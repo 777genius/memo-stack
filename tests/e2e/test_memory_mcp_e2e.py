@@ -1,38 +1,21 @@
 import asyncio
 import json
-import os
-import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_PATHS = [
-    PROJECT_ROOT / "packages" / "memory_core",
-    PROJECT_ROOT / "packages" / "memory_server",
-    PROJECT_ROOT / "packages" / "memory_adapters",
-    PROJECT_ROOT / "packages" / "memory_sdk",
-    PROJECT_ROOT / "packages" / "memory_mcp",
-]
+from memory_server_harness import python_env, run_memory_server
 
 
 def test_memory_mcp_fact_lifecycle_and_document_recall_e2e(tmp_path: Path) -> None:
-    port = _free_port()
-    process = _start_memory_server(tmp_path, port)
-    try:
-        _wait_for_health(port, process)
-        asyncio.run(_run_mcp_lifecycle(port))
-    finally:
-        _stop_process(process)
+    with run_memory_server(tmp_path) as server:
+        asyncio.run(_run_mcp_lifecycle(server.base_url, server.token))
 
 
-async def _run_mcp_lifecycle(port: int) -> None:
+async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
     marker = f"MCP_E2E_{int(time.time() * 1000)}"
     old_fact = f"{marker}: Memory Platform MCP should keep canonical facts active."
     new_fact = f"{marker}: Memory Platform MCP should keep updated canonical facts active."
@@ -40,10 +23,10 @@ async def _run_mcp_lifecycle(port: int) -> None:
         f"{marker}: The document recall path should retrieve larger project notes. "
         "Graphiti is a graph adapter and Qdrant is a vector adapter."
     )
-    env = _python_env(
+    env = python_env(
         {
-            "MEMORY_MCP_API_URL": f"http://127.0.0.1:{port}",
-            "MEMORY_MCP_AUTH_TOKEN": "test-token",
+            "MEMORY_MCP_API_URL": base_url,
+            "MEMORY_MCP_AUTH_TOKEN": token,
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-e2e",
             "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
             "MEMORY_MCP_AGENT_NAME": "e2e-agent",
@@ -176,76 +159,6 @@ async def _call(
     if result.structuredContent is not None:
         return result.structuredContent
     return json.loads(result.content[0].text)
-
-
-def _start_memory_server(tmp_path: Path, port: int) -> subprocess.Popen[str]:
-    env = _python_env(
-        {
-            "MEMORY_DEPLOY_PROFILE": "test",
-            "MEMORY_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}",
-            "MEMORY_AUTO_CREATE_SCHEMA": "true",
-            "MEMORY_SERVICE_TOKEN": "test-token",
-            "MEMORY_HOST": "127.0.0.1",
-            "MEMORY_PORT": str(port),
-            "MEMORY_QDRANT_ENABLED": "false",
-            "MEMORY_GRAPHITI_ENABLED": "false",
-            "MEMORY_EMBEDDINGS_ENABLED": "false",
-        }
-    )
-    return subprocess.Popen(
-        [sys.executable, "-m", "memory_server.main"],
-        cwd=PROJECT_ROOT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-
-
-def _wait_for_health(port: int, process: subprocess.Popen[str]) -> None:
-    deadline = time.time() + 20
-    url = f"http://127.0.0.1:{port}/v1/health"
-    last_error: Exception | None = None
-    while time.time() < deadline:
-        if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else ""
-            raise AssertionError(f"memory_server exited early:\n{output}")
-        try:
-            response = httpx.get(url, timeout=1)
-            if response.status_code == 200:
-                return
-        except httpx.HTTPError as exc:
-            last_error = exc
-        time.sleep(0.2)
-    raise AssertionError(f"memory_server did not become healthy: {last_error}")
-
-
-def _stop_process(process: subprocess.Popen[str]) -> None:
-    if process.poll() is not None:
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _python_env(overrides: dict[str, str]) -> dict[str, str]:
-    env = os.environ.copy()
-    existing = env.get("PYTHONPATH")
-    paths = [str(path) for path in PACKAGE_PATHS]
-    if existing:
-        paths.append(existing)
-    env["PYTHONPATH"] = os.pathsep.join(paths)
-    env.update(overrides)
-    return env
 
 
 def _dump(value: object) -> str:
