@@ -1,0 +1,271 @@
+import json
+
+import httpx
+import pytest
+from memory_sdk import MemoryPlatformClient, MemoryPlatformError
+
+
+def test_sdk_sends_auth_and_params() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["authorization"] = request.headers.get("authorization")
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.list_suggestions(
+        space_id="space_hackinterview",
+        profile_id="profile_default",
+        status="pending",
+    )
+
+    assert response == {"data": {"ok": True}}
+    assert seen["authorization"] == "Bearer test-token"
+    assert (
+        seen["url"]
+        == "http://memory.test/v1/suggestions?space_id=space_hackinterview&profile_id=profile_default&status=pending"
+    )
+
+
+def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url}")
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.list_facts(
+        space_id="space_hackinterview",
+        profile_id="profile_default",
+        limit=10,
+        cursor="fact_cursor",
+    )
+    client.get_fact("fact_1")
+    client.list_fact_versions("fact_1")
+    client.list_document_chunks("doc_1", limit=5, cursor="chunk_cursor")
+    client.process_document("doc_1")
+    client.diagnostics_outbox(limit=10, cursor="outbox_cursor")
+    client.diagnostics_profile("profile_1")
+
+    assert seen == [
+        "GET http://memory.test/v1/facts?space_id=space_hackinterview&profile_id=profile_default&limit=10&status=active&cursor=fact_cursor",
+        "GET http://memory.test/v1/facts/fact_1",
+        "GET http://memory.test/v1/facts/fact_1/versions",
+        "GET http://memory.test/v1/documents/doc_1/chunks?limit=5&cursor=chunk_cursor",
+        "POST http://memory.test/v1/documents/doc_1/process",
+        "GET http://memory.test/v1/diagnostics/outbox?limit=10&cursor=outbox_cursor",
+        "GET http://memory.test/v1/diagnostics/profile/profile_1",
+    ]
+
+
+def test_sdk_process_document_sends_idempotency_key() -> None:
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["idempotency_key"] = request.headers.get("idempotency-key")
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.process_document("doc_1", idempotency_key="process-doc-1")
+
+    assert seen["idempotency_key"] == "process-doc-1"
+
+
+def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, request.url.path, body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.ingest_episode(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        thread_external_ref="session-1",
+        source_type="system_audio",
+        source_external_id="event-1",
+        text="Need FIFO, not LIFO.",
+        speaker="interviewer",
+        trust_level="medium",
+        kind_hint="constraint",
+        metadata={"route": "desktop_companion"},
+        idempotency_key="event-1",
+    )
+    client.thread_memory_status(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        thread_external_ref="session-1",
+    )
+    client.delete_thread_memory(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        thread_external_ref="session-1",
+    )
+
+    assert [f"{method} {path}" for method, path, _body in seen] == [
+        "POST /v1/episodes",
+        "POST /v1/thread-memory/status",
+        "DELETE /v1/thread-memory",
+    ]
+    assert seen[0][2]["space_slug"] == "hackinterview"
+    assert seen[0][2]["profile_external_ref"] == "default"
+    assert seen[0][2]["thread_external_ref"] == "session-1"
+    assert seen[0][2]["idempotency_key"] == "event-1"
+    assert "space_id" not in seen[0][2]
+    assert seen[2][2] == {
+        "space_slug": "hackinterview",
+        "profile_external_ref": "default",
+        "thread_external_ref": "session-1",
+    }
+
+
+def test_sdk_context_search_and_documents_support_external_scope() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, request.url.path, body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.ingest_document(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        thread_external_ref="session-docs",
+        title="Architecture notes",
+        text="Postgres is canonical truth.",
+        source_external_id="doc-1",
+    )
+    client.build_context(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        thread_external_ref="session-docs",
+        query="canonical truth",
+        token_budget=512,
+        max_facts=4,
+        max_chunks=6,
+    )
+    client.search(
+        space_slug="hackinterview",
+        profile_external_refs=["default", "candidate"],
+        query="memory platform",
+        token_budget=1024,
+        max_facts=8,
+        max_chunks=10,
+    )
+
+    assert [f"{method} {path}" for method, path, _body in seen] == [
+        "POST /v1/documents",
+        "POST /v1/context",
+        "POST /v1/search",
+    ]
+    assert seen[0][2]["space_slug"] == "hackinterview"
+    assert seen[0][2]["thread_external_ref"] == "session-docs"
+    assert "space_id" not in seen[0][2]
+    assert seen[1][2]["max_facts"] == 4
+    assert seen[1][2]["max_chunks"] == 6
+    assert seen[2][2]["profile_external_refs"] == ["default", "candidate"]
+    assert "profile_ids" not in seen[2][2]
+
+
+def test_sdk_remember_fact_sends_classification() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(201, json={"data": {"id": "fact_1"}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.remember_fact(
+        space_id="space_hackinterview",
+        profile_id="profile_default",
+        text="Restricted fact",
+        kind="note",
+        source_refs=[{"source_type": "manual", "source_id": "sdk-test"}],
+        classification="restricted",
+    )
+
+    assert seen["body"]["classification"] == "restricted"
+
+
+def test_sdk_raises_typed_server_error_envelope() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={
+                "error": {
+                    "code": "memory.conflict",
+                    "message": "Version conflict",
+                    "retryable": False,
+                }
+            },
+        )
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MemoryPlatformError) as raised:
+        client.forget_fact("fact_1")
+
+    assert raised.value.status_code == 409
+    assert raised.value.code == "memory.conflict"
+    assert raised.value.retryable is False
+
+
+def test_sdk_maps_transport_error_to_retryable_memory_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MemoryPlatformError) as raised:
+        client.build_context(
+            space_id="space_hackinterview",
+            profile_ids=["profile_default"],
+            query="safe fallback",
+        )
+
+    assert raised.value.status_code == 0
+    assert raised.value.code == "memory.network_error"
+    assert raised.value.retryable is True

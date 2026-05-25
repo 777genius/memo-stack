@@ -1,0 +1,58 @@
+services:
+  memory_postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: memory
+      POSTGRES_PASSWORD: memory
+      POSTGRES_DB: memory
+    ports:
+      - "54329:5432"
+
+  memory_qdrant:
+    image: qdrant/qdrant:v1.15.1
+    ports:
+      - "6333:6333"
+    volumes:
+      - memory_qdrant_data:/qdrant/storage
+
+  memory_neo4j:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/memorygraph
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - memory_neo4j_data:/data
+
+  memory_server:
+    image: python:3.12-slim
+    working_dir: /app
+    command: sh -c "pip install -e '.[dev]' && python -m memory_server.main"
+    environment:
+      MEMORY_DEPLOY_PROFILE: local
+      MEMORY_DATABASE_URL: postgresql+asyncpg://memory:memory@memory_postgres:5432/memory
+      MEMORY_AUTO_CREATE_SCHEMA: "true"
+      MEMORY_HOST: 0.0.0.0
+      MEMORY_PORT: "7788"
+      MEMORY_SERVICE_TOKEN: local-dev-token
+      MEMORY_QDRANT_ENABLED: "false"
+      MEMORY_QDRANT_URL: http://memory_qdrant:6333
+      MEMORY_GRAPHITI_ENABLED: "false"
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://memory_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_USER: neo4j
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: memorygraph
+      MEMORY_EMBEDDINGS_ENABLED: "false"
+      MEMORY_LEGACY_HACKINTERVIEW_ENABLED: "true"
+    ports:
+      - "7788:7788"
+    volumes:
+      - ./:/app
+    depends_on:
+      - memory_postgres
+      - memory_qdrant
+      - memory_neo4j
+
+volumes:
+  memory_qdrant_data:
+  memory_neo4j_data:

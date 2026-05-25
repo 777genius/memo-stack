@@ -1,0 +1,199 @@
+"""Suggestions review API."""
+
+from __future__ import annotations
+
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, Query, status
+from memory_core.application import (
+    ApproveSuggestionCommand,
+    CreateSuggestionCommand,
+    ExpireSuggestionCommand,
+    ListSuggestionsQuery,
+    RejectSuggestionCommand,
+)
+from memory_core.domain.entities import (
+    Confidence,
+    MemorySuggestion,
+    ProfileId,
+    SpaceId,
+    SuggestionStatus,
+    TrustLevel,
+)
+from memory_core.domain.errors import MemoryValidationError
+from pydantic import BaseModel, Field
+
+from memory_server.api.auth import require_service_token
+from memory_server.api.dependencies import get_container
+from memory_server.api.policy import ensure_server_writes_enabled
+from memory_server.api.v1.facts import (
+    SourceRefRequest,
+    fact_to_response,
+    map_memory_kind,
+    map_source_ref,
+)
+from memory_server.composition import Container
+
+router = APIRouter(
+    prefix="/suggestions",
+    tags=["suggestions"],
+    dependencies=[Depends(require_service_token)],
+)
+
+
+class CreateSuggestionRequest(BaseModel):
+    space_id: str = Field(min_length=1, max_length=80)
+    profile_id: str = Field(min_length=1, max_length=80)
+    candidate_text: str = Field(min_length=1, max_length=4000)
+    kind: str = "note"
+    source_refs: list[SourceRefRequest] = Field(default_factory=list)
+    confidence: str = "medium"
+    trust_level: str = "medium"
+    safe_reason: str = Field(min_length=1, max_length=320)
+    target_fact_id: str | None = Field(default=None, max_length=80)
+    target_fact_version: int | None = Field(default=None, ge=1)
+    auto_approve: bool = False
+
+
+class ReviewSuggestionRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=320)
+    force: bool = False
+
+
+def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
+    return {
+        "id": str(suggestion.id),
+        "space_id": str(suggestion.space_id),
+        "profile_id": str(suggestion.profile_id),
+        "candidate_text": suggestion.candidate_text,
+        "kind": suggestion.kind.value,
+        "status": suggestion.status.value,
+        "source_refs": [
+            {
+                "source_type": ref.source_type,
+                "source_id": ref.source_id,
+                "chunk_id": ref.chunk_id,
+                "char_start": ref.char_start,
+                "char_end": ref.char_end,
+                "quote_preview": ref.quote_preview,
+            }
+            for ref in suggestion.source_refs
+        ],
+        "confidence": suggestion.confidence.value,
+        "trust_level": suggestion.trust_level.value,
+        "safe_reason": suggestion.safe_reason,
+        "target_fact_id": str(suggestion.target_fact_id) if suggestion.target_fact_id else None,
+        "target_fact_version": suggestion.target_fact_version,
+        "review_reason": suggestion.review_reason,
+        "created_at": suggestion.created_at.isoformat(),
+        "updated_at": suggestion.updated_at.isoformat(),
+        "reviewed_at": suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None,
+    }
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_suggestion(
+    request: CreateSuggestionRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    _validate_confidence_and_trust(request.confidence, request.trust_level)
+    result = await container.create_suggestion.execute(
+        CreateSuggestionCommand(
+            space_id=SpaceId(request.space_id),
+            profile_id=ProfileId(request.profile_id),
+            candidate_text=request.candidate_text,
+            kind=map_memory_kind(request.kind),
+            source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),
+            confidence=request.confidence,
+            trust_level=request.trust_level,
+            safe_reason=request.safe_reason,
+            target_fact_id=request.target_fact_id,
+            target_fact_version=request.target_fact_version,
+            auto_approve=request.auto_approve,
+        )
+    )
+    return {"data": suggestion_to_response(result.suggestion)}
+
+
+@router.get("")
+async def list_suggestions(
+    container: Annotated[Container, Depends(get_container)],
+    space_id: Annotated[str, Query(min_length=1, max_length=80)],
+    profile_id: Annotated[str, Query(min_length=1, max_length=80)],
+    status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict[str, Any]:
+    _validate_suggestion_status(status_filter)
+    suggestions = await container.list_suggestions.execute(
+        ListSuggestionsQuery(
+            space_id=SpaceId(space_id),
+            profile_id=ProfileId(profile_id),
+            status=status_filter,
+            limit=limit,
+        )
+    )
+    return {"data": [suggestion_to_response(suggestion) for suggestion in suggestions]}
+
+
+@router.post("/{suggestion_id}/approve")
+async def approve_suggestion(
+    suggestion_id: str,
+    request: ReviewSuggestionRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    result = await container.approve_suggestion.execute(
+        ApproveSuggestionCommand(
+            suggestion_id=suggestion_id,
+            reason=request.reason,
+            force=request.force,
+        )
+    )
+    body = {"suggestion": suggestion_to_response(result.suggestion)}
+    if result.fact:
+        body["fact"] = fact_to_response(result.fact, result.indexing_status)
+    return {"data": body}
+
+
+@router.post("/{suggestion_id}/reject")
+async def reject_suggestion(
+    suggestion_id: str,
+    request: ReviewSuggestionRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    result = await container.reject_suggestion.execute(
+        RejectSuggestionCommand(suggestion_id=suggestion_id, reason=request.reason)
+    )
+    return {"data": suggestion_to_response(result.suggestion)}
+
+
+@router.post("/{suggestion_id}/expire")
+async def expire_suggestion(
+    suggestion_id: str,
+    request: ReviewSuggestionRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    result = await container.expire_suggestion.execute(
+        ExpireSuggestionCommand(suggestion_id=suggestion_id, reason=request.reason)
+    )
+    return {"data": suggestion_to_response(result.suggestion)}
+
+
+def _validate_confidence_and_trust(confidence: str, trust_level: str) -> None:
+    try:
+        Confidence(confidence)
+        TrustLevel(trust_level)
+    except ValueError as exc:
+        raise MemoryValidationError("Unknown confidence or trust level") from exc
+
+
+def _validate_suggestion_status(status_filter: str | None) -> None:
+    if status_filter is None:
+        return
+    try:
+        SuggestionStatus(status_filter)
+    except ValueError as exc:
+        raise MemoryValidationError("Unknown suggestion status") from exc
