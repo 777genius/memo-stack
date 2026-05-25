@@ -93,6 +93,41 @@ def test_remember_fact_idempotency_and_outbox(tmp_path: Path) -> None:
     assert count == 1
 
 
+def test_remember_and_list_fact_support_external_scope_refs(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "backend-team",
+                "thread_external_ref": "session-1",
+                "text": "MCP facts can be written through external scope refs.",
+                "kind": "architecture_decision",
+                "source_refs": [
+                    {
+                        "source_type": "manual",
+                        "source_id": "external-scope-test",
+                    }
+                ],
+            },
+            headers=auth_headers({"Idempotency-Key": "external-scope-fact"}),
+        )
+        listed = client.get(
+            "/v1/facts",
+            params={
+                "space_slug": "agents",
+                "profile_external_ref": "backend-team",
+                "status": "active",
+            },
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["id"] == created.json()["data"]["id"]
+    assert listed.json()["data"][0]["thread_id"] is not None
+
+
 def test_same_idempotency_key_different_body_conflicts(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         headers = auth_headers({"Idempotency-Key": "fact-1"})

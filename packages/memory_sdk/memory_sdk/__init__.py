@@ -63,27 +63,35 @@ class MemoryPlatformClient:
     def remember_fact(
         self,
         *,
-        space_id: str,
-        profile_id: str,
+        space_id: str | None = None,
+        profile_id: str | None = None,
         text: str,
         source_refs: list[dict[str, Any]],
         kind: str = "note",
         thread_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
         idempotency_key: str | None = None,
         classification: str = "internal",
     ) -> dict[str, Any]:
         return self._request(
             "POST",
             "/v1/facts",
-            json={
-                "space_id": space_id,
-                "profile_id": profile_id,
-                "thread_id": thread_id,
-                "text": text,
-                "kind": kind,
-                "source_refs": source_refs,
-                "classification": classification,
-            },
+            json=_without_none(
+                {
+                    "space_id": space_id,
+                    "profile_id": profile_id,
+                    "thread_id": thread_id,
+                    "space_slug": space_slug,
+                    "profile_external_ref": profile_external_ref,
+                    "thread_external_ref": thread_external_ref,
+                    "text": text,
+                    "kind": kind,
+                    "source_refs": source_refs,
+                    "classification": classification,
+                }
+            ),
             idempotency_key=idempotency_key,
         )
 
@@ -119,13 +127,27 @@ class MemoryPlatformClient:
     def list_facts(
         self,
         *,
-        space_id: str,
-        profile_id: str,
+        space_id: str | None = None,
+        profile_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        thread_id: str | None = None,
+        thread_external_ref: str | None = None,
         status: str | None = "active",
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        params = {"space_id": space_id, "profile_id": profile_id, "limit": limit}
+        params = _without_none(
+            {
+                "space_id": space_id,
+                "profile_id": profile_id,
+                "space_slug": space_slug,
+                "profile_external_ref": profile_external_ref,
+                "thread_id": thread_id,
+                "thread_external_ref": thread_external_ref,
+                "limit": limit,
+            }
+        )
         if status is not None:
             params["status"] = status
         if cursor is not None:

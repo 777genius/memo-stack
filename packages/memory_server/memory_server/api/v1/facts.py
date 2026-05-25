@@ -17,10 +17,7 @@ from memory_core.domain.entities import (
     FactStatus,
     MemoryFact,
     MemoryKind,
-    ProfileId,
     SourceRef,
-    SpaceId,
-    ThreadId,
 )
 from memory_core.domain.errors import MemoryValidationError
 from pydantic import BaseModel, Field
@@ -28,6 +25,7 @@ from pydantic import BaseModel, Field
 from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
 from memory_server.api.policy import ensure_server_writes_enabled
+from memory_server.api.v1.scope_resolution import resolve_single_scope
 from memory_server.composition import Container
 from memory_server.pagination import cursor_datetime, cursor_str, decode_cursor, encode_cursor
 
@@ -48,9 +46,12 @@ class SourceRefRequest(BaseModel):
 
 
 class RememberFactRequest(BaseModel):
-    space_id: str = Field(min_length=1, max_length=80)
-    profile_id: str = Field(min_length=1, max_length=80)
+    space_id: str | None = Field(default=None, min_length=1, max_length=80)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, max_length=80)
+    space_slug: str | None = Field(default=None, min_length=1, max_length=160)
+    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=4000)
     kind: str = "note"
     source_refs: list[SourceRefRequest] = Field(min_length=1)
@@ -122,11 +123,21 @@ async def remember_fact(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> dict[str, Any]:
     ensure_server_writes_enabled(container)
+    scope = await resolve_single_scope(
+        container,
+        space_id=request.space_id,
+        profile_id=request.profile_id,
+        thread_id=request.thread_id,
+        space_slug=request.space_slug,
+        profile_external_ref=request.profile_external_ref,
+        thread_external_ref=request.thread_external_ref,
+        thread_required=False,
+    )
     result = await container.remember_fact.execute(
         RememberFactCommand(
-            space_id=SpaceId(request.space_id),
-            profile_id=ProfileId(request.profile_id),
-            thread_id=ThreadId(request.thread_id) if request.thread_id else None,
+            space_id=scope.space_id,
+            profile_id=scope.profile_id,
+            thread_id=scope.thread_id,
             text=request.text,
             kind=map_memory_kind(request.kind),
             source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),
@@ -142,18 +153,32 @@ async def remember_fact(
 @router.get("")
 async def list_facts(
     container: Annotated[Container, Depends(get_container)],
-    space_id: Annotated[str, Query(min_length=1, max_length=80)],
-    profile_id: Annotated[str, Query(min_length=1, max_length=80)],
+    space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    thread_id: Annotated[str | None, Query(max_length=80)] = None,
+    thread_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "active",
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     cursor: Annotated[str | None, Query(max_length=1000)] = None,
 ) -> dict[str, Any]:
     _validate_fact_status(status_filter)
+    scope = await resolve_single_scope(
+        container,
+        space_id=space_id,
+        profile_id=profile_id,
+        thread_id=thread_id,
+        space_slug=space_slug,
+        profile_external_ref=profile_external_ref,
+        thread_external_ref=thread_external_ref,
+        thread_required=False,
+    )
     decoded_cursor = decode_cursor(cursor, kind="facts")
     result = await container.list_facts.execute(
         ListFactsQuery(
-            space_id=SpaceId(space_id),
-            profile_id=ProfileId(profile_id),
+            space_id=scope.space_id,
+            profile_id=scope.profile_id,
             status=status_filter,
             limit=limit + 1,
             cursor_updated_at=cursor_datetime(decoded_cursor, "updated_at"),

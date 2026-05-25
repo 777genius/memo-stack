@@ -28,11 +28,19 @@ openai = [
 graphiti = [
   "graphiti-core>=0.29.1,<1.0.0",
 ]
+mcp = [
+  "mcp>=1.27.1,<2.0.0",
+]
 dev = [
   "aiosqlite>=0.22.1,<1.0.0",
+  "mcp>=1.27.1,<2.0.0",
   "pytest>=9.0.3,<10.0.0",
   "ruff>=0.15.14,<1.0.0",
 ]
+
+[project.scripts]
+memory-mcp = "memory_mcp.server:main"
+memory-mcp-bench = "memory_mcp.bench:main"
 
 [tool.setuptools.packages.find]
 where = [
@@ -40,6 +48,7 @@ where = [
   "packages/memory_server",
   "packages/memory_adapters",
   "packages/memory_sdk",
+  "packages/memory_mcp",
 ]
 
 [tool.pytest.ini_options]
@@ -49,6 +58,7 @@ pythonpath = [
   "packages/memory_server",
   "packages/memory_adapters",
   "packages/memory_sdk",
+  "packages/memory_mcp",
 ]
 
 [tool.ruff]
