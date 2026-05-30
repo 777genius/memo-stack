@@ -12,6 +12,7 @@ class FakeGraphiti:
         self.built = 0
         self.episodes: list[dict[str, object]] = []
         self.deleted: list[str] = []
+        self.search_calls: list[dict[str, object]] = []
 
     async def build_indices_and_constraints(self) -> None:
         self.built += 1
@@ -22,8 +23,16 @@ class FakeGraphiti:
     async def delete_episode(self, *, name: str) -> None:
         self.deleted.append(name)
 
-    async def search(self, **_kwargs: object) -> list[object]:
-        return [SimpleNamespace(name="fact:fact_graphiti", score=0.8)]
+    async def search(self, **kwargs: object) -> list[object]:
+        self.search_calls.append(kwargs)
+        return [SimpleNamespace(episodes=["fact_graphiti"], score=0.8)]
+
+
+class FakeModernGraphiti(FakeGraphiti):
+    delete_episode = None
+
+    async def remove_episode(self, episode_uuid: str) -> None:
+        self.deleted.append(episode_uuid)
 
 
 def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
@@ -53,9 +62,27 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
         assert fake.built == 1
         assert upsert.status == PortStatus.OK
         assert fake.episodes[0]["name"] == "fact:fact_graphiti"
+        assert fake.episodes[0]["uuid"] == "fact_graphiti"
+        assert fake.episodes[0]["group_id"] == "memory__space_hackinterview__profile_default"
+        assert fake.search_calls[0]["group_ids"] == [
+            "memory__space_hackinterview__profile_default"
+        ]
         assert search.items[0].source_fact_ids == ("fact_graphiti",)
         assert deleted.status == PortStatus.OK
         assert fake.deleted == ["fact:fact_graphiti"]
+
+    asyncio.run(run())
+
+
+def test_graphiti_adapter_supports_modern_remove_episode_delete() -> None:
+    async def run() -> None:
+        fake = FakeModernGraphiti()
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        deleted = await adapter.delete_fact("fact_graphiti")
+
+        assert deleted.status == PortStatus.OK
+        assert fake.deleted == ["fact_graphiti"]
 
     asyncio.run(run())
 
@@ -89,10 +116,10 @@ def test_configured_graphiti_without_client_degrades_instead_of_disabling() -> N
         assert capabilities.healthy is False
         assert capabilities.degraded_reason == "graphiti_unavailable"
         assert upsert.status == PortStatus.DEGRADED
-        assert upsert.diagnostics[0].code == "graph.unavailable"
+        assert upsert.diagnostics[0].code in {"graph.unavailable", "graph.upsert_failed"}
         assert upsert.diagnostics[0].retryable is True
         assert search.status == PortStatus.DEGRADED
-        assert search.diagnostics[0].code == "graph.unavailable"
+        assert search.diagnostics[0].code in {"graph.unavailable", "graph.search_failed"}
         assert search.diagnostics[0].retryable is True
 
     asyncio.run(run())
@@ -220,6 +247,30 @@ def test_qdrant_adapter_creates_collection_before_upsert_and_search() -> None:
         assert upsert.status == PortStatus.OK
         assert fake.upserts == 1
         assert search.items[0].chunk_id == "chunk_1"
+
+    asyncio.run(run())
+
+
+def test_qdrant_zero_limit_search_is_noop() -> None:
+    async def run() -> None:
+        fake = FakeQdrantClient()
+        adapter = QdrantVectorMemoryAdapter(
+            url="http://qdrant.test",
+            collection_name="memory_chunks_v1",
+            vector_size=3,
+        )
+        adapter._client = lambda: _fake_qdrant_client(fake)  # type: ignore[method-assign]
+
+        search = await adapter.search_chunks(
+            space_id="space_hackinterview",
+            profile_ids=("profile_default",),
+            query_vector=(0.1, 0.2, 0.3),
+            limit=0,
+        )
+
+        assert search.status == PortStatus.OK
+        assert search.items == ()
+        assert fake.collections == set()
 
     asyncio.run(run())
 

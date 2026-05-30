@@ -123,6 +123,9 @@ class BuildContextUseCase:
         profile_ids: tuple[str, ...],
         diagnostics: dict[str, object],
     ) -> list:
+        if query.max_chunks <= 0:
+            diagnostics["vector_status"] = "skipped"
+            return []
         capabilities = await self._vector_index.capabilities()
         if not capabilities.enabled:
             diagnostics["vector_status"] = (
@@ -174,7 +177,8 @@ class BuildContextUseCase:
         profile_ids: tuple[str, ...],
         diagnostics: dict[str, object],
     ) -> list[ContextItem]:
-        if not query.include_graph:
+        if not query.include_graph or query.max_facts <= 0:
+            diagnostics["graph_status"] = "skipped"
             return []
         capabilities = await self._graph_index.capabilities()
         if not capabilities.enabled:

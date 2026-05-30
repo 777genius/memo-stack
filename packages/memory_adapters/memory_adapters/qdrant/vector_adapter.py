@@ -141,6 +141,8 @@ class QdrantVectorMemoryAdapter:
         query_vector: tuple[float, ...],
         limit: int,
     ) -> VectorSearchResult:
+        if limit <= 0:
+            return VectorSearchResult.ok(())
         if not query_vector:
             return VectorSearchResult.degraded("qdrant.empty_query_vector", retryable=False)
         try:
