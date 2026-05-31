@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     embeddings_dimensions: int = Field(default=1536, ge=1, le=8192)
     openai_api_key: str | None = None
     legacy_hackinterview_enabled: bool = True
-    default_space_slug: str = "hackinterview"
+    default_space_slug: str = "default"
     default_profile_external_ref: str = "default"
     max_context_tokens: int = Field(default=1800, ge=256, le=16000)
     max_context_chars: int = Field(default=18000, ge=1000, le=60000)

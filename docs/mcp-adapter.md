@@ -49,7 +49,7 @@ The server also exposes:
 ```bash
 MEMORY_MCP_API_URL=http://127.0.0.1:7788
 MEMORY_MCP_AUTH_TOKEN=<memory-service-token>
-MEMORY_MCP_DEFAULT_SPACE_SLUG=hackinterview
+MEMORY_MCP_DEFAULT_SPACE_SLUG=default
 MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF=default
 MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=
 MEMORY_MCP_AGENT_NAME=codex
@@ -84,7 +84,7 @@ scoping at the deployment edge.
         "PYTHONPATH": "/Users/belief/dev/projects/ai/memory-platform/packages/memory_core:/Users/belief/dev/projects/ai/memory-platform/packages/memory_server:/Users/belief/dev/projects/ai/memory-platform/packages/memory_adapters:/Users/belief/dev/projects/ai/memory-platform/packages/memory_sdk:/Users/belief/dev/projects/ai/memory-platform/packages/memory_mcp",
         "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
         "MEMORY_MCP_AUTH_TOKEN": "local-token",
-        "MEMORY_MCP_DEFAULT_SPACE_SLUG": "hackinterview",
+        "MEMORY_MCP_DEFAULT_SPACE_SLUG": "project-alpha",
         "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default"
       }
     }

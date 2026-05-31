@@ -166,7 +166,7 @@ Policy modes:
 MEMORY_POLICY_MODE=disabled       # no server writes or retrieval
 MEMORY_POLICY_MODE=manual_only    # explicit API writes, retrieval for reviewed/manual memory
 MEMORY_POLICY_MODE=suggestions    # review-gated memory mode
-MEMORY_POLICY_MODE=active_context # default HackInterview-compatible context mode
+MEMORY_POLICY_MODE=active_context # active prompt-context mode
 ```
 
 Data classification:
@@ -183,8 +183,8 @@ Worker and operational commands:
 ```bash
 MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.worker --once
 MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.doctor
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.admin repair-projections --space hackinterview --profile default --dry-run
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.admin import-profile --space hackinterview --profile default --file profile-export.json --dry-run
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.admin repair-projections --space project-alpha --profile default --dry-run
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.admin import-profile --space project-alpha --profile default --file profile-export.json --dry-run
 MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.eval run --suite small-golden
 ```
 
@@ -192,8 +192,8 @@ Service tokens:
 
 ```bash
 MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token create --description app
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token create --space space_hackinterview --description hackinterview --expires-at 2026-12-31T23:59:59+00:00
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token create --space space_hackinterview --profile profile_default --description hackinterview-default
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token create --space space_project_alpha --description project-alpha --expires-at 2026-12-31T23:59:59+00:00
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token create --space space_project_alpha --profile profile_default --description project-alpha-default
 MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token list
 MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memory_server.admin token revoke --token-id tok_...
 ```
@@ -221,6 +221,8 @@ MEMORY_SERVICE_TOKEN=local-dev-token \
 HackInterview local canary can point at this server:
 
 ```bash
+MEMORY_DEFAULT_SPACE_SLUG=hackinterview make memory-stack-up-lite
+
 INTERVIEW_MEMORY_API_URL=http://127.0.0.1:7788 \
 INTERVIEW_MEMORY_API_VARIANT=platform \
 INTERVIEW_MEMORY_AUTH_TOKEN=local-dev-token \
@@ -236,7 +238,7 @@ curl -X POST http://127.0.0.1:7788/v1/episodes \
   -H "Authorization: Bearer local-dev-token" \
   -H "Content-Type: application/json" \
   -d '{
-    "space_slug": "hackinterview",
+    "space_slug": "project-alpha",
     "profile_external_ref": "default",
     "thread_external_ref": "session-123",
     "source_type": "system_audio",
@@ -249,7 +251,7 @@ curl -X POST http://127.0.0.1:7788/v1/context \
   -H "Authorization: Bearer local-dev-token" \
   -H "Content-Type: application/json" \
   -d '{
-    "space_slug": "hackinterview",
+    "space_slug": "project-alpha",
     "profile_external_ref": "default",
     "thread_external_ref": "session-123",
     "query": "What did the candidate prefer for event processing?",
@@ -264,7 +266,7 @@ from memory_sdk import MemoryPlatformClient
 
 client = MemoryPlatformClient(token="local-dev-token")
 client.remember_fact(
-    space_id="space_hackinterview",
+    space_id="space_project_alpha",
     profile_id="profile_default",
     text="Postgres is canonical truth.",
     kind="architecture_decision",
@@ -272,7 +274,7 @@ client.remember_fact(
 )
 
 client.ingest_episode(
-    space_slug="hackinterview",
+    space_slug="project-alpha",
     profile_external_ref="default",
     thread_external_ref="session-123",
     source_type="system_audio",
@@ -282,7 +284,7 @@ client.ingest_episode(
 )
 
 context = client.build_context(
-    space_slug="hackinterview",
+    space_slug="project-alpha",
     profile_external_ref="default",
     thread_external_ref="session-123",
     query="event processing preference",
@@ -290,7 +292,7 @@ context = client.build_context(
 )
 
 suggestion = client.create_suggestion(
-    space_id="space_hackinterview",
+    space_id="space_project_alpha",
     profile_id="profile_default",
     candidate_text="Qdrant is a derived index.",
     kind="architecture_decision",

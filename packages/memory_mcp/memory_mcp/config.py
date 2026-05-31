@@ -17,7 +17,7 @@ class McpTransport(StrEnum):
 class MemoryMcpSettings:
     api_url: str = "http://127.0.0.1:7788"
     auth_token: str | None = None
-    default_space_slug: str = "hackinterview"
+    default_space_slug: str = "default"
     default_profile_external_ref: str = "default"
     default_thread_external_ref: str | None = None
     agent_name: str = "mcp-agent"
@@ -39,7 +39,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
     return MemoryMcpSettings(
         api_url=_get(values, "MEMORY_MCP_API_URL", "http://127.0.0.1:7788").rstrip("/"),
         auth_token=token,
-        default_space_slug=_get(values, "MEMORY_MCP_DEFAULT_SPACE_SLUG", "hackinterview"),
+        default_space_slug=_get(values, "MEMORY_MCP_DEFAULT_SPACE_SLUG", "default"),
         default_profile_external_ref=_get(
             values, "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF", "default"
         ),

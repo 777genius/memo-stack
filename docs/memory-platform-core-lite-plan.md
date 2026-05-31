@@ -3029,7 +3029,7 @@ class Settings(BaseSettings):
     qdrant_enabled: bool = True
     embeddings_enabled: bool = False
     legacy_hackinterview_enabled: bool = True
-    default_space_slug: str = "hackinterview"
+    default_space_slug: str = "default"
     default_profile_external_ref: str = "default"
     max_context_tokens: int = 1800
 
@@ -4745,7 +4745,7 @@ MEMORY_QDRANT_URL=http://127.0.0.1:6333
 MEMORY_GRAPHITI_ENABLED=false
 MEMORY_EMBEDDINGS_ENABLED=false
 MEMORY_LEGACY_HACKINTERVIEW_ENABLED=true
-MEMORY_DEFAULT_SPACE_SLUG=hackinterview
+MEMORY_DEFAULT_SPACE_SLUG=default
 MEMORY_DEFAULT_PROFILE_EXTERNAL_REF=default
 MEMORY_MAX_CONTEXT_TOKENS=1800
 ```

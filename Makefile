@@ -75,9 +75,6 @@ memory-stack-up:
 memory-stack-up-lite:
 	$(COMPOSE) --profile lite up -d memory_server memory_worker
 
-.PHONY: memory-stack-up-app
-memory-stack-up-app: memory-stack-up-lite
-
 .PHONY: memory-stack-up-full
 memory-stack-up-full:
 	@test -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" || (echo "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before starting the full profile."; exit 1)
