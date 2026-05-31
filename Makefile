@@ -73,11 +73,11 @@ memory-stack-up:
 
 .PHONY: memory-stack-up-lite
 memory-stack-up-lite:
-	$(COMPOSE) --profile lite up -d memory_server
+	$(COMPOSE) --profile lite up -d memory_server memory_worker
 
 .PHONY: memory-stack-up-hackinterview
 memory-stack-up-hackinterview:
-	$(COMPOSE) --profile hackinterview up -d memory_server
+	$(COMPOSE) --profile hackinterview up -d memory_server memory_worker
 
 .PHONY: memory-stack-up-full
 memory-stack-up-full:

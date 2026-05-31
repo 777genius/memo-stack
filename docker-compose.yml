@@ -91,6 +91,26 @@ services:
       - "${MEMORY_SERVER_PORT:-7788}:7788"
     healthcheck: *memory-server-healthcheck
 
+  memory_worker:
+    <<: *memory-server-common
+    profiles: ["lite", "hackinterview"]
+    command: sh -c "pip install -e '.[dev]' && python -m memory_server.worker --loop --sleep-seconds 2"
+    environment:
+      <<: *memory-server-base-env
+      MEMORY_QDRANT_ENABLED: "false"
+      MEMORY_QDRANT_URL: http://memory_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: memory_chunks_v1
+      MEMORY_EMBEDDINGS_ENABLED: "false"
+      MEMORY_EMBEDDINGS_PROVIDER: noop
+      MEMORY_GRAPHITI_ENABLED: "false"
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://memory_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_USER: neo4j
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: memorygraph
+      MEMORY_GRAPHITI_BUILD_INDICES: "false"
+    depends_on:
+      memory_server:
+        condition: service_healthy
+
   memory_server_full:
     <<: *memory-server-common
     profiles: ["full"]
