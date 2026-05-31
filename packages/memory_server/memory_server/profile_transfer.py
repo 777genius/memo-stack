@@ -142,6 +142,8 @@ async def import_profile(
     documents = list(payload.get("documents", []))
     chunks = list(payload.get("chunks", []))
     source_refs = list(payload.get("source_refs", []))
+    if not dry_run and _contains_redacted_memory(payload, facts=facts, chunks=chunks):
+        return {"status": "refused", "reason": "redacted_profile_export_cannot_be_imported"}
 
     async with AsyncSession(engine) as session:
         target_profile_id = profile_id
@@ -531,6 +533,21 @@ def _import_counts(
 
 def _count_skipped(items: list[dict[str, Any]], skipped: set[str]) -> int:
     return sum(1 for item in items if str(item["id"]) in skipped)
+
+
+def _contains_redacted_memory(
+    payload: dict[str, Any],
+    *,
+    facts: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+) -> bool:
+    if payload.get("redacted") is True:
+        return True
+    if any(fact.get("text") is None for fact in facts):
+        return True
+    return any(
+        chunk.get("text") is None or chunk.get("normalized_text") is None for chunk in chunks
+    )
 
 
 def _fact_conflict_ids(

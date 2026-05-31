@@ -1178,6 +1178,16 @@ def test_export_redacted_mode_omits_restricted_text(
             merge_strategy="skip_existing",
         )
     )
+    refused_redacted_import = asyncio.run(
+        import_profile_command(
+            space="write-space",
+            profile="write-profile",
+            file=str(out),
+            dry_run=False,
+            merge_strategy="skip_existing",
+            confirmed=True,
+        )
+    )
     dry_run_scope = asyncio.run(
         export_profile_command(
             space="dry-run-space",
@@ -1200,6 +1210,10 @@ def test_export_redacted_mode_omits_restricted_text(
     assert refused_import == {
         "status": "refused",
         "reason": "import-profile requires --i-understand-this-writes-canonical-memory",
+    }
+    assert refused_redacted_import == {
+        "status": "refused",
+        "reason": "redacted_profile_export_cannot_be_imported",
     }
     assert dry_run_scope["status"] == "not_found"
 
