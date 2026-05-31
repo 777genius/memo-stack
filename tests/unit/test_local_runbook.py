@@ -18,5 +18,7 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
 
     assert ".PHONY: memory-stack-smoke" in makefile
     assert "$(COMPOSE) --profile lite up -d memory_server memory_worker" in makefile
+    assert "memory-test-quality: memory-lint memory-test-all memory-eval" in makefile
+    assert "$(PYTHON) -m pytest tests/e2e" in makefile
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
     assert "$(MAKE) memory-smoke" in makefile

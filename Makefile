@@ -13,6 +13,10 @@ memory-lint:
 
 .PHONY: memory-test-unit
 memory-test-unit:
+	$(PYTHON) -m pytest tests/unit
+
+.PHONY: memory-test-all
+memory-test-all:
 	$(PYTHON) -m pytest
 
 .PHONY: memory-test-application
@@ -25,7 +29,7 @@ memory-test-integration:
 
 .PHONY: memory-test-e2e
 memory-test-e2e:
-	$(PYTHON) -m pytest tests/unit/test_legacy_and_context_api.py tests/unit/test_worker_eval.py
+	$(PYTHON) -m pytest tests/e2e
 
 .PHONY: memory-eval
 memory-eval:
@@ -33,7 +37,7 @@ memory-eval:
 	$(PYTHON) -m memory_server eval snapshots --suite prompt-contract
 
 .PHONY: memory-test-quality
-memory-test-quality: memory-lint memory-test-application memory-test-integration memory-test-e2e memory-eval
+memory-test-quality: memory-lint memory-test-all memory-eval
 
 .PHONY: memory-smoke
 memory-smoke:
@@ -83,13 +87,13 @@ memory-stack-up-full:
 .PHONY: memory-stack-smoke
 memory-stack-smoke:
 	$(MAKE) memory-stack-up-lite
-	for i in $$(seq 1 90); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 90 ]; then docker compose logs --tail=120 memory_server; exit 1; fi; sleep 1; done
+	for i in $$(seq 1 90); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 90 ]; then $(COMPOSE) logs --tail=120 memory_server; exit 1; fi; sleep 1; done
 	$(MAKE) memory-smoke
 
 .PHONY: memory-stack-smoke-full
 memory-stack-smoke-full:
 	$(MAKE) memory-stack-up-full
-	for i in $$(seq 1 120); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 120 ]; then docker compose logs --tail=120 memory_server_full; exit 1; fi; sleep 1; done
+	for i in $$(seq 1 120); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 120 ]; then $(COMPOSE) logs --tail=120 memory_server_full; exit 1; fi; sleep 1; done
 	$(MAKE) memory-smoke
 	$(MAKE) memory-mcp-smoke
 
