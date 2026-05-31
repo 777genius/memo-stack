@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from memory_mcp.domain.models import MemoryScope, SourceRef
+from memory_mcp.domain.models import MemoryReadScope, MemoryScope, SourceRef
 
 
 class MemoryGatewayPort(Protocol):
@@ -15,7 +15,7 @@ class MemoryGatewayPort(Protocol):
     async def build_context(
         self,
         *,
-        scope: MemoryScope,
+        scope: MemoryReadScope,
         query: str,
         token_budget: int,
         max_facts: int,
@@ -57,6 +57,48 @@ class MemoryGatewayPort(Protocol):
     ) -> dict[str, Any]: ...
 
     async def forget_fact(self, *, fact_id: str) -> dict[str, Any]: ...
+
+    async def create_suggestion(
+        self,
+        *,
+        scope: MemoryScope,
+        candidate_text: str,
+        kind: str,
+        source_refs: list[SourceRef],
+        confidence: str,
+        trust_level: str,
+        safe_reason: str,
+    ) -> dict[str, Any]: ...
+
+    async def list_suggestions(
+        self,
+        *,
+        scope: MemoryScope,
+        status: str | None,
+        limit: int,
+    ) -> dict[str, Any]: ...
+
+    async def approve_suggestion(
+        self,
+        *,
+        suggestion_id: str,
+        reason: str | None,
+        force: bool,
+    ) -> dict[str, Any]: ...
+
+    async def reject_suggestion(
+        self,
+        *,
+        suggestion_id: str,
+        reason: str | None,
+    ) -> dict[str, Any]: ...
+
+    async def expire_suggestion(
+        self,
+        *,
+        suggestion_id: str,
+        reason: str | None,
+    ) -> dict[str, Any]: ...
 
     async def ingest_document(
         self,

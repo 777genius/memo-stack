@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from memory_adapters.postgres.models import (
@@ -21,9 +21,10 @@ from memory_adapters.postgres.models import (
     MemorySourceRefRow,
     MemorySpaceRow,
     MemorySuggestionRow,
+    MemoryThreadRow,
 )
 from memory_core.application import EnsureScopeCommand
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from memory_server.auth_tokens import (
@@ -34,6 +35,34 @@ from memory_server.auth_tokens import (
 from memory_server.composition import build_container
 from memory_server.config import DeployProfile, Settings
 from memory_server.profile_transfer import export_profile, import_profile
+
+ACTIVE_CONTEXT_MANUAL_CHECKS: tuple[tuple[str, str], ...] = (
+    (
+        "hackinterview_fallback_canary",
+        "run HackInterview fallback canary in shadow mode and confirm fallback works",
+    ),
+    (
+        "shadow_retrieve_diagnostics",
+        "review shadow retrieve diagnostics for leaks, latency, and degradation rate",
+    ),
+    ("golden_eval", "run golden eval and confirm all gates pass"),
+    ("service_token_rotation", "create, use, revoke, and replace a service token"),
+    ("kill_switches", "manually verify memory kill switches and fallback mode"),
+)
+ACTIVE_CONTEXT_MANUAL_CHECK_NAMES = tuple(name for name, _ in ACTIVE_CONTEXT_MANUAL_CHECKS)
+SAFE_COMPACTED_OUTBOX_PAYLOAD_KEYS = frozenset(
+    {
+        "space_id",
+        "profile_id",
+        "thread_id",
+        "fact_id",
+        "document_id",
+        "chunk_id",
+        "episode_id",
+        "suggestion_id",
+        "version",
+    }
+)
 
 
 async def seed_defaults() -> dict[str, object]:
@@ -60,10 +89,27 @@ async def doctor() -> dict[str, object]:
     try:
         capabilities = await container.get_capabilities.execute()
         async with AsyncSession(container.engine) as session:
+            await session.execute(text("SELECT 1"))
             pending = await _count_outbox(session, "pending")
             dead = await _count_outbox(session, "dead")
+        adapter_checks = [
+            _adapter_check(adapter.name, adapter.enabled, adapter.healthy, adapter.degraded_reason)
+            for adapter in capabilities.adapters
+        ]
+        checks = [
+            {"name": "postgres", "status": "ok"},
+            {"name": "migrations", "status": "ok"},
+            {
+                "name": "outbox",
+                "status": "ok" if dead == 0 else "degraded",
+                "pending": pending,
+                "dead": dead,
+            },
+            *adapter_checks,
+        ]
         return {
-            "status": "degraded" if dead else "ok",
+            "status": _doctor_status(checks),
+            "checks": checks,
             "adapters": {
                 adapter.name: {
                     "enabled": adapter.enabled,
@@ -78,10 +124,199 @@ async def doctor() -> dict[str, object]:
         await container.engine.dispose()
 
 
+async def active_context_readiness_gate(
+    *,
+    acknowledged_checks: set[str] | None = None,
+) -> dict[str, object]:
+    acknowledged = acknowledged_checks or set()
+    unknown = sorted(acknowledged.difference(ACTIVE_CONTEXT_MANUAL_CHECK_NAMES))
+    if unknown:
+        return {
+            "status": "failed",
+            "gate": "active_context",
+            "checks": [
+                {
+                    "name": "manual_acknowledgements",
+                    "status": "failed",
+                    "unknown": unknown,
+                    "remediation": (
+                        "use one of the documented active context gate acknowledgement names"
+                    ),
+                }
+            ],
+        }
+
+    doctor_result = await doctor()
+    invariant_result = await invariant_check(include_projections=True)
+    default_scope = await _default_scope_status()
+
+    outbox = doctor_result.get("outbox")
+    if not isinstance(outbox, dict):
+        outbox = {}
+    dead_outbox = int(outbox.get("dead") or 0)
+    pending_outbox = int(outbox.get("pending") or 0)
+
+    checks = [
+        _gate_check(
+            "doctor",
+            "ok" if doctor_result.get("status") == "ok" else "failed",
+            remediation="python -m memory_server.doctor",
+            doctor_status=str(doctor_result.get("status")),
+        ),
+        _gate_check(
+            "default_scope",
+            str(default_scope["status"]),
+            remediation="python -m memory_server.admin seed-defaults",
+        ),
+        _gate_check(
+            "outbox_dead_count",
+            "ok" if dead_outbox == 0 else "failed",
+            remediation="python -m memory_server.admin replay-outbox --status dead --limit 50",
+            dead=dead_outbox,
+            pending=pending_outbox,
+        ),
+        _gate_check(
+            "invariant_check",
+            "ok" if invariant_result.get("status") == "ok" else "failed",
+            remediation="python -m memory_server.admin check-invariants --include-projections",
+            invariant_status=str(invariant_result.get("status")),
+            dead_outbox_jobs=int(invariant_result.get("dead_outbox_jobs") or 0),
+        ),
+    ]
+    checks.extend(_manual_gate_checks(acknowledged))
+
+    return {
+        "status": _gate_status(checks),
+        "gate": "active_context",
+        "checks": checks,
+        "manual_acknowledgements": sorted(acknowledged),
+        "doctor_status": str(doctor_result.get("status")),
+        "invariant_status": str(invariant_result.get("status")),
+        "outbox": {"pending": pending_outbox, "dead": dead_outbox},
+    }
+
+
+async def _default_scope_status() -> dict[str, object]:
+    settings = Settings()
+    container = build_container(settings)
+    try:
+        async with AsyncSession(container.engine) as session:
+            space_id = await session.scalar(
+                select(MemorySpaceRow.id).where(
+                    MemorySpaceRow.slug == settings.default_space_slug,
+                    MemorySpaceRow.status == "active",
+                )
+            )
+            if not space_id:
+                return {"status": "failed"}
+            profile_id = await session.scalar(
+                select(MemoryProfileRow.id).where(
+                    MemoryProfileRow.space_id == space_id,
+                    MemoryProfileRow.external_ref == settings.default_profile_external_ref,
+                    MemoryProfileRow.status == "active",
+                )
+            )
+            return {"status": "ok" if profile_id else "failed"}
+    finally:
+        await container.engine.dispose()
+
+
+def _manual_gate_checks(acknowledged: set[str]) -> list[dict[str, object]]:
+    checks: list[dict[str, object]] = []
+    for name, remediation in ACTIVE_CONTEXT_MANUAL_CHECKS:
+        status = "ok" if name in acknowledged else "manual_required"
+        checks.append(
+            _gate_check(
+                name,
+                status,
+                remediation=remediation,
+                acknowledgement_required=name not in acknowledged,
+            )
+        )
+    return checks
+
+
+def _gate_check(
+    name: str,
+    status: str,
+    *,
+    remediation: str,
+    **extra: object,
+) -> dict[str, object]:
+    return {"name": name, "status": status, "remediation": remediation, **extra}
+
+
+def _gate_status(checks: list[dict[str, object]]) -> str:
+    statuses = {str(check.get("status")) for check in checks}
+    if "failed" in statuses:
+        return "failed"
+    if "manual_required" in statuses:
+        return "blocked"
+    if "degraded" in statuses:
+        return "degraded"
+    return "ok"
+
+
+def _adapter_check(
+    name: str,
+    enabled: bool,
+    healthy: bool,
+    degraded_reason: str | None,
+) -> dict[str, object]:
+    if not enabled and degraded_reason == "disabled":
+        status = "disabled"
+    elif enabled and healthy:
+        status = "ok"
+    else:
+        status = "degraded"
+    return {
+        "name": name,
+        "status": status,
+        "enabled": enabled,
+        "healthy": healthy,
+        "degraded_reason": degraded_reason,
+        "provider_version": "unknown",
+        "required_action": _adapter_required_action(name, degraded_reason),
+    }
+
+
+def _adapter_required_action(name: str, degraded_reason: str | None) -> str | None:
+    if degraded_reason is None or degraded_reason == "disabled":
+        return None
+    actions = {
+        "qdrant.dimension_mismatch": (
+            "create a new projection collection or reindex Qdrant with the configured "
+            "embedding dimension"
+        ),
+        "qdrant_sdk_missing": "install the qdrant optional dependency in the memory runtime",
+        "qdrant_unavailable": "verify Qdrant URL, credentials and container health",
+        "graphiti.capability_mismatch": (
+            "verify graphiti-core version and required client methods before enabling "
+            "graph retrieval"
+        ),
+        "graphiti_unavailable": (
+            "verify Graphiti dependencies, Neo4j credentials and container health"
+        ),
+        "embeddings.disabled": "enable and configure an embedding provider before vector retrieval",
+        "embeddings.missing_api_key": "configure the embedding provider API key",
+    }
+    return actions.get(degraded_reason, f"inspect {name} adapter configuration and provider logs")
+
+
+def _doctor_status(checks: list[dict[str, object]]) -> str:
+    statuses = {str(check.get("status")) for check in checks}
+    if "failed" in statuses:
+        return "failed"
+    if "degraded" in statuses:
+        return "degraded"
+    return "ok"
+
+
 async def invariant_check(
     *,
     space: str | None = None,
     profile: str | None = None,
+    include_projections: bool = False,
 ) -> dict[str, object]:
     container = build_container(Settings())
     try:
@@ -114,6 +349,10 @@ async def invariant_check(
                 await _check_idempotency_results_exist(session, scope_filters),
                 _check_dead_outbox(dead),
             ]
+            if include_projections:
+                checks.append(
+                    await _check_projection_outbox_aggregates_exist(session, scope_filters)
+                )
         failed = [check for check in checks if check["status"] != "ok"]
         active_facts_without_source_refs = next(
             check["count"] for check in checks if check["name"] == "active_fact_source_refs"
@@ -127,6 +366,7 @@ async def invariant_check(
             "active_facts_without_source_refs": int(active_facts_without_source_refs),
             "active_chunks": int(active_chunks or 0),
             "dead_outbox_jobs": dead,
+            "include_projections": include_projections,
         }
     finally:
         await container.engine.dispose()
@@ -291,6 +531,63 @@ def _check_dead_outbox(dead: int) -> dict[str, object]:
     }
 
 
+async def _check_projection_outbox_aggregates_exist(
+    session: AsyncSession,
+    scope_filters: ScopeFilters,
+) -> dict[str, object]:
+    rows = list(
+        (
+            await session.execute(
+                select(MemoryOutboxRow)
+                .where(MemoryOutboxRow.workload_class == "projection")
+                .order_by(MemoryOutboxRow.id)
+                .limit(500)
+            )
+        ).scalars()
+    )
+    broken: list[str] = []
+    for row in rows:
+        model = _projection_aggregate_model(row.aggregate_type)
+        if model is None:
+            continue
+        exists_any = await session.scalar(
+            select(func.count()).select_from(model).where(model.id == row.aggregate_id)
+        )
+        if int(exists_any or 0) == 0:
+            if scope_filters.is_scoped and not scope_filters.matches_payload(row.payload_json):
+                continue
+            broken.append(f"{row.aggregate_type}:{row.aggregate_id}")
+            continue
+        if scope_filters.is_scoped:
+            exists_scoped = await session.scalar(
+                select(func.count())
+                .select_from(model)
+                .where(model.id == row.aggregate_id, *scope_filters.for_model(model))
+            )
+            if int(exists_scoped or 0) == 0:
+                continue
+    return _check("projection_outbox_aggregate_exists", broken[:50])
+
+
+def _projection_aggregate_model(
+    aggregate_type: str,
+) -> (
+    type[MemoryFactRow]
+    | type[MemoryDocumentRow]
+    | type[MemoryChunkRow]
+    | type[MemoryEpisodeRow]
+    | type[MemoryThreadRow]
+    | None
+):
+    return {
+        "fact": MemoryFactRow,
+        "document": MemoryDocumentRow,
+        "chunk": MemoryChunkRow,
+        "episode": MemoryEpisodeRow,
+        "thread": MemoryThreadRow,
+    }.get(aggregate_type)
+
+
 def _check(name: str, ids: list[str]) -> dict[str, object]:
     return {
         "name": name,
@@ -317,6 +614,19 @@ class ScopeFilters:
         if self.space_id is None:
             return []
         return [MemoryIdempotencyRecordRow.space_id == self.space_id]
+
+    @property
+    def is_scoped(self) -> bool:
+        return self.space_id is not None or self.profile_id is not None
+
+    def matches_payload(self, payload: object) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        if self.space_id is not None and str(payload.get("space_id")) != self.space_id:
+            return False
+        if self.profile_id is not None and str(payload.get("profile_id")) != self.profile_id:
+            return False
+        return self.is_scoped
 
 
 async def _resolve_scope(
@@ -414,16 +724,303 @@ async def repair_projections(
             "profile": profile,
             "dry_run": dry_run,
             "qdrant": {
+                "missing_chunks": active_chunks,
+                "stale_chunks": 0,
                 "would_upsert": active_chunks,
                 "would_delete": 0,
+                "enqueued": 0,
+                "skipped_existing_jobs": 0,
             },
             "graphiti": {
+                "missing_facts": active_facts,
+                "stale_facts": 0,
                 "would_upsert": active_facts,
                 "would_delete": 0,
+                "enqueued": 0,
+                "skipped_existing_jobs": 0,
             },
         }
     finally:
         await container.engine.dispose()
+
+
+async def reindex_qdrant(
+    *,
+    space: str | None,
+    profile: str | None,
+    dry_run: bool,
+    confirmed: bool = False,
+) -> dict[str, object]:
+    return await _reindex_projection(
+        operation="reindex-qdrant",
+        adapter_key="qdrant",
+        aggregate_type="chunk",
+        event_type="vector.upsert_chunk",
+        space=space,
+        profile=profile,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+
+
+async def reindex_graphiti(
+    *,
+    space: str | None,
+    profile: str | None,
+    dry_run: bool,
+    confirmed: bool = False,
+) -> dict[str, object]:
+    return await _reindex_projection(
+        operation="reindex-graphiti",
+        adapter_key="graphiti",
+        aggregate_type="fact",
+        event_type="graph.upsert_fact",
+        space=space,
+        profile=profile,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+
+
+async def _reindex_projection(
+    *,
+    operation: str,
+    adapter_key: str,
+    aggregate_type: str,
+    event_type: str,
+    space: str | None,
+    profile: str | None,
+    dry_run: bool,
+    confirmed: bool,
+) -> dict[str, object]:
+    if not space or not profile:
+        return {
+            "status": "refused",
+            "operation": operation,
+            "reason": "reindex requires --space and --profile",
+            "dry_run": dry_run,
+        }
+    if not dry_run and not confirmed:
+        return {
+            "status": "refused",
+            "operation": operation,
+            "reason": "reindex requires --i-understand-this-enqueues-projection-jobs",
+            "dry_run": dry_run,
+        }
+
+    container = build_container(Settings())
+    try:
+        async with AsyncSession(container.engine) as session:
+            scope = await _resolve_scope(session, space=space, profile=profile)
+            if scope is None:
+                return {
+                    "status": "not_found",
+                    "operation": operation,
+                    "space": space,
+                    "profile": profile,
+                    "dry_run": dry_run,
+                }
+            scope_filters = _scope_filters(scope)
+            rows = await _active_projection_rows(
+                session,
+                aggregate_type=aggregate_type,
+                scope_filters=scope_filters,
+            )
+            skipped_existing = 0
+            enqueued = 0
+            if not dry_run:
+                now = container.clock.now()
+                for row in rows:
+                    aggregate_id = str(row.id)
+                    aggregate_version = _projection_aggregate_version(row, aggregate_type)
+                    exists_active_job = await _active_projection_job_exists(
+                        session,
+                        event_type=event_type,
+                        aggregate_type=aggregate_type,
+                        aggregate_id=aggregate_id,
+                        aggregate_version=aggregate_version,
+                    )
+                    if exists_active_job:
+                        skipped_existing += 1
+                        continue
+                    session.add(
+                        _projection_outbox(
+                            event_type=event_type,
+                            aggregate_type=aggregate_type,
+                            aggregate_id=aggregate_id,
+                            aggregate_version=aggregate_version,
+                            now=now,
+                            payload=_projection_payload(
+                                aggregate_type=aggregate_type,
+                                aggregate_id=aggregate_id,
+                                aggregate_version=aggregate_version,
+                                space_id=str(row.space_id),
+                                profile_id=str(row.profile_id),
+                            ),
+                        )
+                    )
+                    enqueued += 1
+                await session.commit()
+        would_upsert = len(rows)
+        return {
+            "status": "ok",
+            "operation": operation,
+            "space": space,
+            "profile": profile,
+            "dry_run": dry_run,
+            adapter_key: _reindex_adapter_payload(
+                aggregate_type=aggregate_type,
+                would_upsert=would_upsert,
+                enqueued=enqueued,
+                skipped_existing_jobs=skipped_existing,
+            ),
+        }
+    finally:
+        await container.engine.dispose()
+
+
+async def _active_projection_rows(
+    session: AsyncSession,
+    *,
+    aggregate_type: str,
+    scope_filters: ScopeFilters,
+) -> list[MemoryChunkRow] | list[MemoryFactRow]:
+    if aggregate_type == "chunk":
+        return list(
+            (
+                await session.execute(
+                    select(MemoryChunkRow)
+                    .where(
+                        MemoryChunkRow.status == "active",
+                        *scope_filters.for_model(MemoryChunkRow),
+                    )
+                    .order_by(MemoryChunkRow.id)
+                )
+            ).scalars()
+        )
+    if aggregate_type == "fact":
+        return list(
+            (
+                await session.execute(
+                    select(MemoryFactRow)
+                    .where(
+                        MemoryFactRow.status == "active",
+                        *scope_filters.for_model(MemoryFactRow),
+                    )
+                    .order_by(MemoryFactRow.id)
+                )
+            ).scalars()
+        )
+    raise ValueError(f"Unsupported projection aggregate type: {aggregate_type}")
+
+
+async def _active_projection_job_exists(
+    session: AsyncSession,
+    *,
+    event_type: str,
+    aggregate_type: str,
+    aggregate_id: str,
+    aggregate_version: int | None,
+) -> bool:
+    version_filter = (
+        MemoryOutboxRow.aggregate_version.is_(None)
+        if aggregate_version is None
+        else MemoryOutboxRow.aggregate_version == aggregate_version
+    )
+    count = await session.scalar(
+        select(func.count())
+        .select_from(MemoryOutboxRow)
+        .where(
+            MemoryOutboxRow.event_type == event_type,
+            MemoryOutboxRow.aggregate_type == aggregate_type,
+            MemoryOutboxRow.aggregate_id == aggregate_id,
+            version_filter,
+            MemoryOutboxRow.status.in_(("pending", "retry_pending", "running")),
+        )
+    )
+    return int(count or 0) > 0
+
+
+def _projection_aggregate_version(
+    row: MemoryChunkRow | MemoryFactRow,
+    aggregate_type: str,
+) -> int | None:
+    if aggregate_type == "fact":
+        return int(row.version)
+    return None
+
+
+def _projection_payload(
+    *,
+    aggregate_type: str,
+    aggregate_id: str,
+    aggregate_version: int | None,
+    space_id: str,
+    profile_id: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "space_id": space_id,
+        "profile_id": profile_id,
+    }
+    if aggregate_type == "chunk":
+        payload["chunk_id"] = aggregate_id
+    elif aggregate_type == "fact":
+        payload["fact_id"] = aggregate_id
+        payload["fact_version"] = aggregate_version
+    return payload
+
+
+def _reindex_adapter_payload(
+    *,
+    aggregate_type: str,
+    would_upsert: int,
+    enqueued: int,
+    skipped_existing_jobs: int,
+) -> dict[str, object]:
+    if aggregate_type == "chunk":
+        return {
+            "missing_chunks": would_upsert,
+            "stale_chunks": 0,
+            "would_upsert": would_upsert,
+            "would_delete": 0,
+            "enqueued": enqueued,
+            "skipped_existing_jobs": skipped_existing_jobs,
+        }
+    return {
+        "missing_facts": would_upsert,
+        "stale_facts": 0,
+        "would_upsert": would_upsert,
+        "would_delete": 0,
+        "enqueued": enqueued,
+        "skipped_existing_jobs": skipped_existing_jobs,
+    }
+
+
+def _projection_outbox(
+    *,
+    event_type: str,
+    aggregate_type: str,
+    aggregate_id: str,
+    now: datetime,
+    payload: dict[str, object],
+    aggregate_version: int | None = None,
+) -> MemoryOutboxRow:
+    return MemoryOutboxRow(
+        event_type=event_type,
+        aggregate_type=aggregate_type,
+        aggregate_id=aggregate_id,
+        aggregate_version=aggregate_version,
+        workload_class="projection",
+        fairness_key=f"{aggregate_type}:{aggregate_id}",
+        payload_json=payload,
+        status="pending",
+        attempt_count=0,
+        next_attempt_at=now,
+        last_safe_error=None,
+        last_safe_diagnostic_code=None,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 async def replay_outbox(*, status: str, limit: int) -> dict[str, object]:
@@ -449,6 +1046,83 @@ async def replay_outbox(*, status: str, limit: int) -> dict[str, object]:
         return {"replayed": len(rows), "from_status": status}
     finally:
         await container.engine.dispose()
+
+
+async def compact_done_outbox(
+    *,
+    older_than_seconds: int,
+    limit: int,
+    dry_run: bool,
+) -> dict[str, object]:
+    if older_than_seconds < 0:
+        raise ValueError("older_than_seconds must be >= 0")
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    container = build_container(Settings())
+    try:
+        now = container.clock.now()
+        cutoff = now - timedelta(seconds=older_than_seconds)
+        async with AsyncSession(container.engine) as session:
+            rows = list(
+                (
+                    await session.execute(
+                        select(MemoryOutboxRow)
+                        .where(
+                            MemoryOutboxRow.status == "done",
+                            MemoryOutboxRow.updated_at <= cutoff,
+                        )
+                        .order_by(MemoryOutboxRow.updated_at, MemoryOutboxRow.id)
+                        .limit(limit)
+                    )
+                ).scalars()
+            )
+            already_compacted = sum(
+                1
+                for row in rows
+                if isinstance(row.payload_json, dict) and row.payload_json.get("compacted") is True
+            )
+            rows_to_compact = [
+                row
+                for row in rows
+                if not (
+                    isinstance(row.payload_json, dict)
+                    and row.payload_json.get("compacted") is True
+                )
+            ]
+            if not dry_run:
+                for row in rows_to_compact:
+                    row.payload_json = _compacted_outbox_payload(row, now=now)
+                    row.updated_at = now
+                await session.commit()
+        return {
+            "status": "ok",
+            "dry_run": dry_run,
+            "matched": len(rows),
+            "compacted": 0 if dry_run else len(rows_to_compact),
+            "would_compact": len(rows_to_compact),
+            "already_compacted": already_compacted,
+            "older_than_seconds": older_than_seconds,
+            "limit": limit,
+            "cutoff": cutoff.isoformat(),
+        }
+    finally:
+        await container.engine.dispose()
+
+
+def _compacted_outbox_payload(row: MemoryOutboxRow, *, now: datetime) -> dict[str, object]:
+    original_payload = row.payload_json if isinstance(row.payload_json, dict) else {}
+    safe_payload = {
+        key: value
+        for key, value in original_payload.items()
+        if key in SAFE_COMPACTED_OUTBOX_PAYLOAD_KEYS and isinstance(value, str | int | type(None))
+    }
+    return {
+        "compacted": True,
+        "compacted_at": now.isoformat(),
+        "payload_key_count": len(original_payload),
+        "preserved": safe_payload,
+    }
 
 
 async def token_create(
@@ -605,15 +1279,39 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     if args.command == "doctor":
         return await doctor()
     if args.command in {"invariant-check", "check-invariants"}:
-        return await invariant_check(space=args.space, profile=args.profile)
-    if args.command in {"repair-projections", "reindex-qdrant", "reindex-graphiti"}:
+        return await invariant_check(
+            space=args.space,
+            profile=args.profile,
+            include_projections=args.include_projections,
+        )
+    if args.command == "repair-projections":
         return await repair_projections(
             space=args.space,
             profile=args.profile,
             dry_run=args.dry_run,
         )
+    if args.command == "reindex-qdrant":
+        return await reindex_qdrant(
+            space=args.space,
+            profile=args.profile,
+            dry_run=args.dry_run,
+            confirmed=args.i_understand_this_enqueues_projection_jobs,
+        )
+    if args.command == "reindex-graphiti":
+        return await reindex_graphiti(
+            space=args.space,
+            profile=args.profile,
+            dry_run=args.dry_run,
+            confirmed=args.i_understand_this_enqueues_projection_jobs,
+        )
     if args.command == "replay-outbox":
         return await replay_outbox(status=args.status, limit=args.limit)
+    if args.command == "compact-outbox":
+        return await compact_done_outbox(
+            older_than_seconds=args.older_than_seconds,
+            limit=args.limit,
+            dry_run=args.dry_run,
+        )
     if args.command == "token":
         if args.token_command == "create":
             return await token_create(
@@ -656,17 +1354,28 @@ def main() -> None:
     invariant = sub.add_parser("invariant-check")
     invariant.add_argument("--space", default=None)
     invariant.add_argument("--profile", default=None)
+    invariant.add_argument("--include-projections", action="store_true")
     check_invariants = sub.add_parser("check-invariants")
     check_invariants.add_argument("--space", default=None)
     check_invariants.add_argument("--profile", default=None)
-    for command in ("repair-projections", "reindex-qdrant", "reindex-graphiti"):
-        repair = sub.add_parser(command)
-        repair.add_argument("--space", default=None)
-        repair.add_argument("--profile", default=None)
-        repair.add_argument("--dry-run", action="store_true")
+    check_invariants.add_argument("--include-projections", action="store_true")
+    repair = sub.add_parser("repair-projections")
+    repair.add_argument("--space", default=None)
+    repair.add_argument("--profile", default=None)
+    repair.add_argument("--dry-run", action="store_true")
+    for command in ("reindex-qdrant", "reindex-graphiti"):
+        reindex = sub.add_parser(command)
+        reindex.add_argument("--space", default=None)
+        reindex.add_argument("--profile", default=None)
+        reindex.add_argument("--dry-run", action="store_true")
+        reindex.add_argument("--i-understand-this-enqueues-projection-jobs", action="store_true")
     replay = sub.add_parser("replay-outbox")
     replay.add_argument("--status", default="dead")
     replay.add_argument("--limit", type=int, default=50)
+    compact = sub.add_parser("compact-outbox")
+    compact.add_argument("--older-than-seconds", type=int, default=86_400)
+    compact.add_argument("--limit", type=int, default=500)
+    compact.add_argument("--dry-run", action="store_true")
     token = sub.add_parser("token")
     token_sub = token.add_subparsers(dest="token_command", required=True)
     token_create_parser = token_sub.add_parser("create")
@@ -705,7 +1414,12 @@ def main() -> None:
     import_parser.add_argument(
         "--merge-strategy",
         default="fail_on_conflict",
-        choices=("fail_on_conflict", "skip_existing"),
+        choices=(
+            "fail_on_conflict",
+            "skip_existing",
+            "create_new_profile",
+            "supersede_matching_facts",
+        ),
     )
     result = asyncio.run(_run(parser.parse_args()))
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

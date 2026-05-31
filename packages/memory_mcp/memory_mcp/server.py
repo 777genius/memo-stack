@@ -305,6 +305,163 @@ def create_mcp_server(
         return await tool_service.forget_fact(fact_id=fact_id)
 
     @mcp.tool(
+        name="memory_suggest_fact",
+        title="Suggest Fact",
+        description=(
+            "Create a pending memory suggestion for review. Use this for unreviewed "
+            "auto-memory, transcript-derived facts, or agent-inferred facts."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+        structured_output=True,
+    )
+    async def memory_suggest_fact(
+        candidate_text: Annotated[
+            str,
+            Field(min_length=1, max_length=4000, description="Candidate fact text."),
+        ],
+        kind: Annotated[
+            str,
+            Field(
+                default="note",
+                description=(
+                    "Fact kind: note, architecture_decision, constraint, or user_preference."
+                ),
+            ),
+        ] = "note",
+        space_slug: Annotated[str | None, Field(default=None)] = None,
+        profile_external_ref: Annotated[str | None, Field(default=None)] = None,
+        thread_external_ref: Annotated[str | None, Field(default=None)] = None,
+        source_type: Annotated[str | None, Field(default=None)] = None,
+        source_id: Annotated[str | None, Field(default=None)] = None,
+        quote_preview: Annotated[str | None, Field(default=None, max_length=240)] = None,
+        confidence: Annotated[
+            str,
+            Field(default="medium", description="low, medium, or high."),
+        ] = "medium",
+        trust_level: Annotated[
+            str,
+            Field(default="medium", description="low, medium, or high."),
+        ] = "medium",
+        safe_reason: Annotated[
+            str,
+            Field(default="mcp_agent_suggestion_requires_review", min_length=1, max_length=320),
+        ] = "mcp_agent_suggestion_requires_review",
+    ) -> dict[str, Any]:
+        return await tool_service.suggest_fact(
+            candidate_text=candidate_text,
+            kind=kind,
+            space_slug=space_slug,
+            profile_external_ref=profile_external_ref,
+            thread_external_ref=thread_external_ref,
+            source_type=source_type,
+            source_id=source_id,
+            quote_preview=quote_preview,
+            confidence=confidence,
+            trust_level=trust_level,
+            safe_reason=safe_reason,
+        )
+
+    @mcp.tool(
+        name="memory_list_suggestions",
+        title="List Suggestions",
+        description="List pending or reviewed memory suggestions for a scope.",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+        structured_output=True,
+    )
+    async def memory_list_suggestions(
+        space_slug: Annotated[str | None, Field(default=None)] = None,
+        profile_external_ref: Annotated[str | None, Field(default=None)] = None,
+        thread_external_ref: Annotated[str | None, Field(default=None)] = None,
+        status: Annotated[
+            str | None,
+            Field(default="pending", description="pending, approved, rejected, expired, or null."),
+        ] = "pending",
+        limit: Annotated[int, Field(default=50, ge=1, le=500)] = 50,
+    ) -> dict[str, Any]:
+        return await tool_service.list_suggestions(
+            space_slug=space_slug,
+            profile_external_ref=profile_external_ref,
+            thread_external_ref=thread_external_ref,
+            status=status,
+            limit=limit,
+        )
+
+    @mcp.tool(
+        name="memory_approve_suggestion",
+        title="Approve Suggestion",
+        description=(
+            "Approve one pending memory suggestion by suggestion_id. Approval creates or "
+            "updates canonical memory through the Memory Platform review policy."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+        structured_output=True,
+    )
+    async def memory_approve_suggestion(
+        suggestion_id: Annotated[str, Field(min_length=1, description="Suggestion id.")],
+        reason: Annotated[str | None, Field(default=None, max_length=320)] = None,
+        force: Annotated[
+            bool,
+            Field(default=False, description="Allow explicit reviewer override."),
+        ] = False,
+    ) -> dict[str, Any]:
+        return await tool_service.approve_suggestion(
+            suggestion_id=suggestion_id,
+            reason=reason,
+            force=force,
+        )
+
+    @mcp.tool(
+        name="memory_reject_suggestion",
+        title="Reject Suggestion",
+        description="Reject one pending memory suggestion by suggestion_id.",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+        structured_output=True,
+    )
+    async def memory_reject_suggestion(
+        suggestion_id: Annotated[str, Field(min_length=1, description="Suggestion id.")],
+        reason: Annotated[str | None, Field(default=None, max_length=320)] = None,
+    ) -> dict[str, Any]:
+        return await tool_service.reject_suggestion(suggestion_id=suggestion_id, reason=reason)
+
+    @mcp.tool(
+        name="memory_expire_suggestion",
+        title="Expire Suggestion",
+        description="Expire one pending memory suggestion by suggestion_id.",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+        structured_output=True,
+    )
+    async def memory_expire_suggestion(
+        suggestion_id: Annotated[str, Field(min_length=1, description="Suggestion id.")],
+        reason: Annotated[str | None, Field(default=None, max_length=320)] = None,
+    ) -> dict[str, Any]:
+        return await tool_service.expire_suggestion(suggestion_id=suggestion_id, reason=reason)
+
+    @mcp.tool(
         name="memory_ingest_document",
         title="Ingest Document",
         description=(

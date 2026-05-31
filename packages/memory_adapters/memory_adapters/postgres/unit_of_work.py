@@ -47,6 +47,11 @@ _ADDITIVE_SCHEMA_COLUMNS = {
     "memory_facts": (("classification", "VARCHAR(40) NOT NULL DEFAULT 'internal'"),),
     "memory_documents": (("classification", "VARCHAR(40) NOT NULL DEFAULT 'unknown'"),),
     "memory_chunks": (("classification", "VARCHAR(40) NOT NULL DEFAULT 'unknown'"),),
+    "memory_outbox": (
+        ("workload_class", "VARCHAR(80) NOT NULL DEFAULT 'projection'"),
+        ("fairness_key", "VARCHAR(160)"),
+        ("last_safe_diagnostic_code", "VARCHAR(120)"),
+    ),
 }
 
 
@@ -205,6 +210,30 @@ async def create_schema(engine: AsyncEngine) -> None:
         await connection.run_sync(Base.metadata.create_all)
         await connection.run_sync(_ensure_additive_schema_columns)
         await connection.run_sync(_ensure_document_thread_unique_indexes)
+        await connection.run_sync(_ensure_outbox_lifecycle_indexes)
+
+
+def _ensure_outbox_lifecycle_indexes(connection: Connection) -> None:
+    inspector = inspect(connection)
+    if "memory_outbox" not in set(inspector.get_table_names()):
+        return
+    connection.execute(
+        text(
+            """
+            UPDATE memory_outbox
+            SET fairness_key = aggregate_type || ':' || aggregate_id
+            WHERE fairness_key IS NULL
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_memory_outbox_workload_fairness
+            ON memory_outbox(status, workload_class, fairness_key, next_attempt_at)
+            """
+        )
+    )
 
 
 class PostgresUnitOfWork:

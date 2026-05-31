@@ -11,6 +11,7 @@ from memory_server.api.dependencies import get_container
 from memory_server.composition import Container
 from memory_server.diagnostics import (
     adapter_diagnostics,
+    operational_metrics,
     outbox_diagnostics,
     profile_diagnostics,
 )
@@ -46,3 +47,10 @@ async def get_profile_diagnostics(
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
     return {"data": await profile_diagnostics(container, profile_id=profile_id)}
+
+
+@router.get("/metrics")
+async def get_operational_metrics(
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    return {"data": await operational_metrics(container)}

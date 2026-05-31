@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -8,13 +9,19 @@ from memory_adapters.noop import (
     NoopGraphMemoryAdapter,
     NoopVectorMemoryAdapter,
 )
+from memory_adapters.postgres.models import MemoryEpisodeRow, MemoryOutboxRow
 from memory_core.application import (
     BuildContextQuery,
     BuildContextUseCase,
+    ConsistencyMode,
     EnsureScopeCommand,
     ForgetFactCommand,
 )
-from memory_core.domain.entities import ProfileId, SpaceId, TrustLevel
+from memory_core.application.context_collectors import (
+    CanonicalCollectionResult,
+    CanonicalContextCollector,
+)
+from memory_core.domain.entities import ProfileId, SourceRef, SpaceId, TrustLevel
 from memory_core.ports.adapters import (
     AdapterCapabilities,
     EmbeddingResult,
@@ -24,9 +31,24 @@ from memory_core.ports.adapters import (
     VectorCandidate,
     VectorSearchResult,
 )
+from memory_core.ports.capabilities import (
+    CapabilityRecallCandidate,
+    CapabilityRecallQuery,
+    CapabilityRecallResult,
+    CapabilityStatus,
+    MemoryCapability,
+)
 from memory_server.api.legacy_hackinterview import _legacy_trust
 from memory_server.config import DeployProfile, MemoryPolicyMode, Settings
 from memory_server.main import create_app
+from memory_server.provider_budget import QueryEmbeddingBudgetAdapter
+from memory_server.provider_circuit import (
+    CircuitBreakingEmbeddingAdapter,
+    CircuitBreakingGraphMemoryAdapter,
+    CircuitBreakingVectorMemoryAdapter,
+    ProviderCircuitBreaker,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -86,6 +108,32 @@ def legacy_event(session_id: str, event_id: str, text: str) -> dict[str, Any]:
 
 def test_legacy_unknown_source_maps_to_low_trust() -> None:
     assert _legacy_trust("unknown_screen_scraper") == TrustLevel.LOW
+
+
+def test_future_occurred_at_is_clamped_to_ingest_time(tmp_path: Path) -> None:
+    future = datetime.now(UTC) + timedelta(days=30)
+    with make_client(tmp_path) as client:
+        ingested = client.post(
+            "/v1/episodes",
+            json={
+                "space_slug": "hackinterview",
+                "profile_external_ref": "default",
+                "thread_external_ref": "future-occurred-at",
+                "source_type": "system_audio",
+                "source_external_id": "future-event",
+                "text": "FUTURE_OCCURRED_AT_MARKER must not get temporal priority.",
+                "occurred_at": future.isoformat(),
+            },
+            headers=auth_headers(),
+        )
+        episode_id = ingested.json()["data"]["episode_id"]
+        occurred_at, created_at = asyncio.run(
+            _episode_times(client.app.state.container, episode_id)
+        )
+
+    assert ingested.status_code == 200
+    assert _as_utc(occurred_at) == _as_utc(created_at)
+    assert _as_utc(occurred_at) < future
 
 
 def test_legacy_ingest_context_duplicate_and_delete_session(tmp_path: Path) -> None:
@@ -309,6 +357,23 @@ def test_legacy_scope_creation_is_safe_under_parallel_sessions(tmp_path: Path) -
     assert len({result.thread_id for result in results}) == 8
 
 
+def test_context_rejects_duplicate_canonical_profile_ids(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_ids": ["profile_default", "profile_default"],
+                "query": "scope validation",
+            },
+            headers=auth_headers(),
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "memory.validation"
+    assert "duplicate" in response.json()["error"]["message"].lower()
+
+
 def test_delete_session_only_removes_scoped_outbox_jobs(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         first = client.post(
@@ -434,6 +499,135 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
     assert loaded.json()["data"]["id"] == document_id
     assert context.status_code == 200
     assert "Postgres as canonical truth" in context.json()["data"]["rendered_text"]
+
+
+def test_document_ingest_returns_backpressure_when_outbox_high(tmp_path: Path) -> None:
+    with make_client_with_settings(
+        tmp_path,
+        outbox_backpressure_pending_threshold=1,
+    ) as client:
+        asyncio.run(_insert_pending_outbox(client, aggregate_id="chunk_backpressure"))
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Backpressure document",
+                "text": "BACKPRESSURE_DOC_MARKER should not be ingested while outbox is high.",
+                "source_type": "document",
+                "source_external_id": "backpressure-doc",
+            },
+            headers=auth_headers(),
+        )
+
+    assert document.status_code == 429
+    assert document.json()["error"] == {
+        "code": "memory.backpressure",
+        "message": "Backpressure",
+        "retryable": True,
+        "safe_details": {
+            "reason": "outbox_pending_high",
+            "pending_active": 1,
+            "threshold": 1,
+        },
+    }
+
+
+def test_document_delete_bypasses_backpressure(tmp_path: Path) -> None:
+    with make_client_with_settings(
+        tmp_path,
+        outbox_backpressure_pending_threshold=1,
+    ) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Backpressure delete",
+                "text": "BACKPRESSURE_DELETE_MARKER delete must bypass backpressure.",
+                "source_type": "document",
+                "source_external_id": "backpressure-delete-doc",
+            },
+            headers=auth_headers(),
+        )
+        deleted = client.delete(
+            f"/v1/documents/{document.json()['data']['id']}",
+            headers=auth_headers(),
+        )
+
+    assert document.status_code == 201
+    assert deleted.status_code == 200
+    assert deleted.json()["data"]["status"] == "deleted"
+
+
+def test_forget_bypasses_backpressure(tmp_path: Path) -> None:
+    with make_client_with_settings(
+        tmp_path,
+        outbox_backpressure_pending_threshold=1,
+    ) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "BACKPRESSURE_FORGET_MARKER forget must bypass backpressure.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "backpressure-forget"}],
+            },
+            headers=auth_headers(),
+        )
+        asyncio.run(_insert_pending_outbox(client, aggregate_id="chunk_backpressure_forget"))
+        forgotten = client.delete(
+            f"/v1/facts/{fact.json()['data']['id']}",
+            headers=auth_headers(),
+        )
+
+    assert fact.status_code == 201
+    assert forgotten.status_code == 200
+    assert forgotten.json()["data"]["status"] == "deleted"
+
+
+def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "CANONICAL_COLLECTOR_FACT_MARKER belongs to canonical facts.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "collector-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Collector document",
+                "text": "CANONICAL_COLLECTOR_CHUNK_MARKER belongs to keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "collector-doc",
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        result = asyncio.run(
+            CanonicalContextCollector(uow_factory=container.uow_factory).collect(
+                query=BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="CANONICAL_COLLECTOR",
+                ),
+                profile_ids=("profile_default",),
+            )
+        )
+
+    assert any("CANONICAL_COLLECTOR_FACT_MARKER" in fact.text for fact in result.facts)
+    assert any(
+        "CANONICAL_COLLECTOR_CHUNK_MARKER" in chunk.text for chunk in result.keyword_chunks
+    )
 
 
 def test_v1_document_ingest_accepts_external_scope_and_thread_context(
@@ -644,7 +838,7 @@ def test_document_reimport_same_hash_different_profile_stays_isolated(
     assert "Profile profile_secondary:" in secondary_context.json()["data"]["rendered_text"]
 
 
-def test_restricted_fact_and_document_are_excluded_from_context(tmp_path: Path) -> None:
+def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         document = client.post(
             "/v1/documents",
@@ -689,6 +883,51 @@ def test_restricted_fact_and_document_are_excluded_from_context(tmp_path: Path) 
     rendered = context.json()["data"]["rendered_text"]
     assert "RESTRICTED_DOC_MARKER" not in rendered
     assert "RESTRICTED_FACT_MARKER" not in rendered
+
+
+def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        implicit = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "IMPLICIT_RESTRICTED_MARKER is stored as internal without explicit flag.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "implicit-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        explicit = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "EXPLICIT_RESTRICTED_MARKER must stay out of prompt context.",
+                "kind": "note",
+                "classification": "restricted",
+                "source_refs": [{"source_type": "manual", "source_id": "explicit-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_ids": ["profile_default"],
+                "query": "IMPLICIT_RESTRICTED_MARKER EXPLICIT_RESTRICTED_MARKER",
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert implicit.status_code == 201
+    assert implicit.json()["data"]["classification"] == "internal"
+    assert explicit.status_code == 201
+    assert explicit.json()["data"]["classification"] == "restricted"
+    rendered = context.json()["data"]["rendered_text"]
+    assert "IMPLICIT_RESTRICTED_MARKER" in rendered
+    assert "EXPLICIT_RESTRICTED_MARKER" not in rendered
 
 
 def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path) -> None:
@@ -1194,6 +1433,101 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
     assert "Never render deleted fact marker" not in after.json()["data"]["rendered_text"]
 
 
+def test_context_drops_fact_deleted_between_candidate_search_and_render(
+    tmp_path: Path,
+) -> None:
+    class StaleFactCollector:
+        async def collect(
+            self,
+            *,
+            query: BuildContextQuery,
+            profile_ids: tuple[str, ...],
+        ) -> CanonicalCollectionResult:
+            return CanonicalCollectionResult(facts=(stale_fact,), keyword_chunks=())
+
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "RACE_DELETE_MARKER must not survive late hydration.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "race-delete"}],
+            },
+            headers=auth_headers(),
+        )
+        fact_id = created.json()["data"]["id"]
+        container = client.app.state.container
+
+        async def load_stale_fact():
+            async with container.uow_factory() as uow:
+                return await uow.facts.get_by_id(fact_id)
+
+        stale_fact = asyncio.run(load_stale_fact())
+        deleted = client.delete(f"/v1/facts/{fact_id}", headers=auth_headers())
+
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        use_case._canonical_collector = StaleFactCollector()  # noqa: SLF001
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="RACE_DELETE_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert created.status_code == 201
+    assert stale_fact is not None
+    assert deleted.status_code == 200
+    assert "RACE_DELETE_MARKER" not in context.rendered_text
+    assert context.items == ()
+
+
+def test_context_cache_disabled_for_core_lite_prompt_path(tmp_path: Path) -> None:
+    context_request = {
+        "space_id": "space_hackinterview",
+        "profile_ids": ["profile_default"],
+        "query": "CACHE_DISABLED_MARKER",
+        "token_budget": 512,
+    }
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "CACHE_DISABLED_MARKER should disappear after forget.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "cache-disabled"}],
+            },
+            headers=auth_headers(),
+        )
+        fact_id = created.json()["data"]["id"]
+        before = client.post("/v1/context", json=context_request, headers=auth_headers())
+        deleted = client.delete(f"/v1/facts/{fact_id}", headers=auth_headers())
+        after = client.post("/v1/context", json=context_request, headers=auth_headers())
+
+    before_data = before.json()["data"]
+    after_data = after.json()["data"]
+    assert created.status_code == 201
+    assert before.status_code == 200
+    assert deleted.status_code == 200
+    assert after.status_code == 200
+    assert before_data["bundle_id"] != after_data["bundle_id"]
+    assert "CACHE_DISABLED_MARKER" in before_data["rendered_text"]
+    assert "CACHE_DISABLED_MARKER" not in after_data["rendered_text"]
+
+
 def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         first = client.post(
@@ -1354,6 +1688,50 @@ class FakeGraphAdapter:
         )
 
 
+class OrphanGraphAdapter:
+    async def capabilities(self) -> AdapterCapabilities:
+        return AdapterCapabilities(
+            name="orphan-graph",
+            enabled=True,
+            healthy=True,
+            supports_upsert=True,
+            supports_delete=True,
+            supports_search=True,
+            supports_filters=True,
+            supports_temporal_queries=True,
+        )
+
+    async def search(self, **_kwargs: object) -> GraphSearchResult:
+        return GraphSearchResult.ok(
+            [
+                GraphCandidate(
+                    source_fact_ids=(),
+                    source_chunk_ids=(),
+                    relation_label="orphan_relation",
+                    score=0.99,
+                    diagnostics={"provider": "test"},
+                )
+            ]
+        )
+
+
+class SchemaMismatchGraphAdapter:
+    async def capabilities(self) -> AdapterCapabilities:
+        return AdapterCapabilities(
+            name="schema-mismatch-graph",
+            enabled=True,
+            healthy=True,
+            supports_upsert=True,
+            supports_delete=True,
+            supports_search=True,
+            supports_filters=True,
+            supports_temporal_queries=True,
+        )
+
+    async def search(self, **_kwargs: object) -> GraphSearchResult:
+        return GraphSearchResult.degraded("graph.schema_mismatch", retryable=False)
+
+
 class FakeEmbeddingAdapter:
     async def embed_texts(self, *_args: object, **_kwargs: object) -> EmbeddingResult:
         return EmbeddingResult(status=PortStatus.OK, vectors=((0.1, 0.2, 0.3),))
@@ -1386,6 +1764,258 @@ class FakeVectorAdapter:
                 )
             ]
         )
+
+
+def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> None:
+    class FailingEmbeddingAdapter:
+        async def embed_texts(self, *_args: object, **_kwargs: object) -> EmbeddingResult:
+            raise AssertionError("canonical_only context must not call embeddings")
+
+    class FailingVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            raise AssertionError("canonical_only context must not inspect vector capabilities")
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            raise AssertionError("canonical_only context must not search vectors")
+
+    class FailingGraphAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            raise AssertionError("canonical_only context must not inspect graph capabilities")
+
+        async def search(self, **_kwargs: object) -> GraphSearchResult:
+            raise AssertionError("canonical_only context must not search graph")
+
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "CANONICAL_ONLY_FACT_MARKER comes only from Postgres facts.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "canonical-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Canonical only",
+                "text": "CANONICAL_ONLY_CHUNK_MARKER comes only from keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "canonical-only-doc",
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=FailingVectorAdapter(),
+            graph_index=FailingGraphAdapter(),
+            embedder=FailingEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="CANONICAL_ONLY",
+                    consistency_mode=ConsistencyMode.CANONICAL_ONLY,
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert fact.status_code == 201
+    assert document.status_code == 201
+    assert "CANONICAL_ONLY_FACT_MARKER" in context.rendered_text
+    assert "CANONICAL_ONLY_CHUNK_MARKER" in context.rendered_text
+    assert context.diagnostics["consistency_mode"] == "canonical_only"
+    assert context.diagnostics["vector_status"] == "skipped"
+    assert context.diagnostics["vector_skip_reason"] == "canonical_only"
+    assert context.diagnostics["graph_status"] == "skipped"
+    assert context.diagnostics["graph_skip_reason"] == "canonical_only"
+
+
+def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "CONTEXT_CONSISTENCY_MODE_MARKER is a canonical fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "consistency-mode"}],
+            },
+            headers=auth_headers(),
+        )
+        default_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_ids": ["profile_default"],
+                "query": "CONTEXT_CONSISTENCY_MODE_MARKER",
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+        canonical_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_ids": ["profile_default"],
+                "query": "CONTEXT_CONSISTENCY_MODE_MARKER",
+                "consistency_mode": "canonical_only",
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert default_context.status_code == 200
+    assert canonical_context.status_code == 200
+    assert (
+        default_context.json()["data"]["diagnostics"]["consistency_mode"]
+        == "best_effort"
+    )
+    assert (
+        canonical_context.json()["data"]["diagnostics"]["consistency_mode"]
+        == "canonical_only"
+    )
+    assert "CONTEXT_CONSISTENCY_MODE_MARKER" in canonical_context.json()["data"]["rendered_text"]
+
+
+def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
+    tmp_path: Path,
+) -> None:
+    class FakeRagRecall:
+        async def recall(self, query: CapabilityRecallQuery) -> CapabilityRecallResult:
+            assert query.scope.space_id == "space_hackinterview"
+            assert query.scope.profile_ids == ("profile_default",)
+            return CapabilityRecallResult(
+                status=CapabilityStatus.OK,
+                items=(
+                    CapabilityRecallCandidate(
+                        item_id=chunk_id,
+                        item_type="chunk",
+                        text="STALE_RAG_PROVIDER_TEXT_SHOULD_NOT_RENDER",
+                        score=0.88,
+                        source_refs=(
+                            SourceRef(
+                                source_type="chunk",
+                                source_id=chunk_id,
+                                chunk_id=chunk_id,
+                            ),
+                        ),
+                        capability=MemoryCapability.RAG_RECALL,
+                        adapter_name="cognee",
+                        metadata={
+                            "provider": "cognee",
+                            "dataset_id": "hackinterview/default",
+                            "raw_text": "RAW_RAG_METADATA_SECRET should not leak",
+                            "secret_token": "RAG_METADATA_SECRET_TOKEN",
+                        },
+                    ),
+                ),
+            )
+
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "RAG canonical source",
+                "text": "RAG_CANONICAL_MARKER is hydrated from the canonical chunk.",
+                "source_type": "document",
+                "source_external_id": "rag-source",
+            },
+            headers=auth_headers(),
+        )
+        document_id = document.json()["data"]["id"]
+        chunk_id = client.get(
+            f"/v1/documents/{document_id}/chunks",
+            headers=auth_headers(),
+        ).json()["data"][0]["id"]
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+            rag_recall=FakeRagRecall(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="semantic rag recall",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert "RAG_CANONICAL_MARKER" in context.rendered_text
+    assert "STALE_RAG_PROVIDER_TEXT_SHOULD_NOT_RENDER" not in context.rendered_text
+    assert context.diagnostics["rag_status"] == "ok"
+    assert context.diagnostics["stale_rag_drop_count"] == 0
+    assert context.items[0].diagnostics["retrieval_source"] == "rag_recall"
+    assert context.items[0].diagnostics["adapter_name"] == "cognee"
+    assert context.items[0].diagnostics["provider"] == "cognee"
+    assert context.items[0].diagnostics["dataset_id"] == "hackinterview/default"
+    assert "RAW_RAG_METADATA_SECRET" not in str(context.items[0].diagnostics)
+    assert "RAG_METADATA_SECRET_TOKEN" not in str(context.items[0].diagnostics)
+
+
+def test_context_drops_rag_recall_without_canonical_chunk_source(tmp_path: Path) -> None:
+    class FakeRagRecall:
+        async def recall(self, _query: CapabilityRecallQuery) -> CapabilityRecallResult:
+            return CapabilityRecallResult(
+                status=CapabilityStatus.OK,
+                items=(
+                    CapabilityRecallCandidate(
+                        item_id="provider_only_chunk",
+                        item_type="rag_chunk",
+                        text="PROVIDER_ONLY_RAG_TEXT_SHOULD_NOT_RENDER",
+                        score=0.88,
+                        source_refs=(
+                            SourceRef(source_type="cognee", source_id="provider_only_chunk"),
+                        ),
+                        capability=MemoryCapability.RAG_RECALL,
+                        adapter_name="cognee",
+                    ),
+                ),
+            )
+
+    with make_client(tmp_path) as client:
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+            rag_recall=FakeRagRecall(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="semantic rag recall",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert "PROVIDER_ONLY_RAG_TEXT_SHOULD_NOT_RENDER" not in context.rendered_text
+    assert context.diagnostics["rag_status"] == "ok"
+    assert context.diagnostics["stale_rag_drop_count"] == 1
 
 
 def test_context_does_not_embed_when_vector_adapter_is_disabled(tmp_path: Path) -> None:
@@ -1474,6 +2104,416 @@ def test_context_marks_unavailable_vector_adapter_degraded_without_embedding(
     assert context.diagnostics["vector_degraded_reason"] == "qdrant_sdk_missing"
 
 
+def test_degraded_context_has_safe_diagnostics(tmp_path: Path) -> None:
+    class DegradedVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=False,
+                healthy=False,
+                supports_upsert=False,
+                supports_delete=False,
+                supports_search=False,
+                supports_filters=False,
+                degraded_reason="qdrant_sdk_missing",
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            raise AssertionError("degraded vector adapter must not be searched")
+
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "DEGRADED_CONTEXT_MARKER should still render from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "degraded-context"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=DegradedVectorAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="DEGRADED_CONTEXT_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert created.status_code == 201
+    assert "DEGRADED_CONTEXT_MARKER" in context.rendered_text
+    assert context.diagnostics["vector_status"] == "degraded"
+    assert context.diagnostics["vector_degraded_reason"] == "qdrant_sdk_missing"
+    assert "Traceback" not in str(context.diagnostics)
+    assert "payload_json" not in str(context.diagnostics)
+
+
+def test_qdrant_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
+    class TimeoutVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            raise TimeoutError("RAW_VECTOR_TIMEOUT_SECRET")
+
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "VECTOR_TIMEOUT_CANONICAL_MARKER still renders from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "vector-timeout"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=TimeoutVectorAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=FakeEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="VECTOR_TIMEOUT_CANONICAL_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert created.status_code == 201
+    assert "VECTOR_TIMEOUT_CANONICAL_MARKER" in context.rendered_text
+    assert context.diagnostics["vector_status"] == "degraded"
+    assert context.diagnostics["vector_degraded_reason"] == "vector.timeout"
+    assert "RAW_VECTOR_TIMEOUT_SECRET" not in str(context.diagnostics)
+
+
+def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
+    class TimeoutVectorAdapter:
+        calls = 0
+
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            self.calls += 1
+            raise TimeoutError("RAW_QDRANT_TIMEOUT_SECRET")
+
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "VECTOR_CIRCUIT_MARKER should remain available from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "vector-circuit"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        raw_vector = TimeoutVectorAdapter()
+        circuit = ProviderCircuitBreaker(
+            adapter_name="qdrant",
+            operation_kind="vector",
+            clock=container.clock,
+            failure_threshold=2,
+            reset_after_seconds=60,
+        )
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=CircuitBreakingVectorMemoryAdapter(raw_vector, circuit),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=FakeEmbeddingAdapter(),
+        )
+        first = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="VECTOR_CIRCUIT_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+        second = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="VECTOR_CIRCUIT_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+        third = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="VECTOR_CIRCUIT_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert "VECTOR_CIRCUIT_MARKER" in third.rendered_text
+    assert first.diagnostics["vector_degraded_reason"] == "vector.timeout"
+    assert second.diagnostics["vector_degraded_reason"] == "vector.timeout"
+    assert third.diagnostics["vector_degraded_reason"] == "vector.circuit_open"
+    assert raw_vector.calls == 2
+    snapshot = circuit.snapshot()
+    assert snapshot["state"] == "open"
+    assert snapshot["last_failure_code"] == "vector.exception"
+    assert "RAW_QDRANT_TIMEOUT_SECRET" not in str(snapshot)
+
+
+def test_query_embedding_timeout_degrades_to_keyword_context(tmp_path: Path) -> None:
+    class EnabledVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            raise AssertionError("embedding timeout must stop vector search")
+
+    class TimeoutEmbeddingAdapter:
+        async def embed_texts(self, *_args: object, **_kwargs: object) -> EmbeddingResult:
+            raise TimeoutError("RAW_EMBEDDING_TIMEOUT_SECRET")
+
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Embedding timeout fallback",
+                "text": "EMBEDDING_TIMEOUT_KEYWORD_MARKER still renders from keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "embedding-timeout-doc",
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=EnabledVectorAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=TimeoutEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="EMBEDDING_TIMEOUT_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert document.status_code == 201
+    assert "EMBEDDING_TIMEOUT_KEYWORD_MARKER" in context.rendered_text
+    assert context.diagnostics["vector_status"] == "degraded"
+    assert context.diagnostics["vector_degraded_reason"] == "embeddings.timeout"
+    assert "RAW_EMBEDDING_TIMEOUT_SECRET" not in str(context.diagnostics)
+
+
+def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
+    class EnabledVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            raise AssertionError("open embedding circuit must stop vector search")
+
+    class TimeoutEmbeddingAdapter:
+        calls = 0
+
+        async def embed_texts(self, *_args: object, **_kwargs: object) -> EmbeddingResult:
+            self.calls += 1
+            raise TimeoutError("RAW_EMBEDDING_CIRCUIT_SECRET")
+
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Embedding circuit fallback",
+                "text": "EMBEDDING_CIRCUIT_KEYWORD_MARKER still renders from keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "embedding-circuit-doc",
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        raw_embedder = TimeoutEmbeddingAdapter()
+        circuit = ProviderCircuitBreaker(
+            adapter_name="embeddings",
+            operation_kind="embeddings",
+            clock=container.clock,
+            failure_threshold=2,
+            reset_after_seconds=60,
+        )
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=EnabledVectorAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=CircuitBreakingEmbeddingAdapter(raw_embedder, circuit),
+        )
+        first = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+        second = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+        third = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert "EMBEDDING_CIRCUIT_KEYWORD_MARKER" in third.rendered_text
+    assert first.diagnostics["vector_degraded_reason"] == "embeddings.timeout"
+    assert second.diagnostics["vector_degraded_reason"] == "embeddings.timeout"
+    assert third.diagnostics["vector_degraded_reason"] == "embeddings.circuit_open"
+    assert raw_embedder.calls == 2
+    assert circuit.snapshot()["state"] == "open"
+    assert "RAW_EMBEDDING_CIRCUIT_SECRET" not in str(circuit.snapshot())
+
+
+def test_query_embedding_rate_limit_degrades_to_keyword(tmp_path: Path) -> None:
+    class EnabledVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            raise AssertionError("rate-limited query embeddings must stop vector search")
+
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Query embedding rate limit",
+                "text": "QUERY_RATE_LIMIT_KEYWORD_MARKER still renders from keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "query-rate-limit-doc",
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        budgeted_embedder = QueryEmbeddingBudgetAdapter(
+            inner=FakeEmbeddingAdapter(),
+            clock=container.clock,
+            max_per_minute=1,
+        )
+        asyncio.run(budgeted_embedder.embed_texts(("prewarm budget",)))
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=EnabledVectorAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=budgeted_embedder,
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="QUERY_RATE_LIMIT_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert document.status_code == 201
+    assert "QUERY_RATE_LIMIT_KEYWORD_MARKER" in context.rendered_text
+    assert context.diagnostics["vector_status"] == "degraded"
+    assert context.diagnostics["vector_degraded_reason"] == "embeddings.query_rate_limited"
+
+
 def test_context_does_not_search_when_graph_adapter_is_disabled(tmp_path: Path) -> None:
     class DisabledGraphAdapter:
         async def capabilities(self) -> AdapterCapabilities:
@@ -1560,6 +2600,139 @@ def test_context_marks_unavailable_graph_adapter_degraded_without_search(
     assert context.diagnostics["graph_degraded_reason"] == "graphiti_unavailable"
 
 
+def test_graphiti_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
+    class TimeoutGraphAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="graphiti",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+                supports_temporal_queries=True,
+            )
+
+        async def search(self, **_kwargs: object) -> GraphSearchResult:
+            raise TimeoutError("RAW_GRAPH_TIMEOUT_SECRET")
+
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "GRAPH_TIMEOUT_CANONICAL_MARKER still renders from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "graph-timeout"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=TimeoutGraphAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="GRAPH_TIMEOUT_CANONICAL_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert created.status_code == 201
+    assert "GRAPH_TIMEOUT_CANONICAL_MARKER" in context.rendered_text
+    assert context.diagnostics["graph_status"] == "degraded"
+    assert context.diagnostics["graph_degraded_reason"] == "graph.timeout"
+    assert "RAW_GRAPH_TIMEOUT_SECRET" not in str(context.diagnostics)
+
+
+def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> None:
+    class TimeoutGraphAdapter:
+        calls = 0
+
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="graphiti",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+                supports_temporal_queries=True,
+            )
+
+        async def search(self, **_kwargs: object) -> GraphSearchResult:
+            self.calls += 1
+            raise TimeoutError("RAW_GRAPH_CIRCUIT_SECRET")
+
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "GRAPH_CIRCUIT_MARKER should remain available from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "graph-circuit"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        raw_graph = TimeoutGraphAdapter()
+        circuit = ProviderCircuitBreaker(
+            adapter_name="graphiti",
+            operation_kind="graph",
+            clock=container.clock,
+            failure_threshold=2,
+            reset_after_seconds=60,
+        )
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=CircuitBreakingGraphMemoryAdapter(raw_graph, circuit),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        for _ in range(2):
+            context = asyncio.run(
+                use_case.execute(
+                    BuildContextQuery(
+                        space_id=SpaceId("space_hackinterview"),
+                        profile_ids=(ProfileId("profile_default"),),
+                        query="GRAPH_CIRCUIT_MARKER",
+                        token_budget=512,
+                    )
+                )
+            )
+            assert context.diagnostics["graph_degraded_reason"] == "graph.timeout"
+        opened = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="GRAPH_CIRCUIT_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert "GRAPH_CIRCUIT_MARKER" in opened.rendered_text
+    assert opened.diagnostics["graph_degraded_reason"] == "graph.circuit_open"
+    assert raw_graph.calls == 2
+    assert circuit.snapshot()["state"] == "open"
+    assert "RAW_GRAPH_CIRCUIT_SECRET" not in str(circuit.snapshot())
+
+
 def test_context_revalidates_direct_facts_after_adapter_delay(tmp_path: Path) -> None:
     class EmptyEnabledVectorAdapter:
         async def capabilities(self) -> AdapterCapabilities:
@@ -1622,7 +2795,7 @@ def test_context_revalidates_direct_facts_after_adapter_delay(tmp_path: Path) ->
     assert context.items == ()
 
 
-def test_graph_candidates_are_hydrated_and_deleted_facts_are_filtered(tmp_path: Path) -> None:
+def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         fact = client.post(
             "/v1/facts",
@@ -1670,6 +2843,73 @@ def test_graph_candidates_are_hydrated_and_deleted_facts_are_filtered(tmp_path: 
     assert active.diagnostics["stale_graph_drop_count"] == 0
     assert "Graph-only canonical memory marker" not in deleted.rendered_text
     assert deleted.diagnostics["stale_graph_drop_count"] == 1
+
+
+def test_graph_candidate_without_canonical_source_is_low_confidence_or_dropped(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=OrphanGraphAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="orphan graph relation",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert context.items == ()
+    assert "orphan_relation" not in context.rendered_text
+    assert context.diagnostics["graph_status"] == "ok"
+    assert context.diagnostics["stale_graph_drop_count"] == 1
+
+
+def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "text": "SCHEMA_MISMATCH_CANONICAL_MARKER still renders from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "schema-mismatch"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=SchemaMismatchGraphAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="SCHEMA_MISMATCH_CANONICAL_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert fact.status_code == 201
+    assert "SCHEMA_MISMATCH_CANONICAL_MARKER" in context.rendered_text
+    assert context.diagnostics["graph_status"] == "degraded"
+    assert context.diagnostics["graph_degraded_reason"] == "graph.schema_mismatch"
 
 
 def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
@@ -1851,6 +3091,51 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
     assert context.diagnostics["stale_vector_drop_count"] == 1
 
 
+def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_secondary",
+                "title": "Wrong profile vector source",
+                "text": "WRONG_PROFILE_VECTOR_MARKER must not hydrate into default profile.",
+                "source_type": "document",
+                "source_external_id": "wrong-profile-vector-doc",
+                "classification": "internal",
+            },
+            headers=auth_headers(),
+        )
+        document_id = document.json()["data"]["id"]
+        wrong_profile_chunk_id = client.get(
+            f"/v1/documents/{document_id}/chunks",
+            headers=auth_headers(),
+        ).json()["data"][0]["id"]
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=FakeVectorAdapter(wrong_profile_chunk_id),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=FakeEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_hackinterview"),
+                    profile_ids=(ProfileId("profile_default"),),
+                    query="unrelated vector query",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert document.status_code == 201
+    assert "WRONG_PROFILE_VECTOR_MARKER" not in context.rendered_text
+    assert context.items == ()
+    assert context.diagnostics["stale_vector_drop_count"] == 1
+
+
 def test_disabled_policy_returns_no_legacy_memory_or_public_context(tmp_path: Path) -> None:
     with make_client_with_settings(tmp_path, policy_mode=MemoryPolicyMode.DISABLED) as client:
         ingest = client.post(
@@ -1904,3 +3189,38 @@ async def _first_chunk_id(container, scope, query: str) -> str:
             limit=1,
         )
     return str(chunks[0].id)
+
+
+async def _episode_times(container, episode_id: str) -> tuple[datetime, datetime]:
+    async with AsyncSession(container.engine) as session:
+        row = await session.get(MemoryEpisodeRow, episode_id)
+    assert row is not None
+    return row.occurred_at, row.created_at
+
+
+async def _insert_pending_outbox(client: TestClient, *, aggregate_id: str) -> None:
+    now = client.app.state.container.clock.now()
+    async with AsyncSession(client.app.state.container.engine) as session:
+        session.add(
+            MemoryOutboxRow(
+                event_type="vector.upsert_chunk",
+                aggregate_type="chunk",
+                aggregate_id=aggregate_id,
+                aggregate_version=None,
+                workload_class="projection",
+                fairness_key=f"chunk:{aggregate_id}",
+                payload_json={"chunk_id": aggregate_id},
+                status="pending",
+                attempt_count=0,
+                next_attempt_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await session.commit()
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

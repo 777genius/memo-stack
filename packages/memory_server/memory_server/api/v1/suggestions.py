@@ -15,8 +15,6 @@ from memory_core.application import (
 from memory_core.domain.entities import (
     Confidence,
     MemorySuggestion,
-    ProfileId,
-    SpaceId,
     SuggestionStatus,
     TrustLevel,
 )
@@ -32,6 +30,7 @@ from memory_server.api.v1.facts import (
     map_memory_kind,
     map_source_ref,
 )
+from memory_server.api.v1.scope_resolution import resolve_single_scope
 from memory_server.composition import Container
 
 router = APIRouter(
@@ -42,8 +41,10 @@ router = APIRouter(
 
 
 class CreateSuggestionRequest(BaseModel):
-    space_id: str = Field(min_length=1, max_length=80)
-    profile_id: str = Field(min_length=1, max_length=80)
+    space_id: str | None = Field(default=None, min_length=1, max_length=80)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    space_slug: str | None = Field(default=None, min_length=1, max_length=160)
+    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     candidate_text: str = Field(min_length=1, max_length=4000)
     kind: str = "note"
     source_refs: list[SourceRefRequest] = Field(default_factory=list)
@@ -98,10 +99,20 @@ async def create_suggestion(
 ) -> dict[str, Any]:
     ensure_server_writes_enabled(container)
     _validate_confidence_and_trust(request.confidence, request.trust_level)
+    scope = await resolve_single_scope(
+        container,
+        space_id=request.space_id,
+        profile_id=request.profile_id,
+        thread_id=None,
+        space_slug=request.space_slug,
+        profile_external_ref=request.profile_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
     result = await container.create_suggestion.execute(
         CreateSuggestionCommand(
-            space_id=SpaceId(request.space_id),
-            profile_id=ProfileId(request.profile_id),
+            space_id=scope.space_id,
+            profile_id=scope.profile_id,
             candidate_text=request.candidate_text,
             kind=map_memory_kind(request.kind),
             source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),
@@ -119,16 +130,30 @@ async def create_suggestion(
 @router.get("")
 async def list_suggestions(
     container: Annotated[Container, Depends(get_container)],
-    space_id: Annotated[str, Query(min_length=1, max_length=80)],
-    profile_id: Annotated[str, Query(min_length=1, max_length=80)],
+    space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    profile_external_ref: Annotated[
+        str | None, Query(min_length=1, max_length=200)
+    ] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, Any]:
     _validate_suggestion_status(status_filter)
+    scope = await resolve_single_scope(
+        container,
+        space_id=space_id,
+        profile_id=profile_id,
+        thread_id=None,
+        space_slug=space_slug,
+        profile_external_ref=profile_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
     suggestions = await container.list_suggestions.execute(
         ListSuggestionsQuery(
-            space_id=SpaceId(space_id),
-            profile_id=ProfileId(profile_id),
+            space_id=scope.space_id,
+            profile_id=scope.profile_id,
             status=status_filter,
             limit=limit,
         )

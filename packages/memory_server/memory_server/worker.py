@@ -7,13 +7,20 @@ import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
 
+from memory_adapters.postgres import create_schema
 from memory_adapters.postgres.models import MemoryOutboxRow
-from memory_core.domain.entities import FactStatus, LifecycleStatus
+from memory_core.domain.entities import FactStatus, LifecycleStatus, SourceRef
 from memory_core.ports.adapters import (
     AdapterCapabilities,
     PortDiagnostic,
     PortStatus,
     VectorUpsertItem,
+)
+from memory_core.ports.capabilities import (
+    CapabilityDiagnostic,
+    CapabilityStatus,
+    DocumentMemoryWrite,
+    ProjectionForgetRequest,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +38,15 @@ class ClaimedOutboxJob:
     event_type: str
     aggregate_id: str
     aggregate_version: int | None
+    workload_class: str
+    fairness_key: str | None
     payload_json: dict[str, object]
+
+
+class OutboxProjectionError(RuntimeError):
+    def __init__(self, operation: str, diagnostic_code: str) -> None:
+        super().__init__(operation)
+        self.diagnostic_code = diagnostic_code
 
 
 class OutboxWorker:
@@ -44,7 +59,7 @@ class OutboxWorker:
             try:
                 await self._handle(job)
             except Exception as exc:
-                await self._mark_retry_or_dead(job.id, _safe_error(exc))
+                await self._mark_retry_or_dead(job.id, exc)
             else:
                 await self._mark_done(job.id)
         return len(jobs)
@@ -73,6 +88,8 @@ class OutboxWorker:
                     event_type=row.event_type,
                     aggregate_id=row.aggregate_id,
                     aggregate_version=row.aggregate_version,
+                    workload_class=row.workload_class,
+                    fairness_key=row.fairness_key,
                     payload_json=dict(row.payload_json),
                 )
                 for row in rows
@@ -108,6 +125,7 @@ class OutboxWorker:
         for row in rows:
             row.attempt_count += 1
             row.last_safe_error = "Worker lease expired"
+            row.last_safe_diagnostic_code = "worker.lease_expired"
             row.updated_at = now
             if row.attempt_count >= MAX_ATTEMPTS:
                 row.status = "dead"
@@ -128,6 +146,10 @@ class OutboxWorker:
             fact_id = str(job.payload_json.get("fact_id") or job.aggregate_id)
             result = await self._container.graph_index.delete_fact(fact_id)
             _raise_if_degraded(result.status, "graph.delete_fact", result.diagnostics)
+        elif job.event_type == "cognee.ingest_document":
+            await self._handle_cognee_document_ingest(job)
+        elif job.event_type == "cognee.forget_document":
+            await self._handle_cognee_document_forget(job)
         else:
             raise ValueError(f"Unknown outbox event type: {job.event_type}")
 
@@ -135,6 +157,10 @@ class OutboxWorker:
         chunk_id = str(job.payload_json.get("chunk_id") or job.aggregate_id)
         async with self._container.uow_factory() as uow:
             chunk = await uow.chunks.get_by_id(chunk_id)
+            document_token_estimate = 0
+            if chunk is not None and chunk.document_id is not None:
+                document_chunks = await uow.documents.list_chunks(str(chunk.document_id))
+                document_token_estimate = sum(item.token_estimate for item in document_chunks)
         if chunk is None or chunk.status != LifecycleStatus.ACTIVE:
             await self._container.vector_index.delete_chunks((chunk_id,))
             return
@@ -145,6 +171,14 @@ class OutboxWorker:
             return
         if not capabilities.enabled or not capabilities.healthy or not capabilities.supports_upsert:
             raise RuntimeError("vector adapter unavailable")
+        if _document_embedding_budget_exceeded(
+            self._container.settings.max_embedding_tokens_per_document,
+            document_token_estimate,
+        ):
+            raise OutboxProjectionError(
+                "embeddings.embed_texts",
+                "embeddings.document_budget_exceeded",
+            )
 
         embedding = await self._container.embedder.embed_texts((chunk.text,))
         if _is_disabled_projection(embedding.diagnostics):
@@ -192,6 +226,70 @@ class OutboxWorker:
         )
         _raise_if_degraded(result.status, "graph.upsert_fact", result.diagnostics)
 
+    async def _handle_cognee_document_ingest(self, job: ClaimedOutboxJob) -> None:
+        document_id = str(job.payload_json.get("document_id") or job.aggregate_id)
+        async with self._container.uow_factory() as uow:
+            document = await uow.documents.get_by_id(document_id)
+            chunks = await uow.documents.list_chunks(document_id) if document is not None else []
+        if document is None or document.status != LifecycleStatus.ACTIVE:
+            await self._forget_cognee_document(document_id, reason="canonical_document_inactive")
+            return
+        if not _can_send_to_external_memory(document.classification):
+            return
+        safe_chunks = tuple(
+            chunk for chunk in chunks if _can_send_to_external_memory(chunk.classification)
+        )
+        if not safe_chunks:
+            return
+        result = await self._container.cognee_memory.ingest_document(
+            DocumentMemoryWrite(
+                document_id=str(document.id),
+                space_id=str(document.space_id),
+                profile_id=str(document.profile_id),
+                title=document.title,
+                text="\n\n".join(chunk.text for chunk in safe_chunks),
+                source_refs=tuple(_chunk_source_ref(chunk) for chunk in safe_chunks),
+                chunk_ids=tuple(str(chunk.id) for chunk in safe_chunks),
+                metadata={
+                    "classification": document.classification,
+                    "source_type": document.source_type,
+                },
+            )
+        )
+        _raise_if_capability_degraded(
+            result.status,
+            "cognee.ingest_document",
+            result.diagnostics,
+        )
+
+    async def _handle_cognee_document_forget(self, job: ClaimedOutboxJob) -> None:
+        document_id = str(job.payload_json.get("document_id") or job.aggregate_id)
+        chunk_ids = tuple(str(value) for value in job.payload_json.get("chunk_ids", []))
+        await self._forget_cognee_document(
+            document_id,
+            reason="canonical_document_deleted",
+            chunk_ids=chunk_ids,
+        )
+
+    async def _forget_cognee_document(
+        self,
+        document_id: str,
+        *,
+        reason: str,
+        chunk_ids: tuple[str, ...] = (),
+    ) -> None:
+        result = await self._container.cognee_memory.forget_document(
+            ProjectionForgetRequest(
+                canonical_ids=(document_id, *chunk_ids),
+                reason=reason,
+            )
+        )
+        _raise_if_capability_degraded(
+            result.status,
+            "cognee.forget_document",
+            result.diagnostics,
+        )
+
     async def _mark_done(self, job_id: int) -> None:
         now = self._container.clock.now()
         async with AsyncSession(self._container.engine) as session:
@@ -199,16 +297,18 @@ class OutboxWorker:
             if row:
                 row.status = "done"
                 row.last_safe_error = None
+                row.last_safe_diagnostic_code = None
                 row.updated_at = now
             await session.commit()
 
-    async def _mark_retry_or_dead(self, job_id: int, safe_error: str) -> None:
+    async def _mark_retry_or_dead(self, job_id: int, exc: Exception) -> None:
         now = self._container.clock.now()
         async with AsyncSession(self._container.engine) as session:
             row = await session.get(MemoryOutboxRow, job_id)
             if row:
                 row.attempt_count += 1
-                row.last_safe_error = safe_error[:400]
+                row.last_safe_error = _safe_error(exc)[:400]
+                row.last_safe_diagnostic_code = _safe_diagnostic_code(exc)[:120]
                 row.updated_at = now
                 if row.attempt_count >= MAX_ATTEMPTS:
                     row.status = "dead"
@@ -226,7 +326,20 @@ def _raise_if_degraded(
     if _is_disabled_projection(diagnostics):
         return
     if status != PortStatus.OK:
-        raise RuntimeError(f"{operation} degraded")
+        diagnostic_code = diagnostics[0].code if diagnostics else f"{operation}.degraded"
+        raise OutboxProjectionError(operation, diagnostic_code)
+
+
+def _raise_if_capability_degraded(
+    status: CapabilityStatus,
+    operation: str,
+    diagnostics: tuple[CapabilityDiagnostic, ...] = (),
+) -> None:
+    if status == CapabilityStatus.DISABLED:
+        return
+    if status != CapabilityStatus.OK:
+        diagnostic_code = diagnostics[0].code if diagnostics else f"{operation}.degraded"
+        raise OutboxProjectionError(operation, diagnostic_code)
 
 
 def _is_disabled_projection(diagnostics: tuple[PortDiagnostic, ...]) -> bool:
@@ -241,18 +354,49 @@ def _can_embed(classification: str) -> bool:
     return classification in {"public", "internal"}
 
 
+def _can_send_to_external_memory(classification: str) -> bool:
+    return classification in {"public", "internal"}
+
+
+def _document_embedding_budget_exceeded(limit: int, token_estimate: int) -> bool:
+    return limit > 0 and token_estimate > limit
+
+
+def _chunk_source_ref(chunk) -> SourceRef:
+    return SourceRef(
+        source_type=chunk.source_type,
+        source_id=chunk.source_external_id,
+        chunk_id=str(chunk.id),
+        char_start=chunk.char_start,
+        char_end=chunk.char_end,
+    )
+
+
 def _safe_error(exc: Exception) -> str:
     return exc.__class__.__name__[:400]
 
 
+def _safe_diagnostic_code(exc: Exception) -> str:
+    code = getattr(exc, "diagnostic_code", None)
+    if isinstance(code, str) and code.strip():
+        return code
+    return exc.__class__.__name__
+
+
 async def _run(args: argparse.Namespace) -> None:
-    worker = OutboxWorker(build_container(Settings()))
-    while True:
-        count = await worker.run_once(limit=args.limit)
-        print({"processed": count})
-        if args.once:
-            return
-        await asyncio.sleep(args.sleep_seconds)
+    container = build_container(Settings())
+    if container.settings.auto_create_schema:
+        await create_schema(container.engine)
+    worker = OutboxWorker(container)
+    try:
+        while True:
+            count = await worker.run_once(limit=args.limit)
+            print({"processed": count})
+            if args.once:
+                return
+            await asyncio.sleep(args.sleep_seconds)
+    finally:
+        await container.engine.dispose()
 
 
 def main() -> None:

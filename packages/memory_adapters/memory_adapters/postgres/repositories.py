@@ -1139,6 +1139,8 @@ class PostgresOutbox(OutboxPort):
                 aggregate_type=event.aggregate_type,
                 aggregate_id=event.aggregate_id,
                 aggregate_version=event.aggregate_version,
+                workload_class=event.workload_class,
+                fairness_key=event.fairness_key or f"{event.aggregate_type}:{event.aggregate_id}",
                 payload_json=event.payload,
                 status="pending",
                 attempt_count=0,

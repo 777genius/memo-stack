@@ -18,13 +18,18 @@ from memory_core.domain.entities import (
     MemorySuggestionId,
     TrustLevel,
 )
-from memory_core.domain.errors import MemoryConflictError, MemoryNotFoundError
+from memory_core.domain.errors import (
+    MemoryConflictError,
+    MemoryNotFoundError,
+    MemoryValidationError,
+)
 from memory_core.domain.events import OutboxEvent
 from memory_core.ports.clock import ClockPort
 from memory_core.ports.ids import IdGeneratorPort
 from memory_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _TRUST_RANK = {TrustLevel.LOW: 1, TrustLevel.MEDIUM: 2, TrustLevel.HIGH: 3}
+_ASSISTANT_SOURCES = {"ai_response", "assistant_answer", "assistant_summary"}
 
 
 class CreateSuggestionUseCase:
@@ -93,6 +98,10 @@ class ApproveSuggestionUseCase:
             suggestion = await uow.suggestions.get_for_update(command.suggestion_id)
             if suggestion is None:
                 raise MemoryNotFoundError("Suggestion not found")
+            if not _has_independent_source(suggestion):
+                raise MemoryValidationError(
+                    "Suggestion approval requires non-assistant source refs"
+                )
 
             now = self._clock.now()
             fact: MemoryFact
@@ -190,3 +199,7 @@ def _safe_reason(reason: str, auto_approve: bool, trust: TrustLevel) -> str:
     if auto_approve:
         return f"{reason}; auto_approve_requires_review"
     return reason
+
+
+def _has_independent_source(suggestion: MemorySuggestion) -> bool:
+    return any(ref.source_type not in _ASSISTANT_SOURCES for ref in suggestion.source_refs)

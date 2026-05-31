@@ -1,9 +1,24 @@
 import asyncio
 from types import SimpleNamespace
 
+from memory_adapters.cognee import CogneeMemoryAdapter
 from memory_adapters.graphiti import GraphitiGraphMemoryAdapter
+from memory_adapters.noop import (
+    NoopEmbeddingAdapter,
+    NoopGraphMemoryAdapter,
+    NoopVectorMemoryAdapter,
+)
 from memory_adapters.qdrant import QdrantVectorMemoryAdapter
 from memory_core.ports.adapters import PortStatus, VectorUpsertItem
+from memory_core.ports.capabilities import (
+    CapabilityRecallQuery,
+    CapabilityStatus,
+    DocumentMemoryWrite,
+    FactProjectionWrite,
+    MemoryCapability,
+    MemoryScopeFilter,
+    ProjectionForgetRequest,
+)
 from memory_server.config import Settings
 
 
@@ -35,6 +50,70 @@ class FakeModernGraphiti(FakeGraphiti):
         self.deleted.append(episode_uuid)
 
 
+class FakeGraphitiWithoutSearch:
+    async def add_episode(self, **_kwargs: object) -> None:
+        return None
+
+    async def delete_episode(self, *, name: str) -> None:
+        return None
+
+
+class NodeNotFoundError(RuntimeError):
+    pass
+
+
+class FakeGraphitiDriver:
+    def __init__(self) -> None:
+        self.name_lookup_count = 0
+
+    async def execute_query(self, query: str, **kwargs: object):
+        if "RETURN e.name AS name" in query:
+            return ([{"name": "fact:fact_lookup"}], None, None)
+        if "RETURN e.uuid AS uuid" in query:
+            self.name_lookup_count += 1
+            if self.name_lookup_count == 1:
+                return ([], None, None)
+            return ([{"uuid": "generated_episode_uuid"}], None, None)
+        return ([], None, None)
+
+
+class FakeGraphitiWithEpisodeLookup(FakeGraphiti):
+    delete_episode = None
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.driver = FakeGraphitiDriver()
+
+    async def remove_episode(self, episode_uuid: str) -> None:
+        if episode_uuid == "fact_lookup":
+            raise NodeNotFoundError("fact_lookup")
+        self.deleted.append(episode_uuid)
+
+    async def search(self, **kwargs: object) -> list[object]:
+        self.search_calls.append(kwargs)
+        return [SimpleNamespace(episodes=["generated_episode_uuid"], score=0.91)]
+
+
+class FakeCognee:
+    def __init__(self) -> None:
+        self.remember_calls: list[dict[str, object]] = []
+        self.recall_calls: list[dict[str, object]] = []
+
+    async def remember(self, data: str, **kwargs: object) -> None:
+        self.remember_calls.append({"data": data, **kwargs})
+
+    async def recall(self, query: str, **kwargs: object) -> list[dict[str, object]]:
+        self.recall_calls.append({"query": query, **kwargs})
+        return [
+            {
+                "id": "cognee_chunk_1",
+                "chunk_id": "chunk_canonical_1",
+                "text": "Cognee recalled tenant scoped document chunk.",
+                "score": 0.87,
+            }
+        ]
+
+
 def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
     async def run() -> None:
         fake = FakeGraphiti()
@@ -62,7 +141,7 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
         assert fake.built == 1
         assert upsert.status == PortStatus.OK
         assert fake.episodes[0]["name"] == "fact:fact_graphiti"
-        assert fake.episodes[0]["uuid"] == "fact_graphiti"
+        assert "uuid" not in fake.episodes[0]
         assert fake.episodes[0]["group_id"] == "memory__space_hackinterview__profile_default"
         assert fake.search_calls[0]["group_ids"] == [
             "memory__space_hackinterview__profile_default"
@@ -70,6 +149,270 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
         assert search.items[0].source_fact_ids == ("fact_graphiti",)
         assert deleted.status == PortStatus.OK
         assert fake.deleted == ["fact:fact_graphiti"]
+
+    asyncio.run(run())
+
+
+def test_graphiti_adapter_exposes_temporal_capability_ports() -> None:
+    async def run() -> None:
+        fake = FakeGraphiti()
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        descriptors = await adapter.capability_descriptors()
+        health = await adapter.health()
+        projected = await adapter.upsert_fact_projection(
+            FactProjectionWrite(
+                fact_id="fact_graphiti",
+                space_id="space_hackinterview",
+                profile_id="profile_default",
+                text="Graphiti projection source text must not be returned from search.",
+                version=1,
+                source_refs=(),
+            )
+        )
+        recalled = await adapter.search_facts(
+            CapabilityRecallQuery(
+                scope=MemoryScopeFilter(
+                    space_id="space_hackinterview",
+                    profile_ids=("profile_default",),
+                ),
+                query="Graphiti projection",
+                limit=3,
+            )
+        )
+        forgotten = await adapter.forget_projection(
+            ProjectionForgetRequest(canonical_ids=("fact_graphiti",), reason="test cleanup")
+        )
+
+        descriptor_pairs = {
+            (descriptor.adapter_name, descriptor.capability) for descriptor in descriptors
+        }
+        assert descriptor_pairs == {
+            ("graphiti", MemoryCapability.TEMPORAL_FACT_GRAPH),
+            ("graphiti", MemoryCapability.FACT_PROJECTION),
+            ("graphiti", MemoryCapability.PROJECTION_FORGET),
+        }
+        assert health.status == CapabilityStatus.OK
+        assert projected.status == CapabilityStatus.OK
+        assert projected.affected_ids == ("fact_graphiti",)
+        assert recalled.status == CapabilityStatus.OK
+        assert recalled.items[0].item_id == "fact_graphiti"
+        assert recalled.items[0].text == "fact_graphiti"
+        assert "projection source text" not in recalled.items[0].text
+        assert forgotten.status == CapabilityStatus.OK
+
+    asyncio.run(run())
+
+
+def test_graphiti_adapter_resolves_generated_episode_uuid_by_name() -> None:
+    async def run() -> None:
+        fake = FakeGraphitiWithEpisodeLookup()
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        upsert = await adapter.upsert_fact(
+            "fact_lookup",
+            "Graphiti generated episode UUID must still hydrate canonical fact id.",
+            {
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "updated_at": "2026-05-25T10:00:00+00:00",
+            },
+        )
+        search = await adapter.search(
+            space_id="space_hackinterview",
+            profile_ids=("profile_default",),
+            query="generated episode uuid",
+            limit=3,
+        )
+        deleted = await adapter.delete_fact("fact_lookup")
+
+        assert upsert.status == PortStatus.OK
+        assert "uuid" not in fake.episodes[0]
+        assert search.items[0].source_fact_ids == ("fact_lookup",)
+        assert deleted.status == PortStatus.OK
+        assert fake.deleted == ["generated_episode_uuid"]
+
+    asyncio.run(run())
+
+
+def test_graphiti_capability_mismatch_disables_graph() -> None:
+    async def run() -> None:
+        adapter = GraphitiGraphMemoryAdapter(client=FakeGraphitiWithoutSearch())
+
+        capabilities = await adapter.capabilities()
+        descriptors = await adapter.capability_descriptors()
+        search = await adapter.search(
+            space_id="space_hackinterview",
+            profile_ids=("profile_default",),
+            query="Graphiti projection",
+            limit=3,
+        )
+
+        temporal = next(
+            descriptor
+            for descriptor in descriptors
+            if descriptor.capability == MemoryCapability.TEMPORAL_FACT_GRAPH
+        )
+        assert capabilities.enabled is True
+        assert capabilities.healthy is False
+        assert capabilities.supports_search is False
+        assert capabilities.degraded_reason == "graphiti.capability_mismatch"
+        assert temporal.enabled is False
+        assert temporal.status == CapabilityStatus.UNAVAILABLE
+        assert temporal.degraded_reason == "graphiti.capability_mismatch"
+        assert search.status == PortStatus.DEGRADED
+        assert search.diagnostics[0].code == "graph.missing_search"
+        assert search.diagnostics[0].retryable is False
+
+    asyncio.run(run())
+
+
+def test_noop_graph_adapter_exposes_disabled_temporal_capabilities() -> None:
+    async def run() -> None:
+        adapter = NoopGraphMemoryAdapter()
+
+        descriptors = await adapter.capability_descriptors()
+        health = await adapter.health()
+        recalled = await adapter.search_facts(
+            CapabilityRecallQuery(
+                scope=MemoryScopeFilter(space_id="space", profile_ids=("profile",)),
+                query="anything",
+                limit=1,
+            )
+        )
+
+        assert all(descriptor.status == CapabilityStatus.DISABLED for descriptor in descriptors)
+        assert health.status == CapabilityStatus.DISABLED
+        assert recalled.status == CapabilityStatus.DISABLED
+        assert recalled.items == ()
+
+    asyncio.run(run())
+
+
+def test_noop_vector_adapter_contract_fails_closed_without_candidates() -> None:
+    async def run() -> None:
+        adapter = NoopVectorMemoryAdapter()
+
+        capabilities = await adapter.capabilities()
+        search = await adapter.search_chunks(
+            space_id="space",
+            profile_ids=("profile",),
+            query_vector=(0.1, 0.2, 0.3),
+            limit=3,
+        )
+        upsert = await adapter.upsert_chunks(
+            (
+                VectorUpsertItem(
+                    chunk_id="chunk_1",
+                    space_id="space",
+                    profile_id="profile",
+                    thread_id=None,
+                    text="Noop vector source text.",
+                    vector=(0.1, 0.2, 0.3),
+                    projection_version="v1",
+                ),
+            )
+        )
+        deleted = await adapter.delete_chunks(("chunk_1",))
+
+        assert capabilities.enabled is False
+        assert capabilities.supports_search is False
+        assert search.status == PortStatus.DEGRADED
+        assert search.items == ()
+        assert search.diagnostics[0].code == "vector.disabled"
+        assert search.diagnostics[0].retryable is False
+        assert upsert.status == PortStatus.DEGRADED
+        assert upsert.diagnostics[0].retryable is False
+        assert deleted.status == PortStatus.DEGRADED
+        assert deleted.diagnostics[0].retryable is False
+
+    asyncio.run(run())
+
+
+def test_noop_embedding_adapter_contract_fails_closed_without_vectors() -> None:
+    async def run() -> None:
+        adapter = NoopEmbeddingAdapter()
+
+        capabilities = await adapter.capabilities()
+        result = await adapter.embed_texts(("query text",))
+
+        assert capabilities.enabled is False
+        assert capabilities.supports_search is False
+        assert result.status == PortStatus.DEGRADED
+        assert result.vectors == ()
+        assert result.diagnostics[0].code == "embeddings.disabled"
+        assert result.diagnostics[0].retryable is False
+
+    asyncio.run(run())
+
+
+def test_cognee_skeleton_is_disabled_without_importing_runtime_sdk() -> None:
+    async def run() -> None:
+        adapter = CogneeMemoryAdapter()
+
+        capabilities = await adapter.capabilities()
+        descriptors = await adapter.capability_descriptors()
+        health = await adapter.health()
+        recalled = await adapter.recall(
+            CapabilityRecallQuery(
+                scope=MemoryScopeFilter(space_id="space", profile_ids=("profile",)),
+                query="anything",
+                limit=1,
+            )
+        )
+
+        assert capabilities.name == "cognee"
+        assert capabilities.enabled is False
+        assert {descriptor.capability for descriptor in descriptors} == {
+            MemoryCapability.DOCUMENT_MEMORY,
+            MemoryCapability.RAG_RECALL,
+        }
+        assert health.status == CapabilityStatus.DISABLED
+        assert recalled.status == CapabilityStatus.DISABLED
+        assert recalled.items == ()
+
+    asyncio.run(run())
+
+
+def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> None:
+    async def run() -> None:
+        fake = FakeCognee()
+        adapter = CogneeMemoryAdapter(enabled=True, client=fake, dataset_prefix="mp")
+
+        capabilities = await adapter.capabilities()
+        projected = await adapter.ingest_document(
+            DocumentMemoryWrite(
+                document_id="doc_1",
+                space_id="space_hackinterview",
+                profile_id="profile_default",
+                title="Architecture note",
+                text="Tenant scoped retrieval belongs in Cognee RAG.",
+                source_refs=(),
+                chunk_ids=("chunk_canonical_1",),
+            )
+        )
+        recalled = await adapter.recall(
+            CapabilityRecallQuery(
+                scope=MemoryScopeFilter(
+                    space_id="space_hackinterview",
+                    profile_ids=("profile_default",),
+                ),
+                query="tenant scoped retrieval",
+                limit=5,
+            )
+        )
+
+        assert capabilities.enabled is True
+        assert projected.status == CapabilityStatus.OK
+        assert projected.affected_ids == ("doc_1",)
+        assert fake.remember_calls[0]["dataset_name"] == "mp__space_hackinterview__profile_default"
+        assert fake.remember_calls[0]["node_set"] == ["chunk_canonical_1"]
+        assert fake.recall_calls[0]["datasets"] == ["mp__space_hackinterview__profile_default"]
+        assert fake.recall_calls[0]["top_k"] == 5
+        assert recalled.status == CapabilityStatus.OK
+        assert recalled.items[0].text == "Cognee recalled tenant scoped document chunk."
+        assert recalled.items[0].source_refs[0].source_type == "chunk"
+        assert recalled.items[0].source_refs[0].chunk_id == "chunk_canonical_1"
 
     asyncio.run(run())
 
@@ -162,6 +505,7 @@ class FakeQdrantClient:
     def __init__(self) -> None:
         self.collections: set[str] = set()
         self.upserts = 0
+        self.query_calls: list[dict[str, object]] = []
 
     async def collection_exists(self, collection_name: str) -> bool:
         return collection_name in self.collections
@@ -180,6 +524,7 @@ class FakeQdrantClient:
         return None
 
     async def query_points(self, **_kwargs: object) -> object:
+        self.query_calls.append(_kwargs)
         return SimpleNamespace(
             points=[
                 SimpleNamespace(
@@ -247,6 +592,38 @@ def test_qdrant_adapter_creates_collection_before_upsert_and_search() -> None:
         assert upsert.status == PortStatus.OK
         assert fake.upserts == 1
         assert search.items[0].chunk_id == "chunk_1"
+
+    asyncio.run(run())
+
+
+def test_qdrant_adapter_search_contract_uses_scope_and_projection_filters() -> None:
+    async def run() -> None:
+        fake = FakeQdrantClient()
+        adapter = QdrantVectorMemoryAdapter(
+            url="http://qdrant.test",
+            collection_name="memory_chunks_v1",
+            vector_size=3,
+            projection_version="projection_v2",
+        )
+        adapter._client = lambda: _fake_qdrant_client(fake)  # type: ignore[method-assign]
+
+        search = await adapter.search_chunks(
+            space_id="space_hackinterview",
+            profile_ids=("profile_default", "profile_candidate"),
+            query_vector=(0.1, 0.2, 0.3),
+            limit=3,
+        )
+
+        assert search.status == PortStatus.OK
+        assert len(fake.query_calls) == 1
+        query_filter = fake.query_calls[0]["query_filter"]
+        must = query_filter.kwargs["must"]
+        filters = {condition.kwargs["key"]: condition.kwargs["match"].kwargs for condition in must}
+        assert filters == {
+            "space_id": {"value": "space_hackinterview"},
+            "projection_version": {"value": "projection_v2"},
+            "profile_id": {"any": ["profile_default", "profile_candidate"]},
+        }
 
     asyncio.run(run())
 
@@ -374,6 +751,13 @@ def test_graphiti_enabled_requires_neo4j_password() -> None:
         raise AssertionError("Expected Graphiti config validation to fail")
 
 
+def test_cognee_config_is_disabled_by_default() -> None:
+    settings = Settings()
+
+    assert settings.cognee_enabled is False
+    assert settings.cognee_runtime_configured is False
+
+
 def test_embeddings_enabled_requires_supported_provider_and_api_key() -> None:
     noop_settings = Settings(embeddings_enabled=True, embeddings_provider="noop")
     missing_key_settings = Settings(embeddings_enabled=True, embeddings_provider="openai")
@@ -391,3 +775,19 @@ def test_embeddings_enabled_requires_supported_provider_and_api_key() -> None:
         assert "MEMORY_OPENAI_API_KEY" in str(exc)
     else:
         raise AssertionError("Expected missing OpenAI key validation to fail")
+
+
+def test_real_provider_disabled_in_test_profile() -> None:
+    settings = Settings(
+        deploy_profile="test",
+        embeddings_enabled=True,
+        embeddings_provider="openai",
+        openai_api_key="test-key",
+    )
+
+    try:
+        settings.validate_for_startup()
+    except RuntimeError as exc:
+        assert "test profile cannot use external adapters" in str(exc)
+    else:
+        raise AssertionError("Expected test profile external provider validation to fail")

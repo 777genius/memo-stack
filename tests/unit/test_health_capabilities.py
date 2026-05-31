@@ -1,5 +1,23 @@
 from fastapi.testclient import TestClient
+from memory_core.domain.entities import SourceRef
 from memory_core.domain.errors import MemoryInfrastructureError, MemoryInvariantError
+from memory_core.ports import (
+    CapabilityDescriptor,
+    CapabilityMode,
+    CapabilityRecallCandidate,
+    CapabilityRecallQuery,
+    CapabilityStatus,
+    ConsistencyMode,
+    DocumentMemoryPort,
+    EngineHealthSnapshot,
+    FactProjectionPort,
+    MemoryCapability,
+    MemoryScopeFilter,
+    ProjectionFreshness,
+    RagRecallPort,
+    TemporalFactGraphPort,
+    VectorRecallPort,
+)
 from memory_server.config import DeployProfile, Settings
 from memory_server.main import create_app
 
@@ -42,11 +60,124 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["service_name"] == "memory-platform"
     assert body["deploy_profile"] == "test"
     assert body["policy_mode"] == "active_context"
-    assert set(body["adapters"]) == {"qdrant", "graphiti", "embeddings"}
+    assert set(body["adapters"]) == {"qdrant", "graphiti", "embeddings", "cognee"}
     assert body["adapters"]["qdrant"]["enabled"] is False
     assert body["adapters"]["graphiti"]["enabled"] is False
     assert body["adapters"]["embeddings"]["enabled"] is False
+    assert body["adapters"]["cognee"]["enabled"] is False
+    capability_pairs = {
+        (item["adapter_name"], item["capability"]) for item in body["capabilities"]
+    }
+    assert capability_pairs == {
+        ("qdrant", "vector_recall"),
+        ("qdrant", "projection_forget"),
+        ("graphiti", "temporal_fact_graph"),
+        ("graphiti", "fact_projection"),
+        ("graphiti", "projection_forget"),
+        ("embeddings", "engine_health"),
+        ("cognee", "document_memory"),
+        ("cognee", "rag_recall"),
+    }
+    assert all(item["status"] == "disabled" for item in body["capabilities"])
+    assert all(item["healthy"] is False for item in body["capabilities"])
+    assert "bearer" not in response.text.lower()
+    assert "api_key" not in response.text.lower()
+    assert "secret" not in response.text.lower()
     assert body["limits"]["max_context_tokens"] == 1800
+
+
+def test_legacy_hackinterview_route_kill_switch_removes_compatibility_routes() -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            legacy_hackinterview_enabled=False,
+        )
+    )
+    client = TestClient(app)
+
+    capabilities = client.get("/v1/capabilities")
+    legacy_context = client.post(
+        "/api/v1/interview-memory/context",
+        json={
+            "session_id": "disabled-legacy",
+            "current_request": {"id": "req-1", "label": "request", "text": "hello"},
+        },
+    )
+
+    assert capabilities.status_code == 200
+    assert capabilities.json()["supports_legacy_hackinterview_routes"] is False
+    assert legacy_context.status_code == 404
+
+
+def test_capability_descriptor_contract_defaults_are_safe() -> None:
+    descriptor = CapabilityDescriptor(
+        capability=MemoryCapability.TEMPORAL_FACT_GRAPH,
+        adapter_name="graphiti",
+        mode=CapabilityMode.PRIMARY,
+        status=CapabilityStatus.OK,
+        enabled=True,
+        supports_scope_filter=True,
+        supports_source_refs=True,
+        supports_update=True,
+        supports_delete=True,
+    )
+
+    assert descriptor.projection_freshness == ProjectionFreshness.NOT_APPLICABLE
+    assert descriptor.external_ai_allowed is False
+    assert descriptor.metadata == {}
+
+
+def test_capability_recall_contract_validates_scope_and_score() -> None:
+    scope = MemoryScopeFilter(space_id="space-1", profile_ids=("profile-1",))
+    query = CapabilityRecallQuery(
+        scope=scope,
+        query="architecture decision",
+        limit=5,
+        consistency_mode=ConsistencyMode.REQUIRE_FRESH_PROJECTION,
+        min_score=0.75,
+    )
+    candidate = CapabilityRecallCandidate(
+        item_id="fact-1",
+        item_type="fact",
+        text="Use Memory Core as canonical source of truth.",
+        score=0.91,
+        source_refs=(SourceRef(source_type="manual", source_id="note-1"),),
+        capability=MemoryCapability.FACT_PROJECTION,
+        adapter_name="postgres",
+    )
+
+    assert query.consistency_mode == ConsistencyMode.REQUIRE_FRESH_PROJECTION
+    assert candidate.source_refs[0].source_id == "note-1"
+
+
+def test_capability_ports_are_role_specific_protocols() -> None:
+    assert "ingest_document" in DocumentMemoryPort.__dict__
+    assert "recall" in RagRecallPort.__dict__
+    assert "upsert_fact" in TemporalFactGraphPort.__dict__
+    assert "upsert_fact_projection" in FactProjectionPort.__dict__
+    assert "recall_vectors" in VectorRecallPort.__dict__
+
+
+def test_engine_health_snapshot_uses_capability_descriptors() -> None:
+    descriptor = CapabilityDescriptor(
+        capability=MemoryCapability.RAG_RECALL,
+        adapter_name="cognee",
+        mode=CapabilityMode.SECONDARY,
+        status=CapabilityStatus.DISABLED,
+        enabled=False,
+        supports_scope_filter=True,
+        supports_source_refs=True,
+    )
+    snapshot = EngineHealthSnapshot(
+        adapter_name="cognee",
+        status=CapabilityStatus.DISABLED,
+        capabilities=(descriptor,),
+    )
+
+    assert snapshot.capabilities[0].capability == MemoryCapability.RAG_RECALL
 
 
 def test_unexpected_exception_maps_to_safe_internal_error() -> None:

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 
+from memory_core.application.auto_memory import (
+    MemoryAdmissionService,
+    NoopMemoryClassifier,
+)
 from memory_core.application.chunker import chunk_text
 from memory_core.application.dto import IngestEpisodeCommand, IngestEpisodeResult
 from memory_core.application.normalize import (
@@ -19,11 +23,14 @@ from memory_core.domain.entities import (
     MemoryChunkKind,
     MemoryEpisode,
     MemoryEpisodeId,
+    MemorySuggestion,
+    MemorySuggestionId,
     TrustLevel,
 )
 from memory_core.domain.errors import MemoryConflictError, MemoryInvariantError
 from memory_core.domain.events import OutboxEvent
 from memory_core.domain.idempotency import IdempotencyRecord
+from memory_core.ports.auto_memory import MemoryClassifierPort, SourceProvenance
 from memory_core.ports.clock import ClockPort
 from memory_core.ports.ids import IdGeneratorPort
 from memory_core.ports.unit_of_work import UnitOfWorkFactoryPort
@@ -62,10 +69,16 @@ class IngestEpisodeUseCase:
         uow_factory: UnitOfWorkFactoryPort,
         clock: ClockPort,
         ids: IdGeneratorPort,
+        classifier: MemoryClassifierPort | None = None,
+        admission: MemoryAdmissionService | None = None,
+        auto_suggestions_enabled: bool = False,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
         self._ids = ids
+        self._classifier = classifier or NoopMemoryClassifier()
+        self._admission = admission or MemoryAdmissionService()
+        self._auto_suggestions_enabled = auto_suggestions_enabled
 
     async def execute(self, command: IngestEpisodeCommand) -> IngestEpisodeResult:
         durability = durability_for_episode(command)
@@ -98,7 +111,7 @@ class IngestEpisodeUseCase:
                 )
 
             now = self._clock.now()
-            occurred_at = command.occurred_at if isinstance(command.occurred_at, datetime) else now
+            occurred_at = _safe_occurred_at(command.occurred_at, now)
             episode = MemoryEpisode.create(
                 episode_id=MemoryEpisodeId(self._ids.new_id("episode")),
                 space_id=command.space_id,
@@ -117,6 +130,7 @@ class IngestEpisodeUseCase:
 
             stored = 0
             duplicates = 0
+            source_chunk_id: str | None = None
             for piece in chunk_text(command.text):
                 kind = command.kind_hint or _kind_for_source(command.source_type)
                 chunk = MemoryChunk.create(
@@ -151,6 +165,7 @@ class IngestEpisodeUseCase:
                     duplicates += 1
                 else:
                     stored += 1
+                    source_chunk_id = source_chunk_id or result.chunk_id
                     await uow.outbox.enqueue(
                         OutboxEvent(
                             event_type="vector.upsert_chunk",
@@ -159,6 +174,41 @@ class IngestEpisodeUseCase:
                             payload={"chunk_id": result.chunk_id},
                         )
                     )
+
+            suggestion_ids: list[str] = []
+            if self._auto_suggestions_enabled and source_chunk_id is not None:
+                provenance = SourceProvenance(
+                    source_type=command.source_type,
+                    source_id=str(saved_episode.id),
+                    trust_level=_trust_for_source(command.source_type, command.trust_level),
+                    chunk_id=source_chunk_id,
+                )
+                candidates = await self._classifier.classify(
+                    text=command.text,
+                    source=provenance,
+                )
+                for candidate in candidates:
+                    decision = self._admission.decide(
+                        source=provenance,
+                        candidate=candidate,
+                        allow_auto_promote=False,
+                    )
+                    if decision.outcome != "create_suggestion":
+                        continue
+                    suggestion = MemorySuggestion.create(
+                        suggestion_id=MemorySuggestionId(self._ids.new_id("sug")),
+                        space_id=command.space_id,
+                        profile_id=command.profile_id,
+                        candidate_text=candidate.text,
+                        kind=candidate.kind,
+                        source_refs=candidate.source_refs,
+                        safe_reason=decision.reason,
+                        confidence=decision.confidence,
+                        trust_level=decision.trust_level,
+                        now=now,
+                    )
+                    saved = await uow.suggestions.create(suggestion)
+                    suggestion_ids.append(str(saved.id))
 
             await uow.idempotency.save(
                 IdempotencyRecord(
@@ -178,6 +228,8 @@ class IngestEpisodeUseCase:
             stored_chunks=stored,
             duplicate_chunks=duplicates,
             durability=durability,
+            created_suggestions=len(suggestion_ids),
+            suggestion_ids=tuple(suggestion_ids),
         )
 
 
@@ -187,6 +239,20 @@ def _trust_for_source(source_type: str, default: TrustLevel) -> TrustLevel:
     if source_type in {"manual", "manual_prompt", "focus_copy"}:
         return TrustLevel.HIGH
     return default
+
+
+def _safe_occurred_at(value: object | None, now: datetime) -> datetime:
+    if not isinstance(value, datetime):
+        return now
+    if _as_utc(value) > _as_utc(now):
+        return now
+    return value
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _kind_for_source(source_type: str) -> MemoryChunkKind:

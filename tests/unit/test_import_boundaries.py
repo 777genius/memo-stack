@@ -5,14 +5,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CORE_ROOT = PROJECT_ROOT / "packages" / "memory_core" / "memory_core"
 
 FORBIDDEN_IN_CORE = {
+    "cognee",
     "fastapi",
+    "graphiti",
+    "graphiti_core",
+    "httpx",
+    "mcp",
+    "neo4j",
+    "openai",
+    "pydantic_settings",
+    "qdrant_client",
     "sqlalchemy",
     "asyncpg",
-    "qdrant_client",
-    "graphiti",
-    "openai",
     "uvicorn",
-    "pydantic_settings",
     "memory_adapters",
     "memory_server",
 }
@@ -35,6 +40,13 @@ def test_memory_core_has_no_infrastructure_imports() -> None:
         found.update(imports_for_file(path) & FORBIDDEN_IN_CORE)
 
     assert found == set()
+
+
+def test_capability_contracts_are_importable_without_provider_adapters() -> None:
+    import memory_core.ports.capabilities as capabilities  # noqa: PLC0415
+
+    assert capabilities.MemoryCapability.TEMPORAL_FACT_GRAPH == "temporal_fact_graph"
+    assert capabilities.ConsistencyMode.REQUIRE_FRESH_PROJECTION == "require_fresh_projection"
 
 
 def test_routes_do_not_import_provider_adapter_packages() -> None:

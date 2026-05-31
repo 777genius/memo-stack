@@ -19,6 +19,7 @@ from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
 from memory_server.api.policy import ensure_server_writes_enabled
 from memory_server.api.v1.scope_resolution import resolve_single_scope
+from memory_server.backpressure import document_ingest_backpressure_response
 from memory_server.composition import Container
 from memory_server.pagination import cursor_int, cursor_str, decode_cursor, encode_cursor
 
@@ -97,8 +98,11 @@ async def ingest_document(
     container: Annotated[Container, Depends(get_container)],
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-) -> dict[str, Any]:
+) -> Any:
     ensure_server_writes_enabled(container)
+    backpressure = await document_ingest_backpressure_response(container)
+    if backpressure is not None:
+        return backpressure
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,

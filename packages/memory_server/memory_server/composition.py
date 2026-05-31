@@ -44,6 +44,7 @@ from memory_core.application import (
     RememberFactUseCase,
     UpdateFactUseCase,
 )
+from memory_core.application.auto_memory import RuleBasedMemoryClassifier
 from memory_core.application.context_packer import ContextPacker
 from memory_core.ports.adapters import (
     EmbeddingPort,
@@ -51,12 +52,21 @@ from memory_core.ports.adapters import (
     MemoryAdapterPort,
     VectorMemoryPort,
 )
+from memory_core.ports.capabilities import DocumentMemoryPort
 from memory_core.ports.clock import ClockPort
 from memory_core.ports.ids import IdGeneratorPort
 from memory_core.ports.unit_of_work import UnitOfWorkFactoryPort
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from memory_server.config import Settings
+from memory_server.metrics import RuntimeMetrics
+from memory_server.provider_budget import QueryEmbeddingBudgetAdapter
+from memory_server.provider_circuit import (
+    CircuitBreakingEmbeddingAdapter,
+    CircuitBreakingGraphMemoryAdapter,
+    CircuitBreakingVectorMemoryAdapter,
+    ProviderCircuitBreaker,
+)
 
 SUPPORTED_POLICY_MODES = (
     "disabled",
@@ -74,6 +84,7 @@ class Container:
     ids: IdGeneratorPort
     uow_factory: UnitOfWorkFactoryPort
     adapters: tuple[MemoryAdapterPort, ...]
+    cognee_memory: DocumentMemoryPort
     vector_index: VectorMemoryPort
     graph_index: GraphMemoryPort
     embedder: EmbeddingPort
@@ -103,6 +114,8 @@ class Container:
     approve_suggestion: ApproveSuggestionUseCase
     reject_suggestion: RejectSuggestionUseCase
     expire_suggestion: ExpireSuggestionUseCase
+    runtime_metrics: RuntimeMetrics
+    provider_circuits: tuple[ProviderCircuitBreaker, ...]
 
 
 def build_container(settings: Settings | None = None) -> Container:
@@ -115,10 +128,24 @@ def build_container(settings: Settings | None = None) -> Container:
     session_factory = build_session_factory(engine)
     uow_factory = PostgresUnitOfWorkFactory(session_factory=session_factory, clock=clock)
 
-    vector = _build_vector_adapter(resolved_settings)
-    graph = _build_graph_adapter(resolved_settings)
-    embeddings = _build_embedding_adapter(resolved_settings)
-    adapters: tuple[MemoryAdapterPort, ...] = (vector, graph, embeddings)
+    raw_vector = _build_vector_adapter(resolved_settings)
+    raw_graph = _build_graph_adapter(resolved_settings)
+    raw_embeddings = _build_embedding_adapter(resolved_settings)
+    provider_circuits = (
+        _provider_circuit("qdrant", "vector", clock, resolved_settings),
+        _provider_circuit("graphiti", "graph", clock, resolved_settings),
+        _provider_circuit("embeddings", "embeddings", clock, resolved_settings),
+    )
+    vector = CircuitBreakingVectorMemoryAdapter(raw_vector, provider_circuits[0])
+    graph = CircuitBreakingGraphMemoryAdapter(raw_graph, provider_circuits[1])
+    embeddings = CircuitBreakingEmbeddingAdapter(raw_embeddings, provider_circuits[2])
+    query_embeddings = QueryEmbeddingBudgetAdapter(
+        inner=embeddings,
+        clock=clock,
+        max_per_minute=resolved_settings.max_query_embeddings_per_minute,
+    )
+    cognee = _build_cognee_adapter(resolved_settings)
+    adapters: tuple[MemoryAdapterPort, ...] = (vector, graph, embeddings, cognee)
 
     get_capabilities = GetCapabilitiesUseCase(
         service_name=resolved_settings.service_name,
@@ -144,7 +171,13 @@ def build_container(settings: Settings | None = None) -> Container:
     update_fact = UpdateFactUseCase(uow_factory=uow_factory, clock=clock)
     forget_fact = ForgetFactUseCase(uow_factory=uow_factory, clock=clock)
     ensure_scope = EnsureScopeUseCase(uow_factory=uow_factory, clock=clock)
-    ingest_episode = IngestEpisodeUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
+    ingest_episode = IngestEpisodeUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+        classifier=RuleBasedMemoryClassifier(),
+        auto_suggestions_enabled=resolved_settings.policy_mode.value == "suggestions",
+    )
     ingest_document = IngestDocumentUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     get_document = GetDocumentUseCase(uow_factory=uow_factory)
     list_document_chunks = ListDocumentChunksUseCase(uow_factory=uow_factory)
@@ -155,7 +188,8 @@ def build_container(settings: Settings | None = None) -> Container:
         ids=ids,
         vector_index=vector,
         graph_index=graph,
-        embedder=embeddings,
+        embedder=query_embeddings,
+        rag_recall=cognee,
         packer=ContextPacker(),
     )
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
@@ -165,6 +199,7 @@ def build_container(settings: Settings | None = None) -> Container:
     approve_suggestion = ApproveSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     reject_suggestion = RejectSuggestionUseCase(uow_factory=uow_factory, clock=clock)
     expire_suggestion = ExpireSuggestionUseCase(uow_factory=uow_factory, clock=clock)
+    runtime_metrics = RuntimeMetrics()
 
     return Container(
         settings=resolved_settings,
@@ -173,6 +208,7 @@ def build_container(settings: Settings | None = None) -> Container:
         ids=ids,
         uow_factory=uow_factory,
         adapters=adapters,
+        cognee_memory=cognee,
         vector_index=vector,
         graph_index=graph,
         embedder=embeddings,
@@ -202,6 +238,8 @@ def build_container(settings: Settings | None = None) -> Container:
         approve_suggestion=approve_suggestion,
         reject_suggestion=reject_suggestion,
         expire_suggestion=expire_suggestion,
+        runtime_metrics=runtime_metrics,
+        provider_circuits=provider_circuits,
     )
 
 
@@ -243,3 +281,28 @@ def _build_embedding_adapter(settings: Settings) -> MemoryAdapterPort:
             dimensions=settings.embeddings_dimensions,
         )
     return NoopEmbeddingAdapter(name="embeddings")
+
+
+def _build_cognee_adapter(settings: Settings) -> MemoryAdapterPort:
+    from memory_adapters.cognee import CogneeMemoryAdapter
+
+    return CogneeMemoryAdapter(
+        enabled=settings.cognee_enabled,
+        configured=settings.cognee_runtime_configured,
+        dataset_prefix=settings.cognee_dataset_prefix,
+    )
+
+
+def _provider_circuit(
+    adapter_name: str,
+    operation_kind: str,
+    clock: ClockPort,
+    settings: Settings,
+) -> ProviderCircuitBreaker:
+    return ProviderCircuitBreaker(
+        adapter_name=adapter_name,
+        operation_kind=operation_kind,
+        clock=clock,
+        failure_threshold=settings.provider_circuit_failure_threshold,
+        reset_after_seconds=settings.provider_circuit_reset_after_seconds,
+    )

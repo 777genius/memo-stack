@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     graphiti_neo4j_user: str = "neo4j"
     graphiti_neo4j_password: str | None = None
     graphiti_build_indices: bool = False
+    cognee_enabled: bool = False
+    cognee_runtime_configured: bool = False
+    cognee_dataset_prefix: str = "memory"
     embeddings_enabled: bool = False
     embeddings_provider: str = "noop"
     embeddings_model: str = "text-embedding-3-small"
@@ -50,6 +53,11 @@ class Settings(BaseSettings):
     max_context_chars: int = Field(default=18000, ge=1000, le=60000)
     max_memory_candidates: int = Field(default=2000, ge=1, le=10000)
     max_memory_results: int = Field(default=32, ge=1, le=96)
+    outbox_backpressure_pending_threshold: int = Field(default=0, ge=0)
+    max_embedding_tokens_per_document: int = Field(default=0, ge=0)
+    max_query_embeddings_per_minute: int = Field(default=0, ge=0)
+    provider_circuit_failure_threshold: int = Field(default=3, ge=1, le=100)
+    provider_circuit_reset_after_seconds: int = Field(default=60, ge=1, le=3600)
 
     model_config = SettingsConfigDict(
         env_prefix="MEMORY_",

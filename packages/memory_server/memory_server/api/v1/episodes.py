@@ -51,6 +51,8 @@ async def ingest_episode(
                 "durability": "ignore",
                 "stored_chunks": 0,
                 "duplicate_chunks": 0,
+                "created_suggestions": 0,
+                "suggestion_ids": [],
             }
         }
 
@@ -87,6 +89,8 @@ async def ingest_episode(
             "durability": result.durability,
             "stored_chunks": result.stored_chunks,
             "duplicate_chunks": result.duplicate_chunks,
+            "created_suggestions": result.created_suggestions,
+            "suggestion_ids": list(result.suggestion_ids),
         }
     }
 

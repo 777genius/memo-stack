@@ -4353,6 +4353,19 @@ test_legacy_routes_do_not_change_when_v1_adds_field
 test_breaking_change_requires_version_bump_marker
 ```
 
+Current Core Lite implementation:
+
+- FastAPI exposes `/openapi.json` with `/v1` routes and legacy HackInterview compatibility
+  routes;
+- OpenAPI contract tests pin stable request fields for facts, documents, context/search and
+  legacy context routes;
+- `/v1` responses may add fields under `data` and `meta`; the Python SDK facade returns the
+  response envelope without rejecting additive fields;
+- HackInterview legacy route behavior is covered by separate legacy API tests and is not
+  coupled to public `/v1` DTO evolution;
+- breaking-change marker automation is not implemented in Core Lite yet; behavior-changing
+  `/v1` DTO edits must still be reviewed manually against this section.
+
 ### Endpoint Acceptance Specs
 
 Every endpoint needs success, validation, auth and degradation tests.
@@ -5890,6 +5903,16 @@ test_replay_dead_outbox_job_is_idempotent
 test_repair_dry_run_has_no_side_effects
 ```
 
+Current Core Lite implementation:
+
+- `repair-projections --dry-run` reads canonical Postgres and reports counts only;
+- `reindex-qdrant` enqueues `vector.upsert_chunk` projection jobs for active chunks;
+- `reindex-graphiti` enqueues `graph.upsert_fact` projection jobs for active facts;
+- reindex commands require `--i-understand-this-enqueues-projection-jobs` outside dry-run;
+- admin reindex does not import Qdrant, Graphiti, embedding SDKs or provider clients;
+- repeated reindex skips already active pending/retry/running projection jobs;
+- replaying dead outbox jobs is idempotent because replay only selects rows still in requested status.
+
 ## Qdrant Design
 
 Collection:
@@ -6660,11 +6683,23 @@ Prompt contract tests:
 ```text
 test_memory_block_header_is_stable
 test_memory_items_have_source_labels
-test_memory_block_never_uses_instruction_role
+test_memory_block_drops_instruction_marked_items
 test_prompt_injection_text_is_quoted_evidence
 test_empty_context_is_valid
 test_degraded_context_has_safe_diagnostics
 ```
+
+Current Core Lite implementation:
+
+- `ContextPacker` renders a stable evidence-only header;
+- rendered items include source labels with source type/id and chunk id when available;
+- memory text is quoted and escaped, so prompt-injection phrases remain evidence text;
+- context items marked `is_instruction=true` are dropped fail-closed and counted in
+  `dropped_by_instruction_flag`;
+- context items are never rendered as role/instruction messages;
+- empty context returns a valid evidence block with safe diagnostics;
+- degraded vector context keeps canonical Postgres memory available and reports safe
+  diagnostic codes instead of raw traces or payloads.
 
 ## Observability And Diagnostics
 
@@ -6768,6 +6803,17 @@ test_context_response_request_id_matches_log_record
 test_trace_attributes_do_not_include_raw_text
 test_worker_log_contains_outbox_job_id
 ```
+
+Current Core Lite implementation:
+
+- `/v1/context` and `/v1/search` return `meta.request_id`;
+- context runtime metrics keep the latest safe context trace with the same request id,
+  span name, use case, scope ids, status, duration and counts;
+- trace attributes intentionally omit query text, rendered memory text, source previews and
+  raw provider exception strings;
+- worker outbox diagnostics expose job ids/status/safe diagnostic codes through the outbox
+  diagnostics path, but full structured worker trace propagation remains a later hardening
+  step.
 
 ## Performance And Scaling Budgets
 
@@ -6927,6 +6973,23 @@ test_forget_bypasses_backpressure
 test_circuit_state_visible_in_safe_diagnostics
 ```
 
+Current Core Lite implementation:
+
+- Qdrant/vector, Graphiti/graph and embedding prompt-path calls are wrapped by
+  independent server-layer provider circuit breakers;
+- repeated retryable provider failures open the circuit and subsequent context requests
+  return degraded results such as `vector.circuit_open` or `graph.circuit_open` without
+  calling the provider again;
+- after `MEMORY_PROVIDER_CIRCUIT_RESET_AFTER_SECONDS`, the circuit allows a half-open
+  probe and closes on success;
+- document ingest can return retryable `memory.backpressure` when
+  `MEMORY_OUTBOX_BACKPRESSURE_PENDING_THRESHOLD` is set and active outbox jobs are above
+  the threshold;
+- backpressure is implemented in `memory_server`, not domain/use cases;
+- document delete bypasses the document-ingest backpressure guard;
+- diagnostics expose outbox pending/dead counts, provider circuit state and context
+  degraded rate without raw memory text.
+
 ## Provider Cost Budgets
 
 External providers can create surprise cost. Core Lite should make cost visible and bounded.
@@ -6977,6 +7040,21 @@ test_real_provider_disabled_in_test_profile
 test_budget_diagnostics_omit_raw_text
 ```
 
+Current Core Lite implementation:
+
+- provider budgets are disabled by default and live in `memory_server` wiring/worker code,
+  not in domain entities or use cases;
+- `MEMORY_MAX_EMBEDDING_TOKENS_PER_DOCUMENT` blocks document chunk embedding projection
+  when the canonical document exceeds the configured token cap, while the document/chunks
+  remain stored in Postgres;
+- budget-exceeded vector projection jobs become retryable degraded jobs with safe
+  `embeddings.document_budget_exceeded` diagnostics and no raw text;
+- `MEMORY_MAX_QUERY_EMBEDDINGS_PER_MINUTE` wraps the query embedder used by context/search,
+  returning degraded `embeddings.query_rate_limited` so keyword/canonical context still
+  works;
+- test profile startup validation rejects enabled real providers/adapters;
+- budget diagnostics expose ids/status/codes only and omit raw document/query text.
+
 ## Contract Test Matrix
 
 Contract tests protect substitutability and SOLID/LSP.
@@ -6997,6 +7075,25 @@ Rules:
 - noop adapters are for disabled runtime features;
 - real adapters must pass shared contracts plus provider-specific tests;
 - contract tests must include cross-profile isolation and deleted data.
+
+Current Core Lite implementation:
+
+- import-boundary tests prove `memory_core` has no FastAPI/SQLAlchemy/provider SDK imports,
+  and API routes do not import provider adapter packages or open database sessions directly;
+- noop vector/graph/embedding adapters fail closed with disabled/degraded statuses and no
+  candidates/vectors, so disabled engines remain safe substitutes at runtime;
+- Qdrant adapter tests prove collection creation, dimension mismatch fail-closed behavior,
+  empty/zero-limit behavior, unavailable SDK/server behavior, and explicit
+  `space_id + profile_id + projection_version` search filtering;
+- Graphiti adapter tests prove canonical fact id mapping, scoped group ids, delete support for
+  legacy and modern Graphiti clients, capability mismatch handling, and disabled fallback;
+- Cognee adapter tests prove disabled-by-default behavior and scoped dataset routing when a
+  runtime client is injected;
+- application/context tests prove derived candidates are hydrated through canonical Postgres
+  records before rendering, and stale/deleted/wrong-profile/wrong-thread candidates are dropped;
+- worker/admin tests prove outbox atomicity, retry/dead-letter lifecycle, scoped repair/reindex,
+  and raw-text redaction in diagnostics;
+- SDK tests prove stable additive API contracts and typed transport/server error envelopes.
 
 ## Quality Gates
 
@@ -7087,11 +7184,11 @@ ci:cross-profile-isolation
 Suggested command mapping:
 
 ```bash
-ruff check memory_platform
-pytest memory_platform/tests/unit
-pytest memory_platform/tests/application
-pytest memory_platform/tests/integration/test_postgres_fact_repository.py
-python -m memory_server eval run --suite small-golden
+make memory-lint
+make memory-test-application
+make memory-test-integration
+make memory-test-e2e
+make memory-eval
 ```
 
 Rules:
@@ -7102,6 +7199,19 @@ Rules:
 - Graphiti contract starts at PR 5;
 - prompt snapshot/golden eval is required before active context changes;
 - CI artifacts must redact raw memory text.
+
+Current Core Lite implementation:
+
+- `make memory-test-quality` is the local full quality gate and runs lint,
+  application tests, integration tests, e2e-style memory tests and golden eval;
+- `make memory-test-application` covers domain/fact/context/suggestion behavior;
+- `make memory-test-integration` covers provider adapters and worker retry/dead-letter
+  behavior;
+- `make memory-test-e2e` covers legacy/context and worker paths used by the live memory
+  workflow;
+- `make memory-eval` runs the small golden suite and prompt contract snapshot check;
+- OpenAPI contract coverage currently lives in the full unit suite through
+  `tests/unit/test_openapi_contract.py`.
 
 ## Risk Register
 
@@ -7405,6 +7515,25 @@ docker compose up
 python examples/hackinterview_memory_smoke.py
 ```
 
+Current Core Lite implementation:
+
+- `docker-compose.yml` starts `memory_server`, Postgres, Qdrant and Neo4j for local use;
+- Docker startup runs `memory_server.db upgrade` and `memory_server.admin seed-defaults`
+  before serving HTTP;
+- Docker Compose waits for Postgres health before starting `memory_server` and exposes a
+  server `/v1/health` healthcheck;
+- `.env.example` contains local defaults for server, embeddings, Qdrant, Graphiti and
+  HackInterview compatibility;
+- `make memory-stack-up` starts the local server service through Docker Compose;
+- `make memory-stack-smoke` starts the local server service, waits for `/v1/health` and runs
+  the SDK smoke path;
+- `make memory-smoke` runs `examples/hackinterview_memory_smoke.py` against
+  `http://127.0.0.1:7788` by default;
+- the smoke script uses only `MemoryPlatformClient` and verifies health, space/profile
+  creation, remember, update, document ingest, search, context and forget;
+- smoke output is production-safe ids/counts/status only and does not print the auth token or
+  raw memory text.
+
 ## HackInterview Integration Plan
 
 Goal: HackInterview should treat memory_server as an external dependency and keep its current local fallback.
@@ -7488,6 +7617,665 @@ Suggested rollout:
 4. Enable active context behind settings switch.
 5. Keep local fallback enabled permanently.
 
+## Main Branch Execution Mode
+
+The Memory Platform is implemented in its own repository:
+
+```text
+/Users/belief/dev/projects/ai/memory-platform
+https://github.com/777genius/memory-platform.git
+```
+
+Development is done directly on `main`, without separate pull requests. Keep
+the same safety as stacked PRs by using small conventional commits and phase
+gates.
+
+Terminology override:
+
+```text
+Any older "PR 0", "PR 1" or "implementation PR" wording in this plan now means
+a small main-branch commit slice or checkpoint, not a GitHub pull request.
+```
+
+Rules:
+
+- keep `main` runnable after every commit;
+- use conventional commits, for example `feat(memory): add capability DTOs`;
+- commit docs/contracts separately from runtime behavior;
+- do not mix Cognee runtime, context compiler refactor and outbox schema changes
+  in one commit;
+- do not commit local caches, venv, local databases or `.e2e-artifacts`;
+- if a phase gate fails, either fix forward immediately or revert only the
+  failing commit;
+- HackInterview integration stays client-side through HTTP/SDK/MCP and must not
+  import provider adapters from Memory Platform.
+
+Immediate execution order:
+
+1. Freeze current Core Lite guarantees.
+2. Add capability DTOs and capability ports.
+3. Add capability diagnostics while keeping old adapter fields.
+4. Add `canonical_only` consistency mode without changing default behavior.
+5. Split context compiler into collectors, hydration, policy, ranker and packer.
+6. Harden outbox and projection lifecycle.
+7. Migrate direct Graphiti to temporal capability ports.
+8. Add Cognee behind document/RAG capability ports.
+9. Add auto-memory through suggestions/candidate facts only.
+10. Prepare team/SaaS scope and grants.
+
+First three commits:
+
+1. `feat(memory): add capability DTO contracts`
+   - files: `ports/capabilities.py`, `application/dto.py`,
+     `tests/unit/test_import_boundaries.py`;
+   - no runtime behavior change.
+2. `feat(memory): expose capability diagnostics`
+   - files: `get_capabilities.py`, `/v1/capabilities`, SDK, MCP status,
+     capability tests;
+   - keep backward-compatible adapter fields.
+3. `feat(memory): add canonical context consistency mode`
+   - files: `application/dto.py`, `build_context.py`, context tests;
+   - `best_effort` remains default.
+
+Minimum verification after each behavior-changing commit:
+
+```bash
+make memory-lint
+make memory-test-application
+make memory-test-integration
+make memory-doctor
+```
+
+Run eval before prompt-path changes:
+
+```bash
+make memory-eval
+```
+
+## Detailed Main Branch Implementation Playbook
+
+Use this playbook when implementing the next Memory Platform architecture work
+directly on `main`. The goal is to keep every commit understandable, runnable
+and reversible.
+
+### Pre-flight before any code
+
+Run:
+
+```bash
+cd /Users/belief/dev/projects/ai/memory-platform
+git status --short
+df -h .
+make memory-lint
+make memory-test-application
+```
+
+Check:
+
+- there are no unrelated staged files;
+- free disk is enough for Python tests; for Docker/Qdrant/Neo4j prefer 10GB+;
+- current docs changes are committed or intentionally kept unstaged;
+- no HackInterview `src-tauri` deletion is staged from another repo.
+
+Do not start runtime work while the baseline is red. First fix the baseline or
+commit docs separately.
+
+### Commit A - capability DTO contracts
+
+Commit name:
+
+```text
+feat(memory): add capability DTO contracts
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/ports/capabilities.py
+packages/memory_core/memory_core/application/dto.py
+packages/memory_core/memory_core/ports/__init__.py
+tests/unit/test_import_boundaries.py
+tests/unit/test_health_capabilities.py
+```
+
+Steps:
+
+1. Add capability value objects and enums:
+   - `MemoryCapability`;
+   - `CapabilityStatus`;
+   - `CapabilityMode`;
+   - `ConsistencyMode`;
+   - `ProjectionFreshness`;
+   - `CapabilityDescriptor`.
+2. Add Protocol interfaces only:
+   - `DocumentMemoryPort`;
+   - `RagRecallPort`;
+   - `SessionMemoryPort`;
+   - `TemporalFactGraphPort`;
+   - `FactProjectionPort`;
+   - `VectorRecallPort`;
+   - `ProjectionForgetPort`;
+   - `EngineHealthPort`.
+3. Do not wire the new ports into runtime yet.
+4. Keep `VectorMemoryPort`, `GraphMemoryPort` and `AdapterCapabilities`.
+5. Export new contracts from `memory_core.ports`.
+6. Add tests that prove `memory_core` imports no Cognee, Graphiti, Qdrant,
+   OpenAI, Neo4j, FastAPI, httpx or MCP SDKs.
+
+Expected behavior:
+
+- no API response changes;
+- no database changes;
+- no adapter behavior changes.
+
+Verify:
+
+```bash
+make memory-lint
+.venv/bin/python -m pytest tests/unit/test_import_boundaries.py tests/unit/test_health_capabilities.py
+```
+
+Stop if:
+
+- a new contract imports provider SDKs;
+- runtime behavior changes;
+- public API shape changes.
+
+### Commit B - capability diagnostics shape
+
+Commit name:
+
+```text
+feat(memory): expose capability diagnostics
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/application/use_cases/get_capabilities.py
+packages/memory_server/memory_server/api/v1/capabilities.py
+packages/memory_server/memory_server/diagnostics.py
+packages/memory_sdk/memory_sdk/__init__.py
+packages/memory_mcp/memory_mcp/application/service.py
+tests/unit/test_health_capabilities.py
+tests/unit/test_mcp_adapter.py
+```
+
+Steps:
+
+1. Add a `capabilities` section to the existing `/v1/capabilities` response.
+2. Keep the old `adapters`, `enabled_adapters`, `supports_qdrant` and
+   `supports_graphiti` fields.
+3. Map existing adapters into capability descriptors:
+   - qdrant -> `vector_recall`, `projection_forget`;
+   - graphiti -> `temporal_fact_graph`, `fact_projection`,
+     `projection_forget`;
+   - embeddings -> embedding/provider diagnostics only, not memory recall.
+4. Include safe fields only:
+   - adapter name;
+   - capability;
+   - enabled;
+   - health;
+   - degraded reason;
+   - projection version when known;
+   - external AI allowed when known.
+5. Update SDK and MCP status output to surface capability diagnostics.
+6. Do not change context/search behavior yet.
+
+Expected behavior:
+
+- old clients still work;
+- new clients can understand capability-level health;
+- no raw memory text or secrets appear in diagnostics.
+
+Verify:
+
+```bash
+make memory-lint
+.venv/bin/python -m pytest tests/unit/test_health_capabilities.py tests/unit/test_mcp_adapter.py
+```
+
+Stop if:
+
+- compatibility fields disappear;
+- diagnostics include raw text, tokens or provider credentials;
+- a disabled adapter reports itself as healthy for a capability it cannot serve.
+
+### Commit C - context consistency mode
+
+Commit name:
+
+```text
+feat(memory): add canonical context consistency mode
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/application/dto.py
+packages/memory_core/memory_core/application/use_cases/build_context.py
+packages/memory_server/memory_server/api/v1/context.py
+packages/memory_server/memory_server/api/v1/legacy_hackinterview.py
+tests/unit/test_legacy_and_context_api.py
+```
+
+Steps:
+
+1. Add `consistency_mode` to `BuildContextQuery`.
+2. Supported values:
+   - `canonical_only`;
+   - `best_effort`;
+   - `require_fresh_projection`.
+3. Keep `best_effort` as the default.
+4. Implement `canonical_only` first:
+   - canonical facts;
+   - keyword chunks;
+   - no embeddings;
+   - no Qdrant;
+   - no Graphiti;
+   - no Cognee.
+5. Return diagnostics showing which consistency mode was used.
+6. Keep HackInterview legacy routes backward compatible when they do not pass a
+   consistency mode.
+
+Expected behavior:
+
+- existing context calls still behave as before;
+- callers can explicitly force a provider-free context path.
+
+Verify:
+
+```bash
+make memory-lint
+.venv/bin/python -m pytest tests/unit/test_legacy_and_context_api.py
+```
+
+Stop if:
+
+- default context behavior changes;
+- canonical-only calls hit embeddings/Qdrant/Graphiti;
+- legacy HackInterview tests regress.
+
+### Commit D - context compiler split
+
+Commit name:
+
+```text
+refactor(memory): split context compiler pipeline
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/application/use_cases/build_context.py
+packages/memory_core/memory_core/application/context_collectors.py
+packages/memory_core/memory_core/application/context_hydration.py
+packages/memory_core/memory_core/application/context_policy.py
+packages/memory_core/memory_core/application/context_ranking.py
+packages/memory_core/memory_core/application/context_packer.py
+tests/unit/test_context_packer.py
+tests/unit/test_legacy_and_context_api.py
+```
+
+Steps:
+
+1. Extract candidate collection without changing results.
+2. Extract canonical hydration.
+3. Extract policy filtering.
+4. Extract dedupe/ranking.
+5. Keep `ContextPacker` responsible only for token/char budget rendering.
+6. Keep all output DTOs stable.
+7. Add tests around each extracted piece before deleting old inline logic.
+
+Order:
+
+```text
+canonical collector
+keyword chunk collector
+vector collector wrapper
+graph collector wrapper
+hydrator
+policy filter
+deduper/ranker
+packer
+```
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-application
+make memory-eval
+```
+
+Stop if:
+
+- rendered context changes without an intentional golden eval update;
+- provider candidates bypass hydration;
+- restricted/deleted/wrong-profile data can render.
+
+### Commit E - outbox projection lifecycle hardening
+
+Commit name:
+
+```text
+feat(memory): harden projection outbox lifecycle
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/domain/events.py
+packages/memory_core/memory_core/ports/unit_of_work.py
+packages/memory_adapters/memory_adapters/postgres/models.py
+packages/memory_adapters/memory_adapters/postgres/repositories.py
+packages/memory_adapters/memory_adapters/postgres/migrations/
+packages/memory_server/memory_server/worker.py
+packages/memory_server/memory_server/diagnostics.py
+tests/unit/test_worker_eval.py
+tests/integration/test_outbox_worker.py
+```
+
+Steps:
+
+1. Add additive DB fields only:
+   - workload class;
+   - fairness key;
+   - aggregate version;
+   - last safe diagnostic code;
+   - dead-letter status if missing.
+2. Worker checks aggregate version before side effects.
+3. Worker retry is idempotent.
+4. Poison jobs move to dead-letter after bounded attempts.
+5. Diagnostics expose counts and lag, not raw memory.
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-integration
+make memory-worker-once
+```
+
+Stop if:
+
+- schema migration is destructive;
+- old workers cannot safely ignore new fields;
+- retries duplicate derived projection writes.
+
+### Commit F - Graphiti temporal capability migration
+
+Commit name:
+
+```text
+refactor(memory): expose graphiti temporal capability ports
+```
+
+Files:
+
+```text
+packages/memory_adapters/memory_adapters/graphiti/adapter.py
+packages/memory_adapters/memory_adapters/noop/adapters.py
+packages/memory_server/memory_server/composition.py
+tests/unit/test_provider_adapters.py
+tests/unit/test_legacy_and_context_api.py
+```
+
+Steps:
+
+1. Implement `TemporalFactGraphPort`.
+2. Implement `FactProjectionPort`.
+3. Keep `GraphMemoryPort` wrapper until all callers migrate.
+4. Return canonical fact ids only from Graphiti search.
+5. Keep Graphiti group id derived from hard scope.
+6. Report safe Graphiti capability diagnostics.
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-integration
+```
+
+Stop if:
+
+- Graphiti returns prompt-ready text;
+- Graphiti ids leak into public API;
+- Graphiti disabled mode breaks canonical memory.
+
+### Commit G - Cognee adapter skeleton
+
+Commit name:
+
+```text
+feat(memory): add cognee adapter skeleton
+```
+
+Files:
+
+```text
+packages/memory_adapters/memory_adapters/cognee/
+packages/memory_server/memory_server/config.py
+packages/memory_server/memory_server/composition.py
+tests/unit/test_provider_adapters.py
+tests/unit/test_health_capabilities.py
+```
+
+Steps:
+
+1. Add optional dependency only when ready.
+2. Add config flags disabled by default.
+3. Add adapter class behind `DocumentMemoryPort` and `RagRecallPort`.
+4. Start with disabled/noop behavior.
+5. Expose capability diagnostics.
+6. Do not send real text to Cognee yet.
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-integration
+```
+
+Stop if:
+
+- installing default package requires Cognee;
+- Cognee SDK leaks into `memory_core`;
+- disabled Cognee changes context output.
+
+### Commit H - Cognee document/RAG runtime
+
+Commit name:
+
+```text
+feat(memory): enable cognee document rag adapter
+```
+
+Files:
+
+```text
+packages/memory_adapters/memory_adapters/cognee/
+packages/memory_core/memory_core/application/context_collectors.py
+packages/memory_server/memory_server/composition.py
+tests/e2e/test_memory_quality_e2e.py
+```
+
+Steps:
+
+1. Add document ingestion into Cognee as derived projection.
+2. Add RAG recall collector.
+3. Require source refs for prompt context.
+4. Treat Cognee summaries as derived evidence.
+5. Gate external AI by data classification and purpose policy.
+6. Keep fallback to canonical/Qdrant/keyword.
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-application
+make memory-test-integration
+make memory-eval
+```
+
+Stop if:
+
+- Cognee output becomes canonical fact without Memory Core approval;
+- source refs are missing;
+- restricted/unknown data is sent to external AI without policy approval.
+
+Current Core Lite implementation:
+
+- Cognee is disabled by default and imports the runtime SDK only when explicitly enabled
+  and configured;
+- `public` and `internal` documents enqueue `cognee.ingest_document` as a derived
+  projection job; `restricted` and `unknown` documents do not enqueue Cognee projection
+  jobs;
+- the outbox worker sends Cognee only text reloaded from visible canonical chunks and
+  passes canonical chunk ids in `DocumentMemoryWrite.chunk_ids`;
+- document deletion enqueues `cognee.forget_document` with canonical document/chunk ids
+  so future delete-capable adapters can remove derived projections without raw text;
+- the Cognee adapter can map recall results to canonical chunk source refs when the
+  provider returns `chunk_id`;
+- the RAG collector never renders provider text directly. It hydrates RAG candidates
+  through visible canonical chunks first and drops provider-only/stale candidates;
+- dropped RAG candidates are counted in `stale_rag_drop_count`;
+- RAG candidate metadata is allowlisted before it reaches `ContextItem.diagnostics`, so
+  provider raw text, prompt payloads, tokens and arbitrary metadata cannot leak through
+  context/search responses;
+- provider text is not copied into `SourceRef.quote_preview`;
+- disabled Cognee projection jobs complete without importing the Cognee SDK or sending
+  raw text.
+
+### Commit I - auto-memory suggestions
+
+Commit name:
+
+```text
+feat(memory): route auto memory through suggestions
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/application/use_cases/suggestions.py
+packages/memory_core/memory_core/application/use_cases/ingest_episode.py
+packages/memory_server/memory_server/api/v1/suggestions.py
+packages/memory_mcp/memory_mcp/application/service.py
+tests/unit/test_suggestions_api.py
+tests/e2e/test_memory_mcp_e2e.py
+```
+
+Steps:
+
+1. Auto-memory creates suggestions or candidate facts first.
+2. Promotion creates canonical facts.
+3. Keep evidence lineage.
+4. Do not let agent summaries confirm themselves.
+5. Keep broad agent deletes unavailable.
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-application
+make memory-test-e2e
+```
+
+Stop if:
+
+- auto-memory writes shared facts directly;
+- suggestion approval lacks source refs;
+- MCP can mass-delete by query.
+
+Current Core Lite implementation:
+
+- episode auto-memory is enabled only in `suggestions` policy mode;
+- the rule-based classifier only extracts explicit memory markers and creates pending
+  suggestions, never active facts;
+- prompt-injection-looking candidates become source-only and do not create suggestions;
+- pending/rejected/expired suggestions are excluded from normal context;
+- approval creates or updates canonical facts through `ApproveSuggestionUseCase` and keeps
+  source refs/evidence lineage;
+- assistant-only suggestions cannot approve themselves because approval requires at least
+  one non-assistant source ref;
+- weak suggestions cannot supersede stronger facts unless the reviewer explicitly passes
+  `force`;
+- MCP exposes create/list/approve/reject/expire suggestion tools by concrete suggestion id
+  only and still exposes no broad delete-by-query operation.
+
+### Commit J - team/SaaS scope preparation
+
+Commit name:
+
+```text
+feat(memory): add resolved read scope contract
+```
+
+Files:
+
+```text
+packages/memory_core/memory_core/ports/auth.py
+packages/memory_server/memory_server/auth_scope.py
+packages/memory_server/memory_server/api/v1/
+packages/memory_sdk/memory_sdk/__init__.py
+packages/memory_mcp/memory_mcp/
+tests/unit/test_admin_tokens.py
+tests/e2e/test_memory_mcp_e2e.py
+```
+
+Steps:
+
+1. Add `MemoryScope` / `ReadScope` DTOs.
+2. Centralize visibility guard.
+3. Require all read/write/diagnostic routes to resolve scope.
+4. Keep scoped token restrictions.
+5. Add future tenant/workspace fields only if additive and optional.
+
+Verify:
+
+```bash
+make memory-lint
+make memory-test-application
+make memory-test-e2e
+```
+
+Stop if:
+
+- any route can read/list/export/diagnose outside granted scope;
+- diagnostics leak hidden ids or text;
+- legacy routes bypass the visibility guard.
+
+Current Core Lite implementation:
+
+- `memory_core.ports.auth` defines `MemoryPrincipal`, `MemoryScope` and `ReadScope`
+  with optional additive `tenant_id` and `workspace_id` fields for future SaaS
+  migration;
+- v1 route scope resolution validates canonical single-profile scopes through
+  `MemoryScope` and context/multi-profile scopes through `ReadScope`;
+- context/search rejects duplicate canonical `profile_ids` before use cases run;
+- scoped service tokens are checked against requested space/profile refs, including
+  canonical ids, external refs and path resources;
+- profile-scoped tokens cannot access cross-profile facts, suggestions, diagnostics,
+  context, documents or legacy HackInterview scopes;
+- the SDK exposes typed `MemoryScope` and `ReadScope` DTOs while keeping the existing
+  kwargs API backward compatible;
+- the MCP adapter uses a dedicated read scope for search/context so multi-profile
+  `profile_external_refs` are sent to Memory Server instead of being silently reduced
+  to one profile;
+- MCP read scope rejects `thread_external_ref` with multiple profiles because the
+  server contract allows thread-scoped context only for one profile.
+
+### Always keep these invariants
+
+- Postgres owns canonical lifecycle.
+- Derived engines can be disabled independently.
+- No provider SDK import crosses into `memory_core`.
+- Every derived hit is hydrated before prompt rendering.
+- Prompt memory is evidence, never instruction.
+- HackInterview imports no Memory Platform internals.
+- Each behavior-changing commit has a rollback path or kill switch.
+
 ## Release Acceptance Gates
 
 These gates decide whether Core Lite can move from local experiment to HackInterview active context.
@@ -7543,6 +8331,25 @@ doctor status ok or degraded only for disabled optional adapters
 kill switches manually verified
 ```
 
+Implemented gate command:
+
+```bash
+python -m memory_server.doctor --gate active_context
+```
+
+Manual checks are intentionally explicit. After each external/manual item is verified, acknowledge it with repeated `--ack` flags or with `--ack-all-manual` in local release checks:
+
+```bash
+python -m memory_server.doctor --gate active_context \
+  --ack hackinterview_fallback_canary \
+  --ack shadow_retrieve_diagnostics \
+  --ack golden_eval \
+  --ack service_token_rotation \
+  --ack kill_switches
+```
+
+The gate returns `blocked` until manual checks are acknowledged and `failed` when automated checks fail. Output remains production-safe: ids/counts/status/remediation only, no raw facts, chunks, transcript text, or document text.
+
 Gate rule:
 
 ```text
@@ -7550,6 +8357,17 @@ Gate D is required before enabling `active_context`.
 Gate C is enough for shadow retrieve.
 Gate B is enough for manual memory API.
 ```
+
+Current Core Lite implementation:
+
+- `python -m memory_server.doctor --gate active_context` checks doctor status, default
+  `hackinterview/default` scope, dead outbox count and canonical/projection invariants;
+- manual checks are explicit and must be acknowledged by documented names or
+  `--ack-all-manual`;
+- unknown manual acknowledgement names fail the gate instead of silently passing;
+- the gate returns `blocked` while manual checks are missing, `failed` for automated gate
+  failures and `ok` only when automated checks pass and manual checks are acknowledged;
+- gate and doctor output are production-safe ids/counts/status/remediation only.
 
 ## Minimal Security Model
 
@@ -7618,6 +8436,19 @@ test_redacted_export_omits_restricted_raw_text
 test_context_builder_excludes_restricted_by_default
 ```
 
+Current Core Lite implementation:
+
+- facts default to `internal`; imported documents/chunks default to `unknown`;
+- domain entities reject unknown classification values outside
+  `public/internal/restricted/unknown`;
+- unknown and restricted document chunks are stored canonically but skipped by embedding and
+  external Cognee projection policies;
+- restricted facts/chunks are excluded from normal context/search hydration by default;
+- diagnostics and admin/doctor output expose ids/counts/status/safe codes only, not raw
+  restricted text or previews;
+- redacted profile export removes raw fact text, chunk text, normalized text and source
+  quote previews.
+
 Postponed:
 
 - RLS;
@@ -7669,6 +8500,19 @@ test_two_active_tokens_work_during_rotation
 test_revoked_token_is_rejected
 test_token_list_does_not_print_raw_token
 ```
+
+Current Core Lite implementation:
+
+- admin token create/list/revoke commands are implemented against canonical Postgres rows;
+- raw service tokens are returned only once on creation and persistent storage keeps
+  `token_hash`, not the raw token value;
+- token list output includes ids, descriptions, scope, permissions, timestamps and status
+  only;
+- several active tokens can work during rotation and revoking one token does not break the
+  replacement token;
+- expired and revoked tokens are rejected and do not update `last_used_at`;
+- scoped service tokens enforce space/profile restrictions and memory permissions across
+  public `/v1`, diagnostics, suggestions, documents, facts and legacy routes.
 
 ### Threat Model Lite
 
@@ -7779,6 +8623,18 @@ test_session_delete_hides_thread_memory
 test_document_delete_hides_chunks_before_vector_delete_finishes
 ```
 
+Current Core Lite implementation:
+
+- diagnostics APIs omit `payload_json` and expose outbox ids/counts/status/safe codes only;
+- source quote previews are bounded at the public API boundary;
+- `python -m memory_server.admin compact-outbox` compacts old `done` outbox payloads
+  without deleting audit columns such as event type, aggregate type/id/version, workload
+  class, fairness key, status and attempt count;
+- `compact-outbox --dry-run` reports matched/would-compact counts without mutating rows;
+- compaction preserves only safe scope/aggregate ids from payload and removes arbitrary raw
+  text values;
+- repeated compaction is idempotent because already compacted rows are counted and skipped.
+
 ## Minimal Write Safety
 
 Rules:
@@ -7787,7 +8643,8 @@ Rules:
 - transcript/document extracted facts become suggestions unless explicitly approved;
 - assistant answers are low trust;
 - prompt-injection phrases remain quoted source text;
-- retrieved memory item always has `is_instruction=false`.
+- retrieved memory item always has `is_instruction=false`;
+- context packer drops any instruction-marked candidate before token/char budgeting.
 
 Implementation:
 
@@ -7968,6 +8825,15 @@ test_context_drops_fact_deleted_between_candidate_search_and_render
 test_context_cache_disabled_for_core_lite_prompt_path
 ```
 
+Current Core Lite implementation:
+
+- context candidates are revalidated through canonical Postgres rows immediately before
+  prompt packing;
+- a fact deleted after candidate collection but before render is dropped during late
+  hydration;
+- Core Lite does not cache `ContextBundle` responses on the prompt path, so the same query
+  after `forget` gets a fresh bundle and cannot reuse stale rendered memory.
+
 #### Multi-Profile Context Collision
 
 Risk:
@@ -8008,6 +8874,16 @@ test_multi_profile_dedupe_preserves_source_refs
 test_wrong_profile_vector_hit_is_dropped
 ```
 
+Current Core Lite implementation:
+
+- prompt context keeps explicit profile sections and profile ids on API item DTOs;
+- context ranking dedupes by canonical `item_type/item_id`, keeps the highest-score
+  display item, and merges/deduplicates all source refs from duplicate candidates before
+  packing;
+- derived vector candidates are never trusted by payload profile alone: chunk ids are
+  hydrated through canonical Postgres with the requested space/profile/thread filter, so a
+  wrong-profile vector hit is counted as stale and cannot render.
+
 #### Graph Relation Outlives Canonical Fact
 
 Risk:
@@ -8039,6 +8915,17 @@ test_graph_relation_from_deleted_fact_not_rendered
 test_graph_candidate_without_canonical_source_is_low_confidence_or_dropped
 test_graph_adapter_schema_mismatch_degrades_context
 ```
+
+Current Core Lite implementation:
+
+- graph search returns only `GraphCandidate` canonical ids and safe relation diagnostics,
+  never prompt-ready graph text;
+- graph candidates are hydrated through canonical Postgres facts before prompt packing;
+- deleted, superseded, disputed, wrong-profile and wrong-thread graph fact ids are counted
+  as stale and dropped;
+- graph candidates without canonical source ids are dropped and counted as stale;
+- graph adapter schema/search mismatch degrades graph retrieval only, while canonical
+  Postgres context still renders.
 
 #### Secret Or Restricted Text Enters Memory
 
@@ -8076,6 +8963,19 @@ test_diagnostics_redacts_restricted_preview
 test_export_redacted_mode_omits_restricted_text
 ```
 
+Current Core Lite implementation:
+
+- document and chunk repositories exclude `restricted` classification from keyword/context
+  hydration by default;
+- fact context visibility excludes `restricted` facts unless a future explicit policy allows
+  them;
+- manual fact writes default to `internal`; restricted prompt exclusion only happens when
+  the request explicitly sets `classification=restricted`;
+- diagnostics endpoints expose counts/status/safe diagnostic codes only, not fact text,
+  chunk text, source quote previews or outbox payloads;
+- redacted profile export omits fact text, chunk text, normalized chunk text and source
+  quote previews.
+
 #### Provider Version Drift
 
 Risk:
@@ -8100,6 +9000,18 @@ test_qdrant_dimension_mismatch_fails_closed
 test_graphiti_capability_mismatch_disables_graph
 test_doctor_reports_provider_version_and_required_action
 ```
+
+Current Core Lite implementation:
+
+- Qdrant capabilities compare the existing collection vector size with the configured
+  embedding dimension and fail closed on mismatch;
+- Qdrant upsert/search return non-retryable `qdrant.dimension_mismatch` diagnostics
+  instead of writing/searching with the wrong dimension;
+- Graphiti capabilities verify required retrieval methods before reporting graph search
+  as usable; a missing search method disables graph retrieval with
+  `graphiti.capability_mismatch`;
+- doctor adapter checks include safe `provider_version` metadata and an actionable
+  `required_action` for known provider drift/misconfiguration codes.
 
 ## Data Quality Rules
 
@@ -8236,6 +9148,23 @@ Bad: test_delete_sets_status_deleted
 | idempotency replay different body | same key, different fingerprint | memory.conflict | API |
 | future occurred_at | event timestamp in future | ingested_at tie-breaker, no trust boost | unit |
 
+Current Core Lite implementation:
+
+- Qdrant/vector search timeout degrades vector retrieval and keeps canonical Postgres facts
+  renderable;
+- query embedding timeout degrades vector retrieval before vector search and keeps keyword
+  chunk recall available;
+- Graphiti/graph search timeout degrades graph retrieval and keeps canonical facts/chunks
+  renderable;
+- provider exception diagnostics use safe codes such as `vector.timeout`,
+  `embeddings.timeout` and `graph.timeout`, never raw exception text;
+- episode ingest clamps future `occurred_at` values to server ingest time before canonical
+  persistence;
+- future timestamps therefore cannot create temporal priority over normally ingested
+  evidence;
+- covered by `test_future_occurred_at_is_clamped_to_ingest_time`, which verifies the
+  canonical `memory_episodes` row.
+
 ### Golden Eval Metrics
 
 Core Lite should measure memory quality before it changes HackInterview prompts.
@@ -8282,6 +9211,20 @@ Important:
 - if Graphiti improves recall but increases stale results, keep it disabled;
 - failing eval blocks active context rollout but not shadow ingest.
 
+Current Core Lite implementation:
+
+- `python -m memory_server eval run --suite small-golden` seeds deterministic
+  local SQLite fixtures with facts, documents, update/delete, prompt-injection
+  and cross-profile cases;
+- `--api-url` runs the same suite against a live Memory Platform HTTP server;
+- `--report-out` writes the same redacted JSON report to disk;
+- the report includes `recall_at_5`, `precision_at_5`,
+  `stale_memory_rate`, `deleted_memory_leak_count`,
+  `cross_profile_leak_count`, `prompt_injection_promoted_count`,
+  `context_token_overflow_count` and `fallback_success_rate`;
+- gates fail the command when recall/precision drop or safety leak counts become non-zero;
+- failures include case ids, categories and item ids only, not raw fixture text.
+
 ### Prompt Snapshot Tests
 
 Prompt snapshots protect the memory rendering contract.
@@ -8294,6 +9237,7 @@ facts_only
 facts_plus_chunks
 deleted_fact_filtered
 prompt_injection_quoted
+instruction_flag_dropped
 cross_profile_isolation
 degraded_qdrant
 degraded_graphiti
@@ -8314,6 +9258,15 @@ Command:
 python -m memory_server eval snapshots --suite prompt-contract
 python -m memory_server eval snapshots --suite prompt-contract --update
 ```
+
+Current Core Lite implementation:
+
+- `python -m memory_server eval snapshots --suite prompt-contract`;
+- `python -m memory_server eval snapshots --suite prompt-contract --update`;
+- `make memory-eval` runs both `small-golden` and `prompt-contract`;
+- baseline lives in `tests/snapshots/prompt_contract.json`;
+- snapshot cases include safe synthetic rendered text and metadata ids only;
+- `instruction_flag_dropped` pins the fail-closed rule for instruction-marked candidates.
 
 Snapshot review checklist:
 
@@ -8579,6 +9532,12 @@ Local readiness command target:
 python -m memory_server.doctor
 ```
 
+Active-context release gate target:
+
+```bash
+python -m memory_server.doctor --gate active_context
+```
+
 Doctor output shape:
 
 ```json
@@ -8601,6 +9560,7 @@ Readiness rules:
 - failed required Postgres check blocks startup/rollout;
 - active context rollout requires fallback canary success;
 - every readiness failure maps to one remediation command.
+- `--gate active_context` checks doctor status, default scope, dead outbox count, invariants with projection checks, and explicit manual acknowledgements.
 
 ## Operational Dashboards And Alerts
 
@@ -8639,6 +9599,16 @@ Rules:
 - server profile should expose metrics endpoint or structured logs;
 - critical eval leak blocks active context rollout;
 - every alert has a playbook link or command.
+
+Current Core Lite implementation:
+
+- `/v1/diagnostics/metrics` exposes counts/status/alerts behind service-token auth;
+- metrics include outbox counts, canonical row counts, adapter statuses and safe alerts;
+- metrics intentionally do not include `payload_json`, raw fact text, raw chunk text or document text;
+- context request count, p95 latency, degraded rate and stale hydration drops are collected
+  in-process per server instance.
+- provider circuit states for Qdrant, Graphiti and embeddings are visible as safe
+  adapter name/state/count/code metadata and open circuits emit warning alerts.
 
 ## Admin Command Specs
 
@@ -8690,6 +9660,7 @@ Command:
 
 ```bash
 python -m memory_server.admin check-invariants --space hackinterview --profile default
+python -m memory_server.admin check-invariants --space hackinterview --profile default --include-projections
 ```
 
 Checks:
@@ -8729,6 +9700,13 @@ Rules:
 - checker output uses ids/counts only;
 - checker does not auto-repair unless explicit command is called;
 - failing invariant blocks active context rollout.
+
+Current Core Lite implementation:
+
+- default mode checks canonical Postgres invariants only;
+- `--include-projections` checks projection outbox aggregate references without importing Qdrant,
+  Graphiti or provider SDKs;
+- output remains ids/counts/status only and omits raw memory text and outbox payloads.
 
 Tests:
 
@@ -8801,6 +9779,25 @@ test_import_enqueues_reindex_events
 test_import_fail_on_conflict_blocks_overwrite
 test_redacted_export_has_no_raw_chunk_text
 ```
+
+Current Core Lite implementation:
+
+- `export-profile` reads canonical Postgres facts, documents, chunks and source refs only;
+- `--redacted` omits raw fact text, chunk text and source quote previews;
+- `import-profile --dry-run` reports counts/conflicts without creating target scope rows;
+- non-dry-run import requires `--i-understand-this-writes-canonical-memory`;
+- `fail_on_conflict` blocks canonical overwrite on existing ids or active document/chunk
+  uniqueness conflicts;
+- `skip_existing` skips conflicting incoming facts/documents/chunks and cascades skipped
+  documents to their chunks;
+- `create_new_profile` creates a new active target profile and rewrites imported canonical ids
+  so the original profile is not overwritten;
+- `supersede_matching_facts` marks matching active facts as `superseded`, imports the incoming
+  fact under a new id and enqueues graph delete/upsert projection events;
+- import enqueues `vector.upsert_chunk` and `graph.upsert_fact` projection jobs for imported
+  active chunks/facts;
+- imported active facts always receive at least one source ref, falling back to a synthetic
+  `profile-import:*` source ref if the bundle refs are skipped.
 
 ## Incident Playbooks
 
@@ -8917,6 +9914,21 @@ Extraction rule:
 If a feature is useful only for SaaS and not needed for HackInterview correctness, keep only a port/extension point in Core Lite.
 ```
 
+Current Core Lite implementation:
+
+- reusable boundaries live in `memory_core` ports/use cases, public `/v1` DTOs, Python SDK,
+  MCP adapter and local Docker server;
+- future SaaS fields are additive only, currently limited to optional `tenant_id` and
+  `workspace_id` scope fields in core auth DTOs;
+- team UI, billing, cloud sync, multi-region, legal hold and full backup/restore are not
+  implemented in Core Lite;
+- admin/export/import are local/server operational tools over canonical Postgres, not a cloud
+  sync protocol;
+- MCP exposes no broad destructive delete-by-query tool; destructive forget requires a
+  concrete `fact_id` and can be disabled with `MEMORY_MCP_ALLOW_DELETES=false`;
+- provider engines remain replaceable adapters behind ports, while Postgres canonical
+  lifecycle and projection/outbox semantics remain stable.
+
 ## Rollback and Kill Switches
 
 HackInterview side:
@@ -8942,6 +9954,19 @@ Fallback:
 - if Qdrant fails, use Postgres facts and keyword fallback;
 - if Graphiti fails, use Postgres/Qdrant;
 - if memory_server fails, HackInterview uses local/current-session fallback.
+
+Current Core Lite implementation:
+
+- disabled Qdrant, Graphiti, embeddings and Cognee wire noop/disabled adapters and keep
+  canonical Postgres memory usable;
+- disabled memory policy returns empty public context/legacy context memory and blocks public
+  writes without deleting canonical data;
+- `MEMORY_LEGACY_HACKINTERVIEW_ENABLED=false` removes legacy compatibility routes and reports
+  `supports_legacy_hackinterview_routes=false` from `/v1/capabilities`;
+- context/search provider failures degrade retrieval to canonical facts/keyword chunks where
+  safe;
+- active-context rollout is guarded by doctor, golden eval, manual fallback canary and kill
+  switch acknowledgements.
 
 ## Definition Of Done
 

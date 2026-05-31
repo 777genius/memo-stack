@@ -1,20 +1,26 @@
 import asyncio
+import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
 from memory_adapters.postgres import create_schema
-from memory_adapters.postgres.models import MemoryOutboxRow
+from memory_adapters.postgres.models import MemoryFactRow, MemoryOutboxRow
 from memory_core.ports.adapters import AdapterCapabilities, VectorWriteResult
-from memory_server.admin import seed_defaults
+from memory_core.ports.capabilities import (
+    CapabilityStatus,
+    ProjectionForgetResult,
+    ProjectionWriteResult,
+)
+from memory_server.admin import ACTIVE_CONTEXT_MANUAL_CHECK_NAMES, invariant_check, seed_defaults
 from memory_server.composition import build_container
 from memory_server.config import DeployProfile, Settings
 from memory_server.db import upgrade
 from memory_server.doctor import run_doctor
-from memory_server.eval import run_small_golden
+from memory_server.eval import _execute_small_golden, run_small_golden
 from memory_server.main import create_app
-from memory_server.worker import OutboxWorker, _safe_error
+from memory_server.worker import OutboxWorker, _safe_diagnostic_code, _safe_error
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +35,22 @@ def make_client(tmp_path: Path) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+        )
+    )
+    return TestClient(app)
+
+
+def make_client_with_settings(tmp_path: Path, **overrides: Any) -> TestClient:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}",
+            auto_create_schema=True,
+            service_token="test-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            **overrides,
         )
     )
     return TestClient(app)
@@ -54,6 +76,18 @@ async def outbox_statuses(client: TestClient) -> list[str]:
         return list(
             (
                 await session.execute(select(MemoryOutboxRow.status).order_by(MemoryOutboxRow.id))
+            ).scalars()
+        )
+
+
+async def outbox_event_types(client: TestClient) -> list[str]:
+    engine = client.app.state.container.engine
+    async with AsyncSession(engine) as session:
+        return list(
+            (
+                await session.execute(
+                    select(MemoryOutboxRow.event_type).order_by(MemoryOutboxRow.id)
+                )
             ).scalars()
         )
 
@@ -84,8 +118,122 @@ def test_outbox_worker_marks_disabled_projection_jobs_done(tmp_path: Path) -> No
     assert statuses == ["done"]
 
 
+def test_safe_document_ingest_enqueues_cognee_projection(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Cognee projection",
+                "text": "COGNEE_PUBLIC_DOC_MARKER can be projected to document memory.",
+                "source_type": "document",
+                "source_external_id": "cognee-public-doc",
+                "classification": "public",
+            },
+            headers=auth_headers(),
+        )
+        event_types = asyncio.run(outbox_event_types(client))
+
+    assert created.status_code == 201
+    assert event_types == ["vector.upsert_chunk", "cognee.ingest_document"]
+
+
+def test_restricted_document_ingest_does_not_enqueue_cognee_projection(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Restricted projection",
+                "text": "COGNEE_RESTRICTED_DOC_MARKER must stay out of external memory.",
+                "source_type": "document",
+                "source_external_id": "cognee-restricted-doc",
+                "classification": "restricted",
+            },
+            headers=auth_headers(),
+        )
+        event_types = asyncio.run(outbox_event_types(client))
+
+    assert created.status_code == 201
+    assert event_types == ["vector.upsert_chunk"]
+
+
+def test_cognee_document_projection_worker_sends_only_safe_canonical_chunks(
+    tmp_path: Path,
+) -> None:
+    class RecordingCogneeMemory:
+        def __init__(self) -> None:
+            self.ingested = []
+            self.forgotten = []
+
+        async def ingest_document(self, command):
+            self.ingested.append(command)
+            return ProjectionWriteResult(
+                status=CapabilityStatus.OK,
+                affected_ids=(command.document_id,),
+            )
+
+        async def forget_document(self, command):
+            self.forgotten.append(command)
+            return ProjectionForgetResult(
+                status=CapabilityStatus.OK,
+                forgotten_ids=command.canonical_ids,
+            )
+
+    with make_client(tmp_path) as client:
+        cognee = RecordingCogneeMemory()
+        object.__setattr__(client.app.state.container, "cognee_memory", cognee)
+        created = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Safe Cognee worker",
+                "text": "COGNEE_WORKER_SAFE_MARKER should be sent from canonical chunks.",
+                "source_type": "document",
+                "source_external_id": "cognee-worker-doc",
+                "classification": "internal",
+            },
+            headers=auth_headers(),
+        )
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        statuses = asyncio.run(outbox_statuses(client))
+
+    assert created.status_code == 201
+    assert processed == 2
+    assert statuses == ["done", "done"]
+    assert len(cognee.ingested) == 1
+    command = cognee.ingested[0]
+    assert command.document_id == created.json()["data"]["id"]
+    assert "COGNEE_WORKER_SAFE_MARKER" in command.text
+    assert command.metadata["classification"] == "internal"
+    assert command.chunk_ids
+    assert command.source_refs[0].chunk_id == command.chunk_ids[0]
+
+
+def test_outbox_jobs_store_lifecycle_metadata_by_default(tmp_path: Path) -> None:
+    async def row_metadata(client: TestClient) -> tuple[str, str | None, str | None]:
+        engine = client.app.state.container.engine
+        async with AsyncSession(engine) as session:
+            row = (
+                await session.execute(select(MemoryOutboxRow).order_by(MemoryOutboxRow.id))
+            ).scalar_one()
+            return row.workload_class, row.fairness_key, row.last_safe_diagnostic_code
+
+    with make_client(tmp_path) as client:
+        created = client.post("/v1/facts", json=fact_payload(), headers=auth_headers())
+        workload_class, fairness_key, diagnostic_code = asyncio.run(row_metadata(client))
+
+    assert created.status_code == 201
+    assert workload_class == "projection"
+    assert fairness_key == f"fact:{created.json()['data']['id']}"
+    assert diagnostic_code is None
+
+
 def test_expired_running_outbox_job_is_recovered_and_processed(tmp_path: Path) -> None:
-    async def run() -> tuple[int, str, int, str | None]:
+    async def run() -> tuple[int, str, int, str | None, str | None]:
         container = build_container(
             Settings(
                 deploy_profile=DeployProfile.TEST,
@@ -118,14 +266,21 @@ def test_expired_running_outbox_job_is_recovered_and_processed(tmp_path: Path) -
             row = (
                 await session.execute(select(MemoryOutboxRow).where(MemoryOutboxRow.id == 1))
             ).scalar_one()
-            return processed, row.status, row.attempt_count, row.last_safe_error
+            return (
+                processed,
+                row.status,
+                row.attempt_count,
+                row.last_safe_error,
+                row.last_safe_diagnostic_code,
+            )
 
-    processed, status, attempt_count, last_safe_error = asyncio.run(run())
+    processed, status, attempt_count, last_safe_error, diagnostic_code = asyncio.run(run())
 
     assert processed == 1
     assert status == "done"
     assert attempt_count == 1
     assert last_safe_error is None
+    assert diagnostic_code is None
 
 
 def test_thread_cleanup_graph_delete_uses_payload_fact_id(tmp_path: Path) -> None:
@@ -181,7 +336,7 @@ def test_thread_cleanup_graph_delete_uses_payload_fact_id(tmp_path: Path) -> Non
 
 
 def test_expired_running_outbox_job_becomes_dead_after_max_attempts(tmp_path: Path) -> None:
-    async def run() -> tuple[int, str, int, str | None]:
+    async def run() -> tuple[int, str, int, str | None, str | None]:
         container = build_container(
             Settings(
                 deploy_profile=DeployProfile.TEST,
@@ -214,14 +369,21 @@ def test_expired_running_outbox_job_becomes_dead_after_max_attempts(tmp_path: Pa
             row = (
                 await session.execute(select(MemoryOutboxRow).where(MemoryOutboxRow.id == 1))
             ).scalar_one()
-            return processed, row.status, row.attempt_count, row.last_safe_error
+            return (
+                processed,
+                row.status,
+                row.attempt_count,
+                row.last_safe_error,
+                row.last_safe_diagnostic_code,
+            )
 
-    processed, status, attempt_count, last_safe_error = asyncio.run(run())
+    processed, status, attempt_count, last_safe_error, diagnostic_code = asyncio.run(run())
 
     assert processed == 0
     assert status == "dead"
     assert attempt_count == 5
     assert last_safe_error == "Worker lease expired"
+    assert diagnostic_code == "worker.lease_expired"
 
 
 def test_unknown_document_is_not_embedded_but_job_completes(tmp_path: Path) -> None:
@@ -287,8 +449,8 @@ def test_vector_disabled_internal_document_job_skips_embedding_and_completes(
         statuses = asyncio.run(outbox_statuses(client))
 
     assert created.status_code == 201
-    assert processed == 1
-    assert statuses == ["done"]
+    assert processed == 2
+    assert statuses == ["done", "done"]
     assert embedder.calls == 0
 
 
@@ -319,13 +481,17 @@ def test_unhealthy_vector_projection_retries_without_embedding_cost(tmp_path: Pa
             self.calls += 1
             raise AssertionError("unhealthy vector projection must not call embeddings")
 
-    async def row_state(client: TestClient) -> tuple[str, int, str | None]:
+    async def row_state(client: TestClient) -> tuple[str, int, str | None, str | None]:
         engine = client.app.state.container.engine
         async with AsyncSession(engine) as session:
             row = (
-                await session.execute(select(MemoryOutboxRow).order_by(MemoryOutboxRow.id))
+                await session.execute(
+                    select(MemoryOutboxRow).where(
+                        MemoryOutboxRow.event_type == "vector.upsert_chunk"
+                    )
+                )
             ).scalar_one()
-            return row.status, row.attempt_count, row.last_safe_error
+            return row.status, row.attempt_count, row.last_safe_error, row.last_safe_diagnostic_code
 
     with make_client(tmp_path) as client:
         created = client.post(
@@ -345,14 +511,154 @@ def test_unhealthy_vector_projection_retries_without_embedding_cost(tmp_path: Pa
         object.__setattr__(client.app.state.container, "vector_index", UnhealthyVectorAdapter())
         object.__setattr__(client.app.state.container, "embedder", embedder)
         processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
-        status, attempt_count, last_safe_error = asyncio.run(row_state(client))
+        status, attempt_count, last_safe_error, diagnostic_code = asyncio.run(row_state(client))
 
     assert created.status_code == 201
-    assert processed == 1
+    assert processed == 2
     assert status == "retry_pending"
     assert attempt_count == 1
     assert last_safe_error == "RuntimeError"
+    assert diagnostic_code == "RuntimeError"
     assert embedder.calls == 0
+
+
+def test_embedding_budget_exceeded_keeps_document_canonical(tmp_path: Path) -> None:
+    class HealthyVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def upsert_chunks(self, *_args: object, **_kwargs: object) -> VectorWriteResult:
+            raise AssertionError("budget-exceeded document must not be embedded or upserted")
+
+        async def delete_chunks(self, *_args: object, **_kwargs: object) -> VectorWriteResult:
+            return VectorWriteResult.ok(1)
+
+    class FailingEmbedder:
+        calls = 0
+
+        async def embed_texts(self, _texts):
+            self.calls += 1
+            raise AssertionError("budget-exceeded document must not call embeddings")
+
+    async def row_state(client: TestClient) -> tuple[str, int, str | None, str | None]:
+        async with AsyncSession(client.app.state.container.engine) as session:
+            row = (
+                await session.execute(
+                    select(MemoryOutboxRow).where(
+                        MemoryOutboxRow.event_type == "vector.upsert_chunk"
+                    )
+                )
+            ).scalar_one()
+            return row.status, row.attempt_count, row.last_safe_error, row.last_safe_diagnostic_code
+
+    with make_client_with_settings(
+        tmp_path,
+        max_embedding_tokens_per_document=1,
+    ) as client:
+        created = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Budget exceeded",
+                "text": (
+                    "EMBEDDING_BUDGET_SECRET_MARKER is a canonical document that should "
+                    "remain stored even when projection budget is exceeded."
+                ),
+                "source_type": "document",
+                "source_external_id": "embedding-budget-doc",
+                "classification": "internal",
+            },
+            headers=auth_headers(),
+        )
+        embedder = FailingEmbedder()
+        object.__setattr__(client.app.state.container, "vector_index", HealthyVectorAdapter())
+        object.__setattr__(client.app.state.container, "embedder", embedder)
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=1))
+        status, attempt_count, last_safe_error, diagnostic_code = asyncio.run(row_state(client))
+        loaded = client.get(
+            f"/v1/documents/{created.json()['data']['id']}",
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    assert loaded.status_code == 200
+    assert processed == 1
+    assert status == "retry_pending"
+    assert attempt_count == 1
+    assert last_safe_error == "OutboxProjectionError"
+    assert diagnostic_code == "embeddings.document_budget_exceeded"
+    assert embedder.calls == 0
+
+
+def test_budget_diagnostics_omit_raw_text(tmp_path: Path) -> None:
+    class HealthyVectorAdapter:
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def upsert_chunks(self, *_args: object, **_kwargs: object) -> VectorWriteResult:
+            raise AssertionError("budget-exceeded document must not be upserted")
+
+        async def delete_chunks(self, *_args: object, **_kwargs: object) -> VectorWriteResult:
+            return VectorWriteResult.ok(1)
+
+    async def diagnostic_payload(client: TestClient) -> dict[str, object]:
+        async with AsyncSession(client.app.state.container.engine) as session:
+            row = (
+                await session.execute(
+                    select(MemoryOutboxRow).where(
+                        MemoryOutboxRow.event_type == "vector.upsert_chunk"
+                    )
+                )
+            ).scalar_one()
+            return {
+                "last_safe_error": row.last_safe_error,
+                "last_safe_diagnostic_code": row.last_safe_diagnostic_code,
+                "payload_json": row.payload_json,
+            }
+
+    with make_client_with_settings(
+        tmp_path,
+        max_embedding_tokens_per_document=1,
+    ) as client:
+        created = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_hackinterview",
+                "profile_id": "profile_default",
+                "title": "Budget diagnostics",
+                "text": "BUDGET_DIAGNOSTIC_RAW_TEXT must not appear in worker diagnostics.",
+                "source_type": "document",
+                "source_external_id": "budget-diagnostics-doc",
+                "classification": "internal",
+            },
+            headers=auth_headers(),
+        )
+        object.__setattr__(client.app.state.container, "vector_index", HealthyVectorAdapter())
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=1))
+        diagnostic = asyncio.run(diagnostic_payload(client))
+
+    assert created.status_code == 201
+    assert processed == 1
+    assert diagnostic["last_safe_error"] == "OutboxProjectionError"
+    assert diagnostic["last_safe_diagnostic_code"] == "embeddings.document_budget_exceeded"
+    assert "BUDGET_DIAGNOSTIC_RAW_TEXT" not in str(diagnostic)
 
 
 def test_stale_graph_upsert_event_is_skipped_after_fact_update(tmp_path: Path) -> None:
@@ -410,13 +716,13 @@ def test_degraded_graph_projection_job_retries_without_losing_fact(tmp_path: Pat
         async def delete_fact(self, _fact_id: str) -> VectorWriteResult:
             return VectorWriteResult.degraded("graph.unavailable", retryable=True)
 
-    async def row_state(client: TestClient) -> tuple[str, int, str | None]:
+    async def row_state(client: TestClient) -> tuple[str, int, str | None, str | None]:
         engine = client.app.state.container.engine
         async with AsyncSession(engine) as session:
             row = (
                 await session.execute(select(MemoryOutboxRow).order_by(MemoryOutboxRow.id))
             ).scalar_one()
-            return row.status, row.attempt_count, row.last_safe_error
+            return row.status, row.attempt_count, row.last_safe_error, row.last_safe_diagnostic_code
 
     with make_client(tmp_path) as client:
         created = client.post(
@@ -426,14 +732,15 @@ def test_degraded_graph_projection_job_retries_without_losing_fact(tmp_path: Pat
         )
         object.__setattr__(client.app.state.container, "graph_index", DegradedGraphAdapter())
         processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
-        status, attempt_count, last_safe_error = asyncio.run(row_state(client))
+        status, attempt_count, last_safe_error, diagnostic_code = asyncio.run(row_state(client))
         fact = client.get(f"/v1/facts/{created.json()['data']['id']}", headers=auth_headers())
 
     assert created.status_code == 201
     assert processed == 1
     assert status == "retry_pending"
     assert attempt_count == 1
-    assert last_safe_error == "RuntimeError"
+    assert last_safe_error == "OutboxProjectionError"
+    assert diagnostic_code == "graph.unavailable"
     assert fact.json()["data"]["text"] == "GRAPH_DEGRADED_FACT_MARKER remains canonical."
 
 
@@ -441,10 +748,11 @@ def test_worker_safe_error_omits_raw_exception_text() -> None:
     error = RuntimeError("RAW_PROVIDER_SECRET_MARKER should not be persisted")
 
     assert _safe_error(error) == "RuntimeError"
+    assert _safe_diagnostic_code(error) == "RuntimeError"
 
 
 def test_outbox_poison_job_becomes_dead_with_safe_error(tmp_path: Path) -> None:
-    async def run() -> tuple[str, int, str | None]:
+    async def run() -> tuple[str, int, str | None, str | None]:
         container = build_container(
             Settings(
                 deploy_profile=DeployProfile.TEST,
@@ -485,13 +793,14 @@ def test_outbox_poison_job_becomes_dead_with_safe_error(tmp_path: Path) -> None:
             row = (
                 await session.execute(select(MemoryOutboxRow).where(MemoryOutboxRow.id == 1))
             ).scalar_one()
-            return row.status, row.attempt_count, row.last_safe_error
+            return row.status, row.attempt_count, row.last_safe_error, row.last_safe_diagnostic_code
 
-    status, attempt_count, last_safe_error = asyncio.run(run())
+    status, attempt_count, last_safe_error, diagnostic_code = asyncio.run(run())
 
     assert status == "dead"
     assert attempt_count == 5
     assert last_safe_error == "ValueError"
+    assert diagnostic_code == "ValueError"
     assert "RAW_POISON_PAYLOAD_MARKER" not in str(last_safe_error)
 
 
@@ -499,7 +808,122 @@ def test_small_golden_eval_passes() -> None:
     result = run_small_golden()
 
     assert result["ok"] is True
+    assert result["status"] == "ok"
     assert result["checks"]["memory_evidence_guard"] is True
+    assert result["metrics"]["recall_at_5"] >= 0.85
+    assert result["metrics"]["precision_at_5"] >= 0.70
+    assert result["metrics"]["deleted_memory_leak_count"] == 0
+    assert result["metrics"]["cross_profile_leak_count"] == 0
+    assert result["metrics"]["prompt_injection_promoted_count"] == 0
+    assert result["metrics"]["fallback_success_rate"] == 1.0
+    assert result["failures"] == []
+    assert "EVAL_BETA_SECRET" not in str(result)
+
+
+def test_small_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
+    report = tmp_path / "small-golden-report.json"
+    result = run_small_golden(report_out=report)
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert payload["suite"] == "small-golden"
+    assert payload["metrics"]["deleted_memory_leak_count"] == 0
+    assert payload["failures"] == []
+    assert "EVAL_FACT_CANONICAL" not in report_text
+    assert "EVAL_BETA_SECRET" not in report_text
+    assert "Ignore previous instructions" not in report_text
+
+
+def test_small_golden_eval_seed_preserves_scope_invariants(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'eval-invariants.db'}"
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", database_url)
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
+    monkeypatch.setenv("MEMORY_QDRANT_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_GRAPHITI_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_EMBEDDINGS_ENABLED", "false")
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=database_url,
+            auto_create_schema=True,
+            service_token="test-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+
+    with TestClient(app) as client:
+        result = _execute_small_golden(client, auth_headers())
+
+    invariants = asyncio.run(invariant_check(include_projections=True))
+
+    assert result["ok"] is True
+    assert invariants["status"] == "ok"
+    assert "profile_scoped_rows_match_profile" not in str(invariants.get("failed", []))
+
+
+def test_small_golden_eval_seed_is_repeatable_without_active_duplicates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'eval-repeatable.db'}"
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", database_url)
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
+    monkeypatch.setenv("MEMORY_QDRANT_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_GRAPHITI_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_EMBEDDINGS_ENABLED", "false")
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=database_url,
+            auto_create_schema=True,
+            service_token="test-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+
+    async def matching_fact_ids(text: str, status: str) -> list[str]:
+        async with AsyncSession(app.state.container.engine) as session:
+            return list(
+                (
+                    await session.execute(
+                        select(MemoryFactRow.id).where(
+                            MemoryFactRow.text == text,
+                            MemoryFactRow.status == status,
+                        )
+                    )
+                ).scalars()
+            )
+
+    with TestClient(app) as client:
+        first = _execute_small_golden(client, auth_headers())
+        second = _execute_small_golden(client, auth_headers())
+        active_updated = asyncio.run(
+            matching_fact_ids(
+                "EVAL_FACT_UPDATED_NEW: use Qdrant for document recall.",
+                "active",
+            )
+        )
+        active_deleted = asyncio.run(
+            matching_fact_ids(
+                "EVAL_FACT_DELETED: this deleted fact must not render.",
+                "active",
+            )
+        )
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert len(active_updated) == 1
+    assert active_deleted == []
 
 
 def test_db_upgrade_and_seed_defaults_cli_functions(tmp_path: Path, monkeypatch) -> None:
@@ -521,11 +945,139 @@ def test_readiness_doctor_entrypoint_is_safe(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
-    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'doctor.db'}")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}")
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
     asyncio.run(upgrade())
 
     result = asyncio.run(run_doctor())
 
     assert result["status"] == "ok"
+    assert _doctor_check(result, "postgres")["status"] == "ok"
+    assert _doctor_check(result, "migrations")["status"] == "ok"
+    assert _doctor_check(result, "outbox")["dead"] == 0
+    assert _doctor_check(result, "qdrant")["status"] == "disabled"
+    assert _doctor_check(result, "graphiti")["status"] == "disabled"
     assert "RAW_" not in str(result)
+
+
+def test_readiness_doctor_degrades_on_dead_outbox_without_payload_leak(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
+    with make_client(tmp_path) as client:
+        asyncio.run(_insert_dead_outbox(client))
+
+    result = asyncio.run(run_doctor())
+
+    assert result["status"] == "degraded"
+    assert _doctor_check(result, "outbox")["status"] == "degraded"
+    assert _doctor_check(result, "outbox")["dead"] == 1
+    assert "RAW_DOCTOR_PAYLOAD" not in str(result)
+
+
+def test_active_context_gate_blocks_until_manual_checks_are_acknowledged(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
+    asyncio.run(upgrade())
+    asyncio.run(seed_defaults())
+
+    result = asyncio.run(run_doctor(gate="active_context"))
+
+    assert result["status"] == "blocked"
+    assert result["gate"] == "active_context"
+    assert _doctor_check(result, "doctor")["status"] == "ok"
+    assert _doctor_check(result, "default_scope")["status"] == "ok"
+    assert _doctor_check(result, "outbox_dead_count")["dead"] == 0
+    assert _doctor_check(result, "invariant_check")["status"] == "ok"
+    assert _doctor_check(result, "golden_eval")["status"] == "manual_required"
+    assert "RAW_" not in str(result)
+
+
+def test_active_context_gate_rejects_unknown_manual_acknowledgement(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
+    asyncio.run(upgrade())
+    asyncio.run(seed_defaults())
+
+    result = asyncio.run(
+        run_doctor(
+            gate="active_context",
+            acknowledged_checks={"not-a-real-check"},
+        )
+    )
+
+    assert result["status"] == "failed"
+    assert result["gate"] == "active_context"
+    assert _doctor_check(result, "manual_acknowledgements")["status"] == "failed"
+    assert _doctor_check(result, "manual_acknowledgements")["unknown"] == [
+        "not-a-real-check"
+    ]
+    assert "RAW_" not in str(result)
+
+
+def test_active_context_gate_passes_after_manual_acknowledgements(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "test-token")
+    asyncio.run(upgrade())
+    asyncio.run(seed_defaults())
+
+    result = asyncio.run(
+        run_doctor(
+            gate="active_context",
+            acknowledged_checks=set(ACTIVE_CONTEXT_MANUAL_CHECK_NAMES),
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["manual_acknowledgements"] == sorted(ACTIVE_CONTEXT_MANUAL_CHECK_NAMES)
+    assert _doctor_check(result, "hackinterview_fallback_canary")["status"] == "ok"
+    assert _doctor_check(result, "kill_switches")["status"] == "ok"
+    assert "RAW_" not in str(result)
+
+
+async def _insert_dead_outbox(client: TestClient) -> None:
+    now = client.app.state.container.clock.now()
+    async with AsyncSession(client.app.state.container.engine) as session:
+        session.add(
+            MemoryOutboxRow(
+                event_type="vector.upsert_chunk",
+                aggregate_type="chunk",
+                aggregate_id="chunk_dead",
+                aggregate_version=None,
+                workload_class="projection",
+                fairness_key="chunk:chunk_dead",
+                payload_json={"text": "RAW_DOCTOR_PAYLOAD must not leak"},
+                status="dead",
+                attempt_count=5,
+                next_attempt_at=now,
+                last_safe_error="ValueError",
+                last_safe_diagnostic_code="ValueError",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await session.commit()
+
+
+def _doctor_check(result: dict[str, object], name: str) -> dict[str, object]:
+    checks = result["checks"]
+    assert isinstance(checks, list)
+    for check in checks:
+        if check["name"] == name:
+            return check
+    raise AssertionError(f"Missing doctor check {name}")

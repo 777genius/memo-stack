@@ -113,6 +113,13 @@ Targeted tests:
 .venv/bin/pytest tests/e2e/test_memory_mcp_e2e.py -q
 ```
 
+Live stdio smoke against a running Memory Platform server:
+
+```bash
+make memory-stack-up-hackinterview
+make memory-mcp-smoke
+```
+
 Benchmark:
 
 ```bash

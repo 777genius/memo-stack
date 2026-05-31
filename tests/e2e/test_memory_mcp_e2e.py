@@ -53,7 +53,13 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
             "memory_update_fact",
             "memory_forget_fact",
             "memory_ingest_document",
+            "memory_suggest_fact",
+            "memory_list_suggestions",
+            "memory_approve_suggestion",
+            "memory_reject_suggestion",
+            "memory_expire_suggestion",
         }.issubset(tool_names)
+        assert "memory_forget_by_query" not in tool_names
 
         status = await _call(session, "memory_status", {})
         assert status["ok"] is True
@@ -136,6 +142,48 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         )
         assert search_doc["ok"] is True
         assert marker in _dump(search_doc)
+
+        suggested_text = f"{marker}: Pending MCP suggestions must stay out of context."
+        suggested = await _call(
+            session,
+            "memory_suggest_fact",
+            {
+                "candidate_text": suggested_text,
+                "kind": "constraint",
+                "source_type": "manual",
+                "source_id": f"{marker}:suggestion-source",
+            },
+        )
+        assert suggested["ok"] is True
+        assert suggested["data"]["status"] == "pending"
+
+        suggestions = await _call(session, "memory_list_suggestions", {"status": "pending"})
+        assert suggestions["ok"] is True
+        assert suggested_text in _dump(suggestions)
+
+        search_suggested = await _call(
+            session,
+            "memory_search",
+            {"query": suggested_text, "max_facts": 5, "max_chunks": 0},
+        )
+        assert suggested_text not in _dump(search_suggested)
+
+        approved_suggestion = await _call(
+            session,
+            "memory_approve_suggestion",
+            {
+                "suggestion_id": suggested["data"]["id"],
+                "reason": "E2E reviewed suggestion",
+            },
+        )
+        assert approved_suggestion["ok"] is True
+        assert approved_suggestion["data"]["fact"]["version"] == 1
+        search_approved_suggestion = await _call(
+            session,
+            "memory_search",
+            {"query": suggested_text, "max_facts": 5, "max_chunks": 0},
+        )
+        assert suggested_text in _dump(search_approved_suggestion)
 
         forgotten = await _call(session, "memory_forget_fact", {"fact_id": fact_id})
         assert forgotten["ok"] is True

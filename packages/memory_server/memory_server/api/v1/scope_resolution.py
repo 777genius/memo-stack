@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from memory_core.application import EnsureScopeCommand
 from memory_core.domain.entities import ProfileId, SpaceId, ThreadId
 from memory_core.domain.errors import MemoryValidationError
+from memory_core.ports.auth import MemoryScope, ReadScope
 
 from memory_server.composition import Container
 
@@ -16,6 +17,20 @@ class SingleResolvedScope:
     space_id: SpaceId
     profile_id: ProfileId
     thread_id: ThreadId | None
+    tenant_id: str | None = None
+    workspace_id: str | None = None
+
+    def __post_init__(self) -> None:
+        self.to_memory_scope()
+
+    def to_memory_scope(self) -> MemoryScope:
+        return MemoryScope(
+            space_id=str(self.space_id),
+            profile_id=str(self.profile_id),
+            thread_id=str(self.thread_id) if self.thread_id else None,
+            tenant_id=self.tenant_id,
+            workspace_id=self.workspace_id,
+        )
 
 
 @dataclass(frozen=True)
@@ -23,6 +38,20 @@ class ContextResolvedScope:
     space_id: SpaceId
     profile_ids: tuple[ProfileId, ...]
     thread_id: ThreadId | None
+    tenant_id: str | None = None
+    workspace_id: str | None = None
+
+    def __post_init__(self) -> None:
+        self.to_read_scope()
+
+    def to_read_scope(self) -> ReadScope:
+        return ReadScope(
+            space_id=str(self.space_id),
+            profile_ids=tuple(str(profile_id) for profile_id in self.profile_ids),
+            thread_id=str(self.thread_id) if self.thread_id else None,
+            tenant_id=self.tenant_id,
+            workspace_id=self.workspace_id,
+        )
 
 
 async def resolve_single_scope(

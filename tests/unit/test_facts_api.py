@@ -79,6 +79,17 @@ def test_remember_fact_requires_auth(tmp_path: Path) -> None:
     assert response.status_code == 401
 
 
+def test_source_preview_is_bounded_at_api_boundary(tmp_path: Path) -> None:
+    payload = fact_payload()
+    payload["source_refs"][0]["quote_preview"] = "x" * 241
+
+    with make_client(tmp_path) as client:
+        response = client.post("/v1/facts", json=payload, headers=auth_headers())
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "memory.validation"
+
+
 def test_remember_fact_idempotency_and_outbox(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         headers = auth_headers({"Idempotency-Key": "fact-1"})

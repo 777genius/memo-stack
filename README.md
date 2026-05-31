@@ -102,37 +102,64 @@ Operational pieces:
 
 ## Local Run
 
-```bash
-docker compose up -d memory_postgres memory_qdrant memory_neo4j
-python -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
-MEMORY_AUTO_CREATE_SCHEMA=true MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.main
-```
-
-For local defaults, copy `.env.example` to `.env` and adjust tokens/provider flags.
-If you enable vector search, install optional provider extras and configure a real
-embedding provider:
+Install once:
 
 ```bash
-.venv/bin/python -m pip install -e '.[dev,qdrant,openai]'
-MEMORY_QDRANT_ENABLED=true
-MEMORY_EMBEDDINGS_ENABLED=true
-MEMORY_EMBEDDINGS_PROVIDER=openai
-MEMORY_OPENAI_API_KEY=...
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev,qdrant,openai,graphiti,mcp]'
 ```
 
-Graphiti is also optional and remains disabled unless `MEMORY_GRAPHITI_ENABLED=true`
-and the `graphiti` extra plus Neo4j credentials are configured.
+The Docker compose file has three practical profiles:
+
+```text
+lite           Postgres + Memory Server, provider adapters disabled.
+hackinterview  Same runtime shape as lite, named for app integration scripts.
+full           Postgres + Qdrant + Neo4j + Memory Server + worker, with OpenAI embeddings and Graphiti enabled.
+```
+
+Recommended local MVP for HackInterview:
+
+```bash
+make memory-stack-up-hackinterview
+make memory-smoke
+make memory-mcp-smoke
+```
+
+Full provider mode needs OpenAI for embeddings and Graphiti. Do not paste the
+key into commands that will be saved in shell history. Read it silently or use
+an ignored local env file:
+
+```bash
+read -s OPENAI_API_KEY
+export OPENAI_API_KEY
+export MEMORY_OPENAI_API_KEY="$OPENAI_API_KEY"
+make memory-stack-up-full
+make memory-stack-smoke-full
+```
+
+`MEMORY_OPENAI_API_KEY` is used by the Memory Platform embeddings adapter.
+`OPENAI_API_KEY` is also required because Graphiti reads the standard OpenAI
+environment variable internally.
+
+For a fully isolated paid canary, use a fresh Compose project and temporary
+Docker volumes. The script starts isolated Postgres, Qdrant and Neo4j, runs
+migrations, seeds defaults, starts the server, verifies Graphiti/Qdrant/OpenAI
+behavior, then tears everything down:
+
+```bash
+make memory-clean-full-smoke
+```
+
+For local defaults, copy `.env.example` to `.env` and adjust non-secret provider
+flags. Secrets should stay in your shell, `.env.local`, `.env.full`, or another
+ignored file. Cognee is available as an optional adapter boundary, but the MVP
+RAG path is Qdrant directly and the MVP temporal fact path is Graphiti directly.
 
 Common local targets are available in `Makefile`, for example `make memory-lint`,
 `make memory-test-unit`, `make memory-eval`, `make memory-db-upgrade`,
-`make memory-seed-defaults`, `make memory-doctor`, `make memory-up` and
-`make memory-server`. To start the full local Docker stack, including the
-FastAPI server, use:
-
-```bash
-make memory-stack-up
-```
+`make memory-seed-defaults`, `make memory-doctor`, `make memory-up`,
+`make memory-server`, `make memory-stack-up-lite`, `make memory-stack-up-full`,
+`make memory-clean-full-smoke` and `make memory-mcp-smoke`.
 
 Policy modes:
 

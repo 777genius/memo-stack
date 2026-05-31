@@ -2,7 +2,7 @@ import json
 
 import httpx
 import pytest
-from memory_sdk import MemoryPlatformClient, MemoryPlatformError
+from memory_sdk import MemoryPlatformClient, MemoryPlatformError, MemoryScope, ReadScope
 
 
 def test_sdk_sends_auth_and_params() -> None:
@@ -29,7 +29,7 @@ def test_sdk_sends_auth_and_params() -> None:
     assert seen["authorization"] == "Bearer test-token"
     assert (
         seen["url"]
-        == "http://memory.test/v1/suggestions?space_id=space_hackinterview&profile_id=profile_default&status=pending"
+        == "http://memory.test/v1/suggestions?space_id=space_hackinterview&profile_id=profile_default&limit=100&status=pending"
     )
 
 
@@ -68,6 +68,82 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
         "GET http://memory.test/v1/diagnostics/outbox?limit=10&cursor=outbox_cursor",
         "GET http://memory.test/v1/diagnostics/profile/profile_1",
     ]
+
+
+def test_sdk_exposes_capability_diagnostics_facade() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://memory.test/v1/capabilities"
+        return httpx.Response(
+            200,
+            json={
+                "policy_mode": "active_context",
+                "adapters": {"qdrant": {"enabled": False}},
+                "enabled_adapters": [],
+                "capabilities": [
+                    {
+                        "adapter_name": "qdrant",
+                        "capability": "vector_recall",
+                        "enabled": False,
+                        "healthy": False,
+                        "status": "disabled",
+                    }
+                ],
+            },
+        )
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.capability_diagnostics() == {
+        "capabilities": [
+            {
+                "adapter_name": "qdrant",
+                "capability": "vector_recall",
+                "enabled": False,
+                "healthy": False,
+                "status": "disabled",
+            }
+        ],
+        "adapters": {"qdrant": {"enabled": False}},
+        "enabled_adapters": [],
+        "policy_mode": "active_context",
+    }
+
+
+def test_sdk_facade_accepts_additive_response_fields() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "rendered_text": "Known memory evidence.",
+                    "items": [],
+                    "new_optional_server_field": {"safe": True},
+                },
+                "meta": {
+                    "request_id": "ctx_1",
+                    "new_optional_meta_field": "ignored-by-callers",
+                },
+            },
+        )
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.build_context(
+        space_id="space_hackinterview",
+        profile_ids=["profile_default"],
+        query="additive fields",
+    )
+
+    assert response["data"]["rendered_text"] == "Known memory evidence."
+    assert response["data"]["new_optional_server_field"] == {"safe": True}
+    assert response["meta"]["request_id"] == "ctx_1"
 
 
 def test_sdk_process_document_sends_idempotency_key() -> None:
@@ -143,6 +219,46 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
     }
 
 
+def test_sdk_suggestions_support_external_scope() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, str(request.url), body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.create_suggestion(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        candidate_text="Pending external scope suggestion.",
+        kind="note",
+        safe_reason="sdk_test",
+        source_refs=[{"source_type": "manual", "source_id": "sdk-suggestion"}],
+    )
+    client.list_suggestions(
+        space_slug="hackinterview",
+        profile_external_ref="default",
+        status="pending",
+        limit=25,
+    )
+
+    assert seen[0][0] == "POST"
+    assert seen[0][1] == "http://memory.test/v1/suggestions"
+    assert seen[0][2]["space_slug"] == "hackinterview"
+    assert seen[0][2]["profile_external_ref"] == "default"
+    assert "space_id" not in seen[0][2]
+    assert (
+        seen[1][1]
+        == "http://memory.test/v1/suggestions?space_slug=hackinterview&profile_external_ref=default&limit=25&status=pending"
+    )
+
+
 def test_sdk_context_search_and_documents_support_external_scope() -> None:
     seen: list[tuple[str, str, dict[str, object]]] = []
 
@@ -195,6 +311,64 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     assert seen[1][2]["max_chunks"] == 6
     assert seen[2][2]["profile_external_refs"] == ["default", "candidate"]
     assert "profile_ids" not in seen[2][2]
+
+
+def test_sdk_supports_typed_scope_dtos() -> None:
+    seen: list[tuple[str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.url.path, body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.remember_fact(
+        scope=MemoryScope(
+            space_slug="hackinterview",
+            profile_external_ref="default",
+            thread_external_ref="session-1",
+        ),
+        text="Typed scope fact.",
+        kind="note",
+        source_refs=[{"source_type": "manual", "source_id": "sdk-scope"}],
+    )
+    client.search(
+        read_scope=ReadScope(
+            space_slug="hackinterview",
+            profile_external_refs=("default", "candidate"),
+        ),
+        query="typed read scope",
+    )
+
+    assert seen[0] == (
+        "/v1/facts",
+        {
+            "space_slug": "hackinterview",
+            "profile_external_ref": "default",
+            "thread_external_ref": "session-1",
+            "text": "Typed scope fact.",
+            "kind": "note",
+            "source_refs": [{"source_type": "manual", "source_id": "sdk-scope"}],
+            "classification": "internal",
+        },
+    )
+    assert seen[1][0] == "/v1/search"
+    assert seen[1][1]["profile_external_refs"] == ["default", "candidate"]
+    assert "profile_external_ref" not in seen[1][1]
+
+
+def test_sdk_read_scope_rejects_ambiguous_thread_multi_profile() -> None:
+    with pytest.raises(ValueError, match="single profile"):
+        ReadScope(
+            space_slug="hackinterview",
+            profile_external_refs=("default", "candidate"),
+            thread_external_ref="session-1",
+        ).to_payload()
 
 
 def test_sdk_remember_fact_sends_classification() -> None:

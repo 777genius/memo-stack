@@ -12,6 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path
 from memory_core.application import (
     BuildContextQuery,
+    ConsistencyMode,
     DeleteThreadMemoryCommand,
     EnsureScopeCommand,
     GetSessionStatusQuery,
@@ -145,6 +146,7 @@ async def legacy_context(
                 profile_ids=(scope.profile_id,),
                 thread_id=scope.thread_id,
                 query=query_text,
+                consistency_mode=ConsistencyMode.BEST_EFFORT,
                 token_budget=max_chars // 4,
                 max_rendered_chars=max_chars,
                 max_facts=20,

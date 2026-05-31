@@ -150,6 +150,22 @@ class IngestDocumentUseCase:
                         payload={"chunk_id": upsert.chunk_id},
                     )
                 )
+            if stored_chunks and _can_project_document_to_external_memory(
+                saved_document.classification
+            ):
+                await uow.outbox.enqueue(
+                    OutboxEvent(
+                        event_type="cognee.ingest_document",
+                        aggregate_type="document",
+                        aggregate_id=str(saved_document.id),
+                        payload={
+                            "document_id": str(saved_document.id),
+                            "chunk_ids": [str(chunk.id) for chunk in stored_chunks],
+                            "space_id": str(saved_document.space_id),
+                            "profile_id": str(saved_document.profile_id),
+                        },
+                    )
+                )
 
             await uow.idempotency.save(
                 IdempotencyRecord(
@@ -168,3 +184,7 @@ class IngestDocumentUseCase:
             duplicate_chunks=duplicate_chunks,
             indexing_status="pending",
         )
+
+
+def _can_project_document_to_external_memory(classification: str) -> bool:
+    return classification in {"public", "internal"}

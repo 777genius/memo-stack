@@ -36,6 +36,7 @@ class ContextPacker:
         char_budget = max(len("\n".join(_HEADER_LINES)), max_rendered_chars)
         selected: list[ContextItem] = []
         selected_chunks_by_source: dict[str, int] = {}
+        dropped_by_instruction_flag = 0
         dropped_by_source_cap = 0
         dropped_by_budget = 0
         dropped_by_char_cap = 0
@@ -43,6 +44,9 @@ class ContextPacker:
         lines = list(_HEADER_LINES)
         current_profile_id: str | None = None
         for item in sorted(items, key=lambda value: value.score, reverse=True):
+            if item.is_instruction:
+                dropped_by_instruction_flag += 1
+                continue
             if item.item_type == "chunk":
                 source_key = _source_key(item)
                 source_count = selected_chunks_by_source.get(source_key, 0)
@@ -88,6 +92,7 @@ class ContextPacker:
                 diagnostics={
                     "items_considered": len(items),
                     "items_used": len(selected),
+                    "dropped_by_instruction_flag": dropped_by_instruction_flag,
                     "dropped_by_budget": dropped_by_budget,
                     "dropped_by_source_cap": dropped_by_source_cap,
                     "dropped_by_char_cap": dropped_by_char_cap,
@@ -106,7 +111,10 @@ def _one_line(text: str) -> str:
 
 def _item_line(index: int, item: ContextItem) -> str:
     safe_text = _one_line(item.text)
-    return f"[{index}] {item.item_type}:{item.item_id} - {safe_text}"
+    return (
+        f'[{index}] {item.item_type}:{item.item_id} '
+        f'source={_source_label(item)} text="{_quote_text(safe_text)}"'
+    )
 
 
 def _profile_id(item: ContextItem) -> str:
@@ -121,3 +129,16 @@ def _source_key(item: ContextItem) -> str:
         ref = item.source_refs[0]
         return f"{profile_id}:{ref.source_type}:{ref.source_id}"
     return f"{profile_id}:{item.item_type}:{item.item_id}"
+
+
+def _source_label(item: ContextItem) -> str:
+    if not item.source_refs:
+        return "unknown:unknown"
+    ref = item.source_refs[0]
+    if ref.chunk_id:
+        return f"{ref.source_type}:{ref.source_id}#{ref.chunk_id}"
+    return f"{ref.source_type}:{ref.source_id}"
+
+
+def _quote_text(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')

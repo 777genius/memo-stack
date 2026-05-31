@@ -14,7 +14,23 @@ from memory_core.ports.adapters import (
     AdapterCapabilities,
     GraphCandidate,
     GraphSearchResult,
+    PortDiagnostic,
     VectorWriteResult,
+)
+from memory_core.ports.capabilities import (
+    CapabilityDescriptor,
+    CapabilityDiagnostic,
+    CapabilityMode,
+    CapabilityRecallCandidate,
+    CapabilityRecallQuery,
+    CapabilityRecallResult,
+    CapabilityStatus,
+    EngineHealthSnapshot,
+    FactProjectionWrite,
+    MemoryCapability,
+    ProjectionForgetRequest,
+    ProjectionForgetResult,
+    ProjectionWriteResult,
 )
 
 
@@ -55,15 +71,63 @@ class GraphitiGraphMemoryAdapter:
                 supports_temporal_queries=True,
                 degraded_reason="graphiti_unavailable" if configured else "disabled",
             )
+        supports_upsert = getattr(client, "add_episode", None) is not None
+        supports_delete = _supports_delete_episode(client)
+        supports_search = getattr(client, "search", None) is not None
+        if not supports_search:
+            return AdapterCapabilities(
+                name="graphiti",
+                enabled=True,
+                healthy=False,
+                supports_upsert=supports_upsert,
+                supports_delete=supports_delete,
+                supports_search=False,
+                supports_filters=False,
+                supports_temporal_queries=True,
+                degraded_reason="graphiti.capability_mismatch",
+            )
         return AdapterCapabilities(
             name="graphiti",
             enabled=True,
             healthy=True,
-            supports_upsert=True,
-            supports_delete=True,
-            supports_search=True,
+            supports_upsert=supports_upsert,
+            supports_delete=supports_delete,
+            supports_search=supports_search,
             supports_filters=True,
             supports_temporal_queries=True,
+        )
+
+    async def capability_descriptors(self) -> tuple[CapabilityDescriptor, ...]:
+        capabilities = await self.capabilities()
+        return (
+            _capability_descriptor(
+                capabilities,
+                MemoryCapability.TEMPORAL_FACT_GRAPH,
+                supported=capabilities.supports_search and capabilities.supports_temporal_queries,
+                supports_update=capabilities.supports_upsert,
+                supports_delete=capabilities.supports_delete,
+            ),
+            _capability_descriptor(
+                capabilities,
+                MemoryCapability.FACT_PROJECTION,
+                supported=capabilities.supports_upsert,
+                supports_update=capabilities.supports_upsert,
+            ),
+            _capability_descriptor(
+                capabilities,
+                MemoryCapability.PROJECTION_FORGET,
+                supported=capabilities.supports_delete,
+                supports_delete=capabilities.supports_delete,
+            ),
+        )
+
+    async def health(self) -> EngineHealthSnapshot:
+        descriptors = await self.capability_descriptors()
+        status = _overall_status(descriptors)
+        return EngineHealthSnapshot(
+            adapter_name="graphiti",
+            status=status,
+            capabilities=descriptors,
         )
 
     async def upsert_fact(
@@ -82,7 +146,6 @@ class GraphitiGraphMemoryAdapter:
             await _remove_existing_episode_if_supported(client, fact_id)
             kwargs = {
                 "name": f"fact:{fact_id}",
-                "uuid": fact_id,
                 "episode_body": text,
                 "group_id": self._group_id(
                     metadata.get("space_id", ""),
@@ -99,6 +162,19 @@ class GraphitiGraphMemoryAdapter:
         except Exception:
             return VectorWriteResult.degraded("graph.upsert_failed", retryable=True)
 
+    async def upsert_fact_projection(self, command: FactProjectionWrite) -> ProjectionWriteResult:
+        result = await self.upsert_fact(
+            command.fact_id,
+            command.text,
+            {
+                "space_id": command.space_id,
+                "profile_id": command.profile_id,
+                **command.metadata,
+                **({"updated_at": command.valid_at.isoformat()} if command.valid_at else {}),
+            },
+        )
+        return _projection_write_result(result, affected_ids=(command.fact_id,))
+
     async def delete_fact(self, fact_id: str) -> VectorWriteResult:
         try:
             client = await self._client_or_none()
@@ -110,6 +186,23 @@ class GraphitiGraphMemoryAdapter:
             return VectorWriteResult.ok(1)
         except Exception:
             return VectorWriteResult.degraded("graph.delete_failed", retryable=True)
+
+    async def forget_projection(self, command: ProjectionForgetRequest) -> ProjectionForgetResult:
+        forgotten: list[str] = []
+        diagnostics: list[CapabilityDiagnostic] = []
+        status = CapabilityStatus.OK
+        for canonical_id in command.canonical_ids:
+            result = await self.delete_fact(canonical_id)
+            if result.status.value != "ok":
+                status = CapabilityStatus.DEGRADED
+                diagnostics.extend(_diagnostics(result.diagnostics))
+            else:
+                forgotten.append(canonical_id)
+        return ProjectionForgetResult(
+            status=status,
+            forgotten_ids=tuple(forgotten),
+            diagnostics=tuple(diagnostics),
+        )
 
     async def search(
         self,
@@ -139,7 +232,7 @@ class GraphitiGraphMemoryAdapter:
                     limit=limit,
                 )
                 for result in results:
-                    fact_id = _canonical_fact_id(result)
+                    fact_id = await _canonical_fact_id(client, result)
                     if fact_id:
                         candidates.append(
                             GraphCandidate(
@@ -153,6 +246,34 @@ class GraphitiGraphMemoryAdapter:
             return GraphSearchResult.ok(candidates[:limit])
         except Exception:
             return GraphSearchResult.degraded("graph.search_failed", retryable=True)
+
+    async def search_facts(self, query: CapabilityRecallQuery) -> CapabilityRecallResult:
+        result = await self.search(
+            space_id=query.scope.space_id,
+            profile_ids=query.scope.profile_ids,
+            query=query.query,
+            limit=query.limit,
+        )
+        status = CapabilityStatus.OK if result.status.value == "ok" else CapabilityStatus.DEGRADED
+        candidates = tuple(
+            CapabilityRecallCandidate(
+                item_id=fact_id,
+                item_type="fact",
+                text=fact_id,
+                score=candidate.score,
+                source_refs=(),
+                capability=MemoryCapability.TEMPORAL_FACT_GRAPH,
+                adapter_name="graphiti",
+                metadata={"hydration_required": "true"},
+            )
+            for candidate in result.items
+            for fact_id in candidate.source_fact_ids
+        )
+        return CapabilityRecallResult(
+            status=status,
+            items=candidates,
+            diagnostics=tuple(_diagnostics(result.diagnostics)),
+        )
 
     def _group_id(self, space_id: str, profile_id: str) -> str:
         return "__".join(
@@ -196,7 +317,7 @@ class GraphitiGraphMemoryAdapter:
         self._indices_built = True
 
 
-def _canonical_fact_id(result: object) -> str | None:
+async def _canonical_fact_id(client: object, result: object) -> str | None:
     for attr in ("episodes", "episode_uuids"):
         value = getattr(result, attr, None)
         if isinstance(value, (list, tuple)):
@@ -204,12 +325,115 @@ def _canonical_fact_id(result: object) -> str | None:
                 fact_id = _extract_fact_id(item)
                 if fact_id:
                     return fact_id
+                if isinstance(item, str):
+                    episode_name = await _episode_name_by_uuid(client, item)
+                    fact_id = _extract_fact_id(episode_name)
+                    if fact_id:
+                        return fact_id
     for attr in ("fact_id", "source_fact_id", "uuid", "id", "name", "episode_name"):
         value = getattr(result, attr, None)
         fact_id = _extract_fact_id(value)
         if fact_id:
             return fact_id
     return None
+
+
+def _capability_descriptor(
+    capabilities: AdapterCapabilities,
+    capability: MemoryCapability,
+    *,
+    supported: bool,
+    supports_update: bool = False,
+    supports_delete: bool = False,
+) -> CapabilityDescriptor:
+    status = _capability_status(capabilities, supported=supported)
+    return CapabilityDescriptor(
+        capability=capability,
+        adapter_name="graphiti",
+        mode=(
+            CapabilityMode.DISABLED
+            if status == CapabilityStatus.DISABLED
+            else CapabilityMode.PRIMARY
+        ),
+        status=status,
+        enabled=capabilities.enabled and supported,
+        supports_scope_filter=capabilities.supports_filters,
+        supports_source_refs=False,
+        supports_update=supports_update,
+        supports_delete=supports_delete,
+        degraded_reason=_capability_degraded_reason(
+            capabilities,
+            status=status,
+            supported=supported,
+        ),
+    )
+
+
+def _capability_status(
+    capabilities: AdapterCapabilities,
+    *,
+    supported: bool,
+) -> CapabilityStatus:
+    if not capabilities.enabled:
+        return CapabilityStatus.DISABLED
+    if not capabilities.healthy:
+        return CapabilityStatus.UNAVAILABLE
+    if not supported:
+        return CapabilityStatus.DEGRADED
+    return CapabilityStatus.OK
+
+
+def _capability_degraded_reason(
+    capabilities: AdapterCapabilities,
+    *,
+    status: CapabilityStatus,
+    supported: bool,
+) -> str | None:
+    if status == CapabilityStatus.OK:
+        return None
+    if status == CapabilityStatus.DISABLED:
+        return capabilities.degraded_reason or "disabled"
+    if capabilities.degraded_reason:
+        return capabilities.degraded_reason
+    if not supported:
+        return "unsupported_by_adapter"
+    return capabilities.degraded_reason or "graphiti_unavailable"
+
+
+def _overall_status(descriptors: tuple[CapabilityDescriptor, ...]) -> CapabilityStatus:
+    statuses = {descriptor.status for descriptor in descriptors}
+    if CapabilityStatus.OK in statuses:
+        return CapabilityStatus.OK
+    if CapabilityStatus.DEGRADED in statuses:
+        return CapabilityStatus.DEGRADED
+    if CapabilityStatus.UNAVAILABLE in statuses:
+        return CapabilityStatus.UNAVAILABLE
+    return CapabilityStatus.DISABLED
+
+
+def _projection_write_result(
+    result: VectorWriteResult,
+    *,
+    affected_ids: tuple[str, ...],
+) -> ProjectionWriteResult:
+    status = CapabilityStatus.OK if result.status.value == "ok" else CapabilityStatus.DEGRADED
+    return ProjectionWriteResult(
+        status=status,
+        affected_ids=affected_ids if status == CapabilityStatus.OK else (),
+        diagnostics=tuple(_diagnostics(result.diagnostics)),
+    )
+
+
+def _diagnostics(diagnostics: tuple[PortDiagnostic, ...]) -> list[CapabilityDiagnostic]:
+    return [
+        CapabilityDiagnostic(
+            code=diagnostic.code,
+            safe_message=diagnostic.safe_message,
+            retryable=diagnostic.retryable,
+            details=diagnostic.details,
+        )
+        for diagnostic in diagnostics
+    ]
 
 
 def _extract_fact_id(value: object) -> str | None:
@@ -249,6 +473,16 @@ async def _call_delete_episode(client: Any, fact_id: str) -> None:
         return
     remove_episode = getattr(client, "remove_episode", None)
     if remove_episode is not None:
+        removed = False
+        for episode_uuid in await _episode_uuids_by_name(client, f"fact:{fact_id}"):
+            try:
+                await remove_episode(episode_uuid)
+                removed = True
+            except Exception as exc:
+                if exc.__class__.__name__ != "NodeNotFoundError":
+                    raise
+        if removed:
+            return
         try:
             await remove_episode(fact_id)
         except Exception as exc:
@@ -282,8 +516,54 @@ async def _remove_existing_episode_if_supported(client: object, fact_id: str) ->
     remove_episode = getattr(client, "remove_episode", None)
     if remove_episode is None:
         return
+    removed = False
+    for episode_uuid in await _episode_uuids_by_name(client, f"fact:{fact_id}"):
+        try:
+            await remove_episode(episode_uuid)
+            removed = True
+        except Exception as exc:
+            if exc.__class__.__name__ != "NodeNotFoundError":
+                raise
+    if removed:
+        return
     try:
         await remove_episode(fact_id)
     except Exception as exc:
         if exc.__class__.__name__ != "NodeNotFoundError":
             raise
+
+
+async def _episode_uuids_by_name(client: object, name: str) -> tuple[str, ...]:
+    driver = getattr(client, "driver", None)
+    execute_query = getattr(driver, "execute_query", None)
+    if execute_query is None:
+        return ()
+    try:
+        records, *_ = await execute_query(
+            "MATCH (e:Episodic {name: $name}) RETURN e.uuid AS uuid",
+            name=name,
+            routing_="r",
+        )
+    except Exception:
+        return ()
+    return tuple(str(record["uuid"]) for record in records if record.get("uuid"))
+
+
+async def _episode_name_by_uuid(client: object, episode_uuid: str) -> str | None:
+    driver = getattr(client, "driver", None)
+    execute_query = getattr(driver, "execute_query", None)
+    if execute_query is None:
+        return None
+    try:
+        records, *_ = await execute_query(
+            "MATCH (e:Episodic {uuid: $uuid}) RETURN e.name AS name",
+            uuid=episode_uuid,
+            routing_="r",
+        )
+    except Exception:
+        return None
+    for record in records:
+        name = record.get("name")
+        if isinstance(name, str):
+            return name
+    return None

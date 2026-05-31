@@ -22,6 +22,7 @@ from memory_core.domain.entities import (
     ThreadId,
     TrustLevel,
 )
+from memory_core.ports.capabilities import ConsistencyMode as ConsistencyMode
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,8 @@ class IngestEpisodeResult:
     stored_chunks: int
     duplicate_chunks: int
     durability: str
+    created_suggestions: int = 0
+    suggestion_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -247,6 +250,7 @@ class BuildContextQuery:
     profile_ids: tuple[ProfileId, ...]
     query: str
     thread_id: ThreadId | None = None
+    consistency_mode: ConsistencyMode = ConsistencyMode.BEST_EFFORT
     token_budget: int = 1800
     max_rendered_chars: int = 18000
     max_facts: int = 20

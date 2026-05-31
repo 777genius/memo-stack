@@ -3,6 +3,7 @@
 from memory_core.application.dto import (
     ApproveSuggestionCommand,
     BuildContextQuery,
+    ConsistencyMode,
     ContextBundle,
     ContextItem,
     CreateProfileCommand,
@@ -86,6 +87,7 @@ __all__ = [
     "BuildContextQuery",
     "BuildContextUseCase",
     "CapabilitiesResult",
+    "ConsistencyMode",
     "ContextBundle",
     "ContextItem",
     "CreateProfileCommand",

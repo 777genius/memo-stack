@@ -28,6 +28,9 @@ openai = [
 graphiti = [
   "graphiti-core>=0.29.1,<1.0.0",
 ]
+cognee = [
+  "cognee>=1.1.2,<2.0.0",
+]
 mcp = [
   "mcp>=1.27.1,<2.0.0",
 ]

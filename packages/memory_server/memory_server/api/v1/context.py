@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from memory_core.application import BuildContextQuery
+from memory_core.application import BuildContextQuery, ConsistencyMode
 from pydantic import BaseModel, Field
 
 from memory_server.api.auth import require_service_token
@@ -26,6 +27,7 @@ class ContextRequest(BaseModel):
     profile_external_refs: list[str] | None = Field(default=None, min_length=1, max_length=20)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     query: str = Field(min_length=1, max_length=12000)
+    consistency_mode: ConsistencyMode = Field(default=ConsistencyMode.BEST_EFFORT)
     token_budget: int = Field(default=1800, ge=64, le=16000)
     max_facts: int = Field(default=20, ge=0, le=100)
     max_chunks: int = Field(default=30, ge=0, le=200)
@@ -60,8 +62,20 @@ async def build_context(
     request: ContextRequest,
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
+    started = perf_counter()
+    request_id = container.ids.new_id("req")
     if not should_retrieve(container):
-        return _empty_context_response(policy_mode=container.settings.policy_mode.value)
+        response = _empty_context_response(
+            policy_mode=container.settings.policy_mode.value,
+            request_id=request_id,
+        )
+        container.runtime_metrics.record_context(
+            latency_ms=_elapsed_ms(started),
+            diagnostics=response["data"]["diagnostics"],
+            request_id=request_id,
+            use_case="build_context",
+        )
+        return response
     scope = await resolve_context_scope(
         container,
         space_id=request.space_id,
@@ -78,13 +92,15 @@ async def build_context(
             profile_ids=scope.profile_ids,
             thread_id=scope.thread_id,
             query=request.query,
+            consistency_mode=request.consistency_mode,
             token_budget=request.token_budget,
             max_rendered_chars=container.settings.max_context_chars,
             max_facts=request.max_facts,
             max_chunks=request.max_chunks,
         )
     )
-    return {
+    response = {
+        "meta": {"request_id": request_id},
         "data": {
             "bundle_id": bundle.bundle_id,
             "rendered_text": bundle.rendered_text,
@@ -92,6 +108,14 @@ async def build_context(
             "diagnostics": bundle.diagnostics,
         }
     }
+    container.runtime_metrics.record_context(
+        latency_ms=_elapsed_ms(started),
+        diagnostics=bundle.diagnostics,
+        request_id=request_id,
+        use_case="build_context",
+        scope=_trace_scope(scope),
+    )
+    return response
 
 
 @router.post("/search")
@@ -99,8 +123,11 @@ async def search_memory(
     request: ContextRequest,
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
+    started = perf_counter()
+    request_id = container.ids.new_id("req")
     if not should_retrieve(container):
-        return {
+        response = {
+            "meta": {"request_id": request_id},
             "data": {
                 "items": [],
                 "next_cursor": None,
@@ -110,6 +137,13 @@ async def search_memory(
                 },
             }
         }
+        container.runtime_metrics.record_context(
+            latency_ms=_elapsed_ms(started),
+            diagnostics=response["data"]["diagnostics"],
+            request_id=request_id,
+            use_case="search_memory",
+        )
+        return response
     scope = await resolve_context_scope(
         container,
         space_id=request.space_id,
@@ -126,23 +160,34 @@ async def search_memory(
             profile_ids=scope.profile_ids,
             thread_id=scope.thread_id,
             query=request.query,
+            consistency_mode=request.consistency_mode,
             token_budget=request.token_budget,
             max_rendered_chars=container.settings.max_context_chars,
             max_facts=request.max_facts,
             max_chunks=request.max_chunks,
         )
     )
-    return {
+    response = {
+        "meta": {"request_id": request_id},
         "data": {
             "items": [context_item_to_response(item) for item in bundle.items],
             "next_cursor": None,
             "diagnostics": bundle.diagnostics,
         }
     }
+    container.runtime_metrics.record_context(
+        latency_ms=_elapsed_ms(started),
+        diagnostics=bundle.diagnostics,
+        request_id=request_id,
+        use_case="search_memory",
+        scope=_trace_scope(scope),
+    )
+    return response
 
 
-def _empty_context_response(*, policy_mode: str) -> dict[str, Any]:
+def _empty_context_response(*, policy_mode: str, request_id: str) -> dict[str, Any]:
     return {
+        "meta": {"request_id": request_id},
         "data": {
             "bundle_id": "ctx_disabled",
             "rendered_text": "",
@@ -152,4 +197,16 @@ def _empty_context_response(*, policy_mode: str) -> dict[str, Any]:
                 "retrieval_disabled": True,
             },
         }
+    }
+
+
+def _elapsed_ms(started: float) -> float:
+    return (perf_counter() - started) * 1000
+
+
+def _trace_scope(scope) -> dict[str, object]:
+    return {
+        "space_id": str(scope.space_id),
+        "profile_ids": tuple(str(profile_id) for profile_id in scope.profile_ids),
+        "thread_id": str(scope.thread_id) if scope.thread_id else None,
     }

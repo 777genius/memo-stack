@@ -40,6 +40,19 @@ class DeleteDocumentUseCase:
                         payload={"document_id": str(document.id), "chunk_ids": list(chunk_ids)},
                     )
                 )
+                await uow.outbox.enqueue(
+                    OutboxEvent(
+                        event_type="cognee.forget_document",
+                        aggregate_type="document",
+                        aggregate_id=str(document.id),
+                        payload={
+                            "document_id": str(document.id),
+                            "chunk_ids": list(chunk_ids),
+                            "space_id": str(document.space_id),
+                            "profile_id": str(document.profile_id),
+                        },
+                    )
+                )
             for fact_id, _version in deleted_facts:
                 await uow.outbox.enqueue(
                     OutboxEvent(

@@ -24,13 +24,26 @@ async def capabilities(
         "deploy_profile": result.deploy_profile,
         "policy_mode": result.policy_mode,
         "adapters": {adapter.name: asdict(adapter) for adapter in result.adapters},
+        "capabilities": [_capability_payload(capability) for capability in result.capabilities],
         "enabled_adapters": [
             adapter.name for adapter in result.adapters if adapter.enabled and adapter.healthy
         ],
         "supports_qdrant": any(adapter.name == "qdrant" for adapter in result.adapters),
         "supports_graphiti": any(adapter.name == "graphiti" for adapter in result.adapters),
+        "supports_cognee": any(adapter.name == "cognee" for adapter in result.adapters),
         "supports_legacy_hackinterview_routes": container.settings.legacy_hackinterview_enabled,
         "supported_policy_modes": list(result.supported_policy_modes),
         "supported_embedding_models": [container.settings.embeddings_model],
         "limits": result.limits,
     }
+
+
+def _capability_payload(capability: Any) -> dict[str, Any]:
+    payload = asdict(capability)
+    status = str(payload["status"])
+    payload["capability"] = str(payload["capability"])
+    payload["mode"] = str(payload["mode"])
+    payload["status"] = status
+    payload["projection_freshness"] = str(payload["projection_freshness"])
+    payload["healthy"] = status == "ok"
+    return payload
