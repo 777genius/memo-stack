@@ -92,7 +92,7 @@ def _required_permission(request: Request) -> str | None:
         return MEMORY_PERMISSION_WRITE if method == "POST" else MEMORY_PERMISSION_READ
 
     if path == "/v1/profiles":
-        return MEMORY_PERMISSION_WRITE
+        return MEMORY_PERMISSION_WRITE if method == "POST" else MEMORY_PERMISSION_READ
 
     return MEMORY_PERMISSION_READ
 

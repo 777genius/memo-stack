@@ -359,6 +359,11 @@ def test_service_token_permissions_are_enforced(
             headers=read_headers,
         )
         read_can_get_capabilities = client.get("/v1/capabilities", headers=read_headers)
+        read_can_list_profiles = client.get(
+            "/v1/profiles",
+            params={"space_id": space["id"]},
+            headers=read_headers,
+        )
         read_cannot_write = client.post(
             "/v1/facts",
             json={
@@ -387,6 +392,11 @@ def test_service_token_permissions_are_enforced(
         write_cannot_read = client.get(
             "/v1/facts",
             params={"space_id": space["id"], "profile_id": profile["id"]},
+            headers=write_headers,
+        )
+        write_cannot_list_profiles = client.get(
+            "/v1/profiles",
+            params={"space_id": space["id"]},
             headers=write_headers,
         )
         write_cannot_delete = client.delete(f"/v1/facts/{fact['id']}", headers=write_headers)
@@ -420,11 +430,13 @@ def test_service_token_permissions_are_enforced(
 
     assert read_allowed.status_code == 200
     assert read_can_get_capabilities.status_code == 200
+    assert read_can_list_profiles.status_code == 200
     assert read_cannot_write.status_code == 403
     assert read_cannot_delete.status_code == 403
     assert read_cannot_diagnose.status_code == 403
     assert write_allowed.status_code == 201
     assert write_cannot_read.status_code == 403
+    assert write_cannot_list_profiles.status_code == 403
     assert write_cannot_delete.status_code == 403
     assert diagnostics_allowed.status_code == 200
     assert diagnostics_cannot_read.status_code == 403
