@@ -127,6 +127,14 @@ async def canonical_scope_matches(
         return False
     unique_profile_ids = tuple(dict.fromkeys(profile_ids))
     async with AsyncSession(container.engine) as session:
+        space_exists = (
+            await session.execute(
+                select(MemorySpaceRow.id).where(
+                    MemorySpaceRow.id == space_id,
+                    MemorySpaceRow.status == "active",
+                )
+            )
+        ).scalar_one_or_none()
         profile_rows = list(
             (
                 await session.execute(
@@ -136,6 +144,10 @@ async def canonical_scope_matches(
                 )
             ).all()
         )
+        if space_exists is None:
+            return not profile_rows and thread_id is None
+        if len(profile_rows) != len(unique_profile_ids):
+            return False
         if any(row.space_id != space_id for row in profile_rows):
             return False
         if thread_id is None:
