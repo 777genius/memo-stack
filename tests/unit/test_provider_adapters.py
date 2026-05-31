@@ -58,6 +58,15 @@ class FakeGraphitiWithoutSearch:
         return None
 
 
+class FakeGraphitiWithManyResults(FakeGraphiti):
+    async def search(self, **kwargs: object) -> list[object]:
+        self.search_calls.append(kwargs)
+        return [
+            SimpleNamespace(episodes=[f"fact_many_{index}"], score=0.9 - index * 0.01)
+            for index in range(5)
+        ]
+
+
 class NodeNotFoundError(RuntimeError):
     pass
 
@@ -166,6 +175,30 @@ def test_graphiti_adapter_overfetches_thread_queries_for_postgres_visibility_hyd
 
         assert search.status == PortStatus.OK
         assert fake.search_calls[0]["num_results"] == 12
+
+    asyncio.run(run())
+
+
+def test_graphiti_search_facts_caps_thread_overfetch_to_requested_limit() -> None:
+    async def run() -> None:
+        fake = FakeGraphitiWithManyResults()
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        recalled = await adapter.search_facts(
+            CapabilityRecallQuery(
+                scope=MemoryScopeFilter(
+                    space_id="space_hackinterview",
+                    profile_ids=("profile_default",),
+                    thread_id="thread_current",
+                ),
+                query="Graphiti projection",
+                limit=2,
+            )
+        )
+
+        assert recalled.status == CapabilityStatus.OK
+        assert fake.search_calls[0]["num_results"] == 8
+        assert [item.item_id for item in recalled.items] == ["fact_many_0", "fact_many_1"]
 
     asyncio.run(run())
 

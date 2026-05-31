@@ -274,7 +274,7 @@ class GraphitiGraphMemoryAdapter:
         )
         return CapabilityRecallResult(
             status=status,
-            items=candidates,
+            items=candidates[: query.limit],
             diagnostics=tuple(_diagnostics(result.diagnostics)),
         )
 
