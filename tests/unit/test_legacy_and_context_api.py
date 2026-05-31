@@ -375,6 +375,57 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
     assert "graph.delete_fact" in event_types
 
 
+def test_v1_thread_memory_read_routes_do_not_create_missing_scope(tmp_path: Path) -> None:
+    scope = {
+        "space_slug": "missing-thread-space",
+        "profile_external_ref": "default",
+        "thread_external_ref": "missing-thread",
+    }
+    with make_client(tmp_path) as client:
+        before_spaces = client.get("/v1/spaces", headers=auth_headers())
+        status = client.post(
+            "/v1/thread-memory/status",
+            json=scope,
+            headers=auth_headers(),
+        )
+        deleted = client.request(
+            "DELETE",
+            "/v1/thread-memory",
+            json=scope,
+            headers=auth_headers(),
+        )
+        compat_deleted = client.post(
+            "/v1/thread-memory/delete",
+            json=scope,
+            headers=auth_headers(),
+        )
+        after_spaces = client.get("/v1/spaces", headers=auth_headers())
+
+    assert before_spaces.status_code == 200
+    assert before_spaces.json()["data"] == []
+    assert status.status_code == 200
+    assert status.json()["data"] == {
+        "chunks": 0,
+        "facts": 0,
+        "jobs": 0,
+        "pending_jobs": 0,
+    }
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {
+        "deleted_chunks": 0,
+        "deleted_facts": 0,
+        "deleted_jobs": 0,
+    }
+    assert compat_deleted.status_code == 200
+    assert compat_deleted.json()["data"] == {
+        "deleted_chunks": 0,
+        "deleted_facts": 0,
+        "deleted_jobs": 0,
+    }
+    assert after_spaces.status_code == 200
+    assert after_spaces.json()["data"] == []
+
+
 def test_legacy_scope_creation_is_safe_under_parallel_sessions(tmp_path: Path) -> None:
     app = create_app(
         Settings(
