@@ -292,6 +292,8 @@ async def import_profile(
         for ref in source_refs:
             if str(ref["fact_id"]) in skipped["facts"]:
                 continue
+            if ref.get("chunk_id") is not None and str(ref["chunk_id"]) in skipped["chunks"]:
+                continue
             mapped = _remap_source_ref(
                 ref,
                 fact_id_map=fact_id_map,
@@ -500,7 +502,9 @@ def _skipped_ids(
     skipped_chunks.update(
         str(chunk["id"])
         for chunk in chunks
-        if chunk.get("document_id") is not None and str(chunk["document_id"]) in skipped_documents
+        if chunk.get("document_id") is None
+        or str(chunk["document_id"]) not in document_ids
+        or str(chunk["document_id"]) in skipped_documents
     )
     return {
         "facts": skipped_facts,
@@ -852,7 +856,7 @@ def _chunk_from_json(
         profile_id=profile_id,
         thread_id=None,
         document_id=item.get("document_id"),
-        episode_id=item.get("episode_id"),
+        episode_id=None,
         source_type=str(item.get("source_type", "import")),
         source_external_id=str(item.get("source_external_id", item["id"])),
         source_hash=str(item.get("source_hash", item["id"])),

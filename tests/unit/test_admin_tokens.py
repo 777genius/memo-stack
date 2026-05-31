@@ -10,6 +10,7 @@ from memory_adapters.postgres.models import (
     MemoryOutboxRow,
     MemoryProfileRow,
     MemoryServiceTokenRow,
+    MemorySourceRefRow,
     MemorySpaceRow,
 )
 from memory_server.admin import (
@@ -1564,6 +1565,159 @@ def test_import_profile_drops_thread_ids_without_thread_transfer(
     assert fact_thread_id is None
     assert document_thread_id is None
     assert chunk_thread_id is None
+
+
+def test_import_profile_skips_episode_chunks_without_episode_transfer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "episode-chunk-import.db"
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    fixture = tmp_path / "episode-chunk-profile-import.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "space": {"slug": "source-space"},
+                "profile": {"external_ref": "source-profile"},
+                "facts": [
+                    {
+                        "id": "fact_imported_episode_chunk",
+                        "thread_id": "thread_source_only",
+                        "kind": "preference",
+                        "text": "Imported facts should survive unsupported episode chunks.",
+                        "status": "active",
+                        "confidence": "medium",
+                        "trust_level": "medium",
+                        "classification": "internal",
+                        "version": 1,
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "documents": [],
+                "chunks": [
+                    {
+                        "id": "chunk_imported_episode_only",
+                        "thread_id": "thread_source_only",
+                        "document_id": None,
+                        "episode_id": "episode_source_only",
+                        "source_type": "conversation",
+                        "source_external_id": "episode-source",
+                        "source_hash": "chunk-imported-episode-only-hash",
+                        "kind": "episode_excerpt",
+                        "text": "Unsupported episode chunks should not be imported.",
+                        "normalized_text": "unsupported episode chunks should not be imported.",
+                        "status": "active",
+                        "sequence": 0,
+                        "char_start": 0,
+                        "char_end": 51,
+                        "token_estimate": 13,
+                        "classification": "internal",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                        "metadata_json": {},
+                    },
+                    {
+                        "id": "chunk_imported_missing_document",
+                        "thread_id": "thread_source_only",
+                        "document_id": "doc_not_in_payload",
+                        "episode_id": None,
+                        "source_type": "document",
+                        "source_external_id": "missing-doc-source",
+                        "source_hash": "chunk-imported-missing-doc-hash",
+                        "kind": "document_section",
+                        "text": "Chunks cannot point at documents outside the import payload.",
+                        "normalized_text": (
+                            "chunks cannot point at documents outside the import payload."
+                        ),
+                        "status": "active",
+                        "sequence": 1,
+                        "char_start": 0,
+                        "char_end": 59,
+                        "token_estimate": 15,
+                        "classification": "internal",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                        "metadata_json": {},
+                    },
+                ],
+                "source_refs": [
+                    {
+                        "fact_id": "fact_imported_episode_chunk",
+                        "fact_version": 1,
+                        "source_type": "import",
+                        "source_id": "fixture",
+                        "chunk_id": "chunk_imported_episode_only",
+                        "quote_preview": "episode source ref",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    imported = asyncio.run(
+        import_profile_command(
+            space="episode-chunk-import-space",
+            profile="default",
+            file=str(fixture),
+            dry_run=False,
+            merge_strategy="fail_on_conflict",
+            confirmed=True,
+        )
+    )
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+
+    async def load_imported_rows() -> tuple[MemoryFactRow | None, list[MemorySourceRefRow]]:
+        async with AsyncSession(app.state.container.engine) as session:
+            fact = await session.get(MemoryFactRow, "fact_imported_episode_chunk")
+            episode_chunk = await session.get(MemoryChunkRow, "chunk_imported_episode_only")
+            missing_document_chunk = await session.get(
+                MemoryChunkRow,
+                "chunk_imported_missing_document",
+            )
+            refs = list(
+                (
+                    await session.execute(
+                        select(MemorySourceRefRow).where(
+                            MemorySourceRefRow.fact_id == "fact_imported_episode_chunk"
+                        )
+                    )
+                ).scalars()
+            )
+            assert episode_chunk is None
+            assert missing_document_chunk is None
+            return fact, refs
+
+    fact, refs = asyncio.run(load_imported_rows())
+
+    assert imported["status"] == "ok"
+    assert imported["imported"] == {
+        "facts": 1,
+        "documents": 0,
+        "chunks": 0,
+        "source_refs": 0,
+    }
+    assert fact is not None
+    assert len(refs) == 1
+    assert refs[0].chunk_id is None
+    assert refs[0].source_type == "import"
 
 
 def test_import_profile_create_new_profile_rewrites_canonical_ids(
