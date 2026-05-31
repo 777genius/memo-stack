@@ -91,11 +91,11 @@ async def requested_profile_refs(
 
 
 async def space_matches(container: Container, token_scope: str, requested_space: str) -> bool:
-    if token_scope == requested_space:
-        return True
     async with AsyncSession(container.engine) as session:
         token_space = await _load_space(session, token_scope)
         requested = await _load_space(session, requested_space)
+    if token_scope == requested_space:
+        return _scope_row_is_active(token_space) and _scope_row_is_active(requested)
     token_refs = _space_refs(token_space, fallback=token_scope)
     requested_refs = _space_refs(requested, fallback=requested_space)
     return not token_refs.isdisjoint(requested_refs)
@@ -106,11 +106,11 @@ async def profile_matches(
     token_scope: str,
     requested_profile: str,
 ) -> bool:
-    if token_scope == requested_profile:
-        return True
     async with AsyncSession(container.engine) as session:
         token_profile = await _load_profile(session, token_scope)
         requested = await _load_profile(session, requested_profile)
+    if token_scope == requested_profile:
+        return _scope_row_is_active(token_profile) and _scope_row_is_active(requested)
     token_refs = _profile_refs(token_profile, fallback=token_scope)
     requested_refs = _profile_refs(requested, fallback=requested_profile)
     return not token_refs.isdisjoint(requested_refs)
@@ -263,10 +263,18 @@ async def _load_profile(session: AsyncSession, value: str) -> MemoryProfileRow |
 def _space_refs(row: MemorySpaceRow | None, *, fallback: str) -> set[str]:
     if row is None:
         return {fallback}
+    if row.status != "active":
+        return set()
     return {row.id, row.slug}
 
 
 def _profile_refs(row: MemoryProfileRow | None, *, fallback: str) -> set[str]:
     if row is None:
         return {fallback}
+    if row.status != "active":
+        return set()
     return {row.id, row.external_ref}
+
+
+def _scope_row_is_active(row: MemorySpaceRow | MemoryProfileRow | None) -> bool:
+    return row is None or row.status == "active"

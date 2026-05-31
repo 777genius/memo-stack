@@ -3,7 +3,13 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memory_adapters.postgres.models import MemoryFactRow, MemoryOutboxRow, MemoryServiceTokenRow
+from memory_adapters.postgres.models import (
+    MemoryFactRow,
+    MemoryOutboxRow,
+    MemoryProfileRow,
+    MemoryServiceTokenRow,
+    MemorySpaceRow,
+)
 from memory_server.admin import (
     export_profile_command,
     import_profile_command,
@@ -54,6 +60,24 @@ async def _load_service_token(tmp_path: Path, *, token_id: str) -> MemoryService
             return row
     finally:
         await app.state.container.engine.dispose()
+
+
+async def _mark_scope_deleted(
+    app,
+    *,
+    space_id: str | None = None,
+    profile_id: str | None = None,
+) -> None:
+    async with AsyncSession(app.state.container.engine) as session:
+        if space_id:
+            space = await session.get(MemorySpaceRow, space_id)
+            assert space is not None
+            space.status = "deleted"
+        if profile_id:
+            profile = await session.get(MemoryProfileRow, profile_id)
+            assert profile is not None
+            profile.status = "deleted"
+        await session.commit()
 
 
 def test_admin_token_lifecycle_and_auth_without_raw_token_in_list(
@@ -562,6 +586,88 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
     assert profile_capabilities.status_code == 200
     assert "PROFILE_SCOPE_LEAK_MARKER" not in cross_profile_by_id.text
     assert "PROFILE_SCOPE_SUGGESTION_LEAK" not in cross_profile_suggestions.text
+
+
+def test_scoped_service_tokens_reject_inactive_path_resource_scope(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'inactive.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'inactive.db'}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+    root_headers = {"Authorization": "Bearer root-token"}
+    with TestClient(app) as client:
+        space = client.post(
+            "/v1/spaces",
+            json={"slug": "inactive-scope", "name": "Inactive Scope"},
+            headers=root_headers,
+        ).json()["data"]
+        profile = client.post(
+            "/v1/profiles",
+            json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
+            headers=root_headers,
+        ).json()["data"]
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": space["id"],
+                "profile_id": profile["id"],
+                "text": "INACTIVE_SCOPE_PATH_MARKER must not leak after scope deletion.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "inactive-scope"}],
+            },
+            headers=root_headers,
+        ).json()["data"]
+
+    profile_scoped = asyncio.run(
+        token_create(
+            space_id=space["id"],
+            profile_ids=(profile["id"],),
+            description="inactive profile token",
+            permissions=("memory:read",),
+        )
+    )
+    space_scoped = asyncio.run(
+        token_create(
+            space_id=space["id"],
+            description="inactive space token",
+            permissions=("memory:read",),
+        )
+    )
+    profile_headers = {"Authorization": f"Bearer {profile_scoped['token']}"}
+    space_headers = {"Authorization": f"Bearer {space_scoped['token']}"}
+
+    with TestClient(app) as client:
+        profile_before = client.get(f"/v1/facts/{fact['id']}", headers=profile_headers)
+        space_before = client.get(f"/v1/facts/{fact['id']}", headers=space_headers)
+
+    asyncio.run(_mark_scope_deleted(app, profile_id=profile["id"]))
+    with TestClient(app) as client:
+        inactive_profile = client.get(f"/v1/facts/{fact['id']}", headers=profile_headers)
+
+    asyncio.run(_mark_scope_deleted(app, space_id=space["id"]))
+    with TestClient(app) as client:
+        inactive_space = client.get(f"/v1/facts/{fact['id']}", headers=space_headers)
+
+    assert profile_before.status_code == 200
+    assert space_before.status_code == 200
+    assert inactive_profile.status_code == 403
+    assert inactive_space.status_code == 403
+    assert "INACTIVE_SCOPE_PATH_MARKER" not in inactive_profile.text
+    assert "INACTIVE_SCOPE_PATH_MARKER" not in inactive_space.text
 
 
 def test_profile_scoped_service_token_requires_space_scope(
