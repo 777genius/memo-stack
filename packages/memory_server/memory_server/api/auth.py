@@ -163,7 +163,12 @@ async def _ensure_profile_scoped_token_can_access_request(
     for requested_profile in requested_profiles:
         matched = False
         for token_profile in token.profile_ids:
-            if await profile_matches(container, token_profile, requested_profile):
+            if await profile_matches(
+                container,
+                token_profile,
+                requested_profile,
+                space_scope=token.space_id,
+            ):
                 matched = True
                 break
         if not matched:

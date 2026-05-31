@@ -670,6 +670,84 @@ def test_scoped_service_tokens_reject_inactive_path_resource_scope(
     assert "INACTIVE_SCOPE_PATH_MARKER" not in inactive_space.text
 
 
+def test_profile_scoped_external_ref_match_is_bound_to_token_space(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'ref-space.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'ref-space.db'}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+    root_headers = {"Authorization": "Bearer root-token"}
+    with TestClient(app) as client:
+        space_a = client.post(
+            "/v1/spaces",
+            json={"slug": "ref-space-a", "name": "Ref Space A"},
+            headers=root_headers,
+        ).json()["data"]
+        profile_a = client.post(
+            "/v1/profiles",
+            json={"space_id": space_a["id"], "external_ref": "default", "name": "Default"},
+            headers=root_headers,
+        ).json()["data"]
+        space_b = client.post(
+            "/v1/spaces",
+            json={"slug": "ref-space-b", "name": "Ref Space B"},
+            headers=root_headers,
+        ).json()["data"]
+        profile_b = client.post(
+            "/v1/profiles",
+            json={"space_id": space_b["id"], "external_ref": "default", "name": "Default"},
+            headers=root_headers,
+        ).json()["data"]
+        fact_b = client.post(
+            "/v1/facts",
+            json={
+                "space_id": space_b["id"],
+                "profile_id": profile_b["id"],
+                "text": "PROFILE_REF_SPACE_MARKER must not leak to space-a token.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "ref-space-b"}],
+            },
+            headers=root_headers,
+        ).json()["data"]
+
+    scoped = asyncio.run(
+        token_create(
+            space_id=space_a["id"],
+            profile_ids=("default",),
+            description="space-a default by external ref",
+            permissions=("memory:read",),
+        )
+    )
+    scoped_headers = {"Authorization": f"Bearer {scoped['token']}"}
+
+    asyncio.run(_mark_scope_deleted(app, profile_id=profile_a["id"]))
+    with TestClient(app) as client:
+        same_space_deleted = client.get(
+            "/v1/facts",
+            params={"space_id": space_a["id"], "profile_id": "default"},
+            headers=scoped_headers,
+        )
+        cross_space_path = client.get(f"/v1/facts/{fact_b['id']}", headers=scoped_headers)
+
+    assert same_space_deleted.status_code == 403
+    assert cross_space_path.status_code == 403
+    assert "PROFILE_REF_SPACE_MARKER" not in cross_space_path.text
+
+
 def test_profile_scoped_service_token_requires_space_scope(
     tmp_path: Path,
     monkeypatch,

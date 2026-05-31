@@ -105,10 +105,18 @@ async def profile_matches(
     container: Container,
     token_scope: str,
     requested_profile: str,
+    *,
+    space_scope: str | None = None,
 ) -> bool:
     async with AsyncSession(container.engine) as session:
-        token_profile = await _load_profile(session, token_scope)
-        requested = await _load_profile(session, requested_profile)
+        space = await _load_space(session, space_scope) if space_scope else None
+        if space_scope and not _scope_row_is_active(space):
+            return False
+        space_id = space.id if space else None
+        token_profile = await _load_profile(session, token_scope, space_id=space_id)
+        requested = await _load_profile(session, requested_profile, space_id=space_id)
+    if space_scope and (token_profile is None or requested is None):
+        return False
     if token_scope == requested_profile:
         return _scope_row_is_active(token_profile) and _scope_row_is_active(requested)
     token_refs = _profile_refs(token_profile, fallback=token_scope)
@@ -251,12 +259,16 @@ async def _load_space(session: AsyncSession, value: str) -> MemorySpaceRow | Non
     ).scalar_one_or_none()
 
 
-async def _load_profile(session: AsyncSession, value: str) -> MemoryProfileRow | None:
-    rows = await session.execute(
-        select(MemoryProfileRow)
-        .where(or_(MemoryProfileRow.id == value, MemoryProfileRow.external_ref == value))
-        .limit(1)
-    )
+async def _load_profile(
+    session: AsyncSession,
+    value: str,
+    *,
+    space_id: str | None = None,
+) -> MemoryProfileRow | None:
+    conditions = [or_(MemoryProfileRow.id == value, MemoryProfileRow.external_ref == value)]
+    if space_id is not None:
+        conditions.append(MemoryProfileRow.space_id == space_id)
+    rows = await session.execute(select(MemoryProfileRow).where(*conditions).limit(1))
     return rows.scalars().first()
 
 
