@@ -189,6 +189,7 @@ async def _requested_space_refs(container: Container, request: Request) -> set[s
             and (
                 request.url.path == "/v1/spaces"
                 or request.url.path in {"/v1/context", "/v1/search", "/v1/episodes"}
+                or request.url.path.startswith("/v1/facts")
                 or request.url.path.startswith("/v1/documents")
                 or request.url.path.startswith("/v1/suggestions")
                 or request.url.path.startswith("/v1/thread-memory")
@@ -231,6 +232,7 @@ async def _requested_profile_refs(container: Container, request: Request) -> set
             if (
                 request.url.path == "/v1/profiles"
                 or request.url.path in {"/v1/context", "/v1/search", "/v1/episodes"}
+                or request.url.path.startswith("/v1/facts")
                 or request.url.path.startswith("/v1/documents")
                 or request.url.path.startswith("/v1/suggestions")
                 or request.url.path.startswith("/v1/thread-memory")

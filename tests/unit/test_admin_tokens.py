@@ -750,13 +750,36 @@ def test_profile_scoped_service_token_accepts_external_refs_without_cross_profil
             },
             headers=scoped_headers,
         )
+        fact = client.post(
+            "/v1/facts",
+            json={
+                **allowed_scope,
+                "text": "EXTERNAL_SCOPE_FACT_ALPHA_MARKER can be written by alpha token.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "external-fact-alpha"}],
+            },
+            headers=scoped_headers,
+        )
+        denied_fact = client.post(
+            "/v1/facts",
+            json={
+                **denied_scope,
+                "text": "EXTERNAL_SCOPE_FACT_BETA_MARKER must not be written.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "external-fact-beta"}],
+            },
+            headers=scoped_headers,
+        )
 
     assert episode.status_code == 200
     assert context.status_code == 200
     assert "EXTERNAL_SCOPE_ALPHA_MARKER" in context.json()["data"]["rendered_text"]
     assert denied_context.status_code == 403
     assert denied_document.status_code == 403
+    assert fact.status_code == 201
+    assert denied_fact.status_code == 403
     assert "EXTERNAL_SCOPE_BETA_MARKER" not in denied_document.text
+    assert "EXTERNAL_SCOPE_FACT_BETA_MARKER" not in denied_fact.text
 
 
 def test_reset_local_refuses_without_confirmation_and_server_profile(monkeypatch) -> None:
@@ -1221,9 +1244,7 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
             )
             outbox = list(
                 (
-                    await session.execute(
-                        select(MemoryOutboxRow).order_by(MemoryOutboxRow.id)
-                    )
+                    await session.execute(select(MemoryOutboxRow).order_by(MemoryOutboxRow.id))
                 ).scalars()
             )
             return facts, outbox
