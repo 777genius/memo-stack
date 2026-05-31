@@ -558,6 +558,10 @@ class FakeQdrantModels:
         def __init__(self, **kwargs: object) -> None:
             self.kwargs = kwargs
 
+    class IsEmptyCondition:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
     class MinShould:
         def __init__(self, **kwargs: object) -> None:
             self.kwargs = kwargs
@@ -716,6 +720,7 @@ def test_qdrant_adapter_search_contract_filters_current_thread_or_profile_wide_c
         assert conditions[0].kwargs["key"] == "thread_id"
         assert conditions[0].kwargs["match"].kwargs == {"value": "thread_current"}
         assert conditions[1].kwargs["is_null"].kwargs == {"key": "thread_id"}
+        assert conditions[2].kwargs["is_empty"].kwargs == {"key": "thread_id"}
 
     asyncio.run(run())
 

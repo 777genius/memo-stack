@@ -169,6 +169,7 @@ class QdrantVectorMemoryAdapter:
                             match=models.MatchValue(value=thread_id),
                         ),
                         models.IsNullCondition(is_null=models.PayloadField(key="thread_id")),
+                        models.IsEmptyCondition(is_empty=models.PayloadField(key="thread_id")),
                     ],
                     min_count=1,
                 )
