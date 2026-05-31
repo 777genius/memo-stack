@@ -73,7 +73,7 @@ services:
 
   memory_server:
     <<: *memory-server-common
-    profiles: ["lite", "hackinterview"]
+    profiles: ["lite"]
     command: sh -c "pip install -e '.[dev]' && python -m memory_server.db upgrade && python -m memory_server.admin seed-defaults && python -m memory_server.main"
     environment:
       <<: *memory-server-base-env
@@ -93,7 +93,7 @@ services:
 
   memory_worker:
     <<: *memory-server-common
-    profiles: ["lite", "hackinterview"]
+    profiles: ["lite"]
     command: sh -c "pip install -e '.[dev]' && python -m memory_server.worker --loop --sleep-seconds 2"
     environment:
       <<: *memory-server-base-env

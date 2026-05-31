@@ -5,8 +5,8 @@ from typing import Any
 
 
 def load_smoke_module():
-    path = Path(__file__).parents[2] / "examples" / "hackinterview_memory_smoke.py"
-    spec = importlib.util.spec_from_file_location("hackinterview_memory_smoke", path)
+    path = Path(__file__).parents[2] / "examples" / "integration_memory_smoke.py"
+    spec = importlib.util.spec_from_file_location("integration_memory_smoke", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -27,7 +27,7 @@ class FakeSmokeClient:
 
     def create_space(self, **_kwargs: Any) -> dict[str, Any]:
         self.calls.append("create_space")
-        return {"data": {"id": "space_hackinterview"}}
+        return {"data": {"id": "space_smoke"}}
 
     def create_profile(self, **_kwargs: Any) -> dict[str, Any]:
         self.calls.append("create_profile")
@@ -66,13 +66,13 @@ class FakeSmokeClient:
         return {"data": {"id": "fact_smoke", "status": "deleted"}}
 
 
-def test_hackinterview_smoke_uses_sdk_happy_path() -> None:
+def test_integration_smoke_uses_sdk_happy_path() -> None:
     smoke = load_smoke_module()
     client = FakeSmokeClient()
     config = smoke.SmokeConfig(
         api_url="http://memory.test",
         auth_token="test-token",
-        space_slug="hackinterview",
+        space_slug="memory-platform-smoke",
         profile_external_ref="default",
         thread_external_ref="smoke-test",
         run_id="unit",
@@ -98,13 +98,13 @@ def test_hackinterview_smoke_uses_sdk_happy_path() -> None:
     ]
 
 
-def test_hackinterview_smoke_fails_when_forgotten_fact_leaks() -> None:
+def test_integration_smoke_fails_when_forgotten_fact_leaks() -> None:
     smoke = load_smoke_module()
     client = FakeSmokeClient(leak_after_forget=True)
     config = smoke.SmokeConfig(
         api_url="http://memory.test",
         auth_token="test-token",
-        space_slug="hackinterview",
+        space_slug="memory-platform-smoke",
         profile_external_ref="default",
         thread_external_ref="smoke-test",
         run_id="unit",

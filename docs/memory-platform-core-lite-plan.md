@@ -7512,7 +7512,7 @@ Exit gate:
 
 ```bash
 docker compose up
-python examples/hackinterview_memory_smoke.py
+python examples/integration_memory_smoke.py
 ```
 
 Current Core Lite implementation:
@@ -7527,7 +7527,7 @@ Current Core Lite implementation:
 - `make memory-stack-up` starts the local server service through Docker Compose;
 - `make memory-stack-smoke` starts the local server service, waits for `/v1/health` and runs
   the SDK smoke path;
-- `make memory-smoke` runs `examples/hackinterview_memory_smoke.py` against
+- `make memory-smoke` runs `examples/integration_memory_smoke.py` against
   `http://127.0.0.1:7788` by default;
 - the smoke script uses only `MemoryPlatformClient` and verifies health, space/profile
   creation, remember, update, document ingest, search, context and forget;

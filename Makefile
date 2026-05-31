@@ -37,7 +37,7 @@ memory-test-quality: memory-lint memory-test-application memory-test-integration
 
 .PHONY: memory-smoke
 memory-smoke:
-	MEMORY_SMOKE_API_URL=$${MEMORY_SMOKE_API_URL:-http://127.0.0.1:7788} MEMORY_SMOKE_AUTH_TOKEN=$${MEMORY_SMOKE_AUTH_TOKEN:-local-dev-token} $(PYTHON) examples/hackinterview_memory_smoke.py
+	MEMORY_SMOKE_API_URL=$${MEMORY_SMOKE_API_URL:-http://127.0.0.1:7788} MEMORY_SMOKE_AUTH_TOKEN=$${MEMORY_SMOKE_AUTH_TOKEN:-local-dev-token} $(PYTHON) examples/integration_memory_smoke.py
 
 .PHONY: memory-mcp-smoke
 memory-mcp-smoke:
@@ -75,9 +75,8 @@ memory-stack-up:
 memory-stack-up-lite:
 	$(COMPOSE) --profile lite up -d memory_server memory_worker
 
-.PHONY: memory-stack-up-hackinterview
-memory-stack-up-hackinterview:
-	$(COMPOSE) --profile hackinterview up -d memory_server memory_worker
+.PHONY: memory-stack-up-app
+memory-stack-up-app: memory-stack-up-lite
 
 .PHONY: memory-stack-up-full
 memory-stack-up-full:
@@ -104,7 +103,7 @@ memory-clean-full-smoke:
 
 .PHONY: memory-down
 memory-down:
-	$(COMPOSE) --profile lite --profile hackinterview --profile full down
+	$(COMPOSE) --profile lite --profile full down
 
 .PHONY: memory-server
 memory-server:

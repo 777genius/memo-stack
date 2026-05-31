@@ -109,18 +109,17 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev,qdrant,openai,graphiti,mcp]'
 ```
 
-The Docker compose file has three practical profiles:
+The Docker compose file has two practical profiles:
 
 ```text
 lite           Postgres + Memory Server, provider adapters disabled.
-hackinterview  Same runtime shape as lite, named for app integration scripts.
 full           Postgres + Qdrant + Neo4j + Memory Server + worker, with OpenAI embeddings and Graphiti enabled.
 ```
 
-Recommended local MVP for HackInterview:
+Recommended local MVP:
 
 ```bash
-make memory-stack-up-hackinterview
+make memory-stack-up-lite
 make memory-smoke
 make memory-mcp-smoke
 ```

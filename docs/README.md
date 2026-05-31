@@ -33,13 +33,12 @@ Start the local platform stack through explicit profiles:
 
 ```bash
 make memory-stack-up-lite
-make memory-stack-up-hackinterview
 make memory-stack-up-full
 ```
 
-`lite` and `hackinterview` run Postgres plus the Memory Server with provider
-adapters disabled. `full` also runs Qdrant, Neo4j and the outbox worker, and
-requires `OPENAI_API_KEY` plus `MEMORY_OPENAI_API_KEY`.
+`lite` runs Postgres plus the Memory Server and worker with provider adapters
+disabled. `full` also runs Qdrant, Neo4j and the outbox worker, and requires
+`OPENAI_API_KEY` plus `MEMORY_OPENAI_API_KEY`.
 
 Local smokes:
 

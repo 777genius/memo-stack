@@ -116,7 +116,7 @@ Targeted tests:
 Live stdio smoke against a running Memory Platform server:
 
 ```bash
-make memory-stack-up-hackinterview
+make memory-stack-up-lite
 make memory-mcp-smoke
 ```
 
