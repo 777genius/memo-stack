@@ -75,12 +75,12 @@ Implemented API surface:
 - `/v1/spaces`, `/v1/profiles`;
 - `/v1/facts` remember/list/get/versions/update/forget;
 - `/v1/documents` ingest/get/chunks/process/delete;
-- `/v1/episodes` transcript/event ingest for HackInterview-style sessions;
+- `/v1/episodes` transcript/event ingest for app or agent sessions;
 - `/v1/search`, `/v1/context`;
 - `/v1/thread-memory/status`, `/v1/thread-memory` delete for thread-scoped cleanup;
 - `/v1/suggestions` create/list/approve/reject/expire for review-gated memory;
 - `/v1/diagnostics/adapters`, `/outbox`, `/profile/{profile_id}` with production-safe metadata only;
-- HackInterview-compatible `/api/v1/interview-memory/ingest`, `/context`, session status and delete routes.
+- optional HackInterview-compatible `/api/v1/interview-memory/ingest`, `/context`, session status and delete routes when `MEMORY_LEGACY_HACKINTERVIEW_ENABLED=true`.
 
 Operational pieces:
 
@@ -221,7 +221,9 @@ MEMORY_SERVICE_TOKEN=local-dev-token \
 HackInterview local canary can point at this server:
 
 ```bash
-MEMORY_DEFAULT_SPACE_SLUG=hackinterview make memory-stack-up-lite
+MEMORY_DEFAULT_SPACE_SLUG=hackinterview \
+MEMORY_LEGACY_HACKINTERVIEW_ENABLED=true \
+make memory-stack-up-lite
 
 INTERVIEW_MEMORY_API_URL=http://127.0.0.1:7788 \
 INTERVIEW_MEMORY_API_VARIANT=platform \

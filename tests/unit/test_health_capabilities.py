@@ -84,20 +84,11 @@ def test_capabilities_return_noop_adapters() -> None:
     assert "api_key" not in response.text.lower()
     assert "secret" not in response.text.lower()
     assert body["limits"]["max_context_tokens"] == 1800
+    assert body["supports_legacy_hackinterview_routes"] is False
 
 
-def test_legacy_hackinterview_route_kill_switch_removes_compatibility_routes() -> None:
-    app = create_app(
-        Settings(
-            deploy_profile=DeployProfile.TEST,
-            qdrant_enabled=False,
-            graphiti_enabled=False,
-            embeddings_enabled=False,
-            legacy_hackinterview_enabled=False,
-        )
-    )
-    client = TestClient(app)
-
+def test_legacy_hackinterview_routes_are_opt_in() -> None:
+    client = build_test_client()
     capabilities = client.get("/v1/capabilities")
     legacy_context = client.post(
         "/api/v1/interview-memory/context",
@@ -110,6 +101,32 @@ def test_legacy_hackinterview_route_kill_switch_removes_compatibility_routes() -
     assert capabilities.status_code == 200
     assert capabilities.json()["supports_legacy_hackinterview_routes"] is False
     assert legacy_context.status_code == 404
+
+
+def test_legacy_hackinterview_route_flag_enables_compatibility_routes() -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            legacy_hackinterview_enabled=True,
+        )
+    )
+    client = TestClient(app)
+
+    capabilities = client.get("/v1/capabilities")
+    legacy_context = client.post(
+        "/api/v1/interview-memory/context",
+        json={
+            "session_id": "enabled-legacy",
+            "current_request": {"id": "req-1", "label": "request", "text": "hello"},
+        },
+    )
+
+    assert capabilities.status_code == 200
+    assert capabilities.json()["supports_legacy_hackinterview_routes"] is True
+    assert legacy_context.status_code != 404
 
 
 def test_capability_descriptor_contract_defaults_are_safe() -> None:

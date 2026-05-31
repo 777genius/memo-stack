@@ -61,6 +61,7 @@ def make_client(tmp_path: Path) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            legacy_hackinterview_enabled=True,
         )
     )
     return TestClient(app)
@@ -76,6 +77,7 @@ def make_client_with_settings(tmp_path: Path, **overrides: Any) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            legacy_hackinterview_enabled=True,
             **overrides,
         )
     )

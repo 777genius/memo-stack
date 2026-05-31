@@ -38,8 +38,8 @@ from memory_server.profile_transfer import export_profile, import_profile
 
 ACTIVE_CONTEXT_MANUAL_CHECKS: tuple[tuple[str, str], ...] = (
     (
-        "hackinterview_fallback_canary",
-        "run HackInterview fallback canary in shadow mode and confirm fallback works",
+        "client_fallback_canary",
+        "run the client fallback canary in shadow mode and confirm fallback works",
     ),
     (
         "shadow_retrieve_diagnostics",

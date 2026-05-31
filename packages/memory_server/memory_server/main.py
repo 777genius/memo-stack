@@ -16,7 +16,6 @@ from memory_server.api.errors import (
     memory_error_handler,
     request_validation_error_handler,
 )
-from memory_server.api.legacy_hackinterview import router as legacy_hackinterview_router
 from memory_server.api.v1 import router as v1_router
 from memory_server.api.v1.health import router as root_health_router
 from memory_server.composition import build_container
@@ -43,6 +42,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(root_health_router)
     app.include_router(v1_router)
     if container.settings.legacy_hackinterview_enabled:
+        from memory_server.api.legacy_hackinterview import router as legacy_hackinterview_router
+
         app.include_router(legacy_hackinterview_router)
     return app
 

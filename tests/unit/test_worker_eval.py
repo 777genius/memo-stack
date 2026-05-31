@@ -1045,7 +1045,7 @@ def test_active_context_gate_passes_after_manual_acknowledgements(
 
     assert result["status"] == "ok"
     assert result["manual_acknowledgements"] == sorted(ACTIVE_CONTEXT_MANUAL_CHECK_NAMES)
-    assert _doctor_check(result, "hackinterview_fallback_canary")["status"] == "ok"
+    assert _doctor_check(result, "client_fallback_canary")["status"] == "ok"
     assert _doctor_check(result, "kill_switches")["status"] == "ok"
     assert "RAW_" not in str(result)
 

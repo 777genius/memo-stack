@@ -152,7 +152,7 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
             "MEMORY_GRAPHITI_BUILD_INDICES": "true",
             "MEMORY_PROVIDER_CIRCUIT_FAILURE_THRESHOLD": "2",
             "MEMORY_PROVIDER_CIRCUIT_RESET_AFTER_SECONDS": "30",
-            "MEMORY_LEGACY_HACKINTERVIEW_ENABLED": "true",
+            "MEMORY_LEGACY_HACKINTERVIEW_ENABLED": "false",
         }
     )
     return env

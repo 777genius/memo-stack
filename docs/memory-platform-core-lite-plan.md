@@ -3028,7 +3028,7 @@ class Settings(BaseSettings):
     graphiti_enabled: bool = False
     qdrant_enabled: bool = True
     embeddings_enabled: bool = False
-    legacy_hackinterview_enabled: bool = True
+    legacy_hackinterview_enabled: bool = False
     default_space_slug: str = "default"
     default_profile_external_ref: str = "default"
     max_context_tokens: int = 1800
@@ -4744,7 +4744,7 @@ MEMORY_QDRANT_ENABLED=true
 MEMORY_QDRANT_URL=http://127.0.0.1:6333
 MEMORY_GRAPHITI_ENABLED=false
 MEMORY_EMBEDDINGS_ENABLED=false
-MEMORY_LEGACY_HACKINTERVIEW_ENABLED=true
+MEMORY_LEGACY_HACKINTERVIEW_ENABLED=false
 MEMORY_DEFAULT_SPACE_SLUG=default
 MEMORY_DEFAULT_PROFILE_EXTERNAL_REF=default
 MEMORY_MAX_CONTEXT_TOKENS=1800
@@ -8341,7 +8341,7 @@ Manual checks are intentionally explicit. After each external/manual item is ver
 
 ```bash
 python -m memory_server.doctor --gate active_context \
-  --ack hackinterview_fallback_canary \
+  --ack client_fallback_canary \
   --ack shadow_retrieve_diagnostics \
   --ack golden_eval \
   --ack service_token_rotation \
