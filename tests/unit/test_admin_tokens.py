@@ -1204,6 +1204,97 @@ def test_export_redacted_mode_omits_restricted_text(
     assert dry_run_scope["status"] == "not_found"
 
 
+def test_export_profile_refuses_deleted_scope(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "deleted-transfer.db"
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+    headers = {"Authorization": "Bearer root-token"}
+    with TestClient(app) as client:
+        space = client.post(
+            "/v1/spaces",
+            json={"slug": "deleted-export", "name": "Deleted Export"},
+            headers=headers,
+        ).json()["data"]
+        profile = client.post(
+            "/v1/profiles",
+            json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
+            headers=headers,
+        ).json()["data"]
+        deleted_space = client.post(
+            "/v1/spaces",
+            json={"slug": "deleted-export-space", "name": "Deleted Export Space"},
+            headers=headers,
+        ).json()["data"]
+        deleted_space_profile = client.post(
+            "/v1/profiles",
+            json={
+                "space_id": deleted_space["id"],
+                "external_ref": "default",
+                "name": "Default",
+            },
+            headers=headers,
+        ).json()["data"]
+        for scope_space, scope_profile, marker in (
+            (space, profile, "DELETED_PROFILE_EXPORT_SECRET"),
+            (deleted_space, deleted_space_profile, "DELETED_SPACE_EXPORT_SECRET"),
+        ):
+            client.post(
+                "/v1/facts",
+                json={
+                    "space_id": scope_space["id"],
+                    "profile_id": scope_profile["id"],
+                    "text": f"{marker} must not be exported after scope deletion.",
+                    "kind": "note",
+                    "source_refs": [{"source_type": "manual", "source_id": marker.lower()}],
+                },
+                headers=headers,
+            )
+
+    asyncio.run(_mark_scope_deleted(app, profile_id=profile["id"]))
+    asyncio.run(_mark_scope_deleted(app, space_id=deleted_space["id"]))
+    deleted_profile_out = tmp_path / "deleted-profile-export.json"
+    deleted_space_out = tmp_path / "deleted-space-export.json"
+
+    deleted_profile_export = asyncio.run(
+        export_profile_command(
+            space="deleted-export",
+            profile="default",
+            out=str(deleted_profile_out),
+            redacted=False,
+        )
+    )
+    deleted_space_export = asyncio.run(
+        export_profile_command(
+            space="deleted-export-space",
+            profile="default",
+            out=str(deleted_space_out),
+            redacted=False,
+        )
+    )
+
+    assert deleted_profile_export == {"status": "not_found", "out": str(deleted_profile_out)}
+    assert deleted_space_export == {"status": "not_found", "out": str(deleted_space_out)}
+    assert not deleted_profile_out.exists()
+    assert not deleted_space_out.exists()
+
+
 def test_import_profile_enqueues_projection_reindex_events(
     tmp_path: Path,
     monkeypatch,

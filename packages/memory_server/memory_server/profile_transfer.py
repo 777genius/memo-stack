@@ -357,7 +357,12 @@ async def _load_scope(
     profile_external_ref: str,
 ) -> tuple[MemorySpaceRow, MemoryProfileRow] | None:
     space = (
-        await session.execute(select(MemorySpaceRow).where(MemorySpaceRow.slug == space_slug))
+        await session.execute(
+            select(MemorySpaceRow).where(
+                MemorySpaceRow.slug == space_slug,
+                MemorySpaceRow.status == "active",
+            )
+        )
     ).scalar_one_or_none()
     if space is None:
         return None
@@ -366,6 +371,7 @@ async def _load_scope(
             select(MemoryProfileRow).where(
                 MemoryProfileRow.space_id == space.id,
                 MemoryProfileRow.external_ref == profile_external_ref,
+                MemoryProfileRow.status == "active",
             )
         )
     ).scalar_one_or_none()
@@ -454,9 +460,7 @@ async def _chunk_hash_conflicts(
     chunks: list[dict[str, Any]],
 ) -> list[str]:
     by_hash = {
-        str(item.get("source_hash")): str(item["id"])
-        for item in chunks
-        if item.get("source_hash")
+        str(item.get("source_hash")): str(item["id"]) for item in chunks if item.get("source_hash")
     }
     if not by_hash:
         return []
