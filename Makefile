@@ -34,6 +34,7 @@ memory-test-e2e:
 .PHONY: memory-eval
 memory-eval:
 	$(PYTHON) -m memory_server eval run --suite small-golden
+	$(PYTHON) -m memory_server eval run --suite quality-golden
 	$(PYTHON) -m memory_server eval snapshots --suite prompt-contract
 
 .PHONY: memory-test-quality

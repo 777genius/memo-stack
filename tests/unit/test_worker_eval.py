@@ -18,7 +18,7 @@ from memory_server.composition import build_container
 from memory_server.config import DeployProfile, Settings
 from memory_server.db import upgrade
 from memory_server.doctor import run_doctor
-from memory_server.eval import _execute_small_golden, run_small_golden
+from memory_server.eval import _execute_small_golden, run_quality_golden, run_small_golden
 from memory_server.main import create_app
 from memory_server.worker import OutboxWorker, _safe_diagnostic_code, _safe_error
 from sqlalchemy import select, update
@@ -832,6 +832,48 @@ def test_small_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["failures"] == []
     assert "EVAL_FACT_CANONICAL" not in report_text
     assert "EVAL_BETA_SECRET" not in report_text
+    assert "Ignore previous instructions" not in report_text
+
+
+def test_quality_golden_eval_passes() -> None:
+    result = run_quality_golden()
+
+    assert result["ok"] is True
+    assert result["status"] == "ok"
+    assert result["suite"] == "quality-golden"
+    assert result["checks"]["memory_evidence_guard"] is True
+    assert result["metrics"]["case_count"] >= 14
+    assert result["metrics"]["recall_at_5"] >= 0.95
+    assert result["metrics"]["precision_at_5"] >= 0.90
+    assert result["metrics"]["answer_support_rate"] == 1.0
+    assert result["metrics"]["document_recall_at_5"] >= 0.95
+    assert result["metrics"]["multi_profile_recall_at_5"] == 1.0
+    assert result["metrics"]["stale_memory_rate"] == 0.0
+    assert result["metrics"]["deleted_memory_leak_count"] == 0
+    assert result["metrics"]["cross_profile_leak_count"] == 0
+    assert result["metrics"]["restricted_memory_leak_count"] == 0
+    assert result["metrics"]["prompt_injection_promoted_count"] == 0
+    assert result["metrics"]["critical_failure_count"] == 0
+    assert result["metrics"]["harmful_context_rate"] == 0.0
+    assert result["failures"] == []
+    assert "QUALITY_RESTRICTED_SECRET" not in str(result)
+    assert "QUALITY_BETA_ONLY_SECRET" not in str(result)
+    assert "Ignore previous instructions" not in str(result)
+
+
+def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
+    report = tmp_path / "quality-golden-report.json"
+    result = run_quality_golden(report_out=report)
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert payload["suite"] == "quality-golden"
+    assert payload["metrics"]["critical_failure_count"] == 0
+    assert payload["metrics"]["harmful_context_rate"] == 0.0
+    assert payload["failures"] == []
+    assert "QUALITY_FACT_MODEL_CURRENT" not in report_text
+    assert "QUALITY_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
 
 

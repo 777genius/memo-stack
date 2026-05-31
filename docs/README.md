@@ -49,6 +49,19 @@ make memory-stack-smoke-full
 make memory-mcp-smoke
 ```
 
+Quality gates:
+
+```bash
+make memory-test-quality
+.venv/bin/python -m memory_server.eval run --suite quality-golden
+```
+
+`quality-golden` is the prompt-impacting memory benchmark. It checks recall,
+precision, stale update filtering, delete filtering, restricted-memory hiding,
+profile isolation, document chunk recall, prompt-injection evidence rendering
+and tiny token-budget safety. Reports are redacted and contain case ids,
+item ids, gates and aggregate metrics, not raw memory text.
+
 Fresh full-provider canary with isolated Docker volumes:
 
 ```bash

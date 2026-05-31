@@ -98,6 +98,8 @@ Operational pieces:
   current evidence only points to the deleted document or its chunks;
 - redacted profile export removes fact/chunk text and source quote previews;
 - small golden eval for prompt-impacting context behavior;
+- quality golden eval for recall, precision, stale/delete filtering, profile isolation,
+  restricted-memory hiding, prompt-injection evidence handling and token budget safety;
 - import-boundary, API, worker, SDK and review-gated suggestion tests.
 
 ## Local Run
@@ -186,6 +188,7 @@ MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.doctor
 MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.admin repair-projections --space project-alpha --profile default --dry-run
 MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.admin import-profile --space project-alpha --profile default --file profile-export.json --dry-run
 MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.eval run --suite small-golden
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memory_server.eval run --suite quality-golden
 ```
 
 Service tokens:
@@ -312,4 +315,5 @@ python -m venv .venv
 .venv/bin/ruff check .
 .venv/bin/python -m pytest
 .venv/bin/python -m memory_server.eval run --suite small-golden
+.venv/bin/python -m memory_server.eval run --suite quality-golden
 ```
