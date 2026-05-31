@@ -162,6 +162,10 @@ Common local targets are available in `Makefile`, for example `make memory-lint`
 `make memory-server`, `make memory-stack-up-lite`, `make memory-stack-up-full`,
 `make memory-clean-full-smoke` and `make memory-mcp-smoke`.
 
+GitHub Actions runs the same prompt-impacting gate on push and pull requests:
+`make PYTHON=python RUFF=ruff memory-test-quality`. Keep quality changes green
+there before relying on memory in an agent prompt path.
+
 Policy modes:
 
 ```text
