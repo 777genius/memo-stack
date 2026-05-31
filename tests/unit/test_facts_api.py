@@ -426,6 +426,64 @@ def test_list_facts_is_scoped_and_validates_status(tmp_path: Path) -> None:
     assert invalid.json()["error"]["code"] == "memory.validation"
 
 
+def test_list_facts_filters_current_thread_without_leaking_other_threads(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        current = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "backend-team",
+                "thread_external_ref": "thread-current",
+                "text": "THREAD_LIST_CURRENT_MARKER belongs to current thread.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "thread-current"}],
+            },
+            headers=auth_headers(),
+        )
+        other = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "backend-team",
+                "thread_external_ref": "thread-other",
+                "text": "THREAD_LIST_OTHER_MARKER belongs to another thread.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "thread-other"}],
+            },
+            headers=auth_headers(),
+        )
+        profile_wide = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "backend-team",
+                "text": "THREAD_LIST_GLOBAL_MARKER is profile-wide.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "profile-wide"}],
+            },
+            headers=auth_headers(),
+        )
+        listed = client.get(
+            "/v1/facts",
+            params={
+                "space_slug": "agents",
+                "profile_external_ref": "backend-team",
+                "thread_external_ref": "thread-current",
+                "status": "active",
+            },
+            headers=auth_headers(),
+        )
+
+    assert current.status_code == 201
+    assert other.status_code == 201
+    assert profile_wide.status_code == 201
+    assert listed.status_code == 200
+    texts = {item["text"] for item in listed.json()["data"]}
+    assert "THREAD_LIST_CURRENT_MARKER belongs to current thread." in texts
+    assert "THREAD_LIST_GLOBAL_MARKER is profile-wide." in texts
+    assert "THREAD_LIST_OTHER_MARKER belongs to another thread." not in texts
+
+
 def test_disabled_policy_blocks_public_writes(tmp_path: Path) -> None:
     with make_client_with_settings(tmp_path, policy_mode=MemoryPolicyMode.DISABLED) as client:
         response = client.post("/v1/facts", json=fact_payload(), headers=auth_headers())

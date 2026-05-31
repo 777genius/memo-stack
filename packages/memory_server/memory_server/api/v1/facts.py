@@ -179,6 +179,7 @@ async def list_facts(
         ListFactsQuery(
             space_id=scope.space_id,
             profile_id=scope.profile_id,
+            thread_id=scope.thread_id,
             status=status_filter,
             limit=limit + 1,
             cursor_updated_at=cursor_datetime(decoded_cursor, "updated_at"),

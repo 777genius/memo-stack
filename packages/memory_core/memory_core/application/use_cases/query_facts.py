@@ -22,6 +22,7 @@ class ListFactsUseCase:
             facts = await uow.facts.list_for_scope(
                 space_id=str(query.space_id),
                 profile_id=str(query.profile_id),
+                thread_id=str(query.thread_id) if query.thread_id else None,
                 status=query.status,
                 limit=query.limit,
                 cursor_updated_at=query.cursor_updated_at,

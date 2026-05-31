@@ -641,6 +641,7 @@ class PostgresFactRepository(FactRepositoryPort):
         *,
         space_id: str,
         profile_id: str,
+        thread_id: str | None,
         status: str | None,
         limit: int,
         cursor_updated_at: datetime | None = None,
@@ -652,6 +653,10 @@ class PostgresFactRepository(FactRepositoryPort):
         ]
         if status:
             conditions.append(MemoryFactRow.status == status)
+        if thread_id is not None:
+            conditions.append(
+                or_(MemoryFactRow.thread_id == thread_id, MemoryFactRow.thread_id.is_(None))
+            )
         if cursor_updated_at is not None and cursor_id is not None:
             conditions.append(
                 or_(
@@ -841,10 +846,7 @@ class PostgresDocumentRepository(DocumentRepositoryPort):
             )
         row = (
             await self._session.execute(
-                select(MemoryDocumentRow)
-                .where(*conditions)
-                .order_by(*order_by)
-                .limit(1)
+                select(MemoryDocumentRow).where(*conditions).order_by(*order_by).limit(1)
             )
         ).scalar_one_or_none()
         return document_row_to_domain(row) if row is not None else None
@@ -954,9 +956,7 @@ class PostgresChunkRepository(ChunkRepositoryPort):
             )
         rows = (
             await self._session.execute(
-                select(MemoryChunkRow)
-                .where(*conditions)
-                .order_by(MemoryChunkRow.created_at.desc())
+                select(MemoryChunkRow).where(*conditions).order_by(MemoryChunkRow.created_at.desc())
             )
         ).scalars()
         by_id = {row.id: chunk_row_to_domain(row) for row in rows}

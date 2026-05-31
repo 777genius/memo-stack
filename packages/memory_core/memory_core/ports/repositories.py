@@ -122,6 +122,7 @@ class FactRepositoryPort(Protocol):
         *,
         space_id: str,
         profile_id: str,
+        thread_id: str | None,
         status: str | None,
         limit: int,
         cursor_updated_at: datetime | None = None,

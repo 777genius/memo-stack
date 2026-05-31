@@ -96,6 +96,7 @@ class FactVersionsQuery:
 class ListFactsQuery:
     space_id: SpaceId
     profile_id: ProfileId
+    thread_id: ThreadId | None
     status: str | None
     limit: int
     cursor_updated_at: datetime | None = None
