@@ -138,6 +138,7 @@ class QdrantVectorMemoryAdapter:
         *,
         space_id: str,
         profile_ids: tuple[str, ...],
+        thread_id: str | None = None,
         query_vector: tuple[float, ...],
         limit: int,
     ) -> VectorSearchResult:
@@ -148,19 +149,30 @@ class QdrantVectorMemoryAdapter:
         try:
             client, models = await self._client()
             await self._ensure_collection(client, models)
-            query_filter = models.Filter(
-                must=[
-                    models.FieldCondition(key="space_id", match=models.MatchValue(value=space_id)),
-                    models.FieldCondition(
-                        key="projection_version",
-                        match=models.MatchValue(value=self._projection_version),
-                    ),
-                    models.FieldCondition(
-                        key="profile_id",
-                        match=models.MatchAny(any=list(profile_ids)),
-                    ),
-                ]
-            )
+            must_conditions = [
+                models.FieldCondition(key="space_id", match=models.MatchValue(value=space_id)),
+                models.FieldCondition(
+                    key="projection_version",
+                    match=models.MatchValue(value=self._projection_version),
+                ),
+                models.FieldCondition(
+                    key="profile_id",
+                    match=models.MatchAny(any=list(profile_ids)),
+                ),
+            ]
+            filter_kwargs = {"must": must_conditions}
+            if thread_id is not None:
+                filter_kwargs["min_should"] = models.MinShould(
+                    conditions=[
+                        models.FieldCondition(
+                            key="thread_id",
+                            match=models.MatchValue(value=thread_id),
+                        ),
+                        models.IsNullCondition(is_null=models.PayloadField(key="thread_id")),
+                    ],
+                    min_count=1,
+                )
+            query_filter = models.Filter(**filter_kwargs)
             results = await self._search(client, models, query_vector, query_filter, limit)
             candidates = [
                 VectorCandidate(

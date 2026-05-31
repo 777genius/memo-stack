@@ -627,9 +627,7 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
         )
 
     assert any("CANONICAL_COLLECTOR_FACT_MARKER" in fact.text for fact in result.facts)
-    assert any(
-        "CANONICAL_COLLECTOR_CHUNK_MARKER" in chunk.text for chunk in result.keyword_chunks
-    )
+    assert any("CANONICAL_COLLECTOR_CHUNK_MARKER" in chunk.text for chunk in result.keyword_chunks)
 
 
 def test_v1_document_ingest_accepts_external_scope_and_thread_context(
@@ -686,9 +684,7 @@ def test_thread_scoped_document_reimport_same_hash_stays_visible_per_thread(
         "profile_external_ref": "default",
         "thread_external_ref": "document-thread-b",
     }
-    document_text = (
-        "THREAD_DOC_DEDUPE_MARKER must be independently visible in every thread import."
-    )
+    document_text = "THREAD_DOC_DEDUPE_MARKER must be independently visible in every thread import."
     with make_client(tmp_path) as client:
         first = client.post(
             "/v1/documents",
@@ -1047,8 +1043,7 @@ def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path)
                 "space_id": "space_hackinterview",
                 "profile_id": "profile_secondary",
                 "text": (
-                    "CROSS_PROFILE_FACT_REF_MARKER must survive another "
-                    "profile document delete."
+                    "CROSS_PROFILE_FACT_REF_MARKER must survive another profile document delete."
                 ),
                 "kind": "note",
                 "source_refs": [
@@ -1663,6 +1658,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
 class FakeGraphAdapter:
     def __init__(self, fact_id: str) -> None:
         self._fact_id = fact_id
+        self.search_calls: list[dict[str, object]] = []
 
     async def capabilities(self) -> AdapterCapabilities:
         return AdapterCapabilities(
@@ -1677,6 +1673,7 @@ class FakeGraphAdapter:
         )
 
     async def search(self, **_kwargs: object) -> GraphSearchResult:
+        self.search_calls.append(_kwargs)
         return GraphSearchResult.ok(
             [
                 GraphCandidate(
@@ -1742,6 +1739,7 @@ class FakeEmbeddingAdapter:
 class FakeVectorAdapter:
     def __init__(self, chunk_id: str) -> None:
         self._chunk_id = chunk_id
+        self.search_calls: list[dict[str, object]] = []
 
     async def capabilities(self) -> AdapterCapabilities:
         return AdapterCapabilities(
@@ -1755,6 +1753,7 @@ class FakeVectorAdapter:
         )
 
     async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+        self.search_calls.append(_kwargs)
         return VectorSearchResult.ok(
             [
                 VectorCandidate(
@@ -1879,14 +1878,8 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
 
     assert default_context.status_code == 200
     assert canonical_context.status_code == 200
-    assert (
-        default_context.json()["data"]["diagnostics"]["consistency_mode"]
-        == "best_effort"
-    )
-    assert (
-        canonical_context.json()["data"]["diagnostics"]["consistency_mode"]
-        == "canonical_only"
-    )
+    assert default_context.json()["data"]["diagnostics"]["consistency_mode"] == "best_effort"
+    assert canonical_context.json()["data"]["diagnostics"]["consistency_mode"] == "canonical_only"
     assert "CONTEXT_CONSISTENCY_MODE_MARKER" in canonical_context.json()["data"]["rendered_text"]
 
 
@@ -2949,11 +2942,12 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
             },
             headers=auth_headers(),
         )
+        graph_adapter = FakeGraphAdapter(fact.json()["data"]["id"])
         use_case = BuildContextUseCase(
             uow_factory=container.uow_factory,
             ids=container.ids,
             vector_index=NoopVectorMemoryAdapter(),
-            graph_index=FakeGraphAdapter(fact.json()["data"]["id"]),
+            graph_index=graph_adapter,
             embedder=NoopEmbeddingAdapter(),
         )
         context = asyncio.run(
@@ -2969,6 +2963,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
         )
 
     assert fact.status_code == 201
+    assert graph_adapter.search_calls[0]["thread_id"] == str(current_scope.thread_id)
     assert "WRONG_THREAD_GRAPH_MARKER" not in context.rendered_text
     assert context.diagnostics["stale_graph_drop_count"] == 1
 
@@ -3070,10 +3065,11 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
         other_chunk_id = asyncio.run(
             _first_chunk_id(container, other_scope, "WRONG_THREAD_VECTOR_MARKER")
         )
+        vector_adapter = FakeVectorAdapter(other_chunk_id)
         use_case = BuildContextUseCase(
             uow_factory=container.uow_factory,
             ids=container.ids,
-            vector_index=FakeVectorAdapter(other_chunk_id),
+            vector_index=vector_adapter,
             graph_index=NoopGraphMemoryAdapter(),
             embedder=FakeEmbeddingAdapter(),
         )
@@ -3089,6 +3085,7 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
             )
         )
 
+    assert vector_adapter.search_calls[0]["thread_id"] == str(current_scope.thread_id)
     assert "WRONG_THREAD_VECTOR_MARKER" not in context.rendered_text
     assert context.diagnostics["stale_vector_drop_count"] == 1
 

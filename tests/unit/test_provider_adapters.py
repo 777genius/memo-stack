@@ -143,12 +143,29 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
         assert fake.episodes[0]["name"] == "fact:fact_graphiti"
         assert "uuid" not in fake.episodes[0]
         assert fake.episodes[0]["group_id"] == "memory__space_hackinterview__profile_default"
-        assert fake.search_calls[0]["group_ids"] == [
-            "memory__space_hackinterview__profile_default"
-        ]
+        assert fake.search_calls[0]["group_ids"] == ["memory__space_hackinterview__profile_default"]
         assert search.items[0].source_fact_ids == ("fact_graphiti",)
         assert deleted.status == PortStatus.OK
         assert fake.deleted == ["fact:fact_graphiti"]
+
+    asyncio.run(run())
+
+
+def test_graphiti_adapter_overfetches_thread_queries_for_postgres_visibility_hydration() -> None:
+    async def run() -> None:
+        fake = FakeGraphiti()
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        search = await adapter.search(
+            space_id="space_hackinterview",
+            profile_ids=("profile_default",),
+            thread_id="thread_current",
+            query="Graphiti projection",
+            limit=3,
+        )
+
+        assert search.status == PortStatus.OK
+        assert fake.search_calls[0]["num_results"] == 12
 
     asyncio.run(run())
 
@@ -500,6 +517,18 @@ class FakeQdrantModels:
         def __init__(self, **kwargs: object) -> None:
             self.kwargs = kwargs
 
+    class PayloadField:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    class IsNullCondition:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    class MinShould:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
 
 class FakeQdrantClient:
     def __init__(self) -> None:
@@ -624,6 +653,36 @@ def test_qdrant_adapter_search_contract_uses_scope_and_projection_filters() -> N
             "projection_version": {"value": "projection_v2"},
             "profile_id": {"any": ["profile_default", "profile_candidate"]},
         }
+
+    asyncio.run(run())
+
+
+def test_qdrant_adapter_search_contract_filters_current_thread_or_profile_wide_chunks() -> None:
+    async def run() -> None:
+        fake = FakeQdrantClient()
+        adapter = QdrantVectorMemoryAdapter(
+            url="http://qdrant.test",
+            collection_name="memory_chunks_v1",
+            vector_size=3,
+        )
+        adapter._client = lambda: _fake_qdrant_client(fake)  # type: ignore[method-assign]
+
+        search = await adapter.search_chunks(
+            space_id="space_hackinterview",
+            profile_ids=("profile_default",),
+            thread_id="thread_current",
+            query_vector=(0.1, 0.2, 0.3),
+            limit=3,
+        )
+
+        assert search.status == PortStatus.OK
+        query_filter = fake.query_calls[0]["query_filter"]
+        min_should = query_filter.kwargs["min_should"]
+        conditions = min_should.kwargs["conditions"]
+        assert min_should.kwargs["min_count"] == 1
+        assert conditions[0].kwargs["key"] == "thread_id"
+        assert conditions[0].kwargs["match"].kwargs == {"value": "thread_current"}
+        assert conditions[1].kwargs["is_null"].kwargs == {"key": "thread_id"}
 
     asyncio.run(run())
 

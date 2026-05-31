@@ -160,6 +160,7 @@ class VectorMemoryPort(MemoryAdapterPort, Protocol):
         *,
         space_id: str,
         profile_ids: tuple[str, ...],
+        thread_id: str | None = None,
         query_vector: tuple[float, ...],
         limit: int,
     ) -> VectorSearchResult:
@@ -208,6 +209,7 @@ class GraphMemoryPort(MemoryAdapterPort, Protocol):
         *,
         space_id: str,
         profile_ids: tuple[str, ...],
+        thread_id: str | None = None,
         query: str,
         limit: int,
     ) -> GraphSearchResult:

@@ -209,6 +209,7 @@ class GraphitiGraphMemoryAdapter:
         *,
         space_id: str,
         profile_ids: tuple[str, ...],
+        thread_id: str | None = None,
         query: str,
         limit: int,
     ) -> GraphSearchResult:
@@ -224,12 +225,13 @@ class GraphitiGraphMemoryAdapter:
             if search is None:
                 return GraphSearchResult.degraded("graph.missing_search", retryable=False)
             candidates: list[GraphCandidate] = []
+            effective_limit = _search_limit(limit, thread_id=thread_id)
             for profile_id in profile_ids:
                 results = await _call_search(
                     search,
                     query=query,
                     group_id=self._group_id(space_id, profile_id),
-                    limit=limit,
+                    limit=effective_limit,
                 )
                 for result in results:
                     fact_id = await _canonical_fact_id(client, result)
@@ -243,7 +245,7 @@ class GraphitiGraphMemoryAdapter:
                                 diagnostics={"provider": "graphiti"},
                             )
                         )
-            return GraphSearchResult.ok(candidates[:limit])
+            return GraphSearchResult.ok(candidates[:effective_limit])
         except Exception:
             return GraphSearchResult.degraded("graph.search_failed", retryable=True)
 
@@ -251,6 +253,7 @@ class GraphitiGraphMemoryAdapter:
         result = await self.search(
             space_id=query.scope.space_id,
             profile_ids=query.scope.profile_ids,
+            thread_id=query.scope.thread_id,
             query=query.query,
             limit=query.limit,
         )
@@ -490,6 +493,13 @@ async def _call_delete_episode(client: Any, fact_id: str) -> None:
                 raise
 
 
+def _search_limit(limit: int, *, thread_id: str | None) -> int:
+    if thread_id is None:
+        return limit
+    # Graphiti is grouped by space/profile; Postgres hydration enforces thread visibility.
+    return min(max(limit * 4, limit), 100)
+
+
 async def _call_search(search: Any, *, query: str, group_id: str, limit: int) -> list[object]:
     try:
         return list(await search(query=query, group_ids=[group_id], num_results=limit))
@@ -507,9 +517,10 @@ def _safe_group_id_part(value: str) -> str:
 
 
 def _supports_delete_episode(client: object) -> bool:
-    return getattr(client, "delete_episode", None) is not None or getattr(
-        client, "remove_episode", None
-    ) is not None
+    return (
+        getattr(client, "delete_episode", None) is not None
+        or getattr(client, "remove_episode", None) is not None
+    )
 
 
 async def _remove_existing_episode_if_supported(client: object, fact_id: str) -> None:

@@ -75,9 +75,7 @@ class ProviderCircuitBreaker:
     def snapshot(self) -> dict[str, object]:
         with self._lock:
             opened_at = self._opened_at
-            next_probe_at = (
-                opened_at.timestamp() + self.reset_after_seconds if opened_at else None
-            )
+            next_probe_at = opened_at.timestamp() + self.reset_after_seconds if opened_at else None
             return {
                 "adapter_name": self.adapter_name,
                 "operation_kind": self.operation_kind,
@@ -173,6 +171,7 @@ class CircuitBreakingVectorMemoryAdapter:
         *,
         space_id: str,
         profile_ids: tuple[str, ...],
+        thread_id: str | None = None,
         query_vector: tuple[float, ...],
         limit: int,
     ) -> VectorSearchResult:
@@ -182,6 +181,7 @@ class CircuitBreakingVectorMemoryAdapter:
             result = await self._inner.search_chunks(
                 space_id=space_id,
                 profile_ids=profile_ids,
+                thread_id=thread_id,
                 query_vector=query_vector,
                 limit=limit,
             )
@@ -247,6 +247,7 @@ class CircuitBreakingGraphMemoryAdapter:
         *,
         space_id: str,
         profile_ids: tuple[str, ...],
+        thread_id: str | None = None,
         query: str,
         limit: int,
     ) -> GraphSearchResult:
@@ -256,6 +257,7 @@ class CircuitBreakingGraphMemoryAdapter:
             result = await self._inner.search(
                 space_id=space_id,
                 profile_ids=profile_ids,
+                thread_id=thread_id,
                 query=query,
                 limit=limit,
             )

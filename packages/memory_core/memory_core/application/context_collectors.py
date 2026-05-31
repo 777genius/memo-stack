@@ -130,6 +130,7 @@ class VectorContextCollector:
             result = await self._vector_index.search_chunks(
                 space_id=str(query.space_id),
                 profile_ids=profile_ids,
+                thread_id=str(query.thread_id) if query.thread_id else None,
                 query_vector=embedding.vectors[0],
                 limit=query.max_chunks,
             )
@@ -197,6 +198,7 @@ class GraphContextCollector:
             result = await self._graph_index.search(
                 space_id=str(query.space_id),
                 profile_ids=profile_ids,
+                thread_id=str(query.thread_id) if query.thread_id else None,
                 query=query.query,
                 limit=query.max_facts,
             )
@@ -229,7 +231,7 @@ class GraphContextCollector:
             profile_ids=profile_ids,
         )
         diagnostics["stale_graph_drop_count"] = stale_count + orphan_candidate_count
-        return items
+        return items[: query.max_facts]
 
 
 class RagContextCollector:
