@@ -842,15 +842,17 @@ def test_quality_golden_eval_passes() -> None:
     assert result["status"] == "ok"
     assert result["suite"] == "quality-golden"
     assert result["checks"]["memory_evidence_guard"] is True
-    assert result["metrics"]["case_count"] >= 14
+    assert result["metrics"]["case_count"] >= 16
     assert result["metrics"]["recall_at_5"] >= 0.95
     assert result["metrics"]["precision_at_5"] >= 0.90
     assert result["metrics"]["answer_support_rate"] == 1.0
     assert result["metrics"]["document_recall_at_5"] >= 0.95
     assert result["metrics"]["multi_profile_recall_at_5"] == 1.0
+    assert result["metrics"]["thread_recall_at_5"] == 1.0
     assert result["metrics"]["stale_memory_rate"] == 0.0
     assert result["metrics"]["deleted_memory_leak_count"] == 0
     assert result["metrics"]["cross_profile_leak_count"] == 0
+    assert result["metrics"]["cross_thread_leak_count"] == 0
     assert result["metrics"]["restricted_memory_leak_count"] == 0
     assert result["metrics"]["prompt_injection_promoted_count"] == 0
     assert result["metrics"]["critical_failure_count"] == 0

@@ -98,8 +98,8 @@ Operational pieces:
   current evidence only points to the deleted document or its chunks;
 - redacted profile export removes fact/chunk text and source quote previews;
 - small golden eval for prompt-impacting context behavior;
-- quality golden eval for recall, precision, stale/delete filtering, profile isolation,
-  restricted-memory hiding, prompt-injection evidence handling and token budget safety;
+- quality golden eval for recall, precision, stale/delete filtering, profile/thread
+  isolation, restricted-memory hiding, prompt-injection evidence handling and token budget safety;
 - import-boundary, API, worker, SDK and review-gated suggestion tests.
 
 ## Local Run

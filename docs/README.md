@@ -58,7 +58,7 @@ make memory-test-quality
 
 `quality-golden` is the prompt-impacting memory benchmark. It checks recall,
 precision, stale update filtering, delete filtering, restricted-memory hiding,
-profile isolation, document chunk recall, prompt-injection evidence rendering
+profile and thread isolation, document chunk recall, prompt-injection evidence rendering
 and tiny token-budget safety. Reports are redacted and contain case ids,
 item ids, gates and aggregate metrics, not raw memory text.
 

@@ -190,6 +190,8 @@ def _execute_quality_golden(client, headers: dict[str, str]) -> dict[str, object
             space_id=seeded.space_id,
             alpha_profile_id=seeded.alpha_profile_id,
             beta_profile_id=seeded.beta_profile_id,
+            current_thread_id=seeded.current_thread_id,
+            other_thread_id=seeded.other_thread_id,
         )
     )
     metrics = _quality_golden_metrics(case_results)
@@ -231,6 +233,8 @@ class QualitySeedResult:
     space_id: str
     alpha_profile_id: str
     beta_profile_id: str
+    current_thread_id: str
+    other_thread_id: str
 
 
 @dataclass(frozen=True)
@@ -240,6 +244,7 @@ class EvalCase:
     space_id: str
     profile_ids: tuple[str, ...]
     query: str
+    thread_id: str | None = None
     must_include: tuple[str, ...] = ()
     must_not_include: tuple[str, ...] = ()
     token_budget: int = 512
@@ -273,6 +278,8 @@ def _seed_small_golden(client: TestClient, headers: dict[str, str]) -> SeedResul
             space_id=space_id,
             alpha_profile_id=alpha_profile_id,
             beta_profile_id=beta_profile_id,
+            current_thread_id="thread_quality_current",
+            other_thread_id="thread_quality_other",
         )
     checks["fact_canonical"] = _remember_eval_fact(
         client,
@@ -387,8 +394,12 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             space_id=space_id,
             alpha_profile_id=alpha_profile_id,
             beta_profile_id=beta_profile_id,
+            current_thread_id="thread_quality_current",
+            other_thread_id="thread_quality_other",
         )
 
+    current_thread_id = "thread_quality_current"
+    other_thread_id = "thread_quality_other"
     quality_facts = (
         (
             "current_model",
@@ -397,6 +408,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-current-model",
             "quality-current-model-v1",
             "internal",
+            None,
         ),
         (
             "model_decoy",
@@ -405,6 +417,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-model-decoy",
             "quality-model-decoy-v1",
             "internal",
+            None,
         ),
         (
             "architecture_roles",
@@ -416,6 +429,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-architecture-roles",
             "quality-architecture-roles-v1",
             "internal",
+            None,
         ),
         (
             "clean_arch",
@@ -427,6 +441,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-clean-arch",
             "quality-clean-arch-v1",
             "internal",
+            None,
         ),
         (
             "frontend_noise",
@@ -435,6 +450,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-frontend-noise",
             "quality-frontend-noise-v1",
             "internal",
+            None,
         ),
         (
             "compact_budget",
@@ -443,6 +459,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-compact-budget",
             "quality-compact-budget-v1",
             "internal",
+            None,
         ),
         (
             "restricted_secret",
@@ -451,6 +468,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-restricted-secret",
             "quality-restricted-secret-v1",
             "restricted",
+            None,
         ),
         (
             "beta_secret",
@@ -459,9 +477,36 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "quality-beta-secret",
             "quality-beta-secret-v1",
             "internal",
+            None,
+        ),
+        (
+            "current_thread_fact",
+            alpha_profile_id,
+            "QUALITY_THREAD_CURRENT: active coding session uses black-box retry strategy.",
+            "quality-thread-current",
+            "quality-thread-current-v1",
+            "internal",
+            current_thread_id,
+        ),
+        (
+            "other_thread_fact",
+            alpha_profile_id,
+            "QUALITY_THREAD_OTHER: neighboring session uses snapshot-only migration notes.",
+            "quality-thread-other",
+            "quality-thread-other-v1",
+            "internal",
+            other_thread_id,
         ),
     )
-    for check_name, profile_id, text, source_id, idempotency_key, classification in quality_facts:
+    for (
+        check_name,
+        profile_id,
+        text,
+        source_id,
+        idempotency_key,
+        classification,
+        thread_id,
+    ) in quality_facts:
         checks[check_name] = _remember_eval_fact(
             client,
             headers,
@@ -471,6 +516,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             source_id=source_id,
             idempotency_key=idempotency_key,
             classification=classification,
+            thread_id=thread_id,
         )
 
     checks["updated_provider_fact"] = _seed_quality_updated_fact(
@@ -542,6 +588,8 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         space_id=space_id,
         alpha_profile_id=alpha_profile_id,
         beta_profile_id=beta_profile_id,
+        current_thread_id=current_thread_id,
+        other_thread_id=other_thread_id,
     )
 
 
@@ -606,12 +654,14 @@ def _remember_eval_fact(
     source_id: str,
     idempotency_key: str | None = None,
     classification: str = "internal",
+    thread_id: str | None = None,
 ) -> bool:
     response = client.post(
         "/v1/facts",
         json={
             "space_id": space_id,
             "profile_id": profile_id,
+            "thread_id": thread_id,
             "text": text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": source_id}],
@@ -853,6 +903,8 @@ def _quality_golden_cases(
     space_id: str,
     alpha_profile_id: str,
     beta_profile_id: str,
+    current_thread_id: str,
+    other_thread_id: str,
 ) -> tuple[EvalCase, ...]:
     return (
         EvalCase(
@@ -939,6 +991,30 @@ def _quality_golden_cases(
             max_chunks=0,
         ),
         EvalCase(
+            case_id="thread_current_visible_without_neighbor",
+            category="cross_thread",
+            space_id=space_id,
+            profile_ids=(alpha_profile_id,),
+            thread_id=current_thread_id,
+            query="active coding session black-box retry strategy neighboring snapshot migration",
+            must_include=("QUALITY_THREAD_CURRENT",),
+            must_not_include=("QUALITY_THREAD_OTHER",),
+            max_facts=5,
+            max_chunks=0,
+        ),
+        EvalCase(
+            case_id="thread_other_visible_without_current",
+            category="cross_thread",
+            space_id=space_id,
+            profile_ids=(alpha_profile_id,),
+            thread_id=other_thread_id,
+            query="neighboring session snapshot-only migration notes black-box retry strategy",
+            must_include=("QUALITY_THREAD_OTHER",),
+            must_not_include=("QUALITY_THREAD_CURRENT",),
+            max_facts=5,
+            max_chunks=0,
+        ),
+        EvalCase(
             case_id="document_overview_recall",
             category="documents",
             space_id=space_id,
@@ -1008,18 +1084,17 @@ def _run_eval_case(
     headers: dict[str, str],
     case: EvalCase,
 ) -> EvalCaseResult:
-    response = client.post(
-        "/v1/context",
-        json={
-            "space_id": case.space_id,
-            "profile_ids": list(case.profile_ids),
-            "query": case.query,
-            "token_budget": case.token_budget,
-            "max_facts": case.max_facts,
-            "max_chunks": case.max_chunks,
-        },
-        headers=headers,
-    )
+    payload = {
+        "space_id": case.space_id,
+        "profile_ids": list(case.profile_ids),
+        "query": case.query,
+        "token_budget": case.token_budget,
+        "max_facts": case.max_facts,
+        "max_chunks": case.max_chunks,
+    }
+    if case.thread_id:
+        payload["thread_id"] = case.thread_id
+    response = client.post("/v1/context", json=payload, headers=headers)
     if response.status_code != 200:
         return EvalCaseResult(
             case=case,
@@ -1172,9 +1247,17 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
     multi_profile_cases = tuple(
         result for result in case_results if result.case.category == "multi_profile"
     )
+    cross_thread_cases = tuple(
+        result for result in case_results if result.case.category == "cross_thread"
+    )
     restricted_leaks = _count_category_failures(
         case_results,
         "restricted",
+        "must_not_include_matched",
+    )
+    cross_thread_leaks = _count_category_failures(
+        case_results,
+        "cross_thread",
         "must_not_include_matched",
     )
     critical_failure_count = (
@@ -1183,6 +1266,7 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
         + int(base["prompt_injection_promoted_count"])
         + int(base["context_token_overflow_count"])
         + restricted_leaks
+        + cross_thread_leaks
         + _count_category_failures(case_results, "stale_update", "must_not_include_matched")
     )
     return {
@@ -1203,6 +1287,11 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
             sum(1 for result in multi_profile_cases if result.recall_ok),
             len(multi_profile_cases),
         ),
+        "thread_recall_at_5": _ratio(
+            sum(1 for result in cross_thread_cases if result.recall_ok),
+            len(cross_thread_cases),
+        ),
+        "cross_thread_leak_count": cross_thread_leaks,
         "restricted_memory_leak_count": restricted_leaks,
         "critical_failure_count": critical_failure_count,
         "harmful_context_rate": _ratio(critical_failure_count, len(case_results)),
@@ -1217,9 +1306,11 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "answer_support_rate": metrics["answer_support_rate"] == 1.0,
         "document_recall_at_5": float(metrics["document_recall_at_5"]) >= 0.95,
         "multi_profile_recall_at_5": metrics["multi_profile_recall_at_5"] == 1.0,
+        "thread_recall_at_5": metrics["thread_recall_at_5"] == 1.0,
         "stale_memory_rate": metrics["stale_memory_rate"] == 0.0,
         "deleted_memory_leak_count": metrics["deleted_memory_leak_count"] == 0,
         "cross_profile_leak_count": metrics["cross_profile_leak_count"] == 0,
+        "cross_thread_leak_count": metrics["cross_thread_leak_count"] == 0,
         "restricted_memory_leak_count": metrics["restricted_memory_leak_count"] == 0,
         "prompt_injection_promoted_count": metrics["prompt_injection_promoted_count"] == 0,
         "fallback_success_rate": metrics["fallback_success_rate"] == 1.0,
