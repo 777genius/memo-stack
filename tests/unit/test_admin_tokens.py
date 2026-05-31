@@ -239,12 +239,14 @@ def test_scoped_service_token_cannot_cross_space_or_use_unscoped_routes(
             headers=scoped_headers,
         )
         cross_space_by_id = client.get(f"/v1/facts/{fact_b['id']}", headers=scoped_headers)
+        capabilities = client.get("/v1/capabilities", headers=scoped_headers)
         unscoped = client.get("/v1/spaces", headers=scoped_headers)
 
     assert same_space.status_code == 200
     assert cross_space.status_code == 403
     assert cross_space.json()["error"]["code"] == "memory.forbidden"
     assert cross_space_by_id.status_code == 403
+    assert capabilities.status_code == 200
     assert "SCOPED_TOKEN_LEAK_MARKER" not in cross_space_by_id.text
     assert unscoped.status_code == 403
 
@@ -544,6 +546,7 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
             },
             headers=scoped_headers,
         )
+        profile_capabilities = client.get("/v1/capabilities", headers=scoped_headers)
 
     assert scoped["profile_ids"] == [profile_a["id"]]
     assert same_profile.status_code == 200
@@ -556,6 +559,7 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
     assert scoped_same_profile_diagnostics.status_code == 200
     assert cross_profile_diagnostics.status_code == 403
     assert multi_profile_context.status_code == 403
+    assert profile_capabilities.status_code == 200
     assert "PROFILE_SCOPE_LEAK_MARKER" not in cross_profile_by_id.text
     assert "PROFILE_SCOPE_SUGGESTION_LEAK" not in cross_profile_suggestions.text
 

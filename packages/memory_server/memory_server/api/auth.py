@@ -134,6 +134,8 @@ async def _ensure_scoped_token_can_access_request(
 ) -> None:
     if token.space_id is None:
         return
+    if _is_safe_unscoped_endpoint(request):
+        return
 
     requested_spaces = await _requested_space_refs(container, request)
     if not requested_spaces:
@@ -151,6 +153,8 @@ async def _ensure_profile_scoped_token_can_access_request(
 ) -> None:
     if token.profile_ids is None:
         return
+    if _is_safe_unscoped_endpoint(request):
+        return
 
     requested_profiles = await _requested_profile_refs(container, request)
     if not requested_profiles:
@@ -166,6 +170,10 @@ async def _ensure_profile_scoped_token_can_access_request(
             raise MemoryForbiddenError(
                 "Profile-scoped service token cannot access requested profile"
             )
+
+
+def _is_safe_unscoped_endpoint(request: Request) -> bool:
+    return request.method.upper() == "GET" and request.url.path == "/v1/capabilities"
 
 
 async def _requested_space_refs(container: Container, request: Request) -> set[str]:
