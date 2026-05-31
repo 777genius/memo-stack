@@ -693,6 +693,97 @@ def test_profile_scoped_service_token_requires_space_scope(
         raise AssertionError("Expected profile-scoped token without space to fail")
 
 
+def test_scoped_service_token_create_requires_existing_active_scope(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'scope-create.db'}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'scope-create.db'}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+    root_headers = {"Authorization": "Bearer root-token"}
+    with TestClient(app) as client:
+        space = client.post(
+            "/v1/spaces",
+            json={"slug": "token-scope-create", "name": "Token Scope Create"},
+            headers=root_headers,
+        ).json()["data"]
+        profile = client.post(
+            "/v1/profiles",
+            json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
+            headers=root_headers,
+        ).json()["data"]
+
+    slug_scoped = asyncio.run(
+        token_create(
+            space_id="token-scope-create",
+            profile_ids=("alpha",),
+            description="slug scoped",
+        )
+    )
+
+    missing_space_error = None
+    try:
+        asyncio.run(token_create(space_id="space_missing", description="missing space"))
+    except ValueError as exc:
+        missing_space_error = str(exc)
+
+    missing_profile_error = None
+    try:
+        asyncio.run(
+            token_create(
+                space_id=space["id"],
+                profile_ids=("profile_missing",),
+                description="missing profile",
+            )
+        )
+    except ValueError as exc:
+        missing_profile_error = str(exc)
+
+    asyncio.run(_mark_scope_deleted(app, profile_id=profile["id"]))
+    deleted_profile_error = None
+    try:
+        asyncio.run(
+            token_create(
+                space_id=space["id"],
+                profile_ids=(profile["id"],),
+                description="deleted profile",
+            )
+        )
+    except ValueError as exc:
+        deleted_profile_error = str(exc)
+
+    asyncio.run(_mark_scope_deleted(app, space_id=space["id"]))
+    deleted_space_error = None
+    try:
+        asyncio.run(token_create(space_id=space["id"], description="deleted space"))
+    except ValueError as exc:
+        deleted_space_error = str(exc)
+
+    assert slug_scoped["space_id"] == "token-scope-create"
+    assert slug_scoped["profile_ids"] == ["alpha"]
+    assert missing_space_error == "Scoped service token space must exist and be active"
+    assert missing_profile_error == (
+        "Profile scoped service token profiles must exist and be active"
+    )
+    assert deleted_profile_error == (
+        "Profile scoped service token profiles must exist and be active"
+    )
+    assert deleted_space_error == "Scoped service token space must exist and be active"
+
+
 def test_profile_scoped_write_token_can_create_suggestion_only_in_scope(
     tmp_path: Path,
     monkeypatch,

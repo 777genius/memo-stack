@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 
-from memory_adapters.postgres.models import MemoryServiceTokenRow
-from sqlalchemy import select
+from memory_adapters.postgres.models import MemoryProfileRow, MemoryServiceTokenRow, MemorySpaceRow
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from memory_server.composition import Container
@@ -104,6 +104,19 @@ async def create_service_token(
     if normalized_profile_ids is not None and space_id is None:
         raise ValueError("Profile scoped service token requires a space scope")
     async with AsyncSession(engine) as session:
+        space_row = await _load_active_space(session, space_id) if space_id else None
+        if space_id is not None and space_row is None:
+            raise ValueError("Scoped service token space must exist and be active")
+        if normalized_profile_ids is not None:
+            for profile_id in normalized_profile_ids:
+                if not await _profile_ref_exists_in_space(
+                    session,
+                    space_id=space_row.id,
+                    profile_ref=profile_id,
+                ):
+                    raise ValueError(
+                        "Profile scoped service token profiles must exist and be active"
+                    )
         session.add(
             MemoryServiceTokenRow(
                 id=token_id,
@@ -130,6 +143,40 @@ async def create_service_token(
         description=description,
         permissions=normalized_permissions,
     )
+
+
+async def _load_active_space(
+    session: AsyncSession,
+    value: str,
+) -> MemorySpaceRow | None:
+    return (
+        await session.execute(
+            select(MemorySpaceRow).where(
+                or_(MemorySpaceRow.id == value, MemorySpaceRow.slug == value),
+                MemorySpaceRow.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _profile_ref_exists_in_space(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    profile_ref: str,
+) -> bool:
+    profile = (
+        await session.execute(
+            select(MemoryProfileRow.id).where(
+                MemoryProfileRow.space_id == space_id,
+                or_(
+                    MemoryProfileRow.id == profile_ref, MemoryProfileRow.external_ref == profile_ref
+                ),
+                MemoryProfileRow.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    return profile is not None
 
 
 async def list_service_tokens(
