@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from memory_adapters.postgres.models import (
+    MemoryChunkRow,
+    MemoryDocumentRow,
     MemoryFactRow,
     MemoryOutboxRow,
     MemoryProfileRow,
@@ -1430,6 +1432,138 @@ def test_import_profile_enqueues_projection_reindex_events(
     assert event_types == {"graph.upsert_fact", "vector.upsert_chunk"}
     assert fairness_keys == {"fact:fact_imported_reindex", "chunk:chunk_imported_reindex"}
     assert all(item["workload_class"] == "projection" for item in items)
+
+
+def test_import_profile_drops_thread_ids_without_thread_transfer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "thread-import.db"
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    fixture = tmp_path / "thread-profile-import.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "space": {"slug": "source-space"},
+                "profile": {"external_ref": "source-profile"},
+                "facts": [
+                    {
+                        "id": "fact_imported_thread",
+                        "thread_id": "thread_source_only",
+                        "kind": "architecture_decision",
+                        "text": "Imported fact thread ids should not become orphan refs.",
+                        "status": "active",
+                        "confidence": "medium",
+                        "trust_level": "medium",
+                        "classification": "internal",
+                        "version": 1,
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "documents": [
+                    {
+                        "id": "doc_imported_thread",
+                        "thread_id": "thread_source_only",
+                        "title": "Imported threaded document",
+                        "source_type": "document",
+                        "source_external_id": "doc-imported-thread",
+                        "content_hash": "doc-imported-thread-hash",
+                        "classification": "internal",
+                        "status": "active",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "chunks": [
+                    {
+                        "id": "chunk_imported_thread",
+                        "thread_id": "thread_source_only",
+                        "document_id": "doc_imported_thread",
+                        "source_type": "document",
+                        "source_external_id": "doc-imported-thread",
+                        "source_hash": "chunk-imported-thread-hash",
+                        "kind": "document_section",
+                        "text": "Imported chunk thread ids should not become orphan refs.",
+                        "normalized_text": (
+                            "imported chunk thread ids should not become orphan refs."
+                        ),
+                        "status": "active",
+                        "sequence": 0,
+                        "char_start": 0,
+                        "char_end": 57,
+                        "token_estimate": 14,
+                        "classification": "internal",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                        "metadata_json": {},
+                    }
+                ],
+                "source_refs": [
+                    {
+                        "fact_id": "fact_imported_thread",
+                        "fact_version": 1,
+                        "source_type": "import",
+                        "source_id": "fixture",
+                        "chunk_id": "chunk_imported_thread",
+                        "quote_preview": "thread source ref",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    imported = asyncio.run(
+        import_profile_command(
+            space="thread-import-space",
+            profile="default",
+            file=str(fixture),
+            dry_run=False,
+            merge_strategy="fail_on_conflict",
+            confirmed=True,
+        )
+    )
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+
+    async def load_thread_refs() -> tuple[str | None, str | None, str | None]:
+        async with AsyncSession(app.state.container.engine) as session:
+            fact = await session.get(MemoryFactRow, "fact_imported_thread")
+            document = await session.get(MemoryDocumentRow, "doc_imported_thread")
+            chunk = await session.get(MemoryChunkRow, "chunk_imported_thread")
+            assert fact is not None
+            assert document is not None
+            assert chunk is not None
+            return fact.thread_id, document.thread_id, chunk.thread_id
+
+    fact_thread_id, document_thread_id, chunk_thread_id = asyncio.run(load_thread_refs())
+
+    assert imported["status"] == "ok"
+    assert imported["imported"] == {
+        "facts": 1,
+        "documents": 1,
+        "chunks": 1,
+        "source_refs": 1,
+    }
+    assert fact_thread_id is None
+    assert document_thread_id is None
+    assert chunk_thread_id is None
 
 
 def test_import_profile_create_new_profile_rewrites_canonical_ids(
