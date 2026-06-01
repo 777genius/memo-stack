@@ -1673,7 +1673,7 @@ def _prompt_snapshot_cases() -> tuple[PromptSnapshotCase, ...]:
             items=(
                 _fact(
                     "fact_profile_alpha_visible",
-                    "Profile alpha uses local Memory Platform for HackInterview.",
+                    "Profile alpha uses local Memory Platform for Client App.",
                     source_id="manual_profile_alpha",
                     profile_id="profile_alpha",
                     score=0.95,

@@ -41,10 +41,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(Exception, internal_error_handler)
     app.include_router(root_health_router)
     app.include_router(v1_router)
-    if container.settings.legacy_hackinterview_enabled:
-        from memory_server.api.legacy_hackinterview import router as legacy_hackinterview_router
+    if container.settings.legacy_client_enabled:
+        from memory_server.api.legacy_client import router as legacy_client_router
 
-        app.include_router(legacy_hackinterview_router)
+        app.include_router(legacy_client_router)
     return app
 
 

@@ -1114,7 +1114,7 @@ def test_export_redacted_mode_omits_restricted_text(
     with TestClient(app) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers={"Authorization": "Bearer root-token"},
         ).json()["data"]
         profile = client.post(
@@ -1156,7 +1156,7 @@ def test_export_redacted_mode_omits_restricted_text(
     out = tmp_path / "profile-export.json"
     exported = asyncio.run(
         export_profile_command(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             out=str(out),
             redacted=True,
@@ -1745,7 +1745,7 @@ def test_import_profile_create_new_profile_rewrites_canonical_ids(
     with TestClient(app) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=headers,
         ).json()["data"]
         profile = client.post(
@@ -1768,7 +1768,7 @@ def test_import_profile_create_new_profile_rewrites_canonical_ids(
     export_path = tmp_path / "profile-export.json"
     exported = asyncio.run(
         export_profile_command(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             out=str(export_path),
             redacted=False,
@@ -1776,7 +1776,7 @@ def test_import_profile_create_new_profile_rewrites_canonical_ids(
     )
     imported = asyncio.run(
         import_profile_command(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             file=str(export_path),
             dry_run=False,
@@ -1849,7 +1849,7 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
     with TestClient(app) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=headers,
         ).json()["data"]
         profile = client.post(
@@ -1908,7 +1908,7 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
 
     imported = asyncio.run(
         import_profile_command(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             file=str(fixture),
             dry_run=False,

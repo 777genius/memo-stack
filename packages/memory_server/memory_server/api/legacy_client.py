@@ -1,4 +1,4 @@
-"""HackInterview compatibility gateway.
+"""Legacy client compatibility gateway.
 
 This module is intentionally an anti-corruption layer. Legacy DTO names and
 response shapes stay here and are mapped to generic application use cases.
@@ -30,7 +30,7 @@ from memory_server.composition import Container
 
 router = APIRouter(
     prefix="/api/v1/interview-memory",
-    tags=["legacy-hackinterview"],
+    tags=["legacy-client"],
     dependencies=[Depends(require_service_token)],
 )
 
@@ -282,7 +282,7 @@ def _empty_status_counts() -> dict[str, int]:
 
 def _required_thread(thread_id: ThreadId | None) -> ThreadId:
     if thread_id is None:
-        msg = "Legacy HackInterview request requires thread scope"
+        msg = "Legacy client request requires thread scope"
         raise RuntimeError(msg)
     return thread_id
 

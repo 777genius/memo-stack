@@ -62,7 +62,7 @@ def auth_headers() -> dict[str, str]:
 
 def fact_payload(text: str = "Graph jobs stay safe when Graphiti is disabled.") -> dict[str, Any]:
     return {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_id": "profile_default",
         "text": text,
         "kind": "architecture_decision",
@@ -123,7 +123,7 @@ def test_safe_document_ingest_enqueues_cognee_projection(tmp_path: Path) -> None
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Cognee projection",
                 "text": "COGNEE_PUBLIC_DOC_MARKER can be projected to document memory.",
@@ -144,7 +144,7 @@ def test_restricted_document_ingest_does_not_enqueue_cognee_projection(tmp_path:
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Restricted projection",
                 "text": "COGNEE_RESTRICTED_DOC_MARKER must stay out of external memory.",
@@ -188,7 +188,7 @@ def test_cognee_document_projection_worker_sends_only_safe_canonical_chunks(
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Safe Cognee worker",
                 "text": "COGNEE_WORKER_SAFE_MARKER should be sent from canonical chunks.",
@@ -398,7 +398,7 @@ def test_unknown_document_is_not_embedded_but_job_completes(tmp_path: Path) -> N
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Unknown document",
                 "text": "UNKNOWN_CLASSIFICATION_MARKER should be stored only.",
@@ -433,7 +433,7 @@ def test_vector_disabled_internal_document_job_skips_embedding_and_completes(
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Internal document",
                 "text": "VECTOR_DISABLED_INTERNAL_DOC_MARKER should stay canonical only.",
@@ -497,7 +497,7 @@ def test_unhealthy_vector_projection_retries_without_embedding_cost(tmp_path: Pa
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Internal document",
                 "text": "VECTOR_UNHEALTHY_RETRY_MARKER should leave projection pending.",
@@ -566,7 +566,7 @@ def test_embedding_budget_exceeded_keeps_document_canonical(tmp_path: Path) -> N
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Budget exceeded",
                 "text": (
@@ -640,7 +640,7 @@ def test_budget_diagnostics_omit_raw_text(tmp_path: Path) -> None:
         created = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Budget diagnostics",
                 "text": "BUDGET_DIAGNOSTIC_RAW_TEXT must not appear in worker diagnostics.",
@@ -1064,9 +1064,7 @@ def test_active_context_gate_rejects_unknown_manual_acknowledgement(
     assert result["status"] == "failed"
     assert result["gate"] == "active_context"
     assert _doctor_check(result, "manual_acknowledgements")["status"] == "failed"
-    assert _doctor_check(result, "manual_acknowledgements")["unknown"] == [
-        "not-a-real-check"
-    ]
+    assert _doctor_check(result, "manual_acknowledgements")["unknown"] == ["not-a-real-check"]
     assert "RAW_" not in str(result)
 
 

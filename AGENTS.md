@@ -2,7 +2,7 @@
 
 ## Project Intent
 
-This repository is the reusable Memory Platform extracted from HackInterview planning docs.
+This repository is the reusable Memory Platform extracted from client application planning docs.
 
 Implement according to:
 
@@ -29,15 +29,15 @@ Global reference:
 docs/memory-platform-architecture-plan.md
 ```
 
-HackInterview compatibility notes:
+Legacy client compatibility notes:
 
 ```text
-docs/hackinterview/interview-memory-clean-architecture-plan.md
+docs/client-integration/interview-memory-clean-architecture-plan.md
 ```
 
 ## Implementation Rule
 
-Do not let `memory_core` import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI or HackInterview code.
+Do not let `memory_core` import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI or client application code.
 
 Implementation order:
 

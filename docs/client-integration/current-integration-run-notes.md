@@ -1,10 +1,10 @@
-# HackInterview Integration Run Notes
+# Client App Integration Run Notes
 
-These notes were copied from the HackInterview project context when Memory Platform docs were moved out.
+These notes were copied from the Client App project context when Memory Platform docs were moved out.
 
-## Current HackInterview Memory Integration
+## Current Client App Memory Integration
 
-HackInterview currently has desktop interview memory behavior around `ActiveContext`.
+Client App currently has desktop interview memory behavior around `ActiveContext`.
 
 Backend routes:
 
@@ -77,12 +77,12 @@ pnpm tauri dev
 
 ## Future Memory Platform Compatibility Goal
 
-The new Memory Platform should preserve HackInterview compatibility through an adapter/gateway instead of making HackInterview own the memory engine.
+The new Memory Platform should preserve Client App compatibility through an adapter/gateway instead of making Client App own the memory engine.
 
 Target boundary:
 
 ```text
-HackInterview desktop/backend
+Client App desktop/backend
   -> HTTP or SDK
   -> memory_server compatibility routes
   -> memory_core use cases
@@ -91,7 +91,7 @@ HackInterview desktop/backend
 
 Rules:
 
-- HackInterview must not import Qdrant/Graphiti provider SDKs;
+- Client App must not import Qdrant/Graphiti provider SDKs;
 - compatibility DTOs stay in `memory_server`, not `memory_core`;
 - fallback behavior remains best-effort and non-blocking;
 - active prompt path must keep kill switches;

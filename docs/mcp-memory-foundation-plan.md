@@ -498,7 +498,7 @@ Every tool should return the same shape:
     "schema_version": "mcp.memory.v1",
     "trace_id": "mcp_...",
     "scope": {
-      "space_slug": "hackinterview",
+      "space_slug": "client-app",
       "profile_external_refs": ["default"],
       "thread_external_ref": null
     },
@@ -1268,7 +1268,7 @@ The agent should not decide low-level memory lifecycle for a batch of facts. It 
 
 ```json
 {
-  "space_slug": "hackinterview",
+  "space_slug": "client-app",
   "profile_external_ref": "architecture",
   "profile_external_refs": ["architecture", "project"],
   "thread_external_ref": "codex-thread-123",

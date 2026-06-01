@@ -29,13 +29,13 @@ def test_create_and_list_spaces_profiles(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         )
         space_id = space.json()["data"]["id"]
         duplicate_space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         )
         profile = client.post(

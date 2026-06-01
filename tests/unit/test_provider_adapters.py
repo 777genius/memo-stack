@@ -133,13 +133,13 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
             "fact_graphiti",
             "Graphiti projection source text.",
             {
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "updated_at": "2026-05-25T10:00:00+00:00",
             },
         )
         search = await adapter.search(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query="Graphiti projection",
             limit=3,
@@ -151,8 +151,8 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
         assert upsert.status == PortStatus.OK
         assert fake.episodes[0]["name"] == "fact:fact_graphiti"
         assert "uuid" not in fake.episodes[0]
-        assert fake.episodes[0]["group_id"] == "memory__space_hackinterview__profile_default"
-        assert fake.search_calls[0]["group_ids"] == ["memory__space_hackinterview__profile_default"]
+        assert fake.episodes[0]["group_id"] == "memory__space_client_app__profile_default"
+        assert fake.search_calls[0]["group_ids"] == ["memory__space_client_app__profile_default"]
         assert search.items[0].source_fact_ids == ("fact_graphiti",)
         assert deleted.status == PortStatus.OK
         assert fake.deleted == ["fact:fact_graphiti"]
@@ -166,7 +166,7 @@ def test_graphiti_adapter_overfetches_thread_queries_for_postgres_visibility_hyd
         adapter = GraphitiGraphMemoryAdapter(client=fake)
 
         search = await adapter.search(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             thread_id="thread_current",
             query="Graphiti projection",
@@ -187,7 +187,7 @@ def test_graphiti_search_facts_caps_thread_overfetch_to_requested_limit() -> Non
         recalled = await adapter.search_facts(
             CapabilityRecallQuery(
                 scope=MemoryScopeFilter(
-                    space_id="space_hackinterview",
+                    space_id="space_client_app",
                     profile_ids=("profile_default",),
                     thread_id="thread_current",
                 ),
@@ -213,7 +213,7 @@ def test_graphiti_adapter_exposes_temporal_capability_ports() -> None:
         projected = await adapter.upsert_fact_projection(
             FactProjectionWrite(
                 fact_id="fact_graphiti",
-                space_id="space_hackinterview",
+                space_id="space_client_app",
                 profile_id="profile_default",
                 text="Graphiti projection source text must not be returned from search.",
                 version=1,
@@ -223,7 +223,7 @@ def test_graphiti_adapter_exposes_temporal_capability_ports() -> None:
         recalled = await adapter.search_facts(
             CapabilityRecallQuery(
                 scope=MemoryScopeFilter(
-                    space_id="space_hackinterview",
+                    space_id="space_client_app",
                     profile_ids=("profile_default",),
                 ),
                 query="Graphiti projection",
@@ -263,13 +263,13 @@ def test_graphiti_adapter_resolves_generated_episode_uuid_by_name() -> None:
             "fact_lookup",
             "Graphiti generated episode UUID must still hydrate canonical fact id.",
             {
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "updated_at": "2026-05-25T10:00:00+00:00",
             },
         )
         search = await adapter.search(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query="generated episode uuid",
             limit=3,
@@ -292,7 +292,7 @@ def test_graphiti_capability_mismatch_disables_graph() -> None:
         capabilities = await adapter.capabilities()
         descriptors = await adapter.capability_descriptors()
         search = await adapter.search(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query="Graphiti projection",
             limit=3,
@@ -433,7 +433,7 @@ def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> Non
         projected = await adapter.ingest_document(
             DocumentMemoryWrite(
                 document_id="doc_1",
-                space_id="space_hackinterview",
+                space_id="space_client_app",
                 profile_id="profile_default",
                 title="Architecture note",
                 text="Tenant scoped retrieval belongs in Cognee RAG.",
@@ -444,7 +444,7 @@ def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> Non
         recalled = await adapter.recall(
             CapabilityRecallQuery(
                 scope=MemoryScopeFilter(
-                    space_id="space_hackinterview",
+                    space_id="space_client_app",
                     profile_ids=("profile_default",),
                 ),
                 query="tenant scoped retrieval",
@@ -455,9 +455,9 @@ def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> Non
         assert capabilities.enabled is True
         assert projected.status == CapabilityStatus.OK
         assert projected.affected_ids == ("doc_1",)
-        assert fake.remember_calls[0]["dataset_name"] == "mp__space_hackinterview__profile_default"
+        assert fake.remember_calls[0]["dataset_name"] == "mp__space_client_app__profile_default"
         assert fake.remember_calls[0]["node_set"] == ["chunk_canonical_1"]
-        assert fake.recall_calls[0]["datasets"] == ["mp__space_hackinterview__profile_default"]
+        assert fake.recall_calls[0]["datasets"] == ["mp__space_client_app__profile_default"]
         assert fake.recall_calls[0]["top_k"] == 5
         assert recalled.status == CapabilityStatus.OK
         assert recalled.items[0].text == "Cognee recalled tenant scoped document chunk."
@@ -493,13 +493,13 @@ def test_configured_graphiti_without_client_degrades_instead_of_disabling() -> N
             "fact_graphiti_missing",
             "Graphiti unavailable projection text.",
             {
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "updated_at": "2026-05-25T10:00:00+00:00",
             },
         )
         search = await adapter.search(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query="Graphiti unavailable",
             limit=3,
@@ -596,7 +596,7 @@ class FakeQdrantClient:
                 SimpleNamespace(
                     payload={
                         "chunk_id": "chunk_1",
-                        "space_id": "space_hackinterview",
+                        "space_id": "space_client_app",
                         "profile_id": "profile_default",
                         "projection_version": "v1",
                     },
@@ -639,7 +639,7 @@ def test_qdrant_adapter_creates_collection_before_upsert_and_search() -> None:
             (
                 VectorUpsertItem(
                     chunk_id="chunk_1",
-                    space_id="space_hackinterview",
+                    space_id="space_client_app",
                     profile_id="profile_default",
                     thread_id=None,
                     text="Qdrant projection text.",
@@ -649,7 +649,7 @@ def test_qdrant_adapter_creates_collection_before_upsert_and_search() -> None:
             )
         )
         search = await adapter.search_chunks(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
@@ -674,7 +674,7 @@ def test_qdrant_adapter_search_contract_uses_scope_and_projection_filters() -> N
         adapter._client = lambda: _fake_qdrant_client(fake)  # type: ignore[method-assign]
 
         search = await adapter.search_chunks(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default", "profile_candidate"),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
@@ -686,7 +686,7 @@ def test_qdrant_adapter_search_contract_uses_scope_and_projection_filters() -> N
         must = query_filter.kwargs["must"]
         filters = {condition.kwargs["key"]: condition.kwargs["match"].kwargs for condition in must}
         assert filters == {
-            "space_id": {"value": "space_hackinterview"},
+            "space_id": {"value": "space_client_app"},
             "projection_version": {"value": "projection_v2"},
             "profile_id": {"any": ["profile_default", "profile_candidate"]},
         }
@@ -705,7 +705,7 @@ def test_qdrant_adapter_search_contract_filters_current_thread_or_profile_wide_c
         adapter._client = lambda: _fake_qdrant_client(fake)  # type: ignore[method-assign]
 
         search = await adapter.search_chunks(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             thread_id="thread_current",
             query_vector=(0.1, 0.2, 0.3),
@@ -736,7 +736,7 @@ def test_qdrant_zero_limit_search_is_noop() -> None:
         adapter._client = lambda: _fake_qdrant_client(fake)  # type: ignore[method-assign]
 
         search = await adapter.search_chunks(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query_vector=(0.1, 0.2, 0.3),
             limit=0,
@@ -764,7 +764,7 @@ def test_qdrant_dimension_mismatch_fails_closed() -> None:
             (
                 VectorUpsertItem(
                     chunk_id="chunk_1",
-                    space_id="space_hackinterview",
+                    space_id="space_client_app",
                     profile_id="profile_default",
                     thread_id=None,
                     text="Qdrant projection text.",
@@ -774,7 +774,7 @@ def test_qdrant_dimension_mismatch_fails_closed() -> None:
             )
         )
         search = await adapter.search_chunks(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=("profile_default",),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,

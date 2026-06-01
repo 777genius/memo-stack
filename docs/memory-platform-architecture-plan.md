@@ -4,7 +4,7 @@
 
 Дата фиксации: 2026-05-24.
 
-Цель документа: зафиксировать целевую архитектуру reusable memory platform, которую можно подключать к HackInterview и другим приложениям без привязки к Graphiti, Qdrant, Zep, Cognee или конкретному LLM provider.
+Цель документа: зафиксировать целевую архитектуру reusable memory platform, которую можно подключать к Client App и другим приложениям без привязки к Graphiti, Qdrant, Zep, Cognee или конкретному LLM provider.
 
 Ключевое решение:
 
@@ -80,7 +80,7 @@ V1 не должен превращаться в SaaS. В scope v1 входит 
 - custom vector DB вместо Qdrant;
 - автогенерацию "истины" без source refs;
 - хранение больших файлов в Graphiti;
-- прямую зависимость HackInterview от Graphiti/Qdrant clients.
+- прямую зависимость Client App от Graphiti/Qdrant clients.
 
 ## Fixed Global Decisions
 
@@ -116,7 +116,7 @@ Weak spots found and fixed in this pass:
    - Risk: adapter code silently assumes Neo4j semantics and becomes hard to swap later.
    - Fix: Graphiti adapter must expose capabilities and backend-specific guarantees.
 
-5. HackInterview integration was too greenfield.
+5. Client App integration was too greenfield.
    - Risk: replacing the existing desktop bridge breaks `ActiveContext`, settings rollback, local fallback or production canaries.
    - Fix: add a legacy compatibility gateway and migration contract before changing prompt-impacting behavior.
 
@@ -128,7 +128,7 @@ Weak spots found and fixed in this pass:
    - Risk: new platform ignores `INTERVIEW_MEMORY_FORCE_DISABLED`, Settings `interview_memory_enabled=false` or `INTERVIEW_MEMORY_FORCE_LOCAL_ONLY`.
    - Fix: preserve old mode resolution as a compatibility layer and map it to platform policy/capabilities.
 
-8. Verification commands were too abstract for HackInterview rollout.
+8. Verification commands were too abstract for Client App rollout.
    - Risk: broad tests pass but production memory route, local canary or document recall path regresses.
    - Fix: add exact existing E2E/canary commands to the integration phase and acceptance criteria.
 
@@ -165,7 +165,7 @@ Weak spots found and fixed in this pass:
     - Fix: add sizing assumptions, cost budgets and load-test gates.
 
 17. Execution scope was still too broad.
-    - Risk: implementation starts with Graphiti/Qdrant/HackInterview at once and becomes unreviewable.
+    - Risk: implementation starts with Graphiti/Qdrant/Client App at once and becomes unreviewable.
     - Fix: add MVP cutline, PR roadmap, stop conditions and spike gates.
 
 18. First PR was too vague for a clean architecture foundation.
@@ -208,7 +208,7 @@ Weak spots found and fixed in this pass:
     - Risk: documents, suggestions, imports, exports, outbox jobs and policies drift into ad hoc states.
     - Fix: add aggregate lifecycle state machines with allowed transitions and tests.
 
-28. Contract compatibility was spread across API, SDK, migrations and HackInterview sections.
+28. Contract compatibility was spread across API, SDK, migrations and Client App sections.
     - Risk: API, SDK, ontology, schema and legacy route versions evolve independently.
     - Fix: add a contract version compatibility matrix.
 
@@ -538,7 +538,7 @@ Weak spots found and fixed in this pass:
 
 ### Local Code Assumptions Checked
 
-Checked in HackInterview on 2026-05-24:
+Checked in Client App on 2026-05-24:
 
 - `src-tauri/src/presentation/interview_memory_bridge.rs` already resolves `InterviewMemoryMode` with `disabled`, `shadow_ingest`, `shadow_retrieve`, `assistive_context`, `active_context` and `local_only`.
 - The desktop bridge currently skips ingest for `AiResponse` timeline events. Universal auto-memory must preserve this unless a policy explicitly allows assistant-derived evidence.
@@ -570,7 +570,7 @@ Use this map when implementing or reviewing a PR. A PR should explicitly state w
 | Entity resolution | MemoryEntity, EntityResolutionPort, Graphiti Adapter, Edge Cases | Graphiti candidate merges do not become canonical merges automatically |
 | Temporal validity | Temporal Memory Semantics, MemoryFact, Retrieval and Context Packing | current context must not mix expired or historical facts silently |
 | Fact currency and conflicts | Fact Currency and Conflict Resolution Model, Evidence and Confidence Model, Retrieval and Context Packing | old or contradicted facts do not remain silently active |
-| Prompt-path SLO | Prompt-Path SLO and Degradation Model, Retrieval and Context Packing, HackInterview Compatibility Contract | context calls have explicit deadlines, stage budgets and safe degraded outputs |
+| Prompt-path SLO | Prompt-Path SLO and Degradation Model, Retrieval and Context Packing, Client App Compatibility Contract | context calls have explicit deadlines, stage budgets and safe degraded outputs |
 | Evidence quality | Evidence and Confidence Model, SourceRef, MemoryPolicy | repeated derived summaries do not raise confidence by themselves |
 | Memory consolidation | Memory Consolidation Model, ConsolidateMemoryUseCase, Evaluation Harness | dedupe and digest jobs preserve source refs and never turn derived summaries into primary evidence |
 | AI provider governance | AI Provider Governance, Embedding Adapter, Classifier Adapter, Security and Privacy | external providers cannot bypass policy, redaction, budgets or audit |
@@ -594,7 +594,7 @@ Use this map when implementing or reviewing a PR. A PR should explicitly state w
 | Documents and large files | Document, DocumentChunk, IngestDocumentUseCase, Document Processing Pipeline | large raw files do not go into Graphiti |
 | Lifecycle correctness | Fact Lifecycle, Aggregate Lifecycle State Machines, Consistency Model | deleted/superseded/disabled records are filtered by canonical status |
 | Operation/idempotency | Operation and Idempotency Model, API Contract, SDK Contract | retries and long-running operations return stable, safe, client-visible state |
-| Compatibility | API Contract, SDK Contract, HackInterview Compatibility Contract | legacy `/api/v1/interview-memory/*` keeps desktop behavior stable |
+| Compatibility | API Contract, SDK Contract, Client App Compatibility Contract | legacy `/api/v1/interview-memory/*` keeps desktop behavior stable |
 | Security and tenancy | Principal, MemorySpace, ProfileGrant, AuthorizationPort, Security and Privacy | profile/space leakage is a release blocker |
 | Operations | Deployment, Observability, Rollback, CI Gates | derived indexes must be rebuildable from Postgres |
 | Release governance | Contract Version Compatibility Matrix, ADR and PR Discipline, Done Definition | breaking changes require explicit version/ADR/release note |
@@ -642,7 +642,7 @@ Use this map when implementing or reviewing a PR. A PR should explicitly state w
 | Durable code references | keeps source attribution useful after code moves | code reference resolver, content hashes, symbol refs | rename/line drift/symbol move tests | memory cites the wrong code |
 | Retention lifecycle | prevents unbounded memory growth and accidental deletion | `RetentionRule`, `LegalHold`, retention jobs | dry-run, legal hold, profile delete and derived deindex tests | data is kept forever or deleted too early |
 | Legal hold precedence | preserves held evidence while keeping deletion transparent | legal hold repository, tombstone/audit/export rules | hard-delete vs hold tests, export labeling tests | compliance/security hold is violated |
-| Compatibility gateway first | lets HackInterview migrate without prompt-impacting regression | legacy route adapter over core use cases | existing canary, document recall, companion context, mode resolver tests | production desktop memory breaks |
+| Compatibility gateway first | lets Client App migrate without prompt-impacting regression | legacy route adapter over core use cases | existing canary, document recall, companion context, mode resolver tests | production desktop memory breaks |
 | One Qdrant collection in v1 | keeps local Docker and operations simple | Qdrant collection config and payload filters | diagnostics check missing indexes, profile isolation tests | performance cliffs or cross-profile contamination |
 | Neo4j first for Graphiti | pragmatic supported backend for v1 | Graphiti composition root and backend config | healthcheck, capability report, backend mismatch test | local stack becomes unreliable |
 | Soft delete plus optional hard delete | supports normal recall removal and privacy/legal removal | `MemoryTombstone`, delete use cases, retention jobs | tombstone, hard-delete, backup/export edge tests | deleted memory resurrects or cannot be purged |
@@ -665,7 +665,7 @@ future sync supported by event/outbox schema, but not implemented in v1
 
 Причина:
 
-- проще подключать HackInterview, Codex, Claude, Slack, GitHub через один HTTP/SDK contract;
+- проще подключать Client App, Codex, Claude, Slack, GitHub через один HTTP/SDK contract;
 - server deployment можно переиспользовать между проектами;
 - local Docker остается удобным personal mode;
 - будущий local-first sync не блокируется, если outbox/event log сделаны аккуратно.
@@ -837,7 +837,7 @@ domain imports graphiti
 domain imports qdrant_client
 domain imports sqlalchemy
 application imports fastapi
-HackInterview imports graphiti/qdrant
+Client App imports graphiti/qdrant
 ```
 
 ### SOLID
@@ -948,7 +948,7 @@ Operations Context
 
 ```mermaid
 flowchart TD
-  A["Client App: HackInterview, Codex, Claude, Slack"] --> B["memory_sdk or HTTP API"]
+  A["Client App: Client App, Codex, Claude, Slack"] --> B["memory_sdk or HTTP API"]
   B --> C["memory_server: FastAPI"]
   C --> D["application use cases"]
   D --> E["domain model"]
@@ -1213,7 +1213,7 @@ Mapping rules:
 - no ORM model, Graphiti object, Qdrant payload or FastAPI request model is returned directly to SDKs;
 - mappers must preserve ids, versions, status, source refs, sensitivity labels and operation ids;
 - mappers must redact or omit raw text according to caller scope and DTO purpose;
-- legacy HackInterview envelope mappers are adapters over the same result DTOs, not a forked contract;
+- legacy Client App envelope mappers are adapters over the same result DTOs, not a forked contract;
 - failed mapping is a typed internal error and must be observable without logging raw payloads.
 
 Evolution rules:
@@ -1506,7 +1506,7 @@ metadata
 Rules:
 
 - old SDK/client minor version remains supported during the active window;
-- HackInterview legacy routes have their own compatibility window;
+- Client App legacy routes have their own compatibility window;
 - expired window does not remove behavior automatically; cleanup still requires migration run and ADR;
 - capabilities report active compatibility windows and pending expiry dates.
 
@@ -2124,7 +2124,7 @@ E2E:
 
 ## Prompt-Path SLO and Degradation Model
 
-Prompt-time memory retrieval is a live workflow dependency. HackInterview interviews and coding-agent sessions should not wait for slow graph search, vector search, reranking, provider calls, imports, rebuilds or maintenance work.
+Prompt-time memory retrieval is a live workflow dependency. Client App interviews and coding-agent sessions should not wait for slow graph search, vector search, reranking, provider calls, imports, rebuilds or maintenance work.
 
 Core invariant:
 
@@ -2152,7 +2152,7 @@ id
 space_id
 profile_ids[]
 thread_id?
-client_kind: hackinterview_desktop | sdk | mcp | agent | server_batch
+client_kind: client_app_desktop | sdk | mcp | agent | server_batch
 request_id
 total_deadline_ms
 soft_deadline_ms
@@ -2180,7 +2180,7 @@ Rules:
 - budget is resolved at the start of every prompt-impacting context request;
 - deadline is propagated to adapter calls and cancellation tokens;
 - `allow_provider_call=false` for v1 prompt path unless a later ADR enables tightly bounded prompt-path rerank;
-- budget is policy and client aware, but HackInterview compatibility defaults must stay close to the current desktop timeout budget;
+- budget is policy and client aware, but Client App compatibility defaults must stay close to the current desktop timeout budget;
 - hard deadline returns degraded/fallback result rather than waiting for background work;
 - budget diagnostics expose stage names, timings and degradation reason, not raw memory text.
 
@@ -2264,7 +2264,7 @@ Rules:
 
 Defines what to return when the full retrieval pipeline cannot complete.
 
-Fallback order for HackInterview-compatible prompt path:
+Fallback order for Client App-compatible prompt path:
 
 ```text
 safe server cache hit
@@ -2325,7 +2325,7 @@ Option A - Hard 2 second desktop budget, configurable agent budget.
 🎯 9   🛡️ 9   🧠 5
 Approx changes: `500-1000` lines.
 
-Recommended for v1. It preserves current HackInterview ergonomics and still lets SDK/agent clients request larger budgets explicitly.
+Recommended for v1. It preserves current Client App ergonomics and still lets SDK/agent clients request larger budgets explicitly.
 
 Option B - Fully configurable deadlines per profile/client from day one.
 
@@ -2369,7 +2369,7 @@ Integration:
 
 E2E:
 
-- HackInterview compatibility route returns context or fallback-safe status within current desktop budget;
+- Client App compatibility route returns context or fallback-safe status within current desktop budget;
 - memory_server down still produces local/minimal fallback in desktop flow;
 - provider circuit breaker open does not block context;
 - repeated context calls during import keep p95 under configured budget on local Docker test.
@@ -2417,7 +2417,7 @@ Top-level tenant/project boundary.
 
 Examples:
 
-- `hackinterview`
+- `client-app`
 - `review-router`
 - `personal-coding-agents`
 - `team-platform`
@@ -3056,8 +3056,8 @@ Logical memory category inside a space.
 
 Examples:
 
-- `hackinterview.interview_sessions`
-- `hackinterview.architecture`
+- `client_app.interview_sessions`
+- `client_app.architecture`
 - `project.adr`
 - `project.constraints`
 - `personal.preferences`
@@ -3694,7 +3694,7 @@ E2E:
 - create facts/documents, backup, delete one fact, restore into new space and verify deleted fact policy behavior;
 - backup before hard-delete, hard-delete source document, restore and verify source chunk is not prompt-visible;
 - simulate disaster recovery from manifest and verify context stays disabled until validation passes;
-- restore profile bundle and verify HackInterview compatibility context still maps to correct profile/thread.
+- restore profile bundle and verify Client App compatibility context still maps to correct profile/thread.
 
 ### MemoryEntity
 
@@ -3757,8 +3757,8 @@ profile:{profile_id}:type:{entity_type}:scope:{scope_hash}:name:{normalized_name
 Examples:
 
 ```text
-project "Memory Platform" in HackInterview architecture profile
-package "memory_core" in repo HackInterview
+project "Memory Platform" in Client App architecture profile
+package "memory_core" in repo Client App
 person "Alex" in team profile vs interview candidate profile
 ```
 
@@ -4232,7 +4232,7 @@ Structured origin metadata for every imported event/fact/chunk.
 Fields:
 
 ```text
-source_app: hackinterview | codex | claude | cursor | slack | github | manual | api
+source_app: client-app | codex | claude | cursor | slack | github | manual | api
 source_connector_id
 source_external_id
 source_url
@@ -4627,7 +4627,7 @@ Fields:
 id
 space_id
 principal_id
-source_app: hackinterview | codex | claude | cursor | slack | github | manual | api | mcp
+source_app: client-app | codex | claude | cursor | slack | github | manual | api | mcp
 display_name
 status: active | paused | degraded | revoked | deleted
 allowed_profiles
@@ -8931,7 +8931,7 @@ supports_backup_restore
 backup_manifest_contract_version
 prompt_path_slo_contract_version
 supported_context_degradation_modes
-supports_legacy_hackinterview_routes
+supports_legacy_client_routes
 supports_export
 supports_event_cursor
 supports_sync_exchange
@@ -9371,7 +9371,7 @@ Rules:
 - SDKs should poll operations, not internal outbox jobs;
 - cancel is best-effort and must return committed target status when partial work already committed.
 
-Legacy HackInterview compatibility:
+Legacy Client App compatibility:
 
 ```text
 POST   /api/v1/interview-memory/ingest
@@ -9431,14 +9431,14 @@ Every externally visible contract must have an owner, compatibility rule and bre
 | Repository query scope | query scope contract version | scope proof fields are additive and safe, unscoped access fails closed | repository scope fixture update, unscoped SQL tests and maintenance override evidence |
 | Supply-chain attestation | release attestation contract version | inventory/finding/waiver fields are additive and release gates fail closed | SBOM fixture update, CVE/license gate tests and parser sandbox evidence |
 | Sync exchange | sync contract version and capabilities flag | disabled endpoints return `memory.unsupported`; enabled endpoints require dry-run and conflict fixtures | sync ADR, checkpoint migration and conflict-resolution tests |
-| HackInterview legacy routes | compatibility adapter version | existing desktop envelope and mode precedence stay stable | desktop compatibility ADR and canary pass |
+| Client App legacy routes | compatibility adapter version | existing desktop envelope and mode precedence stay stable | desktop compatibility ADR and canary pass |
 | MCP tool contract | tool schema version | tool inputs are additive and safe by default | MCP client migration note and safety review |
 
 Compatibility window:
 
 - V1 supports current and previous stable SDK minor version.
 - Export/import supports current and previous stable bundle schema version.
-- Legacy HackInterview routes remain until HackInterview has a released native `/v1` integration and rollback window has passed.
+- Legacy Client App routes remain until Client App has a released native `/v1` integration and rollback window has passed.
 - Unknown enum values must not crash clients; they must be surfaced as unsupported capability or opaque string.
 
 Release gates:
@@ -9455,10 +9455,10 @@ Remember fact:
 
 ```json
 {
-  "space_id": "space_hackinterview",
+  "space_id": "space_client_app",
   "profile_id": "profile_architecture",
   "thread_id": "thread_123",
-  "text": "HackInterview desktop memory defaults to active_context unless disabled by settings or env.",
+  "text": "Client App desktop memory defaults to active_context unless disabled by settings or env.",
   "kind": "architecture_decision",
   "source_refs": [
     {
@@ -9474,7 +9474,7 @@ Search:
 
 ```json
 {
-  "space_id": "space_hackinterview",
+  "space_id": "space_client_app",
   "profile_ids": ["profile_architecture"],
   "query": "как работает память интервью и какие есть rollback flags",
   "limit": 10,
@@ -9486,7 +9486,7 @@ Context:
 
 ```json
 {
-  "space_id": "space_hackinterview",
+  "space_id": "space_client_app",
   "profile_ids": ["profile_architecture", "profile_decisions"],
   "query": "объясни текущую архитектуру memory",
   "token_budget": 4000,
@@ -9507,19 +9507,19 @@ memory = MemoryClient(
 )
 
 fact = await memory.remember_fact(
-    space="hackinterview",
+    space="client-app",
     profile="architecture",
     text="Graphiti is used for temporal graph facts, Qdrant for document chunks.",
 )
 
 results = await memory.search(
-    space="hackinterview",
+    space="client-app",
     profiles=["architecture"],
     query="Graphiti Qdrant split",
 )
 
 bundle = await memory.build_context(
-    space="hackinterview",
+    space="client-app",
     profiles=["architecture"],
     query="what is our memory architecture?",
     token_budget=4000,
@@ -9578,7 +9578,7 @@ Connectors are clients with explicit provenance and scoped permissions.
 Connector examples:
 
 ```text
-HackInterview desktop
+Client App desktop
 Codex local agent
 Claude desktop/project agent
 Cursor extension
@@ -9687,18 +9687,18 @@ Event delivery contract for MCP/SDK clients:
 - event delivery is at-least-once and clients must dedupe by event id/cursor;
 - clients must refetch memory through normal authorized APIs instead of trusting event payload text.
 
-HackInterview integration should only know this:
+Client App integration should only know this:
 
 ```text
 MEMORY_SERVER_URL=http://127.0.0.1:7788
 MEMORY_SERVER_API_KEY=...
 ```
 
-No HackInterview code should import Graphiti or Qdrant.
+No Client App code should import Graphiti or Qdrant.
 
-### HackInterview Compatibility Contract
+### Client App Compatibility Contract
 
-The current HackInterview desktop path is not greenfield. It already has:
+The current Client App desktop path is not greenfield. It already has:
 
 ```text
 desktop InterviewMemoryMode
@@ -9773,13 +9773,13 @@ Memory-only auth behavior:
 - it must not replace app auth, STT auth or normal backend auth;
 - missing auth must degrade to fallback, not block chat/interview.
 
-### HackInterview Integration Options
+### Client App Integration Options
 
 1. Compatibility gateway first
    🎯 9   🛡️ 9   🧠 6
    Approx changes: `900-1800` lines.
 
-   Memory platform implements legacy `/api/v1/interview-memory/*` routes as an adapter over the new core. HackInterview can point `INTERVIEW_MEMORY_API_URL` to local platform without desktop bridge rewrite.
+   Memory platform implements legacy `/api/v1/interview-memory/*` routes as an adapter over the new core. Client App can point `INTERVIEW_MEMORY_API_URL` to local platform without desktop bridge rewrite.
 
    Recommendation: choose this. It preserves existing E2E scripts, rollback flags and companion session behavior.
 
@@ -9799,7 +9799,7 @@ Recommended migration sequence:
 
 ```text
 1. Add compatibility routes in memory_server.
-2. Run existing HackInterview canary against memory_server by changing only INTERVIEW_MEMORY_API_URL.
+2. Run existing Client App canary against memory_server by changing only INTERVIEW_MEMORY_API_URL.
 3. Add new SDK client behind the same desktop mode resolver.
 4. Shadow compare old backend vs memory_server retrieval with production-safe diffs.
 5. Switch active context only after canary/document recall gates pass.
@@ -10784,7 +10784,7 @@ Runbook matrix:
 | Object integrity failure | storage diagnostics and quarantine | dependent document/artifact degraded, raw key hidden |
 | Artifact revoke | artifact revoke endpoint or grant change | old download links stop authorizing access |
 | Cache safety incident | `/v1/admin/cache`, invalidate, purge-expired | cached payloads are invalidated/purged, canonical memory unchanged |
-| Legacy compatibility outage | compatibility diagnostics | HackInterview falls back without blocking chat/interview |
+| Legacy compatibility outage | compatibility diagnostics | Client App falls back without blocking chat/interview |
 
 Readiness rules:
 
@@ -11149,7 +11149,7 @@ Example:
 
 ```text
 "Alex" in an interview candidate profile vs "Alex" in a team Slack profile.
-"memory_core" package in HackInterview vs another repo with same package name.
+"memory_core" package in Client App vs another repo with same package name.
 ```
 
 Expected behavior:
@@ -11245,7 +11245,7 @@ Expected behavior:
 
 - source refs include app/source;
 - idempotency keys are namespaced by source;
-- same profile can receive data from Codex, HackInterview, Slack, GitHub.
+- same profile can receive data from Codex, Client App, Slack, GitHub.
 
 ### Offline Local Mode
 
@@ -11686,7 +11686,7 @@ Expected behavior:
 - policy version is part of user-visible cache keys;
 - disabling memory bypasses or invalidates prompt-time context cache immediately;
 - cached diagnostics can remain visible to admins if labeled stale and raw text is hidden;
-- HackInterview Settings and `INTERVIEW_MEMORY_FORCE_DISABLED=true` still override platform cache.
+- Client App Settings and `INTERVIEW_MEMORY_FORCE_DISABLED=true` still override platform cache.
 
 ### Embedding Cache Crosses Sensitivity Boundary
 
@@ -12296,7 +12296,7 @@ Expected behavior:
 
 Expected behavior:
 
-- cleanup phase is blocked while old SDK/HackInterview compatibility window is active;
+- cleanup phase is blocked while old SDK/Client App compatibility window is active;
 - admin override requires ADR, backup/export evidence and explicit audit;
 - capabilities expose pending compatibility-window expiry;
 - rollback boundary is documented before cleanup starts.
@@ -12928,7 +12928,7 @@ Scenarios:
 - API, SDK and OpenAPI fixtures remain compatible across the supported window.
 - `memory_contracts` schema registry matches OpenAPI components and JSON schema artifacts;
 - generated SDK handles unknown enum, unknown field, missing field and explicit null fixtures;
-- native `/v1` route and HackInterview compatibility route map to equivalent safe result DTOs.
+- native `/v1` route and Client App compatibility route map to equivalent safe result DTOs.
 - fresh DB reports bootstrap_required and blocks normal API traffic until setup completes;
 - second bootstrap attempt and reused setup token are rejected;
 - dev seed/reset refuses team/remote deployment lineage.
@@ -12996,7 +12996,7 @@ Scenarios:
 
 ### E2E Tests
 
-HackInterview:
+Client App:
 
 - import large document;
 - ask context query;
@@ -13039,7 +13039,7 @@ HackInterview:
 - verify direct request for forbidden memory id returns safe denial with no text.
 - verify context response carries visibility proof diagnostics in debug-safe form.
 - verify Graphiti/Qdrant timeout returns degraded context or fallback within desktop budget.
-- verify provider/rerank outage does not block HackInterview context response.
+- verify provider/rerank outage does not block Client App context response.
 - verify huge import keeps prompt-context p95 within configured local budget.
 
 Coding agent team scenario:
@@ -13218,7 +13218,7 @@ golden_eval:
   synthetic docs/facts/queries with expected ids
 
 compatibility:
-  legacy HackInterview envelope/session fixtures
+  legacy Client App envelope/session fixtures
 
 load:
   generated large docs, not checked in if huge
@@ -13234,7 +13234,7 @@ Rules:
 
 ### Verification Commands
 
-Minimum local checks for HackInterview compatibility phase:
+Minimum local checks for Client App compatibility phase:
 
 ```bash
 pnpm test:run -- src/stores/appConfig.sync.test.ts src/windowing/stateSync/appConfigSync.scenario.test.ts
@@ -13341,7 +13341,7 @@ Graphiti adapter:
   entity candidate mapping test
   explicit provider registry configuration test
 
-HackInterview compatibility:
+Client App compatibility:
   legacy envelope contract
   existing canary scripts
 ```
@@ -13882,7 +13882,7 @@ Rules:
 | Dev seed/reset touches real data | 10 | 2 | deployment lineage guard, synthetic-only fixtures, explicit confirmation tests |
 | Migration/backfill corrupts canonical data | 10 | 3 | phased migration model, dry-run, idempotent backfills, tombstone/legal-hold checks |
 | Old worker processes new payload schema | 9 | 4 | payload version checks, worker compatibility gates, migration lock diagnostics |
-| Cleanup removes old contract too early | 8 | 4 | compatibility windows, cleanup phase guard, SDK/HackInterview fixture gates |
+| Cleanup removes old contract too early | 8 | 4 | compatibility windows, cleanup phase guard, SDK/Client App fixture gates |
 | Duplicate scheduler runs maintenance twice | 8 | 4 | scheduled task singleton leases, idempotency keys, duplicate tick tests |
 | Worker crash leaves stuck lease or quota | 8 | 5 | heartbeat expiry, lease reclaim, quota release/commit reconciliation tests |
 | Graceful shutdown loses progress | 8 | 4 | worker draining lifecycle, checkpoint rules, shutdown integration tests |
@@ -13897,7 +13897,7 @@ Rules:
 | Outbox duplicate delivery creates duplicate graph/vector data | 8 | 5 | idempotency keys, adapter mapping tables, duplicate delivery tests |
 | Graphiti backend behavior differs from assumptions | 8 | 5 | spike gate, capabilities, canonical filtering, backend-specific tests |
 | Qdrant filter performance degrades with scale | 7 | 5 | payload indexes, diagnostics, load tests |
-| HackInterview prompt path regresses | 9 | 4 | compatibility gateway first, existing canaries, fallback-only failure |
+| Client App prompt path regresses | 9 | 4 | compatibility gateway first, existing canaries, fallback-only failure |
 | Large import starves interactive context | 8 | 4 | workload queues, priority, quotas, backpressure |
 | Eval suite gives false confidence | 7 | 5 | negative cases, source-ref accuracy, stale/deleted leakage gates |
 | Plan scope becomes unreviewable | 8 | 6 | PR roadmap, MVP cutline, forbidden changes per phase |
@@ -14026,7 +14026,7 @@ Qdrant document/chunk retrieval
 object storage lifecycle for large files and artifacts
 Graphiti adapter behind port
 context builder with source refs
-HackInterview legacy compatibility gateway
+Client App legacy compatibility gateway
 small golden eval suite
 local Docker
 backup manifest and restore dry-run guardrails
@@ -14065,7 +14065,7 @@ Hard stop conditions:
 - no prompt-impacting context rollout until deadline, stage-timeout, degraded response and fallback tests pass;
 - no mutating API rollout until operation/idempotency replay tests pass;
 - no server-side context/search cache rollout until cache freshness, forget, update, grant revoke and policy disable tests pass;
-- no prompt-impacting HackInterview switch until compatibility canary and document recall pass against memory_server;
+- no prompt-impacting Client App switch until compatibility canary and document recall pass against memory_server;
 - no auto_safe default until suggestion mode and false-positive evals pass;
 - no automatic consolidation merge/delete until digest/cluster false-merge evals pass;
 - no large imports/auto-memory/external AI until quota admission, storage artifact and reservation tests pass;
@@ -14327,7 +14327,7 @@ Recommended PR sequence:
    - conflict record storage;
    - no public apply mode without ADR.
 
-13. HackInterview compatibility gateway
+13. Client App compatibility gateway
    🎯 9   🛡️ 9   🧠 7
    Approx changes: `900-1800` lines.
 
@@ -14381,7 +14381,7 @@ Exit gate:
 Forbidden in Phase 0:
 
 - real Graphiti/Qdrant/Postgres adapter logic;
-- HackInterview prompt path changes;
+- Client App prompt path changes;
 - classifier/LLM calls;
 - background worker side effects beyond a no-op interface;
 - migration of existing memory data.
@@ -14525,7 +14525,7 @@ Exit gate:
 - context API returns full, degraded or fallback-safe response before hard deadline;
 - graph/vector/rerank timeouts do not block canonical fallback;
 - degraded context is machine-readable and prompt-safe;
-- HackInterview compatibility route keeps current desktop timeout behavior.
+- Client App compatibility route keeps current desktop timeout behavior.
 
 ### Phase 2 - Qdrant RAG
 
@@ -14687,10 +14687,10 @@ Exit gate:
 - policy change affects pending jobs safely;
 - connector-created suggestion cannot be self-approved unless policy allows.
 
-### Phase 5 - HackInterview Integration
+### Phase 5 - Client App Integration
 
 🎯 9   🛡️ 9   🧠 7
-Estimated changes: `900-1800` lines across memory_server compatibility routes, tests and small HackInterview config wiring.
+Estimated changes: `900-1800` lines across memory_server compatibility routes, tests and small Client App config wiring.
 
 Deliver:
 
@@ -14705,7 +14705,7 @@ Deliver:
 
 Exit gate:
 
-- HackInterview does not import Graphiti/Qdrant;
+- Client App does not import Graphiti/Qdrant;
 - local Docker memory works;
 - fallback works when memory_server down.
 - existing mode precedence tests pass;
@@ -14777,7 +14777,7 @@ Use only for:
 14. Branch/repo/environment scope is part of relevance for coding-agent memory.
 15. `MemorySuggestion` is inactive until approved or auto-promoted by policy.
 16. Legacy compatibility routes are adapters over core use cases, not a second memory system.
-17. Existing HackInterview kill switches must remain stronger than platform policy.
+17. Existing Client App kill switches must remain stronger than platform policy.
 18. A run must have one prompt-impacting memory target unless explicit shadow comparison mode is enabled.
 19. Authorization is checked in canonical Postgres, never delegated to Graphiti/Qdrant.
 20. Outbox handlers must be idempotent and safe under duplicate delivery.
@@ -14893,7 +14893,7 @@ Use only for:
    - Alternative: user-configurable thresholds from day one.
 
 5. Branch/repo scope schema.
-   - Recommendation: keep optional typed metadata in v1 and promote to first-class fields after HackInterview/Codex integration proves access patterns.
+   - Recommendation: keep optional typed metadata in v1 and promote to first-class fields after Client App/Codex integration proves access patterns.
    - Alternative: first-class repo/branch/commit columns immediately.
 
 6. Legacy route deprecation timing.
@@ -14901,12 +14901,12 @@ Use only for:
    - Alternative: migrate desktop bridge directly after the first successful local canary.
 
 7. Package/repository location.
-   - Recommendation: start inside HackInterview `memory_platform/` until architecture is proven, then extract to standalone repo/package.
+   - Recommendation: start inside Client App `memory_platform/` until architecture is proven, then extract to standalone repo/package.
    - Alternative: create standalone repo immediately.
 
 8. First generated SDK target.
    - Recommendation: Python SDK first, TypeScript/Rust generated clients after OpenAPI stabilizes.
-   - Alternative: generate TS immediately for HackInterview bridge work.
+   - Alternative: generate TS immediately for Client App bridge work.
 
 9. Entity registry scope.
    - Recommendation: profile-scoped entities in v1, with optional space-level aliases later.
@@ -15008,7 +15008,7 @@ Use only for:
     - Alternative: physical snapshots for every backend, faster at scale but riskier for version drift and derived-index correctness.
 
 32. Prompt-path deadline defaults.
-    - Recommendation: HackInterview-compatible hard budget around current desktop timeout, with larger explicit SDK/agent budgets.
+    - Recommendation: Client App-compatible hard budget around current desktop timeout, with larger explicit SDK/agent budgets.
     - Alternative: profile-configurable deadlines from day one, but bad config can make live interviews hang.
     - Alternative: best-effort context without hard deadline, but this is too risky for prompt-impacting workflows.
 
@@ -15065,7 +15065,7 @@ Acceptance criteria:
 - `GET /v1/health` and `GET /v1/capabilities` work;
 - OpenAPI generation is deterministic;
 - first ADR records V1 cutline and adapter choices;
-- no behavior change in existing HackInterview runtime.
+- no behavior change in existing Client App runtime.
 
 Suggested verification:
 
@@ -15107,8 +15107,8 @@ V1 is done when:
 - deleted/superseded memory never appears in normal search/context;
 - server-side context/search/rerank caches are governed by cache freshness tests for forget, update, grant revoke, policy disable and source redaction;
 - prompt-path context retrieval has deadline, stage budget, degradation and fallback tests for slow graph/vector/rerank/provider paths;
-- HackInterview can connect through HTTP without Graphiti/Qdrant dependency;
-- HackInterview legacy `/api/v1/interview-memory/*` compatibility routes pass existing canaries;
+- Client App can connect through HTTP without Graphiti/Qdrant dependency;
+- Client App legacy `/api/v1/interview-memory/*` compatibility routes pass existing canaries;
 - existing `InterviewMemoryMode` precedence and kill switches remain compatible;
 - companion session import/read path maps to platform thread/profile correctly;
 - authorization and profile grants prevent cross-space/cross-profile leakage;

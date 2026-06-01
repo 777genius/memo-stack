@@ -77,7 +77,7 @@ def test_invariant_checker_is_scoped_and_omits_raw_text(
     with make_client(tmp_path) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
         profile = client.post(
@@ -87,7 +87,7 @@ def test_invariant_checker_is_scoped_and_omits_raw_text(
         ).json()["data"]
         asyncio.run(_insert_broken_rows(client, space_id=space["id"], profile_id=profile["id"]))
 
-    scoped = asyncio.run(invariant_check(space="hackinterview", profile="default"))
+    scoped = asyncio.run(invariant_check(space="client-app", profile="default"))
     global_check = asyncio.run(invariant_check())
 
     assert scoped["status"] == "failed"
@@ -110,7 +110,7 @@ def test_invariant_checker_projection_mode_detects_orphan_projection_outbox(
     with make_client(tmp_path) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
         profile = client.post(
@@ -126,10 +126,10 @@ def test_invariant_checker_projection_mode_detects_orphan_projection_outbox(
             )
         )
 
-    default_check = asyncio.run(invariant_check(space="hackinterview", profile="default"))
+    default_check = asyncio.run(invariant_check(space="client-app", profile="default"))
     projection_check = asyncio.run(
         invariant_check(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             include_projections=True,
         )
@@ -151,13 +151,13 @@ def test_repair_projections_requires_scope_and_dry_run(
     with make_client(tmp_path) as client:
         client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         )
 
     missing_scope = asyncio.run(repair_projections(space=None, profile=None, dry_run=True))
     missing_dry_run = asyncio.run(
-        repair_projections(space="hackinterview", profile="default", dry_run=False)
+        repair_projections(space="client-app", profile="default", dry_run=False)
     )
 
     assert missing_scope["status"] == "refused"
@@ -174,7 +174,7 @@ def test_repair_dry_run_reports_counts_without_side_effects(
     with make_client(tmp_path) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
         profile = client.post(
@@ -207,9 +207,7 @@ def test_repair_dry_run_reports_counts_without_side_effects(
         )
         asyncio.run(_clear_outbox(client))
 
-    result = asyncio.run(
-        repair_projections(space="hackinterview", profile="default", dry_run=True)
-    )
+    result = asyncio.run(repair_projections(space="client-app", profile="default", dry_run=True))
 
     with make_client(tmp_path) as client:
         rows = asyncio.run(_outbox_items(client))
@@ -231,7 +229,7 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
     with make_client(tmp_path) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
         profile = client.post(
@@ -253,13 +251,11 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
         )
         asyncio.run(_clear_outbox(client))
 
-    dry_run = asyncio.run(reindex_qdrant(space="hackinterview", profile="default", dry_run=True))
-    refused = asyncio.run(
-        reindex_qdrant(space="hackinterview", profile="default", dry_run=False)
-    )
+    dry_run = asyncio.run(reindex_qdrant(space="client-app", profile="default", dry_run=True))
+    refused = asyncio.run(reindex_qdrant(space="client-app", profile="default", dry_run=False))
     first = asyncio.run(
         reindex_qdrant(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             dry_run=False,
             confirmed=True,
@@ -267,7 +263,7 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
     )
     second = asyncio.run(
         reindex_qdrant(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             dry_run=False,
             confirmed=True,
@@ -302,7 +298,7 @@ def test_reindex_graphiti_skips_deleted_facts(
     with make_client(tmp_path) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "hackinterview", "name": "HackInterview"},
+            json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
         profile = client.post(
@@ -337,7 +333,7 @@ def test_reindex_graphiti_skips_deleted_facts(
 
     result = asyncio.run(
         reindex_graphiti(
-            space="hackinterview",
+            space="client-app",
             profile="default",
             dry_run=False,
             confirmed=True,
@@ -388,15 +384,11 @@ def test_compact_done_outbox_redacts_payload_but_keeps_audit_columns(
     with make_client(tmp_path) as client:
         asyncio.run(_insert_done_outbox_with_raw_payload(client))
 
-    dry_run = asyncio.run(
-        compact_done_outbox(older_than_seconds=0, limit=50, dry_run=True)
-    )
+    dry_run = asyncio.run(compact_done_outbox(older_than_seconds=0, limit=50, dry_run=True))
     with make_client(tmp_path) as client:
         dry_run_rows = asyncio.run(_outbox_items(client))
 
-    compacted = asyncio.run(
-        compact_done_outbox(older_than_seconds=0, limit=50, dry_run=False)
-    )
+    compacted = asyncio.run(compact_done_outbox(older_than_seconds=0, limit=50, dry_run=False))
     with make_client(tmp_path) as client:
         rows = asyncio.run(_outbox_items(client))
 
@@ -413,7 +405,7 @@ def test_compact_done_outbox_redacts_payload_but_keeps_audit_columns(
     assert rows[0]["aggregate_id"] == "chunk_done_compact"
     assert rows[0]["payload_json"]["compacted"] is True
     assert rows[0]["payload_json"]["preserved"] == {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_id": "profile_default",
         "chunk_id": "chunk_done_compact",
     }
@@ -543,7 +535,7 @@ async def _insert_done_outbox_with_raw_payload(client: TestClient) -> None:
                 aggregate_id="chunk_done_compact",
                 aggregate_version=None,
                 payload_json={
-                    "space_id": "space_hackinterview",
+                    "space_id": "space_client_app",
                     "profile_id": "profile_default",
                     "chunk_id": "chunk_done_compact",
                     "raw": "RAW_DONE_PAYLOAD_SECRET should be compacted away",
@@ -571,9 +563,7 @@ async def _clear_outbox(client: TestClient) -> None:
 async def _outbox_items(client: TestClient) -> list[dict[str, object]]:
     async with AsyncSession(client.app.state.container.engine) as session:
         rows = list(
-            (
-                await session.execute(select(MemoryOutboxRow).order_by(MemoryOutboxRow.id))
-            ).scalars()
+            (await session.execute(select(MemoryOutboxRow).order_by(MemoryOutboxRow.id))).scalars()
         )
         return [
             {

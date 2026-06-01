@@ -20,7 +20,7 @@ def test_sdk_sends_auth_and_params() -> None:
     )
 
     response = client.list_suggestions(
-        space_id="space_hackinterview",
+        space_id="space_client_app",
         profile_id="profile_default",
         status="pending",
     )
@@ -29,7 +29,7 @@ def test_sdk_sends_auth_and_params() -> None:
     assert seen["authorization"] == "Bearer test-token"
     assert (
         seen["url"]
-        == "http://memory.test/v1/suggestions?space_id=space_hackinterview&profile_id=profile_default&limit=100&status=pending"
+        == "http://memory.test/v1/suggestions?space_id=space_client_app&profile_id=profile_default&limit=100&status=pending"
     )
 
 
@@ -47,7 +47,7 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
     )
 
     client.list_facts(
-        space_id="space_hackinterview",
+        space_id="space_client_app",
         profile_id="profile_default",
         limit=10,
         cursor="fact_cursor",
@@ -60,7 +60,7 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
     client.diagnostics_profile("profile_1")
 
     assert seen == [
-        "GET http://memory.test/v1/facts?space_id=space_hackinterview&profile_id=profile_default&limit=10&status=active&cursor=fact_cursor",
+        "GET http://memory.test/v1/facts?space_id=space_client_app&profile_id=profile_default&limit=10&status=active&cursor=fact_cursor",
         "GET http://memory.test/v1/facts/fact_1",
         "GET http://memory.test/v1/facts/fact_1/versions",
         "GET http://memory.test/v1/documents/doc_1/chunks?limit=5&cursor=chunk_cursor",
@@ -136,7 +136,7 @@ def test_sdk_facade_accepts_additive_response_fields() -> None:
     )
 
     response = client.build_context(
-        space_id="space_hackinterview",
+        space_id="space_client_app",
         profile_ids=["profile_default"],
         query="additive fields",
     )
@@ -179,7 +179,7 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
     )
 
     client.ingest_episode(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         thread_external_ref="session-1",
         source_type="system_audio",
@@ -192,12 +192,12 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
         idempotency_key="event-1",
     )
     client.thread_memory_status(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         thread_external_ref="session-1",
     )
     client.delete_thread_memory(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         thread_external_ref="session-1",
     )
@@ -207,13 +207,13 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
         "POST /v1/thread-memory/status",
         "DELETE /v1/thread-memory",
     ]
-    assert seen[0][2]["space_slug"] == "hackinterview"
+    assert seen[0][2]["space_slug"] == "client-app"
     assert seen[0][2]["profile_external_ref"] == "default"
     assert seen[0][2]["thread_external_ref"] == "session-1"
     assert seen[0][2]["idempotency_key"] == "event-1"
     assert "space_id" not in seen[0][2]
     assert seen[2][2] == {
-        "space_slug": "hackinterview",
+        "space_slug": "client-app",
         "profile_external_ref": "default",
         "thread_external_ref": "session-1",
     }
@@ -234,7 +234,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
     )
 
     client.create_suggestion(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         candidate_text="Pending external scope suggestion.",
         kind="note",
@@ -242,7 +242,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
         source_refs=[{"source_type": "manual", "source_id": "sdk-suggestion"}],
     )
     client.list_suggestions(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         status="pending",
         limit=25,
@@ -250,12 +250,12 @@ def test_sdk_suggestions_support_external_scope() -> None:
 
     assert seen[0][0] == "POST"
     assert seen[0][1] == "http://memory.test/v1/suggestions"
-    assert seen[0][2]["space_slug"] == "hackinterview"
+    assert seen[0][2]["space_slug"] == "client-app"
     assert seen[0][2]["profile_external_ref"] == "default"
     assert "space_id" not in seen[0][2]
     assert (
         seen[1][1]
-        == "http://memory.test/v1/suggestions?space_slug=hackinterview&profile_external_ref=default&limit=25&status=pending"
+        == "http://memory.test/v1/suggestions?space_slug=client-app&profile_external_ref=default&limit=25&status=pending"
     )
 
 
@@ -274,7 +274,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     )
 
     client.ingest_document(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         thread_external_ref="session-docs",
         title="Architecture notes",
@@ -282,7 +282,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         source_external_id="doc-1",
     )
     client.build_context(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_ref="default",
         thread_external_ref="session-docs",
         query="canonical truth",
@@ -291,7 +291,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         max_chunks=6,
     )
     client.search(
-        space_slug="hackinterview",
+        space_slug="client-app",
         profile_external_refs=["default", "candidate"],
         query="memory platform",
         token_budget=1024,
@@ -304,7 +304,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         "POST /v1/context",
         "POST /v1/search",
     ]
-    assert seen[0][2]["space_slug"] == "hackinterview"
+    assert seen[0][2]["space_slug"] == "client-app"
     assert seen[0][2]["thread_external_ref"] == "session-docs"
     assert "space_id" not in seen[0][2]
     assert seen[1][2]["max_facts"] == 4
@@ -329,7 +329,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
 
     client.remember_fact(
         scope=MemoryScope(
-            space_slug="hackinterview",
+            space_slug="client-app",
             profile_external_ref="default",
             thread_external_ref="session-1",
         ),
@@ -339,7 +339,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
     )
     client.search(
         read_scope=ReadScope(
-            space_slug="hackinterview",
+            space_slug="client-app",
             profile_external_refs=("default", "candidate"),
         ),
         query="typed read scope",
@@ -348,7 +348,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
     assert seen[0] == (
         "/v1/facts",
         {
-            "space_slug": "hackinterview",
+            "space_slug": "client-app",
             "profile_external_ref": "default",
             "thread_external_ref": "session-1",
             "text": "Typed scope fact.",
@@ -365,7 +365,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
 def test_sdk_read_scope_rejects_ambiguous_thread_multi_profile() -> None:
     with pytest.raises(ValueError, match="single profile"):
         ReadScope(
-            space_slug="hackinterview",
+            space_slug="client-app",
             profile_external_refs=("default", "candidate"),
             thread_external_ref="session-1",
         ).to_payload()
@@ -385,7 +385,7 @@ def test_sdk_remember_fact_sends_classification() -> None:
     )
 
     client.remember_fact(
-        space_id="space_hackinterview",
+        space_id="space_client_app",
         profile_id="profile_default",
         text="Restricted fact",
         kind="note",
@@ -435,7 +435,7 @@ def test_sdk_maps_transport_error_to_retryable_memory_error() -> None:
 
     with pytest.raises(MemoryPlatformError) as raised:
         client.build_context(
-            space_id="space_hackinterview",
+            space_id="space_client_app",
             profile_ids=["profile_default"],
             query="safe fallback",
         )

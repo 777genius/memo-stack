@@ -640,7 +640,7 @@ Work:
 - extract canonical, vector, graph and later RAG candidate collectors;
 - add explicit hydration step for every derived candidate;
 - add consistency mode to `BuildContextQuery`;
-- keep output DTO backward compatible for HackInterview until SDK/API version
+- keep output DTO backward compatible for Client App until SDK/API version
   is bumped.
 
 Done when:

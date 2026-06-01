@@ -6,7 +6,7 @@ This project is the new source of truth for the memory platform architecture and
 
 ## Current Status
 
-Docs extracted from HackInterview on 2026-05-24.
+Docs extracted from client application docs on 2026-05-24.
 
 Implementation target:
 
@@ -28,8 +28,8 @@ Core principles:
 
 - [Core Lite implementation plan](docs/memory-platform-core-lite-plan.md)
 - [Global architecture plan](docs/memory-platform-architecture-plan.md)
-- [HackInterview current memory notes](docs/hackinterview/interview-memory-clean-architecture-plan.md)
-- [HackInterview integration run notes](docs/hackinterview/current-integration-run-notes.md)
+- [Legacy client memory notes](docs/client-integration/interview-memory-clean-architecture-plan.md)
+- [Legacy client integration run notes](docs/client-integration/current-integration-run-notes.md)
 
 ## Intended Package Layout
 
@@ -47,7 +47,7 @@ tests/
   fixtures/
 ```
 
-HackInterview should consume this project through HTTP or SDK, not by importing provider-specific adapters.
+Client applications should consume this project through HTTP or SDK, not by importing provider-specific adapters.
 
 ## Current Implementation
 
@@ -80,7 +80,7 @@ Implemented API surface:
 - `/v1/thread-memory/status`, `/v1/thread-memory` delete for thread-scoped cleanup;
 - `/v1/suggestions` create/list/approve/reject/expire for review-gated memory;
 - `/v1/diagnostics/adapters`, `/outbox`, `/profile/{profile_id}` with production-safe metadata only;
-- optional HackInterview-compatible `/api/v1/interview-memory/ingest`, `/context`, session status and delete routes when `MEMORY_LEGACY_HACKINTERVIEW_ENABLED=true`.
+- optional Legacy-client-compatible `/api/v1/interview-memory/ingest`, `/context`, session status and delete routes when `MEMORY_LEGACY_CLIENT_ENABLED=true`.
 
 Operational pieces:
 
@@ -225,11 +225,11 @@ MEMORY_SERVICE_TOKEN=local-dev-token \
 .venv/bin/python -m memory_server.main
 ```
 
-HackInterview local canary can point at this server:
+Legacy client local canary can point at this server:
 
 ```bash
-MEMORY_DEFAULT_SPACE_SLUG=hackinterview \
-MEMORY_LEGACY_HACKINTERVIEW_ENABLED=true \
+MEMORY_DEFAULT_SPACE_SLUG=client-app \
+MEMORY_LEGACY_CLIENT_ENABLED=true \
 make memory-stack-up-lite
 
 INTERVIEW_MEMORY_API_URL=http://127.0.0.1:7788 \

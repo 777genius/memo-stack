@@ -47,7 +47,7 @@ def test_health_returns_ok() -> None:
     }
 
 
-def test_root_health_alias_supports_hackinterview_canary() -> None:
+def test_root_health_alias_supports_client_canary() -> None:
     response = build_test_client().get("/health")
 
     assert response.status_code == 200
@@ -67,9 +67,7 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["adapters"]["graphiti"]["enabled"] is False
     assert body["adapters"]["embeddings"]["enabled"] is False
     assert body["adapters"]["cognee"]["enabled"] is False
-    capability_pairs = {
-        (item["adapter_name"], item["capability"]) for item in body["capabilities"]
-    }
+    capability_pairs = {(item["adapter_name"], item["capability"]) for item in body["capabilities"]}
     assert capability_pairs == {
         ("qdrant", "vector_recall"),
         ("qdrant", "projection_forget"),
@@ -86,10 +84,10 @@ def test_capabilities_return_noop_adapters() -> None:
     assert "api_key" not in response.text.lower()
     assert "secret" not in response.text.lower()
     assert body["limits"]["max_context_tokens"] == 1800
-    assert body["supports_legacy_hackinterview_routes"] is False
+    assert body["supports_legacy_client_routes"] is False
 
 
-def test_legacy_hackinterview_routes_are_opt_in() -> None:
+def test_legacy_client_routes_are_opt_in() -> None:
     client = build_test_client()
     capabilities = client.get("/v1/capabilities")
     legacy_context = client.post(
@@ -101,11 +99,11 @@ def test_legacy_hackinterview_routes_are_opt_in() -> None:
     )
 
     assert capabilities.status_code == 200
-    assert capabilities.json()["supports_legacy_hackinterview_routes"] is False
+    assert capabilities.json()["supports_legacy_client_routes"] is False
     assert legacy_context.status_code == 404
 
 
-def test_legacy_hackinterview_route_flag_enables_compatibility_routes(tmp_path: Path) -> None:
+def test_legacy_client_route_flag_enables_compatibility_routes(tmp_path: Path) -> None:
     app = create_app(
         Settings(
             deploy_profile=DeployProfile.TEST,
@@ -114,7 +112,7 @@ def test_legacy_hackinterview_route_flag_enables_compatibility_routes(tmp_path: 
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
-            legacy_hackinterview_enabled=True,
+            legacy_client_enabled=True,
         )
     )
     with TestClient(app) as client:
@@ -128,7 +126,7 @@ def test_legacy_hackinterview_route_flag_enables_compatibility_routes(tmp_path: 
         )
 
     assert capabilities.status_code == 200
-    assert capabilities.json()["supports_legacy_hackinterview_routes"] is True
+    assert capabilities.json()["supports_legacy_client_routes"] is True
     assert legacy_context.status_code != 404
 
 

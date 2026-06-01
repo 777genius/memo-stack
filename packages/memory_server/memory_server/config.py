@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     embeddings_model: str = "text-embedding-3-small"
     embeddings_dimensions: int = Field(default=1536, ge=1, le=8192)
     openai_api_key: str | None = None
-    legacy_hackinterview_enabled: bool = False
+    legacy_client_enabled: bool = False
     default_space_slug: str = "default"
     default_profile_external_ref: str = "default"
     max_context_tokens: int = Field(default=1800, ge=256, le=16000)

@@ -127,8 +127,7 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
             "MEMORY_OPENAI_API_KEY": openai_key,
             "MEMORY_DEPLOY_PROFILE": "local",
             "MEMORY_DATABASE_URL": (
-                "postgresql+asyncpg://memory:memory"
-                f"@127.0.0.1:{ports['postgres']}/memory"
+                f"postgresql+asyncpg://memory:memory@127.0.0.1:{ports['postgres']}/memory"
             ),
             "MEMORY_AUTO_CREATE_SCHEMA": "true",
             "MEMORY_HOST": "127.0.0.1",
@@ -152,7 +151,7 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
             "MEMORY_GRAPHITI_BUILD_INDICES": "true",
             "MEMORY_PROVIDER_CIRCUIT_FAILURE_THRESHOLD": "2",
             "MEMORY_PROVIDER_CIRCUIT_RESET_AFTER_SECONDS": "30",
-            "MEMORY_LEGACY_HACKINTERVIEW_ENABLED": "false",
+            "MEMORY_LEGACY_CLIENT_ENABLED": "false",
         }
     )
     return env
@@ -376,9 +375,7 @@ def _compose(project_name: str, env: Mapping[str, str], *args: str, check: bool 
     )
     if check and completed.returncode != 0:
         raise CleanSmokeFailure(
-            "docker compose failed: "
-            + completed.stdout[-2000:]
-            + completed.stderr[-2000:]
+            "docker compose failed: " + completed.stdout[-2000:] + completed.stderr[-2000:]
         )
 
 

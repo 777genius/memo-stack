@@ -52,7 +52,7 @@ def auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
 
 def fact_payload(text: str = "Postgres is canonical truth.") -> dict[str, Any]:
     return {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_id": "profile_default",
         "text": text,
         "kind": "architecture_decision",
@@ -261,7 +261,7 @@ def test_idempotency_unique_violation_maps_to_domain_conflict(tmp_path: Path) ->
             async with container.uow_factory() as uow:
                 await uow.idempotency.save(
                     IdempotencyRecord(
-                        space_id="space_hackinterview",
+                        space_id="space_client_app",
                         key="duplicate-commit",
                         fingerprint="first",
                         result_type="fact",
@@ -270,7 +270,7 @@ def test_idempotency_unique_violation_maps_to_domain_conflict(tmp_path: Path) ->
                 )
                 await uow.idempotency.save(
                     IdempotencyRecord(
-                        space_id="space_hackinterview",
+                        space_id="space_client_app",
                         key="duplicate-commit",
                         fingerprint="second",
                         result_type="fact",
@@ -356,7 +356,7 @@ def test_fact_update_context_only_renders_current_version(tmp_path: Path) -> Non
         before = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "memory retrieval",
                 "max_facts": 5,
@@ -378,7 +378,7 @@ def test_fact_update_context_only_renders_current_version(tmp_path: Path) -> Non
         after = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "memory retrieval pgvector Qdrant",
                 "max_facts": 5,
@@ -414,7 +414,7 @@ def test_forget_fact_context_and_search_hide_deleted_fact(tmp_path: Path) -> Non
         before_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "FACT_FORGET_E2E_MARKER",
                 "max_facts": 5,
@@ -427,7 +427,7 @@ def test_forget_fact_context_and_search_hide_deleted_fact(tmp_path: Path) -> Non
         after_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "FACT_FORGET_E2E_MARKER",
                 "max_facts": 5,
@@ -439,7 +439,7 @@ def test_forget_fact_context_and_search_hide_deleted_fact(tmp_path: Path) -> Non
         after_search = client.post(
             "/v1/search",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "FACT_FORGET_E2E_MARKER",
                 "max_facts": 5,
@@ -478,7 +478,7 @@ def test_list_facts_is_scoped_and_validates_status(tmp_path: Path) -> None:
         listed = client.get(
             "/v1/facts",
             params={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "status": "active",
             },
@@ -487,7 +487,7 @@ def test_list_facts_is_scoped_and_validates_status(tmp_path: Path) -> None:
         invalid = client.get(
             "/v1/facts",
             params={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "status": "typo",
             },

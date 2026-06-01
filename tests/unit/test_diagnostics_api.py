@@ -33,7 +33,7 @@ def test_diagnostics_adapters_and_outbox_are_safe(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Diagnostics notes",
                 "text": "Do not leak this raw diagnostic text through outbox diagnostics.",
@@ -72,7 +72,7 @@ def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -
         client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Profile diagnostics notes",
                 "text": "PROFILE_DIAGNOSTIC_MARKER should not appear in diagnostics.",
@@ -84,7 +84,7 @@ def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "PROFILE_DIAGNOSTIC_FACT should not appear in diagnostics.",
                 "kind": "note",
@@ -95,7 +95,7 @@ def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -
         client.post(
             "/v1/suggestions",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "candidate_text": "PROFILE_DIAGNOSTIC_SUGGESTION",
                 "safe_reason": "diagnostic count",
@@ -122,7 +122,7 @@ def test_diagnostics_redacts_restricted_preview(tmp_path: Path) -> None:
         client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Restricted diagnostics",
                 "text": "RESTRICTED_DIAGNOSTIC_DOC_SECRET must never appear in diagnostics.",
@@ -135,7 +135,7 @@ def test_diagnostics_redacts_restricted_preview(tmp_path: Path) -> None:
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "RESTRICTED_DIAGNOSTIC_FACT_SECRET must never appear in diagnostics.",
                 "kind": "note",
@@ -169,7 +169,7 @@ def test_diagnostics_metrics_are_counts_only_and_alert_on_dead_outbox(tmp_path: 
         client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Metrics diagnostics notes",
                 "text": "RAW_METRICS_SECRET should not appear in metrics.",
@@ -201,7 +201,7 @@ def test_diagnostics_metrics_include_context_runtime_counters(tmp_path: Path) ->
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "RUNTIME_METRIC_FACT should not leak through metrics.",
                 "kind": "note",
@@ -212,7 +212,7 @@ def test_diagnostics_metrics_include_context_runtime_counters(tmp_path: Path) ->
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "runtime metric",
                 "token_budget": 512,
@@ -260,7 +260,7 @@ def test_context_response_request_id_matches_log_record(tmp_path: Path) -> None:
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "TRACE_REQUEST_ID_MARKER renders from canonical facts.",
                 "kind": "note",
@@ -271,7 +271,7 @@ def test_context_response_request_id_matches_log_record(tmp_path: Path) -> None:
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "TRACE_REQUEST_ID_MARKER",
                 "token_budget": 512,
@@ -288,7 +288,7 @@ def test_context_response_request_id_matches_log_record(tmp_path: Path) -> None:
     assert trace["request_id"] == request_id
     assert trace["span"] == "memory.context.request"
     assert trace["use_case"] == "build_context"
-    assert trace["space_id"] == "space_hackinterview"
+    assert trace["space_id"] == "space_client_app"
     assert trace["profile_ids"] == ["profile_default"]
 
 
@@ -297,7 +297,7 @@ def test_trace_attributes_do_not_include_raw_text(tmp_path: Path) -> None:
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "TRACE_RAW_TEXT_SECRET must not appear in trace attributes.",
                 "kind": "note",
@@ -308,7 +308,7 @@ def test_trace_attributes_do_not_include_raw_text(tmp_path: Path) -> None:
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "TRACE_RAW_TEXT_SECRET",
                 "token_budget": 512,

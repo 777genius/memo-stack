@@ -43,7 +43,7 @@ def auth_headers() -> dict[str, str]:
 
 def suggestion_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_id": "profile_default",
         "candidate_text": "Use Postgres as canonical truth.",
         "kind": "architecture_decision",
@@ -67,7 +67,7 @@ def test_pending_suggestion_not_in_context_and_approve_creates_fact(tmp_path: Pa
         before = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "canonical truth",
                 "token_budget": 512,
@@ -82,7 +82,7 @@ def test_pending_suggestion_not_in_context_and_approve_creates_fact(tmp_path: Pa
         after = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "canonical truth",
                 "token_budget": 512,
@@ -115,7 +115,7 @@ def test_rejected_suggestion_never_appears_in_context(tmp_path: Path) -> None:
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "Rejected memory marker",
                 "token_budget": 512,
@@ -278,7 +278,7 @@ def test_list_suggestions_rejects_unknown_status(tmp_path: Path) -> None:
         response = client.get(
             "/v1/suggestions",
             params={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "status": "mispelled",
             },
@@ -343,7 +343,7 @@ def test_suggestion_cannot_update_target_fact_from_another_profile(tmp_path: Pat
         other_fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_secondary",
                 "text": "CROSS_PROFILE_TARGET_FACT must stay unchanged.",
                 "kind": "note",

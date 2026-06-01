@@ -39,7 +39,7 @@ from memory_core.ports.capabilities import (
     CapabilityStatus,
     MemoryCapability,
 )
-from memory_server.api.legacy_hackinterview import _legacy_trust
+from memory_server.api.legacy_client import _legacy_trust
 from memory_server.config import DeployProfile, MemoryPolicyMode, Settings
 from memory_server.main import create_app
 from memory_server.provider_budget import QueryEmbeddingBudgetAdapter
@@ -62,7 +62,7 @@ def make_client(tmp_path: Path) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
-            legacy_hackinterview_enabled=True,
+            legacy_client_enabled=True,
         )
     )
     return TestClient(app)
@@ -78,7 +78,7 @@ def make_client_with_settings(tmp_path: Path, **overrides: Any) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
-            legacy_hackinterview_enabled=True,
+            legacy_client_enabled=True,
             **overrides,
         )
     )
@@ -119,7 +119,7 @@ def test_future_occurred_at_is_clamped_to_ingest_time(tmp_path: Path) -> None:
         ingested = client.post(
             "/v1/episodes",
             json={
-                "space_slug": "hackinterview",
+                "space_slug": "client-app",
                 "profile_external_ref": "default",
                 "thread_external_ref": "future-occurred-at",
                 "source_type": "system_audio",
@@ -262,7 +262,7 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
     tmp_path: Path,
 ) -> None:
     scope = {
-        "space_slug": "hackinterview",
+        "space_slug": "client-app",
         "profile_external_ref": "default",
         "thread_external_ref": "v1-session-1",
     }
@@ -446,7 +446,7 @@ def test_legacy_scope_creation_is_safe_under_parallel_sessions(tmp_path: Path) -
                 *[
                     container.ensure_scope.execute(
                         EnsureScopeCommand(
-                            space_slug="hackinterview",
+                            space_slug="client-app",
                             profile_external_ref="default",
                             thread_external_ref=f"parallel-session-{index}",
                         )
@@ -467,7 +467,7 @@ def test_context_rejects_duplicate_canonical_profile_ids(tmp_path: Path) -> None
         response = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default", "profile_default"],
                 "query": "scope validation",
             },
@@ -575,7 +575,7 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Architecture notes",
                 "text": "Memory Platform uses Postgres as canonical truth. Qdrant is derived.",
@@ -589,7 +589,7 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "What is canonical truth?",
                 "token_budget": 512,
@@ -615,7 +615,7 @@ def test_document_ingest_returns_backpressure_when_outbox_high(tmp_path: Path) -
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Backpressure document",
                 "text": "BACKPRESSURE_DOC_MARKER should not be ingested while outbox is high.",
@@ -646,7 +646,7 @@ def test_document_delete_bypasses_backpressure(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Backpressure delete",
                 "text": "BACKPRESSURE_DELETE_MARKER delete must bypass backpressure.",
@@ -673,7 +673,7 @@ def test_forget_bypasses_backpressure(tmp_path: Path) -> None:
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "BACKPRESSURE_FORGET_MARKER forget must bypass backpressure.",
                 "kind": "note",
@@ -697,7 +697,7 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "CANONICAL_COLLECTOR_FACT_MARKER belongs to canonical facts.",
                 "kind": "note",
@@ -708,7 +708,7 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
         client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Collector document",
                 "text": "CANONICAL_COLLECTOR_CHUNK_MARKER belongs to keyword chunks.",
@@ -721,7 +721,7 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
         result = asyncio.run(
             CanonicalContextCollector(uow_factory=container.uow_factory).collect(
                 query=BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="CANONICAL_COLLECTOR",
                 ),
@@ -737,7 +737,7 @@ def test_v1_document_ingest_accepts_external_scope_and_thread_context(
     tmp_path: Path,
 ) -> None:
     scope = {
-        "space_slug": "hackinterview",
+        "space_slug": "client-app",
         "profile_external_ref": "default",
         "thread_external_ref": "document-session-1",
     }
@@ -778,12 +778,12 @@ def test_thread_scoped_document_reimport_same_hash_stays_visible_per_thread(
     tmp_path: Path,
 ) -> None:
     first_scope = {
-        "space_slug": "hackinterview",
+        "space_slug": "client-app",
         "profile_external_ref": "default",
         "thread_external_ref": "document-thread-a",
     }
     second_scope = {
-        "space_slug": "hackinterview",
+        "space_slug": "client-app",
         "profile_external_ref": "default",
         "thread_external_ref": "document-thread-b",
     }
@@ -835,7 +835,7 @@ def test_document_reimport_same_hash_is_noop_even_with_new_idempotency_key(
     tmp_path: Path,
 ) -> None:
     payload = {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_id": "profile_default",
         "title": "Reimport notes",
         "text": "DOC_REIMPORT_MARKER should only create one canonical document.",
@@ -863,7 +863,7 @@ def test_document_reimport_same_hash_is_noop_even_with_new_idempotency_key(
 
 def test_document_reimport_same_hash_different_source_id_is_noop(tmp_path: Path) -> None:
     base_payload = {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_id": "profile_default",
         "title": "Same content notes",
         "text": "DOC_REIMPORT_SOURCE_MARKER should not duplicate chunks.",
@@ -892,7 +892,7 @@ def test_document_reimport_same_hash_different_profile_stays_isolated(
     tmp_path: Path,
 ) -> None:
     base_payload = {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "title": "Shared source notes",
         "text": "DOC_REIMPORT_PROFILE_MARKER should stay scoped per profile.",
         "source_type": "document",
@@ -912,7 +912,7 @@ def test_document_reimport_same_hash_different_profile_stays_isolated(
         default_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "DOC_REIMPORT_PROFILE_MARKER",
                 "token_budget": 512,
@@ -922,7 +922,7 @@ def test_document_reimport_same_hash_different_profile_stays_isolated(
         secondary_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_secondary"],
                 "query": "DOC_REIMPORT_PROFILE_MARKER",
                 "token_budget": 512,
@@ -944,7 +944,7 @@ def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Restricted notes",
                 "text": "RESTRICTED_DOC_MARKER must stay out of prompt context.",
@@ -957,7 +957,7 @@ def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "RESTRICTED_FACT_MARKER must stay out of prompt context.",
                 "kind": "note",
@@ -969,7 +969,7 @@ def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "RESTRICTED_DOC_MARKER RESTRICTED_FACT_MARKER",
                 "token_budget": 512,
@@ -991,7 +991,7 @@ def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> Non
         implicit = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "IMPLICIT_RESTRICTED_MARKER is stored as internal without explicit flag.",
                 "kind": "note",
@@ -1002,7 +1002,7 @@ def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> Non
         explicit = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "EXPLICIT_RESTRICTED_MARKER must stay out of prompt context.",
                 "kind": "note",
@@ -1014,7 +1014,7 @@ def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> Non
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "IMPLICIT_RESTRICTED_MARKER EXPLICIT_RESTRICTED_MARKER",
                 "token_budget": 512,
@@ -1036,7 +1036,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Delete notes",
                 "text": "DELETE_DOC_MARKER should disappear after document delete.",
@@ -1052,7 +1052,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "DELETE_DOC_FACT_MARKER should disappear with its source document.",
                 "kind": "note",
@@ -1069,7 +1069,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
         document_fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "DELETE_DOC_WIDE_FACT_MARKER should disappear with document id source.",
                 "kind": "note",
@@ -1085,7 +1085,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
         before = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "DELETE_DOC_MARKER DELETE_DOC_FACT_MARKER DELETE_DOC_WIDE_FACT_MARKER",
                 "token_budget": 512,
@@ -1097,7 +1097,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
         after = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "DELETE_DOC_MARKER DELETE_DOC_FACT_MARKER DELETE_DOC_WIDE_FACT_MARKER",
                 "token_budget": 512,
@@ -1127,7 +1127,7 @@ def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path)
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Scoped delete notes",
                 "text": "CROSS_PROFILE_DELETE_DOC_MARKER belongs to default profile.",
@@ -1143,7 +1143,7 @@ def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path)
         cross_profile_fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_secondary",
                 "text": (
                     "CROSS_PROFILE_FACT_REF_MARKER must survive another profile document delete."
@@ -1163,7 +1163,7 @@ def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path)
         secondary_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_secondary"],
                 "query": "CROSS_PROFILE_FACT_REF_MARKER",
                 "token_budget": 512,
@@ -1182,7 +1182,7 @@ def test_document_reimport_same_hash_after_delete_creates_new_active_document(
     tmp_path: Path,
 ) -> None:
     payload = {
-        "space_slug": "hackinterview",
+        "space_slug": "client-app",
         "profile_external_ref": "default",
         "thread_external_ref": "doc-delete-reimport-thread",
         "title": "Reimport after delete",
@@ -1202,7 +1202,7 @@ def test_document_reimport_same_hash_after_delete_creates_new_active_document(
         context = client.post(
             "/v1/context",
             json={
-                "space_slug": "hackinterview",
+                "space_slug": "client-app",
                 "profile_external_ref": "default",
                 "thread_external_ref": "doc-delete-reimport-thread",
                 "query": "DELETE_REIMPORT_DOC_MARKER",
@@ -1224,7 +1224,7 @@ def test_process_document_reenqueues_active_chunks(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Process notes",
                 "text": "PROCESS_DOC_MARKER should be reindexed on demand.",
@@ -1263,7 +1263,7 @@ def test_process_document_idempotency_key_conflicts_on_different_document(
         first = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "First process notes",
                 "text": "First document process idempotency marker.",
@@ -1275,7 +1275,7 @@ def test_process_document_idempotency_key_conflicts_on_different_document(
         second = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Second process notes",
                 "text": "Second document process idempotency marker.",
@@ -1358,7 +1358,7 @@ def test_fact_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> Non
         target = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "DEEP_FACT_RECALL_MARKER: use a temporal graph only as derived evidence.",
                 "kind": "architecture_decision",
@@ -1370,7 +1370,7 @@ def test_fact_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> Non
             client.post(
                 "/v1/facts",
                 json={
-                    "space_id": "space_hackinterview",
+                    "space_id": "space_client_app",
                     "profile_id": "profile_default",
                     "text": f"Recent irrelevant memory filler {index}.",
                     "kind": "note",
@@ -1385,7 +1385,7 @@ def test_fact_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> Non
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "DEEP_FACT_RECALL_MARKER temporal graph evidence",
                 "token_budget": 512,
@@ -1407,7 +1407,7 @@ def test_chunk_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> No
         target = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Deep chunk recall",
                 "text": "DEEP_CHUNK_RECALL_MARKER: Graphiti is derived, Postgres stays canonical.",
@@ -1420,7 +1420,7 @@ def test_chunk_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> No
             client.post(
                 "/v1/documents",
                 json={
-                    "space_id": "space_hackinterview",
+                    "space_id": "space_client_app",
                     "profile_id": "profile_default",
                     "title": f"Recent filler {index}",
                     "text": f"Recent irrelevant document filler {index}.",
@@ -1434,7 +1434,7 @@ def test_chunk_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> No
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "DEEP_CHUNK_RECALL_MARKER Graphiti canonical",
                 "token_budget": 512,
@@ -1457,7 +1457,7 @@ def test_public_context_respects_server_rendered_char_cap(tmp_path: Path) -> Non
             client.post(
                 "/v1/facts",
                 json={
-                    "space_id": "space_hackinterview",
+                    "space_id": "space_client_app",
                     "profile_id": "profile_default",
                     "text": f"PUBLIC_CHAR_CAP_MARKER fact {index}. " + ("important details " * 20),
                     "kind": "note",
@@ -1472,7 +1472,7 @@ def test_public_context_respects_server_rendered_char_cap(tmp_path: Path) -> Non
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "PUBLIC_CHAR_CAP_MARKER",
                 "token_budget": 16000,
@@ -1496,7 +1496,7 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "Never render deleted fact marker.",
                 "kind": "note",
@@ -1508,7 +1508,7 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
         before = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "deleted fact marker",
                 "token_budget": 512,
@@ -1519,7 +1519,7 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
         after = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "deleted fact marker",
                 "token_budget": 512,
@@ -1549,7 +1549,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
         created = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "RACE_DELETE_MARKER must not survive late hydration.",
                 "kind": "note",
@@ -1578,7 +1578,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="RACE_DELETE_MARKER",
                     token_budget=512,
@@ -1595,7 +1595,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
 
 def test_context_cache_disabled_for_core_lite_prompt_path(tmp_path: Path) -> None:
     context_request = {
-        "space_id": "space_hackinterview",
+        "space_id": "space_client_app",
         "profile_ids": ["profile_default"],
         "query": "CACHE_DISABLED_MARKER",
         "token_budget": 512,
@@ -1604,7 +1604,7 @@ def test_context_cache_disabled_for_core_lite_prompt_path(tmp_path: Path) -> Non
         created = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "CACHE_DISABLED_MARKER should disappear after forget.",
                 "kind": "note",
@@ -1633,7 +1633,7 @@ def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
         first = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "PROFILE_DEFAULT_MARKER owns fifo choice.",
                 "kind": "note",
@@ -1644,7 +1644,7 @@ def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
         second = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_secondary",
                 "text": "PROFILE_SECONDARY_MARKER owns queue constraint.",
                 "kind": "note",
@@ -1655,7 +1655,7 @@ def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default", "profile_secondary"],
                 "query": "PROFILE_DEFAULT_MARKER PROFILE_SECONDARY_MARKER",
                 "token_budget": 512,
@@ -1685,7 +1685,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
         current_scope = asyncio.run(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
-                    space_slug="hackinterview",
+                    space_slug="client-app",
                     profile_external_ref="default",
                     thread_external_ref="fact-thread-current",
                 )
@@ -1694,7 +1694,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
         other_scope = asyncio.run(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
-                    space_slug="hackinterview",
+                    space_slug="client-app",
                     profile_external_ref="default",
                     thread_external_ref="fact-thread-other",
                 )
@@ -1904,7 +1904,7 @@ def test_context_revalidation_drops_provider_only_raw_items(tmp_path: Path) -> N
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="provider only graph text",
                     token_budget=512,
@@ -1939,7 +1939,7 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "CANONICAL_ONLY_FACT_MARKER comes only from Postgres facts.",
                 "kind": "note",
@@ -1950,7 +1950,7 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Canonical only",
                 "text": "CANONICAL_ONLY_CHUNK_MARKER comes only from keyword chunks.",
@@ -1970,7 +1970,7 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="CANONICAL_ONLY",
                     consistency_mode=ConsistencyMode.CANONICAL_ONLY,
@@ -1995,7 +1995,7 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "CONTEXT_CONSISTENCY_MODE_MARKER is a canonical fact.",
                 "kind": "note",
@@ -2006,7 +2006,7 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
         default_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "CONTEXT_CONSISTENCY_MODE_MARKER",
                 "token_budget": 512,
@@ -2016,7 +2016,7 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
         canonical_context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "CONTEXT_CONSISTENCY_MODE_MARKER",
                 "consistency_mode": "canonical_only",
@@ -2037,7 +2037,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
 ) -> None:
     class FakeRagRecall:
         async def recall(self, query: CapabilityRecallQuery) -> CapabilityRecallResult:
-            assert query.scope.space_id == "space_hackinterview"
+            assert query.scope.space_id == "space_client_app"
             assert query.scope.profile_ids == ("profile_default",)
             return CapabilityRecallResult(
                 status=CapabilityStatus.OK,
@@ -2058,7 +2058,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
                         adapter_name="cognee",
                         metadata={
                             "provider": "cognee",
-                            "dataset_id": "hackinterview/default",
+                            "dataset_id": "client-app/default",
                             "raw_text": "RAW_RAG_METADATA_SECRET should not leak",
                             "secret_token": "RAG_METADATA_SECRET_TOKEN",
                         },
@@ -2070,7 +2070,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "RAG canonical source",
                 "text": "RAG_CANONICAL_MARKER is hydrated from the canonical chunk.",
@@ -2096,7 +2096,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="semantic rag recall",
                     token_budget=512,
@@ -2111,7 +2111,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
     assert context.items[0].diagnostics["retrieval_source"] == "rag_recall"
     assert context.items[0].diagnostics["adapter_name"] == "cognee"
     assert context.items[0].diagnostics["provider"] == "cognee"
-    assert context.items[0].diagnostics["dataset_id"] == "hackinterview/default"
+    assert context.items[0].diagnostics["dataset_id"] == "client-app/default"
     assert "RAW_RAG_METADATA_SECRET" not in str(context.items[0].diagnostics)
     assert "RAG_METADATA_SECRET_TOKEN" not in str(context.items[0].diagnostics)
 
@@ -2149,7 +2149,7 @@ def test_context_drops_rag_recall_without_canonical_chunk_source(tmp_path: Path)
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="semantic rag recall",
                     token_budget=512,
@@ -2183,7 +2183,7 @@ def test_context_does_not_embed_when_vector_adapter_is_disabled(tmp_path: Path) 
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="VECTOR_DISABLED_COST_GUARD",
                     token_budget=512,
@@ -2235,7 +2235,7 @@ def test_context_marks_unavailable_vector_adapter_degraded_without_embedding(
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="VECTOR_UNAVAILABLE_COST_GUARD",
                     token_budget=512,
@@ -2269,7 +2269,7 @@ def test_degraded_context_has_safe_diagnostics(tmp_path: Path) -> None:
         created = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "DEGRADED_CONTEXT_MARKER should still render from Postgres.",
                 "kind": "note",
@@ -2288,7 +2288,7 @@ def test_degraded_context_has_safe_diagnostics(tmp_path: Path) -> None:
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="DEGRADED_CONTEXT_MARKER",
                     token_budget=512,
@@ -2324,7 +2324,7 @@ def test_qdrant_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
         created = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "VECTOR_TIMEOUT_CANONICAL_MARKER still renders from Postgres.",
                 "kind": "note",
@@ -2343,7 +2343,7 @@ def test_qdrant_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="VECTOR_TIMEOUT_CANONICAL_MARKER",
                     token_budget=512,
@@ -2381,7 +2381,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "VECTOR_CIRCUIT_MARKER should remain available from Postgres.",
                 "kind": "note",
@@ -2408,7 +2408,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         first = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="VECTOR_CIRCUIT_MARKER",
                     token_budget=512,
@@ -2418,7 +2418,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         second = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="VECTOR_CIRCUIT_MARKER",
                     token_budget=512,
@@ -2428,7 +2428,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         third = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="VECTOR_CIRCUIT_MARKER",
                     token_budget=512,
@@ -2471,7 +2471,7 @@ def test_query_embedding_timeout_degrades_to_keyword_context(tmp_path: Path) -> 
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Embedding timeout fallback",
                 "text": "EMBEDDING_TIMEOUT_KEYWORD_MARKER still renders from keyword chunks.",
@@ -2491,7 +2491,7 @@ def test_query_embedding_timeout_degrades_to_keyword_context(tmp_path: Path) -> 
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="EMBEDDING_TIMEOUT_KEYWORD_MARKER",
                     token_budget=512,
@@ -2533,7 +2533,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Embedding circuit fallback",
                 "text": "EMBEDDING_CIRCUIT_KEYWORD_MARKER still renders from keyword chunks.",
@@ -2561,7 +2561,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         first = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
                     token_budget=512,
@@ -2571,7 +2571,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         second = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
                     token_budget=512,
@@ -2581,7 +2581,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
         third = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
                     token_budget=512,
@@ -2618,7 +2618,7 @@ def test_query_embedding_rate_limit_degrades_to_keyword(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Query embedding rate limit",
                 "text": "QUERY_RATE_LIMIT_KEYWORD_MARKER still renders from keyword chunks.",
@@ -2644,7 +2644,7 @@ def test_query_embedding_rate_limit_degrades_to_keyword(tmp_path: Path) -> None:
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="QUERY_RATE_LIMIT_KEYWORD_MARKER",
                     token_budget=512,
@@ -2688,7 +2688,7 @@ def test_context_does_not_search_when_graph_adapter_is_disabled(tmp_path: Path) 
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="GRAPH_DISABLED_COST_GUARD",
                     token_budget=512,
@@ -2732,7 +2732,7 @@ def test_context_marks_unavailable_graph_adapter_degraded_without_search(
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="GRAPH_UNAVAILABLE_COST_GUARD",
                     token_budget=512,
@@ -2765,7 +2765,7 @@ def test_graphiti_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
         created = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "GRAPH_TIMEOUT_CANONICAL_MARKER still renders from Postgres.",
                 "kind": "note",
@@ -2784,7 +2784,7 @@ def test_graphiti_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="GRAPH_TIMEOUT_CANONICAL_MARKER",
                     token_budget=512,
@@ -2823,7 +2823,7 @@ def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> Non
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "GRAPH_CIRCUIT_MARKER should remain available from Postgres.",
                 "kind": "note",
@@ -2851,7 +2851,7 @@ def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> Non
             context = asyncio.run(
                 use_case.execute(
                     BuildContextQuery(
-                        space_id=SpaceId("space_hackinterview"),
+                        space_id=SpaceId("space_client_app"),
                         profile_ids=(ProfileId("profile_default"),),
                         query="GRAPH_CIRCUIT_MARKER",
                         token_budget=512,
@@ -2862,7 +2862,7 @@ def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> Non
         opened = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="GRAPH_CIRCUIT_MARKER",
                     token_budget=512,
@@ -2906,7 +2906,7 @@ def test_context_revalidates_direct_facts_after_adapter_delay(tmp_path: Path) ->
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "RACE_DELETE_FACT_MARKER must not survive final context validation.",
                 "kind": "note",
@@ -2926,7 +2926,7 @@ def test_context_revalidates_direct_facts_after_adapter_delay(tmp_path: Path) ->
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="RACE_DELETE_FACT_MARKER",
                     token_budget=512,
@@ -2944,7 +2944,7 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "Graph-only canonical memory marker.",
                 "kind": "note",
@@ -2964,7 +2964,7 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
         active = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="unrelated graph query",
                     token_budget=512,
@@ -2975,7 +2975,7 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
         deleted = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="unrelated graph query",
                     token_budget=512,
@@ -3004,7 +3004,7 @@ def test_graph_candidate_without_canonical_source_is_low_confidence_or_dropped(
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="orphan graph relation",
                     token_budget=512,
@@ -3023,7 +3023,7 @@ def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "text": "SCHEMA_MISMATCH_CANONICAL_MARKER still renders from Postgres.",
                 "kind": "note",
@@ -3042,7 +3042,7 @@ def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="SCHEMA_MISMATCH_CANONICAL_MARKER",
                     token_budget=512,
@@ -3064,7 +3064,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
         current_scope = asyncio.run(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
-                    space_slug="hackinterview",
+                    space_slug="client-app",
                     profile_external_ref="default",
                     thread_external_ref="graph-thread-current",
                 )
@@ -3073,7 +3073,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
         other_scope = asyncio.run(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
-                    space_slug="hackinterview",
+                    space_slug="client-app",
                     profile_external_ref="default",
                     thread_external_ref="graph-thread-other",
                 )
@@ -3244,7 +3244,7 @@ def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_secondary",
                 "title": "Wrong profile vector source",
                 "text": "WRONG_PROFILE_VECTOR_MARKER must not hydrate into default profile.",
@@ -3270,7 +3270,7 @@ def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
         context = asyncio.run(
             use_case.execute(
                 BuildContextQuery(
-                    space_id=SpaceId("space_hackinterview"),
+                    space_id=SpaceId("space_client_app"),
                     profile_ids=(ProfileId("profile_default"),),
                     query="unrelated vector query",
                     token_budget=512,
@@ -3294,7 +3294,7 @@ def test_disabled_policy_returns_no_legacy_memory_or_public_context(tmp_path: Pa
         context = client.post(
             "/v1/context",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_ids": ["profile_default"],
                 "query": "POLICY_DISABLED_MARKER",
                 "token_budget": 512,

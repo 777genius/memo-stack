@@ -53,7 +53,7 @@ def test_openapi_contains_legacy_routes_when_compatibility_adapter_enabled() -> 
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
-            legacy_hackinterview_enabled=True,
+            legacy_client_enabled=True,
         )
     )
     body = TestClient(app).get("/openapi.json").json()

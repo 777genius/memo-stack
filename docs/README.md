@@ -1,14 +1,14 @@
 # Memory Platform Docs
 
-This folder contains the platform planning documents moved out of HackInterview.
+This folder contains the platform planning documents moved out of Client App.
 
 ## Reading Order
 
 1. [Core Lite implementation plan](memory-platform-core-lite-plan.md)
 2. [Global architecture plan](memory-platform-architecture-plan.md)
 3. [MCP memory foundation plan](mcp-memory-foundation-plan.md)
-4. [HackInterview current memory notes](hackinterview/interview-memory-clean-architecture-plan.md)
-5. [HackInterview integration run notes](hackinterview/current-integration-run-notes.md)
+4. [Legacy client memory notes](client-integration/interview-memory-clean-architecture-plan.md)
+5. [Legacy client integration run notes](client-integration/current-integration-run-notes.md)
 
 ## Architecture Decisions
 
@@ -26,7 +26,7 @@ These docs now belong to:
 /Users/belief/dev/projects/ai/memory-platform
 ```
 
-HackInterview should keep only integration notes and pointers to this project.
+Client App should keep only integration notes and pointers to this project.
 
 ## Local Docker Runbook
 

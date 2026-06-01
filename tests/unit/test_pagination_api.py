@@ -30,7 +30,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
             client.post(
                 "/v1/facts",
                 json={
-                    "space_id": "space_hackinterview",
+                    "space_id": "space_client_app",
                     "profile_id": "profile_default",
                     "text": text,
                     "kind": "note",
@@ -41,7 +41,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
         client.post(
             "/v1/facts",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_other",
                 "text": "FACT_CURSOR_OTHER_PROFILE",
                 "kind": "note",
@@ -52,7 +52,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
         page_1 = client.get(
             "/v1/facts",
             params={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "limit": 1,
             },
@@ -62,7 +62,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
         page_2 = client.get(
             "/v1/facts",
             params={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "limit": 1,
                 "cursor": cursor,
@@ -72,7 +72,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
         invalid = client.get(
             "/v1/facts",
             params={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "cursor": "not-a-valid-cursor",
             },
@@ -97,7 +97,7 @@ def test_document_chunks_cursor_is_opaque_and_ordered(tmp_path: Path) -> None:
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_hackinterview",
+                "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Cursor document",
                 "text": text,
@@ -139,7 +139,7 @@ def test_diagnostics_outbox_cursor_is_opaque(tmp_path: Path) -> None:
             client.post(
                 "/v1/documents",
                 json={
-                    "space_id": "space_hackinterview",
+                    "space_id": "space_client_app",
                     "profile_id": "profile_default",
                     "title": f"Outbox cursor {idx}",
                     "text": f"OUTBOX_CURSOR_SECRET_{idx}",

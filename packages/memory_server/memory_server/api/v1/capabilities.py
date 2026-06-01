@@ -31,7 +31,7 @@ async def capabilities(
         "supports_qdrant": any(adapter.name == "qdrant" for adapter in result.adapters),
         "supports_graphiti": any(adapter.name == "graphiti" for adapter in result.adapters),
         "supports_cognee": any(adapter.name == "cognee" for adapter in result.adapters),
-        "supports_legacy_hackinterview_routes": container.settings.legacy_hackinterview_enabled,
+        "supports_legacy_client_routes": container.settings.legacy_client_enabled,
         "supported_policy_modes": list(result.supported_policy_modes),
         "supported_embedding_models": [container.settings.embeddings_model],
         "limits": result.limits,

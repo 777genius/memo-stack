@@ -1365,10 +1365,10 @@ Do not add memory-specific SQL to unrelated transcription/payment/auth modules.
 Likely frontend/Tauri locations:
 
 ```text
-/Users/belief/dev/projects/HackInterview/src-tauri/src/presentation/companion_timeline.rs
-/Users/belief/dev/projects/HackInterview/src-tauri/src/presentation/companion_actions.rs
-/Users/belief/dev/projects/HackInterview/src-tauri/src/presentation/commands.rs
-/Users/belief/dev/projects/HackInterview/src-tauri/src/infrastructure/llm/backend_provider.rs
+/Users/belief/dev/projects/Client App/src-tauri/src/presentation/companion_timeline.rs
+/Users/belief/dev/projects/Client App/src-tauri/src/presentation/companion_actions.rs
+/Users/belief/dev/projects/Client App/src-tauri/src/presentation/commands.rs
+/Users/belief/dev/projects/Client App/src-tauri/src/infrastructure/llm/backend_provider.rs
 ```
 
 Expected additions:
@@ -4379,23 +4379,23 @@ Backend deterministic DB/HTTP gate:
   cargo test --test interview_memory_e2e -- --nocapture --test-threads=1
 
 Frontend companion synthetic context gate:
-  cd /Users/belief/dev/projects/HackInterview
+  cd /Users/belief/dev/projects/Client App
   pnpm e2e:companion-context -- --filler-chars 80000
 
 Frontend companion memory retrieval gate:
-  cd /Users/belief/dev/projects/HackInterview
+  cd /Users/belief/dev/projects/Client App
   pnpm e2e:prepare-local-memory-auth -- --api-url http://127.0.0.1:8080
-  INTERVIEW_MEMORY_AUTH_TOKEN="$(cat /tmp/hackinterview-memory-e2e-token.txt)" \
+  INTERVIEW_MEMORY_AUTH_TOKEN="$(cat /tmp/client-app-memory-e2e-token.txt)" \
   INTERVIEW_MEMORY_DB_URL=postgres://belief@localhost/voice_to_text \
   pnpm e2e:companion-context -- --filler-chars 52000 --verify-memory --memory-api-url http://127.0.0.1:8080
   pnpm e2e:prepare-local-memory-auth -- --clear
 
 Backend production/staging canary gate:
-  cd /Users/belief/dev/projects/HackInterview
+  cd /Users/belief/dev/projects/Client App
   pnpm e2e:memory-canary -- --api-url https://api.voicetext.site
 
 Frontend companion dual audio gate:
-  cd /Users/belief/dev/projects/HackInterview
+  cd /Users/belief/dev/projects/Client App
   pnpm e2e:companion-audio -- --cycles 3 --allow-mic-miss
 ```
 

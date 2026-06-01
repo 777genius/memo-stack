@@ -324,7 +324,7 @@ def test_http_gateway_sends_auth_idempotency_and_external_scope() -> None:
         )
 
         response = await gateway.remember_fact(
-            scope=MemoryScope("hackinterview", "default", "session-1"),
+            scope=MemoryScope("client-app", "default", "session-1"),
             text="Use Graphiti as graph adapter.",
             kind="architecture_decision",
             source_refs=[SourceRef(source_type="manual", source_id="note-1")],
@@ -339,7 +339,7 @@ def test_http_gateway_sends_auth_idempotency_and_external_scope() -> None:
     assert seen["authorization"] == "Bearer test-token"
     assert seen["idempotency_key"] == "fact-key-1"
     assert seen["url"] == "http://memory.test/v1/facts"
-    assert seen["body"]["space_slug"] == "hackinterview"
+    assert seen["body"]["space_slug"] == "client-app"
     assert seen["body"]["profile_external_ref"] == "default"
     assert seen["body"]["thread_external_ref"] == "session-1"
 
@@ -361,7 +361,7 @@ def test_http_gateway_sends_read_scope_profile_external_refs() -> None:
 
         await gateway.build_context(
             scope=MemoryReadScope(
-                space_slug="hackinterview",
+                space_slug="client-app",
                 profile_external_refs=("default", "candidate"),
             ),
             query="memory platform",
@@ -372,6 +372,6 @@ def test_http_gateway_sends_read_scope_profile_external_refs() -> None:
 
     asyncio.run(run())
 
-    assert seen["body"]["space_slug"] == "hackinterview"
+    assert seen["body"]["space_slug"] == "client-app"
     assert seen["body"]["profile_external_refs"] == ["default", "candidate"]
     assert "profile_external_ref" not in seen["body"]

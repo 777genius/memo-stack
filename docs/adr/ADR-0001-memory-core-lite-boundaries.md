@@ -2,11 +2,11 @@
 
 ## Context
 
-Memory Platform starts as Core Lite: a reusable Python service/library that HackInterview can consume without importing storage or provider SDKs.
+Memory Platform starts as Core Lite: a reusable Python service/library that Client App can consume without importing storage or provider SDKs.
 
 ## Decision
 
-Keep `memory_core` free of FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI and HackInterview imports.
+Keep `memory_core` free of FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI and Client App imports.
 
 Dependency direction:
 
