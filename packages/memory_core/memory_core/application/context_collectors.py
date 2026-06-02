@@ -141,6 +141,7 @@ class VectorContextCollector:
         diagnostics["vector_status"] = result.status.value
         if result.diagnostics:
             diagnostics["vector_degraded_reason"] = result.diagnostics[0].code
+        diagnostics["vector_candidate_count"] = len(result.items)
         if result.status != PortStatus.OK or not result.items:
             return ()
         chunk_ids = tuple(candidate.chunk_id for candidate in result.items)
@@ -150,6 +151,7 @@ class VectorContextCollector:
             profile_ids=profile_ids,
         )
         hydrated_ids = {str(chunk.id) for chunk in chunks}
+        diagnostics["vector_hydrated_count"] = len(chunks)
         diagnostics["stale_vector_drop_count"] = sum(
             1 for chunk_id in chunk_ids if chunk_id not in hydrated_ids
         )
@@ -209,6 +211,7 @@ class GraphContextCollector:
         diagnostics["graph_status"] = result.status.value
         if result.diagnostics:
             diagnostics["graph_degraded_reason"] = result.diagnostics[0].code
+        diagnostics["graph_candidate_count"] = len(result.items)
         if result.status != PortStatus.OK or not result.items:
             return ()
 
@@ -230,6 +233,7 @@ class GraphContextCollector:
             query=query,
             profile_ids=profile_ids,
         )
+        diagnostics["graph_hydrated_count"] = len(items)
         diagnostics["stale_graph_drop_count"] = stale_count + orphan_candidate_count
         return items[: query.max_facts]
 

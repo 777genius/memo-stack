@@ -1,0 +1,6 @@
+{
+  "description": "Memory Platform universal agent plugin for durable project memory.",
+  "mcpServers": "./.mcp.json",
+  "name": "memory-agent-plugin",
+  "version": "0.1.0"
+}

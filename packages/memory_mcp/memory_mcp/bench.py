@@ -8,12 +8,13 @@ import json
 import statistics
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from memory_mcp.adapters.http_gateway import HttpMemoryGateway
 from memory_mcp.application.service import MemoryToolService
 from memory_mcp.config import MemoryMcpSettings, load_settings
+from memory_mcp.domain.policy import MemoryMcpDeleteMode, MemoryMcpIngestMode, MemoryMcpWriteMode
 
 
 @dataclass
@@ -48,10 +49,17 @@ async def run_benchmark(
         auth_token=settings.auth_token,
         timeout_seconds=settings.request_timeout_seconds,
     )
-    service = MemoryToolService(gateway=gateway, settings=settings)
+    lifecycle_settings = replace(
+        settings,
+        write_mode=MemoryMcpWriteMode.DIRECT,
+        delete_mode=MemoryMcpDeleteMode.EXPLICIT,
+        ingest_mode=MemoryMcpIngestMode.ALLOWED,
+    )
+    service = MemoryToolService(gateway=gateway, settings=lifecycle_settings)
     run_id = uuid.uuid4().hex[:10]
     latencies = {
         "remember": Latencies(),
+        "proposal_suggest": Latencies(),
         "search_after_remember": Latencies(),
         "update": Latencies(),
         "search_after_update": Latencies(),
@@ -61,6 +69,7 @@ async def run_benchmark(
     }
     counters = {
         "remember_success": 0,
+        "proposal_suggestion_success": 0,
         "retrieved_after_remember": 0,
         "update_success": 0,
         "retrieved_after_update": 0,
@@ -75,6 +84,28 @@ async def run_benchmark(
         new_text = (
             f"{marker}: Graph memory should use updated canonical facts before derived indexes."
         )
+        proposal_service = MemoryToolService(
+            gateway=gateway,
+            settings=replace(settings, write_mode=MemoryMcpWriteMode.SUGGEST),
+        )
+        proposal = await _timed(
+            latencies["proposal_suggest"],
+            proposal_service.propose_updates(
+                candidates=[
+                    {
+                        "text": f"{marker}: Proposal path should create review suggestions.",
+                        "kind": "note",
+                        "operation": "remember",
+                    }
+                ],
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                source_type="manual",
+                source_id=f"bench-proposal-{run_id}-{index}",
+            ),
+        )
+        if proposal.get("ok") and proposal.get("data", {}).get("accepted_suggestions"):
+            counters["proposal_suggestion_success"] += 1
 
         remembered = await _timed(
             latencies["remember"],
@@ -200,7 +231,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark Memory MCP adapter CRUD/retrieval.")
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--api-url", default=None)
-    parser.add_argument("--auth-token", default=None)
     parser.add_argument("--space-slug", default=None)
     parser.add_argument("--profile-ref", default=None)
     args = parser.parse_args()
@@ -208,7 +238,7 @@ def main() -> None:
     base = load_settings()
     settings = MemoryMcpSettings(
         api_url=args.api_url or base.api_url,
-        auth_token=args.auth_token if args.auth_token is not None else base.auth_token,
+        auth_token=base.auth_token,
         default_space_slug=args.space_slug or base.default_space_slug,
         default_profile_external_ref=args.profile_ref or base.default_profile_external_ref,
         default_thread_external_ref=base.default_thread_external_ref,
@@ -216,8 +246,15 @@ def main() -> None:
         source_type=base.source_type,
         request_timeout_seconds=base.request_timeout_seconds,
         max_tool_text_chars=base.max_tool_text_chars,
+        min_token_budget=base.min_token_budget,
+        max_token_budget=base.max_token_budget,
+        max_search_items=base.max_search_items,
         allow_writes=base.allow_writes,
         allow_deletes=base.allow_deletes,
+        write_mode=base.write_mode,
+        delete_mode=base.delete_mode,
+        ingest_mode=base.ingest_mode,
+        small_doc_max_chars=base.small_doc_max_chars,
         transport=base.transport,
     )
     result = asyncio.run(

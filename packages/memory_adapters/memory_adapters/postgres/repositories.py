@@ -16,7 +16,7 @@ from memory_core.domain.entities import (
     MemorySuggestion,
     SourceRef,
 )
-from memory_core.domain.errors import MemoryNotFoundError
+from memory_core.domain.errors import MemoryConflictError, MemoryNotFoundError
 from memory_core.domain.events import OutboxEvent
 from memory_core.domain.idempotency import IdempotencyRecord
 from memory_core.ports.repositories import (
@@ -39,7 +39,6 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from memory_adapters.postgres.mappers import (
-    apply_fact_to_row,
     apply_suggestion_to_row,
     chunk_row_to_domain,
     chunk_to_row,
@@ -545,11 +544,48 @@ class PostgresFactRepository(FactRepositoryPort):
         return fact_row_to_domain(row, refs)
 
     async def save(self, fact: MemoryFact) -> MemoryFact:
+        expected_version = fact.version - 1
+        if expected_version < 1:
+            raise MemoryConflictError("Stale fact version")
+        result = await self._session.execute(
+            update(MemoryFactRow)
+            .where(
+                MemoryFactRow.id == str(fact.id),
+                MemoryFactRow.version == expected_version,
+            )
+            .values(
+                space_id=str(fact.space_id),
+                profile_id=str(fact.profile_id),
+                thread_id=str(fact.thread_id) if fact.thread_id else None,
+                kind=fact.kind.value,
+                text=fact.text,
+                status=fact.status.value,
+                confidence=fact.confidence.value,
+                trust_level=fact.trust_level.value,
+                classification=fact.classification,
+                version=fact.version,
+                created_at=fact.created_at,
+                updated_at=fact.updated_at,
+            )
+        )
+        if result.rowcount == 0:
+            exists = await self._session.get(MemoryFactRow, str(fact.id))
+            if exists is None:
+                msg = "Fact row missing during save"
+                raise RuntimeError(msg)
+            if (
+                exists.version == fact.version
+                and exists.status == fact.status.value
+                and exists.status == "deleted"
+            ):
+                return fact
+            raise MemoryConflictError("Stale fact version")
         row = await self._session.get(MemoryFactRow, str(fact.id))
-        if row is None:
+        if row is not None:
+            self._session.expire(row)
+        else:
             msg = "Fact row missing during save"
             raise RuntimeError(msg)
-        apply_fact_to_row(fact, row)
         await self._write_version(fact)
         await self._replace_source_refs(fact)
         return fact

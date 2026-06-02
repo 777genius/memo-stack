@@ -7,6 +7,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from memory_mcp.domain.policy import (
+    MemoryMcpDeleteMode,
+    MemoryMcpIngestMode,
+    MemoryMcpWriteMode,
+)
+
 
 class McpTransport(StrEnum):
     STDIO = "stdio"
@@ -24,18 +30,45 @@ class MemoryMcpSettings:
     source_type: str = "ai_response"
     request_timeout_seconds: float = 10.0
     max_tool_text_chars: int = 20_000
+    min_token_budget: int = 256
+    max_token_budget: int = 6_000
+    max_search_items: int = 50
     allow_writes: bool = True
     allow_deletes: bool = True
+    write_mode: MemoryMcpWriteMode = MemoryMcpWriteMode.SUGGEST
+    delete_mode: MemoryMcpDeleteMode = MemoryMcpDeleteMode.OFF
+    ingest_mode: MemoryMcpIngestMode = MemoryMcpIngestMode.SMALL_DOCS
+    small_doc_max_chars: int = 50_000
     transport: McpTransport = McpTransport.STDIO
+
+    def __post_init__(self) -> None:
+        if self.max_token_budget < self.min_token_budget:
+            raise ValueError("max_token_budget must be >= min_token_budget")
 
     @property
     def sanitized_api_url(self) -> str:
         return self.api_url.rstrip("/")
 
+    @property
+    def writes_enabled(self) -> bool:
+        return self.allow_writes and self.write_mode != MemoryMcpWriteMode.OFF
+
+    @property
+    def deletes_enabled(self) -> bool:
+        return self.allow_deletes and self.delete_mode != MemoryMcpDeleteMode.OFF
+
+    @property
+    def ingest_enabled(self) -> bool:
+        return self.writes_enabled and self.ingest_mode != MemoryMcpIngestMode.OFF
+
 
 def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
     values = env or os.environ
     token = _get(values, "MEMORY_MCP_AUTH_TOKEN") or _get(values, "MEMORY_SERVICE_TOKEN")
+    write_mode = _write_mode(values)
+    delete_mode = _delete_mode(values)
+    allow_writes = _bool(_get(values, "MEMORY_MCP_ALLOW_WRITES", "true"))
+    allow_deletes = _bool(_get(values, "MEMORY_MCP_ALLOW_DELETES", "true"))
     return MemoryMcpSettings(
         api_url=_get(values, "MEMORY_MCP_API_URL", "http://127.0.0.1:7788").rstrip("/"),
         auth_token=token,
@@ -56,8 +89,29 @@ def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
             _get(values, "MEMORY_MCP_MAX_TOOL_TEXT_CHARS", "20000"),
             "MEMORY_MCP_MAX_TOOL_TEXT_CHARS",
         ),
-        allow_writes=_bool(_get(values, "MEMORY_MCP_ALLOW_WRITES", "true")),
-        allow_deletes=_bool(_get(values, "MEMORY_MCP_ALLOW_DELETES", "true")),
+        min_token_budget=_positive_int(
+            _get(values, "MEMORY_MCP_MIN_TOKEN_BUDGET", "256"),
+            "MEMORY_MCP_MIN_TOKEN_BUDGET",
+        ),
+        max_token_budget=_positive_int(
+            _get(values, "MEMORY_MCP_MAX_TOKEN_BUDGET", "6000"),
+            "MEMORY_MCP_MAX_TOKEN_BUDGET",
+        ),
+        max_search_items=_positive_int(
+            _get(values, "MEMORY_MCP_MAX_SEARCH_ITEMS", "50"),
+            "MEMORY_MCP_MAX_SEARCH_ITEMS",
+        ),
+        allow_writes=allow_writes,
+        allow_deletes=allow_deletes,
+        write_mode=MemoryMcpWriteMode.OFF if not allow_writes else write_mode,
+        delete_mode=MemoryMcpDeleteMode.OFF if not allow_deletes else delete_mode,
+        ingest_mode=MemoryMcpIngestMode(
+            _get(values, "MEMORY_MCP_INGEST_MODE", MemoryMcpIngestMode.SMALL_DOCS.value)
+        ),
+        small_doc_max_chars=_positive_int(
+            _get(values, "MEMORY_MCP_SMALL_DOC_MAX_CHARS", "50000"),
+            "MEMORY_MCP_SMALL_DOC_MAX_CHARS",
+        ),
         transport=McpTransport(_get(values, "MEMORY_MCP_TRANSPORT", McpTransport.STDIO.value)),
     )
 
@@ -95,3 +149,13 @@ def _positive_int(value: str, name: str) -> int:
 
 def _bool(value: str) -> bool:
     return value.lower() not in {"0", "false", "no", "off"}
+
+
+def _write_mode(values: Mapping[str, str]) -> MemoryMcpWriteMode:
+    value = _get(values, "MEMORY_MCP_WRITE_MODE", MemoryMcpWriteMode.SUGGEST.value)
+    return MemoryMcpWriteMode(value)
+
+
+def _delete_mode(values: Mapping[str, str]) -> MemoryMcpDeleteMode:
+    value = _get(values, "MEMORY_MCP_DELETE_MODE", MemoryMcpDeleteMode.OFF.value)
+    return MemoryMcpDeleteMode(value)

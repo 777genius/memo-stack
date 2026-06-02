@@ -53,6 +53,7 @@ Quality gates:
 
 ```bash
 make memory-test-quality
+make memory-plugin-test
 .venv/bin/python -m memory_server.eval run --suite quality-golden
 ```
 
@@ -66,13 +67,26 @@ Fresh full-provider canary with isolated Docker volumes:
 
 ```bash
 make memory-clean-full-smoke
+make memory-clean-full-mcp-smoke
 ```
 
-Default local values:
+This is a manual paid canary. It requires Docker plus `MEMORY_OPENAI_API_KEY`
+or `OPENAI_API_KEY`, starts isolated Postgres, Qdrant and Neo4j containers,
+uses OpenAI embeddings, and tears the stack down unless
+`MEMORY_CLEAN_SMOKE_KEEP_STACK=true`.
+
+`memory-clean-full-smoke` now runs the real stdio MCP canary by default. To
+run only the historical HTTP/API full-provider smoke, set:
+
+```bash
+MEMORY_CLEAN_SMOKE_SKIP_MCP=true make memory-clean-full-smoke
+```
+
+Local smoke variables:
 
 ```text
 MEMORY_SMOKE_API_URL=http://127.0.0.1:7788
-MEMORY_SMOKE_AUTH_TOKEN=local-dev-token
+MEMORY_SMOKE_AUTH_TOKEN=(set via environment; Makefile supplies local dev fallback)
 ```
 
 The smoke script uses only the public SDK and verifies the Phase 7 path:
@@ -84,3 +98,20 @@ remember, update and forget through MCP tools. `memory_server` runs database
 upgrade and `seed-defaults` during Docker startup. The Compose file waits for
 Postgres health before starting the server and exposes a server healthcheck on
 `/v1/health`.
+
+The plugin gate validates repo-local agent packaging for Codex, Claude, Gemini,
+OpenCode, Cursor package config and Cursor workspace config:
+
+```bash
+make memory-plugin-test
+```
+
+It runs `plugin-kit-ai generate --check`, strict target validation and generated
+MCP e2e coverage. Use `make memory-plugin-doctor` after
+`make memory-stack-up-lite` for the live API readiness check.
+
+The clean full MCP canary uses the same isolated full-provider stack and
+verifies MCP status/readiness, fact lifecycle, document chunk recall through
+Qdrant, Graphiti projection updates/deletes, outbox drain, provider
+diagnostics and token redaction. It is intentionally not part of
+`make memory-test-quality`.

@@ -63,7 +63,7 @@ async def run_smoke() -> dict[str, Any]:
             {
                 "text": old_fact,
                 "kind": "constraint",
-                "source_type": "mcp_smoke",
+                "source_type": "manual",
                 "source_id": f"{marker}:remember",
                 "idempotency_key": f"{marker}:remember",
             },
@@ -84,7 +84,7 @@ async def run_smoke() -> dict[str, Any]:
                 "expected_version": fact["version"],
                 "text": new_fact,
                 "reason": "mcp live smoke update",
-                "source_type": "mcp_smoke",
+                "source_type": "manual",
                 "source_id": f"{marker}:update",
             },
         )

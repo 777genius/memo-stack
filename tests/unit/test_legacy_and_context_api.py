@@ -2984,8 +2984,12 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
         )
 
     assert "Graph-only canonical memory marker" in active.rendered_text
+    assert active.diagnostics["graph_candidate_count"] == 1
+    assert active.diagnostics["graph_hydrated_count"] == 1
     assert active.diagnostics["stale_graph_drop_count"] == 0
     assert "Graph-only canonical memory marker" not in deleted.rendered_text
+    assert deleted.diagnostics["graph_candidate_count"] == 1
+    assert deleted.diagnostics["graph_hydrated_count"] == 0
     assert deleted.diagnostics["stale_graph_drop_count"] == 1
 
 
@@ -3015,6 +3019,8 @@ def test_graph_candidate_without_canonical_source_is_low_confidence_or_dropped(
     assert context.items == ()
     assert "orphan_relation" not in context.rendered_text
     assert context.diagnostics["graph_status"] == "ok"
+    assert context.diagnostics["graph_candidate_count"] == 1
+    assert context.diagnostics["graph_hydrated_count"] == 0
     assert context.diagnostics["stale_graph_drop_count"] == 1
 
 
@@ -3172,8 +3178,12 @@ def test_vector_candidates_are_hydrated_and_deleted_chunks_are_filtered(tmp_path
         )
 
     assert "VECTOR_ONLY_MARKER" in active.rendered_text
+    assert active.diagnostics["vector_candidate_count"] == 1
+    assert active.diagnostics["vector_hydrated_count"] == 1
     assert active.diagnostics["stale_vector_drop_count"] == 0
     assert "VECTOR_ONLY_MARKER" not in deleted.rendered_text
+    assert deleted.diagnostics["vector_candidate_count"] == 1
+    assert deleted.diagnostics["vector_hydrated_count"] == 0
     assert deleted.diagnostics["stale_vector_drop_count"] == 1
 
 

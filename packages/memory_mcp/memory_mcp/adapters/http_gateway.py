@@ -6,7 +6,14 @@ from typing import Any
 
 import httpx
 
-from memory_mcp.domain.models import MemoryGatewayError, MemoryReadScope, MemoryScope, SourceRef
+from memory_mcp.domain.models import (
+    MemoryGatewayError,
+    MemoryReadScope,
+    MemoryScope,
+    SourceRef,
+    public_error_code,
+    safe_message,
+)
 
 
 class HttpMemoryGateway:
@@ -269,12 +276,37 @@ class HttpMemoryGateway:
         ) as client:
             try:
                 response = await client.request(method, path, json=json, params=params)
+            except httpx.ConnectTimeout as exc:
+                raise MemoryGatewayError(
+                    status_code=0,
+                    code="memory_mcp.gateway.connect_timeout",
+                    message="Memory Platform connection timed out",
+                    retryable=True,
+                    unknown_commit_state=False,
+                ) from exc
+            except httpx.ReadTimeout as exc:
+                raise MemoryGatewayError(
+                    status_code=0,
+                    code="memory_mcp.gateway.read_timeout",
+                    message="Memory Platform response timed out",
+                    retryable=True,
+                    unknown_commit_state=method.upper() in {"POST", "PUT", "PATCH", "DELETE"},
+                ) from exc
+            except httpx.WriteTimeout as exc:
+                raise MemoryGatewayError(
+                    status_code=0,
+                    code="memory_mcp.gateway.write_timeout",
+                    message="Memory Platform request body timed out",
+                    retryable=True,
+                    unknown_commit_state=method.upper() in {"POST", "PUT", "PATCH", "DELETE"},
+                ) from exc
             except httpx.TransportError as exc:
                 raise MemoryGatewayError(
                     status_code=0,
-                    code="memory_mcp.network_error",
+                    code="memory_mcp.gateway.network_error",
                     message="Memory Platform HTTP request failed",
                     retryable=True,
+                    unknown_commit_state=False,
                 ) from exc
         if response.is_error:
             raise _to_error(response)
@@ -283,7 +315,7 @@ class HttpMemoryGateway:
         except ValueError as exc:
             raise MemoryGatewayError(
                 status_code=response.status_code,
-                code="memory_mcp.invalid_json",
+                code="memory_mcp.gateway.invalid_json",
                 message="Memory Platform returned invalid JSON",
                 retryable=False,
             ) from exc
@@ -296,9 +328,18 @@ def _to_error(response: httpx.Response) -> MemoryGatewayError:
         payload = {}
     error = payload.get("error", {}) if isinstance(payload, dict) else {}
     detail = payload.get("detail", {}) if isinstance(payload, dict) else {}
-    code = str(error.get("code") or detail.get("code") or "memory_mcp.http_error")
-    message = str(error.get("message") or detail.get("message") or response.text or code)
-    retryable = bool(error.get("retryable", response.status_code >= 500))
+    raw_code = str(error.get("code") or detail.get("code") or "memory_mcp.gateway.http_error")
+    code = public_error_code(raw_code, status_code=response.status_code)
+    raw_message = str(error.get("message") or detail.get("message") or response.text or code)
+    message = safe_message(raw_message)
+    retryable = bool(
+        error.get(
+            "retryable",
+            response.status_code == 429
+            or response.status_code >= 500
+            or code == "memory_mcp.degraded.backpressure",
+        )
+    )
     return MemoryGatewayError(
         status_code=response.status_code,
         code=code,
