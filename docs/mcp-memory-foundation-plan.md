@@ -1474,7 +1474,8 @@ Rules:
 - for updates, require `expected_version` and let the backend reject stale versions;
 - for suggestion approval, preserve `target_fact_version` and surface backend conflicts safely;
 - for forget, require exact `fact_id` and do not support delete-by-query;
-- after direct write/update/forget, return the canonical fact id, version and status from Postgres response;
+- after direct write/update/forget/document ingest, return the canonical id, version/status when
+  applicable and indexing status from Postgres response;
 - do not verify a canonical write by vector/graph search, because Graphiti/Qdrant can lag;
 - mark projection state as `indexing_status`, `projection_status` or `degraded` when available;
 - if duplicate detection search races with another write, backend idempotency/version checks are the final guard;
@@ -1483,7 +1484,8 @@ Rules:
 Agent retry instruction:
 
 ```text
-If a write/update/forget returned unknown_commit_state=true, call memory_get_fact or memory_list_facts first. Do not repeat the same write from memory alone.
+If a write/update/forget/document ingest returned unknown_commit_state=true, call memory_get_fact
+or memory_list_facts first. Do not repeat the same write from memory alone.
 ```
 
 ### 8.9 Canonicalization And Fingerprint Rules
@@ -3215,11 +3217,56 @@ Real-stack canary status:
 - `scripts/clean_full_smoke.py` owns the isolated full-provider canary.
 - `memory-clean-full-smoke` runs HTTP/API checks and MCP checks by default.
 - `memory-clean-full-mcp-smoke` is the explicit manual paid MCP gate.
+- `memory-agent-behavior-bench` is the explicit manual paid real LLM gate.
+- Paid real LLM gates default `MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`,
+  so projection worker failures after mutating MCP tools are hard failures.
 - `MEMORY_CLEAN_SMOKE_SKIP_MCP=true` keeps the historical HTTP/API-only smoke
   available when debugging provider issues.
 - The MCP canary uses a real stdio MCP client against the isolated Memory
   Server and verifies Graphiti projection, Qdrant document recall, OpenAI
   embeddings readiness, outbox drain, stale/delete hiding and token redaction.
+- `memory-prod-load-canary` extends the same paid/manual full stack with
+  production-like scale, chaos and load checks: concurrent writes, idempotent
+  retry races, multi-profile corpus growth, document ingest, auth/validation/
+  not-found floods, repeated worker drain, API and stdio MCP retrieval, update,
+  delete, provider diagnostics, outbox drain and context latency p95.
+- The prod load canary also covers Memory Server restart continuity,
+  Qdrant/Neo4j provider restart recovery, provider outage while projection jobs
+  are pending, retry drain after providers return, thread-scoped isolation,
+  large multi-chunk document recall and stale chunk hiding after document
+  deletion.
+- The free scale/chaos/load e2e gate covers concurrent fact and document
+  idempotency, mutation storms with parallel context reads, outbox backpressure
+  with cleanup availability, stale outbox lag alerting with worker drain
+  recovery, dead outbox runbook recovery through `memory_server.admin
+  replay-outbox`, expired worker lease recovery through the worker CLI, poison
+  outbox jobs becoming `dead` with safe diagnostics and no raw payload leak,
+  `memory_server.doctor` degraded output on dead jobs, Memory Server process
+  restart continuity with idempotency retry persistence, done outbox compaction
+  with payload redaction and continued retrieval, pagination, profile isolation,
+  restricted memory hiding and latency p95.
+- The prod load canary is bounded by env maximums and stays out of
+  `make memory-test-quality`, because it requires Docker and paid embeddings/
+  provider projection work.
+- The agent behavior benchmark extends the same isolated full stack with
+  `MEMORY_CLEAN_SMOKE_AGENT_BENCH=true`. It exposes public MCP tools to an
+  env-configured OpenAI Responses API model, executes chosen calls through
+  stdio `memory_mcp`, runs worker catch-up after mutating calls and scores
+  search-before-write, update-vs-duplicate, document routing, supported
+  answers, stale/delete hiding, scope isolation and secret safety.
+- The agent behavior benchmark includes minimal host-side repair guardrails:
+  one corrective turn when the model returns a final answer before required
+  memory tools, a pre-write guardrail that blocks mutating tools until a memory
+  read/search has happened, and one final-answer rewrite when excluded secret/
+  hostile/scratchpad text is quoted. Tool choice remains automatic.
+- Guardrail-blocked writes are not hidden from evaluation: forbidden blocked
+  tools still produce safety failures, and secret-like blocked inputs are
+  represented as redacted boolean safety markers rather than raw values. Blocked
+  write attempts also count against search-before-write and update-vs-duplicate
+  metrics, so host recovery does not inflate agent behavior scores.
+- Projection worker errors inside the agent behavior block are reported as
+  optional diagnostics by default. Provider/projection correctness remains hard
+  in the MCP canary checks above.
 
 ### 20.3 Practical Work Batches
 

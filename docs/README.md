@@ -110,8 +110,136 @@ It runs `plugin-kit-ai generate --check`, strict target validation and generated
 MCP e2e coverage. Use `make memory-plugin-doctor` after
 `make memory-stack-up-lite` for the live API readiness check.
 
+Agent install verification is separate from package validation because
+`plugin-kit-ai validate` and `plugin-kit-ai add` use different target names:
+
+```bash
+make memory-agent-install-dry-run
+make memory-agent-install
+make memory-agent-install-doctor
+make memory-agent-live-smoke
+```
+
+The managed install targets are `codex`, `claude`, `gemini`, `opencode` and
+`cursor`. Cursor workspace config remains a generated workspace-copy lane and
+is covered by plugin e2e, not by `plugin-kit-ai integrations`.
+`memory-agent-live-smoke` is strict for real agent CLI checks: if a configured
+agent CLI times out or cannot call the MCP tool, the target fails instead of
+reporting a false positive. For generated MCP config diagnostics without hard
+agent CLI gating, run `scripts/agent_install_verification.py live-smoke
+--run-agent-cli` directly without `--strict-agent-cli`.
+`memory-agent-install-doctor` also treats `plugin-kit-ai integrations list` and
+`plugin-kit-ai integrations doctor` failures as hard failures, even when the
+local structured state file still looks valid.
+
 The clean full MCP canary uses the same isolated full-provider stack and
 verifies MCP status/readiness, fact lifecycle, document chunk recall through
 Qdrant, Graphiti projection updates/deletes, outbox drain, provider
 diagnostics and token redaction. It is intentionally not part of
+`make memory-test-quality`. `make memory-full-provider-canary` is an alias for
+the same paid gate.
+
+For production-like scale, chaos and load coverage:
+
+```bash
+MEMORY_OPENAI_API_KEY="$KEY" make memory-prod-load-canary
+```
+
+This uses the same clean Docker full stack, then adds concurrent fact writes,
+idempotent retry races, multi-profile corpus growth, document ingest, auth and
+validation floods, worker drain checks, API and stdio MCP retrieval, update,
+delete, Qdrant/Graphiti recall and context latency p95. The regular free e2e
+gate also covers concurrent document idempotency, outbox backpressure, mutation
+storms, stale outbox lag alerting with worker drain recovery, dead outbox
+runbook recovery through `memory_server.admin replay-outbox`, expired worker
+lease recovery through the worker CLI, and poison outbox handling where an
+unknown projection job must become `dead`, raise a safe alert, fail
+`memory_server.doctor` as degraded without leaking payload, and leave canonical
+read/write paths available. The same free gate also verifies Memory Server
+process restart continuity: canonical facts/documents survive restart,
+idempotency retries do not create duplicates, updated/deleted facts stay
+filtered and restricted facts remain hidden. Maintenance coverage includes
+`memory_server.admin compact-outbox`: dry-run stays non-mutating, actual
+compaction redacts done-job payloads, diagnostics stay safe and canonical
+context retrieval still works.
+The paid full-stack canary additionally verifies thread-scoped isolation, large
+multi-chunk document recall, Memory Server restart continuity, Qdrant/Neo4j
+provider restart recovery, and provider outage recovery where projection jobs
+must enter retry and drain after providers return. It is paid/manual and does
+not run in `make memory-test-quality`.
+
+Useful knobs for larger runs:
+
+- `MEMORY_CLEAN_SMOKE_LOAD_PROFILES` - default `3`, max `12`.
+- `MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE` - default `8`, max `100`.
+- `MEMORY_CLEAN_SMOKE_LOAD_DOCUMENTS` - default `3`, max `30`.
+- `MEMORY_CLEAN_SMOKE_LOAD_LARGE_DOC_SECTIONS` - default `18`, max `80`.
+- `MEMORY_CLEAN_SMOKE_LOAD_CONCURRENCY` - default `6`, max `24`.
+- `MEMORY_CLEAN_SMOKE_LOAD_CHAOS_REQUESTS` - default `16`, max `200`.
+- `MEMORY_CLEAN_SMOKE_LOAD_CONTEXT_REQUESTS` - default `10`, max `200`.
+- `MEMORY_CLEAN_SMOKE_LOAD_MAX_P95_MS` - default `15000`.
+- `MEMORY_CLEAN_SMOKE_LOAD_RESTART_SERVER` - default `true`.
+- `MEMORY_CLEAN_SMOKE_LOAD_RESTART_PROVIDERS` - default `true`.
+- `MEMORY_CLEAN_SMOKE_LOAD_PROVIDER_OUTAGE` - default `true`.
+
+The real LLM agent-behavior benchmark is a stricter paid/manual gate. It uses
+the same fresh full-provider stack, exposes `memory_mcp` tools to an OpenAI
+Responses API model as function tools, executes chosen calls through real stdio
+MCP, then scores whether the model searched before writes, updated instead of
+duplicating, avoided secrets, respected scope isolation and treated retrieved
+memory as evidence.
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memory-agent-behavior-bench
+```
+
+For noisier, more production-like scenarios:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memory-agent-realistic-bench
+```
+
+The realistic suite covers noisy transcripts, semantic duplicates, similar
+project scopes, neighboring thread scopes, ambiguous deletes, long notes with
+secrets, prompt-injected retrieved memory and immediate recall after writes.
+Both paid agent benchmark targets default
+`MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`, so provider projection worker
+failures after mutating MCP tools fail the benchmark instead of being treated as
+soft warnings.
+
+The benchmark now models a minimal host-side memory orchestrator instead of a
+totally raw model call. It still uses `tool_choice=auto`, but it allows one
+corrective turn if the model answers without required memory tools, blocks
+mutating tools until a memory read/search has happened, and allows one
+final-answer repair if the model quotes excluded secret/hostile/scratchpad text.
+Projection worker catch-up errors are reported as optional diagnostics in this
+agent-behavior block; provider correctness remains a hard gate in the full MCP
+canary checks.
+Blocked mutating calls are not treated as invisible successes: if a blocked
+call targets a forbidden tool or contains secret-like input, the benchmark
+counts a safety failure while keeping the raw value out of the report. Blocked
+write attempts also count against search-before-write and update-vs-duplicate
+metrics, even when the model later recovers and completes the operation safely.
+The paid report includes `metric_failures` so non-perfect aggregate metrics point
+to the exact scenario, tool sequence and reason. The hard gates include safety
+leaks, search-before-write, answer support and a minimum update-vs-duplicate
+rate.
+
+Read the agent-behavior result separately from the storage result. MCP canary
+success means the memory stack and projections work. Agent-behavior failures
+usually mean the model skipped a required tool call or stopped after
+`memory_status`. Production agents should wrap raw MCP tools with a host-side
+memory policy/orchestrator when correctness matters. Direct `memory_remember_fact`
+has a server-side duplicate/conflict preflight, but no server can fix a request
+where the agent never calls a memory tool.
+
+`MEMORY_AGENT_BENCH_OPENAI_API_KEY` may be used for the agent model key. The
+full stack still needs `MEMORY_OPENAI_API_KEY` or `OPENAI_API_KEY` for
+embeddings. `MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS`,
+`MEMORY_AGENT_BENCH_LLM_TIMEOUT_RETRIES`,
+`MEMORY_AGENT_BENCH_OPENAI_HTTP_TIMEOUT_SECONDS`,
+`MEMORY_AGENT_BENCH_OPENAI_MAX_RETRIES`,
+`MEMORY_AGENT_BENCH_SCENARIO_TIMEOUT_SECONDS` and
+`MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS` can tune the paid/manual gate. The
+benchmark prints one redacted JSON report and is intentionally not part of
 `make memory-test-quality`.
