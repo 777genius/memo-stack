@@ -307,6 +307,7 @@ def run_memory_quality_scorecard(
     report_out: Path | None = None,
     suite_results: Mapping[str, dict[str, object]] | None = None,
     suite_report_paths: Sequence[Path] | None = None,
+    require_top_evidence: bool = False,
 ) -> dict[str, object]:
     """Aggregate deterministic memory eval suites into one capability scorecard.
 
@@ -331,7 +332,10 @@ def run_memory_quality_scorecard(
             GRAPH_NATIVE_GOLDEN_SUITE: run_graph_native_golden(),
             PROMPT_CONTRACT_SUITE: run_prompt_snapshots(),
         }
-    result = build_memory_quality_scorecard(results)
+    result = build_memory_quality_scorecard(
+        results,
+        require_top_evidence=require_top_evidence,
+    )
     _write_redacted_report(result, report_out)
     return result
 
@@ -358,6 +362,8 @@ def _load_scorecard_suite_reports(paths: Sequence[Path]) -> dict[str, dict[str, 
 
 def build_memory_quality_scorecard(
     suite_results: Mapping[str, dict[str, object]],
+    *,
+    require_top_evidence: bool = False,
 ) -> dict[str, object]:
     required_suites = _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES
     missing_suites = tuple(suite for suite in required_suites if suite not in suite_results)
@@ -374,6 +380,10 @@ def build_memory_quality_scorecard(
         "scope_and_safety": _scorecard_scope_and_safety(suite_results),
         "prompt_context_contract": _scorecard_prompt_context_contract(suite_results),
     }
+    external_evidence = _scorecard_external_evidence(
+        suite_results,
+        require_top_evidence=require_top_evidence,
+    )
     all_suite_checks_ok = all(summary["ok"] is True for summary in suites.values())
     all_capabilities_ok = all(capability["ok"] is True for capability in capabilities.values())
     check_values = (
@@ -390,7 +400,10 @@ def build_memory_quality_scorecard(
         "all_capabilities_ok": all_capabilities_ok,
         "maturity_score_min": maturity_score_10 >= _MEMORY_QUALITY_SCORECARD_MIN_SCORE_10,
     }
-    external_evidence = _scorecard_external_evidence(suite_results)
+    if require_top_evidence:
+        gates["top_library_external_evidence"] = (
+            external_evidence["top_library_comparison_ready"] is True
+        )
     failures = _scorecard_failures(
         missing_suites=missing_suites,
         suites=suites,
@@ -618,6 +631,8 @@ def _scorecard_prompt_context_contract(
 
 def _scorecard_external_evidence(
     suite_results: Mapping[str, dict[str, object]],
+    *,
+    require_top_evidence: bool = False,
 ) -> dict[str, object]:
     full_provider = _scorecard_find_full_provider_report(suite_results)
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
@@ -646,6 +661,7 @@ def _scorecard_external_evidence(
 
     return {
         "confidence_tier": confidence_tier,
+        "required_for_gate": require_top_evidence,
         "top_library_comparison_ready": full_provider_ok and agent_behavior_ok,
         "benchmark_note": (
             "Internal deterministic suites are the local quality gate. "
@@ -5306,6 +5322,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=None,
         help="Existing redacted eval JSON report to include in the scorecard.",
     )
+    scorecard.add_argument(
+        "--require-top-evidence",
+        action="store_true",
+        help=(
+            "Fail unless external full-provider and agent-behavior evidence is present "
+            "and passing."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.command == "run":
         if args.suite == SMALL_GOLDEN_SUITE:
@@ -5361,6 +5385,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             result = run_memory_quality_scorecard(
                 report_out=args.report_out,
                 suite_report_paths=args.suite_report,
+                require_top_evidence=args.require_top_evidence,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc

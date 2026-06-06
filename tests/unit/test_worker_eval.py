@@ -1391,6 +1391,35 @@ def test_memory_quality_scorecard_warns_on_failed_external_evidence() -> None:
     assert "full_provider_canary_failed" in result["external_evidence"]["evidence_gaps"]
 
 
+def test_memory_quality_scorecard_strict_top_evidence_fails_without_external_reports() -> None:
+    result = build_memory_quality_scorecard(
+        _scorecard_fixture_results(),
+        require_top_evidence=True,
+    )
+
+    assert result["ok"] is False
+    assert result["gates"]["top_library_external_evidence"] is False
+    assert result["external_evidence"]["required_for_gate"] is True
+    assert result["external_evidence"]["confidence_tier"] == "internal_deterministic"
+    assert any(
+        failure["case_id"] == "top_library_external_evidence"
+        for failure in result["failures"]
+    )
+
+
+def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    assert result["ok"] is True
+    assert result["gates"]["top_library_external_evidence"] is True
+    assert result["external_evidence"]["required_for_gate"] is True
+    assert result["external_evidence"]["confidence_tier"] == "full_provider_and_agent_evaluated"
+
+
 def test_memory_quality_scorecard_fails_on_undercovered_suite() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["auto-memory-golden"]["metrics"]["extraction_case_count"] = 12

@@ -231,13 +231,7 @@ def main() -> int:
         result["suite"] = FULL_PROVIDER_CANARY_SUITE
         result["project"] = project_name
         result["elapsed_seconds"] = round(time.perf_counter() - started, 3)
-        print(
-            json.dumps(
-                _redact_payload(result, env=server_env),
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
+        _emit_report(result, env=server_env)
         return 0
     except Exception as exc:
         details: dict[str, Any] = {
@@ -250,14 +244,7 @@ def main() -> int:
         if server is not None:
             details["server_output_tail"] = _redact_text(_stop_server(server), env=server_env)
             server = None
-        print(
-            json.dumps(
-                _redact_payload(details, env=server_env),
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-            file=sys.stderr,
-        )
+        _emit_report(details, env=server_env, stream=sys.stderr)
         return 1
     finally:
         if server is not None:
@@ -2677,6 +2664,34 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
 
 def _bool(value: str) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _emit_report(
+    payload: Mapping[str, Any],
+    *,
+    env: Mapping[str, str] | None = None,
+    stream: TextIO | None = None,
+) -> None:
+    serialized = json.dumps(
+        _redact_payload(payload, env=env),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    _write_report_out(serialized)
+    print(serialized, file=stream or sys.stdout)
+
+
+def _write_report_out(serialized: str) -> None:
+    report_out = os.getenv("MEMORY_CLEAN_SMOKE_REPORT_OUT", "").strip()
+    if not report_out:
+        return
+    if any(pattern.search(serialized) for pattern in SENSITIVE_TEXT_PATTERNS):
+        raise CleanSmokeFailure(
+            "Refusing to write clean smoke report with unredacted secret markers"
+        )
+    path = Path(report_out)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(serialized, encoding="utf-8")
 
 
 def _redact_payload(value: Any, *, env: Mapping[str, str] | None = None) -> Any:

@@ -58,19 +58,27 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     assert ".PHONY: memo-stack-quality-scorecard" in makefile
     assert "$(PYTHON) -m memo_stack_server eval scorecard" in makefile
     assert ".PHONY: memo-stack-quality-scorecard-from-reports" in makefile
+    assert ".PHONY: memo-stack-quality-scorecard-top-evidence" in makefile
     assert "MEMORY_SCORECARD_SUITE_REPORTS" in makefile
     assert "--suite-report" in makefile
+    assert "--require-top-evidence" in makefile
     assert 'scorecard.add_argument(\n        "--suite-report"' in eval_runner
+    assert 'scorecard.add_argument(\n        "--require-top-evidence"' in eval_runner
     assert 'snapshots.add_argument("--report-out"' in eval_runner
 
 
 def test_makefile_has_clean_full_mcp_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    clean_full_smoke = (ROOT / "scripts" / "clean_full_smoke.py").read_text(
+        encoding="utf-8"
+    )
 
     assert ".PHONY: memo-stack-clean-full-mcp-smoke" in makefile
     assert "memo-stack-clean-full-mcp-smoke:" in makefile
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in makefile
     assert "$(PYTHON) scripts/clean_full_smoke.py" in makefile
+    assert "MEMORY_CLEAN_SMOKE_REPORT_OUT" in clean_full_smoke
+    assert "memo-stack-full-provider-canary" in clean_full_smoke
 
 
 def test_makefile_has_manual_prod_load_canary_target() -> None:
