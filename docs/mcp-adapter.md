@@ -354,6 +354,18 @@ keeps raw source paths out of emitted fixtures. Use the redacted output as
 `MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR`; then add manual expected checks for
 high-signal release gates.
 
+Audit the corpus before using it as a confidence signal:
+
+```bash
+MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR=/path/to/redacted-corpus \
+make memo-stack-agent-transcript-corpus-audit
+```
+
+Set `MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT=true` to fail safe-but-unready
+fixtures that still need manual expected checks. This prevents "real transcript"
+benchmarks from passing only because the agent searched/ingested without proving
+durable recall, stale handling or safety behavior.
+
 Full real-memory confidence gate:
 
 ```bash

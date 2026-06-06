@@ -307,6 +307,18 @@ does not write raw source paths into fixtures. Manual annotation is still
 recommended for high-signal expected memory checks before treating a corpus as a
 release gate.
 
+Then audit the redacted corpus before running it as evidence:
+
+```bash
+MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR=/path/to/redacted-corpus \
+make memo-stack-agent-transcript-corpus-audit
+```
+
+Use `MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT=true` when a corpus must be
+release-gate ready. Strict mode fails fixtures that are safe but still lack
+high-signal expected checks such as `required_memory_checks`,
+`expected_answer_contains` or `expected_memory_contains`.
+
 For the broad paid/manual "real memory in battle" gate:
 
 ```bash

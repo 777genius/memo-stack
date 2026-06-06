@@ -361,6 +361,15 @@ memo-stack-agent-transcript-corpus-redact:
 	@test -n "$${MEMORY_AGENT_TRANSCRIPT_OUTPUT:-}" || (echo "Set MEMORY_AGENT_TRANSCRIPT_OUTPUT to the redacted corpus output directory."; exit 1)
 	$(PYTHON) scripts/agent_transcript_corpus_redactor.py "$${MEMORY_AGENT_TRANSCRIPT_INPUT}" "$${MEMORY_AGENT_TRANSCRIPT_OUTPUT}"
 
+.PHONY: memo-stack-agent-transcript-corpus-audit
+memo-stack-agent-transcript-corpus-audit:
+	@test -n "$${MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR:-}" || (echo "Set MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR to a redacted corpus directory."; exit 1)
+	@if [ "$${MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT:-false}" = "true" ]; then \
+		$(PYTHON) scripts/agent_transcript_corpus_audit.py "$${MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR}" --strict; \
+	else \
+		$(PYTHON) scripts/agent_transcript_corpus_audit.py "$${MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR}"; \
+	fi
+
 .PHONY: memo-stack-full-provider-canary
 memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke
 
