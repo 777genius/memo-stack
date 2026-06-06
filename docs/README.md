@@ -276,15 +276,32 @@ review-gated uncertain claims, cross-profile meeting noise, credential traps and
 long-tail transcript recall. The report includes `live_session_pass_rate` and
 `adversarial_pass_rate`.
 
+For transcript-corpus driven long conversation checks:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-transcript-corpus-bench
+```
+
+This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=transcript`. The built-in corpus
+models long agent handoffs, architecture drift, rejected approaches, precise
+deletes, hostile tool output and credential traps. To measure anonymized real
+conversation logs without changing code, set
+`MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR` to a directory containing `.json`,
+`.jsonl` or `.txt` fixtures. JSON fixtures may provide `turns`, `transcript`,
+`expected_tools`, `expected_answer_contains`, `expected_memory_contains`,
+`forbidden_contains`, `required_memory_checks` and `tags`. File count and size
+are bounded by `MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_FILES` and
+`MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_BYTES`.
+
 For the broad paid/manual "real memory in battle" gate:
 
 ```bash
 MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-real-memory-confidence
 ```
 
-That gate runs the full-provider MCP canary, prod-load canary and live-session
-agent benchmark before `git diff --check` and secret scan. Paid agent benchmark
-targets default
+That gate runs the full-provider MCP canary, prod-load canary, live-session
+agent benchmark and transcript-corpus benchmark before `git diff --check` and
+secret scan. Paid agent benchmark targets default
 `MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`, so provider projection worker
 failures after mutating MCP tools fail the benchmark instead of being treated as
 soft warnings.

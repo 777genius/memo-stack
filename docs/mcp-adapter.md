@@ -322,6 +322,24 @@ transcript recall. The report adds `live_session_case_count`,
 `live_session_pass_rate`, `adversarial_case_count` and `adversarial_pass_rate`
 with hard gates for live-session and adversarial behavior.
 
+Transcript-corpus long conversation benchmark:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-transcript-corpus-bench
+```
+
+This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=transcript`: sanitized long agent
+handoffs, architecture drift, rejected approaches, precise deletes, hostile
+tool output and credential traps. The report adds
+`transcript_corpus_case_count` and `transcript_corpus_pass_rate`, with a hard
+minimum pass-rate gate. For anonymized real logs, set
+`MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR` to a directory of `.json`, `.jsonl`
+or `.txt` fixtures. JSON/JSONL cases can provide `turns`, `transcript`,
+`expected_tools`, `expected_answer_contains`, `expected_memory_contains`,
+`forbidden_contains`, `required_memory_checks` and `tags`. Use
+`MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_FILES` and
+`MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_BYTES` to bound corpus scope.
+
 Full real-memory confidence gate:
 
 ```bash
@@ -330,9 +348,9 @@ MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-r
 
 This is the broad paid/manual gate for "real memory in battle": full-provider
 MCP lifecycle, production-like load/chaos/provider-outage canary, live-session
-agent benchmark, `git diff --check` and secret scan. It is intentionally not
-part of normal CI because it uses Docker providers and paid model/embedding
-calls.
+agent benchmark, transcript-corpus benchmark, `git diff --check` and secret
+scan. It is intentionally not part of normal CI because it uses Docker
+providers and paid model/embedding calls.
 
 The paid agent benchmark defaults `MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`.
 That means a projection worker failure after a mutating MCP tool is a hard

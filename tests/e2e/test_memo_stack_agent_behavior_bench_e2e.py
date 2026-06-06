@@ -109,6 +109,50 @@ def test_agent_behavior_benchmark_reports_live_session_metrics_over_real_mcp(
     assert exit_code_from_report(report) == 0
 
 
+def test_agent_behavior_benchmark_reports_transcript_corpus_metrics_over_real_mcp(
+    tmp_path: Path,
+) -> None:
+    with run_memo_stack_server(tmp_path) as server:
+        env = python_env(
+            {
+                "MEMORY_MCP_API_URL": server.base_url,
+                "MEMORY_MCP_AUTH_TOKEN": server.token,
+                "MEMORY_MCP_DEFAULT_SPACE_SLUG": "agent-bench-transcript-e2e",
+                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_AGENT_NAME": "agent-behavior-transcript-e2e",
+                "MEMORY_MCP_TRANSPORT": "stdio",
+                "MEMORY_MCP_WRITE_MODE": "direct",
+                "MEMORY_MCP_DELETE_MODE": "explicit",
+                "MEMORY_MCP_INGEST_MODE": "allowed",
+            }
+        )
+        report = asyncio.run(
+            run_agent_behavior_benchmark(
+                base_url=server.base_url,
+                auth_token=server.token,
+                model="fake-model",
+                run_id="transcript-e2e",
+                mcp_env=env,
+                scenarios=_transcript_e2e_scenarios(),
+                llm_client=_transcript_fake_llm(),
+                space_slug_prefix="agent-bench-transcript-e2e",
+                profile_external_ref="default",
+                max_tool_rounds=3,
+            )
+        )
+
+    assert report["ok"] is True
+    assert report["metrics"]["transcript_corpus_case_count"] == 1
+    assert report["metrics"]["transcript_corpus_pass_rate"] == 1.0
+    assert report["gates"]["transcript_corpus_pass_rate_min_0_80"] is True
+    assert report["scenarios"][0]["tags"] == [
+        "live_session",
+        "transcript_corpus",
+        "external_transcript",
+    ]
+    assert exit_code_from_report(report) == 0
+
+
 def _e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
     return (
         AgentBenchScenario(
@@ -194,6 +238,35 @@ def _live_e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
                 {
                     "type": "final_contains",
                     "contains": ["Live-session evidence remains scoped"],
+                },
+            ),
+        ),
+    )
+
+
+def _transcript_e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
+    return (
+        AgentBenchScenario(
+            id="transcript_e2e_recall",
+            category="answer",
+            tags=("live_session", "transcript_corpus", "external_transcript"),
+            user_prompt="Search memory and answer from transcript corpus evidence.",
+            setup_actions=(
+                {
+                    "action": "ingest_document",
+                    "title": "E2E transcript corpus",
+                    "text": (
+                        "E2E_TRANSCRIPT_CORPUS: Transcript corpus evidence must stay "
+                        "review-gated."
+                    ),
+                    "source_external_id": "e2e-transcript-corpus",
+                },
+            ),
+            expected_tools=("memory_search",),
+            required_memory_checks=(
+                {
+                    "type": "final_contains",
+                    "contains": ["review-gated"],
                 },
             ),
         ),
@@ -310,6 +383,28 @@ def _live_fake_llm() -> FakeLlmClient:
             AgentLlmResponse(
                 response_id="live-final",
                 output_text="Live-session evidence remains scoped.",
+            ),
+        ]
+    )
+
+
+def _transcript_fake_llm() -> FakeLlmClient:
+    return FakeLlmClient(
+        [
+            AgentLlmResponse(
+                response_id="transcript-search",
+                output_text="",
+                function_calls=(
+                    AgentFunctionCall(
+                        call_id="transcript-search-call",
+                        name="memory_search",
+                        arguments={"query": "E2E_TRANSCRIPT_CORPUS", "max_chunks": 5},
+                    ),
+                ),
+            ),
+            AgentLlmResponse(
+                response_id="transcript-final",
+                output_text="Transcript corpus evidence must stay review-gated.",
             ),
         ]
     )

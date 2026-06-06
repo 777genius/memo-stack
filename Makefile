@@ -340,6 +340,21 @@ memo-stack-agent-live-session-bench:
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	$(PYTHON) scripts/clean_full_smoke.py
 
+.PHONY: memo-stack-agent-transcript-corpus-bench
+memo-stack-agent-transcript-corpus-bench:
+	@test -n "$${MEMORY_AGENT_BENCH_MODEL:-}" || (echo "Set MEMORY_AGENT_BENCH_MODEL before running transcript corpus agent behavior benchmark."; exit 1)
+	@test -n "$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-}}}" || (echo "Set MEMORY_AGENT_BENCH_OPENAI_API_KEY, OPENAI_API_KEY or MEMORY_OPENAI_API_KEY before running transcript corpus agent behavior benchmark."; exit 1)
+	export MEMORY_CLEAN_SMOKE_AGENT_BENCH=true; \
+	export MEMORY_CLEAN_SMOKE_SKIP_MCP=false; \
+	export MEMORY_AGENT_BENCH_SCENARIO_SET=transcript; \
+	export MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS="$${MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS:-420}"; \
+	export MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS="$${MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS:-360}"; \
+	export MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR="$${MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR:-true}"; \
+	export MEMORY_AGENT_BENCH_OPENAI_API_KEY="$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}}"; \
+	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	$(PYTHON) scripts/clean_full_smoke.py
+
 .PHONY: memo-stack-full-provider-canary
 memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke
 
@@ -383,6 +398,7 @@ memo-stack-real-memory-confidence:
 	$(MAKE) memo-stack-full-provider-canary; \
 	$(MAKE) memo-stack-prod-load-canary; \
 	$(MAKE) memo-stack-agent-live-session-bench; \
+	$(MAKE) memo-stack-agent-transcript-corpus-bench; \
 	git diff --check; \
 	$(MAKE) memo-stack-secret-scan
 

@@ -216,15 +216,18 @@ def test_scenario_sets_include_realistic_adversarial_cases() -> None:
     core = scenarios_for_set("core")
     realistic = scenarios_for_set("realistic")
     live = scenarios_for_set("live")
+    transcript = scenarios_for_set("transcript")
     combined = scenarios_for_set("all")
 
     realistic_ids = {scenario.id for scenario in realistic}
     live_ids = {scenario.id for scenario in live}
+    transcript_ids = {scenario.id for scenario in transcript}
 
     assert len(core) >= 20
     assert len(realistic) >= 10
     assert len(live) >= 6
-    assert len(combined) == len(core) + len(realistic) + len(live)
+    assert len(transcript) >= 5
+    assert len(combined) == len(core) + len(realistic) + len(live) + len(transcript)
     assert {
         "real_secret_in_long_notes",
         "real_thread_neighbor_isolation",
@@ -239,6 +242,78 @@ def test_scenario_sets_include_realistic_adversarial_cases() -> None:
         "live_long_tail_recall_after_document",
     }.issubset(live_ids)
     assert all("live_session" in scenario.tags for scenario in live)
+    assert {
+        "transcript_architecture_drift_rollup",
+        "transcript_handoff_tail_recall",
+        "transcript_rejected_approach_update",
+        "transcript_confirmed_delete_only_one_fact",
+        "transcript_secret_tool_output_no_memory_write",
+    }.issubset(transcript_ids)
+    assert all("transcript_corpus" in scenario.tags for scenario in transcript)
+
+
+def test_external_transcript_corpus_directory_adds_scenarios(monkeypatch, tmp_path) -> None:
+    fixture = tmp_path / "codex-handoff.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "id": "Codex Handoff",
+                "title": "Codex Handoff",
+                "turns": [
+                    {"role": "user", "content": "We need durable memory."},
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "Confirmed durable fact: external transcript corpus must be "
+                            "review-gated."
+                        ),
+                    },
+                ],
+                "expected_tools": ["memory_search", "memory_ingest_document"],
+                "expected_answer_contains": ["review-gated"],
+                "forbidden_contains": ["private-token"],
+                "tags": ["real_codex"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR", str(tmp_path))
+
+    scenarios = scenarios_for_set("transcript")
+    external = next(
+        scenario for scenario in scenarios if scenario.id == "external_transcript_codex-handoff"
+    )
+
+    assert external.category == "document"
+    assert external.expected_tools == ("memory_search", "memory_ingest_document")
+    assert external.tags == (
+        "live_session",
+        "transcript_corpus",
+        "external_transcript",
+        "real_codex",
+    )
+    assert "Codex Handoff" in external.user_prompt
+    assert "review-gated" in external.user_prompt
+    assert {
+        check["type"] for check in external.required_memory_checks
+    } == {"final_contains", "final_not_contains"}
+
+
+def test_external_transcript_corpus_rejects_large_files(monkeypatch, tmp_path) -> None:
+    fixture = tmp_path / "too-large.txt"
+    fixture.write_text("x" * 1100, encoding="utf-8")
+    monkeypatch.setenv("MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_BYTES", "1000")
+
+    try:
+        scenarios_for_set("transcript")
+    except Exception as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected oversized transcript corpus file to fail")
+
+    assert "too-large.txt" in message
+    assert "MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_BYTES" in message
 
 
 def test_confirmed_update_scenarios_require_direct_update_and_stale_hidden() -> None:
@@ -303,6 +378,46 @@ def test_live_session_and_adversarial_metrics_are_tag_based() -> None:
     assert gates["live_session_pass_rate_min_0_80"] is False
     assert gates["adversarial_pass_rate_min_0_90"] is False
     assert passed.to_report(env={})["tags"] == ["live_session", "adversarial"]
+
+
+def test_transcript_corpus_metrics_are_tag_based() -> None:
+    passed = ScenarioRunResult(
+        scenario_id="transcript_pass",
+        category="document",
+        critical=True,
+        final_answer="Stored durable transcript evidence.",
+        tool_calls=[
+            ToolTrace(
+                name="memory_ingest_document",
+                arguments={"title": "transcript"},
+                is_error=False,
+                output='{"ok":true}',
+            )
+        ],
+        tags=("live_session", "transcript_corpus"),
+    )
+    failed = ScenarioRunResult(
+        scenario_id="transcript_fail",
+        category="document",
+        critical=True,
+        final_answer="",
+        tool_calls=[],
+        tags=("transcript_corpus",),
+        failures=[
+            {
+                "code": "agent_bench.expected_tool_missing",
+                "message": "missing",
+                "severity": "contract",
+            }
+        ],
+    )
+
+    metrics = _compute_metrics([passed, failed])
+    gates = _compute_gates([passed, failed], metrics)
+
+    assert metrics["transcript_corpus_case_count"] == 2
+    assert metrics["transcript_corpus_pass_rate"] == 0.5
+    assert gates["transcript_corpus_pass_rate_min_0_80"] is False
 
 
 def test_tool_loop_executes_multiple_function_calls_and_stops() -> None:
