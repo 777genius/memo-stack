@@ -82,6 +82,31 @@ memo-stack-quality-evidence-bundle:
 	for report in $${MEMORY_SCORECARD_EXTRA_REPORTS:-}; do set -- "$$@" --extra-report "$$report"; done; \
 	$(PYTHON) scripts/quality_evidence_bundle.py "$$@"
 
+.PHONY: memo-stack-top-evidence-bundle
+memo-stack-top-evidence-bundle:
+	@test -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" || (echo "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running top evidence bundle."; exit 1)
+	@test -n "$${MEMORY_AGENT_BENCH_MODEL:-}" || (echo "Set MEMORY_AGENT_BENCH_MODEL before running top evidence bundle."; exit 1)
+	@set -e; \
+	evidence_dir="$${MEMORY_QUALITY_EVIDENCE_DIR:-.tmp/memo-stack-top-evidence}"; \
+	external_report="$$evidence_dir/full-provider-agent-public.json"; \
+	mkdir -p "$$evidence_dir"; \
+	export MEMORY_CLEAN_SMOKE_REPORT_OUT="$$external_report"; \
+	export MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true; \
+	export MEMORY_CLEAN_SMOKE_AGENT_BENCH=true; \
+	export MEMORY_CLEAN_SMOKE_SKIP_MCP=false; \
+	export MEMORY_AGENT_BENCH_SCENARIO_SET="$${MEMORY_AGENT_BENCH_SCENARIO_SET:-realistic}"; \
+	export MEMORY_AGENT_BENCH_OPENAI_API_KEY="$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}}"; \
+	export MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-1}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.5}"; \
+	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	$(PYTHON) scripts/clean_full_smoke.py; \
+	$(PYTHON) scripts/quality_evidence_bundle.py \
+		--output-dir "$$evidence_dir" \
+		--extra-report "$$external_report" \
+		--require-top-evidence
+
 .PHONY: memo-stack-public-benchmark
 memo-stack-public-benchmark:
 	@test -n "$${MEMORY_PUBLIC_BENCHMARK_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_DATASET to a LoCoMo/LongMemEval-like JSON or JSONL file."; exit 1)

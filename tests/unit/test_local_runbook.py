@@ -63,11 +63,25 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     assert ".PHONY: memo-stack-quality-scorecard-from-reports" in makefile
     assert ".PHONY: memo-stack-quality-scorecard-top-evidence" in makefile
     assert ".PHONY: memo-stack-quality-evidence-bundle" in makefile
+    assert ".PHONY: memo-stack-top-evidence-bundle" in makefile
     assert "MEMORY_SCORECARD_SUITE_REPORTS" in makefile
     assert "MEMORY_SCORECARD_EXTRA_REPORTS" in makefile
     assert "MEMORY_QUALITY_EVIDENCE_DIR" in makefile
     assert "MEMORY_QUALITY_EVIDENCE_REQUIRE_TOP" in makefile
     assert "$(PYTHON) scripts/quality_evidence_bundle.py" in makefile
+    top_evidence_recipe = "\n".join(
+        _make_target_recipe(makefile, "memo-stack-top-evidence-bundle")
+    )
+    assert 'MEMORY_CLEAN_SMOKE_REPORT_OUT="$$external_report"' in top_evidence_recipe
+    assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in top_evidence_recipe
+    assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in top_evidence_recipe
+    assert 'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"' in (
+        top_evidence_recipe
+    )
+    assert '$(PYTHON) scripts/quality_evidence_bundle.py \\' in top_evidence_recipe
+    assert '--output-dir "$$evidence_dir"' in top_evidence_recipe
+    assert '--extra-report "$$external_report"' in top_evidence_recipe
+    assert "--require-top-evidence" in top_evidence_recipe
     assert "--suite-report" in makefile
     assert "--require-top-evidence" in makefile
     assert 'scorecard.add_argument(\n        "--suite-report"' in eval_runner
@@ -390,6 +404,7 @@ def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> No
         "memo-stack-clean-full-smoke",
         "memo-stack-clean-full-mcp-smoke",
         "memo-stack-full-provider-public-benchmark-canary",
+        "memo-stack-top-evidence-bundle",
         "memo-stack-agent-behavior-bench",
         "memo-stack-agent-realistic-bench",
         "memo-stack-agent-live-session-bench",

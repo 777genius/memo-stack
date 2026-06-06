@@ -37,3 +37,79 @@ def test_quality_evidence_bundle_requires_existing_extra_reports(tmp_path: Path)
         assert "Evidence extra report does not exist" in str(exc)
     else:
         raise AssertionError("expected missing extra report to fail")
+
+
+def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_report(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "full-provider-agent-public.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memo-stack-full-provider-canary",
+                "ok": True,
+                "checks": {
+                    "providers_are_healthy": True,
+                    "context_provider_status_ok": True,
+                    "mcp_provider_diagnostics_ok": True,
+                    "mcp_search_has_graphiti_fact_after_worker": True,
+                    "mcp_search_has_qdrant_document_chunk_after_worker": True,
+                },
+                "adapters": {
+                    "qdrant": "ok",
+                    "graphiti": "ok",
+                    "embeddings": "ok",
+                    "cognee": "disabled",
+                },
+                "mcp": {"ok": True},
+                "agent_behavior": {
+                    "suite": "memory_mcp_agent_behavior",
+                    "ok": True,
+                    "scenario_set": "realistic",
+                    "metrics": {
+                        "tool_choice_accuracy": 1.0,
+                        "search_before_write_rate": 1.0,
+                        "update_vs_duplicate_rate": 1.0,
+                        "document_routing_accuracy": 1.0,
+                        "answer_support_rate": 1.0,
+                        "secret_redaction_violation_count": 0,
+                    },
+                    "gates": {
+                        "critical_scenarios_passed": True,
+                        "tool_choice_accuracy_min": True,
+                        "answer_support_rate_min": True,
+                    },
+                },
+                "public_benchmark": {
+                    "suite": "public-memory-benchmark",
+                    "ok": True,
+                    "benchmarks": [
+                        {
+                            "name": "locomo",
+                            "ok": True,
+                            "metrics": {"accuracy": 0.91, "case_count": 1},
+                        },
+                        {
+                            "name": "longmemeval",
+                            "ok": True,
+                            "metrics": {"accuracy": 0.9, "case_count": 1},
+                        },
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_quality_evidence_bundle(
+        output_dir=tmp_path / "evidence",
+        extra_report_paths=(external_report,),
+        require_top_evidence=True,
+    )
+
+    assert result["ok"] is True
+    assert result["scorecard"]["confidence_tier"] == (
+        "full_provider_agent_and_public_benchmark_evaluated"
+    )
+    assert result["scorecard"]["top_library_comparison_ready"] is True
+    assert result["scorecard"]["evidence_gaps"] == []
