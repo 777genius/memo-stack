@@ -24,6 +24,8 @@ class SourceProvenance:
     source_id: str
     trust_level: TrustLevel
     chunk_id: str | None = None
+    actor_role: str | None = None
+    source_authority: str | None = None
 
 
 @dataclass(frozen=True)

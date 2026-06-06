@@ -295,7 +295,7 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
             "MEMORY_OPENAI_API_KEY": openai_key,
             "MEMORY_DEPLOY_PROFILE": "local",
             "MEMORY_DATABASE_URL": (
-                f"postgresql+asyncpg://memo_stack:memo_stack@127.0.0.1:{ports['postgres']}/memory"
+                f"postgresql+asyncpg://memo_stack:memo_stack@127.0.0.1:{ports['postgres']}/memo_stack"
             ),
             "MEMORY_AUTO_CREATE_SCHEMA": "true",
             "MEMORY_HOST": "127.0.0.1",

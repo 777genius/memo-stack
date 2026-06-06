@@ -20,6 +20,8 @@ from memo_stack_core.ports.auto_memory import (
 _MAX_CANDIDATES = 5
 _MAX_CANDIDATE_CHARS = 800
 _ASSISTANT_SOURCES = {"ai_response", "assistant_answer", "assistant_summary"}
+_ASSISTANT_ACTOR_ROLES = {"assistant"}
+_ASSISTANT_AUTHORITIES = {"assistant_inference"}
 _PREFIXES: tuple[tuple[re.Pattern[str], MemoryKind, str, str | None, str | None], ...] = (
     (
         re.compile(r"^\s*(?:remember|remember this|запомни|запомнить)\s*[:：-]\s*(.+)$", re.I),
@@ -108,7 +110,7 @@ class MemoryAdmissionService:
                 Confidence.LOW,
                 "prompt_injection_text",
             )
-        if source.source_type in _ASSISTANT_SOURCES:
+        if _is_assistant_derived_source(source):
             return AdmissionDecision(
                 "create_suggestion",
                 TrustLevel.LOW,
@@ -205,3 +207,13 @@ def _looks_like_prompt_injection(text: str) -> bool:
 
 def _has_memory_prefix(line: str) -> bool:
     return any(pattern.match(line) for pattern, _, _, _, _ in _PREFIXES)
+
+
+def _is_assistant_derived_source(source: SourceProvenance) -> bool:
+    actor_role = (source.actor_role or "").strip().lower()
+    source_authority = (source.source_authority or "").strip().lower()
+    return (
+        source.source_type in _ASSISTANT_SOURCES
+        or actor_role in _ASSISTANT_ACTOR_ROLES
+        or source_authority in _ASSISTANT_AUTHORITIES
+    )

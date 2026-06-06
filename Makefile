@@ -55,6 +55,7 @@ memo-stack-scale-chaos-load-e2e:
 memo-stack-eval:
 	$(PYTHON) -m memo_stack_server eval run --suite small-golden
 	$(PYTHON) -m memo_stack_server eval run --suite quality-golden
+	$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden
 	$(PYTHON) -m memo_stack_server eval snapshots --suite prompt-contract
 
 .PHONY: memo-stack-test-quality
@@ -173,8 +174,12 @@ memo-stack-hook-capture-smoke:
 memo-stack-auto-memory-eval:
 	$(PYTHON) -m memo_stack_server eval run --suite auto-memory-golden
 
+.PHONY: memo-stack-graph-native-eval
+memo-stack-graph-native-eval:
+	$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden
+
 .PHONY: memo-stack-auto-memory-quality
-memo-stack-auto-memory-quality: memo-stack-capture-test memo-stack-hook-capture-smoke memo-stack-auto-memory-eval
+memo-stack-auto-memory-quality: memo-stack-capture-test memo-stack-hook-capture-smoke memo-stack-auto-memory-eval memo-stack-graph-native-eval
 	$(PYTHON) -m pytest tests/unit/test_mcp_adapter.py -q
 
 .PHONY: memo-stack-agent-install-dry-run

@@ -30,6 +30,7 @@ from memo_stack_server.doctor import run_doctor
 from memo_stack_server.eval import (
     _execute_small_golden,
     run_auto_memory_golden,
+    run_graph_native_golden,
     run_quality_golden,
     run_small_golden,
 )
@@ -980,7 +981,7 @@ def test_auto_memory_golden_eval_passes() -> None:
     assert result["status"] == "ok"
     assert result["suite"] == "auto-memory-golden"
     assert result["checks"]["case_count"] is True
-    assert result["metrics"]["case_count"] >= 6
+    assert result["metrics"]["case_count"] >= 9
     assert result["metrics"]["suggestion_expected_recall_rate"] == 1.0
     assert result["metrics"]["wrong_auto_apply_count"] == 0
     assert result["metrics"]["active_fact_before_review_count"] == 0
@@ -988,6 +989,8 @@ def test_auto_memory_golden_eval_passes() -> None:
     assert result["metrics"]["secret_leakage_count"] == 0
     assert result["metrics"]["duplicate_suggestion_count"] == 0
     assert result["metrics"]["replay_duplicate_suggestion_count"] == 0
+    assert result["metrics"]["assistant_low_trust_violation_count"] == 0
+    assert result["metrics"]["candidate_limit_violation_count"] == 0
     assert result["failures"] == []
     assert "AUTO_MEMORY_EVAL_TOKEN" not in str(result)
     assert "ignore previous instructions" not in str(result).lower()
@@ -1003,10 +1006,43 @@ def test_auto_memory_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["suite"] == "auto-memory-golden"
     assert payload["metrics"]["wrong_auto_apply_count"] == 0
     assert payload["metrics"]["secret_leakage_count"] == 0
+    assert payload["metrics"]["assistant_low_trust_violation_count"] == 0
+    assert payload["metrics"]["candidate_limit_violation_count"] == 0
     assert payload["failures"] == []
     assert "AUTO_MEMORY_EVAL_TOKEN" not in report_text
     assert "AUTO_MEMORY_EVAL_SECRET_REDACTION" not in report_text
     assert "ignore previous instructions" not in report_text.lower()
+
+
+def test_graph_native_golden_eval_passes() -> None:
+    result = run_graph_native_golden()
+
+    assert result["ok"] is True
+    assert result["status"] == "ok"
+    assert result["suite"] == "graph-native-golden"
+    assert result["checks"]["case_count"] is True
+    assert result["checks"]["graph_search_used"] is True
+    assert result["metrics"]["case_count"] >= 8
+    assert result["metrics"]["graph_recall_rate"] == 1.0
+    assert result["metrics"]["graph_hydration_rate"] == 1.0
+    assert result["metrics"]["graph_safety_leak_count"] == 0
+    assert result["metrics"]["graph_stale_drop_count"] >= 4
+    assert result["metrics"]["canonical_only_graph_skip_count"] == 1
+    assert result["failures"] == []
+
+
+def test_graph_native_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
+    report = tmp_path / "graph-native-golden-report.json"
+    result = run_graph_native_golden(report_out=report)
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert payload["suite"] == "graph-native-golden"
+    assert payload["metrics"]["graph_safety_leak_count"] == 0
+    assert payload["failures"] == []
+    assert "GRAPH_NATIVE_EVAL_BETA_SECRET" not in report_text
+    assert "GRAPH_NATIVE_EVAL_RESTRICTED_SECRET" not in report_text
 
 
 def test_small_golden_eval_seed_preserves_scope_invariants(

@@ -12,7 +12,11 @@ from memo_stack_core.application.extractor import (
     RuleBasedMemoryExtractor,
     validate_extractor_candidates,
 )
-from memo_stack_core.domain.capture import ConsolidationStatus
+from memo_stack_core.domain.capture import (
+    CaptureActorRole,
+    ConsolidationStatus,
+    SourceAuthority,
+)
 from memo_stack_core.domain.entities import (
     FactStatus,
     MemoryFact,
@@ -21,6 +25,7 @@ from memo_stack_core.domain.entities import (
     MemorySuggestionId,
     SourceRef,
     SuggestionOperation,
+    TrustLevel,
 )
 from memo_stack_core.domain.errors import (
     MemoryInfrastructureError,
@@ -83,7 +88,9 @@ class ConsolidateCaptureUseCase:
         provenance = SourceProvenance(
             source_type=f"capture:{running.source_kind.value}",
             source_id=str(running.id),
-            trust_level=running.trust_level,
+            trust_level=_effective_capture_trust(running),
+            actor_role=running.actor_role.value,
+            source_authority=running.source_authority.value,
         )
         if self._extractor.requires_external_ai and not self._external_ai_enabled:
             return await self._mark_skipped(
@@ -391,6 +398,15 @@ def _suggestion_operation(operation: CandidateOperation) -> SuggestionOperation:
     if operation == CandidateOperation.REVIEW:
         return SuggestionOperation.REVIEW
     return SuggestionOperation.ADD
+
+
+def _effective_capture_trust(capture) -> TrustLevel:
+    if (
+        capture.actor_role == CaptureActorRole.ASSISTANT
+        or capture.source_authority == SourceAuthority.ASSISTANT_INFERENCE
+    ):
+        return TrustLevel.LOW
+    return capture.trust_level
 
 
 def _candidate_fingerprint(

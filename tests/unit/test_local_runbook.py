@@ -31,6 +31,19 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
     assert "$(MAKE) memo-stack-api-smoke" in makefile
 
 
+def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    eval_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-eval"))
+
+    assert ".PHONY: memo-stack-graph-native-eval" in makefile
+    assert "$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden" in eval_recipe
+    assert (
+        "memo-stack-auto-memory-quality: memo-stack-capture-test "
+        "memo-stack-hook-capture-smoke memo-stack-auto-memory-eval "
+        "memo-stack-graph-native-eval"
+    ) in makefile
+
+
 def test_makefile_has_clean_full_mcp_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
@@ -326,6 +339,20 @@ def test_clean_full_smoke_uses_env_secrets_and_redacts_output(monkeypatch) -> No
     assert '"plain"' not in rendered
     assert "generic-secret-value-12345" not in rendered
     assert "<redacted>" in rendered
+
+
+def test_clean_full_smoke_uses_current_postgres_database_name(monkeypatch) -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-unit-openai-secret")
+
+    env = module._server_env(
+        ports={"postgres": 15432, "qdrant": 16333, "neo4j_bolt": 17687, "server": 17788},
+        token="unit-service-token",
+        run_id="unit-run",
+    )
+
+    assert env["MEMORY_DATABASE_URL"].endswith(":15432/memo_stack")
+    assert not env["MEMORY_DATABASE_URL"].endswith(":15432/memory")
 
 
 def test_clean_full_smoke_keeps_safe_check_names_with_token_word() -> None:
@@ -728,6 +755,8 @@ def test_clean_full_smoke_missing_key_message_does_not_name_sensitive_envs(monke
         raise AssertionError("expected missing key failure")
 
     assert "OPENAI_API_KEY" not in message
+    assert "MEMORY_OPENAI_API_KEY" not in message
+    assert "OpenAI API key" in message
     assert "MEMORY_OPENAI_API_KEY" not in message
 
 
