@@ -273,6 +273,11 @@ def test_makefile_has_auto_memory_eval_quality_gate() -> None:
 
     assert ".PHONY: memo-stack-auto-memory-eval" in makefile
     assert "$(PYTHON) -m memo_stack_server eval run --suite auto-memory-golden" in makefile
+    assert re.search(
+        r"memo-stack-eval:\n(?:\t.+\n)+?\t\$\(PYTHON\) "
+        r"-m memo_stack_server eval run --suite auto-memory-golden",
+        makefile,
+    )
     assert (
         "memo-stack-auto-memory-quality: "
         "memo-stack-capture-test memo-stack-hook-capture-smoke memo-stack-auto-memory-eval"

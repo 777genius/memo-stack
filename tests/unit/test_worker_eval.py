@@ -981,7 +981,19 @@ def test_auto_memory_golden_eval_passes() -> None:
     assert result["status"] == "ok"
     assert result["suite"] == "auto-memory-golden"
     assert result["checks"]["case_count"] is True
+    assert result["checks"]["extraction_case_count"] is True
     assert result["metrics"]["case_count"] >= 13
+    assert result["metrics"]["extraction_case_count"] >= 60
+    assert result["metrics"]["extraction_candidate_count_accuracy"] == 1.0
+    assert result["metrics"]["extraction_positive_recall_rate"] == 1.0
+    assert result["metrics"]["extraction_operation_accuracy"] == 1.0
+    assert result["metrics"]["extraction_kind_accuracy"] == 1.0
+    assert result["metrics"]["extraction_admission_accuracy"] == 1.0
+    assert result["metrics"]["extraction_false_positive_count"] == 0
+    assert result["metrics"]["extraction_false_negative_count"] == 0
+    assert result["metrics"]["extraction_unsafe_admission_count"] == 0
+    assert result["metrics"]["extraction_prompt_injection_admission_violation_count"] == 0
+    assert result["metrics"]["extraction_assistant_admission_violation_count"] == 0
     assert result["metrics"]["suggestion_expected_recall_rate"] == 1.0
     assert result["metrics"]["wrong_auto_apply_count"] == 0
     assert result["metrics"]["active_fact_before_review_count"] == 0
@@ -994,8 +1006,10 @@ def test_auto_memory_golden_eval_passes() -> None:
     assert result["metrics"]["target_resolution_violation_count"] == 0
     assert result["metrics"]["review_operation_violation_count"] == 0
     assert result["failures"] == []
+    assert len(result["extraction_cases"]) >= 60
     assert "AUTO_MEMORY_EVAL_TOKEN" not in str(result)
     assert "ignore previous instructions" not in str(result).lower()
+    assert "EXTRACT_REMEMBER_COLON uses Postgres" not in str(result)
 
 
 def test_auto_memory_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
@@ -1007,14 +1021,20 @@ def test_auto_memory_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert result["ok"] is True
     assert payload["suite"] == "auto-memory-golden"
     assert payload["metrics"]["wrong_auto_apply_count"] == 0
+    assert payload["metrics"]["extraction_case_count"] >= 60
+    assert payload["metrics"]["extraction_candidate_count_accuracy"] == 1.0
+    assert payload["metrics"]["extraction_false_positive_count"] == 0
+    assert payload["metrics"]["extraction_unsafe_admission_count"] == 0
     assert payload["metrics"]["secret_leakage_count"] == 0
     assert payload["metrics"]["assistant_low_trust_violation_count"] == 0
     assert payload["metrics"]["candidate_limit_violation_count"] == 0
     assert payload["metrics"]["target_resolution_violation_count"] == 0
     assert payload["metrics"]["review_operation_violation_count"] == 0
     assert payload["failures"] == []
+    assert len(payload["extraction_cases"]) >= 60
     assert "AUTO_MEMORY_EVAL_TOKEN" not in report_text
     assert "AUTO_MEMORY_EVAL_SECRET_REDACTION" not in report_text
+    assert "EXTRACT_REMEMBER_COLON uses Postgres" not in report_text
     assert "ignore previous instructions" not in report_text.lower()
 
 
