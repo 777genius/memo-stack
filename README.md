@@ -28,6 +28,7 @@ Core principles:
 ## Docs
 
 - [Core Lite implementation plan](docs/memo-stack-core-lite-plan.md)
+- [Local install and Memory Digest plan](docs/local-install-and-memory-digest-plan.md)
 - [Global architecture plan](docs/memo-stack-architecture-plan.md)
 - [Client compatibility notes](docs/client-integration/interview-memo-stack-clean-architecture-plan.md)
 - [Client integration run notes](docs/client-integration/current-integration-run-notes.md)
@@ -40,6 +41,8 @@ packages/
   memo_stack_server/
   memo_stack_adapters/
   memo_stack_sdk/
+  memo_stack_mcp/
+  memo_stack_cli/
 
 tests/
   unit/
@@ -58,6 +61,8 @@ Core Lite is implemented as a reusable service/library baseline:
 - `memo_stack_server` owns FastAPI routes, composition root, auth, config, admin CLI, worker CLI and eval CLI;
 - `memo_stack_adapters` owns Postgres, optional Qdrant/OpenAI/Graphiti adapters and disabled noop adapters;
 - `memo_stack_sdk` owns HTTP client calls and typed error handling for other apps;
+- `memo_stack_mcp` owns the agent-facing MCP adapter over the HTTP API;
+- `memo_stack_cli` owns local install/runtime UX and calls the HTTP API instead of importing server internals;
 - Postgres is canonical truth for spaces, profiles, facts, source refs, fact versions, episodes, documents, chunks, suggestions, outbox and idempotency;
 - Qdrant vectors and Graphiti graph memory are derived projections behind ports;
 - Qdrant adapter creates its collection on first upsert/search when enabled;
@@ -78,6 +83,7 @@ Implemented API surface:
 - `/v1/documents` ingest/get/chunks/process/delete;
 - `/v1/episodes` transcript/event ingest for app or agent sessions;
 - `/v1/search`, `/v1/context`;
+- `/v1/digest` for source-bound Memory Digest reports;
 - `/v1/thread-memory/status`, `/v1/thread-memory` delete for thread-scoped cleanup;
 - `/v1/suggestions` create/list/approve/reject/expire for review-gated memory;
 - `/v1/diagnostics/adapters`, `/outbox`, `/profile/{profile_id}` with production-safe metadata only;
@@ -104,6 +110,33 @@ Operational pieces:
 - import-boundary, API, worker, SDK and review-gated suggestion tests.
 
 ## Local Run
+
+One-command local install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/belief-ai/memo-stack/main/scripts/install.sh | bash
+```
+
+Safer inspectable install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/belief-ai/memo-stack/main/scripts/install.sh -o install.sh
+bash install.sh --no-start
+```
+
+After install:
+
+```bash
+export PATH="$HOME/.memo-stack/bin:$PATH"
+memo-stack up --lite
+memo-stack status
+memo-stack doctor
+memo-stack mcp-config --agent codex
+memo-stack digest "current architecture decisions" --space default --profile default
+```
+
+`memo-stack mcp-config` redacts the generated local service token by default. Use
+`--include-token` only when intentionally writing a private local config file.
 
 Install once:
 
@@ -171,6 +204,11 @@ Common local targets are available in `Makefile`, for example `make memo-stack-l
 `make memo-stack-server`, `make memo-stack-up-lite`, `make memo-stack-up-full`,
 `make memo-stack-clean-full-smoke`, `make memo-stack-auto-memory-eval`,
 `make memo-stack-auto-memory-quality` and `make memo-stack-mcp-smoke`.
+
+Memory Digest can be called through API, SDK, MCP or CLI. It is derived evidence,
+not canonical memory, and pending suggestions are clearly marked as non-canonical.
+For exact lookups or write/update/forget flows, agents should still call
+`memory_search` or `memory_get_fact`.
 
 GitHub Actions runs the same prompt-impacting gate on push and pull requests:
 `make PYTHON=python RUFF=ruff memo-stack-test-quality`. Keep quality changes green

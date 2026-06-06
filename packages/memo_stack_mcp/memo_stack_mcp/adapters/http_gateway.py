@@ -62,6 +62,40 @@ class HttpMemoryGateway:
             ),
         )
 
+    async def build_digest(
+        self,
+        *,
+        scope: MemoryReadScope,
+        topic: str,
+        token_budget: int,
+        max_facts: int,
+        max_chunks: int,
+        max_suggestions: int,
+        include_pending_suggestions: bool,
+        include_superseded: bool,
+        include_related: bool,
+    ) -> dict[str, Any]:
+        profile_payload = _read_scope_profile_payload(scope)
+        return await self._request(
+            "POST",
+            "/v1/digest",
+            json=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    **profile_payload,
+                    "thread_external_ref": scope.thread_external_ref,
+                    "topic": topic,
+                    "token_budget": token_budget,
+                    "max_facts": max_facts,
+                    "max_chunks": max_chunks,
+                    "max_suggestions": max_suggestions,
+                    "include_pending_suggestions": include_pending_suggestions,
+                    "include_superseded": include_superseded,
+                    "include_related": include_related,
+                }
+            ),
+        )
+
     async def remember_fact(
         self,
         *,

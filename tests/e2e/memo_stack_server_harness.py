@@ -19,6 +19,7 @@ PACKAGE_PATHS = [
     PROJECT_ROOT / "packages" / "memo_stack_adapters",
     PROJECT_ROOT / "packages" / "memo_stack_sdk",
     PROJECT_ROOT / "packages" / "memo_stack_mcp",
+    PROJECT_ROOT / "packages" / "memo_stack_cli",
 ]
 
 

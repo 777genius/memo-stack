@@ -25,6 +25,7 @@ def test_openapi_contains_stable_v1_fields() -> None:
     assert "/v1/documents" in paths
     assert "/v1/context" in paths
     assert "/v1/search" in paths
+    assert "/v1/digest" in paths
 
     schemas = body["components"]["schemas"]
     assert set(schemas["RememberFactRequest"]["required"]) == {"text", "source_refs"}
@@ -40,12 +41,15 @@ def test_openapi_contains_stable_v1_fields() -> None:
         "source_external_id",
     }
     assert set(schemas["ContextRequest"]["required"]) == {"query"}
+    assert set(schemas["DigestRequest"]["required"]) == {"topic"}
     assert "profile_external_refs" in schemas["ContextRequest"]["properties"]
+    assert "profile_external_refs" in schemas["DigestRequest"]["properties"]
     assert "consistency_mode" in schemas["ContextRequest"]["properties"]
     assert "classification" in schemas["RememberFactRequest"]["properties"]
     assert "classification" in schemas["IngestDocumentRequest"]["properties"]
     for schema_name in (
         "ContextRequest",
+        "DigestRequest",
         "IngestDocumentRequest",
         "IngestEpisodeRequest",
         "RememberFactRequest",
@@ -65,6 +69,10 @@ def test_v1_request_models_reject_unknown_fields() -> None:
         (
             "/v1/context",
             {"query": "hello", "unexpected": "raw"},
+        ),
+        (
+            "/v1/digest",
+            {"topic": "hello", "unexpected": "raw"},
         ),
         (
             "/v1/documents",

@@ -571,6 +571,56 @@ class MemoStackClient:
             ),
         )
 
+    def build_digest(
+        self,
+        *,
+        topic: str,
+        read_scope: ReadScope | None = None,
+        space_id: str | None = None,
+        profile_ids: list[str] | None = None,
+        thread_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        profile_external_refs: list[str] | None = None,
+        thread_external_ref: str | None = None,
+        token_budget: int = 2400,
+        max_facts: int = 20,
+        max_chunks: int = 20,
+        max_suggestions: int = 10,
+        include_pending_suggestions: bool = True,
+        include_superseded: bool = False,
+        include_related: bool = True,
+        format: str = "markdown",
+    ) -> dict[str, Any]:
+        scope_payload = read_scope.to_payload() if read_scope is not None else None
+        payload = scope_payload or _context_scope_payload(
+            space_id=space_id,
+            profile_ids=profile_ids,
+            thread_id=thread_id,
+            space_slug=space_slug,
+            profile_external_ref=profile_external_ref,
+            profile_external_refs=profile_external_refs,
+            thread_external_ref=thread_external_ref,
+        )
+        return self._request(
+            "POST",
+            "/v1/digest",
+            json=_without_none(
+                {
+                    **payload,
+                    "topic": topic,
+                    "token_budget": token_budget,
+                    "max_facts": max_facts,
+                    "max_chunks": max_chunks,
+                    "max_suggestions": max_suggestions,
+                    "include_pending_suggestions": include_pending_suggestions,
+                    "include_superseded": include_superseded,
+                    "include_related": include_related,
+                    "format": format,
+                }
+            ),
+        )
+
     def thread_memory_status(
         self,
         *,

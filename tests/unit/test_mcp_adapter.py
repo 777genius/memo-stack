@@ -55,6 +55,18 @@ class RecordingGateway:
         self.calls.append(("build_context", kwargs))
         return {"data": {"rendered_text": "stored context", "items": []}}
 
+    async def build_digest(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("build_digest", kwargs))
+        return {
+            "data": {
+                "digest_id": "dig_1",
+                "topic": kwargs["topic"],
+                "rendered_markdown": "# Memory Digest\nEvidence only: true",
+                "sections": [],
+                "diagnostics": {"evidence_only": True},
+            }
+        }
+
     async def remember_fact(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("remember_fact", kwargs))
         return {
@@ -420,6 +432,37 @@ def test_mcp_search_structured_output_preserves_backend_diagnostics() -> None:
             "vector_status": "ok",
             "vector_hydrated_count": 1,
         }
+
+    asyncio.run(run())
+
+
+def test_mcp_digest_structured_output_and_scope() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        server = create_mcp_server(
+            service=MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+        )
+
+        result = await server.call_tool(
+            "memory_digest",
+            {
+                "topic": "Graphiti decisions",
+                "profile_external_refs": ["engineering", "product"],
+                "include_related": False,
+            },
+        )
+
+        assert result.structuredContent["ok"] is True
+        assert result.structuredContent["data"]["digest_id"] == "dig_1"
+        assert result.structuredContent["data"]["diagnostics"] == {"evidence_only": True}
+        assert result.structuredContent["data"]["rendered_markdown_truncated"] is False
+        assert gateway.calls[0][0] == "build_digest"
+        assert gateway.calls[0][1]["topic"] == "Graphiti decisions"
+        assert gateway.calls[0][1]["include_related"] is False
+        assert gateway.calls[0][1]["scope"].profile_external_refs == (
+            "engineering",
+            "product",
+        )
 
     asyncio.run(run())
 
@@ -1879,6 +1922,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert tool_names == {
             "memory_status",
             "memory_search",
+            "memory_digest",
             "memory_remember_fact",
             "memory_list_facts",
             "memory_get_fact",

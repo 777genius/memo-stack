@@ -261,6 +261,41 @@ class BuildContextQuery:
 
 
 @dataclass(frozen=True)
+class BuildMemoryDigestQuery:
+    space_id: SpaceId
+    profile_ids: tuple[ProfileId, ...]
+    topic: str
+    thread_id: ThreadId | None = None
+    consistency_mode: ConsistencyMode = ConsistencyMode.BEST_EFFORT
+    token_budget: int = 2400
+    max_rendered_chars: int = 24000
+    max_facts: int = 20
+    max_chunks: int = 20
+    max_suggestions: int = 10
+    include_pending_suggestions: bool = True
+    include_superseded: bool = False
+    include_related: bool = True
+
+
+@dataclass(frozen=True)
+class MemoryDigestSection:
+    title: str
+    items: tuple[ContextItem, ...]
+    truncated: bool = False
+
+
+@dataclass(frozen=True)
+class MemoryDigest:
+    digest_id: str
+    topic: str
+    rendered_markdown: str
+    sections: tuple[MemoryDigestSection, ...]
+    source_refs: tuple[SourceRef, ...]
+    token_estimate: int
+    diagnostics: dict[str, object]
+
+
+@dataclass(frozen=True)
 class DeleteThreadMemoryCommand:
     space_id: SpaceId
     profile_id: ProfileId

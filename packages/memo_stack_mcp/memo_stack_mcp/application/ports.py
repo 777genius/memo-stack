@@ -22,6 +22,20 @@ class MemoryGatewayPort(Protocol):
         max_chunks: int,
     ) -> dict[str, Any]: ...
 
+    async def build_digest(
+        self,
+        *,
+        scope: MemoryReadScope,
+        topic: str,
+        token_budget: int,
+        max_facts: int,
+        max_chunks: int,
+        max_suggestions: int,
+        include_pending_suggestions: bool,
+        include_superseded: bool,
+        include_related: bool,
+    ) -> dict[str, Any]: ...
+
     async def remember_fact(
         self,
         *,

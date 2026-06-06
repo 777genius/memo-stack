@@ -64,6 +64,7 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         assert {
             "memory_status",
             "memory_search",
+            "memory_digest",
             "memory_remember_fact",
             "memory_update_fact",
             "memory_forget_fact",
@@ -245,6 +246,20 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         search_old = _structured(search_old_result)
         assert search_old["ok"] is True
         assert old_fact in _dump(search_old)
+
+        digest_old = await _call(
+            session,
+            "memory_digest",
+            {
+                "topic": marker,
+                "max_facts": 5,
+                "max_chunks": 0,
+                "include_related": False,
+            },
+        )
+        assert digest_old["ok"] is True
+        assert digest_old["data"]["diagnostics"]["evidence_only"] is True
+        assert old_fact in _dump(digest_old)
 
         concurrent_fact = await _call(
             session,

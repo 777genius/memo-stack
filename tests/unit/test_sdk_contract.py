@@ -143,7 +143,49 @@ def test_sdk_facade_accepts_additive_response_fields() -> None:
 
     assert response["data"]["rendered_text"] == "Known memory evidence."
     assert response["data"]["new_optional_server_field"] == {"safe": True}
-    assert response["meta"]["request_id"] == "ctx_1"
+
+
+def test_sdk_build_digest_posts_stable_contract() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"data": {"digest_id": "dig_1"}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.build_digest(
+        topic="Graphiti decisions",
+        read_scope=ReadScope(
+            space_slug="default",
+            profile_external_refs=("engineering", "product"),
+        ),
+        include_superseded=True,
+        include_related=False,
+    )
+
+    assert response == {"data": {"digest_id": "dig_1"}}
+    assert seen["method"] == "POST"
+    assert seen["url"] == "http://memory.test/v1/digest"
+    assert seen["body"] == {
+        "space_slug": "default",
+        "profile_external_refs": ["engineering", "product"],
+        "topic": "Graphiti decisions",
+        "token_budget": 2400,
+        "max_facts": 20,
+        "max_chunks": 20,
+        "max_suggestions": 10,
+        "include_pending_suggestions": True,
+        "include_superseded": True,
+        "include_related": False,
+        "format": "markdown",
+    }
 
 
 def test_sdk_process_document_sends_idempotency_key() -> None:

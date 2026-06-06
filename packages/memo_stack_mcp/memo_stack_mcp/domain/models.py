@@ -161,7 +161,10 @@ class MemoryStatusData(McpDataModel):
 
 
 class MemorySearchDiagnosticsData(McpDataModel):
+    evidence_only: bool | None = None
     consistency_mode: str | None = None
+    retrieval_disabled: bool | None = None
+    scope_not_found: bool | None = None
     facts_considered: int | None = None
     keyword_chunks_considered: int | None = None
     vector_status: str | None = None
@@ -177,6 +180,11 @@ class MemorySearchDiagnosticsData(McpDataModel):
     stale_vector_drop_count: int | None = None
     stale_graph_drop_count: int | None = None
     stale_rag_drop_count: int | None = None
+    context_items_used: int | None = None
+    pending_suggestions_considered: int | None = None
+    superseded_facts_considered: int | None = None
+    dropped_by_char_cap: int | None = None
+    truncated: bool | None = None
 
 
 class MemorySearchData(McpDataModel):
@@ -196,6 +204,34 @@ class MemorySearchData(McpDataModel):
     effective_max_facts: int | None = None
     requested_max_chunks: int | None = None
     effective_max_chunks: int | None = None
+
+
+class MemoryDigestSectionData(McpDataModel):
+    title: str | None = None
+    items: list[MemorySearchItemData] = Field(default_factory=list)
+    truncated: bool | None = None
+
+
+class MemoryDigestData(McpDataModel):
+    digest_id: str | None = None
+    topic: str | None = None
+    rendered_markdown: str | None = None
+    rendered_markdown_truncated: bool | None = None
+    rendered_markdown_original_chars: int | None = None
+    diagnostics: MemorySearchDiagnosticsData | None = None
+    sections: list[MemoryDigestSectionData] = Field(default_factory=list)
+    source_refs: list[MemorySourceRefData] = Field(default_factory=list)
+    token_estimate: int | None = None
+    requested_profile_external_refs: list[str] = Field(default_factory=list)
+    requested_token_budget: int | None = None
+    effective_token_budget: int | None = None
+    budget_clamped: bool | None = None
+    requested_max_facts: int | None = None
+    effective_max_facts: int | None = None
+    requested_max_chunks: int | None = None
+    effective_max_chunks: int | None = None
+    requested_max_suggestions: int | None = None
+    effective_max_suggestions: int | None = None
 
 
 class MemoryFactListData(McpDataModel):
@@ -267,6 +303,7 @@ class MemoryDocumentIngestData(MemoryFactMutationData):
 class MemoryToolData(
     MemoryStatusData,
     MemorySearchData,
+    MemoryDigestData,
     MemoryFactListData,
     MemoryFactMutationData,
     MemorySuggestionListData,
@@ -299,6 +336,10 @@ class MemoryStatusResponse(McpToolResponse):
 
 class MemorySearchResponse(McpToolResponse):
     data: MemorySearchData | None = None
+
+
+class MemoryDigestResponse(McpToolResponse):
+    data: MemoryDigestData | None = None
 
 
 class MemoryFactResponse(McpToolResponse):

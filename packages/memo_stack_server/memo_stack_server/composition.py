@@ -20,6 +20,7 @@ from memo_stack_adapters.postgres import (
 from memo_stack_core.application import (
     ApproveSuggestionUseCase,
     BuildContextUseCase,
+    BuildMemoryDigestUseCase,
     ConsolidateCaptureUseCase,
     CreateProfileUseCase,
     CreateSpaceUseCase,
@@ -116,6 +117,7 @@ class Container:
     process_document: ProcessDocumentUseCase
     delete_document: DeleteDocumentUseCase
     build_context: BuildContextUseCase
+    build_memory_digest: BuildMemoryDigestUseCase
     delete_thread_memory: DeleteThreadMemoryUseCase
     get_session_status: GetSessionStatusUseCase
     create_suggestion: CreateSuggestionUseCase
@@ -230,6 +232,11 @@ def build_container(settings: Settings | None = None) -> Container:
         rag_recall=cognee,
         packer=ContextPacker(),
     )
+    build_memory_digest = BuildMemoryDigestUseCase(
+        uow_factory=uow_factory,
+        ids=ids,
+        context_builder=build_context,
+    )
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
     get_session_status = GetSessionStatusUseCase(uow_factory=uow_factory)
     create_suggestion = CreateSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
@@ -302,6 +309,7 @@ def build_container(settings: Settings | None = None) -> Container:
         process_document=process_document,
         delete_document=delete_document,
         build_context=build_context,
+        build_memory_digest=build_memory_digest,
         delete_thread_memory=delete_thread_memory,
         get_session_status=get_session_status,
         create_suggestion=create_suggestion,

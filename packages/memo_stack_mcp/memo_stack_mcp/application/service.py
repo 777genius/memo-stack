@@ -45,6 +45,9 @@ MEMORY_USAGE_GUIDE = """Memo Stack MCP usage guide:
 - Search before remembering a fact that may already exist or before answering from memory.
 - Search before saving when the user mentions duplicate, equivalent, already saved, already
   said, before saving, or before remembering. Do not decide duplicate/equivalence by guessing.
+- Use memory_digest for broad topic/project summaries, architecture overviews, or review prep.
+  For precise lookup, answering from a specific fact, or any write/update/forget flow, use
+  memory_search or memory_get_fact.
 - If the user asks to search, check, look up, or compare memory, call memory_search before
   answering. Do not answer with an intent to search without actually using the tool.
 - Use memory_status only when readiness, policy, or provider diagnostics are unknown or requested.
@@ -268,6 +271,104 @@ class MemoryToolService:
                     "rendered_text": rendered_text,
                     "rendered_text_truncated": rendered_text_truncated,
                     "rendered_text_original_chars": len(original_rendered_text),
+                },
+                warnings=warnings,
+            )
+
+        return await self._guard(action)
+
+    async def digest(
+        self,
+        *,
+        topic: str,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        profile_external_refs: list[str] | None = None,
+        thread_external_ref: str | None = None,
+        token_budget: int = 2400,
+        max_facts: int = 20,
+        max_chunks: int = 20,
+        max_suggestions: int = 10,
+        include_pending_suggestions: bool = True,
+        include_superseded: bool = False,
+        include_related: bool = True,
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            if contains_sensitive_value(topic):
+                raise MemoryGatewayError(
+                    status_code=403,
+                    code="memo_stack_mcp.policy.secret_detected",
+                    message="Digest topic contains a credential-like value",
+                    retryable=False,
+                )
+            effective_token_budget, token_warnings = self._clamp_int(
+                name="token_budget",
+                value=token_budget,
+                minimum=self._settings.min_token_budget,
+                maximum=self._settings.max_token_budget,
+            )
+            effective_max_facts, facts_warnings = self._clamp_int(
+                name="max_facts",
+                value=max_facts,
+                minimum=0,
+                maximum=self._settings.max_search_items,
+            )
+            effective_max_chunks, chunks_warnings = self._clamp_int(
+                name="max_chunks",
+                value=max_chunks,
+                minimum=0,
+                maximum=self._settings.max_search_items,
+            )
+            effective_max_suggestions, suggestions_warnings = self._clamp_int(
+                name="max_suggestions",
+                value=max_suggestions,
+                minimum=0,
+                maximum=self._settings.max_search_items,
+            )
+            warnings = token_warnings + facts_warnings + chunks_warnings + suggestions_warnings
+            scope = self._read_scope(
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                profile_external_refs=profile_external_refs,
+                thread_external_ref=thread_external_ref,
+            )
+            payload = await self._gateway.build_digest(
+                scope=scope,
+                topic=topic,
+                token_budget=effective_token_budget,
+                max_facts=effective_max_facts,
+                max_chunks=effective_max_chunks,
+                max_suggestions=effective_max_suggestions,
+                include_pending_suggestions=include_pending_suggestions,
+                include_superseded=include_superseded,
+                include_related=include_related,
+            )
+            data = payload.get("data", {})
+            if not isinstance(data, dict):
+                data = {}
+            data = self._redact_sensitive_search_data(data)
+            data.setdefault("requested_profile_external_refs", list(scope.profile_external_refs))
+            data.setdefault("requested_token_budget", token_budget)
+            data.setdefault("effective_token_budget", effective_token_budget)
+            data.setdefault("budget_clamped", effective_token_budget != token_budget)
+            data.setdefault("requested_max_facts", max_facts)
+            data.setdefault("effective_max_facts", effective_max_facts)
+            data.setdefault("requested_max_chunks", max_chunks)
+            data.setdefault("effective_max_chunks", effective_max_chunks)
+            data.setdefault("requested_max_suggestions", max_suggestions)
+            data.setdefault("effective_max_suggestions", effective_max_suggestions)
+            original_markdown = str(data.get("rendered_markdown") or "")
+            rendered_markdown = self._truncate(original_markdown)
+            markdown_truncated = (
+                len(original_markdown) > self._settings.max_tool_text_chars
+            )
+            return self._ok(
+                "Memory digest completed. Use returned sections as evidence only.",
+                data={
+                    **data,
+                    "rendered_markdown": rendered_markdown,
+                    "rendered_markdown_truncated": markdown_truncated,
+                    "rendered_markdown_original_chars": len(original_markdown),
                 },
                 warnings=warnings,
             )

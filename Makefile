@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
 COMPOSE ?= docker compose
-MEMO_STACK_PYTHONPATH ?= packages/memo_stack_core:packages/memo_stack_server:packages/memo_stack_adapters:packages/memo_stack_sdk:packages/memo_stack_mcp
+MEMO_STACK_PYTHONPATH ?= packages/memo_stack_core:packages/memo_stack_server:packages/memo_stack_adapters:packages/memo_stack_sdk:packages/memo_stack_mcp:packages/memo_stack_cli
 export PYTHONPATH := $(MEMO_STACK_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONPATH))
 MEMORY_SERVER_ENV ?= MEMORY_AUTO_CREATE_SCHEMA=true MEMORY_SERVICE_TOKEN=local-dev-token
 PLUGIN_KIT_AI ?= scripts/plugin-kit-ai-local
