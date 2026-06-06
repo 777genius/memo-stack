@@ -55,6 +55,7 @@ memo-stack-scale-chaos-load-e2e:
 memo-stack-eval:
 	$(PYTHON) -m memo_stack_server eval run --suite small-golden
 	$(PYTHON) -m memo_stack_server eval run --suite quality-golden
+	$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden
 	$(PYTHON) -m memo_stack_server eval run --suite auto-memory-golden
 	$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden
 	$(PYTHON) -m memo_stack_server eval snapshots --suite prompt-contract

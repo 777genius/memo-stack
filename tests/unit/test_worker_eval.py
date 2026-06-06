@@ -31,6 +31,7 @@ from memo_stack_server.eval import (
     _execute_small_golden,
     run_auto_memory_golden,
     run_graph_native_golden,
+    run_long_memory_golden,
     run_quality_golden,
     run_small_golden,
 )
@@ -971,6 +972,49 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["failures"] == []
     assert "QUALITY_FACT_MODEL_CURRENT" not in report_text
     assert "QUALITY_RESTRICTED_SECRET" not in report_text
+    assert "Ignore previous instructions" not in report_text
+
+
+def test_long_memory_golden_eval_passes() -> None:
+    result = run_long_memory_golden()
+
+    assert result["ok"] is True
+    assert result["status"] == "ok"
+    assert result["suite"] == "long-memory-golden"
+    assert result["checks"]["memory_evidence_guard"] is True
+    assert result["metrics"]["long_memory_case_count"] >= 16
+    assert result["metrics"]["recall_at_5"] >= 0.95
+    assert result["metrics"]["precision_at_5"] >= 0.90
+    assert result["metrics"]["multi_session_recall_at_5"] == 1.0
+    assert result["metrics"]["temporal_update_accuracy"] == 1.0
+    assert result["metrics"]["preference_synthesis_recall"] == 1.0
+    assert result["metrics"]["long_document_recall_at_5"] >= 0.95
+    assert result["metrics"]["thread_recall_at_5"] == 1.0
+    assert result["metrics"]["multi_profile_recall_at_5"] == 1.0
+    assert result["metrics"]["stale_memory_rate"] == 0.0
+    assert result["metrics"]["long_safety_leak_count"] == 0
+    assert result["metrics"]["critical_failure_count"] == 0
+    assert result["metrics"]["harmful_context_rate"] == 0.0
+    assert result["failures"] == []
+    assert "LONGMEM_RESTRICTED_SECRET" not in str(result)
+    assert "LONGMEM_BETA_PRIVATE" not in str(result)
+    assert "Ignore previous instructions" not in str(result)
+
+
+def test_long_memory_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
+    report = tmp_path / "long-memory-golden-report.json"
+    result = run_long_memory_golden(report_out=report)
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert payload["suite"] == "long-memory-golden"
+    assert payload["metrics"]["long_safety_leak_count"] == 0
+    assert payload["metrics"]["temporal_update_accuracy"] == 1.0
+    assert payload["metrics"]["multi_session_recall_at_5"] == 1.0
+    assert payload["failures"] == []
+    assert "LONGMEM_PROVIDER_CURRENT" not in report_text
+    assert "LONGMEM_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
 
 
