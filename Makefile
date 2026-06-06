@@ -64,6 +64,11 @@ memo-stack-eval:
 memo-stack-quality-scorecard:
 	$(PYTHON) -m memo_stack_server eval scorecard
 
+.PHONY: memo-stack-quality-scorecard-from-reports
+memo-stack-quality-scorecard-from-reports:
+	@test -n "$${MEMORY_SCORECARD_SUITE_REPORTS:-}" || (echo "Set MEMORY_SCORECARD_SUITE_REPORTS to one or more eval report paths."; exit 1)
+	$(PYTHON) -m memo_stack_server eval scorecard $$(printf ' --suite-report %s' $${MEMORY_SCORECARD_SUITE_REPORTS})
+
 .PHONY: memo-stack-test-quality
 memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
 

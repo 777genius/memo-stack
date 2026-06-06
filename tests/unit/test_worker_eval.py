@@ -81,6 +81,7 @@ def auth_headers() -> dict[str, str]:
 def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
     return {
         "small-golden": {
+            "suite": "small-golden",
             "ok": True,
             "status": "ok",
             "metrics": {
@@ -95,6 +96,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "failures": [],
         },
         "quality-golden": {
+            "suite": "quality-golden",
             "ok": True,
             "status": "ok",
             "metrics": {
@@ -117,6 +119,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "failures": [],
         },
         "long-memory-golden": {
+            "suite": "long-memory-golden",
             "ok": True,
             "status": "ok",
             "metrics": {
@@ -143,6 +146,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "failures": [],
         },
         "auto-memory-golden": {
+            "suite": "auto-memory-golden",
             "ok": True,
             "status": "ok",
             "metrics": {
@@ -167,6 +171,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "failures": [],
         },
         "graph-native-golden": {
+            "suite": "graph-native-golden",
             "ok": True,
             "status": "ok",
             "metrics": {
@@ -181,6 +186,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "failures": [],
         },
         "prompt-contract": {
+            "suite": "prompt-contract",
             "ok": True,
             "status": "ok",
             "checks": {
@@ -1257,6 +1263,36 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert payload["ok"] is True
     assert "QUALITY_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
+
+
+def test_memory_quality_scorecard_loads_existing_suite_reports(tmp_path: Path) -> None:
+    suite_report_paths = []
+    for suite, payload in _scorecard_fixture_results().items():
+        path = tmp_path / f"{suite}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        suite_report_paths.append(path)
+
+    result = run_memory_quality_scorecard(suite_report_paths=tuple(suite_report_paths))
+
+    assert result["ok"] is True
+    assert result["score"]["maturity_score_10"] == 10.0
+    assert result["suites"]["auto-memory-golden"]["case_count"] == 13
+    assert result["suites"]["prompt-contract"]["ok"] is True
+
+
+def test_memory_quality_scorecard_rejects_duplicate_suite_reports(tmp_path: Path) -> None:
+    first = tmp_path / "small-one.json"
+    second = tmp_path / "small-two.json"
+    payload = _scorecard_fixture_results()["small-golden"]
+    first.write_text(json.dumps(payload), encoding="utf-8")
+    second.write_text(json.dumps(payload), encoding="utf-8")
+
+    try:
+        run_memory_quality_scorecard(suite_report_paths=(first, second))
+    except ValueError as exc:
+        assert "Duplicate scorecard suite report" in str(exc)
+    else:
+        raise AssertionError("Expected duplicate suite report to fail")
 
 
 def test_memory_quality_scorecard_fails_on_graph_safety_regression() -> None:

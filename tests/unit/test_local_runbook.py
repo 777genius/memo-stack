@@ -51,9 +51,17 @@ def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
 
 def test_makefile_has_memory_quality_scorecard_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    eval_runner = (
+        ROOT / "packages" / "memo_stack_server" / "memo_stack_server" / "eval.py"
+    ).read_text(encoding="utf-8")
 
     assert ".PHONY: memo-stack-quality-scorecard" in makefile
     assert "$(PYTHON) -m memo_stack_server eval scorecard" in makefile
+    assert ".PHONY: memo-stack-quality-scorecard-from-reports" in makefile
+    assert "MEMORY_SCORECARD_SUITE_REPORTS" in makefile
+    assert "--suite-report" in makefile
+    assert 'scorecard.add_argument(\n        "--suite-report"' in eval_runner
+    assert 'snapshots.add_argument("--report-out"' in eval_runner
 
 
 def test_makefile_has_clean_full_mcp_smoke_target() -> None:

@@ -287,6 +287,7 @@ def run_memory_quality_scorecard(
     *,
     report_out: Path | None = None,
     suite_results: Mapping[str, dict[str, object]] | None = None,
+    suite_report_paths: Sequence[Path] | None = None,
 ) -> dict[str, object]:
     """Aggregate deterministic memory eval suites into one capability scorecard.
 
@@ -296,10 +297,14 @@ def run_memory_quality_scorecard(
     checks over the public HTTP/MCP-facing behavior.
     """
 
-    results = (
-        dict(suite_results)
-        if suite_results is not None
-        else {
+    if suite_results is not None and suite_report_paths:
+        raise ValueError("suite_results and suite_report_paths are mutually exclusive")
+    if suite_results is not None:
+        results = dict(suite_results)
+    elif suite_report_paths:
+        results = _load_scorecard_suite_reports(suite_report_paths)
+    else:
+        results = {
             SMALL_GOLDEN_SUITE: run_small_golden(),
             QUALITY_GOLDEN_SUITE: run_quality_golden(),
             LONG_MEMORY_GOLDEN_SUITE: run_long_memory_golden(),
@@ -307,10 +312,29 @@ def run_memory_quality_scorecard(
             GRAPH_NATIVE_GOLDEN_SUITE: run_graph_native_golden(),
             PROMPT_CONTRACT_SUITE: run_prompt_snapshots(),
         }
-    )
     result = build_memory_quality_scorecard(results)
     _write_redacted_report(result, report_out)
     return result
+
+
+def _load_scorecard_suite_reports(paths: Sequence[Path]) -> dict[str, dict[str, object]]:
+    reports: dict[str, dict[str, object]] = {}
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ValueError(f"Unable to read scorecard suite report: {path}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid scorecard suite report JSON: {path}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"Scorecard suite report must be a JSON object: {path}")
+        suite = payload.get("suite")
+        if not isinstance(suite, str) or not suite:
+            raise ValueError(f"Scorecard suite report is missing suite name: {path}")
+        if suite in reports:
+            raise ValueError(f"Duplicate scorecard suite report for suite: {suite}")
+        reports[suite] = payload
+    return reports
 
 
 def build_memory_quality_scorecard(
@@ -4990,6 +5014,7 @@ def run_prompt_snapshots(
     suite: str = PROMPT_CONTRACT_SUITE,
     update: bool = False,
     snapshot_dir: Path | None = None,
+    report_out: Path | None = None,
 ) -> dict[str, object]:
     if suite != PROMPT_CONTRACT_SUITE:
         raise ValueError(f"Unsupported snapshot suite: {suite}")
@@ -5004,20 +5029,22 @@ def run_prompt_snapshots(
         "matches_snapshot": False,
     }
     if safety_errors:
-        return {
+        result = {
             "suite": suite,
             "ok": False,
             "snapshot_path": str(path),
             "checks": checks,
             "errors": safety_errors,
         }
+        _write_redacted_report(result, report_out)
+        return result
 
     if update:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(actual_text, encoding="utf-8")
         checks["snapshot_exists"] = True
         checks["matches_snapshot"] = True
-        return {
+        result = {
             "suite": suite,
             "ok": True,
             "updated": True,
@@ -5025,15 +5052,19 @@ def run_prompt_snapshots(
             "cases": sorted(actual["cases"]),
             "checks": checks,
         }
+        _write_redacted_report(result, report_out)
+        return result
 
     if not path.exists():
-        return {
+        result = {
             "suite": suite,
             "ok": False,
             "snapshot_path": str(path),
             "checks": checks,
             "errors": ["snapshot_missing"],
         }
+        _write_redacted_report(result, report_out)
+        return result
 
     expected_text = path.read_text(encoding="utf-8")
     matches = expected_text == actual_text
@@ -5047,6 +5078,7 @@ def run_prompt_snapshots(
     }
     if not matches:
         result["changed_cases"] = _changed_snapshot_cases(expected_text, actual)
+    _write_redacted_report(result, report_out)
     return result
 
 
@@ -5088,8 +5120,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     snapshots.add_argument("--suite", default=PROMPT_CONTRACT_SUITE)
     snapshots.add_argument("--update", action="store_true")
     snapshots.add_argument("--snapshot-dir", type=Path, default=None)
+    snapshots.add_argument("--report-out", type=Path, default=None)
     scorecard = sub.add_parser("scorecard")
     scorecard.add_argument("--report-out", type=Path, default=None)
+    scorecard.add_argument(
+        "--suite-report",
+        action="append",
+        type=Path,
+        default=None,
+        help="Existing redacted eval JSON report to include in the scorecard.",
+    )
     args = parser.parse_args(argv)
     if args.command == "run":
         if args.suite == SMALL_GOLDEN_SUITE:
@@ -5136,11 +5176,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                 suite=args.suite,
                 update=args.update,
                 snapshot_dir=args.snapshot_dir,
+                report_out=args.report_out,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
     elif args.command == "scorecard":
-        result = run_memory_quality_scorecard(report_out=args.report_out)
+        try:
+            result = run_memory_quality_scorecard(
+                report_out=args.report_out,
+                suite_report_paths=args.suite_report,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     else:
         raise SystemExit("Unsupported eval command")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

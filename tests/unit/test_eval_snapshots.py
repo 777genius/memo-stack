@@ -17,6 +17,17 @@ def test_prompt_snapshot_update_then_check_passes(tmp_path: Path) -> None:
     assert checked["checks"]["matches_snapshot"] is True
 
 
+def test_prompt_snapshot_writes_redacted_report(tmp_path: Path) -> None:
+    report = tmp_path / "prompt-contract-report.json"
+    result = run_prompt_snapshots(update=True, snapshot_dir=tmp_path, report_out=report)
+    report_payload = json.loads(report.read_text(encoding="utf-8"))
+
+    assert result["ok"] is True
+    assert report_payload["suite"] == "prompt-contract"
+    assert report_payload["checks"]["matches_snapshot"] is True
+    assert "PRIVATE_" not in report.read_text(encoding="utf-8")
+
+
 def test_prompt_snapshot_check_fails_when_baseline_is_missing(tmp_path: Path) -> None:
     result = run_prompt_snapshots(snapshot_dir=tmp_path)
 
