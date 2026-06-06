@@ -33,6 +33,7 @@ MemoryKind = Literal["note", "architecture_decision", "constraint", "user_prefer
 MemoryClassification = Literal["public", "internal", "restricted", "unknown"]
 FactStatus = Literal["active", "superseded", "disputed", "deleted"]
 SuggestionStatus = Literal["pending", "approved", "rejected", "expired"]
+SuggestionOperation = Literal["add", "update", "delete", "review"]
 CaptureStatus = Literal["accepted", "rejected", "redacted", "purged"]
 CaptureConsolidationStatus = Literal[
     "not_required",
@@ -618,6 +619,18 @@ def create_mcp_server(
             SuggestionStatus | None,
             Field(default="pending", description="pending, approved, rejected, expired, or null."),
         ] = "pending",
+        operation: Annotated[
+            SuggestionOperation | None,
+            Field(default=None, description="Optional queue filter: add, update, delete, review."),
+        ] = None,
+        category: Annotated[
+            str | None,
+            Field(default=None, max_length=80, description="Optional normalized category filter."),
+        ] = None,
+        tag: Annotated[
+            str | None,
+            Field(default=None, max_length=48, description="Optional normalized tag filter."),
+        ] = None,
         limit: Annotated[int, Field(default=50, ge=1, le=500)] = 50,
     ) -> Annotated[CallToolResult, MemorySuggestionListResponse]:
         return _tool_response(
@@ -626,6 +639,9 @@ def create_mcp_server(
                 profile_external_ref=profile_external_ref,
                 thread_external_ref=thread_external_ref,
                 status=status,
+                operation=operation,
+                category=category,
+                tag=tag,
                 limit=limit,
             ),
             MemorySuggestionListResponse,

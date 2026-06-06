@@ -178,6 +178,54 @@ def test_rejected_suggestion_never_appears_in_context(tmp_path: Path) -> None:
     assert "Rejected memory marker" not in context.json()["data"]["rendered_text"]
 
 
+def test_list_suggestions_filters_review_queue_by_operation_category_and_tag(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        update = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="Update queue filter marker.",
+                operation="review",
+                category="review",
+                tags=["Queue", "Needs-Human"],
+            ),
+            headers=auth_headers(),
+        )
+        add = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="Add queue filter marker.",
+                operation="add",
+                category="architecture",
+                tags=["queue"],
+            ),
+            headers=auth_headers(),
+        )
+        filtered = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "status": "pending",
+                "operation": "review",
+                "category": "review",
+                "tag": "needs-human",
+            },
+            headers=auth_headers(),
+        )
+
+    assert update.status_code == 201
+    assert add.status_code == 201
+    assert filtered.status_code == 200
+    data = filtered.json()["data"]
+    assert len(data) == 1
+    assert data[0]["candidate_text"] == "Update queue filter marker."
+    assert data[0]["operation"] == "review"
+    assert data[0]["category"] == "review"
+    assert data[0]["tags"] == ["queue", "needs-human"]
+
+
 def test_assistant_suggestion_cannot_auto_promote(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         created = client.post(

@@ -21,6 +21,7 @@
           "ttl_policy",
           "target_fact_id",
           "target_fact_version",
+          "target_hint",
           "valid_from",
           "valid_until",
           "expires_at"
@@ -50,6 +51,7 @@
           },
           "target_fact_id": {"type": ["string", "null"], "maxLength": 80},
           "target_fact_version": {"type": ["integer", "null"], "minimum": 1},
+          "target_hint": {"type": ["string", "null"], "maxLength": 240},
           "valid_from": {"type": ["string", "null"], "format": "date-time"},
           "valid_until": {"type": ["string", "null"], "format": "date-time"},
           "expires_at": {"type": ["string", "null"], "format": "date-time"}

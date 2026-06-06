@@ -913,6 +913,7 @@ def test_openai_json_memory_extractor_maps_structured_response() -> None:
                         "ttl_policy": "durable",
                         "target_fact_id": None,
                         "target_fact_version": None,
+                        "target_hint": None,
                         "valid_from": None,
                         "valid_until": None,
                         "expires_at": None,
@@ -946,6 +947,7 @@ def test_openai_json_memory_extractor_maps_structured_response() -> None:
         assert candidates[0].category == "architecture"
         assert candidates[0].tags == ("graphiti", "temporal")
         assert candidates[0].ttl_policy == "durable"
+        assert candidates[0].target_hint is None
         assert candidates[0].source_refs[0].source_id == "cap_test"
 
     asyncio.run(run())
@@ -968,6 +970,7 @@ def test_openai_json_memory_extractor_rejects_unknown_output_fields() -> None:
                         "ttl_policy": None,
                         "target_fact_id": None,
                         "target_fact_version": None,
+                        "target_hint": None,
                         "valid_from": None,
                         "valid_until": None,
                         "expires_at": None,

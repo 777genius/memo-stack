@@ -173,6 +173,9 @@ class HttpMemoryGateway:
         *,
         scope: MemoryScope,
         status: str | None,
+        operation: str | None,
+        category: str | None,
+        tag: str | None,
         limit: int,
     ) -> dict[str, Any]:
         return await self._request(
@@ -183,6 +186,9 @@ class HttpMemoryGateway:
                     "space_slug": scope.space_slug,
                     "profile_external_ref": scope.profile_external_ref,
                     "status": status,
+                    "operation": operation,
+                    "category": category,
+                    "tag": tag,
                     "limit": limit,
                 }
             ),

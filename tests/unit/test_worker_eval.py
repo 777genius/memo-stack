@@ -981,7 +981,7 @@ def test_auto_memory_golden_eval_passes() -> None:
     assert result["status"] == "ok"
     assert result["suite"] == "auto-memory-golden"
     assert result["checks"]["case_count"] is True
-    assert result["metrics"]["case_count"] >= 9
+    assert result["metrics"]["case_count"] >= 13
     assert result["metrics"]["suggestion_expected_recall_rate"] == 1.0
     assert result["metrics"]["wrong_auto_apply_count"] == 0
     assert result["metrics"]["active_fact_before_review_count"] == 0
@@ -991,6 +991,8 @@ def test_auto_memory_golden_eval_passes() -> None:
     assert result["metrics"]["replay_duplicate_suggestion_count"] == 0
     assert result["metrics"]["assistant_low_trust_violation_count"] == 0
     assert result["metrics"]["candidate_limit_violation_count"] == 0
+    assert result["metrics"]["target_resolution_violation_count"] == 0
+    assert result["metrics"]["review_operation_violation_count"] == 0
     assert result["failures"] == []
     assert "AUTO_MEMORY_EVAL_TOKEN" not in str(result)
     assert "ignore previous instructions" not in str(result).lower()
@@ -1008,6 +1010,8 @@ def test_auto_memory_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["metrics"]["secret_leakage_count"] == 0
     assert payload["metrics"]["assistant_low_trust_violation_count"] == 0
     assert payload["metrics"]["candidate_limit_violation_count"] == 0
+    assert payload["metrics"]["target_resolution_violation_count"] == 0
+    assert payload["metrics"]["review_operation_violation_count"] == 0
     assert payload["failures"] == []
     assert "AUTO_MEMORY_EVAL_TOKEN" not in report_text
     assert "AUTO_MEMORY_EVAL_SECRET_REDACTION" not in report_text

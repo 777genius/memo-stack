@@ -325,6 +325,9 @@ class ListSuggestionsQuery:
     space_id: SpaceId
     profile_id: ProfileId
     status: str | None = None
+    operation: str | None = None
+    category: str | None = None
+    tag: str | None = None
     limit: int = 100
 
 

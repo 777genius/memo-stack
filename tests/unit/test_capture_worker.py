@@ -531,6 +531,156 @@ def test_resolver_coalesces_conflicting_update_delete_candidates(tmp_path: Path)
     assert diff_preview["after"].startswith("TARGET_FACT_MARKER new")
 
 
+def test_resolver_finds_update_target_from_hint(tmp_path: Path) -> None:
+    app = _capture_app(tmp_path, "resolver-target-hint.db", capture_mode=CaptureMode.SUGGEST)
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        fact_response = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "capture-target-hint",
+                "profile_external_ref": "default",
+                "text": "TARGET_HINT_MARKER provider is REST.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "target-hint-fact"}],
+            },
+            headers=headers,
+        )
+        fact = fact_response.json()["data"]
+        created = _create_capture(
+            client,
+            headers=headers,
+            space_slug="capture-target-hint",
+            marker="TARGET_HINT_MARKER provider is GraphQL",
+        )
+        extractor = StaticExtractor(
+            (
+                _candidate(
+                    "TARGET_HINT_MARKER provider is GraphQL.",
+                    operation=CandidateOperation.UPDATE,
+                    target_hint="provider is REST",
+                    quote="TARGET_HINT_MARKER provider is GraphQL",
+                ),
+            )
+        )
+        result = _consolidate_with_extractor(
+            client,
+            capture_id=created.json()["data"]["id"],
+            extractor=extractor,
+            auto_apply_safe_enabled=False,
+        )
+        suggestions = _list_suggestions(client, headers=headers, space_slug="capture-target-hint")
+
+    assert result.created_suggestions == 1
+    suggestion = suggestions.json()["data"][0]
+    assert suggestion["operation"] == "update"
+    assert suggestion["target_fact_id"] == fact["id"]
+    assert suggestion["target_fact_version"] == fact["version"]
+    assert suggestion["review_payload"]["target_hint"] == "provider is REST"
+    assert suggestion["review_payload"]["target_resolution"]["status"] == "resolved"
+    assert suggestion["review_payload"]["diff_preview"]["before"].startswith("TARGET_HINT_MARKER")
+
+
+def test_resolver_finds_delete_target_from_hint(tmp_path: Path) -> None:
+    app = _capture_app(tmp_path, "resolver-delete-hint.db", capture_mode=CaptureMode.SUGGEST)
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        fact_response = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "capture-delete-hint",
+                "profile_external_ref": "default",
+                "text": "DELETE_HINT_MARKER legacy Angular frontend.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "delete-hint-fact"}],
+            },
+            headers=headers,
+        )
+        fact = fact_response.json()["data"]
+        created = _create_capture(
+            client,
+            headers=headers,
+            space_slug="capture-delete-hint",
+            marker="DELETE_HINT_MARKER legacy Angular frontend",
+        )
+        extractor = StaticExtractor(
+            (
+                _candidate(
+                    "legacy Angular frontend",
+                    operation=CandidateOperation.DELETE,
+                    target_hint="legacy Angular frontend",
+                    quote="DELETE_HINT_MARKER legacy Angular frontend",
+                ),
+            )
+        )
+        result = _consolidate_with_extractor(
+            client,
+            capture_id=created.json()["data"]["id"],
+            extractor=extractor,
+            auto_apply_safe_enabled=False,
+        )
+        suggestions = _list_suggestions(client, headers=headers, space_slug="capture-delete-hint")
+
+    assert result.created_suggestions == 1
+    suggestion = suggestions.json()["data"][0]
+    assert suggestion["operation"] == "delete"
+    assert suggestion["target_fact_id"] == fact["id"]
+    assert suggestion["target_fact_version"] == fact["version"]
+    assert suggestion["review_payload"]["target_resolution"]["status"] == "resolved"
+
+
+def test_resolver_rejects_ambiguous_target_hint(tmp_path: Path) -> None:
+    app = _capture_app(tmp_path, "resolver-ambiguous-hint.db", capture_mode=CaptureMode.SUGGEST)
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        for index in (1, 2):
+            response = client.post(
+                "/v1/facts",
+                json={
+                    "space_slug": "capture-ambiguous-hint",
+                    "profile_external_ref": "default",
+                    "text": f"AMBIGUOUS_HINT_MARKER provider option {index}.",
+                    "kind": "note",
+                    "source_refs": [
+                        {"source_type": "manual", "source_id": f"ambiguous-hint-{index}"}
+                    ],
+                },
+                headers=headers,
+            )
+            assert response.status_code == 201
+        created = _create_capture(
+            client,
+            headers=headers,
+            space_slug="capture-ambiguous-hint",
+            marker="AMBIGUOUS_HINT_MARKER provider changed",
+        )
+        extractor = StaticExtractor(
+            (
+                _candidate(
+                    "AMBIGUOUS_HINT_MARKER provider changed.",
+                    operation=CandidateOperation.UPDATE,
+                    target_hint="AMBIGUOUS_HINT_MARKER provider",
+                    quote="AMBIGUOUS_HINT_MARKER provider changed",
+                ),
+            )
+        )
+        result = _consolidate_with_extractor(
+            client,
+            capture_id=created.json()["data"]["id"],
+            extractor=extractor,
+            auto_apply_safe_enabled=False,
+        )
+        suggestions = _list_suggestions(
+            client,
+            headers=headers,
+            space_slug="capture-ambiguous-hint",
+        )
+
+    assert result.created_suggestions == 0
+    assert result.capture.consolidation_status.value == "consolidated"
+    assert suggestions.json()["data"] == []
+
+
 def test_auto_apply_safe_applies_only_strict_explicit_add(tmp_path: Path) -> None:
     app = _capture_app(tmp_path, "auto-apply.db", capture_mode=CaptureMode.AUTO_APPLY_SAFE)
     headers = {"Authorization": "Bearer test-token"}
@@ -768,6 +918,7 @@ def _candidate(
     operation: CandidateOperation = CandidateOperation.ADD,
     target_fact_id: str | None = None,
     target_fact_version: int | None = None,
+    target_hint: str | None = None,
     quote: str | None = None,
     confidence: Confidence = Confidence.MEDIUM,
     ttl_policy: str = "review",
@@ -787,6 +938,7 @@ def _candidate(
         operation_hint=operation,
         target_fact_id=target_fact_id,
         target_fact_version=target_fact_version,
+        target_hint=target_hint,
         tags=("test",),
         ttl_policy=ttl_policy,
     )

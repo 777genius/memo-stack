@@ -87,6 +87,7 @@ _MEMORY_KINDS = {"note", "architecture_decision", "constraint", "user_preference
 _CLASSIFICATIONS = {"public", "internal", "restricted", "unknown"}
 _FACT_STATUSES = {"active", "superseded", "disputed", "deleted"}
 _SUGGESTION_STATUSES = {"pending", "approved", "rejected", "expired"}
+_SUGGESTION_OPERATIONS = {"add", "update", "delete", "review"}
 _CAPTURE_STATUSES = {"accepted", "rejected", "redacted", "purged"}
 _CAPTURE_CONSOLIDATION_STATUSES = {
     "not_required",
@@ -654,14 +655,22 @@ class MemoryToolService:
         profile_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = "pending",
+        operation: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             if status is not None:
                 self._ensure_choice("status", status, _SUGGESTION_STATUSES)
+            if operation is not None:
+                self._ensure_choice("operation", operation, _SUGGESTION_OPERATIONS)
             payload = await self._gateway.list_suggestions(
                 scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
                 status=status,
+                operation=operation,
+                category=_normalize_optional_label(category),
+                tag=_normalize_optional_label(tag),
                 limit=limit,
             )
             return self._ok("Suggestions listed.", data=payload.get("data", payload))
@@ -924,7 +933,14 @@ class MemoryToolService:
     async def resource_scope_summary(self, *, space_slug: str, profile_external_ref: str) -> str:
         scope = self._resource_scope(space_slug, profile_external_ref)
         facts = await self._gateway.list_facts(scope=scope, status="active", limit=10, cursor=None)
-        suggestions = await self._gateway.list_suggestions(scope=scope, status="pending", limit=10)
+        suggestions = await self._gateway.list_suggestions(
+            scope=scope,
+            status="pending",
+            operation=None,
+            category=None,
+            tag=None,
+            limit=10,
+        )
         active_facts, facts_truncated = self._bounded_resource_value(self._payload_items(facts))
         pending_suggestions, suggestions_truncated = self._bounded_resource_value(
             self._payload_items(suggestions)
@@ -968,7 +984,14 @@ class MemoryToolService:
         profile_external_ref: str,
     ) -> str:
         scope = self._resource_scope(space_slug, profile_external_ref)
-        payload = await self._gateway.list_suggestions(scope=scope, status="pending", limit=50)
+        payload = await self._gateway.list_suggestions(
+            scope=scope,
+            status="pending",
+            operation=None,
+            category=None,
+            tag=None,
+            limit=50,
+        )
         suggestions, truncated = self._bounded_resource_value(self._payload_items(payload))
         return self._resource_json(
             {
@@ -1383,7 +1406,14 @@ class MemoryToolService:
                 return ("duplicate", item_id)
             if possible_conflict is None and self._looks_conflicting_fact(text, item_text):
                 possible_conflict = item_id
-        suggestions = await self._gateway.list_suggestions(scope=scope, status="pending", limit=50)
+        suggestions = await self._gateway.list_suggestions(
+            scope=scope,
+            status="pending",
+            operation=None,
+            category=None,
+            tag=None,
+            limit=50,
+        )
         for item in self._payload_items(suggestions):
             candidate_text = str(item.get("candidate_text") or item.get("text") or "")
             if self._normalize_candidate(candidate_text) == normalized:
@@ -1907,3 +1937,10 @@ class MemoryToolService:
     @staticmethod
     def _trace_id() -> str:
         return f"mcp_{uuid.uuid4().hex[:16]}"
+
+
+def _normalize_optional_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    return normalized or None

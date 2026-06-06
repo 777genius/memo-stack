@@ -332,6 +332,10 @@ def _execute_auto_memory_golden(client, headers: dict[str, str]) -> dict[str, ob
             _auto_memory_secret_redaction_case,
             _auto_memory_assistant_inference_case,
             _auto_memory_candidate_limit_case,
+            _auto_memory_update_target_hint_case,
+            _auto_memory_delete_target_hint_case,
+            _auto_memory_ambiguous_target_hint_case,
+            _auto_memory_review_operation_case,
             _auto_memory_replay_case,
             _auto_memory_duplicate_after_approval_case,
         )
@@ -340,7 +344,7 @@ def _execute_auto_memory_golden(client, headers: dict[str, str]) -> dict[str, ob
     gates = _auto_memory_gates(metrics)
     checks = {
         "fixture_seeded": all(scope_checks.values()),
-        "case_count": len(case_results) >= 9,
+        "case_count": len(case_results) >= 13,
         "no_request_failures": metrics["request_failure_count"] == 0,
         "auto_memory_report_redacted": True,
     }
@@ -551,6 +555,8 @@ class AutoMemoryCaseResult:
     temporary_durable_promotion_count: int
     assistant_low_trust_violation_count: int
     candidate_limit_violation_count: int
+    target_resolution_violation_count: int
+    review_operation_violation_count: int
     failures: tuple[dict[str, object], ...] = ()
 
 
@@ -1448,6 +1454,274 @@ def _auto_memory_candidate_limit_case(
     )
 
 
+def _auto_memory_update_target_hint_case(
+    client,
+    headers: dict[str, str],
+    space_id: str,
+    profile_id: str,
+) -> AutoMemoryCaseResult:
+    old_marker = "AUTO_MEMORY_EVAL_TARGET_HINT_OLD"
+    new_marker = "AUTO_MEMORY_EVAL_TARGET_HINT_NEW"
+    fact_response = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        text=f"{old_marker} provider is REST.",
+        source_id="auto-memory-eval-target-hint-fact",
+        idempotency_key="auto-memory-eval-target-hint-fact",
+    )
+    fact = fact_response.json().get("data", {}) if _status_ok(fact_response.status_code) else {}
+    created = _create_auto_memory_capture(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        source_event_id="auto-memory-eval-update-target-hint",
+        text=f"Update memory: {old_marker} provider is REST -> {new_marker} provider is GraphQL.",
+    )
+    consolidated = _consolidate_auto_memory_capture(client, headers, created)
+    suggestions = _auto_memory_suggestions_for_marker(
+        client,
+        headers,
+        space_id,
+        profile_id,
+        new_marker,
+    )
+    context_text = _auto_memory_context_text(client, headers, space_id, profile_id, new_marker)
+    suggestion = suggestions[0] if suggestions else {}
+    review_payload = suggestion.get("review_payload") if isinstance(suggestion, dict) else {}
+    if not isinstance(review_payload, dict):
+        review_payload = {}
+    target_resolution = review_payload.get("target_resolution")
+    if not isinstance(target_resolution, dict):
+        target_resolution = {}
+    request_ok = (
+        _status_ok(fact_response.status_code)
+        and _status_ok(created.status_code)
+        and _status_ok(consolidated.status_code)
+    )
+    target_ok = (
+        len(suggestions) == 1
+        and suggestion.get("operation") == "update"
+        and suggestion.get("target_fact_id") == fact.get("id")
+        and suggestion.get("target_fact_version") == fact.get("version")
+        and target_resolution.get("status") == "resolved"
+        and review_payload.get("target_hint") == f"{old_marker} provider is REST"
+    )
+    active_before_review = int(new_marker in context_text)
+    return _auto_memory_result(
+        case_id="update_target_hint_resolves_to_review_suggestion",
+        category="target_resolution",
+        request_ok=request_ok,
+        expected_suggestion=True,
+        suggestion_ok=target_ok,
+        wrong_auto_apply_count=_json_path_int(consolidated, "data", "auto_applied_facts"),
+        active_fact_before_review_count=active_before_review,
+        target_resolution_violation_count=int(not target_ok),
+        failures=_auto_memory_failures(
+            case_id="update_target_hint_resolves_to_review_suggestion",
+            category="target_resolution",
+            checks={
+                "request_ok": request_ok,
+                "single_update_suggestion": len(suggestions) == 1
+                and suggestion.get("operation") == "update",
+                "target_resolved": target_resolution.get("status") == "resolved",
+                "target_fact_matches_seed": suggestion.get("target_fact_id") == fact.get("id"),
+                "not_active_before_review": active_before_review == 0,
+                "not_auto_applied": _json_path_int(consolidated, "data", "auto_applied_facts") == 0,
+            },
+        ),
+    )
+
+
+def _auto_memory_delete_target_hint_case(
+    client,
+    headers: dict[str, str],
+    space_id: str,
+    profile_id: str,
+) -> AutoMemoryCaseResult:
+    marker = "AUTO_MEMORY_EVAL_DELETE_TARGET_HINT"
+    fact_response = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        text=f"{marker} legacy Angular frontend.",
+        source_id="auto-memory-eval-delete-target-hint-fact",
+        idempotency_key="auto-memory-eval-delete-target-hint-fact",
+    )
+    fact = fact_response.json().get("data", {}) if _status_ok(fact_response.status_code) else {}
+    created = _create_auto_memory_capture(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        source_event_id="auto-memory-eval-delete-target-hint",
+        text=f"Forget: {marker} legacy Angular frontend.",
+    )
+    consolidated = _consolidate_auto_memory_capture(client, headers, created)
+    suggestions = _auto_memory_suggestions_for_marker(client, headers, space_id, profile_id, marker)
+    suggestion = suggestions[0] if suggestions else {}
+    review_payload = suggestion.get("review_payload") if isinstance(suggestion, dict) else {}
+    if not isinstance(review_payload, dict):
+        review_payload = {}
+    target_resolution = review_payload.get("target_resolution")
+    if not isinstance(target_resolution, dict):
+        target_resolution = {}
+    request_ok = (
+        _status_ok(fact_response.status_code)
+        and _status_ok(created.status_code)
+        and _status_ok(consolidated.status_code)
+    )
+    target_ok = (
+        len(suggestions) == 1
+        and suggestion.get("operation") == "delete"
+        and suggestion.get("ttl_policy") == "delete_review"
+        and suggestion.get("target_fact_id") == fact.get("id")
+        and suggestion.get("target_fact_version") == fact.get("version")
+        and target_resolution.get("status") == "resolved"
+    )
+    return _auto_memory_result(
+        case_id="delete_target_hint_resolves_to_review_suggestion",
+        category="target_resolution",
+        request_ok=request_ok,
+        expected_suggestion=True,
+        suggestion_ok=target_ok,
+        wrong_auto_apply_count=_json_path_int(consolidated, "data", "auto_applied_facts"),
+        target_resolution_violation_count=int(not target_ok),
+        failures=_auto_memory_failures(
+            case_id="delete_target_hint_resolves_to_review_suggestion",
+            category="target_resolution",
+            checks={
+                "request_ok": request_ok,
+                "single_delete_suggestion": len(suggestions) == 1
+                and suggestion.get("operation") == "delete",
+                "ttl_delete_review": suggestion.get("ttl_policy") == "delete_review",
+                "target_resolved": target_resolution.get("status") == "resolved",
+                "target_fact_matches_seed": suggestion.get("target_fact_id") == fact.get("id"),
+                "not_auto_applied": _json_path_int(consolidated, "data", "auto_applied_facts") == 0,
+            },
+        ),
+    )
+
+
+def _auto_memory_ambiguous_target_hint_case(
+    client,
+    headers: dict[str, str],
+    space_id: str,
+    profile_id: str,
+) -> AutoMemoryCaseResult:
+    marker = "AUTO_MEMORY_EVAL_AMBIGUOUS_TARGET_HINT"
+    first = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        text=f"{marker} provider option one.",
+        source_id="auto-memory-eval-ambiguous-target-one",
+        idempotency_key="auto-memory-eval-ambiguous-target-one",
+    )
+    second = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        text=f"{marker} provider option two.",
+        source_id="auto-memory-eval-ambiguous-target-two",
+        idempotency_key="auto-memory-eval-ambiguous-target-two",
+    )
+    created = _create_auto_memory_capture(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        source_event_id="auto-memory-eval-ambiguous-target-hint",
+        text=f"Update memory: {marker} provider -> {marker} provider is consolidated.",
+    )
+    consolidated = _consolidate_auto_memory_capture(client, headers, created)
+    suggestions = _auto_memory_suggestions_for_marker(client, headers, space_id, profile_id, marker)
+    request_ok = (
+        _status_ok(first.status_code)
+        and _status_ok(second.status_code)
+        and _status_ok(created.status_code)
+        and _status_ok(consolidated.status_code)
+    )
+    safe_reject = len(suggestions) == 0 and _json_path_int(
+        consolidated,
+        "data",
+        "created_suggestions",
+    ) == 0
+    return _auto_memory_result(
+        case_id="ambiguous_target_hint_is_not_promoted",
+        category="target_resolution",
+        request_ok=request_ok,
+        expected_suggestion=False,
+        suggestion_ok=safe_reject,
+        unexpected_suggestion_count=len(suggestions),
+        wrong_auto_apply_count=_json_path_int(consolidated, "data", "auto_applied_facts"),
+        target_resolution_violation_count=int(not safe_reject),
+        failures=_auto_memory_failures(
+            case_id="ambiguous_target_hint_is_not_promoted",
+            category="target_resolution",
+            checks={
+                "request_ok": request_ok,
+                "no_suggestion": len(suggestions) == 0,
+                "created_zero": _json_path_int(consolidated, "data", "created_suggestions") == 0,
+                "not_auto_applied": _json_path_int(consolidated, "data", "auto_applied_facts") == 0,
+            },
+        ),
+    )
+
+
+def _auto_memory_review_operation_case(
+    client,
+    headers: dict[str, str],
+    space_id: str,
+    profile_id: str,
+) -> AutoMemoryCaseResult:
+    marker = "AUTO_MEMORY_EVAL_REVIEW_OPERATION"
+    created = _create_auto_memory_capture(
+        client,
+        headers,
+        space_id=space_id,
+        profile_id=profile_id,
+        source_event_id="auto-memory-eval-review-operation",
+        text=f"Review memory: {marker} maybe deployment moved to Fly.io.",
+    )
+    consolidated = _consolidate_auto_memory_capture(client, headers, created)
+    suggestions = _auto_memory_suggestions_for_marker(client, headers, space_id, profile_id, marker)
+    suggestion = suggestions[0] if suggestions else {}
+    request_ok = _status_ok(created.status_code) and _status_ok(consolidated.status_code)
+    review_ok = (
+        len(suggestions) == 1
+        and suggestion.get("operation") == "review"
+        and suggestion.get("confidence") == "low"
+        and suggestion.get("ttl_policy") == "review"
+    )
+    return _auto_memory_result(
+        case_id="explicit_review_operation_stays_review_only",
+        category="review_operation",
+        request_ok=request_ok,
+        expected_suggestion=True,
+        suggestion_ok=review_ok,
+        wrong_auto_apply_count=_json_path_int(consolidated, "data", "auto_applied_facts"),
+        review_operation_violation_count=int(not review_ok),
+        failures=_auto_memory_failures(
+            case_id="explicit_review_operation_stays_review_only",
+            category="review_operation",
+            checks={
+                "request_ok": request_ok,
+                "single_review_suggestion": len(suggestions) == 1
+                and suggestion.get("operation") == "review",
+                "low_confidence": suggestion.get("confidence") == "low",
+                "ttl_review": suggestion.get("ttl_policy") == "review",
+                "not_auto_applied": _json_path_int(consolidated, "data", "auto_applied_facts") == 0,
+            },
+        ),
+    )
+
+
 def _auto_memory_replay_case(
     client,
     headers: dict[str, str],
@@ -1701,6 +1975,8 @@ def _auto_memory_result(
     temporary_durable_promotion_count: int = 0,
     assistant_low_trust_violation_count: int = 0,
     candidate_limit_violation_count: int = 0,
+    target_resolution_violation_count: int = 0,
+    review_operation_violation_count: int = 0,
     failures: tuple[dict[str, object], ...] = (),
 ) -> AutoMemoryCaseResult:
     return AutoMemoryCaseResult(
@@ -1719,6 +1995,8 @@ def _auto_memory_result(
         temporary_durable_promotion_count=temporary_durable_promotion_count,
         assistant_low_trust_violation_count=assistant_low_trust_violation_count,
         candidate_limit_violation_count=candidate_limit_violation_count,
+        target_resolution_violation_count=target_resolution_violation_count,
+        review_operation_violation_count=review_operation_violation_count,
         failures=failures,
     )
 
@@ -1778,6 +2056,12 @@ def _auto_memory_metrics(case_results: tuple[AutoMemoryCaseResult, ...]) -> dict
         "candidate_limit_violation_count": sum(
             result.candidate_limit_violation_count for result in case_results
         ),
+        "target_resolution_violation_count": sum(
+            result.target_resolution_violation_count for result in case_results
+        ),
+        "review_operation_violation_count": sum(
+            result.review_operation_violation_count for result in case_results
+        ),
     }
 
 
@@ -1797,6 +2081,8 @@ def _auto_memory_gates(metrics: dict[str, object]) -> dict[str, bool]:
             metrics["assistant_low_trust_violation_count"] == 0
         ),
         "candidate_limit_violation_count": metrics["candidate_limit_violation_count"] == 0,
+        "target_resolution_violation_count": metrics["target_resolution_violation_count"] == 0,
+        "review_operation_violation_count": metrics["review_operation_violation_count"] == 0,
     }
 
 

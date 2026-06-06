@@ -87,6 +87,9 @@ class ListSuggestionsUseCase:
                 space_id=str(query.space_id),
                 profile_id=str(query.profile_id),
                 status=query.status,
+                operation=query.operation,
+                category=query.category,
+                tag=query.tag,
                 limit=query.limit,
             )
 

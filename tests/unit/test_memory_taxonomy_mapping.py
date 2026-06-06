@@ -3,7 +3,11 @@ import asyncio
 from memo_stack_core.application.auto_memory import RuleBasedMemoryClassifier
 from memo_stack_core.domain.entities import Confidence, MemoryKind, TrustLevel
 from memo_stack_core.domain.taxonomy import DefaultTaxonomyPolicy
-from memo_stack_core.ports.auto_memory import MemoryCandidate, SourceProvenance
+from memo_stack_core.ports.auto_memory import (
+    CandidateOperation,
+    MemoryCandidate,
+    SourceProvenance,
+)
 
 
 def test_taxonomy_maps_kind_to_default_category_and_durable_ttl() -> None:
@@ -65,3 +69,33 @@ def test_rule_based_classifier_marks_current_task_as_temporary() -> None:
     assert candidates[0].category == "current_task"
     assert candidates[0].ttl_policy == "task"
     assert candidates[0].safe_reason == "explicit_current_task_marker"
+
+
+def test_rule_based_classifier_extracts_update_delete_and_review_operations() -> None:
+    classifier = RuleBasedMemoryClassifier()
+
+    candidates = asyncio.run(
+        classifier.classify(
+            text=(
+                "Update memory: old provider is REST -> new provider is GraphQL.\n"
+                "Forget: legacy Angular frontend.\n"
+                "Review memory: maybe the deployment moved to Fly.io."
+            ),
+            source=SourceProvenance(
+                source_type="capture:hook",
+                source_id="cap_ops",
+                trust_level=TrustLevel.MEDIUM,
+            ),
+        )
+    )
+
+    assert [candidate.operation_hint for candidate in candidates] == [
+        CandidateOperation.UPDATE,
+        CandidateOperation.DELETE,
+        CandidateOperation.REVIEW,
+    ]
+    assert candidates[0].target_hint == "old provider is REST"
+    assert candidates[0].text == "new provider is GraphQL."
+    assert candidates[1].target_hint == "legacy Angular frontend."
+    assert candidates[1].ttl_policy == "delete_review"
+    assert candidates[2].confidence == Confidence.LOW

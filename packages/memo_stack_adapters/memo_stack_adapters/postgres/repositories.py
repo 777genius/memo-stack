@@ -1195,6 +1195,9 @@ class PostgresSuggestionRepository(SuggestionRepositoryPort):
         space_id: str,
         profile_id: str,
         status: str | None,
+        operation: str | None,
+        category: str | None,
+        tag: str | None,
         limit: int,
     ) -> list[MemorySuggestion]:
         conditions = [
@@ -1203,15 +1206,22 @@ class PostgresSuggestionRepository(SuggestionRepositoryPort):
         ]
         if status:
             conditions.append(MemorySuggestionRow.status == status)
+        if operation:
+            conditions.append(MemorySuggestionRow.operation == operation)
+        if category:
+            conditions.append(MemorySuggestionRow.category == category)
         rows = (
             await self._session.execute(
                 select(MemorySuggestionRow)
                 .where(*conditions)
                 .order_by(MemorySuggestionRow.updated_at.desc())
-                .limit(limit)
+                .limit(_retrieval_candidate_limit(limit) if tag else limit)
             )
         ).scalars()
-        return [suggestion_row_to_domain(row) for row in rows]
+        suggestions = [suggestion_row_to_domain(row) for row in rows]
+        if tag:
+            suggestions = [suggestion for suggestion in suggestions if tag in suggestion.tags]
+        return suggestions[:limit]
 
     async def find_pending_duplicate(
         self,

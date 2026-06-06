@@ -171,9 +171,15 @@ async def list_suggestions(
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
     profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = None,
+    operation: Annotated[str | None, Query(max_length=40)] = None,
+    category: Annotated[str | None, Query(max_length=80)] = None,
+    tag: Annotated[str | None, Query(max_length=48)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, Any]:
     _validate_suggestion_status(status_filter)
+    if operation is not None:
+        _validate_operation(operation)
+    normalized_tag = _normalize_single_tag(tag)
     scope = await resolve_existing_single_scope(
         container,
         space_id=space_id,
@@ -191,6 +197,9 @@ async def list_suggestions(
             space_id=scope.space_id,
             profile_id=scope.profile_id,
             status=status_filter,
+            operation=operation,
+            category=category.strip().lower() if category else None,
+            tag=normalized_tag,
             limit=limit,
         )
     )
@@ -268,11 +277,20 @@ def _validate_operation(value: str) -> None:
 def _normalize_tags(tags: list[str]) -> list[str]:
     normalized: list[str] = []
     for tag in tags:
-        stripped = tag.strip().lower()
+        stripped = _normalize_single_tag(tag)
         if not stripped:
             continue
-        if len(stripped) > 48:
-            raise MemoryValidationError("Suggestion tag is too long")
         if stripped not in normalized:
             normalized.append(stripped)
     return normalized
+
+
+def _normalize_single_tag(tag: str | None) -> str | None:
+    if tag is None:
+        return None
+    stripped = tag.strip().lower()
+    if not stripped:
+        return None
+    if len(stripped) > 48:
+        raise MemoryValidationError("Suggestion tag is too long")
+    return stripped

@@ -632,6 +632,11 @@ class MemoStackClient:
         confidence: str = "medium",
         target_fact_id: str | None = None,
         target_fact_version: int | None = None,
+        operation: str = "add",
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
+        review_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -650,6 +655,11 @@ class MemoStackClient:
                     "confidence": confidence,
                     "target_fact_id": target_fact_id,
                     "target_fact_version": target_fact_version,
+                    "operation": operation,
+                    "category": category,
+                    "tags": tags or [],
+                    "ttl_policy": ttl_policy,
+                    "review_payload": review_payload,
                 }
             ),
         )
@@ -662,6 +672,9 @@ class MemoStackClient:
         space_slug: str | None = None,
         profile_external_ref: str | None = None,
         status: str | None = None,
+        operation: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
         params = _without_none(
@@ -670,6 +683,9 @@ class MemoStackClient:
                 "profile_id": profile_id,
                 "space_slug": space_slug,
                 "profile_external_ref": profile_external_ref,
+                "operation": operation,
+                "category": category,
+                "tag": tag,
                 "limit": limit,
             }
         )

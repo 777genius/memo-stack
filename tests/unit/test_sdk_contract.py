@@ -343,11 +343,19 @@ def test_sdk_suggestions_support_external_scope() -> None:
         kind="note",
         safe_reason="sdk_test",
         source_refs=[{"source_type": "manual", "source_id": "sdk-suggestion"}],
+        operation="review",
+        category="review",
+        tags=["queue"],
+        ttl_policy="review",
+        review_payload={"target_resolution": {"status": "not_required"}},
     )
     client.list_suggestions(
         space_slug="client-app",
         profile_external_ref="default",
         status="pending",
+        operation="review",
+        category="review",
+        tag="queue",
         limit=25,
     )
 
@@ -355,10 +363,15 @@ def test_sdk_suggestions_support_external_scope() -> None:
     assert seen[0][1] == "http://memory.test/v1/suggestions"
     assert seen[0][2]["space_slug"] == "client-app"
     assert seen[0][2]["profile_external_ref"] == "default"
+    assert seen[0][2]["operation"] == "review"
+    assert seen[0][2]["category"] == "review"
+    assert seen[0][2]["tags"] == ["queue"]
+    assert seen[0][2]["ttl_policy"] == "review"
+    assert seen[0][2]["review_payload"] == {"target_resolution": {"status": "not_required"}}
     assert "space_id" not in seen[0][2]
     assert (
         seen[1][1]
-        == "http://memory.test/v1/suggestions?space_slug=client-app&profile_external_ref=default&limit=25&status=pending"
+        == "http://memory.test/v1/suggestions?space_slug=client-app&profile_external_ref=default&operation=review&category=review&tag=queue&limit=25&status=pending"
     )
 
 

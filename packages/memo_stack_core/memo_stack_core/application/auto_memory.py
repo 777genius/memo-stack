@@ -12,6 +12,7 @@ from memo_stack_core.domain.entities import (
     TrustLevel,
 )
 from memo_stack_core.ports.auto_memory import (
+    CandidateOperation,
     MemoryCandidate,
     MemoryClassifierPort,
     SourceProvenance,
@@ -77,6 +78,25 @@ _PROMPT_INJECTION_PATTERNS = (
     re.compile(r"\bраскр(?:ой|ыть)\s+системн", re.I),
     re.compile(r"\bигнорируй\s+(?:все\s+)?(?:предыдущие|прошлые)\s+инструкц", re.I),
 )
+_UPDATE_PREFIXES = (
+    "update memory",
+    "update fact",
+    "обнови память",
+    "актуализируй память",
+)
+_DELETE_PREFIXES = (
+    "forget",
+    "delete memory",
+    "remove memory",
+    "забудь",
+    "удали память",
+)
+_REVIEW_PREFIXES = (
+    "review memory",
+    "memory review",
+    "проверь память",
+)
+_UPDATE_SPLITTER = re.compile(r"\s*(?:=>|->|→|\bshould now be\b|\bтеперь\b)\s*", re.I)
 
 
 @dataclass(frozen=True)
@@ -160,6 +180,9 @@ def _candidate_from_line(
     line: str,
     source: SourceProvenance,
 ) -> MemoryCandidate | None:
+    operation_candidate = _operation_candidate_from_line(line=line, source=source)
+    if operation_candidate is not None:
+        return operation_candidate
     for pattern, kind, reason, category, ttl_policy in _PREFIXES:
         match = pattern.match(line)
         if not match:
@@ -183,6 +206,125 @@ def _candidate_from_line(
             category=category,
             ttl_policy=ttl_policy,
         )
+    return None
+
+
+def _operation_candidate_from_line(
+    *,
+    line: str,
+    source: SourceProvenance,
+) -> MemoryCandidate | None:
+    prefixed = _prefixed_payload(line, _UPDATE_PREFIXES)
+    if prefixed is not None:
+        parts = _UPDATE_SPLITTER.split(prefixed, maxsplit=1)
+        if len(parts) != 2:
+            return _review_candidate(
+                text=prefixed,
+                source=source,
+                line=line,
+                reason="explicit_update_needs_review",
+            )
+        target_hint = _clean_candidate_text(parts[0])
+        updated_text = _clean_candidate_text(parts[1])
+        if not target_hint or not updated_text:
+            return None
+        return _memory_candidate(
+            text=updated_text,
+            source=source,
+            line=line,
+            safe_reason="explicit_update_marker",
+            operation=CandidateOperation.UPDATE,
+            target_hint=target_hint,
+            category="review",
+            ttl_policy="review",
+        )
+
+    prefixed = _prefixed_payload(line, _DELETE_PREFIXES)
+    if prefixed is not None:
+        target_hint = _clean_candidate_text(prefixed)
+        if not target_hint:
+            return None
+        return _memory_candidate(
+            text=target_hint,
+            source=source,
+            line=line,
+            safe_reason="explicit_delete_marker",
+            operation=CandidateOperation.DELETE,
+            target_hint=target_hint,
+            category="delete_review",
+            ttl_policy="delete_review",
+        )
+
+    prefixed = _prefixed_payload(line, _REVIEW_PREFIXES)
+    if prefixed is not None:
+        return _review_candidate(
+            text=prefixed,
+            source=source,
+            line=line,
+            reason="explicit_review_marker",
+        )
+    return None
+
+
+def _review_candidate(
+    *,
+    text: str,
+    source: SourceProvenance,
+    line: str,
+    reason: str,
+) -> MemoryCandidate | None:
+    cleaned = _clean_candidate_text(text)
+    if not cleaned:
+        return None
+    return _memory_candidate(
+        text=cleaned,
+        source=source,
+        line=line,
+        safe_reason=reason,
+        operation=CandidateOperation.REVIEW,
+        category="review",
+        ttl_policy="review",
+        confidence=Confidence.LOW,
+    )
+
+
+def _memory_candidate(
+    *,
+    text: str,
+    source: SourceProvenance,
+    line: str,
+    safe_reason: str,
+    operation: CandidateOperation,
+    category: str | None,
+    ttl_policy: str | None,
+    confidence: Confidence = Confidence.MEDIUM,
+    target_hint: str | None = None,
+) -> MemoryCandidate:
+    return MemoryCandidate(
+        text=text,
+        kind=MemoryKind.NOTE,
+        confidence=confidence,
+        source_refs=(
+            SourceRef(
+                source_type=source.source_type,
+                source_id=source.source_id,
+                chunk_id=source.chunk_id,
+                quote_preview=line[:240],
+            ),
+        ),
+        safe_reason=safe_reason,
+        operation_hint=operation,
+        category=category,
+        ttl_policy=ttl_policy,
+        target_hint=target_hint,
+    )
+
+
+def _prefixed_payload(line: str, prefixes: tuple[str, ...]) -> str | None:
+    for prefix in prefixes:
+        match = re.match(rf"^\s*{re.escape(prefix)}\s*[:：-]\s*(.+)$", line, re.I)
+        if match:
+            return match.group(1)
     return None
 
 

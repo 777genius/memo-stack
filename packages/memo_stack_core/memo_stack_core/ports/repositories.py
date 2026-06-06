@@ -231,6 +231,9 @@ class SuggestionRepositoryPort(Protocol):
         space_id: str,
         profile_id: str,
         status: str | None,
+        operation: str | None,
+        category: str | None,
+        tag: str | None,
         limit: int,
     ) -> list[MemorySuggestion]:
         """List safe suggestion rows for review."""

@@ -75,6 +75,9 @@ class MemoryGatewayPort(Protocol):
         *,
         scope: MemoryScope,
         status: str | None,
+        operation: str | None,
+        category: str | None,
+        tag: str | None,
         limit: int,
     ) -> dict[str, Any]: ...
 

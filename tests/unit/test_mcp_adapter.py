@@ -837,6 +837,43 @@ def test_service_suggest_fact_creates_pending_review_candidate() -> None:
     asyncio.run(run())
 
 
+def test_service_list_suggestions_forwards_review_queue_filters() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(
+                default_space_slug="project-a",
+                default_profile_external_ref="backend",
+            ),
+        )
+
+        result = await service.list_suggestions(
+            status="pending",
+            operation="review",
+            category="Review",
+            tag="Needs-Human",
+            limit=25,
+        )
+
+        assert result["ok"] is True
+        assert gateway.calls == [
+            (
+                "list_suggestions",
+                {
+                    "scope": MemoryScope("project-a", "backend", None),
+                    "status": "pending",
+                    "operation": "review",
+                    "category": "review",
+                    "tag": "needs-human",
+                    "limit": 25,
+                },
+            )
+        ]
+
+    asyncio.run(run())
+
+
 def test_service_propose_updates_creates_suggestion_in_suggest_mode() -> None:
     async def run() -> None:
         gateway = RecordingGateway()
@@ -1871,6 +1908,15 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert "explicitly confirmed" in user_confirmed_description
         assert "uncertain claims" in user_confirmed_description
         assert "review-needed" in user_confirmed_description
+        list_suggestions = next(tool for tool in tools if tool.name == "memory_list_suggestions")
+        assert set(list_suggestions.inputSchema["properties"]["operation"]["anyOf"][0]["enum"]) == {
+            "add",
+            "update",
+            "delete",
+            "review",
+        }
+        assert "category" in list_suggestions.inputSchema["properties"]
+        assert "tag" in list_suggestions.inputSchema["properties"]
         remember = next(tool for tool in tools if tool.name == "memory_remember_fact")
         kind_schema = remember.inputSchema["properties"]["kind"]
         assert set(kind_schema["enum"]) == {

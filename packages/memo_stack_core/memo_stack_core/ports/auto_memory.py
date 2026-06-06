@@ -41,6 +41,7 @@ class MemoryCandidate:
     ttl_policy: str | None = None
     target_fact_id: str | None = None
     target_fact_version: int | None = None
+    target_hint: str | None = None
     valid_from: datetime | None = None
     valid_until: datetime | None = None
     expires_at: datetime | None = None

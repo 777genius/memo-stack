@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from hashlib import sha256
 
@@ -145,6 +146,16 @@ class ConsolidateCaptureUseCase:
             for candidate in validation.candidates:
                 if candidate.operation_hint == CandidateOperation.NOOP:
                     resolver_rejected_codes.append("noop_candidate")
+                    continue
+                candidate, target_resolution, resolution_rejection = (
+                    await _resolve_candidate_target(
+                        uow,
+                        capture=current,
+                        candidate=candidate,
+                    )
+                )
+                if resolution_rejection is not None:
+                    resolver_rejected_codes.append(resolution_rejection)
                     continue
                 target_fact = None
                 if candidate.operation_hint in {
@@ -296,6 +307,8 @@ class ConsolidateCaptureUseCase:
                         "source_authority": current.source_authority.value,
                         "target_fact_id": candidate.target_fact_id,
                         "target_fact_version": candidate.target_fact_version,
+                        "target_hint": candidate.target_hint,
+                        "target_resolution": target_resolution,
                         "diff_preview": _diff_preview(target_fact, candidate.text),
                         "valid_from": candidate.valid_from.isoformat()
                         if candidate.valid_from
@@ -390,6 +403,73 @@ class ConsolidateCaptureUseCase:
         return CaptureResult(capture=saved)
 
 
+async def _resolve_candidate_target(
+    uow,
+    *,
+    capture,
+    candidate,
+) -> tuple[object, dict[str, object], str | None]:
+    if candidate.operation_hint not in {CandidateOperation.UPDATE, CandidateOperation.DELETE}:
+        return candidate, {"status": "not_required"}, None
+    if candidate.target_fact_id:
+        return (
+            candidate,
+            {
+                "status": "provided",
+                "target_fact_id": candidate.target_fact_id,
+                "target_fact_version": candidate.target_fact_version,
+            },
+            None,
+        )
+
+    target_hint = _normalize_target_hint(candidate.target_hint or candidate.text)
+    if not target_hint:
+        return candidate, {"status": "missing_target_hint"}, "target_fact_or_hint_required"
+
+    candidates = await uow.facts.find_active(
+        space_id=str(capture.space_id),
+        profile_ids=(str(capture.profile_id),),
+        thread_id=str(capture.thread_id) if capture.thread_id else None,
+        query=target_hint,
+        limit=5,
+    )
+    ranked = _rank_target_matches(candidates, target_hint)
+    if not ranked:
+        return (
+            candidate,
+            {"status": "not_found", "target_hint": _target_hint_preview(target_hint)},
+            "target_fact_not_found",
+        )
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+        return (
+            candidate,
+            {
+                "status": "ambiguous",
+                "target_hint": _target_hint_preview(target_hint),
+                "candidate_count": len(ranked),
+            },
+            "target_fact_ambiguous",
+        )
+
+    score, fact = ranked[0]
+    resolved = replace(
+        candidate,
+        target_fact_id=str(fact.id),
+        target_fact_version=fact.version,
+    )
+    return (
+        resolved,
+        {
+            "status": "resolved",
+            "target_hint": _target_hint_preview(target_hint),
+            "target_fact_id": str(fact.id),
+            "target_fact_version": fact.version,
+            "score": score,
+        },
+        None,
+    )
+
+
 def _suggestion_operation(operation: CandidateOperation) -> SuggestionOperation:
     if operation == CandidateOperation.DELETE:
         return SuggestionOperation.DELETE
@@ -453,6 +533,36 @@ async def _find_exact_active_duplicate(
 
 def _normalize_fact_text(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _normalize_target_hint(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
+def _target_hint_preview(value: str) -> str:
+    return value[:160]
+
+
+def _rank_target_matches(candidates, target_hint: str):
+    ranked = [
+        (score, fact)
+        for fact in candidates
+        if (score := _target_match_score(fact.text, target_hint)) > 0
+    ]
+    ranked.sort(key=lambda item: (item[0], str(item[1].updated_at), str(item[1].id)), reverse=True)
+    return ranked
+
+
+def _target_match_score(fact_text: str, target_hint: str) -> int:
+    normalized_fact = _normalize_fact_text(fact_text)
+    normalized_hint = _normalize_fact_text(target_hint)
+    terms = {term for term in normalized_hint.split() if len(term) >= 3}
+    if not terms:
+        return 0
+    score = len(terms.intersection(normalized_fact.split()))
+    if normalized_hint in normalized_fact:
+        score += len(terms) + 1
+    return score
 
 
 def _diff_preview(target_fact, candidate_text: str) -> dict[str, str] | None:

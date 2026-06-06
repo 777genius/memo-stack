@@ -97,9 +97,13 @@ def _candidate_rejection_code(
     if len(candidate.text) > MAX_EXTRACTOR_CANDIDATE_CHARS:
         return "candidate_text_too_large"
     if operation in {CandidateOperation.UPDATE, CandidateOperation.DELETE}:
-        if not candidate.target_fact_id:
-            return "target_fact_required"
-        if operation == CandidateOperation.UPDATE and candidate.target_fact_version is None:
+        if not candidate.target_fact_id and not candidate.target_hint:
+            return "target_fact_or_hint_required"
+        if (
+            operation == CandidateOperation.UPDATE
+            and candidate.target_fact_id
+            and candidate.target_fact_version is None
+        ):
             return "target_version_required"
     for source_ref in candidate.source_refs:
         quote = source_ref.quote_preview
