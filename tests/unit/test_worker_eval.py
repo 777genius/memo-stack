@@ -259,6 +259,26 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
     }
 
 
+def _public_benchmark_report() -> dict[str, Any]:
+    return {
+        "suite": "public-memory-benchmark",
+        "ok": True,
+        "benchmarks": [
+            {
+                "name": "locomo",
+                "ok": True,
+                "metrics": {"accuracy": 0.916, "case_count": 600},
+            },
+            {
+                "name": "longmemeval",
+                "ok": True,
+                "metrics": {"accuracy": 0.902, "case_count": 500},
+            },
+        ],
+        "metrics": {"benchmark_count": 2},
+    }
+
+
 def test_eval_cli_uses_env_token_not_cli_auth_token() -> None:
     source = (
         Path(__file__).parents[2]
@@ -1324,6 +1344,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["external_evidence"]["evidence_gaps"] == [
         "full_provider_canary_missing",
         "agent_behavior_benchmark_missing",
+        "public_benchmark_evidence_missing",
     ]
     assert result["metrics"]["safety_leak_count"] == 0
     assert result["failures"] == []
@@ -1357,12 +1378,56 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     assert result["ok"] is True
     evidence = result["external_evidence"]
     assert evidence["confidence_tier"] == "full_provider_and_agent_evaluated"
-    assert evidence["top_library_comparison_ready"] is True
-    assert evidence["evidence_gaps"] == []
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["evidence_gaps"] == ["public_benchmark_evidence_missing"]
     assert evidence["full_provider_canary"]["ok"] is True
     assert evidence["full_provider_canary"]["adapters"]["graphiti"] == "ok"
     assert evidence["agent_behavior_benchmark"]["ok"] is True
     assert evidence["agent_behavior_benchmark"]["metrics"]["tool_choice_accuracy"] == 1.0
+    assert evidence["public_benchmark"]["present"] is False
+
+
+def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmarks() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is True
+    assert evidence["confidence_tier"] == "full_provider_agent_and_public_benchmark_evaluated"
+    assert evidence["top_library_comparison_ready"] is True
+    assert evidence["evidence_gaps"] == []
+    assert evidence["public_benchmark"]["ok"] is True
+    assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.916
+    assert evidence["public_benchmark"]["benchmarks"]["longmemeval"]["case_count"] == 500
+
+
+def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["locomo"] = {
+        "suite": "locomo",
+        "ok": True,
+        "metrics": {"accuracy": 0.91, "case_count": 600},
+    }
+    suite_results["longmemeval"] = {
+        "suite": "longmemeval",
+        "ok": True,
+        "metrics": {"accuracy": 0.9, "case_count": 500},
+    }
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    assert result["ok"] is True
+    public_benchmark = result["external_evidence"]["public_benchmark"]
+    assert public_benchmark["ok"] is True
+    assert public_benchmark["benchmark_count"] == 2
+    assert public_benchmark["benchmarks"]["locomo"]["case_count"] == 600
+    assert public_benchmark["benchmarks"]["longmemeval"]["accuracy"] == 0.9
 
 
 def test_memory_quality_scorecard_can_use_nested_agent_evidence() -> None:
@@ -1411,13 +1476,17 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     suite_results = _scorecard_fixture_results()
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
 
     assert result["ok"] is True
     assert result["gates"]["top_library_external_evidence"] is True
     assert result["external_evidence"]["required_for_gate"] is True
-    assert result["external_evidence"]["confidence_tier"] == "full_provider_and_agent_evaluated"
+    assert (
+        result["external_evidence"]["confidence_tier"]
+        == "full_provider_agent_and_public_benchmark_evaluated"
+    )
 
 
 def test_memory_quality_scorecard_fails_on_undercovered_suite() -> None:

@@ -41,6 +41,9 @@ GRAPH_NATIVE_GOLDEN_SUITE = "graph-native-golden"
 MEMORY_QUALITY_SCORECARD_SUITE = "memory-quality-scorecard"
 FULL_PROVIDER_CANARY_SUITE = "memo-stack-full-provider-canary"
 AGENT_BEHAVIOR_BENCH_SUITE = "memory_mcp_agent_behavior"
+PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
+LOCOMO_BENCHMARK_SUITE = "locomo"
+LONGMEMEVAL_BENCHMARK_SUITE = "longmemeval"
 PROMPT_CONTRACT_SNAPSHOT_VERSION = 1
 PROMPT_CONTRACT_SNAPSHOT_FILE = "prompt_contract.json"
 _DEFAULT_SNAPSHOT_DIR = Path("tests/snapshots")
@@ -84,6 +87,21 @@ _FULL_PROVIDER_CANARY_SUITE_ALIASES = (
     "clean-full-smoke",
     "clean_full_smoke",
 )
+_PUBLIC_MEMORY_BENCHMARK_SUITE_ALIASES = (
+    PUBLIC_MEMORY_BENCHMARK_SUITE,
+    "public_memory_benchmark",
+    "memory-public-benchmarks",
+)
+_PUBLIC_MEMORY_BENCHMARK_REQUIRED = (
+    LOCOMO_BENCHMARK_SUITE,
+    LONGMEMEVAL_BENCHMARK_SUITE,
+)
+_PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
+    LOCOMO_BENCHMARK_SUITE: frozenset(("locomo", "lo_co_mo", "long-context-memory")),
+    LONGMEMEVAL_BENCHMARK_SUITE: frozenset(
+        ("longmemeval", "longmem_eval", "longmem-eval", "long_memory_eval")
+    ),
+}
 
 
 def _eval_auth_token_from_env() -> str | None:
@@ -638,16 +656,15 @@ def _scorecard_external_evidence(
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
     full_provider_summary = _scorecard_full_provider_evidence_summary(full_provider)
     agent_behavior_summary = _scorecard_agent_behavior_evidence_summary(agent_behavior)
+    public_benchmark_summary = _scorecard_public_benchmark_evidence_summary(suite_results)
     full_provider_ok = full_provider_summary["ok"] is True
     agent_behavior_ok = agent_behavior_summary["ok"] is True
-    if full_provider_ok and agent_behavior_ok:
-        confidence_tier = "full_provider_and_agent_evaluated"
-    elif full_provider_ok:
-        confidence_tier = "full_provider_evaluated"
-    elif agent_behavior_ok:
-        confidence_tier = "agent_behavior_evaluated"
-    else:
-        confidence_tier = "internal_deterministic"
+    public_benchmark_ok = public_benchmark_summary["ok"] is True
+    confidence_tier = _scorecard_confidence_tier(
+        full_provider_ok=full_provider_ok,
+        agent_behavior_ok=agent_behavior_ok,
+        public_benchmark_ok=public_benchmark_ok,
+    )
 
     evidence_gaps = []
     if not full_provider_summary["present"]:
@@ -658,19 +675,26 @@ def _scorecard_external_evidence(
         evidence_gaps.append("agent_behavior_benchmark_missing")
     elif not agent_behavior_ok:
         evidence_gaps.append("agent_behavior_benchmark_failed")
+    if not public_benchmark_summary["present"]:
+        evidence_gaps.append("public_benchmark_evidence_missing")
+    elif not public_benchmark_ok:
+        evidence_gaps.append("public_benchmark_evidence_failed")
 
     return {
         "confidence_tier": confidence_tier,
         "required_for_gate": require_top_evidence,
-        "top_library_comparison_ready": full_provider_ok and agent_behavior_ok,
+        "top_library_comparison_ready": full_provider_ok
+        and agent_behavior_ok
+        and public_benchmark_ok,
         "benchmark_note": (
             "Internal deterministic suites are the local quality gate. "
-            "Full-provider and real-agent reports are optional evidence for "
-            "production/top-library comparison claims."
+            "Full-provider, real-agent and public benchmark reports are "
+            "optional evidence for production/top-library comparison claims."
         ),
         "evidence_gaps": evidence_gaps,
         "full_provider_canary": full_provider_summary,
         "agent_behavior_benchmark": agent_behavior_summary,
+        "public_benchmark": public_benchmark_summary,
     }
 
 
@@ -695,6 +719,136 @@ def _scorecard_find_agent_behavior_report(
         return None
     nested = full_provider.get("agent_behavior")
     return nested if isinstance(nested, dict) else None
+
+
+def _scorecard_confidence_tier(
+    *,
+    full_provider_ok: bool,
+    agent_behavior_ok: bool,
+    public_benchmark_ok: bool,
+) -> str:
+    if full_provider_ok and agent_behavior_ok and public_benchmark_ok:
+        return "full_provider_agent_and_public_benchmark_evaluated"
+    if full_provider_ok and agent_behavior_ok:
+        return "full_provider_and_agent_evaluated"
+    if full_provider_ok and public_benchmark_ok:
+        return "full_provider_and_public_benchmark_evaluated"
+    if agent_behavior_ok and public_benchmark_ok:
+        return "agent_and_public_benchmark_evaluated"
+    labels = []
+    if full_provider_ok:
+        labels.append("full_provider")
+    if agent_behavior_ok:
+        labels.append("agent")
+    if public_benchmark_ok:
+        labels.append("public_benchmark")
+    if not labels:
+        return "internal_deterministic"
+    return "_and_".join(labels) + "_evaluated"
+
+
+def _scorecard_public_benchmark_evidence_summary(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    reports = _scorecard_public_benchmark_reports(suite_results)
+    benchmarks: dict[str, dict[str, object]] = {}
+    for report in reports:
+        _scorecard_collect_public_benchmarks(report, benchmarks)
+    missing = [
+        name for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED if name not in benchmarks
+    ]
+    ok = bool(reports) and not missing and all(
+        benchmarks[name]["ok"] is True for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED
+    )
+    return {
+        "present": bool(reports),
+        "ok": ok,
+        "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
+        "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
+        "missing_benchmarks": missing,
+        "benchmark_count": len(benchmarks),
+        "benchmarks": benchmarks,
+    }
+
+
+def _scorecard_public_benchmark_reports(
+    suite_results: Mapping[str, dict[str, object]],
+) -> list[dict[str, object]]:
+    reports: list[dict[str, object]] = []
+    for suite, result in suite_results.items():
+        if suite in _PUBLIC_MEMORY_BENCHMARK_SUITE_ALIASES:
+            reports.append(result)
+            continue
+        if _scorecard_normalize_public_benchmark_name(suite):
+            reports.append(result)
+    return reports
+
+
+def _scorecard_collect_public_benchmarks(
+    report: dict[str, object],
+    benchmarks: dict[str, dict[str, object]],
+) -> None:
+    raw_items = report.get("benchmarks", ())
+    if isinstance(raw_items, list | tuple):
+        for item in raw_items:
+            if isinstance(item, dict):
+                name = _scorecard_normalize_public_benchmark_name(
+                    item.get("name") or item.get("benchmark") or item.get("suite")
+                )
+                if name:
+                    benchmarks[name] = _scorecard_public_benchmark_item_summary(
+                        item,
+                        parent_ok=report.get("ok") is True,
+                    )
+
+    metrics = _scorecard_result_metrics(report)
+    for benchmark in _PUBLIC_MEMORY_BENCHMARK_REQUIRED:
+        if benchmark in benchmarks:
+            continue
+        name = _scorecard_normalize_public_benchmark_name(
+            report.get("benchmark") or report.get("name") or report.get("suite")
+        )
+        if name == benchmark:
+            benchmarks[name] = _scorecard_public_benchmark_item_summary(
+                report,
+                parent_ok=report.get("ok") is True,
+            )
+        elif f"{benchmark}_accuracy" in metrics:
+            benchmarks[benchmark] = {
+                "ok": report.get("ok") is True,
+                "accuracy": metrics.get(f"{benchmark}_accuracy"),
+                "case_count": metrics.get(f"{benchmark}_case_count"),
+                "report_suite": report.get("suite"),
+            }
+
+
+def _scorecard_public_benchmark_item_summary(
+    item: dict[str, object],
+    *,
+    parent_ok: bool,
+) -> dict[str, object]:
+    metrics = _scorecard_result_metrics(item)
+    accuracy = metrics.get("accuracy", item.get("accuracy"))
+    case_count = metrics.get("case_count", item.get("case_count"))
+    item_ok = item.get("ok")
+    return {
+        "ok": item_ok is True if isinstance(item_ok, bool) else parent_ok,
+        "accuracy": accuracy,
+        "case_count": case_count,
+        "report_suite": item.get("suite"),
+    }
+
+
+def _scorecard_normalize_public_benchmark_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().replace(" ", "-").replace("_", "-")
+    for canonical, aliases in _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES.items():
+        if normalized == canonical or normalized in {
+            alias.replace("_", "-") for alias in aliases
+        }:
+            return canonical
+    return None
 
 
 def _scorecard_full_provider_evidence_summary(
