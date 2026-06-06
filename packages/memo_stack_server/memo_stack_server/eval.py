@@ -657,7 +657,10 @@ def _scorecard_external_evidence(
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
     full_provider_summary = _scorecard_full_provider_evidence_summary(full_provider)
     agent_behavior_summary = _scorecard_agent_behavior_evidence_summary(agent_behavior)
-    public_benchmark_summary = _scorecard_public_benchmark_evidence_summary(suite_results)
+    public_benchmark_summary = _scorecard_public_benchmark_evidence_summary(
+        suite_results,
+        full_provider=full_provider,
+    )
     full_provider_ok = full_provider_summary["ok"] is True
     agent_behavior_ok = agent_behavior_summary["ok"] is True
     public_benchmark_ok = public_benchmark_summary["ok"] is True
@@ -750,8 +753,14 @@ def _scorecard_confidence_tier(
 
 def _scorecard_public_benchmark_evidence_summary(
     suite_results: Mapping[str, dict[str, object]],
+    *,
+    full_provider: dict[str, object] | None = None,
 ) -> dict[str, object]:
     reports = _scorecard_public_benchmark_reports(suite_results)
+    if full_provider is not None:
+        nested = full_provider.get("public_benchmark")
+        if isinstance(nested, dict):
+            reports.append(nested)
     benchmarks: dict[str, dict[str, object]] = {}
     for report in reports:
         _scorecard_collect_public_benchmarks(report, benchmarks)

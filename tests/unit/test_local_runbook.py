@@ -147,7 +147,7 @@ def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     assert "$(MAKE) memo-stack-plugin-test" in recipe
     assert "$(MAKE) memo-stack-test-quality" in recipe
     assert "$(MAKE) memo-stack-agent-install-doctor" in recipe
-    assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in recipe
+    assert "$(MAKE) memo-stack-full-provider-public-benchmark-suite" in recipe
     assert "$(MAKE) memo-stack-agent-live-smoke" in recipe
     assert "$(MAKE) memo-stack-agent-live-smoke-agents-strict" in recipe
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
@@ -170,8 +170,12 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
     assert ".PHONY: memo-stack-full-provider-canary" in makefile
     assert "memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke" in makefile
     assert ".PHONY: memo-stack-full-provider-public-benchmark-canary" in makefile
+    assert ".PHONY: memo-stack-full-provider-public-benchmark-suite" in makefile
     public_recipe = "\n".join(
         _make_target_recipe(makefile, "memo-stack-full-provider-public-benchmark-canary")
+    )
+    public_suite_recipe = "\n".join(
+        _make_target_recipe(makefile, "memo-stack-full-provider-public-benchmark-suite")
     )
     assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in public_recipe
     assert (
@@ -183,6 +187,10 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
         in public_recipe
     )
     assert "$(PYTHON) scripts/clean_full_smoke.py" in public_recipe
+    assert 'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"' in (
+        public_suite_recipe
+    )
+    assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in public_suite_recipe
     assert "run_official_public_benchmark_canary" in clean_full_smoke
     assert "public_benchmark_ok" in clean_full_smoke
     assert ".PHONY: memo-stack-full-provider-canary-interactive" in makefile
@@ -286,7 +294,7 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_OUTPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT" in makefile
-    assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in makefile
+    assert "$(MAKE) memo-stack-full-provider-public-benchmark-suite" in makefile
     assert "$(MAKE) memo-stack-prod-load-canary" in makefile
     assert "$(MAKE) memo-stack-agent-live-session-bench" in makefile
     assert "$(MAKE) memo-stack-agent-transcript-corpus-bench" in makefile

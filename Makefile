@@ -133,7 +133,7 @@ memo-stack-prod-confidence-strict:
 	$(MAKE) memo-stack-plugin-test; \
 	$(MAKE) memo-stack-test-quality; \
 	$(MAKE) memo-stack-agent-install-doctor; \
-	$(MAKE) memo-stack-full-provider-public-benchmark-canary; \
+	$(MAKE) memo-stack-full-provider-public-benchmark-suite; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) memo-stack-agent-live-smoke; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) memo-stack-agent-live-smoke-agents-strict; \
 	git diff --check; \
@@ -425,6 +425,12 @@ memo-stack-full-provider-public-benchmark-canary:
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}"; \
 	$(PYTHON) scripts/clean_full_smoke.py
 
+.PHONY: memo-stack-full-provider-public-benchmark-suite
+memo-stack-full-provider-public-benchmark-suite:
+	MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}" \
+	MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-1}" \
+	$(MAKE) memo-stack-full-provider-public-benchmark-canary
+
 .PHONY: memo-stack-full-provider-canary-interactive
 memo-stack-full-provider-canary-interactive:
 	@if [ -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" ]; then \
@@ -462,7 +468,7 @@ memo-stack-real-memory-confidence:
 	@set -e; \
 	cleanup() { $(MAKE) memo-stack-down >/dev/null || true; }; \
 	trap cleanup EXIT INT TERM; \
-	$(MAKE) memo-stack-full-provider-public-benchmark-canary; \
+	$(MAKE) memo-stack-full-provider-public-benchmark-suite; \
 	$(MAKE) memo-stack-prod-load-canary; \
 	$(MAKE) memo-stack-agent-live-session-bench; \
 	$(MAKE) memo-stack-agent-transcript-corpus-bench; \

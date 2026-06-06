@@ -1442,6 +1442,26 @@ def test_memory_quality_scorecard_can_use_nested_agent_evidence() -> None:
     assert result["external_evidence"]["agent_behavior_benchmark"]["scenario_set"] == "realistic"
 
 
+def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> None:
+    suite_results = _scorecard_fixture_results()
+    full_provider = _full_provider_canary_report()
+    full_provider["public_benchmark"] = _public_benchmark_report()
+    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is True
+    assert result["gates"]["top_library_external_evidence"] is True
+    assert evidence["confidence_tier"] == "full_provider_agent_and_public_benchmark_evaluated"
+    assert evidence["top_library_comparison_ready"] is True
+    assert evidence["evidence_gaps"] == []
+    assert evidence["public_benchmark"]["benchmark_count"] == 2
+    assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.916
+    assert evidence["public_benchmark"]["benchmarks"]["longmemeval"]["accuracy"] == 0.902
+
+
 def test_memory_quality_scorecard_warns_on_failed_external_evidence() -> None:
     suite_results = _scorecard_fixture_results()
     full_provider = _full_provider_canary_report()
