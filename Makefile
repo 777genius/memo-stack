@@ -74,6 +74,17 @@ memo-stack-quality-scorecard-top-evidence:
 	@test -n "$${MEMORY_SCORECARD_SUITE_REPORTS:-}" || (echo "Set MEMORY_SCORECARD_SUITE_REPORTS to deterministic eval, full-provider canary, agent behavior and public benchmark report paths."; exit 1)
 	$(PYTHON) -m memo_stack_server eval scorecard --require-top-evidence $$(printf ' --suite-report %s' $${MEMORY_SCORECARD_SUITE_REPORTS})
 
+.PHONY: memo-stack-public-benchmark
+memo-stack-public-benchmark:
+	@test -n "$${MEMORY_PUBLIC_BENCHMARK_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_DATASET to a LoCoMo/LongMemEval-like JSON or JSONL file."; exit 1)
+	@set -e; \
+	set -- --dataset "$${MEMORY_PUBLIC_BENCHMARK_DATASET}"; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT:-}" ]; then set -- "$$@" --report-out "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_API_URL:-}" ]; then set -- "$$@" --api-url "$${MEMORY_PUBLIC_BENCHMARK_API_URL}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_NAME:-}" ]; then set -- "$$@" --benchmark "$${MEMORY_PUBLIC_BENCHMARK_NAME}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-}" ]; then set -- "$$@" --min-accuracy "$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY}"; fi; \
+	$(PYTHON) -m memo_stack_server eval public-benchmark "$$@"
+
 .PHONY: memo-stack-test-quality
 memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
 

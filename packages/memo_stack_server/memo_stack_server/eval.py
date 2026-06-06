@@ -31,6 +31,7 @@ from memo_stack_core.ports.auto_memory import CandidateOperation, SourceProvenan
 
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
+from memo_stack_server.public_benchmark import run_public_memory_benchmark
 
 PROMPT_CONTRACT_SUITE = "prompt-contract"
 SMALL_GOLDEN_SUITE = "small-golden"
@@ -5484,6 +5485,12 @@ def main(argv: Sequence[str] | None = None) -> None:
             "and passing."
         ),
     )
+    public_benchmark = sub.add_parser("public-benchmark")
+    public_benchmark.add_argument("--dataset", type=Path, required=True)
+    public_benchmark.add_argument("--api-url", default=None)
+    public_benchmark.add_argument("--benchmark", default=None)
+    public_benchmark.add_argument("--min-accuracy", type=float, default=0.85)
+    public_benchmark.add_argument("--report-out", type=Path, default=None)
     args = parser.parse_args(argv)
     if args.command == "run":
         if args.suite == SMALL_GOLDEN_SUITE:
@@ -5540,6 +5547,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                 report_out=args.report_out,
                 suite_report_paths=args.suite_report,
                 require_top_evidence=args.require_top_evidence,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    elif args.command == "public-benchmark":
+        try:
+            result = run_public_memory_benchmark(
+                dataset_path=args.dataset,
+                api_url=args.api_url,
+                auth_token=_eval_auth_token_from_env() if args.api_url else None,
+                benchmark=args.benchmark,
+                min_accuracy=args.min_accuracy,
+                report_out=args.report_out,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc

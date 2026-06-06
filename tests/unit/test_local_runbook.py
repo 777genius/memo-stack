@@ -309,6 +309,16 @@ def test_makefile_has_auto_memory_eval_quality_gate() -> None:
     ) in makefile
 
 
+def test_makefile_has_public_memory_benchmark_gate() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert ".PHONY: memo-stack-public-benchmark" in makefile
+    assert "MEMORY_PUBLIC_BENCHMARK_DATASET" in makefile
+    assert "$(PYTHON) -m memo_stack_server eval public-benchmark" in makefile
+    assert "MEMORY_PUBLIC_BENCHMARK_REPORT_OUT" in makefile
+    assert "MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY" in makefile
+
+
 def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
