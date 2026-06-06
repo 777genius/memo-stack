@@ -271,9 +271,12 @@ def _optional_datetime(value: Any, *, field: str) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         raise MemoryValidationError(f"extractor.openai.{field}_invalid")
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise MemoryValidationError(f"extractor.openai.{field}_invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise MemoryValidationError(f"extractor.openai.{field}_invalid")
+    return parsed
 
 
 def _tags(value: Any) -> tuple[str, ...]:

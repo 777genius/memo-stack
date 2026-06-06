@@ -96,6 +96,14 @@ def _candidate_rejection_code(
         return "empty_candidate"
     if len(candidate.text) > MAX_EXTRACTOR_CANDIDATE_CHARS:
         return "candidate_text_too_large"
+    if _has_ambiguous_datetime(candidate):
+        return "ambiguous_datetime"
+    if (
+        candidate.valid_from is not None
+        and candidate.valid_until is not None
+        and candidate.valid_until <= candidate.valid_from
+    ):
+        return "invalid_validity_window"
     if operation in {CandidateOperation.UPDATE, CandidateOperation.DELETE}:
         if not candidate.target_fact_id and not candidate.target_hint:
             return "target_fact_or_hint_required"
@@ -110,6 +118,13 @@ def _candidate_rejection_code(
         if quote and _normalize_evidence(quote) not in normalized_source:
             return "evidence_quote_not_found"
     return None
+
+
+def _has_ambiguous_datetime(candidate: MemoryCandidate) -> bool:
+    for value in (candidate.valid_from, candidate.valid_until, candidate.expires_at):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            return True
+    return False
 
 
 def _normalize_evidence(value: str) -> str:

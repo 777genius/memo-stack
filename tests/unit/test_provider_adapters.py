@@ -149,6 +149,9 @@ def _openai_candidate_payload(
     safe_reason: str = "explicit_user_memory",
     target_hint: str | None = None,
     ttl_policy: str | None = None,
+    valid_from: str | None = None,
+    valid_until: str | None = None,
+    expires_at: str | None = None,
 ) -> dict[str, object]:
     return {
         "text": text,
@@ -163,9 +166,9 @@ def _openai_candidate_payload(
         "target_fact_id": None,
         "target_fact_version": None,
         "target_hint": target_hint,
-        "valid_from": None,
-        "valid_until": None,
-        "expires_at": None,
+        "valid_from": valid_from,
+        "valid_until": valid_until,
+        "expires_at": expires_at,
     }
 
 
@@ -1313,6 +1316,41 @@ def test_openai_json_memory_extractor_rejects_invalid_ttl_policy() -> None:
             assert "invalid_ttl_policy" in str(exc)
         else:
             raise AssertionError("Expected invalid TTL policy to fail")
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_naive_datetime() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="NAIVE_TIME_MARKER should fail.",
+                        operation="add",
+                        evidence_quote="NAIVE_TIME_MARKER",
+                        valid_from="2026-01-01T12:00:00",
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_naive_datetime",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="NAIVE_TIME_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "valid_from_invalid" in str(exc)
+        else:
+            raise AssertionError("Expected naive extractor datetime to fail")
 
     asyncio.run(run())
 
