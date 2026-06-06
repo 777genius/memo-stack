@@ -100,6 +100,22 @@ class MemoryGatewayPort(Protocol):
         reason: str | None,
     ) -> dict[str, Any]: ...
 
+    async def list_captures(
+        self,
+        *,
+        scope: MemoryScope,
+        status: str | None,
+        consolidation_status: str | None,
+        limit: int,
+    ) -> dict[str, Any]: ...
+
+    async def consolidate_capture(
+        self,
+        *,
+        capture_id: str,
+        force: bool,
+    ) -> dict[str, Any]: ...
+
     async def ingest_document(
         self,
         *,

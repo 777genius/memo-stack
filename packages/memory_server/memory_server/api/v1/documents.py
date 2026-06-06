@@ -13,7 +13,7 @@ from memory_core.application import (
     ProcessDocumentCommand,
 )
 from memory_core.domain.entities import MemoryChunk, MemoryDocument
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
@@ -31,6 +31,8 @@ router = APIRouter(
 
 
 class IngestDocumentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
     profile_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, max_length=80)

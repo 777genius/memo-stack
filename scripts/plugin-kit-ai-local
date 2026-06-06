@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+local_root="${PLUGIN_KIT_AI_LOCAL_ROOT:-/Users/belief/dev/projects/plugin-kit-ai}"
+
+if [ -d "${local_root}/cli/plugin-kit-ai/cmd/plugin-kit-ai" ] && command -v go >/dev/null 2>&1; then
+  caller_cwd="$(pwd)"
+  args=("$@")
+  case "${args[0]:-}" in
+    add|bundle|compat|dev|doctor|export|generate|import|inspect|normalize|publication|publish|skills|test|validate)
+      if [ "${#args[@]}" -gt 1 ] && [[ "${args[1]}" != -* ]]; then
+        case "${args[1]}" in
+          /*) ;;
+          *) args[1]="${caller_cwd}/${args[1]}" ;;
+        esac
+      fi
+      ;;
+    remove|repair|update)
+      if [ "${#args[@]}" -gt 1 ] && [[ "${args[1]}" != -* ]]; then
+        case "${args[1]}" in
+          /*) ;;
+          ./*|../*|*/*) args[1]="${caller_cwd}/${args[1]}" ;;
+        esac
+      fi
+      ;;
+  esac
+  exec go -C "${local_root}" run ./cli/plugin-kit-ai/cmd/plugin-kit-ai "${args[@]}"
+fi
+
+exec plugin-kit-ai "$@"

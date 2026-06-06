@@ -6,6 +6,7 @@ from memory_core.application.context_policy import (
     is_context_fact_visible,
     is_graph_fact_visible,
 )
+from memory_core.application.document_text import document_chunk_retrieval_text
 from memory_core.application.dto import BuildContextQuery, ContextItem
 from memory_core.domain.entities import MemoryChunk, SourceRef
 from memory_core.ports.unit_of_work import UnitOfWorkFactoryPort
@@ -118,11 +119,15 @@ class ContextHydrator:
                 chunk = visible_chunks.get(item.item_id)
                 if chunk is None:
                     continue
+                chunk_text = document_chunk_retrieval_text(
+                    text=chunk.text,
+                    metadata=chunk.metadata,
+                )
                 visible_items.append(
                     ContextItem(
                         item_id=str(chunk.id),
                         item_type=item.item_type,
-                        text=chunk.text,
+                        text=chunk_text,
                         score=item.score,
                         source_refs=(
                             SourceRef(
@@ -131,7 +136,7 @@ class ContextHydrator:
                                 chunk_id=str(chunk.id),
                                 char_start=chunk.char_start,
                                 char_end=chunk.char_end,
-                                quote_preview=chunk.text[:200],
+                                quote_preview=chunk_text[:200],
                             ),
                         ),
                         is_instruction=item.is_instruction,

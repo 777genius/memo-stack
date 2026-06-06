@@ -304,6 +304,18 @@ async def _resolve_context_scope(
             thread_required=False,
             create_missing_external_scope=create_missing_external_scope,
         )
+        if scope is None and thread_external_ref and not create_missing_external_scope:
+            scope = await _resolve_single_scope(
+                container,
+                space_id=None,
+                profile_id=None,
+                thread_id=None,
+                space_slug=space_slug,
+                profile_external_ref=ref,
+                thread_external_ref=None,
+                thread_required=False,
+                create_missing_external_scope=False,
+            )
         if scope is None:
             return None
         resolved.append(scope)

@@ -15,6 +15,7 @@ from memory_core.ports.auto_memory import (
     FactExtractionPort,
     MemoryCandidate,
     MemoryClassifierPort,
+    MemoryExtractorPort,
     SourceProvenance,
 )
 from memory_core.ports.capabilities import (
@@ -73,6 +74,7 @@ __all__ = [
     "MemoryCandidate",
     "MemoryCapability",
     "MemoryClassifierPort",
+    "MemoryExtractorPort",
     "MemoryPrincipal",
     "MemoryScope",
     "MemoryScopeFilter",

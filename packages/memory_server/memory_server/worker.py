@@ -9,6 +9,8 @@ from datetime import timedelta
 
 from memory_adapters.postgres import create_schema
 from memory_adapters.postgres.models import MemoryOutboxRow
+from memory_core.application import ConsolidateCaptureCommand
+from memory_core.application.document_text import document_chunk_retrieval_text
 from memory_core.domain.entities import FactStatus, LifecycleStatus, SourceRef
 from memory_core.ports.adapters import (
     AdapterCapabilities,
@@ -38,6 +40,7 @@ class ClaimedOutboxJob:
     event_type: str
     aggregate_id: str
     aggregate_version: int | None
+    attempt_count: int
     workload_class: str
     fairness_key: str | None
     payload_json: dict[str, object]
@@ -54,6 +57,7 @@ class OutboxWorker:
         self._container = container
 
     async def run_once(self, *, limit: int = 25) -> int:
+        await self._container.expire_pending_suggestions.execute(limit=limit)
         jobs = await self._claim_pending(limit=limit)
         for job in jobs:
             try:
@@ -88,6 +92,7 @@ class OutboxWorker:
                     event_type=row.event_type,
                     aggregate_id=row.aggregate_id,
                     aggregate_version=row.aggregate_version,
+                    attempt_count=row.attempt_count,
                     workload_class=row.workload_class,
                     fairness_key=row.fairness_key,
                     payload_json=dict(row.payload_json),
@@ -150,6 +155,13 @@ class OutboxWorker:
             await self._handle_cognee_document_ingest(job)
         elif job.event_type == "cognee.forget_document":
             await self._handle_cognee_document_forget(job)
+        elif job.event_type == "capture.consolidate":
+            await self._container.consolidate_capture.execute(
+                ConsolidateCaptureCommand(
+                    capture_id=str(job.payload_json.get("capture_id") or job.aggregate_id),
+                    force=job.attempt_count > 0,
+                )
+            )
         else:
             raise ValueError(f"Unknown outbox event type: {job.event_type}")
 
@@ -180,7 +192,11 @@ class OutboxWorker:
                 "embeddings.document_budget_exceeded",
             )
 
-        embedding = await self._container.embedder.embed_texts((chunk.text,))
+        projection_text = document_chunk_retrieval_text(
+            text=chunk.text,
+            metadata=chunk.metadata,
+        )
+        embedding = await self._container.embedder.embed_texts((projection_text,))
         if _is_disabled_projection(embedding.diagnostics):
             return
         _raise_if_degraded(embedding.status, "embeddings.embed_texts", embedding.diagnostics)
@@ -194,7 +210,7 @@ class OutboxWorker:
                     space_id=str(chunk.space_id),
                     profile_id=str(chunk.profile_id),
                     thread_id=str(chunk.thread_id) if chunk.thread_id else None,
-                    text=chunk.text,
+                    text=projection_text,
                     vector=embedding.vectors[0],
                     projection_version="v1",
                     metadata={
@@ -396,7 +412,7 @@ async def _run(args: argparse.Namespace) -> None:
                 return
             await asyncio.sleep(args.sleep_seconds)
     finally:
-        await container.engine.dispose()
+        await container.aclose()
 
 
 def main() -> None:

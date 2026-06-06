@@ -97,5 +97,23 @@ class RememberFactUseCase:
                         result_id=str(saved.id),
                     )
                 )
-            await uow.commit()
+            try:
+                await uow.commit()
+            except MemoryConflictError as exc:
+                if not idempotency_key:
+                    raise
+                existing = await uow.idempotency.find(
+                    space_id=str(command.space_id),
+                    key=idempotency_key,
+                )
+                if existing is None:
+                    raise
+                if existing.fingerprint != fingerprint:
+                    raise MemoryConflictError(
+                        "Idempotency key was used with different body"
+                    ) from exc
+                fact = await uow.facts.get_by_id(existing.result_id)
+                if fact is None:
+                    raise MemoryInvariantError("Idempotency result points to missing fact") from exc
+                return FactResult(fact=fact, indexing_status="already_indexed_or_pending")
             return FactResult(fact=saved, indexing_status="pending")

@@ -7,7 +7,12 @@ from typing import Any
 from fastapi.testclient import TestClient
 from memory_adapters.postgres import create_schema
 from memory_adapters.postgres.models import MemoryFactRow, MemoryOutboxRow
-from memory_core.ports.adapters import AdapterCapabilities, VectorWriteResult
+from memory_core.ports.adapters import (
+    AdapterCapabilities,
+    EmbeddingResult,
+    PortStatus,
+    VectorWriteResult,
+)
 from memory_core.ports.capabilities import (
     CapabilityStatus,
     ProjectionForgetResult,
@@ -18,7 +23,12 @@ from memory_server.composition import build_container
 from memory_server.config import DeployProfile, Settings
 from memory_server.db import upgrade
 from memory_server.doctor import run_doctor
-from memory_server.eval import _execute_small_golden, run_quality_golden, run_small_golden
+from memory_server.eval import (
+    _execute_small_golden,
+    run_auto_memory_golden,
+    run_quality_golden,
+    run_small_golden,
+)
 from memory_server.main import create_app
 from memory_server.worker import OutboxWorker, _safe_diagnostic_code, _safe_error
 from sqlalchemy import select, update
@@ -58,6 +68,20 @@ def make_client_with_settings(tmp_path: Path, **overrides: Any) -> TestClient:
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
+
+
+def test_eval_cli_uses_env_token_not_cli_auth_token() -> None:
+    source = (
+        Path(__file__).parents[2]
+        / "packages"
+        / "memory_server"
+        / "memory_server"
+        / "eval.py"
+    ).read_text(encoding="utf-8")
+
+    assert "--auth-token" not in source
+    assert "MEMORY_EVAL_AUTH_TOKEN" in source
+    assert "MEMORY_SERVICE_TOKEN" in source
 
 
 def fact_payload(text: str = "Graph jobs stay safe when Graphiti is disabled.") -> dict[str, Any]:
@@ -452,6 +476,72 @@ def test_vector_disabled_internal_document_job_skips_embedding_and_completes(
     assert processed == 2
     assert statuses == ["done", "done"]
     assert embedder.calls == 0
+
+
+def test_vector_document_projection_indexes_document_title_with_chunk_text(
+    tmp_path: Path,
+) -> None:
+    class RecordingVectorAdapter:
+        def __init__(self) -> None:
+            self.upserts = []
+
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def upsert_chunks(self, items) -> VectorWriteResult:
+            self.upserts.append(items)
+            return VectorWriteResult.ok(len(items))
+
+        async def delete_chunks(self, *_args: object, **_kwargs: object) -> VectorWriteResult:
+            return VectorWriteResult.ok(1)
+
+    class RecordingEmbedder:
+        def __init__(self) -> None:
+            self.texts = []
+
+        async def embed_texts(self, texts) -> EmbeddingResult:
+            self.texts.append(tuple(texts))
+            return EmbeddingResult(
+                status=PortStatus.OK,
+                vectors=((0.1, 0.2, 0.3),),
+                model="unit",
+            )
+
+    marker = "VECTOR_TITLE_ONLY_MARKER"
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "title": f"{marker}: Architecture notes",
+                "text": "Body mentions Postgres, Qdrant and Graphiti without the title marker.",
+                "source_type": "document",
+                "source_external_id": "vector-title-doc",
+                "classification": "internal",
+            },
+            headers=auth_headers(),
+        )
+        vector = RecordingVectorAdapter()
+        embedder = RecordingEmbedder()
+        object.__setattr__(client.app.state.container, "vector_index", vector)
+        object.__setattr__(client.app.state.container, "embedder", embedder)
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+
+    assert created.status_code == 201
+    assert processed == 2
+    assert marker in embedder.texts[0][0]
+    assert "Body mentions Postgres" in embedder.texts[0][0]
+    assert marker in vector.upserts[0][0].text
+    assert "Body mentions Postgres" in vector.upserts[0][0].text
 
 
 def test_unhealthy_vector_projection_retries_without_embedding_cost(tmp_path: Path) -> None:
@@ -877,6 +967,42 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert "QUALITY_FACT_MODEL_CURRENT" not in report_text
     assert "QUALITY_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
+
+
+def test_auto_memory_golden_eval_passes() -> None:
+    result = run_auto_memory_golden()
+
+    assert result["ok"] is True
+    assert result["status"] == "ok"
+    assert result["suite"] == "auto-memory-golden"
+    assert result["checks"]["case_count"] is True
+    assert result["metrics"]["case_count"] >= 6
+    assert result["metrics"]["suggestion_expected_recall_rate"] == 1.0
+    assert result["metrics"]["wrong_auto_apply_count"] == 0
+    assert result["metrics"]["active_fact_before_review_count"] == 0
+    assert result["metrics"]["prompt_injection_promoted_count"] == 0
+    assert result["metrics"]["secret_leakage_count"] == 0
+    assert result["metrics"]["duplicate_suggestion_count"] == 0
+    assert result["metrics"]["replay_duplicate_suggestion_count"] == 0
+    assert result["failures"] == []
+    assert "AUTO_MEMORY_EVAL_TOKEN" not in str(result)
+    assert "ignore previous instructions" not in str(result).lower()
+
+
+def test_auto_memory_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
+    report = tmp_path / "auto-memory-golden-report.json"
+    result = run_auto_memory_golden(report_out=report)
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert payload["suite"] == "auto-memory-golden"
+    assert payload["metrics"]["wrong_auto_apply_count"] == 0
+    assert payload["metrics"]["secret_leakage_count"] == 0
+    assert payload["failures"] == []
+    assert "AUTO_MEMORY_EVAL_TOKEN" not in report_text
+    assert "AUTO_MEMORY_EVAL_SECRET_REDACTION" not in report_text
+    assert "ignore previous instructions" not in report_text.lower()
 
 
 def test_small_golden_eval_seed_preserves_scope_invariants(

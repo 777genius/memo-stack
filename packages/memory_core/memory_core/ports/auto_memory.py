@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 
 from memory_core.domain.entities import Confidence, MemoryKind, SourceRef, TrustLevel
+
+
+class CandidateOperation(StrEnum):
+    ADD = "add"
+    UPDATE = "update"
+    DELETE = "delete"
+    NOOP = "noop"
+    REVIEW = "review"
 
 
 @dataclass(frozen=True)
@@ -23,6 +33,15 @@ class MemoryCandidate:
     confidence: Confidence
     source_refs: tuple[SourceRef, ...]
     safe_reason: str
+    operation_hint: CandidateOperation = CandidateOperation.ADD
+    category: str | None = None
+    tags: tuple[str, ...] = ()
+    ttl_policy: str | None = None
+    target_fact_id: str | None = None
+    target_fact_version: int | None = None
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    expires_at: datetime | None = None
 
 
 class MemoryClassifierPort(Protocol):
@@ -30,7 +49,11 @@ class MemoryClassifierPort(Protocol):
         """Return fact candidates that still require admission/review."""
 
 
-class FactExtractionPort(Protocol):
+class MemoryExtractorPort(Protocol):
+    version: str
+    prompt_version: str | None
+    requires_external_ai: bool
+
     async def extract_facts(
         self,
         *,
@@ -38,3 +61,6 @@ class FactExtractionPort(Protocol):
         source: SourceProvenance,
     ) -> tuple[MemoryCandidate, ...]:
         """Extract candidate facts. Implementations must not write active facts directly."""
+
+
+FactExtractionPort = MemoryExtractorPort

@@ -22,7 +22,7 @@ from memory_server.admin import (
     token_revoke,
 )
 from memory_server.auth_tokens import token_hash
-from memory_server.config import DeployProfile, Settings
+from memory_server.config import CaptureMode, DeployProfile, Settings
 from memory_server.db import upgrade
 from memory_server.main import create_app
 from sqlalchemy import select
@@ -39,6 +39,7 @@ def make_client(tmp_path: Path) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            capture_mode=CaptureMode.SUGGEST,
         )
     )
     return TestClient(app)
@@ -54,6 +55,7 @@ async def _load_service_token(tmp_path: Path, *, token_id: str) -> MemoryService
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            capture_mode=CaptureMode.SUGGEST,
         )
     )
     try:
@@ -216,6 +218,7 @@ def test_scoped_service_token_cannot_cross_space_or_use_unscoped_routes(
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            capture_mode=CaptureMode.SUGGEST,
         )
     )
     root_headers = {"Authorization": "Bearer root-token"}
@@ -296,6 +299,7 @@ def test_service_token_permissions_are_enforced(
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            capture_mode=CaptureMode.SUGGEST,
         )
     )
     root_headers = {"Authorization": "Bearer root-token"}
@@ -392,6 +396,35 @@ def test_service_token_permissions_are_enforced(
             },
             headers=write_headers,
         )
+        write_capture_allowed = client.post(
+            "/v1/captures",
+            json={
+                "space_id": space["id"],
+                "profile_id": profile["id"],
+                "source_agent": "codex",
+                "source_kind": "hook",
+                "event_type": "UserPromptSubmit",
+                "actor_role": "user",
+                "source_event_id": "permission-capture",
+                "text": "Remember: PERMISSION_CAPTURE_MARKER write-only token can create.",
+            },
+            headers=write_headers,
+        )
+        write_capture_id = (
+            write_capture_allowed.json()["data"]["id"]
+            if write_capture_allowed.status_code == 201
+            else "missing"
+        )
+        write_cannot_read_capture = client.get(
+            f"/v1/captures/{write_capture_id}",
+            headers=write_headers,
+        )
+        write_cannot_purge_capture = client.request(
+            "DELETE",
+            f"/v1/captures/{write_capture_id}",
+            json={"reason": "permission test"},
+            headers=write_headers,
+        )
         write_cannot_read = client.get(
             "/v1/facts",
             params={"space_id": space["id"], "profile_id": profile["id"]},
@@ -438,6 +471,9 @@ def test_service_token_permissions_are_enforced(
     assert read_cannot_delete.status_code == 403
     assert read_cannot_diagnose.status_code == 403
     assert write_allowed.status_code == 201
+    assert write_capture_allowed.status_code == 201
+    assert write_cannot_read_capture.status_code == 403
+    assert write_cannot_purge_capture.status_code == 403
     assert write_cannot_read.status_code == 403
     assert write_cannot_list_profiles.status_code == 403
     assert write_cannot_delete.status_code == 403

@@ -1,6 +1,6 @@
 # Memory Platform
 
-Reusable memory platform for coding agents, interview assistants and future team/project memory workflows.
+Reusable memory platform for coding agents and future team/project memory workflows.
 
 This project is the new source of truth for the memory platform architecture and implementation plan.
 
@@ -152,6 +152,14 @@ behavior, then tears everything down:
 make memory-clean-full-smoke
 ```
 
+If the key is not already exported in the current shell, use the interactive
+wrapper. It reads the key with terminal echo disabled and passes it only through
+the canary process environment:
+
+```bash
+make memory-full-provider-canary-interactive
+```
+
 For local defaults, copy `.env.example` to `.env` and adjust non-secret provider
 flags. Secrets should stay in your shell, `.env.local`, `.env.full`, or another
 ignored file. Cognee is available as an optional adapter boundary, but the MVP
@@ -161,7 +169,8 @@ Common local targets are available in `Makefile`, for example `make memory-lint`
 `make memory-test-unit`, `make memory-eval`, `make memory-db-upgrade`,
 `make memory-seed-defaults`, `make memory-doctor`, `make memory-up`,
 `make memory-server`, `make memory-stack-up-lite`, `make memory-stack-up-full`,
-`make memory-clean-full-smoke` and `make memory-mcp-smoke`.
+`make memory-clean-full-smoke`, `make memory-auto-memory-eval`,
+`make memory-auto-memory-quality` and `make memory-mcp-smoke`.
 
 GitHub Actions runs the same prompt-impacting gate on push and pull requests:
 `make PYTHON=python RUFF=ruff memory-test-quality`. Keep quality changes green
@@ -175,6 +184,35 @@ MEMORY_POLICY_MODE=manual_only    # explicit API writes, retrieval for reviewed/
 MEMORY_POLICY_MODE=suggestions    # review-gated memory mode
 MEMORY_POLICY_MODE=active_context # active prompt-context mode
 ```
+
+Auto-memory capture defaults are conservative:
+
+```text
+MEMORY_CAPTURE_MODE=retrieve_only              # no automatic capture writes
+MEMORY_CAPTURE_MODE=capture_only               # store captures, no suggestions
+MEMORY_CAPTURE_MODE=suggest                    # captures can become pending suggestions
+MEMORY_AUTO_APPLY_SAFE_ENABLED=false           # separate switch for direct safe apply
+MEMORY_CAPTURE_EXTRACTOR_PROVIDER=rule_based   # rule_based, noop, or openai
+MEMORY_CAPTURE_EXTERNAL_AI_ENABLED=false       # external extractor egress kill switch
+MEMORY_CAPTURE_EXTRACTOR_MODEL=gpt-4.1-mini    # used only by the OpenAI extractor
+MEMORY_MAX_PENDING_CAPTURES_PER_PROFILE=5000   # hook-loop ingress guard
+MEMORY_MAX_PENDING_SUGGESTIONS_PER_PROFILE=500 # review queue ingress guard
+```
+
+`MEMORY_AUTO_MEMORY_MODE` is accepted as a compatibility alias for
+`MEMORY_CAPTURE_MODE` on both Memory Server and plugin hooks. When both are set,
+`MEMORY_AUTO_MEMORY_MODE` wins.
+
+`rule_based` keeps consolidation local and deterministic. `openai` is available
+behind `MemoryExtractorPort`, but it requires both
+`MEMORY_CAPTURE_EXTERNAL_AI_ENABLED=true` and `MEMORY_OPENAI_API_KEY`; otherwise
+startup or consolidation fails closed without sending capture text to a provider.
+Auto-memory quality is checked by `make memory-auto-memory-quality`, which
+includes deterministic golden capture metrics for review gating, redaction,
+duplicate suppression, replay idempotency and `auto_apply_safe` safety.
+The Python SDK exposes `create_capture`, `get_capture`, `list_captures`,
+`consolidate_capture`, `purge_capture` and `capture_diagnostics`, so clients
+should not hand-roll capture payloads.
 
 Data classification:
 

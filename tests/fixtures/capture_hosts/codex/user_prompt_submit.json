@@ -1,0 +1,5 @@
+{
+  "event": "UserPromptSubmit",
+  "conversation_id": "synthetic-codex-thread",
+  "input": "Remember: HOST_FIXTURE_CODEX_USER_PROMPT Qdrant owns document chunk recall."
+}

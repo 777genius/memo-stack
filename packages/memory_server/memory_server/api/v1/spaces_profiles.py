@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Response, status
 from memory_core.application import CreateProfileCommand, CreateSpaceCommand
 from memory_core.domain.entities import MemoryProfile, MemorySpace, SpaceId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
@@ -18,11 +18,15 @@ router = APIRouter(tags=["spaces-profiles"], dependencies=[Depends(require_servi
 
 
 class CreateSpaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     slug: str = Field(min_length=1, max_length=160)
     name: str = Field(min_length=1, max_length=240)
 
 
 class CreateProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     space_id: str = Field(min_length=1, max_length=80)
     external_ref: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=240)

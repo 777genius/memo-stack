@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "synthetic-claude-session",
+  "transcript_path": "__TRANSCRIPT_PATH__"
+}

@@ -326,6 +326,149 @@ class MemoryPlatformClient:
             ),
         )
 
+    def create_capture(
+        self,
+        *,
+        source_agent: str,
+        event_type: str,
+        text: str,
+        space_id: str | None = None,
+        profile_id: str | None = None,
+        thread_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
+        source_kind: str = "hook",
+        actor_role: str = "unknown",
+        source_event_id: str | None = None,
+        client_instance_id: str | None = None,
+        source_actor_external_ref: str | None = None,
+        agent_session_external_ref: str | None = None,
+        turn_external_ref: str | None = None,
+        parent_capture_id: str | None = None,
+        sequence_index: int | None = None,
+        evidence_refs: list[dict[str, Any]] | None = None,
+        trust_level: str = "medium",
+        source_authority: str = "unknown",
+        sensitivity: str = "medium",
+        data_classification: str = "internal",
+        occurred_at: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        idempotency_key: str | None = None,
+        consolidate: bool | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/captures",
+            json=_without_none(
+                {
+                    "space_id": space_id,
+                    "profile_id": profile_id,
+                    "thread_id": thread_id,
+                    "space_slug": space_slug,
+                    "profile_external_ref": profile_external_ref,
+                    "thread_external_ref": thread_external_ref,
+                    "source_agent": source_agent,
+                    "source_kind": source_kind,
+                    "event_type": event_type,
+                    "actor_role": actor_role,
+                    "text": text,
+                    "source_event_id": source_event_id,
+                    "source_actor_external_ref": source_actor_external_ref,
+                    "client_instance_id": client_instance_id,
+                    "agent_session_external_ref": agent_session_external_ref,
+                    "turn_external_ref": turn_external_ref,
+                    "parent_capture_id": parent_capture_id,
+                    "sequence_index": sequence_index,
+                    "evidence_refs": evidence_refs or [],
+                    "trust_level": trust_level,
+                    "source_authority": source_authority,
+                    "sensitivity": sensitivity,
+                    "data_classification": data_classification,
+                    "occurred_at": occurred_at,
+                    "metadata": metadata,
+                    "trace_id": trace_id,
+                    "idempotency_key": idempotency_key,
+                    "consolidate": consolidate,
+                }
+            ),
+        )
+
+    def get_capture(self, capture_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/captures/{capture_id}")
+
+    def list_captures(
+        self,
+        *,
+        space_id: str | None = None,
+        profile_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        status: str | None = None,
+        consolidation_status: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/v1/captures",
+            params=_without_none(
+                {
+                    "space_id": space_id,
+                    "profile_id": profile_id,
+                    "space_slug": space_slug,
+                    "profile_external_ref": profile_external_ref,
+                    "status": status,
+                    "consolidation_status": consolidation_status,
+                    "limit": limit,
+                }
+            ),
+        )
+
+    def consolidate_capture(self, capture_id: str, *, force: bool = False) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/captures/{capture_id}/consolidate",
+            json={"force": force},
+        )
+
+    def purge_capture(
+        self,
+        capture_id: str,
+        *,
+        reason: str = "privacy_purge",
+    ) -> dict[str, Any]:
+        return self._request(
+            "DELETE",
+            f"/v1/captures/{capture_id}",
+            json={"reason": reason},
+        )
+
+    def capture_diagnostics(
+        self,
+        *,
+        space_id: str | None = None,
+        profile_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        consolidation_status: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/v1/diagnostics/captures",
+            params=_without_none(
+                {
+                    "space_id": space_id,
+                    "profile_id": profile_id,
+                    "space_slug": space_slug,
+                    "profile_external_ref": profile_external_ref,
+                    "consolidation_status": consolidation_status,
+                    "limit": limit,
+                }
+            ),
+        )
+
     def get_document(self, document_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/documents/{document_id}")
 

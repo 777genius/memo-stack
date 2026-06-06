@@ -185,6 +185,7 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
                         "text": direct_proposal_text,
                         "kind": "architecture_decision",
                         "operation": "remember",
+                        "evidence_quote": direct_proposal_text,
                     }
                 ],
                 "source_type": "manual",
@@ -562,6 +563,7 @@ async def _run_mcp_policy_modes(base_url: str, token: str) -> None:
                         "text": direct_text,
                         "kind": "architecture_decision",
                         "operation": "remember",
+                        "evidence_quote": direct_text,
                     }
                 ],
                 "source_type": "manual",

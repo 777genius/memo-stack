@@ -6,6 +6,7 @@ it is rendered or returned to callers.
 
 from __future__ import annotations
 
+import inspect
 from uuid import NAMESPACE_URL, uuid5
 
 from memory_core.ports.adapters import (
@@ -40,6 +41,7 @@ class QdrantVectorMemoryAdapter:
         self._projection_version = projection_version
 
     async def capabilities(self) -> AdapterCapabilities:
+        client = None
         try:
             client, _models = await self._client()
         except Exception:
@@ -78,6 +80,8 @@ class QdrantVectorMemoryAdapter:
                 supports_filters=False,
                 degraded_reason="qdrant_unavailable",
             )
+        finally:
+            await _close_client(client)
         return AdapterCapabilities(
             name="qdrant",
             enabled=True,
@@ -91,6 +95,7 @@ class QdrantVectorMemoryAdapter:
     async def upsert_chunks(self, items: tuple[VectorUpsertItem, ...]) -> VectorWriteResult:
         if not items:
             return VectorWriteResult.ok(0)
+        client = None
         try:
             client, models = await self._client()
             await self._ensure_collection(client, models)
@@ -109,16 +114,19 @@ class QdrantVectorMemoryAdapter:
                 )
                 for item in items
             ]
-            await client.upsert(collection_name=self._collection_name, points=points, wait=False)
+            await client.upsert(collection_name=self._collection_name, points=points, wait=True)
             return VectorWriteResult.ok(len(points))
         except QdrantDimensionMismatchError:
             return VectorWriteResult.degraded("qdrant.dimension_mismatch", retryable=False)
         except Exception:
             return VectorWriteResult.degraded("qdrant.upsert_failed", retryable=True)
+        finally:
+            await _close_client(client)
 
     async def delete_chunks(self, chunk_ids: tuple[str, ...]) -> VectorWriteResult:
         if not chunk_ids:
             return VectorWriteResult.ok(0)
+        client = None
         try:
             client, models = await self._client()
             if not await client.collection_exists(self._collection_name):
@@ -127,11 +135,13 @@ class QdrantVectorMemoryAdapter:
             await client.delete(
                 collection_name=self._collection_name,
                 points_selector=models.PointIdsList(points=point_ids),
-                wait=False,
+                wait=True,
             )
             return VectorWriteResult.ok(len(chunk_ids))
         except Exception:
             return VectorWriteResult.degraded("qdrant.delete_failed", retryable=True)
+        finally:
+            await _close_client(client)
 
     async def search_chunks(
         self,
@@ -146,6 +156,7 @@ class QdrantVectorMemoryAdapter:
             return VectorSearchResult.ok(())
         if not query_vector:
             return VectorSearchResult.degraded("qdrant.empty_query_vector", retryable=False)
+        client = None
         try:
             client, models = await self._client()
             await self._ensure_collection(client, models)
@@ -202,6 +213,8 @@ class QdrantVectorMemoryAdapter:
                     ),
                 ),
             )
+        finally:
+            await _close_client(client)
 
     async def _client(self):
         from qdrant_client import AsyncQdrantClient, models
@@ -271,3 +284,16 @@ def _vector_size_from_vectors(vectors: object) -> int | None:
             if nested_size is not None:
                 return nested_size
     return None
+
+
+async def _close_client(client: object | None) -> None:
+    if client is None:
+        return
+    for method_name in ("aclose", "close"):
+        close = getattr(client, method_name, None)
+        if not callable(close):
+            continue
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+        return

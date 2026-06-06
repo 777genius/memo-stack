@@ -42,6 +42,13 @@ class SuggestionStatus(StrEnum):
     EXPIRED = "expired"
 
 
+class SuggestionOperation(StrEnum):
+    ADD = "add"
+    UPDATE = "update"
+    DELETE = "delete"
+    REVIEW = "review"
+
+
 class Confidence(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
@@ -522,6 +529,7 @@ class MemorySuggestion:
     profile_id: ProfileId
     candidate_text: str
     kind: MemoryKind
+    operation: SuggestionOperation
     status: SuggestionStatus
     source_refs: tuple[SourceRef, ...]
     confidence: Confidence
@@ -531,6 +539,14 @@ class MemorySuggestion:
     target_fact_version: int | None
     created_at: datetime
     updated_at: datetime
+    category: str | None = None
+    tags: tuple[str, ...] = ()
+    ttl_policy: str | None = None
+    expires_at: datetime | None = None
+    expiry_reason: str | None = None
+    created_from_capture_id: str | None = None
+    candidate_fingerprint: str | None = None
+    review_payload: dict[str, object] | None = None
     reviewed_at: datetime | None = None
     review_reason: str | None = None
 
@@ -550,17 +566,34 @@ class MemorySuggestion:
         trust_level: TrustLevel = TrustLevel.MEDIUM,
         target_fact_id: MemoryFactId | None = None,
         target_fact_version: int | None = None,
+        operation: SuggestionOperation = SuggestionOperation.ADD,
+        category: str | None = None,
+        tags: tuple[str, ...] = (),
+        ttl_policy: str | None = None,
+        expires_at: datetime | None = None,
+        expiry_reason: str | None = None,
+        created_from_capture_id: str | None = None,
+        candidate_fingerprint: str | None = None,
+        review_payload: dict[str, object] | None = None,
     ) -> MemorySuggestion:
         if not candidate_text.strip():
             raise MemoryValidationError("Suggestion candidate_text is required")
         if not safe_reason.strip():
             raise MemoryValidationError("Suggestion safe_reason is required")
+        if len(tags) > 10:
+            raise MemoryValidationError("Suggestion tags exceed limit")
+        if (
+            operation in {SuggestionOperation.UPDATE, SuggestionOperation.DELETE}
+            and not target_fact_id
+        ):
+            raise MemoryValidationError("Update/delete suggestion requires target fact")
         return cls(
             id=suggestion_id,
             space_id=space_id,
             profile_id=profile_id,
             candidate_text=candidate_text.strip(),
             kind=kind,
+            operation=operation,
             status=SuggestionStatus.PENDING,
             source_refs=source_refs,
             confidence=confidence,
@@ -568,6 +601,14 @@ class MemorySuggestion:
             safe_reason=safe_reason.strip(),
             target_fact_id=target_fact_id,
             target_fact_version=target_fact_version,
+            category=category,
+            tags=tuple(tags),
+            ttl_policy=ttl_policy,
+            expires_at=expires_at,
+            expiry_reason=expiry_reason,
+            created_from_capture_id=created_from_capture_id,
+            candidate_fingerprint=candidate_fingerprint,
+            review_payload=dict(review_payload or {}),
             created_at=now,
             updated_at=now,
         )

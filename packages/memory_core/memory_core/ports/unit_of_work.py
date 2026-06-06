@@ -6,6 +6,7 @@ from types import TracebackType
 from typing import Protocol
 
 from memory_core.domain.events import OutboxEvent
+from memory_core.ports.captures import CaptureRepositoryPort
 from memory_core.ports.repositories import (
     ChunkRepositoryPort,
     DocumentRepositoryPort,
@@ -28,6 +29,7 @@ class UnitOfWorkPort(Protocol):
     episodes: EpisodeRepositoryPort
     documents: DocumentRepositoryPort
     chunks: ChunkRepositoryPort
+    captures: CaptureRepositoryPort
     suggestions: SuggestionRepositoryPort
     idempotency: IdempotencyRepositoryPort
     outbox: OutboxPort

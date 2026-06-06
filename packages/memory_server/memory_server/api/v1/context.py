@@ -7,7 +7,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from memory_core.application import BuildContextQuery, ConsistencyMode
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
@@ -21,6 +21,8 @@ router = APIRouter(tags=["context"], dependencies=[Depends(require_service_token
 
 
 class ContextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
     profile_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)
     thread_id: str | None = Field(default=None, max_length=80)

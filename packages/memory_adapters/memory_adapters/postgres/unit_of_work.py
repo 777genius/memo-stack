@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
 
 from memory_adapters.postgres.models import Base
 from memory_adapters.postgres.repositories import (
+    PostgresCaptureRepository,
     PostgresChunkRepository,
     PostgresDocumentRepository,
     PostgresEpisodeRepository,
@@ -51,6 +52,17 @@ _ADDITIVE_SCHEMA_COLUMNS = {
         ("workload_class", "VARCHAR(80) NOT NULL DEFAULT 'projection'"),
         ("fairness_key", "VARCHAR(160)"),
         ("last_safe_diagnostic_code", "VARCHAR(120)"),
+    ),
+    "memory_suggestions": (
+        ("operation", "VARCHAR(40) NOT NULL DEFAULT 'add'"),
+        ("category", "VARCHAR(80)"),
+        ("tags_json", "JSON NOT NULL DEFAULT '[]'"),
+        ("ttl_policy", "VARCHAR(80)"),
+        ("expires_at", "TIMESTAMPTZ"),
+        ("expiry_reason", "VARCHAR(160)"),
+        ("created_from_capture_id", "VARCHAR(80)"),
+        ("candidate_fingerprint", "VARCHAR(80)"),
+        ("review_payload_json", "JSON NOT NULL DEFAULT '{}'"),
     ),
 }
 
@@ -211,6 +223,8 @@ async def create_schema(engine: AsyncEngine) -> None:
         await connection.run_sync(_ensure_additive_schema_columns)
         await connection.run_sync(_ensure_document_thread_unique_indexes)
         await connection.run_sync(_ensure_outbox_lifecycle_indexes)
+        await connection.run_sync(_ensure_capture_indexes)
+        await connection.run_sync(_ensure_suggestion_metadata_indexes)
 
 
 def _ensure_outbox_lifecycle_indexes(connection: Connection) -> None:
@@ -223,6 +237,42 @@ def _ensure_outbox_lifecycle_indexes(connection: Connection) -> None:
             UPDATE memory_outbox
             SET fairness_key = aggregate_type || ':' || aggregate_id
             WHERE fairness_key IS NULL
+            """
+        )
+    )
+
+
+def _ensure_capture_indexes(connection: Connection) -> None:
+    inspector = inspect(connection)
+    if "memory_captures" not in set(inspector.get_table_names()):
+        return
+    connection.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_capture_idempotency
+            ON memory_captures(space_id, idempotency_key)
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_memory_captures_consolidation
+            ON memory_captures(space_id, profile_id, consolidation_status, created_at)
+            """
+        )
+    )
+
+
+def _ensure_suggestion_metadata_indexes(connection: Connection) -> None:
+    inspector = inspect(connection)
+    if "memory_suggestions" not in set(inspector.get_table_names()):
+        return
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_memory_suggestions_expiry
+            ON memory_suggestions(space_id, profile_id, status, expires_at)
             """
         )
     )
@@ -256,6 +306,7 @@ class PostgresUnitOfWork:
         self.episodes = PostgresEpisodeRepository(self._session)
         self.documents = PostgresDocumentRepository(self._session)
         self.chunks = PostgresChunkRepository(self._session)
+        self.captures = PostgresCaptureRepository(self._session)
         self.suggestions = PostgresSuggestionRepository(self._session)
         self.idempotency = PostgresIdempotencyRepository(self._session, now=now)
         self.outbox = PostgresOutbox(self._session, now=now)

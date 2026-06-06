@@ -1,0 +1,8 @@
+{
+  "event": "mcp_tool_call",
+  "tool": "memory_status",
+  "message": {
+    "role": "user",
+    "content": "HOST_FIXTURE_CURSOR_MCP_ONLY Cursor remains MCP-only until lifecycle hooks are official."
+  }
+}

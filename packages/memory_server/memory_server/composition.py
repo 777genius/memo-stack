@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 
 from memory_adapters.noop import (
@@ -19,20 +20,24 @@ from memory_adapters.postgres import (
 from memory_core.application import (
     ApproveSuggestionUseCase,
     BuildContextUseCase,
+    ConsolidateCaptureUseCase,
     CreateProfileUseCase,
     CreateSpaceUseCase,
     CreateSuggestionUseCase,
     DeleteDocumentUseCase,
     DeleteThreadMemoryUseCase,
     EnsureScopeUseCase,
+    ExpirePendingSuggestionsUseCase,
     ExpireSuggestionUseCase,
     ForgetFactUseCase,
     GetCapabilitiesUseCase,
+    GetCaptureUseCase,
     GetDocumentUseCase,
     GetFactUseCase,
     GetSessionStatusUseCase,
     IngestDocumentUseCase,
     IngestEpisodeUseCase,
+    ListCapturesUseCase,
     ListDocumentChunksUseCase,
     ListFactsUseCase,
     ListFactVersionsUseCase,
@@ -40,25 +45,29 @@ from memory_core.application import (
     ListSpacesUseCase,
     ListSuggestionsUseCase,
     ProcessDocumentUseCase,
+    PurgeCaptureUseCase,
+    ReceiveCaptureUseCase,
     RejectSuggestionUseCase,
     RememberFactUseCase,
     UpdateFactUseCase,
 )
 from memory_core.application.auto_memory import RuleBasedMemoryClassifier
 from memory_core.application.context_packer import ContextPacker
+from memory_core.application.extractor import NoopMemoryExtractor, RuleBasedMemoryExtractor
 from memory_core.ports.adapters import (
     EmbeddingPort,
     GraphMemoryPort,
     MemoryAdapterPort,
     VectorMemoryPort,
 )
+from memory_core.ports.auto_memory import MemoryExtractorPort
 from memory_core.ports.capabilities import DocumentMemoryPort
 from memory_core.ports.clock import ClockPort
 from memory_core.ports.ids import IdGeneratorPort
 from memory_core.ports.unit_of_work import UnitOfWorkFactoryPort
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from memory_server.config import Settings
+from memory_server.config import CaptureMode, MemoryPolicyMode, Settings
 from memory_server.metrics import RuntimeMetrics
 from memory_server.provider_budget import QueryEmbeddingBudgetAdapter
 from memory_server.provider_circuit import (
@@ -114,8 +123,30 @@ class Container:
     approve_suggestion: ApproveSuggestionUseCase
     reject_suggestion: RejectSuggestionUseCase
     expire_suggestion: ExpireSuggestionUseCase
+    receive_capture: ReceiveCaptureUseCase
+    get_capture: GetCaptureUseCase
+    list_captures: ListCapturesUseCase
+    purge_capture: PurgeCaptureUseCase
+    consolidate_capture: ConsolidateCaptureUseCase
+    expire_pending_suggestions: ExpirePendingSuggestionsUseCase
     runtime_metrics: RuntimeMetrics
     provider_circuits: tuple[ProviderCircuitBreaker, ...]
+
+    async def aclose(self) -> None:
+        closed: set[int] = set()
+        for resource in (
+            *self.adapters,
+            self.cognee_memory,
+            self.vector_index,
+            self.graph_index,
+            self.embedder,
+        ):
+            resource_id = id(resource)
+            if resource_id in closed:
+                continue
+            closed.add(resource_id)
+            await _close_resource(resource)
+        await self.engine.dispose()
 
 
 def build_container(settings: Settings | None = None) -> Container:
@@ -158,6 +189,13 @@ def build_container(settings: Settings | None = None) -> Container:
             "max_context_chars": resolved_settings.max_context_chars,
             "max_memory_candidates": resolved_settings.max_memory_candidates,
             "max_memory_results": resolved_settings.max_memory_results,
+            "max_capture_text_chars": resolved_settings.max_capture_text_chars,
+            "max_pending_captures_per_profile": (
+                resolved_settings.max_pending_captures_per_profile
+            ),
+            "max_pending_suggestions_per_profile": (
+                resolved_settings.max_pending_suggestions_per_profile
+            ),
         },
     )
     create_space = CreateSpaceUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
@@ -199,6 +237,39 @@ def build_container(settings: Settings | None = None) -> Container:
     approve_suggestion = ApproveSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     reject_suggestion = RejectSuggestionUseCase(uow_factory=uow_factory, clock=clock)
     expire_suggestion = ExpireSuggestionUseCase(uow_factory=uow_factory, clock=clock)
+    receive_capture = ReceiveCaptureUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+        max_pending_captures_per_profile=resolved_settings.max_pending_captures_per_profile,
+    )
+    get_capture = GetCaptureUseCase(uow_factory=uow_factory)
+    list_captures = ListCapturesUseCase(uow_factory=uow_factory)
+    purge_capture = PurgeCaptureUseCase(uow_factory=uow_factory, clock=clock)
+    consolidate_capture = ConsolidateCaptureUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+        extractor=_build_capture_extractor(resolved_settings),
+        external_ai_enabled=resolved_settings.capture_external_ai_enabled,
+        auto_apply_safe_enabled=(
+            resolved_settings.capture_mode == CaptureMode.AUTO_APPLY_SAFE
+            and resolved_settings.auto_apply_safe_enabled
+        ),
+        capture_consolidation_enabled=(
+            resolved_settings.policy_mode
+            in {MemoryPolicyMode.SUGGESTIONS, MemoryPolicyMode.ACTIVE_CONTEXT}
+            and resolved_settings.capture_mode
+            in {CaptureMode.SUGGEST, CaptureMode.AUTO_APPLY_SAFE}
+        ),
+        max_pending_suggestions_per_profile=(
+            resolved_settings.max_pending_suggestions_per_profile
+        ),
+    )
+    expire_pending_suggestions = ExpirePendingSuggestionsUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+    )
     runtime_metrics = RuntimeMetrics()
 
     return Container(
@@ -238,9 +309,26 @@ def build_container(settings: Settings | None = None) -> Container:
         approve_suggestion=approve_suggestion,
         reject_suggestion=reject_suggestion,
         expire_suggestion=expire_suggestion,
+        receive_capture=receive_capture,
+        get_capture=get_capture,
+        list_captures=list_captures,
+        purge_capture=purge_capture,
+        consolidate_capture=consolidate_capture,
+        expire_pending_suggestions=expire_pending_suggestions,
         runtime_metrics=runtime_metrics,
         provider_circuits=provider_circuits,
     )
+
+
+async def _close_resource(resource: object) -> None:
+    for method_name in ("aclose", "close"):
+        close = getattr(resource, method_name, None)
+        if not callable(close):
+            continue
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+        return
 
 
 def _build_vector_adapter(settings: Settings) -> MemoryAdapterPort:
@@ -281,6 +369,19 @@ def _build_embedding_adapter(settings: Settings) -> MemoryAdapterPort:
             dimensions=settings.embeddings_dimensions,
         )
     return NoopEmbeddingAdapter(name="embeddings")
+
+
+def _build_capture_extractor(settings: Settings) -> MemoryExtractorPort:
+    if settings.capture_extractor_provider == "noop":
+        return NoopMemoryExtractor()
+    if settings.capture_extractor_provider == "openai":
+        from memory_adapters.extraction import OpenAIJsonMemoryExtractor
+
+        return OpenAIJsonMemoryExtractor(
+            api_key=settings.openai_api_key,
+            model=settings.capture_extractor_model,
+        )
+    return RuleBasedMemoryExtractor()
 
 
 def _build_cognee_adapter(settings: Settings) -> MemoryAdapterPort:

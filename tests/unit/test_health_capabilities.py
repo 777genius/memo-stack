@@ -20,7 +20,7 @@ from memory_core.ports import (
     TemporalFactGraphPort,
     VectorRecallPort,
 )
-from memory_server.config import DeployProfile, Settings
+from memory_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
 from memory_server.main import create_app
 
 
@@ -84,7 +84,72 @@ def test_capabilities_return_noop_adapters() -> None:
     assert "api_key" not in response.text.lower()
     assert "secret" not in response.text.lower()
     assert body["limits"]["max_context_tokens"] == 1800
+    assert body["limits"]["max_capture_text_chars"] == 20_000
+    assert body["limits"]["max_pending_captures_per_profile"] == 5_000
+    assert body["limits"]["max_pending_suggestions_per_profile"] == 500
+    assert body["captures"]["max_pending_per_profile"] == 5_000
+    assert body["captures"]["ingress_limit_code"] == "memory.capture.ingress_limited"
     assert body["supports_legacy_client_routes"] is False
+
+
+def test_capabilities_show_capture_disabled_when_policy_is_manual_only(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'manual-capture-capabilities.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            policy_mode=MemoryPolicyMode.MANUAL_ONLY,
+            capture_mode=CaptureMode.SUGGEST,
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["policy_mode"] == "manual_only"
+    assert response.json()["captures"]["mode"] == "suggest"
+    assert response.json()["captures"]["enabled"] is False
+
+
+def test_capabilities_require_explicit_auto_apply_safe_switch(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'auto-apply-capabilities.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            policy_mode=MemoryPolicyMode.SUGGESTIONS,
+            capture_mode=CaptureMode.AUTO_APPLY_SAFE,
+            auto_apply_safe_enabled=False,
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["captures"]["mode"] == "auto_apply_safe"
+    assert response.json()["captures"]["enabled"] is True
+    assert response.json()["captures"]["auto_apply_safe_enabled"] is False
+
+
+def test_settings_auto_memory_mode_alias_wins_over_capture_mode(monkeypatch) -> None:
+    monkeypatch.setenv("MEMORY_CAPTURE_MODE", "retrieve_only")
+    monkeypatch.setenv("MEMORY_AUTO_MEMORY_MODE", "suggest")
+
+    settings = Settings(
+        _env_file=None,
+        deploy_profile=DeployProfile.TEST,
+        qdrant_enabled=False,
+        graphiti_enabled=False,
+        embeddings_enabled=False,
+    )
+
+    assert settings.capture_mode == CaptureMode.SUGGEST
 
 
 def test_legacy_client_routes_are_opt_in() -> None:

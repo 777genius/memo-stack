@@ -32,7 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            await container.engine.dispose()
+            await container.aclose()
 
     app = FastAPI(title="Memory Platform", version="0.1.0", lifespan=lifespan)
     app.state.container = container

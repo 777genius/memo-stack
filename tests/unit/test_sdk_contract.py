@@ -219,6 +219,109 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
     }
 
 
+def test_sdk_exposes_full_capture_facade_methods() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, str(request.url), body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoryPlatformClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.create_capture(
+        space_slug="client-app",
+        profile_external_ref="default",
+        thread_external_ref="session-1",
+        source_agent="codex",
+        source_kind="hook",
+        event_type="UserPromptSubmit",
+        actor_role="user",
+        text="Remember: SDK capture facade is complete.",
+        source_event_id="event-1",
+        source_actor_external_ref="user-1",
+        client_instance_id="client-1",
+        agent_session_external_ref="session-ext-1",
+        turn_external_ref="turn-1",
+        parent_capture_id="cap_parent",
+        sequence_index=2,
+        evidence_refs=[{"source_type": "hook", "source_id": "event-1"}],
+        trust_level="high",
+        source_authority="explicit_user_command",
+        sensitivity="low",
+        data_classification="internal",
+        occurred_at="2026-06-05T12:00:00+00:00",
+        metadata={"client_minimization_version": "sdk-test"},
+        trace_id="trace-1",
+        idempotency_key="capture-idempotency-1",
+        consolidate=True,
+    )
+    client.get_capture("cap_1")
+    client.list_captures(
+        space_slug="client-app",
+        profile_external_ref="default",
+        status="accepted",
+        consolidation_status="pending",
+        limit=25,
+    )
+    client.consolidate_capture("cap_1", force=True)
+    client.purge_capture("cap_1", reason="sdk privacy purge")
+    client.capture_diagnostics(
+        space_slug="client-app",
+        profile_external_ref="default",
+        consolidation_status="dead",
+        limit=10,
+    )
+
+    assert [method for method, _url, _body in seen] == [
+        "POST",
+        "GET",
+        "GET",
+        "POST",
+        "DELETE",
+        "GET",
+    ]
+    create_body = seen[0][2]
+    assert create_body["space_slug"] == "client-app"
+    assert create_body["profile_external_ref"] == "default"
+    assert create_body["thread_external_ref"] == "session-1"
+    assert create_body["source_actor_external_ref"] == "user-1"
+    assert create_body["agent_session_external_ref"] == "session-ext-1"
+    assert create_body["turn_external_ref"] == "turn-1"
+    assert create_body["parent_capture_id"] == "cap_parent"
+    assert create_body["sequence_index"] == 2
+    assert create_body["evidence_refs"] == [{"source_type": "hook", "source_id": "event-1"}]
+    assert create_body["source_authority"] == "explicit_user_command"
+    assert create_body["sensitivity"] == "low"
+    assert create_body["data_classification"] == "internal"
+    assert create_body["trace_id"] == "trace-1"
+    assert create_body["idempotency_key"] == "capture-idempotency-1"
+    assert create_body["consolidate"] is True
+    assert seen[1][1] == "http://memory.test/v1/captures/cap_1"
+    assert (
+        seen[2][1]
+        == "http://memory.test/v1/captures?space_slug=client-app&profile_external_ref=default&status=accepted&consolidation_status=pending&limit=25"
+    )
+    assert seen[3] == (
+        "POST",
+        "http://memory.test/v1/captures/cap_1/consolidate",
+        {"force": True},
+    )
+    assert seen[4] == (
+        "DELETE",
+        "http://memory.test/v1/captures/cap_1",
+        {"reason": "sdk privacy purge"},
+    )
+    assert (
+        seen[5][1]
+        == "http://memory.test/v1/diagnostics/captures?space_slug=client-app&profile_external_ref=default&consolidation_status=dead&limit=10"
+    )
+
+
 def test_sdk_suggestions_support_external_scope() -> None:
     seen: list[tuple[str, str, dict[str, object]]] = []
 

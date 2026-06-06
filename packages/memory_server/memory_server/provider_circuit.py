@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
@@ -121,6 +122,9 @@ class CircuitBreakingEmbeddingAdapter:
         _record_result(self._circuit, result)
         return result
 
+    async def aclose(self) -> None:
+        await _close_resource(self._inner)
+
 
 class CircuitBreakingVectorMemoryAdapter:
     def __init__(self, inner: VectorMemoryPort, circuit: ProviderCircuitBreaker) -> None:
@@ -190,6 +194,9 @@ class CircuitBreakingVectorMemoryAdapter:
             raise
         _record_result(self._circuit, result)
         return result
+
+    async def aclose(self) -> None:
+        await _close_resource(self._inner)
 
 
 class CircuitBreakingGraphMemoryAdapter:
@@ -266,6 +273,20 @@ class CircuitBreakingGraphMemoryAdapter:
             raise
         _record_result(self._circuit, result)
         return result
+
+    async def aclose(self) -> None:
+        await _close_resource(self._inner)
+
+
+async def _close_resource(resource: object) -> None:
+    for method_name in ("aclose", "close"):
+        close = getattr(resource, method_name, None)
+        if not callable(close):
+            continue
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+        return
 
 
 def _record_result(circuit: ProviderCircuitBreaker, result: _ResultT) -> None:

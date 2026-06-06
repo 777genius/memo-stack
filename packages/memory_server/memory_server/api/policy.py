@@ -26,3 +26,10 @@ def should_ingest_legacy_transcript(container: Container) -> bool:
         MemoryPolicyMode.SUGGESTIONS,
         MemoryPolicyMode.ACTIVE_CONTEXT,
     }
+
+
+def should_capture(container: Container) -> bool:
+    return container.settings.policy_mode in {
+        MemoryPolicyMode.SUGGESTIONS,
+        MemoryPolicyMode.ACTIVE_CONTEXT,
+    }

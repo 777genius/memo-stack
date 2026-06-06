@@ -7,8 +7,9 @@ This folder contains the platform planning documents moved out of Client App.
 1. [Core Lite implementation plan](memory-platform-core-lite-plan.md)
 2. [Global architecture plan](memory-platform-architecture-plan.md)
 3. [MCP memory foundation plan](mcp-memory-foundation-plan.md)
-4. [Legacy client memory notes](client-integration/interview-memory-clean-architecture-plan.md)
-5. [Legacy client integration run notes](client-integration/current-integration-run-notes.md)
+4. [Auto-memory capture platform plan](auto-memory-capture-platform-plan.md)
+5. [Legacy client memory notes](client-integration/interview-memory-clean-architecture-plan.md)
+6. [Legacy client integration run notes](client-integration/current-integration-run-notes.md)
 
 ## Architecture Decisions
 
@@ -68,12 +69,16 @@ Fresh full-provider canary with isolated Docker volumes:
 ```bash
 make memory-clean-full-smoke
 make memory-clean-full-mcp-smoke
+make memory-full-provider-canary-interactive
 ```
 
 This is a manual paid canary. It requires Docker plus `MEMORY_OPENAI_API_KEY`
 or `OPENAI_API_KEY`, starts isolated Postgres, Qdrant and Neo4j containers,
 uses OpenAI embeddings, and tears the stack down unless
 `MEMORY_CLEAN_SMOKE_KEEP_STACK=true`.
+Use `memory-full-provider-canary-interactive` when the key is not already
+exported; it reads the key with terminal echo disabled and passes it only via
+process environment.
 
 `memory-clean-full-smoke` now runs the real stdio MCP canary by default. To
 run only the historical HTTP/API full-provider smoke, set:
@@ -104,11 +109,26 @@ OpenCode, Cursor package config and Cursor workspace config:
 
 ```bash
 make memory-plugin-test
+make memory-prod-confidence
+make memory-prod-confidence-strict-preflight
+make memory-prod-confidence-strict
 ```
 
 It runs `plugin-kit-ai generate --check`, strict target validation and generated
 MCP e2e coverage. Use `make memory-plugin-doctor` after
 `make memory-stack-up-lite` for the live API readiness check.
+`memory-prod-confidence` is the one-command unpaid release gate. It runs plugin
+validation/e2e, the full deterministic memory quality suite, install doctor,
+isolated live MCP smoke, advisory real-agent smoke, advisory auth doctor,
+`git diff --check` and a repository secret scan. It also installs a cleanup trap
+and runs `memory-down` on exit.
+`memory-prod-confidence-strict` is the paid/local-auth hard gate for a fully
+green release. It additionally requires `MEMORY_OPENAI_API_KEY` or
+`OPENAI_API_KEY`, runs the isolated full-provider Graphiti/Qdrant/OpenAI MCP
+canary, and treats real Codex/Claude/Gemini/OpenCode CLI auth failures as hard
+failures. `memory-prod-confidence-strict-preflight` runs first and fails before
+the paid full-provider canary when the OpenAI key or real-agent auth is missing.
+`memory-prod-confidence-full` is an alias for the strict gate.
 
 Agent install verification is separate from package validation because
 `plugin-kit-ai validate` and `plugin-kit-ai add` use different target names:
@@ -118,19 +138,61 @@ make memory-agent-install-dry-run
 make memory-agent-install
 make memory-agent-install-doctor
 make memory-agent-live-smoke
+make memory-agent-live-smoke-agents
+make memory-agent-live-smoke-agents-strict
+make memory-agent-auth-doctor
+make memory-agent-auth-doctor-strict
+make memory-agent-auth-repair
+make memory-prod-confidence-strict-preflight
 ```
 
 The managed install targets are `codex`, `claude`, `gemini`, `opencode` and
 `cursor`. Cursor workspace config remains a generated workspace-copy lane and
 is covered by plugin e2e, not by `plugin-kit-ai integrations`.
-`memory-agent-live-smoke` is strict for real agent CLI checks: if a configured
-agent CLI times out or cannot call the MCP tool, the target fails instead of
-reporting a false positive. For generated MCP config diagnostics without hard
-agent CLI gating, run `scripts/agent_install_verification.py live-smoke
---run-agent-cli` directly without `--strict-agent-cli`.
+`memory-agent-live-smoke` is the stable hard gate for generated MCP configs. It
+starts the local lite stack and verifies stdio `memory_status` through the
+package, Gemini, OpenCode and Cursor workspace generated configs. Real agent
+CLI evidence is separated into `memory-agent-live-smoke-agents`; that target
+reports missing Claude/Gemini/OpenCode/Codex auth/session state as advisory
+blocked evidence. Use `memory-agent-live-smoke-agents-strict` only on a machine
+where every local agent CLI is authenticated and expected to pass.
+The live-smoke targets use isolated default host ports
+`MEMORY_AGENT_SMOKE_SERVER_PORT=17788` and
+`MEMORY_AGENT_SMOKE_POSTGRES_PORT=55429`, so they do not accidentally verify
+against another local Memory Server already running on `7788`.
+Gemini installed extensions persist MCP env inside the extension config. The
+real-agent smoke keeps that persisted config intact and passes
+`MEMORY_MCP_RUNTIME_*` overrides through the repo-local wrapper, so an installed
+extension can still target the default `127.0.0.1:7788` while the isolated smoke
+stack is verified on `17788`. Without these runtime overrides, a mismatched
+persisted Gemini URL remains a blocked preflight.
+Gemini CLI can inject a `wait_for_previous` sequencing argument into MCP tool
+calls. The MCP adapter ignores only that known host argument before strict input
+validation; arbitrary unknown arguments remain rejected.
+`memory-agent-auth-doctor` runs plain agent prompts without Memory MCP. If it
+reports Claude or OpenCode 401, fix the local agent credentials before blaming
+the Memory plugin or MCP transport. `memory-agent-auth-repair` is an
+interactive helper for the local machine; it runs the official Claude and
+OpenCode login flows and then re-runs the strict auth doctor.
+Run `memory-prod-confidence-strict-preflight` before paid canaries on a fresh
+machine; it catches missing OpenAI env and local agent auth problems before the
+Graphiti/Qdrant/OpenAI full-provider stack starts.
 `memory-agent-install-doctor` also treats `plugin-kit-ai integrations list` and
 `plugin-kit-ai integrations doctor` failures as hard failures, even when the
 local structured state file still looks valid.
+
+Auto-memory capture quality has its own deterministic gate:
+
+```bash
+make memory-auto-memory-eval
+make memory-auto-memory-quality
+```
+
+The eval suite runs against public server APIs and verifies that review-gated
+captures do not become active facts before approval, `auto_apply_safe` does not
+promote medium-confidence extractor output, prompt-injection captures are not
+promoted, secrets are redacted on safe surfaces, replay is idempotent and
+approved facts block duplicate pending suggestions.
 
 The clean full MCP canary uses the same isolated full-provider stack and
 verifies MCP status/readiness, fact lifecycle, document chunk recall through

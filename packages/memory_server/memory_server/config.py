@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,14 @@ class MemoryPolicyMode(StrEnum):
     ACTIVE_CONTEXT = "active_context"
 
 
+class CaptureMode(StrEnum):
+    OFF = "off"
+    RETRIEVE_ONLY = "retrieve_only"
+    CAPTURE_ONLY = "capture_only"
+    SUGGEST = "suggest"
+    AUTO_APPLY_SAFE = "auto_apply_safe"
+
+
 class Settings(BaseSettings):
     service_name: str = "memory-platform"
     deploy_profile: DeployProfile = DeployProfile.LOCAL
@@ -29,6 +37,16 @@ class Settings(BaseSettings):
     port: int = 7788
     service_token: str | None = None
     policy_mode: MemoryPolicyMode = MemoryPolicyMode.ACTIVE_CONTEXT
+    auto_memory_mode: CaptureMode | None = None
+    capture_mode: CaptureMode = CaptureMode.RETRIEVE_ONLY
+    capture_external_ai_enabled: bool = False
+    capture_extractor_provider: str = "rule_based"
+    capture_extractor_model: str = "gpt-4.1-mini"
+    capture_default_consolidate: bool = True
+    auto_apply_safe_enabled: bool = False
+    max_capture_text_chars: int = Field(default=20_000, ge=100, le=100_000)
+    max_pending_captures_per_profile: int = Field(default=5_000, ge=1, le=100_000)
+    max_pending_suggestions_per_profile: int = Field(default=500, ge=1, le=10_000)
     qdrant_enabled: bool = False
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: str | None = None
@@ -65,6 +83,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @model_validator(mode="after")
+    def apply_auto_memory_mode_alias(self) -> "Settings":
+        if self.auto_memory_mode is not None:
+            self.capture_mode = self.auto_memory_mode
+        return self
+
     def validate_for_startup(self) -> None:
         if self.deploy_profile == DeployProfile.SERVER and not self.service_token:
             raise RuntimeError("MEMORY_SERVICE_TOKEN is required for server profile")
@@ -82,5 +106,17 @@ class Settings(BaseSettings):
             )
         if self.embeddings_enabled and not self.openai_api_key:
             raise RuntimeError("MEMORY_OPENAI_API_KEY is required when embeddings are enabled")
+        if self.capture_extractor_provider not in {"rule_based", "noop", "openai"}:
+            raise RuntimeError(
+                "MEMORY_CAPTURE_EXTRACTOR_PROVIDER must be rule_based, noop or openai"
+            )
+        if (
+            self.capture_extractor_provider == "openai"
+            and self.capture_external_ai_enabled
+            and not self.openai_api_key
+        ):
+            raise RuntimeError(
+                "MEMORY_OPENAI_API_KEY is required when OpenAI capture extractor is enabled"
+            )
         if self.graphiti_enabled and not self.graphiti_neo4j_password:
             raise RuntimeError("MEMORY_GRAPHITI_ENABLED requires MEMORY_GRAPHITI_NEO4J_PASSWORD")

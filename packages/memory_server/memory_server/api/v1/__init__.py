@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from memory_server.api.v1.capabilities import router as capabilities_router
+from memory_server.api.v1.captures import router as captures_router
 from memory_server.api.v1.context import router as context_router
 from memory_server.api.v1.diagnostics import router as diagnostics_router
 from memory_server.api.v1.documents import router as documents_router
@@ -20,6 +21,7 @@ router.include_router(spaces_profiles_router)
 router.include_router(facts_router)
 router.include_router(documents_router)
 router.include_router(episodes_router)
+router.include_router(captures_router)
 router.include_router(context_router)
 router.include_router(thread_memory_router)
 router.include_router(suggestions_router)

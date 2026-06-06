@@ -11,4 +11,5 @@ build/
 .env.full
 .env.*.local
 .e2e-artifacts/
+.runtime/
 .serena/

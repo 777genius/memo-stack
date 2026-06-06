@@ -37,6 +37,18 @@ def test_makefile_has_clean_full_mcp_smoke_target() -> None:
     assert "$(PYTHON) scripts/clean_full_smoke.py" in makefile
 
 
+def test_makefile_has_manual_prod_load_canary_target() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = _make_target_recipe(makefile, "memory-prod-load-canary")
+
+    assert ".PHONY: memory-prod-load-canary" in makefile
+    assert "MEMORY_CLEAN_SMOKE_PROD_LOAD=true" in "\n".join(recipe)
+    assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in "\n".join(recipe)
+    assert "MEMORY_OPENAI_API_KEY" in "\n".join(recipe)
+    assert "memory-test-quality: memory-lint memory-test-all memory-eval" in makefile
+    assert "memory-test-quality: memory-prod-load-canary" not in makefile
+
+
 def test_makefile_has_memory_plugin_gate_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
@@ -46,6 +58,218 @@ def test_makefile_has_memory_plugin_gate_target() -> None:
         in makefile
     )
     assert "$(PYTHON) -m pytest tests/e2e/test_memory_agent_plugin_e2e.py -q" in makefile
+
+
+def test_makefile_has_prod_confidence_gate_with_cleanup() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = "\n".join(_make_target_recipe(makefile, "memory-prod-confidence"))
+
+    assert ".PHONY: memory-prod-confidence" in makefile
+    assert ".PHONY: memory-secret-scan" in makefile
+    assert "trap cleanup EXIT INT TERM" in recipe
+    assert "$(MAKE) memory-down" in recipe
+    assert "$(MAKE) memory-plugin-test" in recipe
+    assert "$(MAKE) memory-test-quality" in recipe
+    assert "$(MAKE) memory-agent-install-doctor" in recipe
+    assert "$(MAKE) memory-agent-live-smoke" in recipe
+    assert "$(MAKE) memory-agent-live-smoke-agents" in recipe
+    assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
+    assert "MEMORY_PROD_CONFIDENCE_SERVER_PORT" in recipe
+    assert "$(MAKE) memory-agent-auth-doctor" in recipe
+    assert "git diff --check" in recipe
+    assert "$(MAKE) memory-secret-scan" in recipe
+    assert "memory-full-provider-canary" not in recipe
+    assert "memory-agent-live-smoke-agents-strict" not in recipe
+
+
+def test_makefile_has_strict_full_prod_confidence_gate() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = "\n".join(_make_target_recipe(makefile, "memory-prod-confidence-strict"))
+    preflight_recipe = "\n".join(
+        _make_target_recipe(makefile, "memory-prod-confidence-strict-preflight")
+    )
+
+    assert ".PHONY: memory-prod-confidence-strict" in makefile
+    assert ".PHONY: memory-prod-confidence-full" in makefile
+    assert ".PHONY: memory-prod-confidence-strict-preflight" in makefile
+    assert "memory-prod-confidence-full: memory-prod-confidence-strict" in makefile
+    assert "trap cleanup EXIT INT TERM" in recipe
+    assert "$(MAKE) memory-prod-confidence-strict-preflight" in recipe
+    assert "$(MAKE) memory-down" in recipe
+    assert "$(MAKE) memory-plugin-test" in recipe
+    assert "$(MAKE) memory-test-quality" in recipe
+    assert "$(MAKE) memory-agent-install-doctor" in recipe
+    assert "$(MAKE) memory-full-provider-canary" in recipe
+    assert "$(MAKE) memory-agent-live-smoke" in recipe
+    assert "$(MAKE) memory-agent-live-smoke-agents-strict" in recipe
+    assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
+    assert "MEMORY_PROD_CONFIDENCE_SERVER_PORT" in recipe
+    assert "git diff --check" in recipe
+    assert "$(MAKE) memory-secret-scan" in recipe
+    assert "MEMORY_OPENAI_API_KEY" in preflight_recipe
+    assert "OPENAI_API_KEY" in preflight_recipe
+    assert "$(MAKE) memory-agent-auth-doctor-strict" in preflight_recipe
+    assert "$(MAKE) memory-agent-live-smoke-agents;" not in recipe
+    assert "$(MAKE) memory-agent-auth-doctor;" not in recipe
+
+
+def test_makefile_has_agent_install_and_full_canary_targets() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert ".PHONY: memory-full-provider-canary" in makefile
+    assert "memory-full-provider-canary: memory-clean-full-mcp-smoke" in makefile
+    assert ".PHONY: memory-full-provider-canary-interactive" in makefile
+    interactive_recipe = "\n".join(
+        _make_target_recipe(makefile, "memory-full-provider-canary-interactive")
+    )
+    assert "stty -echo" in interactive_recipe
+    assert "IFS= read -r OPENAI_KEY" in interactive_recipe
+    assert "OpenAI key (input hidden)" in interactive_recipe
+    assert "$(MAKE) memory-full-provider-canary" in interactive_recipe
+    assert "sk-" not in interactive_recipe
+    assert ".PHONY: memory-agent-install-dry-run" in makefile
+    assert ".PHONY: memory-agent-install" in makefile
+    assert ".PHONY: memory-agent-install-doctor" in makefile
+    assert ".PHONY: memory-agent-live-smoke" in makefile
+    assert ".PHONY: memory-agent-live-smoke-agents" in makefile
+    assert ".PHONY: memory-agent-live-smoke-agents-strict" in makefile
+    assert ".PHONY: memory-agent-auth-doctor" in makefile
+    assert ".PHONY: memory-agent-auth-doctor-strict" in makefile
+    assert ".PHONY: memory-agent-auth-repair" in makefile
+    assert "MEMORY_AGENT_SMOKE_POSTGRES_PORT ?= 55429" in makefile
+    assert "MEMORY_AGENT_SMOKE_SERVER_PORT ?= 17788" in makefile
+    assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT ?= 55431" in makefile
+    assert "MEMORY_PROD_CONFIDENCE_SERVER_PORT ?= 17791" in makefile
+    assert "MEMORY_AGENT_INSTALL_TARGETS ?= codex claude gemini opencode cursor" in makefile
+    assert "cursor-workspace" not in re.search(
+        r"MEMORY_AGENT_INSTALL_TARGETS \?= (?P<targets>.+)",
+        makefile,
+    ).group("targets")
+    assert "$(PYTHON) scripts/agent_install_verification.py install-doctor" in makefile
+    assert "$(PYTHON) scripts/install_memory_agent_plugin.py --dry-run" in makefile
+    assert "$(PYTHON) scripts/install_memory_agent_plugin.py" in makefile
+    assert (
+        "$(PYTHON) scripts/agent_install_verification.py live-smoke\n"
+    ) in makefile
+    assert (
+        "MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_AGENT_SMOKE_POSTGRES_PORT)} "
+        "MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_AGENT_SMOKE_SERVER_PORT)} "
+        "$(MAKE) memory-stack-up-lite"
+    ) in makefile
+    assert (
+        "MEMORY_MCP_API_URL=$${MEMORY_MCP_API_URL:-http://127.0.0.1:"
+        "$${MEMORY_SERVER_PORT:-$(MEMORY_AGENT_SMOKE_SERVER_PORT)}}"
+    ) in makefile
+    assert (
+        "$(PYTHON) scripts/agent_install_verification.py live-smoke "
+        "--run-agent-cli\n"
+    ) in makefile
+    assert (
+        "$(PYTHON) scripts/agent_install_verification.py live-smoke "
+        "--run-agent-cli --strict-agent-cli"
+    ) in makefile
+    assert "$(PYTHON) scripts/agent_install_verification.py agent-auth-doctor\n" in makefile
+    assert (
+        "$(PYTHON) scripts/agent_install_verification.py agent-auth-doctor --strict"
+        in makefile
+    )
+    assert "Run this target from an interactive terminal" in makefile
+    assert "claude auth login --claudeai" in makefile
+    assert "opencode providers login --provider openai" in makefile
+    assert "$(MAKE) memory-agent-auth-doctor-strict" in makefile
+
+
+def test_memory_agent_plugin_wrappers_support_runtime_env_overrides() -> None:
+    wrappers = [
+        ROOT / "plugins" / "memory-agent-plugin" / "bin" / "memory-mcp",
+        ROOT / "plugins" / "memory-agent-plugin-cursor-workspace" / "bin" / "memory-mcp",
+    ]
+
+    for wrapper_path in wrappers:
+        wrapper = wrapper_path.read_text(encoding="utf-8")
+        assert "MEMORY_MCP_RUNTIME_API_URL" in wrapper
+        assert 'export MEMORY_MCP_API_URL="${MEMORY_MCP_RUNTIME_API_URL}"' in wrapper
+        assert "MEMORY_MCP_RUNTIME_AUTH_TOKEN" in wrapper
+        assert 'export MEMORY_MCP_AUTH_TOKEN="${MEMORY_MCP_RUNTIME_AUTH_TOKEN}"' in wrapper
+        assert "MEMORY_MCP_RUNTIME_DEFAULT_THREAD_EXTERNAL_REF" in wrapper
+        assert wrapper.index("MEMORY_MCP_RUNTIME_DEFAULT_THREAD_EXTERNAL_REF") < wrapper.index(
+            "unset MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF"
+        )
+
+
+def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert ".PHONY: memory-agent-behavior-bench" in makefile
+    assert ".PHONY: memory-agent-realistic-bench" in makefile
+    assert "MEMORY_AGENT_BENCH_MODEL" in makefile
+    assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in makefile
+    assert "MEMORY_AGENT_BENCH_SCENARIO_SET=realistic" in makefile
+    assert "MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS" in makefile
+    assert "MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS" in makefile
+    assert "MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR" in makefile
+    assert "memory-agent-behavior-bench" not in re.search(
+        r"memory-test-quality: (?P<deps>.+)",
+        makefile,
+    ).group("deps")
+    assert "memory-agent-realistic-bench" not in re.search(
+        r"memory-test-quality: (?P<deps>.+)",
+        makefile,
+    ).group("deps")
+
+
+def test_makefile_has_auto_memory_eval_quality_gate() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert ".PHONY: memory-auto-memory-eval" in makefile
+    assert "$(PYTHON) -m memory_server eval run --suite auto-memory-golden" in makefile
+    assert (
+        "memory-auto-memory-quality: "
+        "memory-capture-test memory-hook-capture-smoke memory-auto-memory-eval"
+    ) in makefile
+
+
+def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    for target in (
+        "memory-clean-full-smoke",
+        "memory-clean-full-mcp-smoke",
+        "memory-agent-behavior-bench",
+        "memory-agent-realistic-bench",
+    ):
+        recipe = _make_target_recipe(makefile, target)
+        python_lines = [line for line in recipe if "$(PYTHON) scripts/clean_full_smoke.py" in line]
+
+        assert python_lines, target
+        assert "export " in "\n".join(recipe)
+        assert all("OPENAI_API_KEY=" not in line for line in python_lines)
+        assert all("MEMORY_OPENAI_API_KEY=" not in line for line in python_lines)
+        assert all("MEMORY_AGENT_BENCH_OPENAI_API_KEY=" not in line for line in python_lines)
+
+
+def test_agent_behavior_docs_do_not_contain_raw_token_examples() -> None:
+    docs = "\n".join(
+        [
+            (ROOT / "docs" / "README.md").read_text(encoding="utf-8"),
+            (ROOT / "docs" / "mcp-adapter.md").read_text(encoding="utf-8"),
+        ]
+    )
+
+    assert "sk-" not in docs
+    assert "Bearer " not in docs
+    assert "MEMORY_MCP_AUTH_TOKEN=<" not in docs
+    assert 'MEMORY_AGENT_BENCH_MODEL="$MODEL"' in docs
+
+
+def test_mcp_docs_do_not_make_status_first_default() -> None:
+    docs = (ROOT / "docs" / "mcp-adapter.md").read_text(encoding="utf-8").casefold()
+
+    assert "call `memory_status` first" not in docs
+    assert "call memory_status first" not in docs
+    assert "call `memory_status`." not in docs
+    assert "call `memory_search` before relying on memory" in docs
+    assert "call `memory_status` only" in docs
 
 
 def test_clean_full_smoke_uses_env_secrets_and_redacts_output(monkeypatch) -> None:
@@ -96,6 +320,78 @@ def test_clean_full_smoke_uses_env_secrets_and_redacts_output(monkeypatch) -> No
     assert "<redacted>" in rendered
 
 
+def test_clean_full_smoke_keeps_safe_check_names_with_token_word() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    rendered = json.dumps(
+        module._redact_payload(
+            {
+                "checks": {
+                    "mcp_text_fallback_does_not_leak_token": True,
+                    "CUSTOM_TOKEN": "custom-token-secret-value",
+                }
+            }
+        ),
+        ensure_ascii=False,
+    )
+
+    assert "mcp_text_fallback_does_not_leak_token" in rendered
+    assert "CUSTOM_TOKEN" not in rendered
+    assert "custom-token-secret-value" not in rendered
+
+
+def test_clean_full_smoke_redacts_camelcase_secret_keys_without_hiding_metrics() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    redacted = module._redact_payload(
+        {
+            "apiKey": "plain-api-key-value",
+            "authToken": "plain-auth-token-value",
+            "privateKey": "plain-private-key-value",
+            "token_budget": 1200,
+            "secret_leak_count": 0,
+            "secret_leak_count_zero": True,
+        }
+    )
+
+    assert redacted["<redacted-key>"] == "<redacted>"
+    assert redacted["<redacted-key>-2"] == "<redacted>"
+    assert redacted["<redacted-key>-3"] == "<redacted>"
+    assert redacted["token_budget"] == 1200
+    assert redacted["secret_leak_count"] == 0
+    assert redacted["secret_leak_count_zero"] is True
+
+
+def test_clean_full_smoke_keeps_secret_redaction_metric_failure_key() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    redacted = module._redact_payload(
+        {
+            "metric_failures": {
+                "secret_redaction": [
+                    {
+                        "scenario_id": "secret_probe",
+                        "locations": [{"location": "tool_raw_output"}],
+                    }
+                ],
+                "authToken": "plain-auth-token-value",
+            }
+        }
+    )
+
+    assert redacted == {
+        "metric_failures": {
+            "secret_redaction": [
+                {
+                    "scenario_id": "secret_probe",
+                    "locations": [{"location": "tool_raw_output"}],
+                }
+            ],
+            "<redacted-key>": "<redacted>",
+        }
+    }
+
+
 def test_clean_full_smoke_redacts_explicit_canary_env_without_process_env() -> None:
     module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
 
@@ -137,6 +433,57 @@ def test_clean_full_smoke_mcp_text_secret_check_catches_generic_tokens() -> None
     assert not module._mcp_text_has_no_secrets(Result(), env={})
 
 
+def test_clean_full_smoke_redacts_agent_benchmark_secret_markers() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+    result = {
+        "ok": False,
+        "suite": "memory_mcp_agent_behavior",
+        "metric_failures": {
+            "leak_checks": [
+                {
+                    "scenario_id": "secret_case",
+                    "leak_metric": "secret_leak_count",
+                    "failures": ["found password=bench-secret-project-alpha"],
+                }
+            ]
+        },
+        "scenarios": [
+            {
+                "id": "secret_case",
+                "category": "safety",
+                "critical": True,
+                "status": "failed",
+                "tool_calls": [
+                    {
+                        "name": "memory_search",
+                        "is_error": False,
+                        "side_effects": [],
+                        "arguments": {"query": "password=bench-secret-project-alpha"},
+                        "output_preview": "Bearer canary-token-value",
+                    }
+                ],
+                "failures": [],
+                "memory_checks": [
+                    {
+                        "type": "final_answer_no_secret",
+                        "passed": False,
+                        "failures": ["found forbidden text: bench-secret-project-alpha"],
+                    }
+                ],
+            }
+        ],
+    }
+
+    summary = module._agent_behavior_failure_summary(result)
+    rendered = module._redact_text(json.dumps(summary, ensure_ascii=False), env={})
+
+    assert "bench-secret-project-alpha" not in rendered
+    assert "canary-token-value" not in rendered
+    assert summary["metric_failures"]["leak_checks"][0]["scenario_id"] == "secret_case"
+    assert summary["failed_scenarios"][0]["tool_calls"][0]["name"] == "memory_search"
+    assert "<redacted>" in rendered
+
+
 def test_clean_full_smoke_keeps_mcp_import_lazy_for_api_only_mode() -> None:
     source = (ROOT / "scripts" / "clean_full_smoke.py").read_text(encoding="utf-8")
     before_mcp_lifecycle = source.split("async def _run_mcp_lifecycle", maxsplit=1)[0]
@@ -151,6 +498,24 @@ def test_clean_full_smoke_server_logs_do_not_use_unread_pipe() -> None:
     assert "stdout=subprocess.PIPE" not in source
     assert "tempfile.TemporaryFile" in source
     assert "server_output_tail" in source
+
+
+def test_clean_full_smoke_queries_graphiti_with_semantic_fact_text() -> None:
+    source = (ROOT / "scripts" / "clean_full_smoke.py").read_text(encoding="utf-8")
+
+    assert (
+        'initial_graph_query = "Graphiti connects canonical facts to clean architecture memory"'
+        in source
+    )
+    assert 'updated_graph_query = "Graphiti Qdrant recall updated memory"' in source
+    assert (
+        "initial_context = _context(base_url, headers, space_slug, profile_ref, marker)"
+        not in source
+    )
+    assert (
+        "updated_context = _context(base_url, headers, space_slug, profile_ref, marker)"
+        not in source
+    )
 
 
 def test_clean_full_smoke_accepts_real_context_chunk_shape() -> None:
@@ -197,10 +562,58 @@ def test_clean_full_smoke_accepts_real_context_chunk_shape() -> None:
         )
         == 1
     )
-    assert module._context_diagnostic_int(
-        {"diagnostics": {"graph_hydrated_count": 2}},
-        "graph_hydrated_count",
-    ) == 2
+    assert (
+        module._context_diagnostic_int(
+            {"diagnostics": {"graph_hydrated_count": 2}},
+            "graph_hydrated_count",
+        )
+        == 2
+    )
+
+
+def test_clean_full_smoke_failure_diagnostics_are_safe_allowlists() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    search = {
+        "data": {
+            "diagnostics": {
+                "graph_status": "ok",
+                "graph_hydrated_count": 1,
+                "token": "secret-token",
+            }
+        }
+    }
+    status = {
+        "data": {
+            "readiness": {
+                "read_ready": True,
+                "degraded_reasons": ["cognee.disabled"],
+                "secret": "secret-token",
+            },
+            "capabilities": {
+                "adapters": {
+                    "qdrant": {
+                        "enabled": True,
+                        "healthy": True,
+                        "status": "ok",
+                        "token": "secret-token",
+                    }
+                }
+            },
+        }
+    }
+
+    assert module._safe_search_diagnostics(search) == {
+        "graph_hydrated_count": 1,
+        "graph_status": "ok",
+    }
+    assert module._safe_status_readiness(status) == {
+        "read_ready": True,
+        "degraded_reasons": ["cognee.disabled"],
+    }
+    assert module._safe_status_adapters(status) == {
+        "qdrant": {"enabled": True, "healthy": True, "status": "ok"}
+    }
 
 
 def test_clean_full_smoke_mcp_env_does_not_inherit_provider_secrets(monkeypatch) -> None:
@@ -249,6 +662,41 @@ def test_clean_full_smoke_required_mcp_adapters_ignore_optional_disabled() -> No
         status,
         ("qdrant", "graphiti", "embeddings"),
     )
+    assert module._required_mcp_adapters_ready(
+        {
+            "data": {
+                "capabilities": {
+                    "capabilities": [
+                        {
+                            "adapter_name": "qdrant",
+                            "enabled": True,
+                            "healthy": True,
+                            "status": "ok",
+                        },
+                        {
+                            "adapter_name": "graphiti",
+                            "enabled": True,
+                            "healthy": True,
+                            "status": "ok",
+                        },
+                        {
+                            "adapter_name": "embeddings",
+                            "enabled": True,
+                            "healthy": True,
+                            "status": "ok",
+                        },
+                        {
+                            "adapter_name": "cognee",
+                            "enabled": False,
+                            "healthy": False,
+                            "status": "disabled",
+                        },
+                    ]
+                }
+            }
+        },
+        ("qdrant", "graphiti", "embeddings"),
+    )
     assert not module._required_mcp_adapters_ready(
         status,
         ("qdrant", "graphiti", "embeddings", "cognee"),
@@ -275,6 +723,45 @@ def test_clean_full_smoke_missing_key_message_does_not_name_sensitive_envs(monke
     assert "MEMORY_OPENAI_API_KEY" not in message
 
 
+def test_clean_full_smoke_prod_load_settings_are_bounded(monkeypatch) -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_PROFILES", "4")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE", "9")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_DOCUMENTS", "2")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_LARGE_DOC_SECTIONS", "11")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_CONCURRENCY", "5")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_CHAOS_REQUESTS", "7")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_CONTEXT_REQUESTS", "8")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_WORKER_ROUNDS", "12")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_MAX_P95_MS", "12345")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_RESTART_SERVER", "false")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_RESTART_PROVIDERS", "false")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_PROVIDER_OUTAGE", "false")
+
+    assert module._prod_load_settings() == {
+        "profiles": 4,
+        "facts_per_profile": 9,
+        "documents": 2,
+        "large_doc_sections": 11,
+        "concurrency": 5,
+        "chaos_requests": 7,
+        "context_requests": 8,
+        "worker_rounds": 12,
+        "max_p95_ms": 12345.0,
+        "restart_server": False,
+        "restart_providers": False,
+        "provider_outage": False,
+    }
+
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE", "1000")
+    try:
+        module._prod_load_settings()
+    except module.CleanSmokeFailure as exc:
+        assert "MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE" in str(exc)
+    else:
+        raise AssertionError("expected bounded prod load setting failure")
+
+
 def test_real_stack_mcp_canary_docs_are_env_based() -> None:
     docs = "\n".join(
         [
@@ -285,17 +772,21 @@ def test_real_stack_mcp_canary_docs_are_env_based() -> None:
     )
 
     assert "memory-clean-full-mcp-smoke" in docs
+    assert "memory-prod-load-canary" in docs
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=true" in docs
     assert "--auth-token" not in docs
     assert "local-token" not in docs
     assert "local-dev-token" not in docs
     assert re.search(r"\bsk-[A-Za-z0-9]", docs) is None
     assert re.search(r"=<[A-Za-z0-9_-]+>", docs) is None
-    assert re.search(
-        r'"[A-Z0-9_]*(TOKEN|KEY|SECRET|PASSWORD|DATABASE_URL|DB_URL|DSN)[A-Z0-9_]*"'
-        r'\s*:\s*"<[^"]+>"',
-        docs,
-    ) is None
+    assert (
+        re.search(
+            r'"[A-Z0-9_]*(TOKEN|KEY|SECRET|PASSWORD|DATABASE_URL|DB_URL|DSN)[A-Z0-9_]*"'
+            r'\s*:\s*"<[^"]+>"',
+            docs,
+        )
+        is None
+    )
 
 
 def _load_clean_full_smoke(path: Path):
@@ -305,3 +796,15 @@ def _load_clean_full_smoke(path: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _make_target_recipe(makefile: str, target: str) -> list[str]:
+    lines = makefile.splitlines()
+    start = next(index for index, line in enumerate(lines) if line == f"{target}:")
+    recipe: list[str] = []
+    for line in lines[start + 1 :]:
+        if line and not line.startswith(("\t", " ")):
+            break
+        if line.startswith("\t"):
+            recipe.append(line.strip())
+    return recipe

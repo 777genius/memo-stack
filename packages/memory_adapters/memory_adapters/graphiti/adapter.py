@@ -6,6 +6,7 @@ canonical ids only; application use cases hydrate through Postgres.
 
 from __future__ import annotations
 
+import inspect
 import re
 from datetime import datetime
 from typing import Any
@@ -52,6 +53,21 @@ class GraphitiGraphMemoryAdapter:
         self._build_indices = build_indices
         self._indices_built = not build_indices
         self._group_id_prefix = group_id_prefix
+
+    async def aclose(self) -> None:
+        client = self._client
+        self._client = None
+        self._indices_built = not self._build_indices
+        if client is None:
+            return
+        closed = await _close_if_present(client)
+        if closed:
+            return
+        driver = getattr(client, "driver", None)
+        driver_closed = await _close_if_present(driver)
+        if driver_closed:
+            return
+        await _close_if_present(getattr(driver, "client", None))
 
     async def capabilities(self) -> AdapterCapabilities:
         try:
@@ -323,7 +339,7 @@ class GraphitiGraphMemoryAdapter:
 async def _canonical_fact_id(client: object, result: object) -> str | None:
     for attr in ("episodes", "episode_uuids"):
         value = getattr(result, attr, None)
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, list | tuple):
             for item in value:
                 fact_id = _extract_fact_id(item)
                 if fact_id:
@@ -339,6 +355,18 @@ async def _canonical_fact_id(client: object, result: object) -> str | None:
         if fact_id:
             return fact_id
     return None
+
+
+async def _close_if_present(resource: object | None) -> bool:
+    if resource is None:
+        return False
+    close = getattr(resource, "close", None)
+    if not callable(close):
+        return False
+    result = close()
+    if inspect.isawaitable(result):
+        await result
+    return True
 
 
 def _capability_descriptor(

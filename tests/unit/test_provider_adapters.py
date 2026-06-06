@@ -1,7 +1,9 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 from memory_adapters.cognee import CogneeMemoryAdapter
+from memory_adapters.extraction import OpenAIJsonMemoryExtractor
 from memory_adapters.graphiti import GraphitiGraphMemoryAdapter
 from memory_adapters.noop import (
     NoopEmbeddingAdapter,
@@ -9,7 +11,10 @@ from memory_adapters.noop import (
     NoopVectorMemoryAdapter,
 )
 from memory_adapters.qdrant import QdrantVectorMemoryAdapter
+from memory_core.domain.entities import TrustLevel
+from memory_core.domain.errors import MemoryInfrastructureError, MemoryValidationError
 from memory_core.ports.adapters import PortStatus, VectorUpsertItem
+from memory_core.ports.auto_memory import SourceProvenance
 from memory_core.ports.capabilities import (
     CapabilityRecallQuery,
     CapabilityStatus,
@@ -71,6 +76,27 @@ class NodeNotFoundError(RuntimeError):
     pass
 
 
+class FakeOpenAIResponses:
+    def __init__(self, payload: dict[str, object] | None = None) -> None:
+        self.payload = payload
+        self.calls: list[dict[str, object]] = []
+
+    async def create(self, **kwargs: object):
+        self.calls.append(kwargs)
+        if self.payload is None:
+            raise RuntimeError("provider down")
+        return SimpleNamespace(output_text=json.dumps(self.payload))
+
+
+class FakeOpenAIClient:
+    def __init__(self, payload: dict[str, object] | None = None) -> None:
+        self.responses = FakeOpenAIResponses(payload)
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
 class FakeGraphitiDriver:
     def __init__(self) -> None:
         self.name_lookup_count = 0
@@ -84,6 +110,19 @@ class FakeGraphitiDriver:
                 return ([], None, None)
             return ([{"uuid": "generated_episode_uuid"}], None, None)
         return ([], None, None)
+
+
+class FakeClosableGraphitiDriver:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeGraphitiWithNestedDriver:
+    def __init__(self) -> None:
+        self.driver = FakeClosableGraphitiDriver()
 
 
 class FakeGraphitiWithEpisodeLookup(FakeGraphiti):
@@ -480,40 +519,61 @@ def test_graphiti_adapter_supports_modern_remove_episode_delete() -> None:
     asyncio.run(run())
 
 
-def test_configured_graphiti_without_client_degrades_instead_of_disabling() -> None:
+def test_graphiti_adapter_closes_nested_driver_resource() -> None:
     async def run() -> None:
+        fake = FakeGraphitiWithNestedDriver()
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        await adapter.aclose()
+
+        assert fake.driver.closed is True
+
+    asyncio.run(run())
+
+
+def test_configured_graphiti_without_client_degrades_instead_of_disabling(monkeypatch) -> None:
+    class BrokenGraphiti:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("neo4j unavailable")
+
+    async def run() -> None:
+        import graphiti_core
+
+        monkeypatch.setattr(graphiti_core, "Graphiti", BrokenGraphiti)
         adapter = GraphitiGraphMemoryAdapter(
             neo4j_uri="bolt://graphiti.test:7687",
             neo4j_user="neo4j",
             neo4j_password="memorygraph",
         )
+        try:
+            capabilities = await adapter.capabilities()
+            upsert = await adapter.upsert_fact(
+                "fact_graphiti_missing",
+                "Graphiti unavailable projection text.",
+                {
+                    "space_id": "space_client_app",
+                    "profile_id": "profile_default",
+                    "updated_at": "2026-05-25T10:00:00+00:00",
+                },
+            )
+            search = await adapter.search(
+                space_id="space_client_app",
+                profile_ids=("profile_default",),
+                query="Graphiti unavailable",
+                limit=3,
+            )
 
-        capabilities = await adapter.capabilities()
-        upsert = await adapter.upsert_fact(
-            "fact_graphiti_missing",
-            "Graphiti unavailable projection text.",
-            {
-                "space_id": "space_client_app",
-                "profile_id": "profile_default",
-                "updated_at": "2026-05-25T10:00:00+00:00",
-            },
-        )
-        search = await adapter.search(
-            space_id="space_client_app",
-            profile_ids=("profile_default",),
-            query="Graphiti unavailable",
-            limit=3,
-        )
-
-        assert capabilities.enabled is False
-        assert capabilities.healthy is False
-        assert capabilities.degraded_reason == "graphiti_unavailable"
-        assert upsert.status == PortStatus.DEGRADED
-        assert upsert.diagnostics[0].code in {"graph.unavailable", "graph.upsert_failed"}
-        assert upsert.diagnostics[0].retryable is True
-        assert search.status == PortStatus.DEGRADED
-        assert search.diagnostics[0].code in {"graph.unavailable", "graph.search_failed"}
-        assert search.diagnostics[0].retryable is True
+            assert capabilities.enabled is False
+            assert capabilities.healthy is False
+            assert capabilities.degraded_reason == "graphiti_unavailable"
+            assert upsert.status == PortStatus.DEGRADED
+            assert upsert.diagnostics[0].code in {"graph.unavailable", "graph.upsert_failed"}
+            assert upsert.diagnostics[0].retryable is True
+            assert search.status == PortStatus.DEGRADED
+            assert search.diagnostics[0].code in {"graph.unavailable", "graph.search_failed"}
+            assert search.diagnostics[0].retryable is True
+        finally:
+            await adapter.aclose()
 
     asyncio.run(run())
 
@@ -583,10 +643,11 @@ class FakeQdrantClient:
     async def upsert(self, *, collection_name: str, points: list[object], wait: bool) -> None:
         assert collection_name in self.collections
         assert points
-        assert wait is False
+        assert wait is True
         self.upserts += 1
 
     async def delete(self, **_kwargs: object) -> None:
+        assert _kwargs["wait"] is True
         return None
 
     async def query_points(self, **_kwargs: object) -> object:
@@ -833,6 +894,133 @@ def test_qdrant_server_unavailable_reports_configured_adapter_degraded() -> None
     asyncio.run(run())
 
 
+def test_openai_json_memory_extractor_maps_structured_response() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    {
+                        "text": "OPENAI_EXTRACT_MARKER Graphiti owns temporal projections.",
+                        "kind": "architecture_decision",
+                        "confidence": "high",
+                        "safe_reason": "explicit_user_memory",
+                        "operation": "add",
+                        "evidence_quote": (
+                            "OPENAI_EXTRACT_MARKER Graphiti owns temporal projections."
+                        ),
+                        "category": "architecture",
+                        "tags": ["graphiti", "temporal"],
+                        "ttl_policy": "durable",
+                        "target_fact_id": None,
+                        "target_fact_version": None,
+                        "valid_from": None,
+                        "valid_until": None,
+                        "expires_at": None,
+                    }
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_test",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        candidates = await extractor.extract_facts(
+            text="Remember: OPENAI_EXTRACT_MARKER Graphiti owns temporal projections.",
+            source=source,
+        )
+
+        assert fake.closed is True
+        assert fake.responses.calls[0]["model"] == "test-extractor-model"
+        assert fake.responses.calls[0]["store"] is False
+        assert fake.responses.calls[0]["text"]["format"]["type"] == "json_schema"
+        assert len(candidates) == 1
+        assert candidates[0].kind.value == "architecture_decision"
+        assert candidates[0].confidence.value == "high"
+        assert candidates[0].category == "architecture"
+        assert candidates[0].tags == ("graphiti", "temporal")
+        assert candidates[0].ttl_policy == "durable"
+        assert candidates[0].source_refs[0].source_id == "cap_test"
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_unknown_output_fields() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    {
+                        "text": "UNKNOWN_FIELD_MARKER should fail.",
+                        "kind": "note",
+                        "confidence": "medium",
+                        "safe_reason": "explicit_user_memory",
+                        "operation": "add",
+                        "evidence_quote": "UNKNOWN_FIELD_MARKER",
+                        "category": None,
+                        "tags": [],
+                        "ttl_policy": None,
+                        "target_fact_id": None,
+                        "target_fact_version": None,
+                        "valid_from": None,
+                        "valid_until": None,
+                        "expires_at": None,
+                        "unexpected": "must fail",
+                    }
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_test",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="UNKNOWN_FIELD_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "candidate_unknown_field" in str(exc)
+        else:
+            raise AssertionError("Expected unknown extractor field to fail")
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_provider_error_is_retryable_infra_error() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(payload=None)
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_test",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="Remember: RETRY_MARKER.", source=source)
+        except MemoryInfrastructureError as exc:
+            assert "provider_error" in str(exc)
+        else:
+            raise AssertionError("Expected provider error")
+
+    asyncio.run(run())
+
+
 async def _fake_qdrant_client(client: FakeQdrantClient) -> tuple[FakeQdrantClient, type]:
     return client, FakeQdrantModels
 
@@ -868,6 +1056,28 @@ def test_embeddings_enabled_requires_supported_provider_and_api_key() -> None:
 
     try:
         missing_key_settings.validate_for_startup()
+    except RuntimeError as exc:
+        assert "MEMORY_OPENAI_API_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected missing OpenAI key validation to fail")
+
+
+def test_capture_openai_extractor_requires_supported_provider_and_api_key() -> None:
+    bad_provider = Settings(capture_extractor_provider="unsupported")
+    missing_key = Settings(
+        capture_extractor_provider="openai",
+        capture_external_ai_enabled=True,
+    )
+
+    try:
+        bad_provider.validate_for_startup()
+    except RuntimeError as exc:
+        assert "MEMORY_CAPTURE_EXTRACTOR_PROVIDER" in str(exc)
+    else:
+        raise AssertionError("Expected unsupported extractor provider validation to fail")
+
+    try:
+        missing_key.validate_for_startup()
     except RuntimeError as exc:
         assert "MEMORY_OPENAI_API_KEY" in str(exc)
     else:

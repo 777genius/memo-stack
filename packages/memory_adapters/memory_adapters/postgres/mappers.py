@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from memory_core.domain.capture import (
+    CanonicalCapture,
+    CaptureActorRole,
+    CaptureSensitivity,
+    CaptureSourceKind,
+    CaptureStatus,
+    ConsolidationStatus,
+    MemoryCaptureId,
+    SourceAuthority,
+)
 from memory_core.domain.entities import (
     Confidence,
+    DataClassification,
     FactStatus,
     LifecycleStatus,
     MemoryChunk,
@@ -26,12 +37,14 @@ from memory_core.domain.entities import (
     SourceRef,
     SpaceId,
     SpeakerRole,
+    SuggestionOperation,
     SuggestionStatus,
     ThreadId,
     TrustLevel,
 )
 
 from memory_adapters.postgres.models import (
+    MemoryCaptureRow,
     MemoryChunkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
@@ -255,6 +268,7 @@ def suggestion_to_row(suggestion: MemorySuggestion) -> MemorySuggestionRow:
         profile_id=str(suggestion.profile_id),
         candidate_text=suggestion.candidate_text,
         kind=suggestion.kind.value,
+        operation=suggestion.operation.value,
         status=suggestion.status.value,
         source_refs_json=[source_ref_to_json(ref) for ref in suggestion.source_refs],
         confidence=suggestion.confidence.value,
@@ -262,6 +276,14 @@ def suggestion_to_row(suggestion: MemorySuggestion) -> MemorySuggestionRow:
         safe_reason=suggestion.safe_reason,
         target_fact_id=str(suggestion.target_fact_id) if suggestion.target_fact_id else None,
         target_fact_version=suggestion.target_fact_version,
+        category=suggestion.category,
+        tags_json=list(suggestion.tags),
+        ttl_policy=suggestion.ttl_policy,
+        expires_at=suggestion.expires_at,
+        expiry_reason=suggestion.expiry_reason,
+        created_from_capture_id=suggestion.created_from_capture_id,
+        candidate_fingerprint=suggestion.candidate_fingerprint,
+        review_payload_json=suggestion.review_payload or {},
         review_reason=suggestion.review_reason,
         created_at=suggestion.created_at,
         updated_at=suggestion.updated_at,
@@ -276,6 +298,7 @@ def suggestion_row_to_domain(row: MemorySuggestionRow) -> MemorySuggestion:
         profile_id=ProfileId(row.profile_id),
         candidate_text=row.candidate_text,
         kind=MemoryKind(row.kind),
+        operation=SuggestionOperation(getattr(row, "operation", None) or "add"),
         status=SuggestionStatus(row.status),
         source_refs=tuple(source_ref_from_json(ref) for ref in row.source_refs_json),
         confidence=Confidence(row.confidence),
@@ -283,6 +306,14 @@ def suggestion_row_to_domain(row: MemorySuggestionRow) -> MemorySuggestion:
         safe_reason=row.safe_reason,
         target_fact_id=MemoryFactId(row.target_fact_id) if row.target_fact_id else None,
         target_fact_version=row.target_fact_version,
+        category=getattr(row, "category", None),
+        tags=tuple(getattr(row, "tags_json", None) or ()),
+        ttl_policy=getattr(row, "ttl_policy", None),
+        expires_at=getattr(row, "expires_at", None),
+        expiry_reason=getattr(row, "expiry_reason", None),
+        created_from_capture_id=getattr(row, "created_from_capture_id", None),
+        candidate_fingerprint=getattr(row, "candidate_fingerprint", None),
+        review_payload=dict(getattr(row, "review_payload_json", None) or {}),
         created_at=row.created_at,
         updated_at=row.updated_at,
         reviewed_at=row.reviewed_at,
@@ -293,6 +324,7 @@ def suggestion_row_to_domain(row: MemorySuggestionRow) -> MemorySuggestion:
 def apply_suggestion_to_row(suggestion: MemorySuggestion, row: MemorySuggestionRow) -> None:
     row.candidate_text = suggestion.candidate_text
     row.kind = suggestion.kind.value
+    row.operation = suggestion.operation.value
     row.status = suggestion.status.value
     row.source_refs_json = [source_ref_to_json(ref) for ref in suggestion.source_refs]
     row.confidence = suggestion.confidence.value
@@ -300,6 +332,124 @@ def apply_suggestion_to_row(suggestion: MemorySuggestion, row: MemorySuggestionR
     row.safe_reason = suggestion.safe_reason
     row.target_fact_id = str(suggestion.target_fact_id) if suggestion.target_fact_id else None
     row.target_fact_version = suggestion.target_fact_version
+    row.category = suggestion.category
+    row.tags_json = list(suggestion.tags)
+    row.ttl_policy = suggestion.ttl_policy
+    row.expires_at = suggestion.expires_at
+    row.expiry_reason = suggestion.expiry_reason
+    row.created_from_capture_id = suggestion.created_from_capture_id
+    row.candidate_fingerprint = suggestion.candidate_fingerprint
+    row.review_payload_json = suggestion.review_payload or {}
     row.review_reason = suggestion.review_reason
     row.updated_at = suggestion.updated_at
     row.reviewed_at = suggestion.reviewed_at
+
+
+def capture_to_row(capture: CanonicalCapture) -> MemoryCaptureRow:
+    return MemoryCaptureRow(
+        id=str(capture.id),
+        space_id=str(capture.space_id),
+        profile_id=str(capture.profile_id),
+        thread_id=str(capture.thread_id) if capture.thread_id else None,
+        source_agent=capture.source_agent,
+        source_kind=capture.source_kind.value,
+        event_type=capture.event_type,
+        actor_role=capture.actor_role.value,
+        text_redacted=capture.text,
+        evidence_refs_json=[source_ref_to_json(ref) for ref in capture.evidence_refs],
+        payload_hash=capture.payload_hash,
+        idempotency_key=capture.idempotency_key,
+        status=capture.status.value,
+        consolidation_status=capture.consolidation_status.value,
+        trust_level=capture.trust_level.value,
+        source_authority=capture.source_authority.value,
+        sensitivity=capture.sensitivity.value,
+        data_classification=capture.data_classification.value,
+        occurred_at=capture.occurred_at,
+        received_at=capture.received_at,
+        created_at=capture.created_at,
+        updated_at=capture.updated_at,
+        metadata_json=dict(capture.metadata),
+        source_event_id=capture.source_event_id,
+        source_actor_external_ref=capture.source_actor_external_ref,
+        client_instance_id=capture.client_instance_id,
+        agent_session_external_ref=capture.agent_session_external_ref,
+        turn_external_ref=capture.turn_external_ref,
+        parent_capture_id=str(capture.parent_capture_id) if capture.parent_capture_id else None,
+        sequence_index=capture.sequence_index,
+        trace_id=capture.trace_id,
+        schema_version=capture.schema_version,
+        parser_version=capture.parser_version,
+        redaction_version=capture.redaction_version,
+        admission_version=capture.admission_version,
+        normalization_version=capture.normalization_version,
+        policy_version=capture.policy_version,
+        extractor_version=capture.extractor_version,
+        extractor_prompt_version=capture.extractor_prompt_version,
+        resolver_version=capture.resolver_version,
+        last_error_code=capture.last_error_code,
+        last_error_message=capture.last_error_message,
+    )
+
+
+def capture_row_to_domain(row: MemoryCaptureRow) -> CanonicalCapture:
+    return CanonicalCapture(
+        id=MemoryCaptureId(row.id),
+        space_id=SpaceId(row.space_id),
+        profile_id=ProfileId(row.profile_id),
+        thread_id=ThreadId(row.thread_id) if row.thread_id else None,
+        source_agent=row.source_agent,
+        source_kind=CaptureSourceKind(row.source_kind),
+        event_type=row.event_type,
+        actor_role=CaptureActorRole(row.actor_role),
+        text=row.text_redacted,
+        evidence_refs=tuple(source_ref_from_json(ref) for ref in row.evidence_refs_json),
+        payload_hash=row.payload_hash,
+        idempotency_key=row.idempotency_key,
+        status=CaptureStatus(row.status),
+        consolidation_status=ConsolidationStatus(row.consolidation_status),
+        trust_level=TrustLevel(row.trust_level),
+        source_authority=SourceAuthority(row.source_authority),
+        sensitivity=CaptureSensitivity(row.sensitivity),
+        data_classification=DataClassification(row.data_classification),
+        occurred_at=row.occurred_at,
+        received_at=row.received_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        metadata=dict(row.metadata_json or {}),
+        source_event_id=row.source_event_id,
+        source_actor_external_ref=row.source_actor_external_ref,
+        client_instance_id=row.client_instance_id,
+        agent_session_external_ref=row.agent_session_external_ref,
+        turn_external_ref=row.turn_external_ref,
+        parent_capture_id=MemoryCaptureId(row.parent_capture_id) if row.parent_capture_id else None,
+        sequence_index=row.sequence_index,
+        trace_id=row.trace_id,
+        schema_version=row.schema_version,
+        parser_version=row.parser_version,
+        redaction_version=row.redaction_version,
+        admission_version=row.admission_version,
+        normalization_version=row.normalization_version,
+        policy_version=row.policy_version,
+        extractor_version=row.extractor_version,
+        extractor_prompt_version=row.extractor_prompt_version,
+        resolver_version=row.resolver_version,
+        last_error_code=row.last_error_code,
+        last_error_message=row.last_error_message,
+    )
+
+
+def apply_capture_to_row(capture: CanonicalCapture, row: MemoryCaptureRow) -> None:
+    row.status = capture.status.value
+    row.consolidation_status = capture.consolidation_status.value
+    row.text_redacted = capture.text
+    row.evidence_refs_json = [source_ref_to_json(ref) for ref in capture.evidence_refs]
+    row.sensitivity = capture.sensitivity.value
+    row.data_classification = capture.data_classification.value
+    row.metadata_json = dict(capture.metadata)
+    row.updated_at = capture.updated_at
+    row.extractor_version = capture.extractor_version
+    row.extractor_prompt_version = capture.extractor_prompt_version
+    row.resolver_version = capture.resolver_version
+    row.last_error_code = capture.last_error_code
+    row.last_error_message = capture.last_error_message

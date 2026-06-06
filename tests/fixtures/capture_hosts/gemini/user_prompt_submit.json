@@ -1,0 +1,9 @@
+{
+  "event_name": "UserPromptSubmit",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Remember: HOST_FIXTURE_GEMINI_USER_PROMPT Memory suggestions stay review gated."
+    }
+  ]
+}

@@ -99,6 +99,56 @@ def test_pending_suggestion_not_in_context_and_approve_creates_fact(tmp_path: Pa
     assert "Use Postgres as canonical truth" in after.json()["data"]["rendered_text"]
 
 
+def test_create_suggestion_rejects_unknown_top_level_fields(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(unexpected_raw_payload="must not be ignored"),
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 400
+    assert created.json()["error"]["code"] == "memory.validation"
+
+
+def test_create_suggestion_rejects_unknown_source_ref_fields(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                source_refs=[
+                    {
+                        "source_type": "manual",
+                        "source_id": "strict-ref",
+                        "unknown_raw_path": "/private/session.jsonl",
+                    }
+                ]
+            ),
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 400
+    assert created.json()["error"]["code"] == "memory.validation"
+
+
+def test_review_suggestion_rejects_unknown_fields(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(),
+            headers=auth_headers(),
+        )
+        reviewed = client.post(
+            f"/v1/suggestions/{created.json()['data']['id']}/approve",
+            json={"reason": "reviewed", "raw_override": True},
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    assert reviewed.status_code == 400
+    assert reviewed.json()["error"]["code"] == "memory.validation"
+
+
 def test_rejected_suggestion_never_appears_in_context(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         created = client.post(

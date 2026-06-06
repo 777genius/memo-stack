@@ -235,6 +235,42 @@ class SuggestionRepositoryPort(Protocol):
     ) -> list[MemorySuggestion]:
         """List safe suggestion rows for review."""
 
+    async def find_pending_duplicate(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        candidate_fingerprint: str,
+        operation: str,
+        target_fact_id: str | None,
+    ) -> MemorySuggestion | None:
+        """Find an equivalent pending suggestion created by auto-memory."""
+
+    async def list_expired_pending(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> list[MemorySuggestion]:
+        """List pending suggestions whose expiry timestamp has passed."""
+
+    async def list_pending_for_capture(
+        self,
+        *,
+        capture_id: str,
+        limit: int,
+    ) -> list[MemorySuggestion]:
+        """List pending suggestions derived from a capture."""
+
+    async def count_for_scope(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        status: str | None,
+    ) -> int:
+        """Count suggestions for review queue ingress limits."""
+
 
 class IdempotencyRepositoryPort(Protocol):
     async def find(self, *, space_id: str, key: str) -> IdempotencyRecord | None:

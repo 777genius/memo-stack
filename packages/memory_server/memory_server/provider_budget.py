@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timedelta
 
 from memory_core.ports.adapters import AdapterCapabilities, EmbeddingPort, EmbeddingResult
@@ -37,6 +38,16 @@ class QueryEmbeddingBudgetAdapter:
             return EmbeddingResult.degraded("embeddings.query_rate_limited", retryable=True)
         self._used_in_window += requested
         return await self._inner.embed_texts(texts)
+
+    async def aclose(self) -> None:
+        for method_name in ("aclose", "close"):
+            close = getattr(self._inner, method_name, None)
+            if not callable(close):
+                continue
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+            return
 
     def _reset_window_if_needed(self, now: datetime) -> None:
         if self._window_started_at is None:

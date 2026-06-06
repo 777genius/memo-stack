@@ -246,6 +246,9 @@ Real-stack canary with Graphiti, Qdrant and embeddings:
 ```bash
 make memory-clean-full-mcp-smoke
 make memory-full-provider-canary
+make memory-full-provider-canary-interactive
+make memory-prod-confidence-strict-preflight
+make memory-prod-confidence-strict
 ```
 
 This is a manual paid gate. It requires Docker and `MEMORY_OPENAI_API_KEY` or
@@ -254,6 +257,15 @@ then runs the HTTP lifecycle smoke plus a real stdio MCP client against the
 same Memory Server. The MCP part verifies status/readiness, search, remember,
 update, document ingest, forget, Graphiti projection, Qdrant chunk recall,
 outbox drain, provider diagnostics and token redaction.
+Use `memory-full-provider-canary-interactive` when the key is not already
+exported; it reads the key with terminal echo disabled and passes it only via
+process environment.
+Use `memory-prod-confidence-strict` when the final release gate must include
+both the paid full-provider canary and strict real-agent CLI auth. It requires
+the OpenAI key in process env and authenticated Codex, Claude, Gemini and
+OpenCode CLIs. It runs `memory-prod-confidence-strict-preflight` before the
+paid provider canary, so missing key/auth fails before starting the full stack.
+`memory-prod-confidence-full` is an alias for the same gate.
 
 The historical clean full smoke target also runs MCP checks by default. Use
 `MEMORY_CLEAN_SMOKE_SKIP_MCP=true make memory-clean-full-smoke` only when you
@@ -370,6 +382,11 @@ make memory-agent-install-dry-run
 make memory-agent-install
 make memory-agent-install-doctor
 make memory-agent-live-smoke
+make memory-agent-live-smoke-agents
+make memory-agent-live-smoke-agents-strict
+make memory-agent-auth-doctor
+make memory-agent-auth-doctor-strict
+make memory-agent-auth-repair
 ```
 
 `plugin-kit-ai add` uses managed install targets `codex`, `claude`, `gemini`,
@@ -382,12 +399,31 @@ and a new Codex thread is started.
 and `plugin-kit-ai integrations list/doctor`; a failed plugin-kit-ai doctor run
 does not pass just because `state.json` still looks healthy.
 
-`memory-agent-live-smoke` runs generated MCP config checks plus real agent CLI
-checks in strict mode. Generated MCP failures and agent CLI `blocked` statuses
-make the target fail. For advisory diagnostics, run
-`scripts/agent_install_verification.py live-smoke --run-agent-cli` directly;
-the JSON still reports `agent_cli_failures`, but overall `ok` follows generated
-MCP reachability only.
+`memory-agent-live-smoke` runs the generated MCP config hard gate and does not
+depend on local Claude/Gemini/OpenCode/Codex model auth. It proves the package,
+Gemini, OpenCode and Cursor workspace generated configs can start stdio MCP and
+verify `memory_status` over that transport. `memory-agent-live-smoke-agents`
+adds real agent CLI prompts and reports auth/session failures as advisory
+blocked states while keeping generated MCP strict. Use
+`memory-agent-live-smoke-agents-strict` when local agent auth/session state is
+ready and every real agent CLI must pass end to end.
+The live-smoke targets default to isolated host ports
+`MEMORY_AGENT_SMOKE_SERVER_PORT=17788` and
+`MEMORY_AGENT_SMOKE_POSTGRES_PORT=55429`. This prevents false positives when a
+different local Memory Server is already listening on `7788`.
+Gemini persists MCP env in the installed extension config, so process env may
+not override `MEMORY_MCP_API_URL` directly. The repo-local wrapper therefore
+supports `MEMORY_MCP_RUNTIME_*` overrides. Real-agent smoke can verify the
+installed Gemini extension against the isolated smoke server without mutating
+the user's persisted extension config. If those runtime overrides are absent, a
+mismatched persisted Gemini API URL is still reported as a blocked preflight.
+Gemini CLI can also inject a host sequencing argument named `wait_for_previous`
+into MCP calls. The MCP boundary ignores only that known host argument before
+strict Pydantic validation; unknown user/tool arguments remain rejected.
+`memory-agent-auth-doctor` runs plain model prompts without the Memory plugin.
+Use it to separate local agent credential failures from MCP/plugin failures.
+`memory-agent-auth-repair` is an interactive local helper that runs the official
+Claude and OpenCode login flows, then re-runs strict auth verification.
 
 Benchmark:
 

@@ -243,6 +243,7 @@ class MemorySuggestionRow(Base):
     __table_args__ = (
         Index("ix_memory_suggestions_scope_status", "space_id", "profile_id", "status"),
         Index("ix_memory_suggestions_target", "target_fact_id", "status"),
+        Index("ix_memory_suggestions_expiry", "space_id", "profile_id", "status", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
@@ -250,6 +251,7 @@ class MemorySuggestionRow(Base):
     profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
     candidate_text: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False, default="add")
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     source_refs_json: Mapped[list[dict[str, object]]] = mapped_column(json_type(), nullable=False)
     confidence: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -257,10 +259,88 @@ class MemorySuggestionRow(Base):
     safe_reason: Mapped[str] = mapped_column(String(320), nullable=False)
     target_fact_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     target_fact_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tags_json: Mapped[list[str]] = mapped_column(json_type(), nullable=False, default=list)
+    ttl_policy: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expiry_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_from_capture_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    candidate_fingerprint: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    review_payload_json: Mapped[dict[str, object]] = mapped_column(
+        json_type(),
+        nullable=False,
+        default=dict,
+    )
     review_reason: Mapped[str | None] = mapped_column(String(320), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MemoryCaptureRow(Base):
+    __tablename__ = "memory_captures"
+    __table_args__ = (
+        UniqueConstraint("space_id", "idempotency_key", name="uq_capture_idempotency"),
+        Index("ix_memory_captures_scope_status", "space_id", "profile_id", "status", "created_at"),
+        Index(
+            "ix_memory_captures_consolidation",
+            "space_id",
+            "profile_id",
+            "consolidation_status",
+            "created_at",
+        ),
+        Index(
+            "ix_memory_captures_source",
+            "space_id",
+            "profile_id",
+            "source_agent",
+            "event_type",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    space_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_agent: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(40), nullable=False)
+    text_redacted: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_refs_json: Mapped[list[dict[str, object]]] = mapped_column(json_type(), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    consolidation_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    trust_level: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_authority: Mapped[str] = mapped_column(String(80), nullable=False)
+    sensitivity: Mapped[str] = mapped_column(String(40), nullable=False)
+    data_classification: Mapped[str] = mapped_column(String(40), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    source_event_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    source_actor_external_ref: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    client_instance_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    agent_session_external_ref: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    turn_external_ref: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    parent_capture_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    sequence_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    parser_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    redaction_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    admission_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    normalization_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    extractor_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    extractor_prompt_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    resolver_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
 
 class MemoryOutboxRow(Base):

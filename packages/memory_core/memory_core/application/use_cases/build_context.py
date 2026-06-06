@@ -11,6 +11,7 @@ from memory_core.application.context_collectors import (
 from memory_core.application.context_hydration import ContextHydrator
 from memory_core.application.context_packer import ContextPacker
 from memory_core.application.context_ranking import dedupe_rank_items
+from memory_core.application.document_text import document_chunk_retrieval_text
 from memory_core.application.dto import (
     BuildContextQuery,
     ConsistencyMode,
@@ -121,11 +122,15 @@ class BuildContextUseCase:
             )
         keyword_chunk_ids = {str(chunk.id) for chunk in canonical.keyword_chunks}
         for chunk in (*canonical.keyword_chunks, *vector_chunks):
+            chunk_text = document_chunk_retrieval_text(
+                text=chunk.text,
+                metadata=chunk.metadata,
+            )
             items.append(
                 ContextItem(
                     item_id=str(chunk.id),
                     item_type="chunk",
-                    text=chunk.text,
+                    text=chunk_text,
                     score=0.75 if str(chunk.id) in keyword_chunk_ids else 0.82,
                     source_refs=(
                         SourceRef(
@@ -134,7 +139,7 @@ class BuildContextUseCase:
                             chunk_id=str(chunk.id),
                             char_start=chunk.char_start,
                             char_end=chunk.char_end,
-                            quote_preview=chunk.text[:200],
+                            quote_preview=chunk_text[:200],
                         ),
                     ),
                     diagnostics={

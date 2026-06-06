@@ -44,6 +44,7 @@ dev = [
 [project.scripts]
 memory-mcp = "memory_mcp.server:main"
 memory-mcp-bench = "memory_mcp.bench:main"
+memory-mcp-agent-bench = "memory_mcp.agent_behavior_bench:main"
 
 [tool.setuptools.packages.find]
 where = [
@@ -52,6 +53,12 @@ where = [
   "packages/memory_adapters",
   "packages/memory_sdk",
   "packages/memory_mcp",
+]
+
+[tool.setuptools.package-data]
+memory_adapters = [
+  "extraction/prompts/*.md",
+  "extraction/schemas/*.json",
 ]
 
 [tool.pytest.ini_options]

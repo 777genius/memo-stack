@@ -106,13 +106,25 @@ class MemoryRecordData(McpDataModel):
     item_id: str | None = None
     item_type: str | None = None
     fact_id: str | None = None
+    capture_id: str | None = None
     suggestion_id: str | None = None
     document_id: str | None = None
     version: int | None = None
     status: str | None = None
     text: str | None = None
     candidate_text: str | None = None
+    text_preview: str | None = None
     kind: str | None = None
+    operation: str | None = None
+    consolidation_status: str | None = None
+    source_agent: str | None = None
+    source_kind: str | None = None
+    event_type: str | None = None
+    actor_role: str | None = None
+    category: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    ttl_policy: str | None = None
+    expires_at: str | None = None
     classification: str | None = None
     confidence: str | None = None
     trust_level: str | None = None
@@ -148,10 +160,30 @@ class MemoryStatusData(McpDataModel):
     usage_guide: str | None = None
 
 
+class MemorySearchDiagnosticsData(McpDataModel):
+    consistency_mode: str | None = None
+    facts_considered: int | None = None
+    keyword_chunks_considered: int | None = None
+    vector_status: str | None = None
+    vector_degraded_reason: str | None = None
+    vector_candidate_count: int | None = None
+    vector_hydrated_count: int | None = None
+    graph_status: str | None = None
+    graph_degraded_reason: str | None = None
+    graph_candidate_count: int | None = None
+    graph_hydrated_count: int | None = None
+    rag_status: str | None = None
+    rag_degraded_reason: str | None = None
+    stale_vector_drop_count: int | None = None
+    stale_graph_drop_count: int | None = None
+    stale_rag_drop_count: int | None = None
+
+
 class MemorySearchData(McpDataModel):
     rendered_text: str | None = None
     rendered_text_truncated: bool | None = None
     rendered_text_original_chars: int | None = None
+    diagnostics: MemorySearchDiagnosticsData | None = None
     items: list[MemorySearchItemData] = Field(default_factory=list)
     facts: list[MemorySearchItemData] = Field(default_factory=list)
     chunks: list[MemorySearchItemData] = Field(default_factory=list)
@@ -184,6 +216,21 @@ class MemorySuggestionListData(McpDataModel):
     next_cursor: str | None = None
     total_count: int | None = None
     truncated: bool | None = None
+
+
+class MemoryCaptureListData(McpDataModel):
+    items: list[MemoryRecordData] = Field(default_factory=list)
+    next_cursor: str | None = None
+    total_count: int | None = None
+    truncated: bool | None = None
+
+
+class MemoryCaptureMutationData(McpDataModel):
+    capture: MemoryRecordData | None = None
+    created_suggestions: int | None = None
+    suggestion_ids: list[str] = Field(default_factory=list)
+    auto_applied_facts: int | None = None
+    auto_applied_fact_ids: list[str] = Field(default_factory=list)
 
 
 class MemoryProposalItemData(McpDataModel):
@@ -223,6 +270,8 @@ class MemoryToolData(
     MemoryFactListData,
     MemoryFactMutationData,
     MemorySuggestionListData,
+    MemoryCaptureListData,
+    MemoryCaptureMutationData,
     MemoryProposalBatchData,
 ):
     chunks: int | list[MemorySearchItemData] | list[MemoryRecordData] | None = None
@@ -266,6 +315,14 @@ class MemoryFactMutationResponse(McpToolResponse):
 
 class MemorySuggestionListResponse(McpToolResponse):
     data: MemorySuggestionListData | None = None
+
+
+class MemoryCaptureListResponse(McpToolResponse):
+    data: MemoryCaptureListData | None = None
+
+
+class MemoryCaptureMutationResponse(McpToolResponse):
+    data: MemoryCaptureMutationData | None = None
 
 
 class MemoryProposalResponse(McpToolResponse):

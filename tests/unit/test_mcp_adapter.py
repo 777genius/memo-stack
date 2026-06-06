@@ -8,7 +8,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.shared.version import LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
 from memory_mcp import bench as memory_mcp_bench
 from memory_mcp.adapters.http_gateway import HttpMemoryGateway
-from memory_mcp.application.service import MemoryToolService
+from memory_mcp.application.service import MEMORY_USAGE_GUIDE, MemoryToolService
 from memory_mcp.config import (
     MemoryMcpDeleteMode,
     MemoryMcpIngestMode,
@@ -117,6 +117,37 @@ class RecordingGateway:
         self.calls.append(("expire_suggestion", kwargs))
         return {"data": {"id": kwargs["suggestion_id"], "status": "expired"}}
 
+    async def list_captures(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("list_captures", kwargs))
+        return {
+            "data": {
+                "items": [
+                    {
+                        "id": "cap_1",
+                        "capture_id": "cap_1",
+                        "status": "accepted",
+                        "consolidation_status": "pending",
+                        "text_preview": "Remember: Postgres is canonical truth.",
+                    }
+                ]
+            }
+        }
+
+    async def consolidate_capture(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("consolidate_capture", kwargs))
+        return {
+            "data": {
+                "capture": {
+                    "id": kwargs["capture_id"],
+                    "capture_id": kwargs["capture_id"],
+                    "status": "accepted",
+                    "consolidation_status": "consolidated",
+                },
+                "created_suggestions": 1,
+                "suggestion_ids": ["sug_1"],
+            }
+        }
+
     async def ingest_document(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("ingest_document", kwargs))
         return {"data": {"id": "doc_1"}}
@@ -196,11 +227,91 @@ def test_service_remember_fact_uses_default_scope_and_stable_idempotency() -> No
 
         assert first["ok"] is True
         assert second["ok"] is True
-        first_call = gateway.calls[0][1]
-        second_call = gateway.calls[1][1]
+        remember_calls = [call for name, call in gateway.calls if name == "remember_fact"]
+        assert len(remember_calls) == 2
+        first_call = remember_calls[0]
+        second_call = remember_calls[1]
         assert first_call["scope"] == MemoryScope("project-a", "backend", None)
         assert first_call["idempotency_key"] == second_call["idempotency_key"]
         assert first_call["source_refs"][0].source_type == "manual"
+
+    asyncio.run(run())
+
+
+def test_service_remember_fact_dedupes_existing_active_fact() -> None:
+    class DuplicateGateway(RecordingGateway):
+        async def list_facts(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(("list_facts", kwargs))
+            return {
+                "data": [
+                    {
+                        "id": "fact_existing",
+                        "text": "Postgres is canonical truth.",
+                    }
+                ]
+            }
+
+    async def run() -> None:
+        gateway = DuplicateGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(write_mode=MemoryMcpWriteMode.DIRECT),
+        )
+
+        result = await service.remember_fact(
+            text="Postgres is canonical truth.",
+            kind="architecture_decision",
+            source_type="manual",
+            source_id="manual-note-1",
+        )
+
+        assert result["ok"] is True
+        assert result["data"]["id"] == "fact_existing"
+        assert result["data"]["status"] == "duplicate"
+        assert result["data"]["safe_reason"] == "memory_mcp.duplicate.existing_memory"
+        assert result["diagnostics"]["side_effects"] == []
+        assert "remember_fact" not in [name for name, _ in gateway.calls]
+
+    asyncio.run(run())
+
+
+def test_service_remember_fact_routes_conflicting_existing_fact_to_review() -> None:
+    class ConflictGateway(RecordingGateway):
+        async def list_facts(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(("list_facts", kwargs))
+            return {
+                "data": [
+                    {
+                        "id": "fact_mysql",
+                        "text": "Use MySQL as canonical truth.",
+                    }
+                ]
+            }
+
+    async def run() -> None:
+        gateway = ConflictGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(write_mode=MemoryMcpWriteMode.DIRECT),
+        )
+
+        result = await service.remember_fact(
+            text="Use Postgres as canonical truth.",
+            kind="architecture_decision",
+            source_type="manual",
+            source_id="manual-note-1",
+        )
+
+        assert result["ok"] is True
+        assert result["data"]["id"] == "sug_1"
+        assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
+        assert result["diagnostics"]["warnings"] == ["memory_mcp.conflict.requires_review"]
+        assert "remember_fact" not in [name for name, _ in gateway.calls]
+        assert [name for name, _ in gateway.calls] == [
+            "list_facts",
+            "list_suggestions",
+            "create_suggestion",
+        ]
 
     asyncio.run(run())
 
@@ -272,6 +383,41 @@ def test_service_status_surfaces_capability_diagnostics() -> None:
                 "status": "ok",
             }
         ]
+
+    asyncio.run(run())
+
+
+def test_mcp_search_structured_output_preserves_backend_diagnostics() -> None:
+    class DiagnosticsGateway(RecordingGateway):
+        async def build_context(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(("build_context", kwargs))
+            return {
+                "data": {
+                    "rendered_text": "Graphiti and Qdrant evidence.",
+                    "items": [],
+                    "diagnostics": {
+                        "graph_status": "ok",
+                        "graph_hydrated_count": 1,
+                        "vector_status": "ok",
+                        "vector_hydrated_count": 1,
+                    },
+                }
+            }
+
+    async def run() -> None:
+        server = create_mcp_server(
+            service=MemoryToolService(gateway=DiagnosticsGateway(), settings=MemoryMcpSettings())
+        )
+
+        result = await server.call_tool("memory_search", {"query": "Graphiti Qdrant"})
+
+        assert result.structuredContent["ok"] is True
+        assert result.structuredContent["data"]["diagnostics"] == {
+            "graph_status": "ok",
+            "graph_hydrated_count": 1,
+            "vector_status": "ok",
+            "vector_hydrated_count": 1,
+        }
 
     asyncio.run(run())
 
@@ -590,6 +736,21 @@ def test_service_secret_text_is_rejected_before_gateway() -> None:
     asyncio.run(run())
 
 
+def test_service_secret_search_query_is_rejected_before_gateway() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+
+        result = await service.search(query="Find password=bench-secret-project-alpha")
+
+        assert result["ok"] is False
+        assert result["error"]["code"] == "memory_mcp.policy.secret_detected"
+        assert result["error"]["safe_message"] == "Search query contains a credential-like value"
+        assert gateway.calls == []
+
+    asyncio.run(run())
+
+
 def test_service_rejects_private_key_generic_secret_and_invisible_text() -> None:
     async def run() -> None:
         gateway = RecordingGateway()
@@ -696,6 +857,7 @@ def test_service_propose_updates_creates_suggestion_in_suggest_mode() -> None:
             ],
             source_type="manual",
             source_id="note-1",
+            user_confirmed=True,
         )
 
         assert result["ok"] is True
@@ -733,6 +895,7 @@ def test_service_propose_updates_direct_explicit_requires_confirmation() -> None
                     "text": "Use Graphiti for temporal facts.",
                     "kind": "architecture_decision",
                     "operation": "remember",
+                    "evidence_quote": "Use Graphiti for temporal facts.",
                 }
             ],
             source_type="manual",
@@ -749,6 +912,42 @@ def test_service_propose_updates_direct_explicit_requires_confirmation() -> None
     asyncio.run(run())
 
 
+def test_service_propose_updates_uncertain_evidence_needs_review_even_when_confirmed() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(write_mode=MemoryMcpWriteMode.DIRECT),
+        )
+
+        result = await service.propose_updates(
+            candidates=[
+                {
+                    "text": "Graphiti is being removed.",
+                    "kind": "architecture_decision",
+                    "operation": "remember",
+                    "evidence_quote": "I might have heard Graphiti is being removed, not sure.",
+                }
+            ],
+            source_type="manual",
+            source_id="uncertain-note",
+            user_confirmed=True,
+        )
+
+        assert result["ok"] is True
+        assert result["data"]["accepted_suggestions"][0]["decision_code"] == (
+            "memory_mcp.policy.uncertain_claim"
+        )
+        assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
+        assert [name for name, _ in gateway.calls] == [
+            "list_facts",
+            "list_suggestions",
+            "create_suggestion",
+        ]
+
+    asyncio.run(run())
+
+
 def test_service_propose_updates_dedupes_same_batch() -> None:
     async def run() -> None:
         gateway = RecordingGateway()
@@ -759,8 +958,16 @@ def test_service_propose_updates_dedupes_same_batch() -> None:
 
         result = await service.propose_updates(
             candidates=[
-                {"text": "Use Postgres as canonical truth.", "operation": "remember"},
-                {"text": " use postgres as canonical truth. ", "operation": "remember"},
+                {
+                    "text": "Use Postgres as canonical truth.",
+                    "operation": "remember",
+                    "evidence_quote": "Use Postgres as canonical truth.",
+                },
+                {
+                    "text": " use postgres as canonical truth. ",
+                    "operation": "remember",
+                    "evidence_quote": "Use Postgres as canonical truth.",
+                },
             ],
             source_type="manual",
             source_id="note-1",
@@ -804,7 +1011,6 @@ def test_service_propose_updates_detects_existing_fact_conflict() -> None:
             ],
             source_type="manual",
             source_id="note-1",
-            user_confirmed=True,
         )
 
         assert result["ok"] is True
@@ -880,6 +1086,7 @@ def test_service_propose_updates_rejects_unsafe_and_invalid_candidates() -> None
             ],
             source_type="manual",
             source_id="note-1",
+            user_confirmed=True,
         )
 
         assert [item["decision_code"] for item in result["data"]["unsafe_rejected"]] == [
@@ -1014,6 +1221,7 @@ def test_service_propose_updates_maps_stale_expected_version_to_conflict() -> No
             ],
             source_type="manual",
             source_id="note-1",
+            user_confirmed=True,
         )
 
         assert result["ok"] is True
@@ -1053,6 +1261,7 @@ def test_service_propose_updates_conflicts_same_target_in_batch() -> None:
             ],
             source_type="manual",
             source_id="note-1",
+            user_confirmed=True,
         )
 
         assert result["data"]["direct_writes"][0]["status"] == "direct_update"
@@ -1143,6 +1352,93 @@ def test_service_review_suggestion_rejects_invalid_action() -> None:
         service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
 
         result = await service.review_suggestion(suggestion_id="sug_1", action="merge")
+
+        assert result["ok"] is False
+        assert result["error"]["code"] == "memory_mcp.validation.invalid_input"
+        assert gateway.calls == []
+
+    asyncio.run(run())
+
+
+def test_service_lists_and_consolidates_captures_without_raw_payload() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(
+                default_space_slug="project-a",
+                default_profile_external_ref="backend",
+            ),
+        )
+
+        listed = await service.list_captures(
+            status="accepted",
+            consolidation_status="pending",
+            limit=1000,
+        )
+        consolidated = await service.consolidate_capture(capture_id="cap_1")
+
+        assert listed["ok"] is True
+        assert listed["data"]["items"][0]["capture_id"] == "cap_1"
+        assert listed["data"]["items"][0]["text_preview"]
+        assert "raw_payload" not in listed["data"]["items"][0]
+        assert listed["diagnostics"]["warnings"] == ["limit_clamped_to_max"]
+        assert consolidated["ok"] is True
+        assert consolidated["data"]["created_suggestions"] == 1
+        assert consolidated["diagnostics"]["side_effects"] == ["consolidated_capture"]
+        assert [name for name, _ in gateway.calls] == [
+            "list_captures",
+            "consolidate_capture",
+        ]
+        assert gateway.calls[0][1]["scope"] == MemoryScope("project-a", "backend", None)
+        assert gateway.calls[0][1]["limit"] == 500
+        assert gateway.calls[1][1] == {"capture_id": "cap_1", "force": False}
+
+    asyncio.run(run())
+
+
+def test_service_consolidate_capture_reports_auto_apply_side_effect() -> None:
+    class AutoApplyGateway(RecordingGateway):
+        async def consolidate_capture(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(("consolidate_capture", kwargs))
+            return {
+                "data": {
+                    "capture": {
+                        "id": kwargs["capture_id"],
+                        "capture_id": kwargs["capture_id"],
+                        "status": "accepted",
+                        "consolidation_status": "consolidated",
+                    },
+                    "created_suggestions": 0,
+                    "suggestion_ids": [],
+                    "auto_applied_facts": 1,
+                    "auto_applied_fact_ids": ["fact_1"],
+                }
+            }
+
+    async def run() -> None:
+        gateway = AutoApplyGateway()
+        service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+
+        result = await service.consolidate_capture(capture_id="cap_1")
+
+        assert result["ok"] is True
+        assert result["data"]["auto_applied_facts"] == 1
+        assert result["data"]["auto_applied_fact_ids"] == ["fact_1"]
+        assert result["diagnostics"]["side_effects"] == [
+            "consolidated_capture",
+            "auto_applied_fact",
+        ]
+
+    asyncio.run(run())
+
+
+def test_service_list_captures_rejects_unknown_statuses() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+
+        result = await service.list_captures(status="active")
 
         assert result["ok"] is False
         assert result["error"]["code"] == "memory_mcp.validation.invalid_input"
@@ -1510,6 +1806,8 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_suggest_fact",
             "memory_propose_updates",
             "memory_list_suggestions",
+            "memory_list_captures",
+            "memory_consolidate_capture",
             "memory_approve_suggestion",
             "memory_review_suggestion",
             "memory_reject_suggestion",
@@ -1544,6 +1842,30 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
                 assert tool.annotations.destructiveHint is False
         search = next(tool for tool in tools if tool.name == "memory_search")
         assert "profile_external_refs" in search.inputSchema["properties"]
+        search_description = search.description.casefold()
+        assert "use this whenever" in search_description
+        assert "search, check, look up, or compare memory" in search_description
+        assert "not memory_status" in search_description
+        assert "do not quote them back" in search_description
+        assert "start with memory_search or memory_get_fact" in search_description
+        assert "not a mutating tool" in search_description
+        status = next(tool for tool in tools if tool.name == "memory_status")
+        status_description = status.description.casefold()
+        assert "readiness, policy, or provider diagnostics" in status_description
+        assert "do not call it as a substitute" in status_description
+        assert "status alone does not complete" in status_description
+        assert "call this before relying on memory" not in status_description
+        propose = next(tool for tool in tools if tool.name == "memory_propose_updates")
+        propose_description = propose.description.casefold()
+        assert "mutating tool" in propose_description
+        assert "memory_search or memory_get_fact first" in propose_description
+        assert "duplicate, update, forget, or conflict" in propose_description
+        user_confirmed_description = (
+            propose.inputSchema["properties"]["user_confirmed"]["description"].casefold()
+        )
+        assert "explicitly confirmed" in user_confirmed_description
+        assert "uncertain claims" in user_confirmed_description
+        assert "review-needed" in user_confirmed_description
         remember = next(tool for tool in tools if tool.name == "memory_remember_fact")
         kind_schema = remember.inputSchema["properties"]["kind"]
         assert set(kind_schema["enum"]) == {
@@ -1558,6 +1880,21 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "reject",
             "expire",
         }
+        captures = next(tool for tool in tools if tool.name == "memory_list_captures")
+        assert captures.annotations.readOnlyHint is True
+        assert "raw hook payloads" in captures.description
+        assert set(captures.inputSchema["properties"]["status"]["anyOf"][0]["enum"]) == {
+            "accepted",
+            "rejected",
+            "redacted",
+            "purged",
+        }
+        consolidate_capture = next(
+            tool for tool in tools if tool.name == "memory_consolidate_capture"
+        )
+        assert consolidate_capture.annotations.readOnlyHint is False
+        assert consolidate_capture.annotations.destructiveHint is False
+        assert "pending suggestions" in consolidate_capture.description
 
     asyncio.run(run())
 
@@ -1641,6 +1978,30 @@ def test_mcp_docs_and_benchmark_do_not_recommend_cli_auth_tokens() -> None:
     assert "--auth-token" not in adapter_docs
     assert 'add_argument("--auth-token"' not in bench_source
     assert not contains_sensitive_value(adapter_docs)
+
+
+def test_memory_usage_guide_requires_search_for_duplicate_equivalence_requests() -> None:
+    guide = MEMORY_USAGE_GUIDE.casefold()
+
+    assert "duplicate" in guide
+    assert "equivalent" in guide
+    assert "before saving" in guide
+    assert "memory_search" in guide
+    assert "do not decide duplicate/equivalence by guessing" in guide
+    assert "first memory tool must be" in guide
+    assert "memory_search or memory_get_fact" in guide
+    assert "do not start with a mutating tool" in guide
+    assert "document ingest request" in guide
+    assert "ingest flow" in guide
+
+
+def test_memory_usage_guide_forbids_quoting_excluded_transcript_text() -> None:
+    guide = MEMORY_USAGE_GUIDE.casefold()
+
+    assert "transcript contains both durable facts and excluded text" in guide
+    assert "joke" in guide
+    assert "scratchpad" in guide
+    assert "without quoting" in guide
 
 
 def test_mcp_public_error_taxonomy_is_stable_and_documented() -> None:
@@ -1740,6 +2101,21 @@ def test_mcp_tool_calls_reject_unknown_arguments() -> None:
             raise AssertionError("expected strict argument validation")
 
         assert "profile_external_refs" in str(error)
+
+    asyncio.run(run())
+
+
+def test_mcp_tool_calls_ignore_known_host_injected_arguments() -> None:
+    async def run() -> None:
+        server = create_mcp_server(
+            service=MemoryToolService(gateway=RecordingGateway(), settings=MemoryMcpSettings())
+        )
+
+        result = await server.call_tool("memory_status", {"wait_for_previous": True})
+
+        assert result.isError is False
+        assert result.structuredContent["ok"] is True
+        assert result.structuredContent["data"]["default_scope"]["space_slug"] == "default"
 
     asyncio.run(run())
 

@@ -19,6 +19,11 @@ class MemoryPolicyBlockedError(MemoryError):
     code = "memory.policy_blocked"
 
 
+class MemoryIngressLimitError(MemoryError):
+    code = "memory.capture.ingress_limited"
+    retryable = True
+
+
 class MemoryConflictError(MemoryError):
     code = "memory.conflict"
 

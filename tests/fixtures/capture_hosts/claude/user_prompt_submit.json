@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "synthetic-claude-session",
+  "prompt": "Remember: HOST_FIXTURE_CLAUDE_USER_PROMPT Graphiti remains the temporal graph."
+}

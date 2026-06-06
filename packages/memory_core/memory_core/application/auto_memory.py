@@ -16,11 +16,13 @@ from memory_core.ports.auto_memory import MemoryCandidate, MemoryClassifierPort,
 _MAX_CANDIDATES = 5
 _MAX_CANDIDATE_CHARS = 800
 _ASSISTANT_SOURCES = {"ai_response", "assistant_answer", "assistant_summary"}
-_PREFIXES: tuple[tuple[re.Pattern[str], MemoryKind, str], ...] = (
+_PREFIXES: tuple[tuple[re.Pattern[str], MemoryKind, str, str | None, str | None], ...] = (
     (
         re.compile(r"^\s*(?:remember|remember this|запомни|запомнить)\s*[:：-]\s*(.+)$", re.I),
         MemoryKind.NOTE,
         "explicit_remember_marker",
+        None,
+        None,
     ),
     (
         re.compile(
@@ -32,16 +34,32 @@ _PREFIXES: tuple[tuple[re.Pattern[str], MemoryKind, str], ...] = (
         ),
         MemoryKind.ARCHITECTURE_DECISION,
         "explicit_decision_marker",
+        None,
+        None,
     ),
     (
         re.compile(r"^\s*(?:constraint|ограничение|важное ограничение)\s*[:：-]\s*(.+)$", re.I),
         MemoryKind.CONSTRAINT,
         "explicit_constraint_marker",
+        None,
+        None,
     ),
     (
         re.compile(r"^\s*(?:preference|user preference|предпочтение)\s*[:：-]\s*(.+)$", re.I),
         MemoryKind.USER_PREFERENCE,
         "explicit_preference_marker",
+        None,
+        None,
+    ),
+    (
+        re.compile(
+            r"^\s*(?:current task|task note|текущая задача|заметка задачи)\s*[:：-]\s*(.+)$",
+            re.I,
+        ),
+        MemoryKind.NOTE,
+        "explicit_current_task_marker",
+        "current_task",
+        "task",
     ),
 )
 _PROMPT_INJECTION_PATTERNS = (
@@ -136,7 +154,7 @@ def _candidate_from_line(
     line: str,
     source: SourceProvenance,
 ) -> MemoryCandidate | None:
-    for pattern, kind, reason in _PREFIXES:
+    for pattern, kind, reason, category, ttl_policy in _PREFIXES:
         match = pattern.match(line)
         if not match:
             continue
@@ -156,6 +174,8 @@ def _candidate_from_line(
                 ),
             ),
             safe_reason=reason,
+            category=category,
+            ttl_policy=ttl_policy,
         )
     return None
 
@@ -180,4 +200,4 @@ def _looks_like_prompt_injection(text: str) -> bool:
 
 
 def _has_memory_prefix(line: str) -> bool:
-    return any(pattern.match(line) for pattern, _, _ in _PREFIXES)
+    return any(pattern.match(line) for pattern, _, _, _, _ in _PREFIXES)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
@@ -19,7 +20,7 @@ from memory_core.domain.entities import (
     TrustLevel,
 )
 from memory_core.domain.errors import MemoryValidationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
@@ -44,6 +45,8 @@ router = APIRouter(
 
 
 class CreateSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
     profile_id: str | None = Field(default=None, min_length=1, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
@@ -56,10 +59,21 @@ class CreateSuggestionRequest(BaseModel):
     safe_reason: str = Field(min_length=1, max_length=320)
     target_fact_id: str | None = Field(default=None, max_length=80)
     target_fact_version: int | None = Field(default=None, ge=1)
+    operation: str = Field(default="add", max_length=40)
+    category: str | None = Field(default=None, max_length=80)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    ttl_policy: str | None = Field(default=None, max_length=80)
+    expires_at: datetime | None = None
+    expiry_reason: str | None = Field(default=None, max_length=160)
+    created_from_capture_id: str | None = Field(default=None, max_length=80)
+    candidate_fingerprint: str | None = Field(default=None, max_length=80)
+    review_payload: dict[str, Any] | None = None
     auto_approve: bool = False
 
 
 class ReviewSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str | None = Field(default=None, max_length=320)
     force: bool = False
 
@@ -71,6 +85,7 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
         "profile_id": str(suggestion.profile_id),
         "candidate_text": suggestion.candidate_text,
         "kind": suggestion.kind.value,
+        "operation": suggestion.operation.value,
         "status": suggestion.status.value,
         "source_refs": [
             {
@@ -88,6 +103,14 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
         "safe_reason": suggestion.safe_reason,
         "target_fact_id": str(suggestion.target_fact_id) if suggestion.target_fact_id else None,
         "target_fact_version": suggestion.target_fact_version,
+        "category": suggestion.category,
+        "tags": list(suggestion.tags),
+        "ttl_policy": suggestion.ttl_policy,
+        "expires_at": suggestion.expires_at.isoformat() if suggestion.expires_at else None,
+        "expiry_reason": suggestion.expiry_reason,
+        "created_from_capture_id": suggestion.created_from_capture_id,
+        "candidate_fingerprint": suggestion.candidate_fingerprint,
+        "review_payload": suggestion.review_payload or {},
         "review_reason": suggestion.review_reason,
         "created_at": suggestion.created_at.isoformat(),
         "updated_at": suggestion.updated_at.isoformat(),
@@ -102,6 +125,7 @@ async def create_suggestion(
 ) -> dict[str, Any]:
     ensure_server_writes_enabled(container)
     _validate_confidence_and_trust(request.confidence, request.trust_level)
+    _validate_operation(request.operation)
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,
@@ -124,6 +148,15 @@ async def create_suggestion(
             safe_reason=request.safe_reason,
             target_fact_id=request.target_fact_id,
             target_fact_version=request.target_fact_version,
+            operation=request.operation,
+            category=request.category,
+            tags=tuple(_normalize_tags(request.tags)),
+            ttl_policy=request.ttl_policy,
+            expires_at=request.expires_at,
+            expiry_reason=request.expiry_reason,
+            created_from_capture_id=request.created_from_capture_id,
+            candidate_fingerprint=request.candidate_fingerprint,
+            review_payload=request.review_payload,
             auto_approve=request.auto_approve,
         )
     )
@@ -225,3 +258,21 @@ def _validate_suggestion_status(status_filter: str | None) -> None:
         SuggestionStatus(status_filter)
     except ValueError as exc:
         raise MemoryValidationError("Unknown suggestion status") from exc
+
+
+def _validate_operation(value: str) -> None:
+    if value not in {"add", "update", "delete", "review"}:
+        raise MemoryValidationError("Unknown suggestion operation")
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for tag in tags:
+        stripped = tag.strip().lower()
+        if not stripped:
+            continue
+        if len(stripped) > 48:
+            raise MemoryValidationError("Suggestion tag is too long")
+        if stripped not in normalized:
+            normalized.append(stripped)
+    return normalized

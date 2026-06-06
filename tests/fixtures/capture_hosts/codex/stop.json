@@ -1,0 +1,8 @@
+{
+  "event": "Stop",
+  "conversation_id": "synthetic-codex-thread",
+  "message": {
+    "role": "assistant",
+    "content": "Summary: HOST_FIXTURE_CODEX_STOP should stay assistant inference."
+  }
+}

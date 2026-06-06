@@ -20,7 +20,7 @@ from memory_core.domain.entities import (
     SourceRef,
 )
 from memory_core.domain.errors import MemoryValidationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from memory_server.api.auth import require_service_token
 from memory_server.api.dependencies import get_container
@@ -40,6 +40,8 @@ router = APIRouter(
 
 
 class SourceRefRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_type: str = Field(min_length=1, max_length=80)
     source_id: str = Field(min_length=1, max_length=160)
     chunk_id: str | None = Field(default=None, max_length=160)
@@ -49,6 +51,8 @@ class SourceRefRequest(BaseModel):
 
 
 class RememberFactRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
     profile_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, max_length=80)
@@ -62,6 +66,8 @@ class RememberFactRequest(BaseModel):
 
 
 class UpdateFactRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     expected_version: int = Field(ge=1)
     text: str = Field(min_length=1, max_length=4000)
     reason: str = Field(min_length=1, max_length=240)

@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from hashlib import sha256
 
+from memory_core.domain.capture import CanonicalCapture
 from memory_core.domain.entities import (
     MemoryChunk,
     MemoryDocument,
@@ -19,6 +20,7 @@ from memory_core.domain.entities import (
 from memory_core.domain.errors import MemoryConflictError, MemoryNotFoundError
 from memory_core.domain.events import OutboxEvent
 from memory_core.domain.idempotency import IdempotencyRecord
+from memory_core.ports.captures import CaptureRepositoryPort
 from memory_core.ports.repositories import (
     ChunkRepositoryPort,
     DocumentRepositoryPort,
@@ -36,10 +38,14 @@ from memory_core.ports.unit_of_work import OutboxPort
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from memory_adapters.postgres.mappers import (
+    apply_capture_to_row,
     apply_suggestion_to_row,
+    capture_row_to_domain,
+    capture_to_row,
     chunk_row_to_domain,
     chunk_to_row,
     document_row_to_domain,
@@ -53,6 +59,7 @@ from memory_adapters.postgres.mappers import (
     suggestion_to_row,
 )
 from memory_adapters.postgres.models import (
+    MemoryCaptureRow,
     MemoryChunkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
@@ -848,6 +855,11 @@ class PostgresDocumentRepository(DocumentRepositoryPort):
 
     async def create(self, document: MemoryDocument) -> MemoryDocument:
         self._session.add(document_to_row(document))
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise MemoryConflictError("Canonical document conflicted with existing data") from exc
         return document
 
     async def get_by_id(self, document_id: str) -> MemoryDocument | None:
@@ -1034,6 +1046,119 @@ class PostgresChunkRepository(ChunkRepositoryPort):
         return [chunk_row_to_domain(row) for row in rows[:limit]]
 
 
+class PostgresCaptureRepository(CaptureRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, capture: CanonicalCapture) -> CanonicalCapture:
+        self._session.add(capture_to_row(capture))
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise MemoryConflictError("Canonical capture conflicted with existing data") from exc
+        return capture
+
+    async def get_by_id(self, capture_id: str) -> CanonicalCapture | None:
+        row = await self._session.get(MemoryCaptureRow, capture_id)
+        return capture_row_to_domain(row) if row is not None else None
+
+    async def get_by_idempotency_key(
+        self,
+        *,
+        space_id: str,
+        idempotency_key: str,
+    ) -> CanonicalCapture | None:
+        row = (
+            await self._session.execute(
+                select(MemoryCaptureRow).where(
+                    MemoryCaptureRow.space_id == space_id,
+                    MemoryCaptureRow.idempotency_key == idempotency_key,
+                )
+            )
+        ).scalar_one_or_none()
+        return capture_row_to_domain(row) if row is not None else None
+
+    async def get_for_update(self, capture_id: str) -> CanonicalCapture | None:
+        row = (
+            await self._session.execute(
+                select(MemoryCaptureRow)
+                .where(MemoryCaptureRow.id == capture_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        return capture_row_to_domain(row) if row is not None else None
+
+    async def save(self, capture: CanonicalCapture) -> CanonicalCapture:
+        row = await self._session.get(MemoryCaptureRow, str(capture.id))
+        if row is None:
+            msg = "Capture row missing during save"
+            raise RuntimeError(msg)
+        apply_capture_to_row(capture, row)
+        return capture
+
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        status: str | None,
+        consolidation_status: str | None,
+        limit: int,
+        cursor_created_at: datetime | None = None,
+        cursor_id: str | None = None,
+    ) -> list[CanonicalCapture]:
+        conditions = [
+            MemoryCaptureRow.space_id == space_id,
+            MemoryCaptureRow.profile_id == profile_id,
+        ]
+        if status:
+            conditions.append(MemoryCaptureRow.status == status)
+        if consolidation_status:
+            conditions.append(MemoryCaptureRow.consolidation_status == consolidation_status)
+        if cursor_created_at is not None and cursor_id is not None:
+            conditions.append(
+                or_(
+                    MemoryCaptureRow.created_at < cursor_created_at,
+                    (MemoryCaptureRow.created_at == cursor_created_at)
+                    & (MemoryCaptureRow.id < cursor_id),
+                )
+            )
+        rows = (
+            await self._session.execute(
+                select(MemoryCaptureRow)
+                .where(*conditions)
+                .order_by(MemoryCaptureRow.created_at.desc(), MemoryCaptureRow.id.desc())
+                .limit(limit)
+            )
+        ).scalars()
+        return [capture_row_to_domain(row) for row in rows]
+
+    async def count_for_scope(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        status: str | None,
+        consolidation_statuses: tuple[str, ...],
+    ) -> int:
+        conditions = [
+            MemoryCaptureRow.space_id == space_id,
+            MemoryCaptureRow.profile_id == profile_id,
+        ]
+        if status:
+            conditions.append(MemoryCaptureRow.status == status)
+        if consolidation_statuses:
+            conditions.append(MemoryCaptureRow.consolidation_status.in_(consolidation_statuses))
+        return int(
+            (
+                await self._session.execute(
+                    select(func.count()).select_from(MemoryCaptureRow).where(*conditions)
+                )
+            ).scalar_one()
+        )
+
+
 class PostgresSuggestionRepository(SuggestionRepositoryPort):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -1087,6 +1212,91 @@ class PostgresSuggestionRepository(SuggestionRepositoryPort):
             )
         ).scalars()
         return [suggestion_row_to_domain(row) for row in rows]
+
+    async def find_pending_duplicate(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        candidate_fingerprint: str,
+        operation: str,
+        target_fact_id: str | None,
+    ) -> MemorySuggestion | None:
+        conditions = [
+            MemorySuggestionRow.space_id == space_id,
+            MemorySuggestionRow.profile_id == profile_id,
+            MemorySuggestionRow.status == "pending",
+            MemorySuggestionRow.candidate_fingerprint == candidate_fingerprint,
+            MemorySuggestionRow.operation == operation,
+        ]
+        if target_fact_id:
+            conditions.append(MemorySuggestionRow.target_fact_id == target_fact_id)
+        else:
+            conditions.append(MemorySuggestionRow.target_fact_id.is_(None))
+        row = (
+            await self._session.execute(select(MemorySuggestionRow).where(*conditions).limit(1))
+        ).scalar_one_or_none()
+        return suggestion_row_to_domain(row) if row is not None else None
+
+    async def list_expired_pending(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> list[MemorySuggestion]:
+        rows = (
+            await self._session.execute(
+                select(MemorySuggestionRow)
+                .where(
+                    MemorySuggestionRow.status == "pending",
+                    MemorySuggestionRow.expires_at.is_not(None),
+                    MemorySuggestionRow.expires_at <= now,
+                )
+                .order_by(MemorySuggestionRow.expires_at, MemorySuggestionRow.id)
+                .limit(limit)
+            )
+        ).scalars()
+        return [suggestion_row_to_domain(row) for row in rows]
+
+    async def list_pending_for_capture(
+        self,
+        *,
+        capture_id: str,
+        limit: int,
+    ) -> list[MemorySuggestion]:
+        rows = (
+            await self._session.execute(
+                select(MemorySuggestionRow)
+                .where(
+                    MemorySuggestionRow.status == "pending",
+                    MemorySuggestionRow.created_from_capture_id == capture_id,
+                )
+                .order_by(MemorySuggestionRow.created_at, MemorySuggestionRow.id)
+                .limit(limit)
+            )
+        ).scalars()
+        return [suggestion_row_to_domain(row) for row in rows]
+
+    async def count_for_scope(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        status: str | None,
+    ) -> int:
+        conditions = [
+            MemorySuggestionRow.space_id == space_id,
+            MemorySuggestionRow.profile_id == profile_id,
+        ]
+        if status:
+            conditions.append(MemorySuggestionRow.status == status)
+        return int(
+            (
+                await self._session.execute(
+                    select(func.count()).select_from(MemorySuggestionRow).where(*conditions)
+                )
+            ).scalar_one()
+        )
 
 
 class PostgresIdempotencyRepository(IdempotencyRepositoryPort):

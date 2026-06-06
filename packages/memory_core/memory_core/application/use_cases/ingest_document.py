@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from memory_core.application.chunker import chunk_text
+from memory_core.application.document_text import document_chunk_retrieval_text
 from memory_core.application.dto import IngestDocumentCommand, IngestDocumentResult
 from memory_core.application.normalize import (
     content_hash,
@@ -85,7 +86,31 @@ class IngestDocumentUseCase:
                             result_id=str(existing_document.id),
                         )
                     )
-                    await uow.commit()
+                    try:
+                        await uow.commit()
+                    except MemoryConflictError as exc:
+                        existing = await uow.idempotency.find(
+                            space_id=str(command.space_id),
+                            key=key,
+                        )
+                        if existing is None:
+                            raise
+                        if existing.fingerprint != body_hash:
+                            raise MemoryConflictError(
+                                "Idempotency key was used with different document"
+                            ) from exc
+                        document = await uow.documents.get_by_id(existing.result_id)
+                        if document is None:
+                            raise MemoryInvariantError(
+                                "Idempotency result points to missing document"
+                            ) from exc
+                        chunks = await uow.documents.list_chunks(str(document.id))
+                        return IngestDocumentResult(
+                            document=document,
+                            chunks=tuple(chunks),
+                            duplicate_chunks=len(chunks),
+                            indexing_status="already_indexed_or_pending",
+                        )
                 return IngestDocumentResult(
                     document=existing_document,
                     chunks=tuple(chunks),
@@ -106,10 +131,31 @@ class IngestDocumentUseCase:
                 now=now,
                 classification=command.classification,
             )
-            saved_document = await uow.documents.create(document)
+            try:
+                saved_document = await uow.documents.create(document)
+            except MemoryConflictError:
+                existing_document = await uow.documents.find_active_by_content_hash(
+                    space_id=str(command.space_id),
+                    profile_id=str(command.profile_id),
+                    thread_id=str(command.thread_id) if command.thread_id else None,
+                    content_hash=body_hash,
+                )
+                if existing_document is None:
+                    raise
+                chunks = await uow.documents.list_chunks(str(existing_document.id))
+                return IngestDocumentResult(
+                    document=existing_document,
+                    chunks=tuple(chunks),
+                    duplicate_chunks=len(chunks),
+                    indexing_status="already_indexed_or_pending",
+                )
             stored_chunks = []
             duplicate_chunks = 0
             for piece in chunk_text(command.text):
+                retrieval_text = document_chunk_retrieval_text(
+                    text=piece.text,
+                    title=saved_document.title,
+                )
                 chunk = MemoryChunk.create(
                     chunk_id=MemoryChunkId(self._ids.new_id("chunk")),
                     space_id=command.space_id,
@@ -128,11 +174,11 @@ class IngestDocumentUseCase:
                     ),
                     kind=MemoryChunkKind.DOCUMENT_SECTION,
                     text=piece.text,
-                    normalized_text=normalize_text(piece.text),
+                    normalized_text=normalize_text(retrieval_text),
                     sequence=piece.sequence,
                     char_start=piece.char_start,
                     char_end=piece.char_end,
-                    token_estimate=estimate_tokens(piece.text),
+                    token_estimate=estimate_tokens(retrieval_text),
                     now=now,
                     metadata={"title": saved_document.title},
                     classification=saved_document.classification,
@@ -176,7 +222,42 @@ class IngestDocumentUseCase:
                     result_id=str(saved_document.id),
                 )
             )
-            await uow.commit()
+            try:
+                await uow.commit()
+            except MemoryConflictError as exc:
+                existing = await uow.idempotency.find(space_id=str(command.space_id), key=key)
+                if existing:
+                    if existing.fingerprint != body_hash:
+                        raise MemoryConflictError(
+                            "Idempotency key was used with different document"
+                        ) from exc
+                    document = await uow.documents.get_by_id(existing.result_id)
+                    if document is None:
+                        raise MemoryInvariantError(
+                            "Idempotency result points to missing document"
+                        ) from exc
+                    chunks = await uow.documents.list_chunks(str(document.id))
+                    return IngestDocumentResult(
+                        document=document,
+                        chunks=tuple(chunks),
+                        duplicate_chunks=len(chunks),
+                        indexing_status="already_indexed_or_pending",
+                    )
+                existing_document = await uow.documents.find_active_by_content_hash(
+                    space_id=str(command.space_id),
+                    profile_id=str(command.profile_id),
+                    thread_id=str(command.thread_id) if command.thread_id else None,
+                    content_hash=body_hash,
+                )
+                if existing_document is None:
+                    raise
+                chunks = await uow.documents.list_chunks(str(existing_document.id))
+                return IngestDocumentResult(
+                    document=existing_document,
+                    chunks=tuple(chunks),
+                    duplicate_chunks=len(chunks),
+                    indexing_status="already_indexed_or_pending",
+                )
 
         return IngestDocumentResult(
             document=saved_document,

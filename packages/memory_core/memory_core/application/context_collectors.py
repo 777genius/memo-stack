@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from memory_core.application.context_hydration import ContextHydrator
+from memory_core.application.document_text import document_chunk_retrieval_text
 from memory_core.application.dto import BuildContextQuery, ContextItem
 from memory_core.domain.entities import MemoryChunk, MemoryFact, SourceRef
 from memory_core.ports.adapters import EmbeddingPort, GraphMemoryPort, PortStatus, VectorMemoryPort
@@ -325,10 +326,11 @@ def _candidate_chunk_ids(candidate: CapabilityRecallCandidate) -> tuple[str, ...
 
 
 def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) -> ContextItem:
+    chunk_text = document_chunk_retrieval_text(text=chunk.text, metadata=chunk.metadata)
     return ContextItem(
         item_id=str(chunk.id),
         item_type="chunk",
-        text=chunk.text,
+        text=chunk_text,
         score=candidate.score,
         source_refs=(
             SourceRef(
@@ -337,7 +339,7 @@ def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) ->
                 chunk_id=str(chunk.id),
                 char_start=chunk.char_start,
                 char_end=chunk.char_end,
-                quote_preview=chunk.text[:200],
+                quote_preview=chunk_text[:200],
             ),
         ),
         diagnostics={

@@ -19,3 +19,9 @@ openai = [
 graphiti = [
   "graphiti-core>=0.29.1,<1.0.0",
 ]
+
+[tool.setuptools.package-data]
+memory_adapters = [
+  "extraction/prompts/*.md",
+  "extraction/schemas/*.json",
+]

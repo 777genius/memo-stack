@@ -1,0 +1,7 @@
+{
+  "event": "message",
+  "message": {
+    "role": "user",
+    "content": "Remember: HOST_FIXTURE_OPENCODE_MESSAGE OpenCode payload role maps to user authority."
+  }
+}

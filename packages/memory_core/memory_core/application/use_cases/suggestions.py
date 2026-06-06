@@ -16,6 +16,7 @@ from memory_core.domain.entities import (
     MemoryFactId,
     MemorySuggestion,
     MemorySuggestionId,
+    SuggestionOperation,
     TrustLevel,
 )
 from memory_core.domain.errors import (
@@ -59,6 +60,15 @@ class CreateSuggestionUseCase:
             trust_level=trust,
             target_fact_id=MemoryFactId(command.target_fact_id) if command.target_fact_id else None,
             target_fact_version=command.target_fact_version,
+            operation=SuggestionOperation(command.operation),
+            category=command.category,
+            tags=command.tags,
+            ttl_policy=command.ttl_policy,
+            expires_at=command.expires_at,
+            expiry_reason=command.expiry_reason,
+            created_from_capture_id=command.created_from_capture_id,
+            candidate_fingerprint=command.candidate_fingerprint,
+            review_payload=command.review_payload,
             now=now,
         )
         async with self._uow_factory() as uow:
@@ -118,15 +128,23 @@ class ApproveSuggestionUseCase:
                     and not command.force
                 ):
                     raise MemoryConflictError("Weak suggestion cannot supersede stronger fact")
-                fact = current.update(
-                    expected_version=suggestion.target_fact_version or current.version,
-                    text=suggestion.candidate_text,
-                    source_refs=suggestion.source_refs,
-                    reason=command.reason or suggestion.safe_reason,
-                    now=now,
-                )
+                if suggestion.operation == SuggestionOperation.DELETE:
+                    expected = suggestion.target_fact_version or current.version
+                    if current.version != expected:
+                        raise MemoryConflictError("Stale fact version")
+                    fact = current.forget(now=now)
+                else:
+                    fact = current.update(
+                        expected_version=suggestion.target_fact_version or current.version,
+                        text=suggestion.candidate_text,
+                        source_refs=suggestion.source_refs,
+                        reason=command.reason or suggestion.safe_reason,
+                        now=now,
+                    )
                 fact = await uow.facts.save(fact)
             else:
+                if suggestion.operation == SuggestionOperation.DELETE:
+                    raise MemoryValidationError("Delete suggestion requires target fact")
                 fact = MemoryFact.create(
                     fact_id=MemoryFactId(self._ids.new_id("fact")),
                     space_id=suggestion.space_id,
@@ -142,9 +160,14 @@ class ApproveSuggestionUseCase:
 
             reviewed = suggestion.approve(now=now, reason=command.reason)
             saved_suggestion = await uow.suggestions.save(reviewed)
+            projection_event = (
+                "graph.delete_fact"
+                if suggestion.operation == SuggestionOperation.DELETE
+                else "graph.upsert_fact"
+            )
             await uow.outbox.enqueue(
                 OutboxEvent(
-                    event_type="graph.upsert_fact",
+                    event_type=projection_event,
                     aggregate_type="fact",
                     aggregate_id=str(fact.id),
                     aggregate_version=fact.version,

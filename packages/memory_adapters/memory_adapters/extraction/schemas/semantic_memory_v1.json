@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidates"],
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "kind",
+          "confidence",
+          "safe_reason",
+          "operation",
+          "evidence_quote",
+          "category",
+          "tags",
+          "ttl_policy",
+          "target_fact_id",
+          "target_fact_version",
+          "valid_from",
+          "valid_until",
+          "expires_at"
+        ],
+        "properties": {
+          "text": {"type": "string", "maxLength": 1200},
+          "kind": {
+            "type": "string",
+            "enum": ["note", "architecture_decision", "constraint", "user_preference"]
+          },
+          "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+          "safe_reason": {"type": "string", "maxLength": 240},
+          "operation": {"type": "string", "enum": ["add", "update", "delete", "noop", "review"]},
+          "evidence_quote": {"type": ["string", "null"], "maxLength": 240},
+          "category": {
+            "type": ["string", "null"],
+            "maxLength": 80
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {"type": "string", "maxLength": 48}
+          },
+          "ttl_policy": {
+            "type": ["string", "null"],
+            "enum": ["durable", "task", "short", "review", "delete_review", null]
+          },
+          "target_fact_id": {"type": ["string", "null"], "maxLength": 80},
+          "target_fact_version": {"type": ["integer", "null"], "minimum": 1},
+          "valid_from": {"type": ["string", "null"], "format": "date-time"},
+          "valid_until": {"type": ["string", "null"], "format": "date-time"},
+          "expires_at": {"type": ["string", "null"], "format": "date-time"}
+        }
+      }
+    }
+  }
+}

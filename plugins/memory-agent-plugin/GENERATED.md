@@ -21,6 +21,7 @@ These committed root docs are guidance files with a managed block, not plain gen
 - `.opencode/skills/memory/SKILL.md`
 - `GENERATED.md`
 - `gemini-extension.json`
+- `hooks/hooks.json`
 - `opencode.json`
 - `skills/memory/SKILL.md`
 

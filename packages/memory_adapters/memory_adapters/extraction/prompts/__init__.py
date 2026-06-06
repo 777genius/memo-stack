@@ -1,0 +1,1 @@
+"""Packaged extractor prompts."""

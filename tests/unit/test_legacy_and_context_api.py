@@ -9,7 +9,7 @@ from memory_adapters.noop import (
     NoopGraphMemoryAdapter,
     NoopVectorMemoryAdapter,
 )
-from memory_adapters.postgres.models import MemoryEpisodeRow, MemoryOutboxRow
+from memory_adapters.postgres.models import MemoryEpisodeRow, MemoryOutboxRow, MemoryThreadRow
 from memory_core.application import (
     BuildContextQuery,
     BuildContextUseCase,
@@ -49,6 +49,7 @@ from memory_server.provider_circuit import (
     CircuitBreakingVectorMemoryAdapter,
     ProviderCircuitBreaker,
 )
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -604,6 +605,40 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
     assert loaded.json()["data"]["id"] == document_id
     assert context.status_code == 200
     assert "Postgres as canonical truth" in context.json()["data"]["rendered_text"]
+
+
+def test_document_title_is_indexed_and_rendered_for_context_recall(tmp_path: Path) -> None:
+    marker = "DOC_TITLE_ONLY_MARKER"
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "title": f"{marker}: Architecture notes",
+                "text": "Postgres remains canonical while Qdrant and Graphiti are projections.",
+                "source_type": "document",
+                "source_external_id": "doc-title-only",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "profile_ids": ["profile_default"],
+                "query": f"{marker} Architecture notes",
+                "token_budget": 512,
+                "max_chunks": 4,
+            },
+            headers=auth_headers(),
+        )
+
+    assert document.status_code == 201
+    assert context.status_code == 200
+    rendered = context.json()["data"]["rendered_text"]
+    assert f"{marker}: Architecture notes" in rendered
+    assert "Postgres remains canonical" in rendered
 
 
 def test_document_ingest_returns_backpressure_when_outbox_high(tmp_path: Path) -> None:
@@ -1756,6 +1791,57 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
     assert "THREAD_SCOPE_MARKER current thread fact." in rendered
     assert "THREAD_SCOPE_MARKER profile-wide fact." in rendered
     assert "THREAD_SCOPE_MARKER wrong other thread fact." not in rendered
+
+
+def test_context_with_missing_thread_ref_reads_profile_wide_memory_without_creating_thread(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "client-app",
+                "profile_external_ref": "default",
+                "text": "MISSING_THREAD_PROFILE_WIDE_MARKER profile prep fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "profile-wide"}],
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_slug": "client-app",
+                "profile_external_ref": "default",
+                "thread_external_ref": "missing-thread-before-first-ingest",
+                "query": "MISSING_THREAD_PROFILE_WIDE_MARKER",
+                "token_budget": 512,
+                "max_facts": 8,
+            },
+            headers=auth_headers(),
+        )
+        thread_count = asyncio.run(
+            _thread_count(client, external_ref="missing-thread-before-first-ingest")
+        )
+
+    assert fact.status_code == 201
+    assert context.status_code == 200
+    payload = context.json()["data"]
+    assert payload["diagnostics"].get("scope_not_found") is not True
+    assert "MISSING_THREAD_PROFILE_WIDE_MARKER profile prep fact." in payload["rendered_text"]
+    assert thread_count == 0
+
+
+async def _thread_count(client: TestClient, *, external_ref: str) -> int:
+    engine = client.app.state.container.engine
+    async with AsyncSession(engine) as session:
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(MemoryThreadRow)
+                .where(MemoryThreadRow.external_ref == external_ref)
+            )
+        )
 
 
 class FakeGraphAdapter:

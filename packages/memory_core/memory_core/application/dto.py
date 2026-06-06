@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from memory_core.domain.capture import CanonicalCapture
 from memory_core.domain.entities import (
     MemoryChunk,
     MemoryChunkKind,
@@ -300,6 +301,15 @@ class CreateSuggestionCommand:
     trust_level: str = "medium"
     target_fact_id: str | None = None
     target_fact_version: int | None = None
+    operation: str = "add"
+    category: str | None = None
+    tags: tuple[str, ...] = ()
+    ttl_policy: str | None = None
+    expires_at: datetime | None = None
+    expiry_reason: str | None = None
+    created_from_capture_id: str | None = None
+    candidate_fingerprint: str | None = None
+    review_payload: dict[str, object] | None = None
     auto_approve: bool = False
 
 
@@ -335,3 +345,70 @@ class RejectSuggestionCommand:
 class ExpireSuggestionCommand:
     suggestion_id: str
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ReceiveCaptureCommand:
+    space_id: SpaceId
+    profile_id: ProfileId
+    text: str
+    source_agent: str
+    source_kind: str
+    event_type: str
+    actor_role: str = "unknown"
+    thread_id: ThreadId | None = None
+    evidence_refs: tuple[SourceRef, ...] = ()
+    trust_level: str = "medium"
+    source_authority: str = "unknown"
+    sensitivity: str = "medium"
+    data_classification: str = "internal"
+    occurred_at: datetime | None = None
+    metadata: dict[str, object] | None = None
+    source_event_id: str | None = None
+    source_actor_external_ref: str | None = None
+    client_instance_id: str | None = None
+    agent_session_external_ref: str | None = None
+    turn_external_ref: str | None = None
+    parent_capture_id: str | None = None
+    sequence_index: int | None = None
+    trace_id: str | None = None
+    idempotency_key: str | None = None
+    consolidate: bool = True
+
+
+@dataclass(frozen=True)
+class CaptureResult:
+    capture: CanonicalCapture
+    duplicate: bool = False
+    created_suggestions: int = 0
+    suggestion_ids: tuple[str, ...] = ()
+    auto_applied_facts: int = 0
+    auto_applied_fact_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ListCapturesQuery:
+    space_id: SpaceId
+    profile_id: ProfileId
+    status: str | None = None
+    consolidation_status: str | None = None
+    limit: int = 50
+    cursor_created_at: datetime | None = None
+    cursor_id: str | None = None
+
+
+@dataclass(frozen=True)
+class GetCaptureQuery:
+    capture_id: str
+
+
+@dataclass(frozen=True)
+class PurgeCaptureCommand:
+    capture_id: str
+    reason: str = "privacy_purge"
+
+
+@dataclass(frozen=True)
+class ConsolidateCaptureCommand:
+    capture_id: str
+    force: bool = False

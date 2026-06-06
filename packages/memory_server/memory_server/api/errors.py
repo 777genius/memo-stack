@@ -8,6 +8,7 @@ from memory_core.domain.errors import (
     MemoryError,
     MemoryForbiddenError,
     MemoryInfrastructureError,
+    MemoryIngressLimitError,
     MemoryInvariantError,
     MemoryNotFoundError,
     MemoryPolicyBlockedError,
@@ -22,6 +23,7 @@ STATUS_BY_ERROR_TYPE = {
     MemoryForbiddenError: 403,
     MemoryUnauthorizedError: 401,
     MemoryPolicyBlockedError: 422,
+    MemoryIngressLimitError: 429,
     MemoryInvariantError: 500,
     MemoryInfrastructureError: 503,
 }

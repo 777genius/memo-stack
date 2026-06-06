@@ -225,6 +225,40 @@ class HttpMemoryGateway:
             json=_without_none({"reason": reason}),
         )
 
+    async def list_captures(
+        self,
+        *,
+        scope: MemoryScope,
+        status: str | None,
+        consolidation_status: str | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/captures",
+            params=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    "profile_external_ref": scope.profile_external_ref,
+                    "status": status,
+                    "consolidation_status": consolidation_status,
+                    "limit": limit,
+                }
+            ),
+        )
+
+    async def consolidate_capture(
+        self,
+        *,
+        capture_id: str,
+        force: bool,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/v1/captures/{capture_id}/consolidate",
+            json={"force": force},
+        )
+
     async def ingest_document(
         self,
         *,
