@@ -455,6 +455,61 @@ def test_consolidation_rejects_hallucinated_evidence_quote(tmp_path: Path) -> No
     assert suggestions.json()["data"] == []
 
 
+def test_consolidation_rejects_candidate_without_source_refs(tmp_path: Path) -> None:
+    extractor = StaticExtractor(
+        (
+            MemoryCandidate(
+                text="MISSING_SOURCE_REF_MARKER should not persist.",
+                kind=MemoryKind.NOTE,
+                confidence=Confidence.MEDIUM,
+                source_refs=(),
+                safe_reason="static extractor missing source refs",
+            ),
+        )
+    )
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'missing-source-ref.db'}",
+            auto_create_schema=True,
+            service_token="test-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            capture_mode=CaptureMode.SUGGEST,
+        )
+    )
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        created = _create_capture(
+            client,
+            headers=headers,
+            space_slug="capture-missing-source-ref",
+            marker="MISSING_SOURCE_REF_MARKER",
+        )
+        container = client.app.state.container
+        use_case = ConsolidateCaptureUseCase(
+            uow_factory=container.uow_factory,
+            clock=container.clock,
+            ids=container.ids,
+            extractor=extractor,
+        )
+        result = asyncio.run(
+            use_case.execute(
+                ConsolidateCaptureCommand(capture_id=created.json()["data"]["id"])
+            )
+        )
+        suggestions = _list_suggestions(
+            client,
+            headers=headers,
+            space_slug="capture-missing-source-ref",
+        )
+
+    assert result.capture.consolidation_status.value == "skipped"
+    assert result.capture.last_error_code == "no_valid_candidates"
+    assert suggestions.json()["data"] == []
+
+
 def test_resolver_coalesces_conflicting_update_delete_candidates(tmp_path: Path) -> None:
     app = create_app(
         Settings(

@@ -35,16 +35,56 @@ def test_extractor_validation_rejects_ambiguous_datetime() -> None:
     assert result.rejected_codes == ("ambiguous_datetime",)
 
 
+def test_extractor_validation_rejects_missing_source_refs() -> None:
+    result = validate_extractor_candidates(
+        candidates=(
+            _candidate(
+                valid_from=None,
+                valid_until=None,
+                source_refs=(),
+            ),
+        ),
+        source_text="TEMPORAL_MARKER fact from source.",
+    )
+
+    assert result.candidates == ()
+    assert result.rejected_codes == ("source_ref_required",)
+
+
+def test_extractor_validation_rejects_source_refs_without_evidence_quote() -> None:
+    result = validate_extractor_candidates(
+        candidates=(
+            _candidate(
+                valid_from=None,
+                valid_until=None,
+                source_refs=(
+                    SourceRef(
+                        source_type="capture:hook",
+                        source_id="cap_temporal",
+                    ),
+                ),
+            ),
+        ),
+        source_text="TEMPORAL_MARKER fact from source.",
+    )
+
+    assert result.candidates == ()
+    assert result.rejected_codes == ("evidence_quote_required",)
+
+
 def _candidate(
     *,
     valid_from: datetime | None,
     valid_until: datetime | None,
+    source_refs: tuple[SourceRef, ...] | None = None,
 ) -> MemoryCandidate:
     return MemoryCandidate(
         text="TEMPORAL_MARKER fact from source.",
         kind=MemoryKind.NOTE,
         confidence=Confidence.MEDIUM,
-        source_refs=(
+        source_refs=source_refs
+        if source_refs is not None
+        else (
             SourceRef(
                 source_type="capture:hook",
                 source_id="cap_temporal",

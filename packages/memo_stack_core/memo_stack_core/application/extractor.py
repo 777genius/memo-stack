@@ -104,6 +104,8 @@ def _candidate_rejection_code(
         and candidate.valid_until <= candidate.valid_from
     ):
         return "invalid_validity_window"
+    if not candidate.source_refs:
+        return "source_ref_required"
     if operation in {CandidateOperation.UPDATE, CandidateOperation.DELETE}:
         if not candidate.target_fact_id and not candidate.target_hint:
             return "target_fact_or_hint_required"
@@ -113,10 +115,16 @@ def _candidate_rejection_code(
             and candidate.target_fact_version is None
         ):
             return "target_version_required"
+    has_evidence_quote = False
     for source_ref in candidate.source_refs:
         quote = source_ref.quote_preview
-        if quote and _normalize_evidence(quote) not in normalized_source:
+        if not quote:
+            continue
+        has_evidence_quote = True
+        if _normalize_evidence(quote) not in normalized_source:
             return "evidence_quote_not_found"
+    if not has_evidence_quote:
+        return "evidence_quote_required"
     return None
 
 

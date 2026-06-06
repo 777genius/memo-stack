@@ -24,7 +24,6 @@ from memo_stack_core.domain.entities import (
     MemoryFactId,
     MemorySuggestion,
     MemorySuggestionId,
-    SourceRef,
     SuggestionOperation,
     TrustLevel,
 )
@@ -231,13 +230,7 @@ class ConsolidateCaptureUseCase:
                     resolver_rejected_codes.append("duplicate_pending_suggestion")
                     continue
                 expires_at = _expires_at(now, taxonomy.ttl_policy.duration)
-                source_refs = candidate.source_refs or (
-                    SourceRef(
-                        source_type=f"capture:{current.source_kind.value}",
-                        source_id=str(current.id),
-                        quote_preview=current.text[:240],
-                    ),
-                )
+                source_refs = candidate.source_refs
                 auto_apply = self._auto_apply_policy.decide(
                     enabled=self._auto_apply_safe_enabled,
                     capture=current,
