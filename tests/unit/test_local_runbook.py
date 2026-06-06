@@ -54,17 +54,26 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     eval_runner = (
         ROOT / "packages" / "memo_stack_server" / "memo_stack_server" / "eval.py"
     ).read_text(encoding="utf-8")
+    bundle_script = (ROOT / "scripts" / "quality_evidence_bundle.py").read_text(
+        encoding="utf-8"
+    )
 
     assert ".PHONY: memo-stack-quality-scorecard" in makefile
     assert "$(PYTHON) -m memo_stack_server eval scorecard" in makefile
     assert ".PHONY: memo-stack-quality-scorecard-from-reports" in makefile
     assert ".PHONY: memo-stack-quality-scorecard-top-evidence" in makefile
+    assert ".PHONY: memo-stack-quality-evidence-bundle" in makefile
     assert "MEMORY_SCORECARD_SUITE_REPORTS" in makefile
+    assert "MEMORY_SCORECARD_EXTRA_REPORTS" in makefile
+    assert "MEMORY_QUALITY_EVIDENCE_DIR" in makefile
+    assert "MEMORY_QUALITY_EVIDENCE_REQUIRE_TOP" in makefile
+    assert "$(PYTHON) scripts/quality_evidence_bundle.py" in makefile
     assert "--suite-report" in makefile
     assert "--require-top-evidence" in makefile
     assert 'scorecard.add_argument(\n        "--suite-report"' in eval_runner
     assert 'scorecard.add_argument(\n        "--require-top-evidence"' in eval_runner
     assert 'snapshots.add_argument("--report-out"' in eval_runner
+    assert "from memo_stack_server.evidence_bundle import main" in bundle_script
 
 
 def test_makefile_has_clean_full_mcp_smoke_target() -> None:

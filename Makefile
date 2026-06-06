@@ -74,6 +74,14 @@ memo-stack-quality-scorecard-top-evidence:
 	@test -n "$${MEMORY_SCORECARD_SUITE_REPORTS:-}" || (echo "Set MEMORY_SCORECARD_SUITE_REPORTS to deterministic eval, full-provider canary, agent behavior and public benchmark report paths."; exit 1)
 	$(PYTHON) -m memo_stack_server eval scorecard --require-top-evidence $$(printf ' --suite-report %s' $${MEMORY_SCORECARD_SUITE_REPORTS})
 
+.PHONY: memo-stack-quality-evidence-bundle
+memo-stack-quality-evidence-bundle:
+	@set -e; \
+	set -- --output-dir "$${MEMORY_QUALITY_EVIDENCE_DIR:-.tmp/memo-stack-quality-evidence}"; \
+	if [ "$${MEMORY_QUALITY_EVIDENCE_REQUIRE_TOP:-false}" = "true" ]; then set -- "$$@" --require-top-evidence; fi; \
+	for report in $${MEMORY_SCORECARD_EXTRA_REPORTS:-}; do set -- "$$@" --extra-report "$$report"; done; \
+	$(PYTHON) scripts/quality_evidence_bundle.py "$$@"
+
 .PHONY: memo-stack-public-benchmark
 memo-stack-public-benchmark:
 	@test -n "$${MEMORY_PUBLIC_BENCHMARK_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_DATASET to a LoCoMo/LongMemEval-like JSON or JSONL file."; exit 1)
