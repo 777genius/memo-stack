@@ -416,7 +416,7 @@ async def _run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Memory Platform outbox worker")
+    parser = argparse.ArgumentParser(description="Memo Stack outbox worker")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--limit", type=int, default=25)

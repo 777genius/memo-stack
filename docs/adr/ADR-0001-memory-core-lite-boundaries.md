@@ -2,7 +2,7 @@
 
 ## Context
 
-Memory Platform starts as Core Lite: a reusable Python service/library that Client App can consume without importing storage or provider SDKs.
+Memo Stack starts as Core Lite: a reusable Python service/library that Client App can consume without importing storage or provider SDKs.
 
 ## Decision
 

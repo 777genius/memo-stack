@@ -1,10 +1,10 @@
-# Universal Memory Platform Architecture Plan
+# Universal Memo Stack Architecture Plan
 
 Статус: Draft architecture decision, готово к review перед реализацией.
 
 Дата фиксации: 2026-05-24.
 
-Цель документа: зафиксировать целевую архитектуру reusable memory platform, которую можно подключать к Client App и другим приложениям без привязки к Graphiti, Qdrant, Zep, Cognee или конкретному LLM provider.
+Цель документа: зафиксировать целевую архитектуру reusable memo stack, которую можно подключать к Client App и другим приложениям без привязки к Graphiti, Qdrant, Zep, Cognee или конкретному LLM provider.
 
 Ключевое решение:
 
@@ -19,7 +19,7 @@ Our Memory Core + Postgres canonical truth + Graphiti adapter + Qdrant adapter
 
 ## Executive Summary
 
-Мы не делаем "интеграцию с Graphiti" и не делаем "интеграцию с Qdrant". Мы делаем свою **Memory Platform**, где:
+Мы не делаем "интеграцию с Graphiti" и не делаем "интеграцию с Qdrant". Мы делаем свою **Memo Stack**, где:
 
 - `memory_core` содержит domain, use cases и ports.
 - `memory_server` дает HTTP API, worker, migrations, auth, config.
@@ -988,7 +988,7 @@ Important:
 Recommended Python workspace:
 
 ```text
-memory_platform/
+memo_stack/
   pyproject.toml
   README.md
   docker-compose.yml
@@ -2812,7 +2812,7 @@ Option C - Rely on code review and endpoint-level visibility guards.
 🎯 4   🛡️ 4   🧠 2
 Approx changes: `50-150` lines.
 
-Not acceptable for a reusable team memory platform because one repository method or maintenance job can bypass endpoint-level guardrails.
+Not acceptable for a reusable team memo stack because one repository method or maintenance job can bypass endpoint-level guardrails.
 
 Required tests:
 
@@ -3757,7 +3757,7 @@ profile:{profile_id}:type:{entity_type}:scope:{scope_hash}:name:{normalized_name
 Examples:
 
 ```text
-project "Memory Platform" in Client App architecture profile
+project "Memo Stack" in Client App architecture profile
 package "memory_core" in repo Client App
 person "Alex" in team profile vs interview candidate profile
 ```
@@ -9779,7 +9779,7 @@ Memory-only auth behavior:
    🎯 9   🛡️ 9   🧠 6
    Approx changes: `900-1800` lines.
 
-   Memory platform implements legacy `/api/v1/interview-memory/*` routes as an adapter over the new core. Client App can point `INTERVIEW_MEMORY_API_URL` to local platform without desktop bridge rewrite.
+   Memo stack implements legacy `/api/v1/interview-memory/*` routes as an adapter over the new core. Client App can point `INTERVIEW_MEMORY_API_URL` to local platform without desktop bridge rewrite.
 
    Recommendation: choose this. It preserves existing E2E scripts, rollback flags and companion session behavior.
 
@@ -10020,7 +10020,7 @@ Never:
 
 ## Supply Chain and Parser Sandbox Governance
 
-Memory platform processes untrusted text and files. Dependency governance is therefore part of product safety, not a CI afterthought. This includes Graphiti, Qdrant client, Neo4j driver, FastAPI stack, LLM/provider SDKs, parser/OCR libraries, archive readers and object storage SDKs.
+Memo stack processes untrusted text and files. Dependency governance is therefore part of product safety, not a CI afterthought. This includes Graphiti, Qdrant client, Neo4j driver, FastAPI stack, LLM/provider SDKs, parser/OCR libraries, archive readers and object storage SDKs.
 
 Core invariant:
 
@@ -10217,7 +10217,7 @@ Option A - Lockfile plus SBOM, vulnerability/license gates and parser sandbox po
 🎯 9   🛡️ 9   🧠 5
 Approx changes: `500-1000` lines.
 
-Recommended. It is strong enough for local/team v1 without turning the memory platform into a full security product.
+Recommended. It is strong enough for local/team v1 without turning the memo stack into a full security product.
 
 Option B - Full container sandbox for every parser/OCR job from day one.
 
@@ -10231,7 +10231,7 @@ Option C - CI scan only, no domain records or parser sandbox policy.
 🎯 4   🛡️ 4   🧠 2
 Approx changes: `100-300` lines.
 
-Too weak for a memory platform that ingests arbitrary files and routes content to AI providers.
+Too weak for a memo stack that ingests arbitrary files and routes content to AI providers.
 
 Required tests:
 
@@ -13243,7 +13243,7 @@ pnpm e2e:memory-document-recall -- --api-url http://127.0.0.1:7788
 pnpm e2e:companion-context -- --verify-memory --memory-api-url http://127.0.0.1:7788
 ```
 
-Minimum memory_platform checks:
+Minimum memo_stack checks:
 
 ```bash
 pytest packages/memory_core/tests packages/memory_server/tests
@@ -13783,7 +13783,7 @@ Production-safe by default:
 
 ## Rollback and Kill Switches
 
-Memory platform rollout must be reversible at each layer.
+Memo stack rollout must be reversible at each layer.
 
 Desktop/user-facing rollback:
 
@@ -14009,7 +14009,7 @@ Rules:
 
 ### MVP Cutline
 
-V1 target is a reusable memory platform that can run locally and be integrated safely. V1 is not a full SaaS and not a full Zep competitor.
+V1 target is a reusable memo stack that can run locally and be integrated safely. V1 is not a full SaaS and not a full Zep competitor.
 
 Must include in V1:
 
@@ -14901,7 +14901,7 @@ Use only for:
    - Alternative: migrate desktop bridge directly after the first successful local canary.
 
 7. Package/repository location.
-   - Recommendation: start inside Client App `memory_platform/` until architecture is proven, then extract to standalone repo/package.
+   - Recommendation: start inside Client App `memo_stack/` until architecture is proven, then extract to standalone repo/package.
    - Alternative: create standalone repo immediately.
 
 8. First generated SDK target.
@@ -15022,7 +15022,7 @@ Use only for:
 Recommended first PR:
 
 ```text
-feat(memory): scaffold reusable memory platform core and server
+feat(memory): scaffold reusable memo stack core and server
 ```
 
 Scope:

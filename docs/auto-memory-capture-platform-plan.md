@@ -2,7 +2,7 @@
 
 Status: implementation plan, not an ADR yet.
 
-Owner: Memory Platform.
+Owner: Memo Stack.
 
 Goal: add safe automatic memory capture for coding agents without putting
 business logic into hooks, MCP tools or provider adapters. The design must stay
@@ -41,7 +41,7 @@ Agent Host
 ```
 
 This keeps hooks fast, keeps the domain independent from agent-specific payloads
-and lets Memory Platform replay captures later if extractor prompts, provider
+and lets Memo Stack replay captures later if extractor prompts, provider
 models, policies or projection adapters improve.
 
 ## 2. Research Conclusions To Preserve
@@ -2747,7 +2747,7 @@ Each JSONL row:
   "description": "User corrects an existing architecture decision.",
   "scope": {
     "space_slug": "personal",
-    "profile_external_ref": "memory-platform",
+    "profile_external_ref": "memo-stack",
     "thread_external_ref": "fixture-thread"
   },
   "input": {
@@ -3044,7 +3044,7 @@ pause and suggestion cleanup.
 
 Current state:
 
-- Memory Platform already has facts, documents, suggestions, outbox and
+- Memo Stack already has facts, documents, suggestions, outbox and
   projections.
 - MCP adapter can propose/review memory.
 - Plugin hook can retrieve context and optionally ingest episodes.

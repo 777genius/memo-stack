@@ -3,9 +3,9 @@ requires = ["setuptools>=80", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "memory-platform"
+name = "memo-stack"
 version = "0.1.0"
-description = "Reusable memory platform core lite"
+description = "Reusable memo stack core lite"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.18.4,<2.0.0",

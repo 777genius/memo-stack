@@ -1,4 +1,4 @@
-"""HTTP adapter from MCP tools to the Memory Platform API."""
+"""HTTP adapter from MCP tools to the Memo Stack API."""
 
 from __future__ import annotations
 
@@ -314,7 +314,7 @@ class HttpMemoryGateway:
                 raise MemoryGatewayError(
                     status_code=0,
                     code="memory_mcp.gateway.connect_timeout",
-                    message="Memory Platform connection timed out",
+                    message="Memo Stack connection timed out",
                     retryable=True,
                     unknown_commit_state=False,
                 ) from exc
@@ -322,7 +322,7 @@ class HttpMemoryGateway:
                 raise MemoryGatewayError(
                     status_code=0,
                     code="memory_mcp.gateway.read_timeout",
-                    message="Memory Platform response timed out",
+                    message="Memo Stack response timed out",
                     retryable=True,
                     unknown_commit_state=method.upper() in {"POST", "PUT", "PATCH", "DELETE"},
                 ) from exc
@@ -330,7 +330,7 @@ class HttpMemoryGateway:
                 raise MemoryGatewayError(
                     status_code=0,
                     code="memory_mcp.gateway.write_timeout",
-                    message="Memory Platform request body timed out",
+                    message="Memo Stack request body timed out",
                     retryable=True,
                     unknown_commit_state=method.upper() in {"POST", "PUT", "PATCH", "DELETE"},
                 ) from exc
@@ -338,7 +338,7 @@ class HttpMemoryGateway:
                 raise MemoryGatewayError(
                     status_code=0,
                     code="memory_mcp.gateway.network_error",
-                    message="Memory Platform HTTP request failed",
+                    message="Memo Stack HTTP request failed",
                     retryable=True,
                     unknown_commit_state=False,
                 ) from exc
@@ -350,7 +350,7 @@ class HttpMemoryGateway:
             raise MemoryGatewayError(
                 status_code=response.status_code,
                 code="memory_mcp.gateway.invalid_json",
-                message="Memory Platform returned invalid JSON",
+                message="Memo Stack returned invalid JSON",
                 retryable=False,
             ) from exc
 

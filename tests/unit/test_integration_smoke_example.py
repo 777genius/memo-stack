@@ -72,7 +72,7 @@ def test_integration_smoke_uses_sdk_happy_path() -> None:
     config = smoke.SmokeConfig(
         api_url="http://memory.test",
         auth_token="test-token",
-        space_slug="memory-platform-smoke",
+        space_slug="memo-stack-smoke",
         profile_external_ref="default",
         thread_external_ref="smoke-test",
         run_id="unit",
@@ -104,7 +104,7 @@ def test_integration_smoke_fails_when_forgotten_fact_leaks() -> None:
     config = smoke.SmokeConfig(
         api_url="http://memory.test",
         auth_token="test-token",
-        space_slug="memory-platform-smoke",
+        space_slug="memo-stack-smoke",
         profile_external_ref="default",
         thread_external_ref="smoke-test",
         run_id="unit",

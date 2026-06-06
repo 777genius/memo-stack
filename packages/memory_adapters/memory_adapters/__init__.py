@@ -1,1 +1,1 @@
-"""Infrastructure adapters for memory platform."""
+"""Infrastructure adapters for memo stack."""

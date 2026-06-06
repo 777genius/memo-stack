@@ -579,7 +579,7 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
                 "space_id": "space_client_app",
                 "profile_id": "profile_default",
                 "title": "Architecture notes",
-                "text": "Memory Platform uses Postgres as canonical truth. Qdrant is derived.",
+                "text": "Memo Stack uses Postgres as canonical truth. Qdrant is derived.",
                 "source_type": "document",
                 "source_external_id": "doc-1",
             },

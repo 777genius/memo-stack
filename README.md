@@ -1,12 +1,12 @@
-# Memory Platform
+# Memo Stack
 
-Reusable memory platform for coding agents and future team/project memory workflows.
+Reusable memo stack for coding agents and future team/project memory workflows.
 
-This project is the new source of truth for the memory platform architecture and implementation plan.
+This project is the new source of truth for the memo stack architecture and implementation plan.
 
 ## Current Status
 
-This README describes the standalone Memory Platform repository, its local run
+This README describes the standalone Memo Stack repository, its local run
 modes and the supported integration contracts.
 
 Implementation target:
@@ -27,8 +27,8 @@ Core principles:
 
 ## Docs
 
-- [Core Lite implementation plan](docs/memory-platform-core-lite-plan.md)
-- [Global architecture plan](docs/memory-platform-architecture-plan.md)
+- [Core Lite implementation plan](docs/memo-stack-core-lite-plan.md)
+- [Global architecture plan](docs/memo-stack-architecture-plan.md)
 - [Legacy client memory notes](docs/client-integration/interview-memory-clean-architecture-plan.md)
 - [Legacy client integration run notes](docs/client-integration/current-integration-run-notes.md)
 
@@ -139,7 +139,7 @@ make memory-stack-up-full
 make memory-stack-smoke-full
 ```
 
-`MEMORY_OPENAI_API_KEY` is used by the Memory Platform embeddings adapter.
+`MEMORY_OPENAI_API_KEY` is used by the Memo Stack embeddings adapter.
 `OPENAI_API_KEY` is also required because Graphiti reads the standard OpenAI
 environment variable internally.
 

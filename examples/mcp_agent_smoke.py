@@ -1,4 +1,4 @@
-"""Run a live MCP client smoke against a running Memory Platform server."""
+"""Run a live MCP client smoke against a running Memo Stack server."""
 
 from __future__ import annotations
 

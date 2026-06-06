@@ -1,11 +1,11 @@
-# Memory Platform Docs
+# Memo Stack Docs
 
 This folder contains the platform planning documents moved out of Client App.
 
 ## Reading Order
 
-1. [Core Lite implementation plan](memory-platform-core-lite-plan.md)
-2. [Global architecture plan](memory-platform-architecture-plan.md)
+1. [Core Lite implementation plan](memo-stack-core-lite-plan.md)
+2. [Global architecture plan](memo-stack-architecture-plan.md)
 3. [MCP memory foundation plan](mcp-memory-foundation-plan.md)
 4. [Auto-memory capture platform plan](auto-memory-capture-platform-plan.md)
 5. [Legacy client memory notes](client-integration/interview-memory-clean-architecture-plan.md)
@@ -24,7 +24,7 @@ This folder contains the platform planning documents moved out of Client App.
 These docs now belong to:
 
 ```text
-/Users/belief/dev/projects/ai/memory-platform
+/Users/belief/dev/projects/ai/memo-stack
 ```
 
 Client App should keep only integration notes and pointers to this project.

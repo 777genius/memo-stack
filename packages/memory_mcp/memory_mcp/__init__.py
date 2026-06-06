@@ -1,4 +1,4 @@
-"""MCP adapter for Memory Platform."""
+"""MCP adapter for Memo Stack."""
 
 from memory_mcp.config import MemoryMcpSettings, load_settings
 

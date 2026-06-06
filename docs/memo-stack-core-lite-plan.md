@@ -1,12 +1,12 @@
-# Memory Platform Core Lite Implementation Plan
+# Memo Stack Core Lite Implementation Plan
 
-Статус: рабочий план реализации Core Lite. Глобальный reference план остается в `docs/memory-platform-architecture-plan.md`.
+Статус: рабочий план реализации Core Lite. Глобальный reference план остается в `docs/memo-stack-architecture-plan.md`.
 
 Дата фиксации: 2026-05-24.
 
 ## Summary
 
-Core Lite - это не полный SaaS/Zep competitor. Это минимальная reusable memory platform, которую можно быстро подключить к Client App, а потом вынести в отдельный сервис/SDK для других проектов.
+Core Lite - это не полный SaaS/Zep competitor. Это минимальная reusable memo stack, которую можно быстро подключить к Client App, а потом вынести в отдельный сервис/SDK для других проектов.
 
 Главное решение:
 
@@ -271,7 +271,7 @@ FORBIDDEN_IN_CORE = {
 
 
 def test_memory_core_has_no_infrastructure_imports():
-    imports = scan_imports("memory_platform/packages/memory_core")
+    imports = scan_imports("memo_stack/packages/memory_core")
     assert not (imports & FORBIDDEN_IN_CORE)
 ```
 
@@ -297,7 +297,7 @@ Example:
 
 ```python
 def test_use_cases_depend_on_ports_not_adapters():
-    imports = scan_imports("memory_platform/packages/memory_core/memory_core/application")
+    imports = scan_imports("memo_stack/packages/memory_core/memory_core/application")
     forbidden = {
         "memory_adapters",
         "sqlalchemy",
@@ -309,7 +309,7 @@ def test_use_cases_depend_on_ports_not_adapters():
 
 
 def test_routes_do_not_open_database_sessions_directly():
-    source = read_all_python("memory_platform/packages/memory_server/memory_server/api")
+    source = read_all_python("memo_stack/packages/memory_server/memory_server/api")
     assert "AsyncSession(" not in source
     assert "create_engine(" not in source
 ```
@@ -954,7 +954,7 @@ Rules:
 Recommended:
 
 ```text
-memory_platform/
+memo_stack/
   pyproject.toml
   docker-compose.yml
   .env.example
@@ -1020,9 +1020,9 @@ memory_platform/
 Shorter first PR is acceptable:
 
 ```text
-memory_platform/packages/memory_core
-memory_platform/packages/memory_server
-memory_platform/packages/memory_adapters
+memo_stack/packages/memory_core
+memo_stack/packages/memory_server
+memo_stack/packages/memory_adapters
 ```
 
 But imports must already respect future package split.
@@ -1108,29 +1108,29 @@ PR 0 should be mechanically simple. Do not start by wiring providers.
 Bootstrap commands:
 
 ```bash
-mkdir -p memory_platform/packages/memory_core/memory_core/{domain,application,ports}
-mkdir -p memory_platform/packages/memory_server/memory_server/api/v1
-mkdir -p memory_platform/packages/memory_adapters/memory_adapters/{noop,postgres,qdrant,graphiti,embeddings}
-mkdir -p memory_platform/packages/memory_sdk/memory_sdk
-mkdir -p memory_platform/tests/{unit,integration,e2e,fixtures}
+mkdir -p memo_stack/packages/memory_core/memory_core/{domain,application,ports}
+mkdir -p memo_stack/packages/memory_server/memory_server/api/v1
+mkdir -p memo_stack/packages/memory_adapters/memory_adapters/{noop,postgres,qdrant,graphiti,embeddings}
+mkdir -p memo_stack/packages/memory_sdk/memory_sdk
+mkdir -p memo_stack/tests/{unit,integration,e2e,fixtures}
 mkdir -p docs/adr
 ```
 
 Initial files:
 
 ```text
-memory_platform/pyproject.toml
-memory_platform/docker-compose.yml
-memory_platform/.env.example
-memory_platform/packages/memory_core/pyproject.toml
-memory_platform/packages/memory_core/memory_core/domain/entities.py
-memory_platform/packages/memory_core/memory_core/domain/errors.py
-memory_platform/packages/memory_core/memory_core/ports/*.py
-memory_platform/packages/memory_server/memory_server/main.py
-memory_platform/packages/memory_server/memory_server/config.py
-memory_platform/packages/memory_server/memory_server/composition.py
-memory_platform/packages/memory_adapters/memory_adapters/noop/*.py
-memory_platform/tests/unit/test_import_boundaries.py
+memo_stack/pyproject.toml
+memo_stack/docker-compose.yml
+memo_stack/.env.example
+memo_stack/packages/memory_core/pyproject.toml
+memo_stack/packages/memory_core/memory_core/domain/entities.py
+memo_stack/packages/memory_core/memory_core/domain/errors.py
+memo_stack/packages/memory_core/memory_core/ports/*.py
+memo_stack/packages/memory_server/memory_server/main.py
+memo_stack/packages/memory_server/memory_server/config.py
+memo_stack/packages/memory_server/memory_server/composition.py
+memo_stack/packages/memory_adapters/memory_adapters/noop/*.py
+memo_stack/tests/unit/test_import_boundaries.py
 docs/adr/ADR-0001-memory-core-lite-boundaries.md
 docs/adr/ADR-0002-postgres-canonical-truth.md
 ```
@@ -1139,7 +1139,7 @@ Minimal `pyproject.toml` direction:
 
 ```toml
 [project]
-name = "memory-platform"
+name = "memo-stack"
 version = "0.1.0"
 requires-python = ">=3.11"
 
@@ -1363,9 +1363,9 @@ Order:
 Exit:
 
 ```bash
-pytest memory_platform/tests/unit/test_memory_fact.py
-pytest memory_platform/tests/application/test_remember_fact.py
-pytest memory_platform/tests/integration/test_postgres_fact_repository.py
+pytest memo_stack/tests/unit/test_memory_fact.py
+pytest memo_stack/tests/application/test_remember_fact.py
+pytest memo_stack/tests/integration/test_postgres_fact_repository.py
 ```
 
 ### Slice 2 - Forget Fact
@@ -1388,8 +1388,8 @@ Order:
 Exit:
 
 ```bash
-pytest memory_platform/tests/application/test_forget_fact.py
-pytest memory_platform/tests/e2e/test_forget_hides_context.py
+pytest memo_stack/tests/application/test_forget_fact.py
+pytest memo_stack/tests/e2e/test_forget_hides_context.py
 ```
 
 ### Slice 3 - Ingest Text Document
@@ -1413,8 +1413,8 @@ Order:
 Exit:
 
 ```bash
-pytest memory_platform/tests/application/test_ingest_document.py
-pytest memory_platform/tests/e2e/test_document_recall.py
+pytest memo_stack/tests/application/test_ingest_document.py
+pytest memo_stack/tests/e2e/test_document_recall.py
 ```
 
 ### Slice 4 - Client App Legacy Context
@@ -1437,7 +1437,7 @@ Order:
 Exit:
 
 ```bash
-pytest memory_platform/tests/e2e/test_legacy_client_context.py
+pytest memo_stack/tests/e2e/test_legacy_client_context.py
 pnpm e2e:memory-canary -- --api-url http://127.0.0.1:7788
 ```
 
@@ -1448,7 +1448,7 @@ Core Lite should create short ADRs while implementing. Do not hide key decisions
 Required ADRs:
 
 ```text
-ADR-0001: Memory Platform Core Lite boundaries
+ADR-0001: Memo Stack Core Lite boundaries
 ADR-0002: Postgres is canonical truth
 ADR-0003: Qdrant is derived vector index
 ADR-0004: Graphiti is derived graph adapter
@@ -7255,7 +7255,7 @@ Deliver:
 
 Steps:
 
-1. Create `memory_platform/`.
+1. Create `memo_stack/`.
 2. Add package pyprojects.
 3. Add domain dataclasses and ports.
 4. Add FastAPI app with health/capabilities.
@@ -7264,9 +7264,9 @@ Steps:
 Exit gate:
 
 ```bash
-pytest memory_platform/packages/memory_core/tests
-pytest memory_platform/packages/memory_server/tests
-rg -n "fastapi|sqlalchemy|qdrant|graphiti" memory_platform/packages/memory_core
+pytest memo_stack/packages/memory_core/tests
+pytest memo_stack/packages/memory_server/tests
+rg -n "fastapi|sqlalchemy|qdrant|graphiti" memo_stack/packages/memory_core
 ```
 
 The `rg` command should return no forbidden imports.
@@ -7307,8 +7307,8 @@ Tests:
 Exit gate:
 
 ```bash
-pytest memory_platform/packages/memory_core/tests/test_fact_lifecycle.py
-pytest memory_platform/packages/memory_adapters/tests/test_postgres_fact_repository.py
+pytest memo_stack/packages/memory_core/tests/test_fact_lifecycle.py
+pytest memo_stack/packages/memory_adapters/tests/test_postgres_fact_repository.py
 ```
 
 ### Phase 2 - Client App Compatibility Gateway
@@ -7382,8 +7382,8 @@ Tests:
 Exit gate:
 
 ```bash
-pytest memory_platform/packages/memory_adapters/tests/test_qdrant_adapter.py
-pytest memory_platform/tests/e2e/test_document_recall.py
+pytest memo_stack/packages/memory_adapters/tests/test_qdrant_adapter.py
+pytest memo_stack/tests/e2e/test_document_recall.py
 ```
 
 ### Phase 4 - Context Builder and Golden Eval
@@ -7413,7 +7413,7 @@ Exit gate:
 
 ```bash
 python -m memory_server eval run --suite small-golden
-pytest memory_platform/packages/memory_core/tests/test_context_builder.py
+pytest memo_stack/packages/memory_core/tests/test_context_builder.py
 ```
 
 ### Phase 5 - Thin Graphiti Adapter
@@ -7453,8 +7453,8 @@ Tests:
 Exit gate:
 
 ```bash
-pytest memory_platform/packages/memory_adapters/tests/test_graphiti_adapter.py
-pytest memory_platform/tests/integration/test_graph_context.py
+pytest memo_stack/packages/memory_adapters/tests/test_graphiti_adapter.py
+pytest memo_stack/tests/integration/test_graph_context.py
 ```
 
 ### Phase 6 - Suggestions and Safe Fact Updates
@@ -7561,7 +7561,7 @@ INTERVIEW_MEMORY_FORCE_LOCAL_ONLY=true
 
 Compatibility mapping:
 
-| Client App field | Memory Platform field |
+| Client App field | Memo Stack field |
 |---|---|
 | `session_id` | `MemoryThread.external_ref` |
 | `profile_id` | `MemoryProfile.external_ref` |
@@ -7619,11 +7619,11 @@ Suggested rollout:
 
 ## Main Branch Execution Mode
 
-The Memory Platform is implemented in its own repository:
+The Memo Stack is implemented in its own repository:
 
 ```text
-/Users/belief/dev/projects/ai/memory-platform
-https://github.com/777genius/memory-platform.git
+/Users/belief/dev/projects/ai/memo-stack
+https://github.com/777genius/memo-stack.git
 ```
 
 Development is done directly on `main`, without separate pull requests. Keep
@@ -7648,7 +7648,7 @@ Rules:
 - if a phase gate fails, either fix forward immediately or revert only the
   failing commit;
 - Client App integration stays client-side through HTTP/SDK/MCP and must not
-  import provider adapters from Memory Platform.
+  import provider adapters from Memo Stack.
 
 Immediate execution order:
 
@@ -7694,7 +7694,7 @@ make memory-eval
 
 ## Detailed Main Branch Implementation Playbook
 
-Use this playbook when implementing the next Memory Platform architecture work
+Use this playbook when implementing the next Memo Stack architecture work
 directly on `main`. The goal is to keep every commit understandable, runnable
 and reversible.
 
@@ -7703,7 +7703,7 @@ and reversible.
 Run:
 
 ```bash
-cd /Users/belief/dev/projects/ai/memory-platform
+cd /Users/belief/dev/projects/ai/memo-stack
 git status --short
 df -h .
 make memory-lint
@@ -8273,7 +8273,7 @@ Current Core Lite implementation:
 - No provider SDK import crosses into `memory_core`.
 - Every derived hit is hydrated before prompt rendering.
 - Prompt memory is evidence, never instruction.
-- Client App imports no Memory Platform internals.
+- Client App imports no Memo Stack internals.
 - Each behavior-changing commit has a rollback path or kill switch.
 
 ## Release Acceptance Gates
@@ -9099,28 +9099,28 @@ delete chunk in Postgres -> Qdrant still returns it -> hydration drops it
 Recommended test layout:
 
 ```text
-memory_platform/tests/unit/test_memory_fact.py
-memory_platform/tests/unit/test_memory_document.py
-memory_platform/tests/unit/test_policy_admission.py
-memory_platform/tests/unit/test_context_packer.py
-memory_platform/tests/unit/test_id_generation.py
-memory_platform/tests/application/test_remember_fact.py
-memory_platform/tests/application/test_update_fact.py
-memory_platform/tests/application/test_forget_fact.py
-memory_platform/tests/application/test_ingest_document.py
-memory_platform/tests/application/test_build_context.py
-memory_platform/tests/application/test_scope_guard.py
-memory_platform/tests/integration/test_postgres_fact_repository.py
-memory_platform/tests/integration/test_postgres_document_repository.py
-memory_platform/tests/integration/test_outbox_worker.py
-memory_platform/tests/integration/test_qdrant_adapter_contract.py
-memory_platform/tests/integration/test_graphiti_adapter_contract.py
-memory_platform/tests/e2e/test_document_recall.py
-memory_platform/tests/e2e/test_fact_update.py
-memory_platform/tests/e2e/test_forget.py
-memory_platform/tests/e2e/test_legacy_client_context.py
-memory_platform/tests/e2e/test_prompt_injection.py
-memory_platform/tests/e2e/test_cross_profile_isolation.py
+memo_stack/tests/unit/test_memory_fact.py
+memo_stack/tests/unit/test_memory_document.py
+memo_stack/tests/unit/test_policy_admission.py
+memo_stack/tests/unit/test_context_packer.py
+memo_stack/tests/unit/test_id_generation.py
+memo_stack/tests/application/test_remember_fact.py
+memo_stack/tests/application/test_update_fact.py
+memo_stack/tests/application/test_forget_fact.py
+memo_stack/tests/application/test_ingest_document.py
+memo_stack/tests/application/test_build_context.py
+memo_stack/tests/application/test_scope_guard.py
+memo_stack/tests/integration/test_postgres_fact_repository.py
+memo_stack/tests/integration/test_postgres_document_repository.py
+memo_stack/tests/integration/test_outbox_worker.py
+memo_stack/tests/integration/test_qdrant_adapter_contract.py
+memo_stack/tests/integration/test_graphiti_adapter_contract.py
+memo_stack/tests/e2e/test_document_recall.py
+memo_stack/tests/e2e/test_fact_update.py
+memo_stack/tests/e2e/test_forget.py
+memo_stack/tests/e2e/test_legacy_client_context.py
+memo_stack/tests/e2e/test_prompt_injection.py
+memo_stack/tests/e2e/test_cross_profile_isolation.py
 ```
 
 Naming rule:
@@ -9216,7 +9216,7 @@ Current Core Lite implementation:
 - `python -m memory_server eval run --suite small-golden` seeds deterministic
   local SQLite fixtures with facts, documents, update/delete, prompt-injection
   and cross-profile cases;
-- `--api-url` runs the same suite against a live Memory Platform HTTP server;
+- `--api-url` runs the same suite against a live Memo Stack HTTP server;
 - `--report-out` writes the same redacted JSON report to disk;
 - the report includes `recall_at_5`, `precision_at_5`,
   `stale_memory_rate`, `deleted_memory_leak_count`,
@@ -9393,15 +9393,15 @@ Eval runner rules:
 Core:
 
 ```bash
-pytest memory_platform/packages/memory_core/tests
-pytest memory_platform/packages/memory_server/tests
-pytest memory_platform/packages/memory_adapters/tests
+pytest memo_stack/packages/memory_core/tests
+pytest memo_stack/packages/memory_server/tests
+pytest memo_stack/packages/memory_adapters/tests
 ```
 
 Import boundaries:
 
 ```bash
-rg -n "fastapi|sqlalchemy|qdrant|graphiti" memory_platform/packages/memory_core
+rg -n "fastapi|sqlalchemy|qdrant|graphiti" memo_stack/packages/memory_core
 ```
 
 Expected: no output.
@@ -9453,7 +9453,7 @@ Example:
 
 ```makefile
 memory-test-unit:
-	pytest memory_platform/tests/unit
+	pytest memo_stack/tests/unit
 
 memory-eval:
 	python -m memory_server eval run --suite small-golden
@@ -9467,7 +9467,7 @@ memory-doctor:
 First local run:
 
 ```bash
-cd memory_platform
+cd memo_stack
 cp .env.example .env
 docker compose up -d memory_postgres memory_qdrant
 python -m memory_server.db upgrade
@@ -9991,12 +9991,12 @@ Core Lite is done when:
 Recommended first PR:
 
 ```text
-feat(memory): scaffold core-lite memory platform
+feat(memory): scaffold core-lite memo stack
 ```
 
 Scope:
 
-- `memory_platform/packages/memory_core`;
+- `memo_stack/packages/memory_core`;
 - domain entities;
 - ports;
 - `memory_server` health/capabilities;
@@ -10025,15 +10025,15 @@ Why:
 Files:
 
 ```text
-memory_platform/pyproject.toml
-memory_platform/packages/memory_core/pyproject.toml
-memory_platform/packages/memory_core/memory_core/domain/*
-memory_platform/packages/memory_core/memory_core/ports/*
-memory_platform/packages/memory_server/pyproject.toml
-memory_platform/packages/memory_server/memory_server/main.py
-memory_platform/packages/memory_server/memory_server/config.py
-memory_platform/packages/memory_adapters/pyproject.toml
-memory_platform/tests/unit/test_import_boundaries.py
+memo_stack/pyproject.toml
+memo_stack/packages/memory_core/pyproject.toml
+memo_stack/packages/memory_core/memory_core/domain/*
+memo_stack/packages/memory_core/memory_core/ports/*
+memo_stack/packages/memory_server/pyproject.toml
+memo_stack/packages/memory_server/memory_server/main.py
+memo_stack/packages/memory_server/memory_server/config.py
+memo_stack/packages/memory_adapters/pyproject.toml
+memo_stack/tests/unit/test_import_boundaries.py
 docs/adr/ADR-0001-memory-core-lite-boundaries.md
 ```
 
@@ -10251,7 +10251,7 @@ Approx changes: `900-1500` lines.
 
 Steps:
 
-1. Create `memory_platform/pyproject.toml`.
+1. Create `memo_stack/pyproject.toml`.
 2. Create `memory_core` package with `domain`, `application`, `ports`.
 3. Add minimal domain value objects and errors.
 4. Add empty ports with `Protocol`.
@@ -10272,7 +10272,7 @@ no Client App prompt changes
 Verification:
 
 ```bash
-pytest memory_platform/tests/unit/test_import_boundaries.py
+pytest memo_stack/tests/unit/test_import_boundaries.py
 python -m memory_server.main
 curl http://127.0.0.1:7788/v1/health
 ```

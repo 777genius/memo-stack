@@ -545,7 +545,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "clean_arch",
             alpha_profile_id,
             (
-                "QUALITY_FACT_CLEAN_ARCH: memory platform follows Clean Architecture, "
+                "QUALITY_FACT_CLEAN_ARCH: memo stack follows Clean Architecture, "
                 "SOLID, simple DDD, and port adapter boundaries."
             ),
             "quality-clean-arch",
@@ -1749,7 +1749,7 @@ def _quality_golden_cases(
             category="answer_support",
             space_id=space_id,
             profile_ids=(alpha_profile_id,),
-            query="Clean Architecture SOLID simple DDD port adapter memory platform",
+            query="Clean Architecture SOLID simple DDD port adapter memo stack",
             must_include=("QUALITY_FACT_CLEAN_ARCH",),
             must_not_include=("QUALITY_NOISE_FRONTEND_THEME",),
             max_facts=1,
@@ -2299,7 +2299,7 @@ def build_prompt_contract_snapshot() -> dict[str, object]:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Memory Platform eval runner")
+    parser = argparse.ArgumentParser(description="Memo Stack eval runner")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run")
     run.add_argument("--suite", default="small-golden")
@@ -2438,7 +2438,7 @@ def _prompt_snapshot_cases() -> tuple[PromptSnapshotCase, ...]:
             items=(
                 _fact(
                     "fact_profile_alpha_visible",
-                    "Profile alpha uses local Memory Platform for Client App.",
+                    "Profile alpha uses local Memo Stack for Client App.",
                     source_id="manual_profile_alpha",
                     profile_id="profile_alpha",
                     score=0.95,

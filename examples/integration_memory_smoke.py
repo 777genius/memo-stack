@@ -1,4 +1,4 @@
-"""Generic local Memory Platform smoke test.
+"""Generic local Memo Stack smoke test.
 
 Run after `docker compose up` or `make memory-stack-up`.
 The script uses only the public SDK and HTTP API.
@@ -39,7 +39,7 @@ class SmokeConfig:
                 "MEMORY_SMOKE_AUTH_TOKEN",
                 os.getenv("MEMORY_SERVICE_TOKEN", "local-dev-token"),
             ),
-            space_slug=os.getenv("MEMORY_SMOKE_SPACE", "memory-platform-smoke"),
+            space_slug=os.getenv("MEMORY_SMOKE_SPACE", "memo-stack-smoke"),
             profile_external_ref=os.getenv("MEMORY_SMOKE_PROFILE", "default"),
             thread_external_ref=os.getenv(
                 "MEMORY_SMOKE_THREAD",
@@ -78,7 +78,7 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
             space_slug=config.space_slug,
             profile_external_ref=config.profile_external_ref,
             thread_external_ref=config.thread_external_ref,
-            text=f"{fact_marker}: initial smoke fact for Memory Platform.",
+            text=f"{fact_marker}: initial smoke fact for Memo Stack.",
             kind="note",
             classification="internal",
             source_refs=[
@@ -94,7 +94,7 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
         client.update_fact(
             str(fact["id"]),
             expected_version=int(fact.get("version", 1)),
-            text=f"{updated_marker}: updated smoke fact for Memory Platform.",
+            text=f"{updated_marker}: updated smoke fact for Memo Stack.",
             reason="integration smoke update",
             source_refs=[
                 {
@@ -109,8 +109,8 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
             space_slug=config.space_slug,
             profile_external_ref=config.profile_external_ref,
             thread_external_ref=config.thread_external_ref,
-            title=f"Memory Platform smoke document {config.run_id}",
-            text=f"{document_marker}: document recall smoke for Memory Platform.",
+            title=f"Memo Stack smoke document {config.run_id}",
+            text=f"{document_marker}: document recall smoke for Memo Stack.",
             source_external_id=f"smoke-doc-{config.run_id}",
             classification="internal",
             idempotency_key=f"smoke-doc-{config.run_id}",

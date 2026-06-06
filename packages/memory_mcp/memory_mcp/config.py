@@ -1,4 +1,4 @@
-"""Configuration for the Memory Platform MCP adapter."""
+"""Configuration for the Memo Stack MCP adapter."""
 
 from __future__ import annotations
 

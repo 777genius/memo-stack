@@ -1,13 +1,13 @@
 # Memory Agent Plugin Cursor Workspace
 
-MCP-only Cursor workspace plugin for Memory Platform.
+MCP-only Cursor workspace plugin for Memo Stack.
 
 This plugin exists because `plugin-kit-ai` 1.2.2 supports portable MCP for the
 `cursor-workspace` target, but does not support portable skills there. The main
 `memory-agent-plugin` keeps skills for package-capable agents. This sibling
 plugin keeps Cursor workspace validation clean.
 
-The generated `.cursor/mcp.json` is meant to be used from the Memory Platform
+The generated `.cursor/mcp.json` is meant to be used from the Memo Stack
 repository root. Its command points at:
 
 ```text
@@ -15,7 +15,7 @@ ${workspaceFolder}/plugins/memory-agent-plugin-cursor-workspace/bin/memory-mcp
 ```
 
 For a different consuming workspace, keep the env contract but point `command`
-at the checked-out Memory Platform plugin wrapper.
+at the checked-out Memo Stack plugin wrapper.
 
 ## Install Into Cursor Workspace
 
@@ -26,13 +26,13 @@ mkdir -p .cursor
 cp plugins/memory-agent-plugin-cursor-workspace/.cursor/mcp.json .cursor/mcp.json
 ```
 
-For another repository, copy or merge the generated `mcpServers.memory-platform`
+For another repository, copy or merge the generated `mcpServers.memo-stack`
 entry into that repository's `.cursor/mcp.json`, then change `command` to an
-absolute path for this Memory Platform checkout.
+absolute path for this Memo Stack checkout.
 
 ## Local Run
 
-From the Memory Platform repository root:
+From the Memo Stack repository root:
 
 ```bash
 make memory-stack-up-lite
@@ -42,7 +42,7 @@ plugins/memory-agent-plugin-cursor-workspace/bin/memory-mcp-doctor
 ```
 
 The generated MCP config uses `MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF` with the
-`__MEMORY_PLATFORM_NO_DEFAULT_THREAD__` sentinel. The wrapper unsets this value
+`__MEMO_STACK_NO_DEFAULT_THREAD__` sentinel. The wrapper unsets this value
 before starting MCP, so the runtime default remains no thread scope.
 
 ## Generate And Validate

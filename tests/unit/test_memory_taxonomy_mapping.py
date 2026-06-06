@@ -52,7 +52,7 @@ def test_rule_based_classifier_marks_current_task_as_temporary() -> None:
 
     candidates = asyncio.run(
         classifier.classify(
-            text="Current task: finish the memory platform hook preflight.",
+            text="Current task: finish the memo stack hook preflight.",
             source=SourceProvenance(
                 source_type="capture:hook",
                 source_id="cap_task",

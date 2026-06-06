@@ -1,7 +1,7 @@
 # Memory Agent Plugin
 
-Universal repo-local agent plugin for Memory Platform. The plugin exposes the
-Memory Platform MCP adapter and memory skill to Codex, Claude, Gemini, OpenCode,
+Universal repo-local agent plugin for Memo Stack. The plugin exposes the
+Memo Stack MCP adapter and memory skill to Codex, Claude, Gemini, OpenCode,
 and Cursor through `plugin-kit-ai` generated artifacts.
 
 Cursor workspace MCP uses the sibling MCP-only plugin at
@@ -20,11 +20,11 @@ Platform repository root, so its command points back into
 - Agent-facing memory usage guidance.
 
 It does not start Docker, Graphiti, Qdrant, Postgres, or the Memory Server. Run
-the Memory Platform stack separately.
+the Memo Stack stack separately.
 
 ## Local Run
 
-From the Memory Platform repository root:
+From the Memo Stack repository root:
 
 ```bash
 make memory-stack-up-lite
@@ -40,17 +40,17 @@ MEMORY_MCP_API_URL=http://127.0.0.1:7788
 MEMORY_MCP_AUTH_TOKEN=local-dev-token
 MEMORY_MCP_DEFAULT_SPACE_SLUG=default
 MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF=default
-MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=__MEMORY_PLATFORM_NO_DEFAULT_THREAD__
+MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=__MEMO_STACK_NO_DEFAULT_THREAD__
 MEMORY_MCP_AGENT_NAME=agent
 MEMORY_MCP_WRITE_MODE=suggest
 MEMORY_MCP_DELETE_MODE=off
 MEMORY_MCP_INGEST_MODE=small_docs
 ```
 
-`__MEMORY_PLATFORM_NO_DEFAULT_THREAD__` is a packaging sentinel. The wrapper
+`__MEMO_STACK_NO_DEFAULT_THREAD__` is a packaging sentinel. The wrapper
 unsets it before starting MCP, so the runtime default remains no thread scope.
 
-For a remote Memory Platform server, override the API URL and token in the
+For a remote Memo Stack server, override the API URL and token in the
 target agent config or through the environment supported by that agent.
 
 ## Lifecycle Hooks
@@ -144,7 +144,7 @@ Generated package entrypoints:
 - OpenCode: `opencode.json`
 
 All of these point back to the repo-local wrapper at `bin/memory-mcp` and expect
-the Memory Platform server to already be running. They do not start Docker.
+the Memo Stack server to already be running. They do not start Docker.
 
 For Cursor workspace MCP, use the sibling generated config:
 
@@ -250,7 +250,7 @@ config.
 - Prefer updating existing facts over adding contradictory duplicates.
 - Forget only concrete facts by `fact_id`.
 
-Raw MCP tool choice is model-controlled. The Memory Platform protects direct
+Raw MCP tool choice is model-controlled. The Memo Stack protects direct
 `memory_remember_fact` with duplicate/conflict preflight checks, but it cannot
 protect requests where the agent never calls a memory tool. Production agent
 hosts should add a policy/orchestrator step when memory correctness is critical:

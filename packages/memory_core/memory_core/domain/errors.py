@@ -2,7 +2,7 @@
 
 
 class MemoryError(Exception):
-    """Base class for memory platform errors."""
+    """Base class for memo stack errors."""
 
     code = "memory.internal"
     retryable = False

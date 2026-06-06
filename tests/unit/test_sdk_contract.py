@@ -396,7 +396,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     client.search(
         space_slug="client-app",
         profile_external_refs=["default", "candidate"],
-        query="memory platform",
+        query="memo stack",
         token_budget=1024,
         max_facts=8,
         max_chunks=10,

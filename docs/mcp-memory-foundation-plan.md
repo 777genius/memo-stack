@@ -2,13 +2,13 @@
 
 Status: implementation plan, not final architecture record.
 
-Owner: Memory Platform.
+Owner: Memo Stack.
 
 Goal: build a powerful local-first MCP adapter for coding agents that can search, propose, update and manage long-term project memory safely, without prematurely adding enterprise complexity such as OAuth, tenant policy, quotas, hosted HTTP deployment, billing, or centralized audit infrastructure.
 
 ## 1. Why This Exists
 
-The current Memory Platform already has the important core:
+The current Memo Stack already has the important core:
 
 - canonical Postgres lifecycle for facts, documents, suggestions and outbox;
 - Graphiti adapter for temporal fact graph projection;
@@ -64,7 +64,7 @@ Practical conclusions:
 
 ### 2.1 Low-Confidence Areas Studied And Plan Corrections
 
-The plan is stronger after checking current MCP docs, the Python SDK docs and local Memory Platform code. These are the main corrections:
+The plan is stronger after checking current MCP docs, the Python SDK docs and local Memo Stack code. These are the main corrections:
 
 1. FastMCP structured output should not be treated as "any dict is equally good".
    The Python SDK can infer structured output from Pydantic models, TypedDicts and typed return values. For this MCP adapter, prefer Pydantic response models for public tool results. Keep `dict[str, Any]` at the HTTP gateway boundary.
@@ -108,7 +108,7 @@ user_preference
    The Tools spec says tool execution errors should be reported in tool results with `isError: true`. The plan must define when a whole MCP tool call is an execution error versus a successful batch response containing per-candidate rejections.
 
 12. Server instructions are also prompt surface.
-   `FastMCP("Memory Platform", instructions=...)` exposes instructions during initialization. Snapshot and scan server instructions, prompt text and static resources together with tool schemas.
+   `FastMCP("Memo Stack", instructions=...)` exposes instructions during initialization. Snapshot and scan server instructions, prompt text and static resources together with tool schemas.
 
 13. Dependency ranges can silently change protocol behavior.
    The current pyproject allows `mcp>=1.27.1,<2.0.0`. That is fine only if CI captures tool/capability/schema snapshots. For release builds, prefer a lock file or constraints file so MCP protocol behavior does not drift unnoticed.
@@ -810,7 +810,7 @@ Different MCP clients support different subsets of the spec. Design for the stro
 - if a client cannot render resource links, search results still contain enough short evidence text to be useful;
 - if a client cannot list resource templates, direct `memory_get_fact` and `memory_list_facts` still cover the audit path;
 - if a client launches from an unexpected cwd, absolute config examples and env validation keep startup deterministic;
-- if a client restarts the stdio server per session, MCP state must be stateless beyond Memory Platform server state.
+- if a client restarts the stdio server per session, MCP state must be stateless beyond Memo Stack server state.
 
 Do not add dynamic tool discovery inside this MCP server for v1. The toolset is small enough that progressive discovery is unnecessary here. Revisit only if the server grows beyond roughly 15-20 tools or tool descriptions become a meaningful context cost.
 
@@ -962,9 +962,9 @@ Rules:
 - every public tool name keeps the `memory_` prefix;
 - no aliases such as `search`, `remember`, `delete`, `update` in V1;
 - compatibility tools are deprecated in docs but keep their existing names for one transition phase;
-- server name should be stable: `Memory Platform`;
-- client config examples should use a descriptive server key such as `memory-platform`, not `memory`;
-- if two Memory Platform servers are configured for different environments, docs should recommend distinct server keys, not dynamic tool names.
+- server name should be stable: `Memo Stack`;
+- client config examples should use a descriptive server key such as `memo-stack`, not `memory`;
+- if two Memo Stack servers are configured for different environments, docs should recommend distinct server keys, not dynamic tool names.
 
 Client compatibility matrix:
 
@@ -1290,7 +1290,7 @@ The agent should not decide low-level memory lifecycle for a batch of facts. It 
       "confidence": "high",
       "reason": "User explicitly confirmed architecture decision.",
       "evidence_quote": "Postgres is canonical...",
-      "labels": ["architecture", "memory-platform"]
+      "labels": ["architecture", "memo-stack"]
     }
   ],
   "mode": "auto",
@@ -2508,7 +2508,7 @@ Do not fail the full gate because a provider-backed benchmark is slow. Fail it o
 | `memory_status` reports auth | only boolean `auth_configured`, no token prefix/value | unit |
 | docs recommend CLI auth token arguments for normal run | docs check fails, env var preferred | unit/docs |
 | generic alias tool `search` or `remember` appears | tool name snapshot fails | unit |
-| two Memory Platform servers in client config | docs recommend distinct server keys, stable tool names | docs/e2e |
+| two Memo Stack servers in client config | docs recommend distinct server keys, stable tool names | docs/e2e |
 | write tool receives unknown extra field | schema validation rejects before policy/write | unit/e2e |
 | `user_confirmed` arrives as string | reject unless SDK coercion is explicitly tested and accepted | unit |
 | `token_budget` is too high | clamp and report requested/effective values | unit/e2e |

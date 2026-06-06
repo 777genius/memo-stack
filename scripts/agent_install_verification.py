@@ -26,7 +26,9 @@ from mcp.client.stdio import stdio_client
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memory-agent-plugin"
 CURSOR_WORKSPACE_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memory-agent-plugin-cursor-workspace"
-NO_DEFAULT_THREAD_SENTINEL = "__MEMORY_PLATFORM_NO_DEFAULT_THREAD__"
+NO_DEFAULT_THREAD_SENTINEL = "__MEMO_STACK_NO_DEFAULT_THREAD__"
+MCP_SERVER_ALIAS = "memo-stack"
+LEGACY_MCP_SERVER_ALIAS = "memory-platform"
 INTEGRATION_ID = "memory-agent-plugin"
 DEFAULT_API_URL = "http://127.0.0.1:7788"
 DEFAULT_AUTH_TOKEN = "local-dev-token"
@@ -343,11 +345,11 @@ def run_agent_cli_smokes(
     timeout: float,
 ) -> dict[str, Any]:
     prompt = (
-        "Call the Memory Platform MCP tool memory_status. "
+        "Call the Memo Stack MCP tool memory_status. "
         "Then reply with exactly: memory_status_checked."
     )
     gemini_prompt = (
-        "Use the Gemini MCP tool named mcp_memory-platform_memory_status with empty args. "
+        "Use the Gemini MCP tool named mcp_memo-stack_memory_status with empty args. "
         "Do not call shell tools, subagents, or file tools. "
         "After the MCP call succeeds, reply with exactly: memory_status_checked."
     )
@@ -387,7 +389,7 @@ def run_agent_cli_smokes(
             "--extensions",
             INTEGRATION_ID,
             "--allowed-mcp-server-names",
-            "memory-platform",
+            "memo-stack",
             "--output-format",
             "json",
         ],
@@ -395,7 +397,7 @@ def run_agent_cli_smokes(
         "codex": [
             "codex",
             "-c",
-            f'mcp_servers.memory-platform.command="{memory_mcp_bin}"',
+            f'mcp_servers.memo-stack.command="{memory_mcp_bin}"',
             "exec",
             "--ephemeral",
             "--sandbox",
@@ -665,7 +667,8 @@ def check_gemini_extension_runtime_config(
     for item in extensions:
         if str(item.get("name", "")) != INTEGRATION_ID:
             continue
-        server = (item.get("mcpServers") or {}).get("memory-platform") or {}
+        mcp_servers = item.get("mcpServers") or {}
+        server = mcp_servers.get(MCP_SERVER_ALIAS) or mcp_servers.get(LEGACY_MCP_SERVER_ALIAS) or {}
         env = server.get("env") or {}
         actual_api_url = str(env.get("MEMORY_MCP_API_URL", "")).strip()
         actual_token = str(env.get("MEMORY_MCP_AUTH_TOKEN", ""))
@@ -757,7 +760,11 @@ def load_generated_mcp_server(
     else:
         servers = parsed.get("mcpServers", parsed)
         env_key = "env"
-    server = servers["memory-platform"]
+    server = servers.get(MCP_SERVER_ALIAS) or servers.get(LEGACY_MCP_SERVER_ALIAS)
+    if not isinstance(server, dict):
+        raise VerificationFailure(
+            f"generated MCP config {config_relpath} is missing {MCP_SERVER_ALIAS}"
+        )
     command_value = server["command"]
     if isinstance(command_value, list):
         command = str(command_value[0])

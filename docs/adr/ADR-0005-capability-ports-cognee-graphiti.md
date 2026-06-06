@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Memory Platform should use ready engines instead of rebuilding every ingestion,
+Memo Stack should use ready engines instead of rebuilding every ingestion,
 RAG and temporal graph capability from scratch. Cognee and Graphiti overlap in
 the broad "memory" label, but they are strong in different roles:
 
@@ -17,7 +17,7 @@ the broad "memory" label, but they are strong in different roles:
   relationships, fact invalidation, episode search and time-aware project/user
   memory.
 - Qdrant remains useful as a direct vector projection where Cognee is not the
-  owner of the vector path or where Memory Platform needs lower-level control.
+  owner of the vector path or where Memo Stack needs lower-level control.
 
 The dangerous simplification would be a single generic interface:
 
@@ -167,13 +167,13 @@ Cognee, Graphiti and Qdrant concepts must be translated at adapter boundaries:
 
 ```text
 Cognee dataset/user/node_set/search_type
-  -> Memory Platform space/profile/bank/evidence DTOs
+  -> Memo Stack space/profile/bank/evidence DTOs
 
 Graphiti group_id/episode_uuid/fact edge
-  -> Memory Platform canonical ids and temporal fact DTOs
+  -> Memo Stack canonical ids and temporal fact DTOs
 
 Qdrant collection/payload/point_id
-  -> Memory Platform chunk ids and vector candidate DTOs
+  -> Memo Stack chunk ids and vector candidate DTOs
 ```
 
 No external SDK type crosses into `memory_core`. No external engine id becomes a
@@ -400,7 +400,7 @@ architecture.
 ## Public Contract And Agent Consistency
 
 Agents, SDKs and MCP clients should not infer platform behavior from adapter
-names. Public responses should expose stable Memory Platform semantics:
+names. Public responses should expose stable Memo Stack semantics:
 
 - `api_version` and contract version;
 - resolved scope, profile set and thread scope;
@@ -541,7 +541,7 @@ Do:
 
 - add `CogneeAdapter` behind `DocumentMemoryPort`, `RagRecallPort` and optional
   `SessionMemoryPort`;
-- map Cognee dataset/user/node_set/search_type to Memory Platform DTOs in the
+- map Cognee dataset/user/node_set/search_type to Memo Stack DTOs in the
   adapter only;
 - treat Cognee summaries as derived evidence;
 - gate external AI processing by purpose policy.
@@ -862,9 +862,9 @@ change in these commits. Approx total: 500-900 lines.
 
 ## Non-Goals
 
-- Do not fork Cognee as Memory Platform core.
+- Do not fork Cognee as Memo Stack core.
 - Do not expose Cognee datasets, Graphiti group ids or Qdrant collections in the
-  Memory Platform public API.
+  Memo Stack public API.
 - Do not make Cognee's graph extraction or Graphiti's edge invalidation the
   canonical lifecycle.
 - Do not start heavy document ingestion or graph extraction in the live prompt
@@ -876,7 +876,7 @@ change in these commits. Approx total: 500-900 lines.
 - Single Responsibility: each port has one reason to change. Cognee document
   ingestion changes do not force Graphiti temporal fact changes.
 - Interface Segregation: use cases should not depend on methods they do not use.
-- Dependency Inversion: application code depends on Memory Platform contracts,
+- Dependency Inversion: application code depends on Memo Stack contracts,
   not Cognee, Graphiti, Qdrant, Neo4j or vector-store SDKs.
 - Open/Closed: adding a Cognee-backed RAG path or a new temporal graph engine
   should add an adapter, not change canonical lifecycle use cases.
@@ -946,7 +946,7 @@ diagnostic and prefer canonical Memory Core lifecycle/authority rules.
 
 ### 5. Scope mapping mismatch
 
-Cognee may use datasets/users/node sets. Graphiti uses group ids. Memory Platform
+Cognee may use datasets/users/node sets. Graphiti uses group ids. Memo Stack
 uses space/profile/bank and later tenant/workspace.
 
 Rules:
@@ -1026,7 +1026,7 @@ payloads.
 
 Rules:
 
-- adapter maps external payloads to stable Memory Platform DTOs;
+- adapter maps external payloads to stable Memo Stack DTOs;
 - adapter contract tests cover all enabled capabilities;
 - no external SDK types cross into `memory_core`;
 - capabilities include adapter version/schema when available.
@@ -1286,8 +1286,8 @@ These checks should become tests or `doctor` assertions as the adapters mature:
 
 ## Consequences
 
-- Memory Platform can use Cognee without becoming Cognee-shaped.
-- Memory Platform can use direct Graphiti without rebuilding Cognee's document
+- Memo Stack can use Cognee without becoming Cognee-shaped.
+- Memo Stack can use direct Graphiti without rebuilding Cognee's document
   pipeline.
 - Adapters stay replaceable and testable.
 - Context quality becomes a Memory Core responsibility, not an engine side

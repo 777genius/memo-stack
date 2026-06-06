@@ -1,4 +1,4 @@
-"""Static architecture checks for Memory Platform package boundaries."""
+"""Static architecture checks for Memo Stack package boundaries."""
 
 from __future__ import annotations
 

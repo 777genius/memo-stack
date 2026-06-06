@@ -42,7 +42,7 @@ def test_health_returns_ok() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "memory-platform",
+        "service": "memo-stack",
         "deploy_profile": "test",
     }
 
@@ -59,7 +59,7 @@ def test_capabilities_return_noop_adapters() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["service_name"] == "memory-platform"
+    assert body["service_name"] == "memo-stack"
     assert body["deploy_profile"] == "test"
     assert body["policy_mode"] == "active_context"
     assert set(body["adapters"]) == {"qdrant", "graphiti", "embeddings", "cognee"}

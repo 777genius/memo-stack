@@ -1517,7 +1517,7 @@ def test_http_gateway_sends_read_scope_profile_external_refs() -> None:
                 space_slug="client-app",
                 profile_external_refs=("default", "candidate"),
             ),
-            query="memory platform",
+            query="memo stack",
             token_budget=512,
             max_facts=4,
             max_chunks=8,

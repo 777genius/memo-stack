@@ -29,7 +29,7 @@ class CaptureMode(StrEnum):
 
 
 class Settings(BaseSettings):
-    service_name: str = "memory-platform"
+    service_name: str = "memo-stack"
     deploy_profile: DeployProfile = DeployProfile.LOCAL
     database_url: str = "postgresql+asyncpg://memory:memory@127.0.0.1:54329/memory"
     auto_create_schema: bool = False

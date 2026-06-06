@@ -2,7 +2,7 @@
 
 ## Project Intent
 
-This repository is the reusable Memory Platform extracted from client application planning docs.
+This repository is the reusable Memo Stack extracted from client application planning docs.
 
 Implement according to:
 
@@ -20,13 +20,13 @@ Implement according to:
 Start with:
 
 ```text
-docs/memory-platform-core-lite-plan.md
+docs/memo-stack-core-lite-plan.md
 ```
 
 Global reference:
 
 ```text
-docs/memory-platform-architecture-plan.md
+docs/memo-stack-architecture-plan.md
 ```
 
 Legacy client compatibility notes:

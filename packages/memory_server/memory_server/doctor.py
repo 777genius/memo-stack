@@ -40,7 +40,7 @@ async def run_doctor(
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Memory Platform readiness checks")
+    parser = argparse.ArgumentParser(description="Memo Stack readiness checks")
     parser.add_argument("--gate", choices=("active_context",), default=None)
     parser.add_argument(
         "--ack",

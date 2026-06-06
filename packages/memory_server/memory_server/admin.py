@@ -1347,7 +1347,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Memory Platform admin commands")
+    parser = argparse.ArgumentParser(description="Memo Stack admin commands")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("seed-defaults")
     sub.add_parser("doctor")

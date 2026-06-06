@@ -173,5 +173,5 @@ capabilities = request_json(f"{api_url}/v1/capabilities", token)
 if "adapters" not in capabilities:
     fail("/v1/capabilities missing adapters")
 ok("/v1/capabilities")
-ok("Memory Platform MCP plugin is ready")
+ok("Memo Stack MCP plugin is ready")
 PY

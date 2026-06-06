@@ -108,7 +108,7 @@ def test_gemini_runtime_config_blocks_mismatched_installed_api_url(monkeypatch) 
                     {
                         "name": "memory-agent-plugin",
                         "mcpServers": {
-                            "memory-platform": {
+                            "memo-stack": {
                                 "env": {
                                     "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
                                     "MEMORY_MCP_AUTH_TOKEN": "unit-token",
@@ -152,7 +152,7 @@ def test_gemini_runtime_config_accepts_runtime_override_for_installed_mismatch(
                     {
                         "name": "memory-agent-plugin",
                         "mcpServers": {
-                            "memory-platform": {
+                            "memo-stack": {
                                 "env": {
                                     "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
                                     "MEMORY_MCP_AUTH_TOKEN": "old-token",
@@ -197,7 +197,7 @@ def test_gemini_runtime_config_accepts_matching_or_inherited_env(monkeypatch) ->
                 [
                     {
                         "name": "memory-agent-plugin",
-                        "mcpServers": {"memory-platform": {"env": {}}},
+                        "mcpServers": {"memo-stack": {"env": {}}},
                     }
                 ]
             ),
@@ -387,11 +387,11 @@ def test_agent_cli_smokes_run_agent_commands_in_parallel(monkeypatch) -> None:
     assert set(result) == {"claude", "gemini", "opencode", "codex"}
     assert set(calls) == {"claude", "gemini", "opencode", "codex"}
     assert "--allowed-mcp-server-names" in calls["gemini"]
-    assert "memory-platform" in calls["gemini"]
+    assert "memo-stack" in calls["gemini"]
     assert "--output-format" in calls["gemini"]
-    assert "mcp_memory-platform_memory_status" in " ".join(calls["gemini"])
+    assert "mcp_memo-stack_memory_status" in " ".join(calls["gemini"])
     assert "--plugin-dir" in calls["claude"]
-    assert f'mcp_servers.memory-platform.command="{module.PLUGIN_ROOT / "bin" / "memory-mcp"}"' in (
+    assert f'mcp_servers.memo-stack.command="{module.PLUGIN_ROOT / "bin" / "memory-mcp"}"' in (
         calls["codex"]
     )
     assert "unit-live-token" not in " ".join(calls["codex"])
@@ -557,7 +557,7 @@ def test_agent_command_blocks_success_marker_with_mcp_tool_error(monkeypatch) ->
         lambda *_args, **_kwargs: {
             "returncode": 0,
             "stdout": "memory_status_checked\n",
-            "stderr": "Error executing tool mcp_memory-platform_memory_status",
+            "stderr": "Error executing tool mcp_memo-stack_memory_status",
             "timed_out": False,
         },
     )

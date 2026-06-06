@@ -1,6 +1,6 @@
 # Client App Integration Run Notes
 
-These notes were copied from the Client App project context when Memory Platform docs were moved out.
+These notes were copied from the Client App project context when Memo Stack docs were moved out.
 
 ## Current Client App Memory Integration
 
@@ -75,9 +75,9 @@ FOCUS_COPY_ENABLE_BROWSER_CDP=1 \
 pnpm tauri dev
 ```
 
-## Future Memory Platform Compatibility Goal
+## Future Memo Stack Compatibility Goal
 
-The new Memory Platform should preserve Client App compatibility through an adapter/gateway instead of making Client App own the memory engine.
+The new Memo Stack should preserve Client App compatibility through an adapter/gateway instead of making Client App own the memory engine.
 
 Target boundary:
 

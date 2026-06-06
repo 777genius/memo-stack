@@ -29,7 +29,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Memory Platform database commands")
+    parser = argparse.ArgumentParser(description="Memo Stack database commands")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("upgrade")
     print(json.dumps(asyncio.run(_run(parser.parse_args())), ensure_ascii=False, sort_keys=True))

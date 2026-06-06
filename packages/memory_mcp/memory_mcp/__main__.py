@@ -1,4 +1,4 @@
-"""Run Memory Platform MCP with `python -m memory_mcp`."""
+"""Run Memo Stack MCP with `python -m memory_mcp`."""
 
 from memory_mcp.server import main
 

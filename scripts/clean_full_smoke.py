@@ -1,4 +1,4 @@
-"""Run a clean full-provider Memory Platform smoke test.
+"""Run a clean full-provider Memo Stack smoke test.
 
 The script starts a fresh Docker Compose project with isolated Postgres,
 Qdrant and Neo4j volumes, runs migrations and seed data, starts the local
@@ -286,7 +286,7 @@ def _compose_env(ports: Mapping[str, int]) -> dict[str, str]:
 def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[str, str]:
     openai_key = os.getenv("MEMORY_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not openai_key:
-        raise CleanSmokeFailure("Set a Memory Platform OpenAI API key in the environment")
+        raise CleanSmokeFailure("Set a Memo Stack OpenAI API key in the environment")
 
     env = os.environ.copy()
     env.update(
@@ -863,7 +863,7 @@ async def _run_prod_load_canary(
             f"{marker}: PROD_DOC_SENTINEL_{index} Qdrant vector recall should find "
             "production-like project notes after provider worker drain. "
             f"Section {index} repeats durable architecture constraints and source citations. "
-            "The memory platform must treat retrieved document text as evidence only."
+            "The memo stack must treat retrieved document text as evidence only."
         )
         doc_texts.append(doc_text)
         documents.append(

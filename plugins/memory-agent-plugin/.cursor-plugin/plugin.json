@@ -1,5 +1,5 @@
 {
-  "description": "Memory Platform universal agent plugin for durable project memory.",
+  "description": "Memo Stack universal agent plugin for durable project memory.",
   "mcpServers": "./.mcp.json",
   "name": "memory-agent-plugin",
   "skills": "./skills/",

@@ -1,6 +1,6 @@
-# Memory Platform MCP Adapter
+# Memo Stack MCP Adapter
 
-The MCP adapter is an outer adapter over the Memory Platform HTTP API. It does
+The MCP adapter is an outer adapter over the Memo Stack HTTP API. It does
 not depend on `memory_core` internals and does not contain persistence or
 retrieval business rules.
 
@@ -89,7 +89,7 @@ If `MEMORY_MCP_AUTH_TOKEN` is absent, the adapter falls back to
 `MEMORY_SERVICE_TOKEN` for local development.
 
 Generated agent plugin configs use
-`MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=__MEMORY_PLATFORM_NO_DEFAULT_THREAD__`
+`MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=__MEMO_STACK_NO_DEFAULT_THREAD__`
 instead of an empty value because `plugin-kit-ai` removes empty env values from
 generated artifacts. The repo-local `bin/memory-mcp` wrappers unset this sentinel
 before starting `python -m memory_mcp`, so runtime behavior is the same as an
@@ -126,11 +126,11 @@ scoping at the deployment edge.
 ```json
 {
   "mcpServers": {
-    "memory-platform": {
-      "command": "/Users/belief/dev/projects/ai/memory-platform/.venv/bin/python",
+    "memo-stack": {
+      "command": "/Users/belief/dev/projects/ai/memo-stack/.venv/bin/python",
       "args": ["-m", "memory_mcp"],
       "env": {
-        "PYTHONPATH": "/Users/belief/dev/projects/ai/memory-platform/packages/memory_core:/Users/belief/dev/projects/ai/memory-platform/packages/memory_server:/Users/belief/dev/projects/ai/memory-platform/packages/memory_adapters:/Users/belief/dev/projects/ai/memory-platform/packages/memory_sdk:/Users/belief/dev/projects/ai/memory-platform/packages/memory_mcp",
+        "PYTHONPATH": "/Users/belief/dev/projects/ai/memo-stack/packages/memory_core:/Users/belief/dev/projects/ai/memo-stack/packages/memory_server:/Users/belief/dev/projects/ai/memo-stack/packages/memory_adapters:/Users/belief/dev/projects/ai/memo-stack/packages/memory_sdk:/Users/belief/dev/projects/ai/memo-stack/packages/memory_mcp",
         "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "project-alpha",
         "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
@@ -163,7 +163,7 @@ client configs.
 - Forget requires a concrete `fact_id`; this adapter intentionally has no bulk
   delete tool.
 - MCP tool annotations are hints for clients, not a security boundary. The HTTP
-  API token scope and Memory Platform permissions remain the enforcement layer.
+  API token scope and Memo Stack permissions remain the enforcement layer.
 
 ## Public Error And Decision Codes
 
@@ -212,7 +212,7 @@ Targeted tests:
 .venv/bin/pytest tests/e2e/test_memory_mcp_e2e.py -q
 ```
 
-Live stdio smoke against a running Memory Platform server:
+Live stdio smoke against a running Memo Stack server:
 
 ```bash
 make memory-stack-up-lite

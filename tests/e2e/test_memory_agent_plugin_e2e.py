@@ -14,7 +14,7 @@ from memory_server_harness import run_memory_server
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memory-agent-plugin"
 CURSOR_WORKSPACE_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memory-agent-plugin-cursor-workspace"
-NO_DEFAULT_THREAD_SENTINEL = "__MEMORY_PLATFORM_NO_DEFAULT_THREAD__"
+NO_DEFAULT_THREAD_SENTINEL = "__MEMO_STACK_NO_DEFAULT_THREAD__"
 
 
 def test_generated_plugin_package_manifests_reference_existing_artifacts() -> None:
@@ -98,7 +98,7 @@ def test_generated_plugin_hook_retrieves_memory_context_e2e(tmp_path: Path) -> N
             token=server.token,
             space_slug="plugin-hook-e2e",
             profile_ref="default",
-            text="The Memory Platform hook e2e marker color is teal.",
+            text="The Memo Stack hook e2e marker color is teal.",
         )
         env = os.environ.copy()
         env.update(
@@ -123,7 +123,7 @@ def test_generated_plugin_hook_retrieves_memory_context_e2e(tmp_path: Path) -> N
         )
 
     output = f"{completed.stdout}\n{completed.stderr}"
-    assert '<memory_context source="memory-platform" event="UserPromptSubmit">' in completed.stdout
+    assert '<memory_context source="memo-stack" event="UserPromptSubmit">' in completed.stdout
     assert "teal" in completed.stdout
     assert server.token not in output
     assert NO_DEFAULT_THREAD_SENTINEL not in output
@@ -290,7 +290,7 @@ def test_memory_agent_plugin_doctors_do_not_echo_token_e2e(tmp_path: Path) -> No
                 timeout=30,
             )
             output = f"{completed.stdout}\n{completed.stderr}"
-            assert "Memory Platform MCP plugin is ready" in output
+            assert "Memo Stack MCP plugin is ready" in output
             assert server.token not in output
 
 
@@ -315,7 +315,7 @@ def test_memory_agent_plugin_doctors_accept_service_token_fallback_e2e(tmp_path:
                 timeout=30,
             )
             output = f"{completed.stdout}\n{completed.stderr}"
-            assert "Memory Platform MCP plugin is ready" in output
+            assert "Memo Stack MCP plugin is ready" in output
             assert server.token not in output
 
 
@@ -530,8 +530,8 @@ def _load_generated_mcp_server(
         env_key = "env"
 
     assert isinstance(servers, dict)
-    assert "memory-platform" in servers
-    server = servers["memory-platform"]
+    assert "memo-stack" in servers
+    server = servers["memo-stack"]
     assert isinstance(server, dict)
     command_value = server["command"]
     if isinstance(command_value, list):

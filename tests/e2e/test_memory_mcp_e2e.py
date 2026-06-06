@@ -28,8 +28,8 @@ def test_memory_mcp_auth_failure_redaction_e2e(tmp_path: Path) -> None:
 
 async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
     marker = f"MCP_E2E_{int(time.time() * 1000)}"
-    old_fact = f"{marker}: Memory Platform MCP should keep canonical facts active."
-    new_fact = f"{marker}: Memory Platform MCP should keep updated canonical facts active."
+    old_fact = f"{marker}: Memo Stack MCP should keep canonical facts active."
+    new_fact = f"{marker}: Memo Stack MCP should keep updated canonical facts active."
     document_text = (
         f"{marker}: The document recall path should retrieve larger project notes. "
         "Graphiti is a graph adapter and Qdrant is a vector adapter."

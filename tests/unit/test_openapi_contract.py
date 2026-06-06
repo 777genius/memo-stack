@@ -18,7 +18,7 @@ def build_test_client() -> TestClient:
 def test_openapi_contains_stable_v1_fields() -> None:
     body = build_test_client().get("/openapi.json").json()
 
-    assert body["info"] == {"title": "Memory Platform", "version": "0.1.0"}
+    assert body["info"] == {"title": "Memo Stack", "version": "0.1.0"}
     paths = body["paths"]
     assert "/v1/facts" in paths
     assert "/v1/facts/{fact_id}" in paths

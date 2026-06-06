@@ -1,4 +1,4 @@
-"""Small HTTP SDK for Memory Platform Core Lite."""
+"""Small HTTP SDK for Memo Stack Core Lite."""
 
 from __future__ import annotations
 
@@ -730,7 +730,7 @@ class MemoryPlatformClient:
                 raise MemoryPlatformError(
                     status_code=0,
                     code="memory.network_error",
-                    message="Memory Platform request failed",
+                    message="Memo Stack request failed",
                     retryable=True,
                 ) from exc
             if response.is_error:

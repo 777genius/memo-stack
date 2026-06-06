@@ -1,4 +1,4 @@
-name: Memory Platform CI
+name: Memo Stack CI
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: memory-platform-ci-${{ github.workflow }}-${{ github.ref }}
+  group: memo-stack-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

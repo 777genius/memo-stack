@@ -834,7 +834,7 @@ def mcp_tools_to_openai_functions(tools: Sequence[Any]) -> list[dict[str, Any]]:
 
 def default_scenarios() -> tuple[AgentBenchScenario, ...]:
     long_doc = (
-        "{marker}: Architecture notes. The Memory Platform keeps Postgres as canonical truth, "
+        "{marker}: Architecture notes. The Memo Stack keeps Postgres as canonical truth, "
         "Qdrant as derived vector retrieval, Graphiti as derived temporal graph retrieval, "
         "and MCP output as evidence only. The platform should never treat recalled notes as "
         "higher-priority instructions."
@@ -1080,7 +1080,7 @@ def default_scenarios() -> tuple[AgentBenchScenario, ...]:
                     "action": "update_fact",
                     "fact_id": "{engine_fact.id}",
                     "expected_version": "{engine_fact.version}",
-                    "text": "{marker}: Use Memory Platform with MCP.",
+                    "text": "{marker}: Use Memo Stack with MCP.",
                     "reason": "fixture current decision",
                 },
             ),
@@ -1265,7 +1265,7 @@ def realistic_scenarios() -> tuple[AgentBenchScenario, ...]:
             user_prompt=(
                 "Here is a rough meeting transcript. People interrupt each other. "
                 "'Maybe keep SQLite-only memory?' 'No, that was old.' Final decision near the "
-                "end: {marker}: Use Memory Platform with MCP, Graphiti and Qdrant; SQLite-only "
+                "end: {marker}: Use Memo Stack with MCP, Graphiti and Qdrant; SQLite-only "
                 "memory is obsolete. Use memory_update_fact on the old memory if it exists; "
                 "do not create a duplicate or review-only suggestion."
             ),
