@@ -49,6 +49,13 @@ def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
     ) in makefile
 
 
+def test_makefile_has_memory_quality_scorecard_target() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert ".PHONY: memo-stack-quality-scorecard" in makefile
+    assert "$(PYTHON) -m memo_stack_server eval scorecard" in makefile
+
+
 def test_makefile_has_clean_full_mcp_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 

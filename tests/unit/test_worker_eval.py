@@ -29,9 +29,11 @@ from memo_stack_server.db import upgrade
 from memo_stack_server.doctor import run_doctor
 from memo_stack_server.eval import (
     _execute_small_golden,
+    build_memory_quality_scorecard,
     run_auto_memory_golden,
     run_graph_native_golden,
     run_long_memory_golden,
+    run_memory_quality_scorecard,
     run_quality_golden,
     run_small_golden,
 )
@@ -74,6 +76,121 @@ def make_client_with_settings(tmp_path: Path, **overrides: Any) -> TestClient:
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
+
+
+def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
+    return {
+        "small-golden": {
+            "ok": True,
+            "status": "ok",
+            "metrics": {
+                "case_count": 8,
+                "recall_at_5": 0.9,
+                "precision_at_5": 0.8,
+                "deleted_memory_leak_count": 0,
+                "cross_profile_leak_count": 0,
+                "prompt_injection_promoted_count": 0,
+                "context_token_overflow_count": 0,
+            },
+            "failures": [],
+        },
+        "quality-golden": {
+            "ok": True,
+            "status": "ok",
+            "metrics": {
+                "case_count": 16,
+                "recall_at_5": 0.96,
+                "precision_at_5": 0.95,
+                "answer_support_rate": 1.0,
+                "document_recall_at_5": 1.0,
+                "multi_profile_recall_at_5": 1.0,
+                "thread_recall_at_5": 1.0,
+                "stale_memory_rate": 0.0,
+                "deleted_memory_leak_count": 0,
+                "cross_profile_leak_count": 0,
+                "cross_thread_leak_count": 0,
+                "restricted_memory_leak_count": 0,
+                "prompt_injection_promoted_count": 0,
+                "harmful_context_rate": 0.0,
+                "context_token_overflow_count": 0,
+            },
+            "failures": [],
+        },
+        "long-memory-golden": {
+            "ok": True,
+            "status": "ok",
+            "metrics": {
+                "case_count": 16,
+                "long_memory_case_count": 16,
+                "recall_at_5": 0.96,
+                "precision_at_5": 0.95,
+                "multi_session_recall_at_5": 1.0,
+                "temporal_update_accuracy": 1.0,
+                "preference_synthesis_recall": 1.0,
+                "long_document_recall_at_5": 1.0,
+                "thread_recall_at_5": 1.0,
+                "multi_profile_recall_at_5": 1.0,
+                "stale_memory_rate": 0.0,
+                "deleted_memory_leak_count": 0,
+                "cross_profile_leak_count": 0,
+                "cross_thread_leak_count": 0,
+                "restricted_memory_leak_count": 0,
+                "prompt_injection_promoted_count": 0,
+                "long_safety_leak_count": 0,
+                "harmful_context_rate": 0.0,
+                "context_token_overflow_count": 0,
+            },
+            "failures": [],
+        },
+        "auto-memory-golden": {
+            "ok": True,
+            "status": "ok",
+            "metrics": {
+                "case_count": 13,
+                "extraction_case_count": 78,
+                "extraction_positive_recall_rate": 1.0,
+                "extraction_operation_accuracy": 1.0,
+                "extraction_kind_accuracy": 1.0,
+                "extraction_admission_accuracy": 1.0,
+                "extraction_ttl_accuracy": 1.0,
+                "extraction_target_hint_accuracy": 1.0,
+                "extraction_false_positive_count": 0,
+                "extraction_false_negative_count": 0,
+                "wrong_auto_apply_count": 0,
+                "active_fact_before_review_count": 0,
+                "prompt_injection_promoted_count": 0,
+                "secret_leakage_count": 0,
+                "assistant_low_trust_violation_count": 0,
+                "target_resolution_violation_count": 0,
+                "review_operation_violation_count": 0,
+            },
+            "failures": [],
+        },
+        "graph-native-golden": {
+            "ok": True,
+            "status": "ok",
+            "metrics": {
+                "case_count": 8,
+                "graph_recall_rate": 1.0,
+                "graph_hydration_rate": 1.0,
+                "graph_status_ok_rate": 1.0,
+                "graph_safety_leak_count": 0,
+                "graph_stale_drop_count": 4,
+                "canonical_only_graph_skip_count": 1,
+            },
+            "failures": [],
+        },
+        "prompt-contract": {
+            "ok": True,
+            "status": "ok",
+            "checks": {
+                "snapshot_safe": True,
+                "snapshot_exists": True,
+                "matches_snapshot": True,
+            },
+            "failures": [],
+        },
+    }
 
 
 def test_eval_cli_uses_env_token_not_cli_auth_token() -> None:
@@ -1113,6 +1230,48 @@ def test_graph_native_golden_eval_writes_redacted_report(tmp_path: Path) -> None
     assert payload["failures"] == []
     assert "GRAPH_NATIVE_EVAL_BETA_SECRET" not in report_text
     assert "GRAPH_NATIVE_EVAL_RESTRICTED_SECRET" not in report_text
+
+
+def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Path) -> None:
+    report = tmp_path / "memory-quality-scorecard.json"
+
+    result = run_memory_quality_scorecard(
+        suite_results=_scorecard_fixture_results(),
+        report_out=report,
+    )
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert result["suite"] == "memory-quality-scorecard"
+    assert result["score"]["maturity_score_10"] == 10.0
+    assert result["gates"]["required_suites_present"] is True
+    assert result["capabilities"]["canonical_recall_precision"]["ok"] is True
+    assert result["capabilities"]["longitudinal_memory"]["ok"] is True
+    assert result["capabilities"]["auto_memory_admission"]["ok"] is True
+    assert result["capabilities"]["graph_native_recall"]["ok"] is True
+    assert result["capabilities"]["scope_and_safety"]["ok"] is True
+    assert result["capabilities"]["prompt_context_contract"]["ok"] is True
+    assert result["metrics"]["safety_leak_count"] == 0
+    assert result["failures"] == []
+    assert payload["ok"] is True
+    assert "QUALITY_RESTRICTED_SECRET" not in report_text
+    assert "Ignore previous instructions" not in report_text
+
+
+def test_memory_quality_scorecard_fails_on_graph_safety_regression() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["graph-native-golden"]["metrics"]["graph_safety_leak_count"] = 1
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    assert result["capabilities"]["graph_native_recall"]["ok"] is False
+    assert result["capabilities"]["scope_and_safety"]["ok"] is False
+    assert result["metrics"]["safety_leak_count"] == 1
+    assert "graph_safety_leak_count" in result["capabilities"]["graph_native_recall"][
+        "failed_checks"
+    ]
 
 
 def test_small_golden_eval_seed_preserves_scope_invariants(

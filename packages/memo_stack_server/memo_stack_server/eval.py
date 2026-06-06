@@ -7,7 +7,7 @@ import asyncio
 import json
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -38,6 +38,7 @@ QUALITY_GOLDEN_SUITE = "quality-golden"
 LONG_MEMORY_GOLDEN_SUITE = "long-memory-golden"
 AUTO_MEMORY_GOLDEN_SUITE = "auto-memory-golden"
 GRAPH_NATIVE_GOLDEN_SUITE = "graph-native-golden"
+MEMORY_QUALITY_SCORECARD_SUITE = "memory-quality-scorecard"
 PROMPT_CONTRACT_SNAPSHOT_VERSION = 1
 PROMPT_CONTRACT_SNAPSHOT_FILE = "prompt_contract.json"
 _DEFAULT_SNAPSHOT_DIR = Path("tests/snapshots")
@@ -55,6 +56,15 @@ _QUALITY_GOLDEN_RECALL_GATE = 0.95
 _QUALITY_GOLDEN_PRECISION_GATE = 0.90
 _LONG_MEMORY_RECALL_GATE = 0.95
 _LONG_MEMORY_PRECISION_GATE = 0.90
+_MEMORY_QUALITY_SCORECARD_MIN_SCORE_10 = 9.0
+_MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES = (
+    SMALL_GOLDEN_SUITE,
+    QUALITY_GOLDEN_SUITE,
+    LONG_MEMORY_GOLDEN_SUITE,
+    AUTO_MEMORY_GOLDEN_SUITE,
+    GRAPH_NATIVE_GOLDEN_SUITE,
+    PROMPT_CONTRACT_SUITE,
+)
 
 
 def _eval_auth_token_from_env() -> str | None:
@@ -271,6 +281,392 @@ def run_graph_native_golden(
             result = _execute_graph_native_golden(client, headers, graph)
     _write_redacted_report(result, report_out)
     return result
+
+
+def run_memory_quality_scorecard(
+    *,
+    report_out: Path | None = None,
+    suite_results: Mapping[str, dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Aggregate deterministic memory eval suites into one capability scorecard.
+
+    This is an internal confidence gate, not a replacement for public benchmarks
+    such as LOCOMO or LongMemEval. It makes our own quality claims auditable by
+    tying them to concrete recall, lifecycle, safety, auto-memory and graph
+    checks over the public HTTP/MCP-facing behavior.
+    """
+
+    results = (
+        dict(suite_results)
+        if suite_results is not None
+        else {
+            SMALL_GOLDEN_SUITE: run_small_golden(),
+            QUALITY_GOLDEN_SUITE: run_quality_golden(),
+            LONG_MEMORY_GOLDEN_SUITE: run_long_memory_golden(),
+            AUTO_MEMORY_GOLDEN_SUITE: run_auto_memory_golden(),
+            GRAPH_NATIVE_GOLDEN_SUITE: run_graph_native_golden(),
+            PROMPT_CONTRACT_SUITE: run_prompt_snapshots(),
+        }
+    )
+    result = build_memory_quality_scorecard(results)
+    _write_redacted_report(result, report_out)
+    return result
+
+
+def build_memory_quality_scorecard(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    required_suites = _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES
+    missing_suites = tuple(suite for suite in required_suites if suite not in suite_results)
+    suites = {
+        suite: _scorecard_suite_summary(suite_results.get(suite))
+        for suite in required_suites
+    }
+    capabilities = {
+        "canonical_recall_precision": _scorecard_canonical_recall_precision(suite_results),
+        "longitudinal_memory": _scorecard_longitudinal_memory(suite_results),
+        "auto_memory_admission": _scorecard_auto_memory_admission(suite_results),
+        "graph_native_recall": _scorecard_graph_native_recall(suite_results),
+        "scope_and_safety": _scorecard_scope_and_safety(suite_results),
+        "prompt_context_contract": _scorecard_prompt_context_contract(suite_results),
+    }
+    all_suite_checks_ok = all(summary["ok"] is True for summary in suites.values())
+    all_capabilities_ok = all(capability["ok"] is True for capability in capabilities.values())
+    check_values = (
+        *(summary["ok"] is True for summary in suites.values()),
+        *(capability["ok"] is True for capability in capabilities.values()),
+    )
+    passed_checks = sum(1 for value in check_values if value)
+    total_checks = len(check_values)
+    score_percent = _ratio(passed_checks, total_checks)
+    maturity_score_10 = round(score_percent * 10, 2)
+    gates = {
+        "required_suites_present": not missing_suites,
+        "all_suites_ok": all_suite_checks_ok,
+        "all_capabilities_ok": all_capabilities_ok,
+        "maturity_score_min": maturity_score_10 >= _MEMORY_QUALITY_SCORECARD_MIN_SCORE_10,
+    }
+    failures = _scorecard_failures(
+        missing_suites=missing_suites,
+        suites=suites,
+        capabilities=capabilities,
+        gates=gates,
+    )
+    ok = all(gates.values())
+    return {
+        "suite": MEMORY_QUALITY_SCORECARD_SUITE,
+        "status": "ok" if ok else "failed",
+        "ok": ok,
+        "benchmark_scope": (
+            "internal deterministic public-API suites; "
+            "not a LOCOMO or LongMemEval substitute"
+        ),
+        "score": {
+            "passed_checks": passed_checks,
+            "total_checks": total_checks,
+            "score_percent": score_percent,
+            "maturity_score_10": maturity_score_10,
+            "minimum_maturity_score_10": _MEMORY_QUALITY_SCORECARD_MIN_SCORE_10,
+        },
+        "suites": suites,
+        "capabilities": capabilities,
+        "gates": gates,
+        "metrics": _scorecard_metrics(suite_results),
+        "failures": failures,
+    }
+
+
+def _scorecard_suite_summary(result: dict[str, object] | None) -> dict[str, object]:
+    if result is None:
+        return {
+            "ok": False,
+            "status": "missing",
+            "case_count": 0,
+            "failure_count": 1,
+        }
+    metrics = _scorecard_result_metrics(result)
+    cases = result.get("cases", ())
+    failures = result.get("failures", ())
+    case_count = metrics.get("case_count")
+    if not isinstance(case_count, int):
+        case_count = len(cases) if isinstance(cases, list | tuple) else 0
+    return {
+        "ok": bool(result.get("ok")),
+        "status": result.get("status", "ok" if result.get("ok") else "failed"),
+        "case_count": case_count,
+        "failure_count": len(failures) if isinstance(failures, list | tuple) else 0,
+    }
+
+
+def _scorecard_canonical_recall_precision(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    small = _scorecard_result_metrics(suite_results.get(SMALL_GOLDEN_SUITE))
+    quality = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
+    checks = {
+        "small_recall_at_5": float(small.get("recall_at_5", 0.0)) >= _SMALL_GOLDEN_RECALL_GATE,
+        "small_precision_at_5": (
+            float(small.get("precision_at_5", 0.0)) >= _SMALL_GOLDEN_PRECISION_GATE
+        ),
+        "quality_recall_at_5": (
+            float(quality.get("recall_at_5", 0.0)) >= _QUALITY_GOLDEN_RECALL_GATE
+        ),
+        "quality_precision_at_5": (
+            float(quality.get("precision_at_5", 0.0)) >= _QUALITY_GOLDEN_PRECISION_GATE
+        ),
+        "answer_support_rate": quality.get("answer_support_rate") == 1.0,
+        "document_recall_at_5": float(quality.get("document_recall_at_5", 0.0)) >= 0.95,
+    }
+    return _scorecard_capability("canonical_recall_precision", checks)
+
+
+def _scorecard_longitudinal_memory(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    metrics = _scorecard_result_metrics(suite_results.get(LONG_MEMORY_GOLDEN_SUITE))
+    checks = {
+        "multi_session_recall_at_5": metrics.get("multi_session_recall_at_5") == 1.0,
+        "temporal_update_accuracy": metrics.get("temporal_update_accuracy") == 1.0,
+        "preference_synthesis_recall": metrics.get("preference_synthesis_recall") == 1.0,
+        "long_document_recall_at_5": float(metrics.get("long_document_recall_at_5", 0.0))
+        >= 0.95,
+        "long_safety_leak_count": metrics.get("long_safety_leak_count") == 0,
+        "stale_memory_rate": metrics.get("stale_memory_rate") == 0.0,
+    }
+    return _scorecard_capability("longitudinal_memory", checks)
+
+
+def _scorecard_auto_memory_admission(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    metrics = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
+    checks = {
+        "extraction_positive_recall_rate": (
+            metrics.get("extraction_positive_recall_rate") == 1.0
+        ),
+        "extraction_operation_accuracy": metrics.get("extraction_operation_accuracy") == 1.0,
+        "extraction_kind_accuracy": metrics.get("extraction_kind_accuracy") == 1.0,
+        "extraction_admission_accuracy": metrics.get("extraction_admission_accuracy") == 1.0,
+        "extraction_ttl_accuracy": metrics.get("extraction_ttl_accuracy") == 1.0,
+        "extraction_target_hint_accuracy": metrics.get("extraction_target_hint_accuracy") == 1.0,
+        "extraction_false_positive_count": metrics.get("extraction_false_positive_count") == 0,
+        "extraction_false_negative_count": metrics.get("extraction_false_negative_count") == 0,
+        "wrong_auto_apply_count": metrics.get("wrong_auto_apply_count") == 0,
+        "active_fact_before_review_count": metrics.get("active_fact_before_review_count") == 0,
+        "secret_leakage_count": metrics.get("secret_leakage_count") == 0,
+        "assistant_low_trust_violation_count": (
+            metrics.get("assistant_low_trust_violation_count") == 0
+        ),
+        "target_resolution_violation_count": (
+            metrics.get("target_resolution_violation_count") == 0
+        ),
+        "review_operation_violation_count": (
+            metrics.get("review_operation_violation_count") == 0
+        ),
+    }
+    return _scorecard_capability("auto_memory_admission", checks)
+
+
+def _scorecard_graph_native_recall(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    metrics = _scorecard_result_metrics(suite_results.get(GRAPH_NATIVE_GOLDEN_SUITE))
+    checks = {
+        "graph_recall_rate": metrics.get("graph_recall_rate") == 1.0,
+        "graph_hydration_rate": metrics.get("graph_hydration_rate") == 1.0,
+        "graph_status_ok_rate": metrics.get("graph_status_ok_rate") == 1.0,
+        "graph_safety_leak_count": metrics.get("graph_safety_leak_count") == 0,
+        "graph_stale_drop_count": int(metrics.get("graph_stale_drop_count", 0)) >= 4,
+        "canonical_only_graph_skip_count": (
+            metrics.get("canonical_only_graph_skip_count") == 1
+        ),
+    }
+    return _scorecard_capability("graph_native_recall", checks)
+
+
+def _scorecard_scope_and_safety(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    small = _scorecard_result_metrics(suite_results.get(SMALL_GOLDEN_SUITE))
+    quality = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
+    long = _scorecard_result_metrics(suite_results.get(LONG_MEMORY_GOLDEN_SUITE))
+    auto = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
+    graph = _scorecard_result_metrics(suite_results.get(GRAPH_NATIVE_GOLDEN_SUITE))
+    checks = {
+        "deleted_memory_leak_count": (
+            int(small.get("deleted_memory_leak_count", 0))
+            + int(quality.get("deleted_memory_leak_count", 0))
+            + int(long.get("deleted_memory_leak_count", 0))
+        )
+        == 0,
+        "cross_scope_leak_count": (
+            int(small.get("cross_profile_leak_count", 0))
+            + int(quality.get("cross_profile_leak_count", 0))
+            + int(quality.get("cross_thread_leak_count", 0))
+            + int(long.get("cross_profile_leak_count", 0))
+            + int(long.get("cross_thread_leak_count", 0))
+            + int(graph.get("graph_safety_leak_count", 0))
+        )
+        == 0,
+        "restricted_memory_leak_count": (
+            int(quality.get("restricted_memory_leak_count", 0))
+            + int(long.get("restricted_memory_leak_count", 0))
+        )
+        == 0,
+        "prompt_injection_promoted_count": (
+            int(small.get("prompt_injection_promoted_count", 0))
+            + int(quality.get("prompt_injection_promoted_count", 0))
+            + int(long.get("prompt_injection_promoted_count", 0))
+            + int(auto.get("prompt_injection_promoted_count", 0))
+        )
+        == 0,
+        "secret_leakage_count": int(auto.get("secret_leakage_count", 0)) == 0,
+        "harmful_context_rate": (
+            float(quality.get("harmful_context_rate", 0.0))
+            + float(long.get("harmful_context_rate", 0.0))
+        )
+        == 0.0,
+        "context_token_overflow_count": (
+            int(small.get("context_token_overflow_count", 0))
+            + int(quality.get("context_token_overflow_count", 0))
+            + int(long.get("context_token_overflow_count", 0))
+        )
+        == 0,
+    }
+    return _scorecard_capability("scope_and_safety", checks)
+
+
+def _scorecard_prompt_context_contract(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    result = suite_results.get(PROMPT_CONTRACT_SUITE, {})
+    checks_raw = result.get("checks", {})
+    checks_map = checks_raw if isinstance(checks_raw, dict) else {}
+    checks = {
+        "snapshot_safe": checks_map.get("snapshot_safe") is True,
+        "snapshot_exists": checks_map.get("snapshot_exists") is True,
+        "matches_snapshot": checks_map.get("matches_snapshot") is True,
+    }
+    return _scorecard_capability("prompt_context_contract", checks)
+
+
+def _scorecard_capability(name: str, checks: Mapping[str, bool]) -> dict[str, object]:
+    failed = sorted(check for check, ok in checks.items() if not ok)
+    return {
+        "name": name,
+        "ok": not failed,
+        "checks": dict(checks),
+        "failed_checks": failed,
+    }
+
+
+def _scorecard_failures(
+    *,
+    missing_suites: tuple[str, ...],
+    suites: Mapping[str, dict[str, object]],
+    capabilities: Mapping[str, dict[str, object]],
+    gates: Mapping[str, bool],
+) -> list[dict[str, object]]:
+    failures: list[dict[str, object]] = []
+    for suite in missing_suites:
+        failures.append(
+            {
+                "case_id": suite,
+                "category": "suite",
+                "reason": "missing_suite_result",
+            }
+        )
+    for suite, summary in suites.items():
+        if summary["ok"] is not True:
+            failures.append(
+                {
+                    "case_id": suite,
+                    "category": "suite",
+                    "reason": "suite_not_ok",
+                }
+            )
+    for capability_name, capability in capabilities.items():
+        if capability["ok"] is not True:
+            failures.append(
+                {
+                    "case_id": capability_name,
+                    "category": "capability",
+                    "reason": "capability_gate_failed",
+                    "failed_checks": capability["failed_checks"],
+                }
+            )
+    for gate, ok in gates.items():
+        if not ok:
+            failures.append(
+                {
+                    "case_id": gate,
+                    "category": "scorecard_gate",
+                    "reason": "scorecard_gate_failed",
+                }
+            )
+    return failures
+
+
+def _scorecard_metrics(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    quality = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
+    long = _scorecard_result_metrics(suite_results.get(LONG_MEMORY_GOLDEN_SUITE))
+    auto = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
+    graph = _scorecard_result_metrics(suite_results.get(GRAPH_NATIVE_GOLDEN_SUITE))
+    return {
+        "quality_recall_at_5": quality.get("recall_at_5", 0.0),
+        "quality_precision_at_5": quality.get("precision_at_5", 0.0),
+        "long_multi_session_recall_at_5": long.get("multi_session_recall_at_5", 0.0),
+        "long_temporal_update_accuracy": long.get("temporal_update_accuracy", 0.0),
+        "auto_extraction_positive_recall_rate": auto.get(
+            "extraction_positive_recall_rate",
+            0.0,
+        ),
+        "auto_extraction_operation_accuracy": auto.get(
+            "extraction_operation_accuracy",
+            0.0,
+        ),
+        "auto_extraction_admission_accuracy": auto.get(
+            "extraction_admission_accuracy",
+            0.0,
+        ),
+        "graph_recall_rate": graph.get("graph_recall_rate", 0.0),
+        "graph_hydration_rate": graph.get("graph_hydration_rate", 0.0),
+        "safety_leak_count": _scorecard_safety_leak_count(suite_results),
+    }
+
+
+def _scorecard_safety_leak_count(
+    suite_results: Mapping[str, dict[str, object]],
+) -> int:
+    total = 0
+    for suite in (
+        SMALL_GOLDEN_SUITE,
+        QUALITY_GOLDEN_SUITE,
+        LONG_MEMORY_GOLDEN_SUITE,
+        AUTO_MEMORY_GOLDEN_SUITE,
+        GRAPH_NATIVE_GOLDEN_SUITE,
+    ):
+        metrics = _scorecard_result_metrics(suite_results.get(suite))
+        for key in (
+            "deleted_memory_leak_count",
+            "cross_profile_leak_count",
+            "cross_thread_leak_count",
+            "restricted_memory_leak_count",
+            "prompt_injection_promoted_count",
+            "secret_leakage_count",
+            "graph_safety_leak_count",
+        ):
+            total += int(metrics.get(key, 0))
+    return total
+
+
+def _scorecard_result_metrics(result: dict[str, object] | None) -> dict[str, object]:
+    if result is None:
+        return {}
+    metrics = result.get("metrics", {})
+    return metrics if isinstance(metrics, dict) else {}
 
 
 def _eval_setup_failure(suite: str, reason: str) -> dict[str, object]:
@@ -4692,6 +5088,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     snapshots.add_argument("--suite", default=PROMPT_CONTRACT_SUITE)
     snapshots.add_argument("--update", action="store_true")
     snapshots.add_argument("--snapshot-dir", type=Path, default=None)
+    scorecard = sub.add_parser("scorecard")
+    scorecard.add_argument("--report-out", type=Path, default=None)
     args = parser.parse_args(argv)
     if args.command == "run":
         if args.suite == SMALL_GOLDEN_SUITE:
@@ -4741,6 +5139,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
+    elif args.command == "scorecard":
+        result = run_memory_quality_scorecard(report_out=args.report_out)
     else:
         raise SystemExit("Unsupported eval command")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

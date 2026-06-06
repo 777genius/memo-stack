@@ -60,6 +60,10 @@ memo-stack-eval:
 	$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden
 	$(PYTHON) -m memo_stack_server eval snapshots --suite prompt-contract
 
+.PHONY: memo-stack-quality-scorecard
+memo-stack-quality-scorecard:
+	$(PYTHON) -m memo_stack_server eval scorecard
+
 .PHONY: memo-stack-test-quality
 memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
 
