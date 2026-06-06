@@ -65,6 +65,16 @@ _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES = (
     GRAPH_NATIVE_GOLDEN_SUITE,
     PROMPT_CONTRACT_SUITE,
 )
+_MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS = {
+    SMALL_GOLDEN_SUITE: 8,
+    QUALITY_GOLDEN_SUITE: 16,
+    LONG_MEMORY_GOLDEN_SUITE: 16,
+    AUTO_MEMORY_GOLDEN_SUITE: 13,
+    GRAPH_NATIVE_GOLDEN_SUITE: 8,
+    PROMPT_CONTRACT_SUITE: 10,
+}
+_MEMORY_QUALITY_SCORECARD_MIN_EXTRACTION_CASES = 78
+_MEMORY_QUALITY_SCORECARD_MIN_SEMANTIC_EXTRACTION_CASES = 18
 
 
 def _eval_auth_token_from_env() -> str | None:
@@ -347,6 +357,7 @@ def build_memory_quality_scorecard(
         for suite in required_suites
     }
     capabilities = {
+        "coverage_floors": _scorecard_coverage_floors(suite_results, suites),
         "canonical_recall_precision": _scorecard_canonical_recall_precision(suite_results),
         "longitudinal_memory": _scorecard_longitudinal_memory(suite_results),
         "auto_memory_admission": _scorecard_auto_memory_admission(suite_results),
@@ -420,6 +431,26 @@ def _scorecard_suite_summary(result: dict[str, object] | None) -> dict[str, obje
         "case_count": case_count,
         "failure_count": len(failures) if isinstance(failures, list | tuple) else 0,
     }
+
+
+def _scorecard_coverage_floors(
+    suite_results: Mapping[str, dict[str, object]],
+    suites: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    auto_metrics = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
+    checks = {
+        f"{suite}_case_count": int(suites[suite].get("case_count", 0)) >= minimum
+        for suite, minimum in _MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS.items()
+    }
+    checks["auto_memory_extraction_case_count"] = (
+        int(auto_metrics.get("extraction_case_count", 0))
+        >= _MEMORY_QUALITY_SCORECARD_MIN_EXTRACTION_CASES
+    )
+    checks["auto_memory_semantic_extraction_case_count"] = (
+        int(auto_metrics.get("extraction_semantic_case_count", 0))
+        >= _MEMORY_QUALITY_SCORECARD_MIN_SEMANTIC_EXTRACTION_CASES
+    )
+    return _scorecard_capability("coverage_floors", checks)
 
 
 def _scorecard_canonical_recall_precision(

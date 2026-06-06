@@ -152,6 +152,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "metrics": {
                 "case_count": 13,
                 "extraction_case_count": 78,
+                "extraction_semantic_case_count": 18,
                 "extraction_positive_recall_rate": 1.0,
                 "extraction_operation_accuracy": 1.0,
                 "extraction_kind_accuracy": 1.0,
@@ -194,6 +195,18 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "snapshot_exists": True,
                 "matches_snapshot": True,
             },
+            "cases": [
+                "cross_profile_isolation",
+                "degraded_graphiti",
+                "degraded_qdrant",
+                "deleted_fact_filtered",
+                "empty_context",
+                "facts_only",
+                "facts_plus_chunks",
+                "instruction_flag_dropped",
+                "prompt_injection_quoted",
+                "token_budget_truncated",
+            ],
             "failures": [],
         },
     }
@@ -1252,6 +1265,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["suite"] == "memory-quality-scorecard"
     assert result["score"]["maturity_score_10"] == 10.0
     assert result["gates"]["required_suites_present"] is True
+    assert result["capabilities"]["coverage_floors"]["ok"] is True
     assert result["capabilities"]["canonical_recall_precision"]["ok"] is True
     assert result["capabilities"]["longitudinal_memory"]["ok"] is True
     assert result["capabilities"]["auto_memory_admission"]["ok"] is True
@@ -1278,6 +1292,20 @@ def test_memory_quality_scorecard_loads_existing_suite_reports(tmp_path: Path) -
     assert result["score"]["maturity_score_10"] == 10.0
     assert result["suites"]["auto-memory-golden"]["case_count"] == 13
     assert result["suites"]["prompt-contract"]["ok"] is True
+
+
+def test_memory_quality_scorecard_fails_on_undercovered_suite() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["auto-memory-golden"]["metrics"]["extraction_case_count"] = 12
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    assert result["capabilities"]["coverage_floors"]["ok"] is False
+    assert "auto_memory_extraction_case_count" in result["capabilities"]["coverage_floors"][
+        "failed_checks"
+    ]
+    assert result["gates"]["all_capabilities_ok"] is False
 
 
 def test_memory_quality_scorecard_rejects_duplicate_suite_reports(tmp_path: Path) -> None:
