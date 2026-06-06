@@ -559,6 +559,46 @@ def test_service_search_adds_fact_resource_links() -> None:
     asyncio.run(run())
 
 
+def test_service_search_redacts_sensitive_retrieved_text() -> None:
+    class SensitiveContextGateway(RecordingGateway):
+        async def build_context(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(("build_context", kwargs))
+            secret = "password=bench-secret-search-output-alpha"
+            return {
+                "data": {
+                    "rendered_text": f"Relevant memory says {secret}. Keep review-gated.",
+                    "items": [
+                        {
+                            "item_id": "chunk_1",
+                            "item_type": "chunk",
+                            "text": f"Tail chunk includes {secret}. Keep review-gated.",
+                            "source_refs": [{"quote_preview": f"quote {secret}"}],
+                        }
+                    ],
+                }
+            }
+
+    async def run() -> None:
+        service = MemoryToolService(
+            gateway=SensitiveContextGateway(),
+            settings=MemoryMcpSettings(),
+        )
+
+        result = await service.search(query="review-gated hooks")
+        serialized = json.dumps(result, ensure_ascii=False)
+
+        assert result["ok"] is True
+        assert "bench-secret-search-output-alpha" not in serialized
+        assert "[redacted]" in result["data"]["rendered_text"]
+        assert "[redacted]" in result["data"]["items"][0]["text"]
+        assert "[redacted]" in result["data"]["items"][0]["source_refs"][0]["quote_preview"]
+        assert result["data"]["rendered_text_original_chars"] == len(
+            result["data"]["rendered_text"]
+        )
+
+    asyncio.run(run())
+
+
 def test_service_search_rejects_thread_scope_with_multiple_profiles() -> None:
     async def run() -> None:
         gateway = RecordingGateway()

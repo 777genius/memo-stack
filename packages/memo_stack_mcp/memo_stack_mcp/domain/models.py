@@ -502,13 +502,17 @@ def public_error_code(code: str, *, status_code: int = 0) -> str:
 
 
 def safe_message(value: str) -> str:
-    redacted = value
-    redacted = _USERINFO_PATTERN.sub(r"\1[redacted]@", redacted)
-    for pattern in _SECRET_PATTERNS:
-        redacted = pattern.sub("[redacted]", redacted)
+    redacted = redact_sensitive_text(value)
     redacted = redacted.replace("\x00", "")
     if len(redacted) > 500:
         redacted = redacted[:500] + "...[truncated]"
+    return redacted
+
+
+def redact_sensitive_text(value: str) -> str:
+    redacted = _USERINFO_PATTERN.sub(r"\1[redacted]@", value)
+    for pattern in _SECRET_PATTERNS:
+        redacted = pattern.sub("[redacted]", redacted)
     return redacted
 
 

@@ -28,6 +28,7 @@ from memo_stack_mcp.domain.models import (
     has_control_characters,
     has_zero_width_characters,
     public_error_code,
+    redact_sensitive_text,
     safe_message,
 )
 from memo_stack_mcp.domain.policy import (
@@ -246,6 +247,7 @@ class MemoryToolService:
             if not isinstance(data, dict):
                 data = {}
             data = self._with_search_resource_links(data)
+            data = self._redact_sensitive_search_data(data)
             data.setdefault("requested_profile_external_refs", list(scope.profile_external_refs))
             data.setdefault("requested_token_budget", token_budget)
             data.setdefault("effective_token_budget", effective_token_budget)
@@ -271,6 +273,15 @@ class MemoryToolService:
             )
 
         return await self._guard(action)
+
+    def _redact_sensitive_search_data(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return redact_sensitive_text(value)
+        if isinstance(value, list):
+            return [self._redact_sensitive_search_data(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self._redact_sensitive_search_data(item) for key, item in value.items()}
+        return value
 
     async def remember_fact(
         self,

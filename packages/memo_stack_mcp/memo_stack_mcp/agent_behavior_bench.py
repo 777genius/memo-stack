@@ -1641,7 +1641,7 @@ def live_session_scenarios() -> tuple[AgentBenchScenario, ...]:
                 {
                     "type": "memory_contains",
                     "query": "{marker} Graphiti homegrown graph not decided",
-                    "contains": ["{marker}", "not decided"],
+                    "contains": ["Graphiti", "not decided"],
                     "status": "pending",
                 },
             ),
