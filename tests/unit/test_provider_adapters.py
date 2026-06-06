@@ -152,6 +152,7 @@ def _openai_candidate_payload(
     valid_from: str | None = None,
     valid_until: str | None = None,
     expires_at: str | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "text": text,
@@ -161,7 +162,7 @@ def _openai_candidate_payload(
         "operation": operation,
         "evidence_quote": evidence_quote,
         "category": None,
-        "tags": [],
+        "tags": tags if tags is not None else [],
         "ttl_policy": ttl_policy,
         "target_fact_id": None,
         "target_fact_version": None,
@@ -1353,6 +1354,142 @@ def test_openai_json_memory_extractor_rejects_naive_datetime() -> None:
             raise AssertionError("Expected naive extractor datetime to fail")
 
     asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_oversized_candidate_text() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="TEXT_SIZE_MARKER " + ("x" * 1200),
+                        operation="add",
+                        evidence_quote="TEXT_SIZE_MARKER",
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_text_size",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="TEXT_SIZE_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "text_too_large" in str(exc)
+        else:
+            raise AssertionError("Expected oversized extractor text to fail")
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_oversized_target_hint() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="TARGET_HINT_SIZE_MARKER should fail.",
+                        operation="update",
+                        evidence_quote="TARGET_HINT_SIZE_MARKER",
+                        target_hint="h" * 241,
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_target_hint_size",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="TARGET_HINT_SIZE_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "target_hint_too_large" in str(exc)
+        else:
+            raise AssertionError("Expected oversized extractor target hint to fail")
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_schema_invalid_tags() -> None:
+    async def run_too_many() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="TOO_MANY_TAGS_MARKER should fail.",
+                        operation="add",
+                        evidence_quote="TOO_MANY_TAGS_MARKER",
+                        tags=[f"tag_{index}" for index in range(11)],
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_too_many_tags",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="TOO_MANY_TAGS_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "too_many_tags" in str(exc)
+        else:
+            raise AssertionError("Expected too many extractor tags to fail")
+
+    async def run_too_large() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="TAG_SIZE_MARKER should fail.",
+                        operation="add",
+                        evidence_quote="TAG_SIZE_MARKER",
+                        tags=["x" * 49],
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_tag_size",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="TAG_SIZE_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "tag_too_large" in str(exc)
+        else:
+            raise AssertionError("Expected oversized extractor tag to fail")
+
+    asyncio.run(run_too_many())
+    asyncio.run(run_too_large())
 
 
 def test_openai_json_memory_extractor_rejects_unknown_output_fields() -> None:

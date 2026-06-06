@@ -159,7 +159,11 @@ def _candidate_from_payload(
         _required_str(payload, "operation", max_chars=32),
         "extractor.openai.invalid_operation",
     )
-    evidence_quote = _optional_str(payload.get("evidence_quote"), max_chars=240)
+    evidence_quote = _optional_str(
+        payload.get("evidence_quote"),
+        field="evidence_quote",
+        max_chars=240,
+    )
     _validate_evidence_quote(
         operation=operation,
         evidence_quote=evidence_quote,
@@ -180,12 +184,16 @@ def _candidate_from_payload(
         source_refs=_source_refs(source=source, evidence_quote=evidence_quote),
         safe_reason=_required_str(payload, "safe_reason", max_chars=MAX_SAFE_REASON_CHARS),
         operation_hint=operation,
-        category=_optional_str(payload.get("category"), max_chars=80),
+        category=_optional_str(payload.get("category"), field="category", max_chars=80),
         tags=_tags(payload.get("tags")),
         ttl_policy=_optional_ttl_policy(payload.get("ttl_policy")),
-        target_fact_id=_optional_str(payload.get("target_fact_id"), max_chars=80),
+        target_fact_id=_optional_str(
+            payload.get("target_fact_id"),
+            field="target_fact_id",
+            max_chars=80,
+        ),
         target_fact_version=_optional_int(payload.get("target_fact_version")),
-        target_hint=_optional_str(payload.get("target_hint"), max_chars=240),
+        target_hint=_optional_str(payload.get("target_hint"), field="target_hint", max_chars=240),
         valid_from=_optional_datetime(payload.get("valid_from"), field="valid_from"),
         valid_until=_optional_datetime(payload.get("valid_until"), field="valid_until"),
         expires_at=_optional_datetime(payload.get("expires_at"), field="expires_at"),
@@ -236,20 +244,25 @@ def _required_str(payload: dict[str, Any], field: str, *, max_chars: int) -> str
     value = payload.get(field)
     if not isinstance(value, str) or not value.strip():
         raise MemoryValidationError(f"extractor.openai.{field}_required")
-    return value.strip()[:max_chars]
+    normalized = value.strip()
+    if len(normalized) > max_chars:
+        raise MemoryValidationError(f"extractor.openai.{field}_too_large")
+    return normalized
 
 
-def _optional_str(value: Any, *, max_chars: int) -> str | None:
+def _optional_str(value: Any, *, field: str, max_chars: int) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise MemoryValidationError("extractor.openai.invalid_string")
+        raise MemoryValidationError(f"extractor.openai.{field}_invalid")
     normalized = value.strip()
-    return normalized[:max_chars] or None
+    if len(normalized) > max_chars:
+        raise MemoryValidationError(f"extractor.openai.{field}_too_large")
+    return normalized or None
 
 
 def _optional_ttl_policy(value: Any) -> str | None:
-    ttl_policy = _optional_str(value, max_chars=80)
+    ttl_policy = _optional_str(value, field="ttl_policy", max_chars=80)
     if ttl_policy is None:
         return None
     if ttl_policy not in ALLOWED_TTL_POLICIES:
@@ -282,13 +295,17 @@ def _optional_datetime(value: Any, *, field: str) -> datetime | None:
 def _tags(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise MemoryValidationError("extractor.openai.tags_not_array")
+    if len(value) > MAX_TAGS:
+        raise MemoryValidationError("extractor.openai.too_many_tags")
     tags: list[str] = []
-    for item in value[:MAX_TAGS]:
+    for item in value:
         if not isinstance(item, str):
             raise MemoryValidationError("extractor.openai.invalid_tag")
         tag = item.strip()
         if tag:
-            tags.append(tag[:MAX_TAG_CHARS])
+            if len(tag) > MAX_TAG_CHARS:
+                raise MemoryValidationError("extractor.openai.tag_too_large")
+            tags.append(tag)
     return tuple(tags)
 
 
