@@ -1,7 +1,10 @@
+import asyncio
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).parents[2]
 
@@ -223,17 +226,31 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
 
     assert ".PHONY: memo-stack-agent-behavior-bench" in makefile
     assert ".PHONY: memo-stack-agent-realistic-bench" in makefile
+    assert ".PHONY: memo-stack-agent-live-session-bench" in makefile
+    assert ".PHONY: memo-stack-real-memory-confidence" in makefile
     assert "MEMORY_AGENT_BENCH_MODEL" in makefile
     assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in makefile
     assert "MEMORY_AGENT_BENCH_SCENARIO_SET=realistic" in makefile
+    assert "MEMORY_AGENT_BENCH_SCENARIO_SET=live" in makefile
     assert "MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS" in makefile
     assert "MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS" in makefile
     assert "MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR" in makefile
+    assert "$(MAKE) memo-stack-full-provider-canary" in makefile
+    assert "$(MAKE) memo-stack-prod-load-canary" in makefile
+    assert "$(MAKE) memo-stack-agent-live-session-bench" in makefile
     assert "memo-stack-agent-behavior-bench" not in re.search(
         r"memo-stack-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
     assert "memo-stack-agent-realistic-bench" not in re.search(
+        r"memo-stack-test-quality: (?P<deps>.+)",
+        makefile,
+    ).group("deps")
+    assert "memo-stack-agent-live-session-bench" not in re.search(
+        r"memo-stack-test-quality: (?P<deps>.+)",
+        makefile,
+    ).group("deps")
+    assert "memo-stack-real-memory-confidence" not in re.search(
         r"memo-stack-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
@@ -258,6 +275,7 @@ def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> No
         "memo-stack-clean-full-mcp-smoke",
         "memo-stack-agent-behavior-bench",
         "memo-stack-agent-realistic-bench",
+        "memo-stack-agent-live-session-bench",
     ):
         recipe = _make_target_recipe(makefile, target)
         python_lines = [line for line in recipe if "$(PYTHON) scripts/clean_full_smoke.py" in line]
@@ -651,6 +669,26 @@ def test_clean_full_smoke_failure_diagnostics_are_safe_allowlists() -> None:
     }
 
 
+def test_clean_full_smoke_summarizes_mcp_exception_groups_safely() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+    env = {"MEMORY_MCP_AUTH_TOKEN": "unit-token-value-12345678"}
+    group = ExceptionGroup(
+        "unhandled errors in a TaskGroup",
+        [
+            RuntimeError("Bearer unit-token-value-12345678"),
+            RuntimeError("Failed to read from defunct connection"),
+        ],
+    )
+
+    summary = module._exception_summary(group, env=env)
+
+    assert module._mcp_session_retryable(group) is True
+    assert "ExceptionGroup(2)" in summary
+    assert "defunct connection" in summary
+    assert "unit-token-value-12345678" not in summary
+    assert "<redacted>" in summary
+
+
 def test_clean_full_smoke_mcp_env_does_not_inherit_provider_secrets(monkeypatch) -> None:
     module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-unit-openai-secret")
@@ -760,6 +798,45 @@ def test_clean_full_smoke_missing_key_message_does_not_name_sensitive_envs(monke
     assert "MEMORY_OPENAI_API_KEY" not in message
 
 
+def test_clean_full_smoke_openai_preflight_reports_safe_invalid_key(monkeypatch) -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    class FakeOpenAIAuthError(RuntimeError):
+        status_code = 401
+        code = "invalid_api_key"
+
+    class FakeEmbeddings:
+        async def create(self, **_kwargs: object) -> object:
+            raise FakeOpenAIAuthError("raw provider error must stay hidden")
+
+    class FakeAsyncOpenAI:
+        def __init__(self, *, api_key: str) -> None:
+            self.api_key = api_key
+            self.embeddings = FakeEmbeddings()
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI))
+    env = {
+        "MEMORY_OPENAI_API_KEY": "sk-test-secret",
+        "MEMORY_EMBEDDINGS_MODEL": "text-embedding-3-small",
+        "MEMORY_EMBEDDINGS_DIMENSIONS": "1536",
+    }
+
+    try:
+        asyncio.run(module._run_openai_provider_preflight(env))
+    except module.CleanSmokeFailure as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected OpenAI preflight to fail")
+
+    assert message == "OpenAI provider preflight failed: openai.invalid_api_key"
+    assert "sk-test-secret" not in message
+    assert "raw provider error" not in message
+
+
 def test_clean_full_smoke_prod_load_settings_are_bounded(monkeypatch) -> None:
     module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
     monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_PROFILES", "4")
@@ -810,6 +887,8 @@ def test_real_stack_mcp_canary_docs_are_env_based() -> None:
 
     assert "memo-stack-clean-full-mcp-smoke" in docs
     assert "memo-stack-prod-load-canary" in docs
+    assert "memo-stack-agent-live-session-bench" in docs
+    assert "memo-stack-real-memory-confidence" in docs
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=true" in docs
     assert "--auth-token" not in docs
     assert "local-token" not in docs

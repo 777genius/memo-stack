@@ -215,19 +215,30 @@ def test_execute_tool_call_flags_sensitive_raw_output_without_exposing_it() -> N
 def test_scenario_sets_include_realistic_adversarial_cases() -> None:
     core = scenarios_for_set("core")
     realistic = scenarios_for_set("realistic")
+    live = scenarios_for_set("live")
     combined = scenarios_for_set("all")
 
     realistic_ids = {scenario.id for scenario in realistic}
+    live_ids = {scenario.id for scenario in live}
 
     assert len(core) >= 20
     assert len(realistic) >= 10
-    assert len(combined) == len(core) + len(realistic)
+    assert len(live) >= 6
+    assert len(combined) == len(core) + len(realistic) + len(live)
     assert {
         "real_secret_in_long_notes",
         "real_thread_neighbor_isolation",
         "real_ambiguous_forget_multiple_matches",
         "real_secret_search_trap",
     }.issubset(realistic_ids)
+    assert {
+        "live_long_transcript_rollup",
+        "live_update_delete_chain",
+        "live_review_gated_uncertain_transcript",
+        "live_transcript_secret_injection_trap",
+        "live_long_tail_recall_after_document",
+    }.issubset(live_ids)
+    assert all("live_session" in scenario.tags for scenario in live)
 
 
 def test_confirmed_update_scenarios_require_direct_update_and_stale_hidden() -> None:
@@ -248,6 +259,50 @@ def test_confirmed_update_scenarios_require_direct_update_and_stale_hidden() -> 
         ]
         assert stale_checks
         assert all(check.get("optional") is not True for check in stale_checks)
+
+
+def test_live_session_and_adversarial_metrics_are_tag_based() -> None:
+    passed = ScenarioRunResult(
+        scenario_id="live_pass",
+        category="answer",
+        critical=True,
+        final_answer="Answered from evidence.",
+        tool_calls=[
+            ToolTrace(
+                name="memory_search",
+                arguments={"query": "live memory"},
+                is_error=False,
+                output='{"ok":true}',
+            )
+        ],
+        tags=("live_session", "adversarial"),
+    )
+    failed = ScenarioRunResult(
+        scenario_id="live_fail",
+        category="safety",
+        critical=True,
+        final_answer="Unsafe answer.",
+        tool_calls=[],
+        tags=("live_session", "adversarial"),
+        failures=[
+            {
+                "code": "agent_bench.redaction_sensitive_trace",
+                "message": "unsafe",
+                "severity": "safety",
+            }
+        ],
+    )
+
+    metrics = _compute_metrics([passed, failed])
+    gates = _compute_gates([passed, failed], metrics)
+
+    assert metrics["live_session_case_count"] == 2
+    assert metrics["live_session_pass_rate"] == 0.5
+    assert metrics["adversarial_case_count"] == 2
+    assert metrics["adversarial_pass_rate"] == 0.5
+    assert gates["live_session_pass_rate_min_0_80"] is False
+    assert gates["adversarial_pass_rate_min_0_90"] is False
+    assert passed.to_report(env={})["tags"] == ["live_session", "adversarial"]
 
 
 def test_tool_loop_executes_multiple_function_calls_and_stops() -> None:
@@ -1639,6 +1694,41 @@ def test_after_mutating_tool_callback_runs_once() -> None:
         calls += 1
 
     asyncio.run(_call_after_mutating_tool(callback))
+
+    assert calls == 1
+
+
+def test_after_mutating_tool_retries_transient_worker_connection_close() -> None:
+    calls = 0
+
+    async def callback() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError(
+                "sqlalchemy.exc.DBAPIError: asyncpg.exceptions.ConnectionDoesNotExistError: "
+                "connection was closed in the middle of operation"
+            )
+
+    asyncio.run(_call_after_mutating_tool(callback, attempts=3))
+
+    assert calls == 2
+
+
+def test_after_mutating_tool_does_not_retry_non_transient_worker_failure() -> None:
+    calls = 0
+
+    async def callback() -> None:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("worker failed with validation error")
+
+    try:
+        asyncio.run(_call_after_mutating_tool(callback, attempts=3))
+    except RuntimeError as exc:
+        assert "validation error" in str(exc)
+    else:
+        raise AssertionError("expected non-transient worker failure")
 
     assert calls == 1
 

@@ -13,6 +13,7 @@ Secrets are read from the process environment only. Nothing is written to .env.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import re
@@ -27,6 +28,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 import httpx
+from memo_stack_adapters.provider_errors import classify_provider_exception
 from neo4j import GraphDatabase
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -133,6 +135,8 @@ def main() -> int:
         if run_prod_load and skip_mcp:
             raise CleanSmokeFailure("Prod load canary requires MCP checks")
         server_env = _server_env(ports=ports, token=token, run_id=run_id)
+        if _bool(os.getenv("MEMORY_CLEAN_SMOKE_OPENAI_PREFLIGHT", "true")):
+            asyncio.run(_run_openai_provider_preflight(server_env))
         _compose(project_name, compose_env, "down", "-v", "--remove-orphans", check=False)
         _compose(
             project_name,
@@ -323,6 +327,34 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
         }
     )
     return env
+
+
+async def _run_openai_provider_preflight(env: Mapping[str, str]) -> None:
+    try:
+        from openai import AsyncOpenAI
+    except Exception as exc:
+        raise CleanSmokeFailure("OpenAI provider preflight failed: openai.sdk_missing") from exc
+
+    client = AsyncOpenAI(api_key=env["MEMORY_OPENAI_API_KEY"])
+    try:
+        await client.embeddings.create(
+            model=env["MEMORY_EMBEDDINGS_MODEL"],
+            input=["memo stack provider preflight"],
+            dimensions=int(env["MEMORY_EMBEDDINGS_DIMENSIONS"]),
+        )
+    except Exception as exc:
+        code, _retryable = classify_provider_exception(
+            exc,
+            prefix="openai",
+            default_code="openai.provider_error",
+        )
+        raise CleanSmokeFailure(f"OpenAI provider preflight failed: {code}") from exc
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            result = close()
+            if inspect.isawaitable(result):
+                await result
 
 
 def _run_lifecycle(
@@ -718,8 +750,7 @@ async def _run_prod_load_canary(
     restart_providers: Callable[[], None] | None = None,
     stop_providers: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
+    from mcp import StdioServerParameters
 
     headers = {"Authorization": f"Bearer {token}"}
     settings = _prod_load_settings()
@@ -1063,7 +1094,7 @@ async def _run_prod_load_canary(
                     "profile_external_ref": alpha,
                     "title": f"{marker} provider outage document",
                     "text": outage_doc_text,
-                    "source_type": "prod_load",
+                    "source_type": "manual",
                     "source_external_id": f"{marker}:provider-outage-doc",
                     "classification": "internal",
                 },
@@ -1112,8 +1143,8 @@ async def _run_prod_load_canary(
         profile_ref=alpha,
     )
     params = StdioServerParameters(command=PYTHON, args=["-m", "memo_stack_mcp"], env=mcp_env)
-    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
-        await _await_mcp(session.initialize(), "prod_load.memo_stack_mcp.initialize", env=mcp_env)
+
+    async def read_probe_phase(session: Any) -> dict[str, dict[str, Any]]:
         status_result = await _call_mcp_result(session, "memory_status", {}, env=mcp_env)
         status = _structured_mcp(status_result, "prod_load.memory_status", env=mcp_env)
         mcp_fact = _structured_mcp(
@@ -1204,6 +1235,32 @@ async def _run_prod_load_canary(
                 "prod_load.memory_search provider_outage_doc",
                 env=mcp_env,
             )
+        return {
+            "status": status,
+            "mcp_fact": mcp_fact,
+            "mcp_doc": mcp_doc,
+            "mcp_thread_current": mcp_thread_current,
+            "mcp_large_doc": mcp_large_doc,
+            "mcp_outage_fact": mcp_outage_fact,
+            "mcp_outage_doc": mcp_outage_doc,
+        }
+
+    mcp_read_phase = await _run_mcp_session(
+        params,
+        operation="prod_load.read_probes",
+        env=mcp_env,
+        attempts=2,
+        callback=read_probe_phase,
+    )
+    status = mcp_read_phase["status"]
+    mcp_fact = mcp_read_phase["mcp_fact"]
+    mcp_doc = mcp_read_phase["mcp_doc"]
+    mcp_thread_current = mcp_read_phase["mcp_thread_current"]
+    mcp_large_doc = mcp_read_phase["mcp_large_doc"]
+    mcp_outage_fact = mcp_read_phase["mcp_outage_fact"]
+    mcp_outage_doc = mcp_read_phase["mcp_outage_doc"]
+
+    async def mutating_phase(session: Any) -> dict[str, Any]:
         updated = _structured_mcp(
             await _call_mcp_result(
                 session,
@@ -1213,7 +1270,7 @@ async def _run_prod_load_canary(
                     "expected_version": target_fact["version"],
                     "text": new_text,
                     "reason": "prod load canary update",
-                    "source_type": "prod_load",
+                    "source_type": "manual",
                     "source_id": f"{marker}:update",
                 },
                 env=mcp_env,
@@ -1271,6 +1328,28 @@ async def _run_prod_load_canary(
             "prod_load.memory_search deleted",
             env=mcp_env,
         )
+        return {
+            "updated": updated,
+            "update_drain": update_drain,
+            "mcp_updated": mcp_updated,
+            "forgotten": forgotten,
+            "delete_drain": delete_drain,
+            "mcp_deleted": mcp_deleted,
+        }
+
+    mcp_mutating_phase = await _run_mcp_session(
+        params,
+        operation="prod_load.mutating_lifecycle",
+        env=mcp_env,
+        attempts=1,
+        callback=mutating_phase,
+    )
+    updated = mcp_mutating_phase["updated"]
+    update_drain = mcp_mutating_phase["update_drain"]
+    mcp_updated = mcp_mutating_phase["mcp_updated"]
+    forgotten = mcp_mutating_phase["forgotten"]
+    delete_drain = mcp_mutating_phase["delete_drain"]
+    mcp_deleted = mcp_mutating_phase["mcp_deleted"]
 
     deleted_document = _request(
         base_url,
@@ -2072,6 +2151,73 @@ async def _call_mcp_result(
     if result.isError:
         raise CleanSmokeFailure(f"{name} returned MCP error: {_redact_text(str(result), env=env)}")
     return result
+
+
+async def _run_mcp_session(
+    params: Any,
+    *,
+    operation: str,
+    env: Mapping[str, str],
+    callback: Callable[[Any], Any],
+    attempts: int,
+) -> Any:
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client
+
+    last_exception: Exception | None = None
+    for attempt in range(1, max(attempts, 1) + 1):
+        try:
+            async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+                await _await_mcp(session.initialize(), f"{operation}.initialize", env=env)
+                return await callback(session)
+        except Exception as exc:
+            last_exception = exc
+            if attempt < attempts and _mcp_session_retryable(exc):
+                time.sleep(min(2.0, 0.5 * attempt))
+                continue
+            raise CleanSmokeFailure(
+                f"{operation} MCP session failed: {_exception_summary(exc, env=env)}"
+            ) from exc
+    raise CleanSmokeFailure(
+        f"{operation} MCP session failed: "
+        f"{_exception_summary(last_exception, env=env) if last_exception else 'unknown error'}"
+    )
+
+
+def _mcp_session_retryable(exc: Exception) -> bool:
+    if isinstance(exc, BaseExceptionGroup):
+        return True
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "broken pipe",
+            "closedresource",
+            "connection reset",
+            "defunct connection",
+            "no data",
+            "taskgroup",
+        )
+    )
+
+
+def _exception_summary(exc: BaseException | None, *, env: Mapping[str, str]) -> str:
+    if exc is None:
+        return "unknown error"
+    if isinstance(exc, BaseExceptionGroup):
+        children = [
+            _exception_summary(child, env=env)
+            for child in exc.exceptions[:3]
+        ]
+        suffix = "" if len(exc.exceptions) <= 3 else f"; +{len(exc.exceptions) - 3} more"
+        return _redact_text(
+            f"{exc.__class__.__name__}({len(exc.exceptions)}): "
+            + "; ".join(children)
+            + suffix,
+            env=env,
+        )
+    message = str(exc) or exc.__class__.__name__
+    return _redact_text(f"{exc.__class__.__name__}: {message}", env=env)
 
 
 async def _await_mcp(awaitable: Any, operation: str, *, env: Mapping[str, str]) -> Any:

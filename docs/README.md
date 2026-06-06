@@ -264,7 +264,27 @@ MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-a
 The realistic suite covers noisy transcripts, semantic duplicates, similar
 project scopes, neighboring thread scopes, ambiguous deletes, long notes with
 secrets, prompt-injected retrieved memory and immediate recall after writes.
-Both paid agent benchmark targets default
+
+For long live-agent sessions and adversarial transcript tails:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-live-session-bench
+```
+
+The live suite covers long transcript rollups, update plus delete chains,
+review-gated uncertain claims, cross-profile meeting noise, credential traps and
+long-tail transcript recall. The report includes `live_session_pass_rate` and
+`adversarial_pass_rate`.
+
+For the broad paid/manual "real memory in battle" gate:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-real-memory-confidence
+```
+
+That gate runs the full-provider MCP canary, prod-load canary and live-session
+agent benchmark before `git diff --check` and secret scan. Paid agent benchmark
+targets default
 `MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`, so provider projection worker
 failures after mutating MCP tools fail the benchmark instead of being treated as
 soft warnings.

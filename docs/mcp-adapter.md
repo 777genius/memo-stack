@@ -309,6 +309,31 @@ and immediate recall before provider projections fully catch up. It is intention
 paid/manual and should be used when you want a closer production-confidence signal
 than the core behavioral suite.
 
+Long live-session/adversarial agent-behavior benchmark:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-live-session-bench
+```
+
+This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=live`: long coding-agent session
+transcript rollups, update plus delete chains, review-gated uncertain claims,
+cross-profile meeting noise, credential/prompt-injection traps and long-tail
+transcript recall. The report adds `live_session_case_count`,
+`live_session_pass_rate`, `adversarial_case_count` and `adversarial_pass_rate`
+with hard gates for live-session and adversarial behavior.
+
+Full real-memory confidence gate:
+
+```bash
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-real-memory-confidence
+```
+
+This is the broad paid/manual gate for "real memory in battle": full-provider
+MCP lifecycle, production-like load/chaos/provider-outage canary, live-session
+agent benchmark, `git diff --check` and secret scan. It is intentionally not
+part of normal CI because it uses Docker providers and paid model/embedding
+calls.
+
 The paid agent benchmark defaults `MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`.
 That means a projection worker failure after a mutating MCP tool is a hard
 benchmark failure. Override it only when debugging agent behavior separately from
@@ -351,7 +376,8 @@ function tools, lets the model choose tools with `tool_choice=auto`, executes
 calls through real stdio `memo_stack_mcp`, returns `function_call_output` items, and
 deterministically evaluates the trace. The report includes `tool_choice_accuracy`,
 `search_before_write_rate`, `update_vs_duplicate_rate`, `document_routing_accuracy`,
-`answer_support_rate`, unsafe write counts and leak counts. It also includes
+`answer_support_rate`, `live_session_pass_rate`, `adversarial_pass_rate`, unsafe
+write counts and leak counts. It also includes
 `metric_failures` with scenario ids, tool names and reasons for non-perfect
 diagnostic metrics. Reports are redacted and do not include raw API keys, MCP
 tokens, bearer headers or secret-like user text.

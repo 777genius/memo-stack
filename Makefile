@@ -325,6 +325,21 @@ memo-stack-agent-realistic-bench:
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	$(PYTHON) scripts/clean_full_smoke.py
 
+.PHONY: memo-stack-agent-live-session-bench
+memo-stack-agent-live-session-bench:
+	@test -n "$${MEMORY_AGENT_BENCH_MODEL:-}" || (echo "Set MEMORY_AGENT_BENCH_MODEL before running live-session agent behavior benchmark."; exit 1)
+	@test -n "$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-}}}" || (echo "Set MEMORY_AGENT_BENCH_OPENAI_API_KEY, OPENAI_API_KEY or MEMORY_OPENAI_API_KEY before running live-session agent behavior benchmark."; exit 1)
+	export MEMORY_CLEAN_SMOKE_AGENT_BENCH=true; \
+	export MEMORY_CLEAN_SMOKE_SKIP_MCP=false; \
+	export MEMORY_AGENT_BENCH_SCENARIO_SET=live; \
+	export MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS="$${MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS:-420}"; \
+	export MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS="$${MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS:-360}"; \
+	export MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR="$${MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR:-true}"; \
+	export MEMORY_AGENT_BENCH_OPENAI_API_KEY="$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}}"; \
+	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	$(PYTHON) scripts/clean_full_smoke.py
+
 .PHONY: memo-stack-full-provider-canary
 memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke
 
@@ -359,6 +374,17 @@ memo-stack-prod-load-canary:
 	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY}}"; \
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}"; \
 	$(PYTHON) scripts/clean_full_smoke.py
+
+.PHONY: memo-stack-real-memory-confidence
+memo-stack-real-memory-confidence:
+	@set -e; \
+	cleanup() { $(MAKE) memo-stack-down >/dev/null || true; }; \
+	trap cleanup EXIT INT TERM; \
+	$(MAKE) memo-stack-full-provider-canary; \
+	$(MAKE) memo-stack-prod-load-canary; \
+	$(MAKE) memo-stack-agent-live-session-bench; \
+	git diff --check; \
+	$(MAKE) memo-stack-secret-scan
 
 .PHONY: memo-stack-down
 memo-stack-down:

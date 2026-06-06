@@ -297,8 +297,20 @@ def _adapter_required_action(name: str, degraded_reason: str | None) -> str | No
         "graphiti_unavailable": (
             "verify Graphiti dependencies, Neo4j credentials and container health"
         ),
+        "graph.invalid_api_key": (
+            "replace the Graphiti/OpenAI provider API key and rerun the canary"
+        ),
+        "graph.rate_limited": "wait for Graphiti/OpenAI provider quota reset",
+        "graph.invalid_request": "verify Graphiti LLM provider model and request configuration",
+        "graph.provider_unavailable": "retry after Graphiti provider/network recovery",
         "embeddings.disabled": "enable and configure an embedding provider before vector retrieval",
         "embeddings.missing_api_key": "configure the embedding provider API key",
+        "embeddings.invalid_api_key": "replace the embedding provider API key and rerun the canary",
+        "embeddings.rate_limited": (
+            "wait for provider quota reset or switch embedding provider credentials"
+        ),
+        "embeddings.invalid_request": "verify embedding model name and configured dimensions",
+        "embeddings.provider_unavailable": "retry after provider/network recovery",
     }
     return actions.get(degraded_reason, f"inspect {name} adapter configuration and provider logs")
 

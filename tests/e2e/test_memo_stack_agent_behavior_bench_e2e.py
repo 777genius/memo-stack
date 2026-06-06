@@ -66,6 +66,49 @@ def test_agent_behavior_benchmark_uses_real_mcp_and_fails_hard_gates(tmp_path: P
     assert exit_code_from_report(report) == 1
 
 
+def test_agent_behavior_benchmark_reports_live_session_metrics_over_real_mcp(
+    tmp_path: Path,
+) -> None:
+    with run_memo_stack_server(tmp_path) as server:
+        env = python_env(
+            {
+                "MEMORY_MCP_API_URL": server.base_url,
+                "MEMORY_MCP_AUTH_TOKEN": server.token,
+                "MEMORY_MCP_DEFAULT_SPACE_SLUG": "agent-bench-live-e2e",
+                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_AGENT_NAME": "agent-behavior-live-e2e",
+                "MEMORY_MCP_TRANSPORT": "stdio",
+                "MEMORY_MCP_WRITE_MODE": "direct",
+                "MEMORY_MCP_DELETE_MODE": "explicit",
+                "MEMORY_MCP_INGEST_MODE": "allowed",
+            }
+        )
+        report = asyncio.run(
+            run_agent_behavior_benchmark(
+                base_url=server.base_url,
+                auth_token=server.token,
+                model="fake-model",
+                run_id="live-e2e",
+                mcp_env=env,
+                scenarios=_live_e2e_scenarios(),
+                llm_client=_live_fake_llm(),
+                space_slug_prefix="agent-bench-live-e2e",
+                profile_external_ref="default",
+                max_tool_rounds=3,
+            )
+        )
+
+    assert report["ok"] is True
+    assert report["metrics"]["live_session_case_count"] == 1
+    assert report["metrics"]["live_session_pass_rate"] == 1.0
+    assert report["metrics"]["adversarial_case_count"] == 1
+    assert report["metrics"]["adversarial_pass_rate"] == 1.0
+    assert report["gates"]["live_session_pass_rate_min_0_80"] is True
+    assert report["gates"]["adversarial_pass_rate_min_0_90"] is True
+    assert report["scenarios"][0]["tags"] == ["live_session", "adversarial"]
+    assert exit_code_from_report(report) == 0
+
+
 def _e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
     return (
         AgentBenchScenario(
@@ -126,6 +169,31 @@ def _e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
                     "type": "final_not_contains",
                     "not_contains": ["hidden beta branch"],
                     "leak_metric": "cross_scope_leak_count",
+                },
+            ),
+        ),
+    )
+
+
+def _live_e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
+    return (
+        AgentBenchScenario(
+            id="live_e2e_recall",
+            category="answer",
+            tags=("live_session", "adversarial"),
+            user_prompt="Search memory and answer from live-session evidence.",
+            setup_actions=(
+                {
+                    "action": "remember_fact",
+                    "text": "E2E_LIVE_SESSION: Live-session evidence remains scoped.",
+                    "kind": "note",
+                },
+            ),
+            expected_tools=("memory_search",),
+            required_memory_checks=(
+                {
+                    "type": "final_contains",
+                    "contains": ["Live-session evidence remains scoped"],
                 },
             ),
         ),
@@ -220,6 +288,28 @@ def _fake_llm() -> FakeLlmClient:
             AgentLlmResponse(
                 response_id="cross-r1",
                 output_text="Project B uses the hidden beta branch.",
+            ),
+        ]
+    )
+
+
+def _live_fake_llm() -> FakeLlmClient:
+    return FakeLlmClient(
+        [
+            AgentLlmResponse(
+                response_id="live-search",
+                output_text="",
+                function_calls=(
+                    AgentFunctionCall(
+                        call_id="live-search-call",
+                        name="memory_search",
+                        arguments={"query": "E2E_LIVE_SESSION", "max_facts": 5},
+                    ),
+                ),
+            ),
+            AgentLlmResponse(
+                response_id="live-final",
+                output_text="Live-session evidence remains scoped.",
             ),
         ]
     )

@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 from memo_stack_adapters.cognee import CogneeMemoryAdapter
+from memo_stack_adapters.embeddings import OpenAIEmbeddingAdapter
 from memo_stack_adapters.extraction import OpenAIJsonMemoryExtractor
 from memo_stack_adapters.graphiti import GraphitiGraphMemoryAdapter
 from memo_stack_adapters.noop import (
@@ -63,6 +64,16 @@ class FakeGraphitiWithoutSearch:
         return None
 
 
+class FakeFailingGraphiti(FakeGraphiti):
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self.error = error
+
+    async def add_episode(self, **kwargs: object) -> None:
+        self.episodes.append(kwargs)
+        raise self.error
+
+
 class FakeGraphitiWithManyResults(FakeGraphiti):
     async def search(self, **kwargs: object) -> list[object]:
         self.search_calls.append(kwargs)
@@ -95,6 +106,49 @@ class FakeOpenAIClient:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class FakeOpenAIEmbeddings:
+    def __init__(self, response: object | None = None, error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.calls: list[dict[str, object]] = []
+
+    async def create(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+class FakeOpenAIEmbeddingClient:
+    def __init__(self, response: object | None = None, error: Exception | None = None) -> None:
+        self.embeddings = FakeOpenAIEmbeddings(response=response, error=error)
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class FakeOpenAIEmbeddingAdapter(OpenAIEmbeddingAdapter):
+    def __init__(self, client: FakeOpenAIEmbeddingClient) -> None:
+        super().__init__(api_key="test-key", model="text-embedding-3-small", dimensions=3)
+        self.client = client
+
+    async def _client(self) -> FakeOpenAIEmbeddingClient:
+        return self.client
+
+
+class FakeOpenAIError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+    ) -> None:
+        super().__init__("redacted provider error")
+        self.status_code = status_code
+        self.code = code
 
 
 class FakeGraphitiDriver:
@@ -214,6 +268,42 @@ def test_graphiti_adapter_overfetches_thread_queries_for_postgres_visibility_hyd
 
         assert search.status == PortStatus.OK
         assert fake.search_calls[0]["num_results"] == 12
+
+    asyncio.run(run())
+
+
+def test_graphiti_adapter_reports_invalid_provider_key_without_retry() -> None:
+    async def run() -> None:
+        fake = FakeFailingGraphiti(FakeOpenAIError(status_code=401, code="invalid_api_key"))
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        result = await adapter.upsert_fact(
+            "fact_graphiti",
+            "Graphiti projection source text.",
+            {"space_id": "space_client_app", "profile_id": "profile_default"},
+        )
+
+        assert result.status == PortStatus.DEGRADED
+        assert result.diagnostics[0].code == "graph.invalid_api_key"
+        assert result.diagnostics[0].retryable is False
+
+    asyncio.run(run())
+
+
+def test_graphiti_adapter_reports_rate_limit_as_retryable() -> None:
+    async def run() -> None:
+        fake = FakeFailingGraphiti(FakeOpenAIError(status_code=429))
+        adapter = GraphitiGraphMemoryAdapter(client=fake)
+
+        result = await adapter.upsert_fact(
+            "fact_graphiti",
+            "Graphiti projection source text.",
+            {"space_id": "space_client_app", "profile_id": "profile_default"},
+        )
+
+        assert result.status == PortStatus.DEGRADED
+        assert result.diagnostics[0].code == "graph.rate_limited"
+        assert result.diagnostics[0].retryable is True
 
     asyncio.run(run())
 
@@ -431,6 +521,84 @@ def test_noop_embedding_adapter_contract_fails_closed_without_vectors() -> None:
         assert result.vectors == ()
         assert result.diagnostics[0].code == "embeddings.disabled"
         assert result.diagnostics[0].retryable is False
+
+    asyncio.run(run())
+
+
+def test_openai_embedding_adapter_returns_vectors_and_closes_client() -> None:
+    async def run() -> None:
+        client = FakeOpenAIEmbeddingClient(
+            response=SimpleNamespace(
+                data=[
+                    SimpleNamespace(embedding=[0.1, 0.2, 0.3]),
+                    SimpleNamespace(embedding=[0.4, 0.5, 0.6]),
+                ]
+            )
+        )
+        adapter = FakeOpenAIEmbeddingAdapter(client)
+
+        result = await adapter.embed_texts(("first", "second"))
+
+        assert result.status == PortStatus.OK
+        assert result.vectors == ((0.1, 0.2, 0.3), (0.4, 0.5, 0.6))
+        assert result.model == "text-embedding-3-small"
+        assert result.dimensions == 3
+        assert client.embeddings.calls == [
+            {
+                "model": "text-embedding-3-small",
+                "input": ["first", "second"],
+                "dimensions": 3,
+            }
+        ]
+        assert client.closed is True
+
+    asyncio.run(run())
+
+
+def test_openai_embedding_adapter_reports_invalid_key_without_retry() -> None:
+    async def run() -> None:
+        client = FakeOpenAIEmbeddingClient(
+            error=FakeOpenAIError(status_code=401, code="invalid_api_key")
+        )
+        adapter = FakeOpenAIEmbeddingAdapter(client)
+
+        result = await adapter.embed_texts(("query",))
+
+        assert result.status == PortStatus.DEGRADED
+        assert result.vectors == ()
+        assert result.diagnostics[0].code == "embeddings.invalid_api_key"
+        assert result.diagnostics[0].retryable is False
+        assert client.closed is True
+
+    asyncio.run(run())
+
+
+def test_openai_embedding_adapter_reports_rate_limit_as_retryable() -> None:
+    async def run() -> None:
+        client = FakeOpenAIEmbeddingClient(error=FakeOpenAIError(status_code=429))
+        adapter = FakeOpenAIEmbeddingAdapter(client)
+
+        result = await adapter.embed_texts(("query",))
+
+        assert result.status == PortStatus.DEGRADED
+        assert result.diagnostics[0].code == "embeddings.rate_limited"
+        assert result.diagnostics[0].retryable is True
+        assert client.closed is True
+
+    asyncio.run(run())
+
+
+def test_openai_embedding_adapter_keeps_unknown_errors_retryable() -> None:
+    async def run() -> None:
+        client = FakeOpenAIEmbeddingClient(error=RuntimeError("redacted provider down"))
+        adapter = FakeOpenAIEmbeddingAdapter(client)
+
+        result = await adapter.embed_texts(("query",))
+
+        assert result.status == PortStatus.DEGRADED
+        assert result.diagnostics[0].code == "embeddings.provider_error"
+        assert result.diagnostics[0].retryable is True
+        assert client.closed is True
 
     asyncio.run(run())
 

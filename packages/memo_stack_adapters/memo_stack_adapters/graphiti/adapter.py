@@ -34,6 +34,8 @@ from memo_stack_core.ports.capabilities import (
     ProjectionWriteResult,
 )
 
+from memo_stack_adapters.provider_errors import classify_provider_exception
+
 
 class GraphitiGraphMemoryAdapter:
     def __init__(
@@ -175,8 +177,13 @@ class GraphitiGraphMemoryAdapter:
                 kwargs["source"] = episode_type
             await add_episode(**kwargs)
             return VectorWriteResult.ok(1)
-        except Exception:
-            return VectorWriteResult.degraded("graph.upsert_failed", retryable=True)
+        except Exception as exc:
+            code, retryable = classify_provider_exception(
+                exc,
+                prefix="graph",
+                default_code="graph.upsert_failed",
+            )
+            return VectorWriteResult.degraded(code, retryable=retryable)
 
     async def upsert_fact_projection(self, command: FactProjectionWrite) -> ProjectionWriteResult:
         result = await self.upsert_fact(
@@ -200,8 +207,13 @@ class GraphitiGraphMemoryAdapter:
                 return VectorWriteResult.degraded("graph.missing_delete_episode", retryable=False)
             await _call_delete_episode(client, fact_id)
             return VectorWriteResult.ok(1)
-        except Exception:
-            return VectorWriteResult.degraded("graph.delete_failed", retryable=True)
+        except Exception as exc:
+            code, retryable = classify_provider_exception(
+                exc,
+                prefix="graph",
+                default_code="graph.delete_failed",
+            )
+            return VectorWriteResult.degraded(code, retryable=retryable)
 
     async def forget_projection(self, command: ProjectionForgetRequest) -> ProjectionForgetResult:
         forgotten: list[str] = []
@@ -262,8 +274,13 @@ class GraphitiGraphMemoryAdapter:
                             )
                         )
             return GraphSearchResult.ok(candidates[:effective_limit])
-        except Exception:
-            return GraphSearchResult.degraded("graph.search_failed", retryable=True)
+        except Exception as exc:
+            code, retryable = classify_provider_exception(
+                exc,
+                prefix="graph",
+                default_code="graph.search_failed",
+            )
+            return GraphSearchResult.degraded(code, retryable=retryable)
 
     async def search_facts(self, query: CapabilityRecallQuery) -> CapabilityRecallResult:
         result = await self.search(

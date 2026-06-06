@@ -67,6 +67,34 @@ def test_doctor_reports_provider_version_and_required_action() -> None:
     assert graphiti_disabled["required_action"] is None
 
 
+def test_doctor_reports_openai_embedding_key_action() -> None:
+    embeddings = _adapter_check(
+        "embeddings",
+        enabled=True,
+        healthy=False,
+        degraded_reason="embeddings.invalid_api_key",
+    )
+
+    assert embeddings["status"] == "degraded"
+    assert embeddings["required_action"] == (
+        "replace the embedding provider API key and rerun the canary"
+    )
+
+
+def test_doctor_reports_graphiti_provider_key_action() -> None:
+    graphiti = _adapter_check(
+        "graphiti",
+        enabled=True,
+        healthy=False,
+        degraded_reason="graph.invalid_api_key",
+    )
+
+    assert graphiti["status"] == "degraded"
+    assert graphiti["required_action"] == (
+        "replace the Graphiti/OpenAI provider API key and rerun the canary"
+    )
+
+
 def test_invariant_checker_is_scoped_and_omits_raw_text(
     tmp_path: Path,
     monkeypatch,

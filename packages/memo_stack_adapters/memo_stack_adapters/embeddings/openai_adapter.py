@@ -6,6 +6,8 @@ import inspect
 
 from memo_stack_core.ports.adapters import AdapterCapabilities, EmbeddingResult, PortStatus
 
+from memo_stack_adapters.provider_errors import classify_provider_exception
+
 
 class OpenAIEmbeddingAdapter:
     def __init__(
@@ -61,8 +63,13 @@ class OpenAIEmbeddingAdapter:
                 model=self._model,
                 dimensions=self._dimensions,
             )
-        except Exception:
-            return EmbeddingResult.degraded("embeddings.provider_error", retryable=True)
+        except Exception as exc:
+            code, retryable = classify_provider_exception(
+                exc,
+                prefix="embeddings",
+                default_code="embeddings.provider_error",
+            )
+            return EmbeddingResult.degraded(code, retryable=retryable)
         finally:
             await _close_client(client)
 
