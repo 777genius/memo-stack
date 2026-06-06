@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).parents[2]
-SCRIPT_PATH = ROOT / "scripts" / "official_public_benchmark_canary.py"
+from memo_stack_server import official_public_benchmark as canary
 
-spec = importlib.util.spec_from_file_location("official_public_benchmark_canary", SCRIPT_PATH)
-assert spec is not None
-canary = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-sys.modules[spec.name] = canary
-spec.loader.exec_module(canary)
+ROOT = Path(__file__).parents[2]
 
 
 def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
@@ -135,3 +127,13 @@ def test_official_public_benchmark_canary_can_run_single_dataset(tmp_path: Path)
     assert result["metrics"]["benchmark_count"] == 1
     assert result["metrics"]["locomo_case_count"] == 1
     assert result["source_urls"] == {"locomo": canary.LOCOMO_URL}
+
+
+def test_official_public_benchmark_script_is_thin_wrapper() -> None:
+    script = (ROOT / "scripts" / "official_public_benchmark_canary.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "from memo_stack_server.official_public_benchmark import main" in script
+    assert "run_public_memory_benchmark" not in script
+    assert "urllib.request" not in script

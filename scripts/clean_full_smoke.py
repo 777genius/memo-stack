@@ -29,6 +29,7 @@ from typing import Any, TextIO
 
 import httpx
 from memo_stack_adapters.provider_errors import classify_provider_exception
+from memo_stack_server.official_public_benchmark import run_official_public_benchmark_canary
 from neo4j import GraphDatabase
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -130,6 +131,7 @@ def main() -> int:
     skip_mcp = _bool(os.getenv("MEMORY_CLEAN_SMOKE_SKIP_MCP", "false"))
     run_agent_bench = _bool(os.getenv("MEMORY_CLEAN_SMOKE_AGENT_BENCH", "false"))
     run_prod_load = _bool(os.getenv("MEMORY_CLEAN_SMOKE_PROD_LOAD", "false"))
+    run_public_benchmark = _bool(os.getenv("MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK", "false"))
     server: ServerHandle | None = None
 
     try:
@@ -228,6 +230,27 @@ def main() -> int:
                         env=server_env,
                     )
                 )
+        if run_public_benchmark:
+            public_benchmark_result = _run_public_benchmark_canary(
+                base_url=base_url,
+                token=token,
+            )
+            result["public_benchmark"] = public_benchmark_result
+            result["checks"]["public_benchmark_ok"] = (
+                public_benchmark_result.get("ok") is True
+            )
+            if public_benchmark_result.get("ok") is not True:
+                raise CleanSmokeFailure(
+                    "Official public benchmark canary failed: "
+                    + _redact_text(
+                        json.dumps(
+                            _public_benchmark_failure_summary(public_benchmark_result),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        env=server_env,
+                    )
+                )
         result["suite"] = FULL_PROVIDER_CANARY_SUITE
         result["project"] = project_name
         result["elapsed_seconds"] = round(time.perf_counter() - started, 3)
@@ -251,6 +274,65 @@ def main() -> int:
             _stop_server(server)
         if not keep_stack:
             _compose(project_name, compose_env, "down", "-v", "--remove-orphans", check=False)
+
+
+def _run_public_benchmark_canary(*, base_url: str, token: str) -> dict[str, object]:
+    benchmark = os.getenv("MEMORY_PUBLIC_BENCHMARK_NAME", "locomo")
+    report_out = (
+        Path(value)
+        if (value := os.getenv("MEMORY_PUBLIC_BENCHMARK_REPORT_OUT", "").strip())
+        else None
+    )
+    return run_official_public_benchmark_canary(
+        benchmark=benchmark,
+        max_cases=_positive_int_env("MEMORY_PUBLIC_BENCHMARK_MAX_CASES", 1),
+        min_accuracy=_float_env("MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY", 0.5),
+        api_url=base_url,
+        auth_token=token,
+        download_timeout_seconds=_float_env(
+            "MEMORY_PUBLIC_BENCHMARK_DOWNLOAD_TIMEOUT_SECONDS",
+            180.0,
+        ),
+        report_out=report_out,
+    )
+
+
+def _public_benchmark_failure_summary(result: Mapping[str, object]) -> dict[str, object]:
+    failures = result.get("failures")
+    checks = result.get("checks")
+    metrics = result.get("metrics")
+    return {
+        "ok": result.get("ok"),
+        "checks": checks if isinstance(checks, Mapping) else {},
+        "metrics": metrics if isinstance(metrics, Mapping) else {},
+        "failures": failures[:5] if isinstance(failures, list) else [],
+    }
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise CleanSmokeFailure(f"{name} must be an integer") from exc
+    if value <= 0:
+        raise CleanSmokeFailure(f"{name} must be positive")
+    return value
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise CleanSmokeFailure(f"{name} must be numeric") from exc
+    if value < 0:
+        raise CleanSmokeFailure(f"{name} must be non-negative")
+    return value
 
 
 def _ports() -> dict[str, int]:

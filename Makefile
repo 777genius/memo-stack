@@ -133,7 +133,7 @@ memo-stack-prod-confidence-strict:
 	$(MAKE) memo-stack-plugin-test; \
 	$(MAKE) memo-stack-test-quality; \
 	$(MAKE) memo-stack-agent-install-doctor; \
-	$(MAKE) memo-stack-full-provider-canary; \
+	$(MAKE) memo-stack-full-provider-public-benchmark-canary; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) memo-stack-agent-live-smoke; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) memo-stack-agent-live-smoke-agents-strict; \
 	git diff --check; \
@@ -413,6 +413,18 @@ memo-stack-agent-transcript-corpus-audit:
 .PHONY: memo-stack-full-provider-canary
 memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke
 
+.PHONY: memo-stack-full-provider-public-benchmark-canary
+memo-stack-full-provider-public-benchmark-canary:
+	@test -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" || (echo "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running full-provider public benchmark canary."; exit 1)
+	export MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true; \
+	export MEMORY_CLEAN_SMOKE_SKIP_MCP=false; \
+	export MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-locomo}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-1}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.5}"; \
+	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY}}"; \
+	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}"; \
+	$(PYTHON) scripts/clean_full_smoke.py
+
 .PHONY: memo-stack-full-provider-canary-interactive
 memo-stack-full-provider-canary-interactive:
 	@if [ -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" ]; then \
@@ -450,7 +462,7 @@ memo-stack-real-memory-confidence:
 	@set -e; \
 	cleanup() { $(MAKE) memo-stack-down >/dev/null || true; }; \
 	trap cleanup EXIT INT TERM; \
-	$(MAKE) memo-stack-full-provider-canary; \
+	$(MAKE) memo-stack-full-provider-public-benchmark-canary; \
 	$(MAKE) memo-stack-prod-load-canary; \
 	$(MAKE) memo-stack-agent-live-session-bench; \
 	$(MAKE) memo-stack-agent-transcript-corpus-bench; \

@@ -147,7 +147,7 @@ def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     assert "$(MAKE) memo-stack-plugin-test" in recipe
     assert "$(MAKE) memo-stack-test-quality" in recipe
     assert "$(MAKE) memo-stack-agent-install-doctor" in recipe
-    assert "$(MAKE) memo-stack-full-provider-canary" in recipe
+    assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in recipe
     assert "$(MAKE) memo-stack-agent-live-smoke" in recipe
     assert "$(MAKE) memo-stack-agent-live-smoke-agents-strict" in recipe
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
@@ -163,9 +163,28 @@ def test_makefile_has_strict_full_prod_confidence_gate() -> None:
 
 def test_makefile_has_agent_install_and_full_canary_targets() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    clean_full_smoke = (ROOT / "scripts" / "clean_full_smoke.py").read_text(
+        encoding="utf-8"
+    )
 
     assert ".PHONY: memo-stack-full-provider-canary" in makefile
     assert "memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke" in makefile
+    assert ".PHONY: memo-stack-full-provider-public-benchmark-canary" in makefile
+    public_recipe = "\n".join(
+        _make_target_recipe(makefile, "memo-stack-full-provider-public-benchmark-canary")
+    )
+    assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in public_recipe
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-locomo}"'
+        in public_recipe
+    )
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-1}"'
+        in public_recipe
+    )
+    assert "$(PYTHON) scripts/clean_full_smoke.py" in public_recipe
+    assert "run_official_public_benchmark_canary" in clean_full_smoke
+    assert "public_benchmark_ok" in clean_full_smoke
     assert ".PHONY: memo-stack-full-provider-canary-interactive" in makefile
     interactive_recipe = "\n".join(
         _make_target_recipe(makefile, "memo-stack-full-provider-canary-interactive")
@@ -267,7 +286,7 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_OUTPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT" in makefile
-    assert "$(MAKE) memo-stack-full-provider-canary" in makefile
+    assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in makefile
     assert "$(MAKE) memo-stack-prod-load-canary" in makefile
     assert "$(MAKE) memo-stack-agent-live-session-bench" in makefile
     assert "$(MAKE) memo-stack-agent-transcript-corpus-bench" in makefile
@@ -325,6 +344,13 @@ def test_makefile_has_official_public_benchmark_canary() -> None:
     recipe = "\n".join(
         _make_target_recipe(makefile, "memo-stack-official-public-benchmark-canary")
     )
+    module = (
+        ROOT
+        / "packages"
+        / "memo_stack_server"
+        / "memo_stack_server"
+        / "official_public_benchmark.py"
+    ).read_text(encoding="utf-8")
     script = (ROOT / "scripts" / "official_public_benchmark_canary.py").read_text(
         encoding="utf-8"
     )
@@ -335,8 +361,9 @@ def test_makefile_has_official_public_benchmark_canary() -> None:
     assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_API_URL" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN" in recipe
-    assert "snap-research/locomo" in script
-    assert "longmemeval_s_cleaned.json" in script
+    assert "memo_stack_server.official_public_benchmark import main" in script
+    assert "snap-research/locomo" in module
+    assert "longmemeval_s_cleaned.json" in module
 
 
 def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> None:
@@ -345,6 +372,7 @@ def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> No
     for target in (
         "memo-stack-clean-full-smoke",
         "memo-stack-clean-full-mcp-smoke",
+        "memo-stack-full-provider-public-benchmark-canary",
         "memo-stack-agent-behavior-bench",
         "memo-stack-agent-realistic-bench",
         "memo-stack-agent-live-session-bench",
