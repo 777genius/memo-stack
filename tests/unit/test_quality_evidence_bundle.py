@@ -105,12 +105,12 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                         {
                             "name": "locomo",
                             "ok": True,
-                            "metrics": {"accuracy": 0.91, "case_count": 1},
+                            "metrics": {"accuracy": 0.947, "case_count": 600},
                         },
                         {
                             "name": "longmemeval",
                             "ok": True,
-                            "metrics": {"accuracy": 0.9, "case_count": 1},
+                            "metrics": {"accuracy": 0.902, "case_count": 500},
                         },
                     ],
                 },
@@ -131,9 +131,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     )
     assert result["scorecard"]["top_library_comparison_ready"] is True
     assert result["scorecard"]["evidence_gaps"] == []
-    manifest = json.loads(
-        ((tmp_path / "evidence") / "quality-evidence-manifest.json").read_text()
-    )
+    manifest = json.loads(((tmp_path / "evidence") / "quality-evidence-manifest.json").read_text())
     external_artifacts = [
         item for item in manifest["artifacts"] if item["kind"] == "external_report"
     ]

@@ -267,7 +267,7 @@ def _public_benchmark_report() -> dict[str, Any]:
             {
                 "name": "locomo",
                 "ok": True,
-                "metrics": {"accuracy": 0.916, "case_count": 600},
+                "metrics": {"accuracy": 0.947, "case_count": 600},
             },
             {
                 "name": "longmemeval",
@@ -1401,7 +1401,8 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
     assert evidence["public_benchmark"]["ok"] is True
-    assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.916
+    assert evidence["public_benchmark"]["competitive_floor_ok"] is True
+    assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.947
     assert evidence["public_benchmark"]["benchmarks"]["longmemeval"]["case_count"] == 500
 
 
@@ -1412,12 +1413,12 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     suite_results["locomo"] = {
         "suite": "locomo",
         "ok": True,
-        "metrics": {"accuracy": 0.91, "case_count": 600},
+        "metrics": {"accuracy": 0.947, "case_count": 600},
     }
     suite_results["longmemeval"] = {
         "suite": "longmemeval",
         "ok": True,
-        "metrics": {"accuracy": 0.9, "case_count": 500},
+        "metrics": {"accuracy": 0.902, "case_count": 500},
     }
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
@@ -1426,8 +1427,45 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     public_benchmark = result["external_evidence"]["public_benchmark"]
     assert public_benchmark["ok"] is True
     assert public_benchmark["benchmark_count"] == 2
+    assert public_benchmark["competitive_floor_ok"] is True
     assert public_benchmark["benchmarks"]["locomo"]["case_count"] == 600
-    assert public_benchmark["benchmarks"]["longmemeval"]["accuracy"] == 0.9
+    assert public_benchmark["benchmarks"]["longmemeval"]["accuracy"] == 0.902
+
+
+def test_memory_quality_scorecard_rejects_underpowered_public_benchmark_evidence() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["public-memory-benchmark"] = {
+        "suite": "public-memory-benchmark",
+        "ok": True,
+        "benchmarks": [
+            {
+                "name": "locomo",
+                "ok": True,
+                "metrics": {"accuracy": 0.94, "case_count": 600},
+            },
+            {
+                "name": "longmemeval",
+                "ok": True,
+                "metrics": {"accuracy": 0.902, "case_count": 1},
+            },
+        ],
+    }
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert result["gates"]["top_library_external_evidence"] is False
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["public_benchmark"]["ok"] is False
+    assert evidence["public_benchmark"]["competitive_floor_ok"] is False
+    assert evidence["public_benchmark"]["competitive_floor"]["failed_benchmarks"] == [
+        "locomo",
+        "longmemeval",
+    ]
+    assert "public_benchmark_competitive_floor_failed" in evidence["evidence_gaps"]
 
 
 def test_memory_quality_scorecard_can_use_nested_agent_evidence() -> None:
@@ -1458,7 +1496,8 @@ def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> 
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
     assert evidence["public_benchmark"]["benchmark_count"] == 2
-    assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.916
+    assert evidence["public_benchmark"]["competitive_floor_ok"] is True
+    assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.947
     assert evidence["public_benchmark"]["benchmarks"]["longmemeval"]["accuracy"] == 0.902
 
 
@@ -1487,8 +1526,7 @@ def test_memory_quality_scorecard_strict_top_evidence_fails_without_external_rep
     assert result["external_evidence"]["required_for_gate"] is True
     assert result["external_evidence"]["confidence_tier"] == "internal_deterministic"
     assert any(
-        failure["case_id"] == "top_library_external_evidence"
-        for failure in result["failures"]
+        failure["case_id"] == "top_library_external_evidence" for failure in result["failures"]
     )
 
 
@@ -1517,9 +1555,10 @@ def test_memory_quality_scorecard_fails_on_undercovered_suite() -> None:
 
     assert result["ok"] is False
     assert result["capabilities"]["coverage_floors"]["ok"] is False
-    assert "auto_memory_extraction_case_count" in result["capabilities"]["coverage_floors"][
-        "failed_checks"
-    ]
+    assert (
+        "auto_memory_extraction_case_count"
+        in result["capabilities"]["coverage_floors"]["failed_checks"]
+    )
     assert result["gates"]["all_capabilities_ok"] is False
 
 
@@ -1548,9 +1587,9 @@ def test_memory_quality_scorecard_fails_on_graph_safety_regression() -> None:
     assert result["capabilities"]["graph_native_recall"]["ok"] is False
     assert result["capabilities"]["scope_and_safety"]["ok"] is False
     assert result["metrics"]["safety_leak_count"] == 1
-    assert "graph_safety_leak_count" in result["capabilities"]["graph_native_recall"][
-        "failed_checks"
-    ]
+    assert (
+        "graph_safety_leak_count" in result["capabilities"]["graph_native_recall"]["failed_checks"]
+    )
 
 
 def test_small_golden_eval_seed_preserves_scope_invariants(

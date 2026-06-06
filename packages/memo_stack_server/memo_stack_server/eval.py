@@ -97,6 +97,10 @@ _PUBLIC_MEMORY_BENCHMARK_REQUIRED = (
     LOCOMO_BENCHMARK_SUITE,
     LONGMEMEVAL_BENCHMARK_SUITE,
 )
+_PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS = {
+    LOCOMO_BENCHMARK_SUITE: {"min_accuracy": 0.947, "min_case_count": 600},
+    LONGMEMEVAL_BENCHMARK_SUITE: {"min_accuracy": 0.902, "min_case_count": 500},
+}
 _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
     LOCOMO_BENCHMARK_SUITE: frozenset(("locomo", "lo_co_mo", "long-context-memory")),
     LONGMEMEVAL_BENCHMARK_SUITE: frozenset(
@@ -387,8 +391,7 @@ def build_memory_quality_scorecard(
     required_suites = _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES
     missing_suites = tuple(suite for suite in required_suites if suite not in suite_results)
     suites = {
-        suite: _scorecard_suite_summary(suite_results.get(suite))
-        for suite in required_suites
+        suite: _scorecard_suite_summary(suite_results.get(suite)) for suite in required_suites
     }
     capabilities = {
         "coverage_floors": _scorecard_coverage_floors(suite_results, suites),
@@ -435,8 +438,7 @@ def build_memory_quality_scorecard(
         "status": "ok" if ok else "failed",
         "ok": ok,
         "benchmark_scope": (
-            "internal deterministic public-API suites; "
-            "not a LOCOMO or LongMemEval substitute"
+            "internal deterministic public-API suites; not a LOCOMO or LongMemEval substitute"
         ),
         "score": {
             "passed_checks": passed_checks,
@@ -526,8 +528,7 @@ def _scorecard_longitudinal_memory(
         "multi_session_recall_at_5": metrics.get("multi_session_recall_at_5") == 1.0,
         "temporal_update_accuracy": metrics.get("temporal_update_accuracy") == 1.0,
         "preference_synthesis_recall": metrics.get("preference_synthesis_recall") == 1.0,
-        "long_document_recall_at_5": float(metrics.get("long_document_recall_at_5", 0.0))
-        >= 0.95,
+        "long_document_recall_at_5": float(metrics.get("long_document_recall_at_5", 0.0)) >= 0.95,
         "long_safety_leak_count": metrics.get("long_safety_leak_count") == 0,
         "stale_memory_rate": metrics.get("stale_memory_rate") == 0.0,
     }
@@ -539,9 +540,7 @@ def _scorecard_auto_memory_admission(
 ) -> dict[str, object]:
     metrics = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
     checks = {
-        "extraction_positive_recall_rate": (
-            metrics.get("extraction_positive_recall_rate") == 1.0
-        ),
+        "extraction_positive_recall_rate": (metrics.get("extraction_positive_recall_rate") == 1.0),
         "extraction_operation_accuracy": metrics.get("extraction_operation_accuracy") == 1.0,
         "extraction_kind_accuracy": metrics.get("extraction_kind_accuracy") == 1.0,
         "extraction_admission_accuracy": metrics.get("extraction_admission_accuracy") == 1.0,
@@ -558,9 +557,7 @@ def _scorecard_auto_memory_admission(
         "target_resolution_violation_count": (
             metrics.get("target_resolution_violation_count") == 0
         ),
-        "review_operation_violation_count": (
-            metrics.get("review_operation_violation_count") == 0
-        ),
+        "review_operation_violation_count": (metrics.get("review_operation_violation_count") == 0),
     }
     return _scorecard_capability("auto_memory_admission", checks)
 
@@ -575,9 +572,7 @@ def _scorecard_graph_native_recall(
         "graph_status_ok_rate": metrics.get("graph_status_ok_rate") == 1.0,
         "graph_safety_leak_count": metrics.get("graph_safety_leak_count") == 0,
         "graph_stale_drop_count": int(metrics.get("graph_stale_drop_count", 0)) >= 4,
-        "canonical_only_graph_skip_count": (
-            metrics.get("canonical_only_graph_skip_count") == 1
-        ),
+        "canonical_only_graph_skip_count": (metrics.get("canonical_only_graph_skip_count") == 1),
     }
     return _scorecard_capability("graph_native_recall", checks)
 
@@ -683,6 +678,8 @@ def _scorecard_external_evidence(
         evidence_gaps.append("public_benchmark_evidence_missing")
     elif not public_benchmark_ok:
         evidence_gaps.append("public_benchmark_evidence_failed")
+        if public_benchmark_summary.get("competitive_floor_ok") is False:
+            evidence_gaps.append("public_benchmark_competitive_floor_failed")
 
     return {
         "confidence_tier": confidence_tier,
@@ -764,18 +761,22 @@ def _scorecard_public_benchmark_evidence_summary(
     benchmarks: dict[str, dict[str, object]] = {}
     for report in reports:
         _scorecard_collect_public_benchmarks(report, benchmarks)
-    missing = [
-        name for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED if name not in benchmarks
-    ]
-    ok = bool(reports) and not missing and all(
-        benchmarks[name]["ok"] is True for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED
+    missing = [name for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED if name not in benchmarks]
+    ok = (
+        bool(reports)
+        and not missing
+        and all(benchmarks[name]["ok"] is True for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED)
     )
+    competitive_floor = _scorecard_public_benchmark_competitive_floor(benchmarks)
+    ok = ok and competitive_floor["ok"] is True
     return {
         "present": bool(reports),
         "ok": ok,
         "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
         "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
         "missing_benchmarks": missing,
+        "competitive_floor_ok": competitive_floor["ok"],
+        "competitive_floor": competitive_floor,
         "benchmark_count": len(benchmarks),
         "benchmarks": benchmarks,
     }
@@ -849,14 +850,44 @@ def _scorecard_public_benchmark_item_summary(
     }
 
 
+def _scorecard_public_benchmark_competitive_floor(
+    benchmarks: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    checks: dict[str, dict[str, object]] = {}
+    for name, floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.items():
+        benchmark = benchmarks.get(name)
+        accuracy = _scorecard_float(benchmark.get("accuracy") if benchmark else None)
+        case_count = _scorecard_int(benchmark.get("case_count") if benchmark else None)
+        min_accuracy = float(floor["min_accuracy"])
+        min_case_count = int(floor["min_case_count"])
+        checks[name] = {
+            "ok": (
+                benchmark is not None
+                and benchmark.get("ok") is True
+                and accuracy is not None
+                and accuracy >= min_accuracy
+                and case_count is not None
+                and case_count >= min_case_count
+            ),
+            "accuracy": accuracy,
+            "min_accuracy": min_accuracy,
+            "case_count": case_count,
+            "min_case_count": min_case_count,
+        }
+    failed = sorted(name for name, check in checks.items() if check["ok"] is not True)
+    return {
+        "ok": not failed,
+        "failed_benchmarks": failed,
+        "benchmarks": checks,
+    }
+
+
 def _scorecard_normalize_public_benchmark_name(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     normalized = value.strip().lower().replace(" ", "-").replace("_", "-")
     for canonical, aliases in _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES.items():
-        if normalized == canonical or normalized in {
-            alias.replace("_", "-") for alias in aliases
-        }:
+        if normalized == canonical or normalized in {alias.replace("_", "-") for alias in aliases}:
             return canonical
     return None
 
@@ -876,8 +907,7 @@ def _scorecard_full_provider_evidence_summary(
         "providers_are_healthy": checks_map.get("providers_are_healthy") is True,
         "context_provider_status_ok": checks_map.get("context_provider_status_ok") is True,
         "mcp_provider_diagnostics_ok": (
-            mcp_map.get("skipped") is True
-            or checks_map.get("mcp_provider_diagnostics_ok") is True
+            mcp_map.get("skipped") is True or checks_map.get("mcp_provider_diagnostics_ok") is True
         ),
     }
     check_values = [value is True for value in checks_map.values()]
@@ -1047,6 +1077,24 @@ def _scorecard_result_metrics(result: dict[str, object] | None) -> dict[str, obj
         return {}
     metrics = result.get("metrics", {})
     return metrics if isinstance(metrics, dict) else {}
+
+
+def _scorecard_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _scorecard_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
 
 
 def _eval_setup_failure(suite: str, reason: str) -> dict[str, object]:
@@ -2432,9 +2480,7 @@ def _candidate_limit_extraction_case() -> AutoMemoryExtractionCase:
     return _extraction_case(
         "candidate_flood_capped_at_five",
         "candidate_limit",
-        "\n".join(
-            f"Remember: EXTRACT_FLOOD_{index} should cap candidates." for index in range(8)
-        ),
+        "\n".join(f"Remember: EXTRACT_FLOOD_{index} should cap candidates." for index in range(8)),
         expected_candidate_count=5,
         expected_operations=(CandidateOperation.ADD,) * 5,
         expected_kinds=(MemoryKind.NOTE,) * 5,
@@ -2909,9 +2955,7 @@ async def _run_auto_memory_extraction_benchmark_async() -> tuple[
                 ttl_mismatch_count=int(not ttl_ok),
                 target_hint_mismatch_count=int(not target_hint_ok),
                 unsafe_admission_count=unsafe_admissions,
-                prompt_injection_admission_violation_count=int(
-                    not prompt_injection_admission_ok
-                ),
+                prompt_injection_admission_violation_count=int(not prompt_injection_admission_ok),
                 assistant_admission_violation_count=int(not assistant_admission_ok),
                 validation_rejection_count=len(validation.rejected_codes),
                 failures=_auto_memory_failures(
@@ -3475,11 +3519,15 @@ def _auto_memory_ambiguous_target_hint_case(
         and _status_ok(created.status_code)
         and _status_ok(consolidated.status_code)
     )
-    safe_reject = len(suggestions) == 0 and _json_path_int(
-        consolidated,
-        "data",
-        "created_suggestions",
-    ) == 0
+    safe_reject = (
+        len(suggestions) == 0
+        and _json_path_int(
+            consolidated,
+            "data",
+            "created_suggestions",
+        )
+        == 0
+    )
     return _auto_memory_result(
         case_id="ambiguous_target_hint_is_not_promoted",
         category="target_resolution",
@@ -5490,8 +5538,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--require-top-evidence",
         action="store_true",
         help=(
-            "Fail unless external full-provider and agent-behavior evidence is present "
-            "and passing."
+            "Fail unless external full-provider and agent-behavior evidence is present and passing."
         ),
     )
     public_benchmark = sub.add_parser("public-benchmark")
