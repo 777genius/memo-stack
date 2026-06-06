@@ -58,6 +58,7 @@ class BenchmarkHttpResponsePort(Protocol):
 class BenchmarkMemoryInput:
     text: str
     kind: str = "note"
+    source_external_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class BenchmarkDocumentInput:
     text: str
     source_type: str = "benchmark_document"
     classification: str = "internal"
+    source_external_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,7 @@ def run_public_memory_benchmark(
     report_out: Path | None = None,
     benchmark: str | None = None,
     min_accuracy: float = _DEFAULT_MIN_ACCURACY,
+    max_cases: int | None = None,
 ) -> dict[str, object]:
     """Run normalized public memory cases and optionally write a JSON report."""
 
@@ -139,6 +142,10 @@ def run_public_memory_benchmark(
     if benchmark:
         canonical_benchmark = _normalize_benchmark_name(benchmark)
         cases = tuple(case for case in cases if case.benchmark == canonical_benchmark)
+    if max_cases is not None:
+        if max_cases < 1:
+            raise BenchmarkValidationError("max_cases must be greater than zero")
+        cases = cases[:max_cases]
 
     if not cases:
         result = {
@@ -266,7 +273,8 @@ def _execute_cases(
         "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
         "status": "ok" if ok else "failed",
         "ok": ok,
-        "benchmark_scope": "normalized_public_memory_jsonl",
+        "benchmark_scope": "normalized_public_memory_retrieval",
+        "evaluation_mode": "retrieved_expected_terms",
         "dataset_path": str(dataset_path),
         "dataset_hash": dataset_hash,
         "checks": {
@@ -306,6 +314,10 @@ def _run_case(
     profile_ref = case.profile_external_ref or f"{case.benchmark}-{case.case_id}"
     thread_ref = case.thread_external_ref or f"{case.benchmark}-{case.case_id}"
     for index, memory in enumerate(case.memories):
+        source_id = _safe_identifier(
+            memory.source_external_id or f"{dataset_hash}:{case.case_id}:memory:{index}",
+            max_chars=160,
+        )
         _post_required(
             adapter,
             "/v1/facts",
@@ -319,16 +331,20 @@ def _run_case(
                 "source_refs": [
                     {
                         "source_type": "public_benchmark",
-                        "source_id": f"{dataset_hash}:{case.case_id}:memory:{index}",
+                        "source_id": source_id,
                         "quote_preview": memory.text[:240],
                     }
                 ],
                 "classification": "internal",
             },
-            idempotency_key=f"{dataset_hash}:{case.case_id}:memory:{index}",
+            idempotency_key=source_id,
         )
 
     for index, document in enumerate(case.documents):
+        source_id = _safe_identifier(
+            document.source_external_id or f"{dataset_hash}:{case.case_id}:doc:{index}",
+            max_chars=240,
+        )
         _post_required(
             adapter,
             "/v1/documents",
@@ -340,10 +356,10 @@ def _run_case(
                 "title": document.title,
                 "text": document.text,
                 "source_type": document.source_type,
-                "source_external_id": f"{dataset_hash}:{case.case_id}:doc:{index}",
+                "source_external_id": source_id,
                 "classification": document.classification,
             },
-            idempotency_key=f"{dataset_hash}:{case.case_id}:doc:{index}",
+            idempotency_key=source_id,
         )
 
     started = time.perf_counter()
@@ -393,31 +409,269 @@ def _run_case(
 def _load_cases(dataset_path: Path) -> tuple[PublicBenchmarkCase, ...]:
     if not dataset_path.exists():
         raise BenchmarkValidationError(f"Dataset does not exist: {dataset_path}")
-    raw_items = _load_raw_items(dataset_path)
-    cases = tuple(_normalize_case(item) for item in raw_items)
+    cases = _cases_from_payload(_load_dataset_payload(dataset_path))
     if not cases:
         raise BenchmarkValidationError("Dataset does not contain benchmark cases")
     return cases
 
 
-def _load_raw_items(dataset_path: Path) -> tuple[Mapping[str, object], ...]:
+def _load_dataset_payload(dataset_path: Path) -> object:
     text = dataset_path.read_text(encoding="utf-8")
     stripped = text.strip()
     if not stripped:
         return ()
     if stripped.startswith("[") or (stripped.startswith("{") and "\n" not in stripped):
-        payload = json.loads(stripped)
-        if isinstance(payload, dict):
-            raw_cases = payload.get("cases") or payload.get("data") or payload.get("items")
-            if raw_cases is None:
-                raw_cases = [payload]
-        else:
-            raw_cases = payload
-    else:
-        raw_cases = [json.loads(line) for line in stripped.splitlines() if line.strip()]
-    if not isinstance(raw_cases, list):
+        return json.loads(stripped)
+    return [json.loads(line) for line in stripped.splitlines() if line.strip()]
+
+
+def _cases_from_payload(payload: object) -> tuple[PublicBenchmarkCase, ...]:
+    if isinstance(payload, Mapping):
+        if _is_official_locomo_sample(payload):
+            return _official_locomo_cases(payload)
+        if _is_official_longmemeval_row(payload):
+            return (_official_longmemeval_case(payload),)
+        raw_cases = payload.get("cases") or payload.get("data") or payload.get("items")
+        if raw_cases is not None:
+            return _cases_from_payload(raw_cases)
+        return (_normalize_case(payload),)
+
+    if not isinstance(payload, Sequence) or isinstance(payload, str | bytes):
         raise BenchmarkValidationError("Dataset root must be a case list, object or JSONL")
-    return tuple(item for item in raw_cases if isinstance(item, Mapping))
+
+    cases: list[PublicBenchmarkCase] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        if _is_official_locomo_sample(item):
+            cases.extend(_official_locomo_cases(item))
+        elif _is_official_longmemeval_row(item):
+            cases.append(_official_longmemeval_case(item))
+        else:
+            cases.append(_normalize_case(item))
+    return tuple(cases)
+
+
+def _is_official_locomo_sample(raw: Mapping[str, object]) -> bool:
+    return isinstance(raw.get("conversation"), Mapping) and isinstance(raw.get("qa"), list)
+
+
+def _official_locomo_cases(raw: Mapping[str, object]) -> tuple[PublicBenchmarkCase, ...]:
+    sample_id = _first_str(raw, "sample_id", "id") or _case_hash(raw)
+    documents = _official_locomo_documents(raw, sample_id=sample_id)
+    evidence_lookup = _official_locomo_evidence_lookup(raw)
+    raw_qas = raw.get("qa")
+    cases: list[PublicBenchmarkCase] = []
+    if not isinstance(raw_qas, Sequence) or isinstance(raw_qas, str | bytes):
+        return ()
+    for index, qa in enumerate(raw_qas):
+        if not isinstance(qa, Mapping):
+            continue
+        question = _first_str(qa, "question", "query")
+        expected_terms = _official_locomo_evidence_terms(qa, evidence_lookup) or _terms(
+            qa,
+            "answer",
+            "expected_answer",
+            "answers",
+        )
+        if not question or not expected_terms:
+            continue
+        category = qa.get("category")
+        case_id = f"{sample_id}:qa:{index + 1}"
+        cases.append(
+            PublicBenchmarkCase(
+                benchmark=LOCOMO_BENCHMARK_SUITE,
+                case_id=case_id,
+                question=question,
+                expected_terms=expected_terms,
+                documents=documents,
+                profile_external_ref=f"locomo-{sample_id}",
+                thread_external_ref=f"locomo-{sample_id}",
+                metadata={
+                    "source_format": "official_locomo",
+                    "sample_id": sample_id,
+                    "qa_index": index,
+                    "category": category,
+                    "evidence": qa.get("evidence") if isinstance(qa.get("evidence"), list) else [],
+                },
+            )
+        )
+    return tuple(cases)
+
+
+def _official_locomo_evidence_lookup(raw: Mapping[str, object]) -> dict[str, str]:
+    conversation = raw.get("conversation")
+    if not isinstance(conversation, Mapping):
+        return {}
+    lookup: dict[str, str] = {}
+    for key in sorted(conversation, key=_session_sort_key):
+        if not _is_session_key(key):
+            continue
+        turns = conversation.get(key)
+        if not isinstance(turns, Sequence) or isinstance(turns, str | bytes):
+            continue
+        for turn in turns:
+            if not isinstance(turn, Mapping):
+                continue
+            dia_id = _first_str(turn, "dia_id", "id")
+            text = _first_str(turn, "text", "content", "utterance")
+            caption = _first_str(turn, "blip_caption", "caption")
+            evidence_text = text or caption
+            if dia_id and evidence_text:
+                lookup[dia_id] = evidence_text
+    return lookup
+
+
+def _official_locomo_evidence_terms(
+    qa: Mapping[str, object],
+    evidence_lookup: Mapping[str, str],
+) -> tuple[str, ...]:
+    evidence = qa.get("evidence")
+    terms: list[str] = []
+    for item in _as_list(evidence):
+        if not isinstance(item, str):
+            continue
+        text = evidence_lookup.get(item.strip())
+        if text:
+            terms.append(text)
+    return tuple(_unique(terms))
+
+
+def _official_locomo_documents(
+    raw: Mapping[str, object],
+    *,
+    sample_id: str,
+) -> tuple[BenchmarkDocumentInput, ...]:
+    conversation = raw.get("conversation")
+    if not isinstance(conversation, Mapping):
+        return ()
+    documents: list[BenchmarkDocumentInput] = []
+    for key in sorted(conversation, key=_session_sort_key):
+        if not _is_session_key(key):
+            continue
+        turns = conversation.get(key)
+        if not isinstance(turns, Sequence) or isinstance(turns, str | bytes):
+            continue
+        date_value = conversation.get(f"{key}_date_time")
+        lines = [f"{key} date: {date_value}"] if isinstance(date_value, str) else [key]
+        for turn in turns:
+            if not isinstance(turn, Mapping):
+                continue
+            dia_id = _first_str(turn, "dia_id", "id")
+            speaker = _first_str(turn, "speaker", "role", "author") or "speaker"
+            text = _first_str(turn, "text", "content", "utterance")
+            if text:
+                prefix = f"{dia_id} " if dia_id else ""
+                lines.append(f"{prefix}{speaker}: {text}")
+            caption = _first_str(turn, "blip_caption", "caption")
+            if caption:
+                lines.append(f"{speaker} image caption: {caption}")
+        if len(lines) > 1:
+            documents.append(
+                BenchmarkDocumentInput(
+                    title=f"LoCoMo {sample_id} {key}",
+                    text="\n".join(lines),
+                    source_type="locomo_session",
+                    source_external_id=f"locomo:{sample_id}:{key}",
+                )
+            )
+    return tuple(documents)
+
+
+def _is_session_key(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and value.startswith("session_")
+        and not value.endswith("_date_time")
+    )
+
+
+def _session_sort_key(value: object) -> tuple[int, str]:
+    if not isinstance(value, str):
+        return (10**9, "")
+    if _is_session_key(value):
+        try:
+            return (int(value.rsplit("_", 1)[1]), value)
+        except ValueError:
+            return (10**9, value)
+    return (10**9, value)
+
+
+def _is_official_longmemeval_row(raw: Mapping[str, object]) -> bool:
+    return (
+        isinstance(raw.get("haystack_sessions"), list)
+        and isinstance(raw.get("question"), str)
+        and raw.get("answer") is not None
+    )
+
+
+def _official_longmemeval_case(raw: Mapping[str, object]) -> PublicBenchmarkCase:
+    question_id = _first_str(raw, "question_id", "id") or _case_hash(raw)
+    question = _first_str(raw, "question", "query")
+    expected_terms = _terms(raw, "answer", "expected_answer", "answers")
+    if not question or not expected_terms:
+        raise BenchmarkValidationError(f"LongMemEval row {question_id} is missing question/answer")
+    return PublicBenchmarkCase(
+        benchmark=LONGMEMEVAL_BENCHMARK_SUITE,
+        case_id=question_id,
+        question=question,
+        expected_terms=expected_terms,
+        documents=_official_longmemeval_documents(raw, question_id=question_id),
+        profile_external_ref=f"longmemeval-{question_id}",
+        thread_external_ref=f"longmemeval-{question_id}",
+        metadata={
+            "source_format": "official_longmemeval",
+            "question_type": raw.get("question_type"),
+            "question_date": raw.get("question_date"),
+            "answer_session_ids": raw.get("answer_session_ids")
+            if isinstance(raw.get("answer_session_ids"), list)
+            else [],
+        },
+    )
+
+
+def _official_longmemeval_documents(
+    raw: Mapping[str, object],
+    *,
+    question_id: str,
+) -> tuple[BenchmarkDocumentInput, ...]:
+    sessions = raw.get("haystack_sessions")
+    if not isinstance(sessions, Sequence) or isinstance(sessions, str | bytes):
+        return ()
+    dates = raw.get("haystack_dates")
+    session_ids = raw.get("haystack_session_ids")
+    documents: list[BenchmarkDocumentInput] = []
+    for index, session in enumerate(sessions):
+        session_id = _sequence_str(session_ids, index) or f"session-{index + 1}"
+        date_value = _sequence_str(dates, index)
+        lines = [f"{session_id} date: {date_value}"] if date_value else [session_id]
+        for message in _as_list(session):
+            if isinstance(message, Mapping):
+                role = _first_str(message, "role", "speaker", "author") or "speaker"
+                content = _first_str(message, "content", "text", "message")
+                if content:
+                    lines.append(f"{role}: {content}")
+            elif isinstance(message, str) and message.strip():
+                lines.append(message.strip())
+        if len(lines) > 1:
+            documents.append(
+                BenchmarkDocumentInput(
+                    title=f"LongMemEval {question_id} {session_id}",
+                    text="\n".join(lines),
+                    source_type="longmemeval_session",
+                    source_external_id=f"longmemeval:{question_id}:{session_id}",
+                )
+            )
+    return tuple(documents)
+
+
+def _sequence_str(value: object, index: int) -> str | None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return None
+    if index >= len(value):
+        return None
+    item = value[index]
+    return item.strip() if isinstance(item, str) and item.strip() else None
 
 
 def _normalize_case(raw: Mapping[str, object]) -> PublicBenchmarkCase:
@@ -492,6 +746,8 @@ def _terms(raw: Mapping[str, object], *keys: str) -> tuple[str, ...]:
 def _term_values(value: object) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
+    if isinstance(value, int | float | bool):
+        return [str(value)]
     if isinstance(value, Sequence) and not isinstance(value, str | bytes):
         return [str(item).strip() for item in value if str(item).strip()]
     return []
@@ -708,6 +964,14 @@ def _unique(values: Iterable[str]) -> list[str]:
 
 def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _safe_identifier(value: str, *, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    prefix = value[: max(1, max_chars - len(digest) - 1)]
+    return f"{prefix}:{digest}"
 
 
 def _setup_failure_result(*, reason: str, case_count: int) -> dict[str, object]:

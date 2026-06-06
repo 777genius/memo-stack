@@ -5490,6 +5490,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     public_benchmark.add_argument("--api-url", default=None)
     public_benchmark.add_argument("--benchmark", default=None)
     public_benchmark.add_argument("--min-accuracy", type=float, default=0.85)
+    public_benchmark.add_argument("--max-cases", type=int, default=None)
     public_benchmark.add_argument("--report-out", type=Path, default=None)
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -5558,6 +5559,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 auth_token=_eval_auth_token_from_env() if args.api_url else None,
                 benchmark=args.benchmark,
                 min_accuracy=args.min_accuracy,
+                max_cases=args.max_cases,
                 report_out=args.report_out,
             )
         except ValueError as exc:

@@ -81,3 +81,119 @@ def test_public_memory_benchmark_reports_missing_expected_terms(tmp_path: Path) 
     assert result["benchmarks"][0]["ok"] is False
     assert result["cases"][0]["missing_terms"] == ["Notion"]
     assert result["failures"][0]["reason"] == "missing_expected_terms"
+
+
+def test_public_memory_benchmark_accepts_official_locomo_shape(tmp_path: Path) -> None:
+    dataset = tmp_path / "locomo10-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-mini",
+                    "conversation": {
+                        "session_1_date_time": "7 May 2023",
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:1",
+                                "text": "I went to the LGBTQ support group today.",
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "When did Caroline go to the LGBTQ support group?",
+                            "answer": "7 May 2023",
+                            "evidence": ["D1:1"],
+                            "category": 2,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["benchmarks"][0]["name"] == "locomo"
+    assert result["metrics"]["locomo_case_count"] == 1
+    assert result["cases"][0]["case_id"] == "conv-mini:qa:1"
+
+
+def test_public_memory_benchmark_accepts_official_longmemeval_shape(tmp_path: Path) -> None:
+    dataset = tmp_path / "longmemeval_s_cleaned-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "long-mini",
+                    "question_type": "single-session-user",
+                    "question": "What degree did I graduate with?",
+                    "question_date": "2023/05/30 (Tue) 23:40",
+                    "answer": "Business Administration",
+                    "answer_session_ids": ["answer_session"],
+                    "haystack_session_ids": ["answer_session"],
+                    "haystack_dates": ["2023/05/20 (Sat) 02:21"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "I graduated with Business Administration.",
+                            },
+                            {
+                                "role": "assistant",
+                                "content": "Congratulations on the degree.",
+                            },
+                        ]
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["benchmarks"][0]["name"] == "longmemeval"
+    assert result["metrics"]["longmemeval_case_count"] == 1
+    assert result["cases"][0]["case_id"] == "long-mini"
+
+
+def test_public_memory_benchmark_accepts_longmemeval_numeric_answer(tmp_path: Path) -> None:
+    dataset = tmp_path / "longmemeval_numeric_answer.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "long-numeric",
+                    "question_type": "single-session-user",
+                    "question": "How many pull requests did I review?",
+                    "question_date": "2023/06/01 (Thu) 10:00",
+                    "answer": 3,
+                    "answer_session_ids": ["answer_session"],
+                    "haystack_session_ids": ["answer_session"],
+                    "haystack_dates": ["2023/05/31 (Wed) 18:00"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "I reviewed 3 pull requests today.",
+                            }
+                        ]
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["metrics"]["longmemeval_accuracy"] == 1.0

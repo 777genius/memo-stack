@@ -317,6 +317,7 @@ def test_makefile_has_public_memory_benchmark_gate() -> None:
     assert "$(PYTHON) -m memo_stack_server eval public-benchmark" in makefile
     assert "MEMORY_PUBLIC_BENCHMARK_REPORT_OUT" in makefile
     assert "MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY" in makefile
+    assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in makefile
 
 
 def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> None:

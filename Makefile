@@ -83,6 +83,7 @@ memo-stack-public-benchmark:
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_API_URL:-}" ]; then set -- "$$@" --api-url "$${MEMORY_PUBLIC_BENCHMARK_API_URL}"; fi; \
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_NAME:-}" ]; then set -- "$$@" --benchmark "$${MEMORY_PUBLIC_BENCHMARK_NAME}"; fi; \
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-}" ]; then set -- "$$@" --min-accuracy "$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-}" ]; then set -- "$$@" --max-cases "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES}"; fi; \
 	$(PYTHON) -m memo_stack_server eval public-benchmark "$$@"
 
 .PHONY: memo-stack-test-quality
