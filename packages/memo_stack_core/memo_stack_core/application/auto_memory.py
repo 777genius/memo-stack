@@ -100,6 +100,113 @@ _UPDATE_SPLITTER = re.compile(r"\s*(?:=>|->|→|\bshould now be\b|\bтеперь
 
 
 @dataclass(frozen=True)
+class _SemanticPattern:
+    pattern: re.Pattern[str]
+    kind: MemoryKind
+    reason: str
+    confidence: Confidence = Confidence.LOW
+    category: str | None = None
+    ttl_policy: str | None = None
+    text_prefix: str | None = None
+
+
+_SEMANTIC_PATTERNS: tuple[_SemanticPattern, ...] = (
+    _SemanticPattern(
+        re.compile(r"^\s*(?:we\s+)?(?:decided|agreed)\s+(?:that\s+)?(.+)$", re.I),
+        MemoryKind.ARCHITECTURE_DECISION,
+        "semantic_decision_statement",
+    ),
+    _SemanticPattern(
+        re.compile(
+            r"^\s*(?:the\s+)?architecture decision\s+(?:is|was)\s+(?:to\s+)?(.+)$",
+            re.I,
+        ),
+        MemoryKind.ARCHITECTURE_DECISION,
+        "semantic_architecture_decision_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*(?:мы\s+)?решили\s+(.+)$", re.I),
+        MemoryKind.ARCHITECTURE_DECISION,
+        "semantic_ru_decision_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*архитектурное решение\s+(?:-|:|это|такое)?\s*(.+)$", re.I),
+        MemoryKind.ARCHITECTURE_DECISION,
+        "semantic_ru_architecture_decision_statement",
+    ),
+    _SemanticPattern(
+        re.compile(
+            r"^\s*(?:we\s+)?(?:must|should)\s+not\s+(store|log|send|persist|expose)\s+(.+)$",
+            re.I,
+        ),
+        MemoryKind.CONSTRAINT,
+        "semantic_negative_constraint_statement",
+        text_prefix="Must not",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*(?:never|do\s+not|don't)\s+(store|log|send|persist|expose)\s+(.+)$", re.I),
+        MemoryKind.CONSTRAINT,
+        "semantic_imperative_constraint_statement",
+        text_prefix="Must not",
+    ),
+    _SemanticPattern(
+        re.compile(
+            r"^\s*(?:нельзя|не\s+надо|запрещено)\s+"
+            r"(хранить|логировать|отправлять|показывать|сохранять)\s+(.+)$",
+            re.I,
+        ),
+        MemoryKind.CONSTRAINT,
+        "semantic_ru_constraint_statement",
+        text_prefix="Нельзя",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*i\s+prefer\s+(.+)$", re.I),
+        MemoryKind.USER_PREFERENCE,
+        "semantic_user_preference_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*my\s+preference\s+is\s+(.+)$", re.I),
+        MemoryKind.USER_PREFERENCE,
+        "semantic_user_preference_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*я\s+предпочитаю\s+(.+)$", re.I),
+        MemoryKind.USER_PREFERENCE,
+        "semantic_ru_user_preference_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*(?:the\s+)?project\s+uses\s+(.+)$", re.I),
+        MemoryKind.NOTE,
+        "semantic_project_fact_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*(?:memo\s+stack|this\s+project)\s+uses\s+(.+)$", re.I),
+        MemoryKind.NOTE,
+        "semantic_project_fact_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*проект\s+использует\s+(.+)$", re.I),
+        MemoryKind.NOTE,
+        "semantic_ru_project_fact_statement",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*current\s+task\s+is\s+(?:to\s+)?(.+)$", re.I),
+        MemoryKind.NOTE,
+        "semantic_current_task_statement",
+        category="current_task",
+        ttl_policy="task",
+    ),
+    _SemanticPattern(
+        re.compile(r"^\s*текущая\s+задача\s+(?:-|:|это|сейчас)?\s*(.+)$", re.I),
+        MemoryKind.NOTE,
+        "semantic_ru_current_task_statement",
+        category="current_task",
+        ttl_policy="task",
+    ),
+)
+
+
+@dataclass(frozen=True)
 class AdmissionDecision:
     outcome: str
     trust_level: TrustLevel
@@ -158,10 +265,11 @@ class NoopMemoryClassifier:
 
 
 class RuleBasedMemoryClassifier(MemoryClassifierPort):
-    """Small deterministic classifier for explicit memory markers.
+    """Small deterministic classifier for explicit and high-signal memory markers.
 
-    This is intentionally conservative. It only produces review suggestions when
-    the transcript/document explicitly marks durable memory.
+    This is intentionally conservative. It produces candidates for explicit
+    memory commands and a small set of durable semantic statements that are
+    common in agent transcripts. Admission still keeps them review-gated.
     """
 
     async def classify(self, *, text: str, source: SourceProvenance) -> tuple[MemoryCandidate, ...]:
@@ -205,6 +313,36 @@ def _candidate_from_line(
             safe_reason=reason,
             category=category,
             ttl_policy=ttl_policy,
+        )
+    return _semantic_candidate_from_line(line=line, source=source)
+
+
+def _semantic_candidate_from_line(
+    *,
+    line: str,
+    source: SourceProvenance,
+) -> MemoryCandidate | None:
+    if _looks_like_prompt_injection(line):
+        return None
+    if _looks_like_question(line):
+        return None
+    for pattern in _SEMANTIC_PATTERNS:
+        match = pattern.pattern.match(line)
+        if not match:
+            continue
+        text = _semantic_text(pattern, match)
+        if not text:
+            return None
+        return _memory_candidate(
+            text=text,
+            source=source,
+            line=line,
+            safe_reason=pattern.reason,
+            operation=CandidateOperation.ADD,
+            category=pattern.category,
+            ttl_policy=pattern.ttl_policy,
+            confidence=pattern.confidence,
+            kind=pattern.kind,
         )
     return None
 
@@ -298,11 +436,12 @@ def _memory_candidate(
     category: str | None,
     ttl_policy: str | None,
     confidence: Confidence = Confidence.MEDIUM,
+    kind: MemoryKind = MemoryKind.NOTE,
     target_hint: str | None = None,
 ) -> MemoryCandidate:
     return MemoryCandidate(
         text=text,
-        kind=MemoryKind.NOTE,
+        kind=kind,
         confidence=confidence,
         source_refs=(
             SourceRef(
@@ -328,6 +467,15 @@ def _prefixed_payload(line: str, prefixes: tuple[str, ...]) -> str | None:
     return None
 
 
+def _semantic_text(pattern: _SemanticPattern, match: re.Match[str]) -> str:
+    if pattern.text_prefix:
+        payload = " ".join(group for group in match.groups() if group)
+        text = f"{pattern.text_prefix} {payload}"
+    else:
+        text = match.group(1)
+    return _clean_candidate_text(text)
+
+
 def _candidate_lines(text: str) -> list[str]:
     lines: list[str] = []
     for raw_line in text.replace("\r\n", "\n").split("\n"):
@@ -345,6 +493,30 @@ def _clean_candidate_text(text: str) -> str:
 
 def _looks_like_prompt_injection(text: str) -> bool:
     return any(pattern.search(text) for pattern in _PROMPT_INJECTION_PATTERNS)
+
+
+def _looks_like_question(text: str) -> bool:
+    lowered = text.strip().casefold()
+    if lowered.endswith("?"):
+        return True
+    return lowered.startswith(
+        (
+            "can ",
+            "could ",
+            "should ",
+            "would ",
+            "do i ",
+            "do we ",
+            "do you ",
+            "do they ",
+            "does ",
+            "did ",
+            "как ",
+            "что ",
+            "можно ",
+            "нужно ли ",
+        )
+    )
 
 
 def _has_memory_prefix(line: str) -> bool:

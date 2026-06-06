@@ -353,7 +353,7 @@ def _execute_auto_memory_golden(client, headers: dict[str, str]) -> dict[str, ob
     checks = {
         "fixture_seeded": all(scope_checks.values()),
         "case_count": len(case_results) >= 13,
-        "extraction_case_count": len(extraction_results) >= 60,
+        "extraction_case_count": len(extraction_results) >= 78,
         "no_request_failures": metrics["request_failure_count"] == 0,
         "auto_memory_report_redacted": True,
     }
@@ -1333,6 +1333,7 @@ def _auto_memory_extraction_cases() -> tuple[AutoMemoryExtractionCase, ...]:
         _multi_candidate_extraction_case(),
         _candidate_limit_extraction_case(),
     ]
+    cases.extend(_semantic_extraction_cases())
     cases.extend(_operation_extraction_cases())
     cases.extend(_safety_extraction_cases())
     cases.extend(_negative_extraction_cases())
@@ -1374,6 +1375,132 @@ def _candidate_limit_extraction_case() -> AutoMemoryExtractionCase:
         expected_categories=(None,) * 5,
         expected_ttl_policies=(None,) * 5,
         expected_target_hints=(None,) * 5,
+    )
+
+
+def _semantic_extraction_cases() -> tuple[AutoMemoryExtractionCase, ...]:
+    return (
+        _semantic_add_case(
+            "semantic_decided_that",
+            "We decided that SEMANTIC_DECISION_GRAPHITI is the temporal facts engine.",
+            MemoryKind.ARCHITECTURE_DECISION,
+            "semantic_architecture_decision",
+        ),
+        _semantic_add_case(
+            "semantic_agreed_without_that",
+            "Agreed SEMANTIC_AGREED_POSTGRES remains the canonical source of truth.",
+            MemoryKind.ARCHITECTURE_DECISION,
+            "semantic_architecture_decision",
+        ),
+        _semantic_add_case(
+            "semantic_architecture_decision_is",
+            "Architecture decision is to keep SEMANTIC_ARCH_PORTS behind ports.",
+            MemoryKind.ARCHITECTURE_DECISION,
+            "semantic_architecture_decision",
+        ),
+        _semantic_add_case(
+            "semantic_ru_decided",
+            "Мы решили SEMANTIC_RU_DECISION использовать Qdrant для документов.",
+            MemoryKind.ARCHITECTURE_DECISION,
+            "semantic_architecture_decision",
+        ),
+        _semantic_add_case(
+            "semantic_ru_arch_decision",
+            "Архитектурное решение это SEMANTIC_RU_ARCH_DECISION хранить lifecycle в Postgres.",
+            MemoryKind.ARCHITECTURE_DECISION,
+            "semantic_architecture_decision",
+        ),
+        _semantic_add_case(
+            "semantic_must_not_store",
+            "We must not store SEMANTIC_CONSTRAINT_RAW_TOKENS in diagnostics.",
+            MemoryKind.CONSTRAINT,
+            "semantic_constraint",
+        ),
+        _semantic_add_case(
+            "semantic_do_not_log",
+            "Do not log SEMANTIC_CONSTRAINT_AUTH_HEADERS in reports.",
+            MemoryKind.CONSTRAINT,
+            "semantic_constraint",
+        ),
+        _semantic_add_case(
+            "semantic_never_send",
+            "Never send SEMANTIC_CONSTRAINT_PRIVATE_CODE to external providers.",
+            MemoryKind.CONSTRAINT,
+            "semantic_constraint",
+        ),
+        _semantic_add_case(
+            "semantic_ru_constraint",
+            "Нельзя хранить SEMANTIC_RU_CONSTRAINT_RAW_KEYS в памяти.",
+            MemoryKind.CONSTRAINT,
+            "semantic_constraint",
+        ),
+        _semantic_add_case(
+            "semantic_i_prefer",
+            "I prefer SEMANTIC_PREF_SHORT_REPORTS in Russian.",
+            MemoryKind.USER_PREFERENCE,
+            "semantic_preference",
+        ),
+        _semantic_add_case(
+            "semantic_my_preference",
+            "My preference is SEMANTIC_PREF_MARKDOWN_PLANS.",
+            MemoryKind.USER_PREFERENCE,
+            "semantic_preference",
+        ),
+        _semantic_add_case(
+            "semantic_ru_preference",
+            "Я предпочитаю SEMANTIC_RU_PREF короткие summary.",
+            MemoryKind.USER_PREFERENCE,
+            "semantic_preference",
+        ),
+        _semantic_add_case(
+            "semantic_project_uses",
+            "The project uses SEMANTIC_PROJECT_QDRANT for document vectors.",
+        ),
+        _semantic_add_case(
+            "semantic_memo_stack_uses",
+            "Memo Stack uses SEMANTIC_MEMO_STACK_GRAPHITI for graph facts.",
+        ),
+        _semantic_add_case(
+            "semantic_this_project_uses",
+            "This project uses SEMANTIC_THIS_PROJECT_CLEAN_ARCHITECTURE for boundaries.",
+        ),
+        _semantic_add_case(
+            "semantic_ru_project_uses",
+            "Проект использует SEMANTIC_RU_PROJECT_POSTGRES как source of truth.",
+        ),
+        _semantic_add_case(
+            "semantic_current_task_is",
+            "Current task is SEMANTIC_CURRENT_TASK add semantic extractor benchmark.",
+            expected_category="current_task",
+            expected_ttl_policy="task",
+            category="semantic_current_task",
+        ),
+        _semantic_add_case(
+            "semantic_ru_current_task",
+            "Текущая задача сейчас SEMANTIC_RU_CURRENT_TASK проверить gates.",
+            expected_category="current_task",
+            expected_ttl_policy="task",
+            category="semantic_current_task",
+        ),
+    )
+
+
+def _semantic_add_case(
+    case_id: str,
+    text: str,
+    kind: MemoryKind = MemoryKind.NOTE,
+    category: str = "semantic_fact",
+    *,
+    expected_category: str | None = None,
+    expected_ttl_policy: str | None = None,
+) -> AutoMemoryExtractionCase:
+    return _add_case(
+        case_id,
+        text,
+        kind,
+        category=category,
+        expected_category=expected_category,
+        expected_ttl_policy=expected_ttl_policy,
     )
 
 
@@ -2668,9 +2795,13 @@ def _auto_memory_metrics(
     extraction_positive_cases = tuple(
         result for result in extraction_results if result.category != "negative"
     )
+    extraction_semantic_cases = tuple(
+        result for result in extraction_results if result.category.startswith("semantic")
+    )
     extraction_metrics = {
         "extraction_case_count": len(extraction_results),
         "extraction_expected_positive_count": len(extraction_expected_cases),
+        "extraction_semantic_case_count": len(extraction_semantic_cases),
         "extraction_candidate_count_accuracy": _ratio(
             sum(1 for result in extraction_results if result.extraction_ok),
             len(extraction_results),
@@ -2801,7 +2932,8 @@ def _auto_memory_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "candidate_limit_violation_count": metrics["candidate_limit_violation_count"] == 0,
         "target_resolution_violation_count": metrics["target_resolution_violation_count"] == 0,
         "review_operation_violation_count": metrics["review_operation_violation_count"] == 0,
-        "extraction_case_count": metrics["extraction_case_count"] >= 60,
+        "extraction_case_count": metrics["extraction_case_count"] >= 78,
+        "extraction_semantic_case_count": metrics["extraction_semantic_case_count"] >= 18,
         "extraction_candidate_count_accuracy": (
             metrics["extraction_candidate_count_accuracy"] == 1.0
         ),

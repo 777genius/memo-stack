@@ -99,3 +99,55 @@ def test_rule_based_classifier_extracts_update_delete_and_review_operations() ->
     assert candidates[1].target_hint == "legacy Angular frontend."
     assert candidates[1].ttl_policy == "delete_review"
     assert candidates[2].confidence == Confidence.LOW
+
+
+def test_rule_based_classifier_extracts_high_signal_semantic_memory() -> None:
+    classifier = RuleBasedMemoryClassifier()
+
+    candidates = asyncio.run(
+        classifier.classify(
+            text=(
+                "We decided that semantic Graphiti remains the temporal facts engine.\n"
+                "We must not store raw API tokens in diagnostics.\n"
+                "I prefer concise Russian summaries.\n"
+                "The project uses Qdrant for document vectors."
+            ),
+            source=SourceProvenance(
+                source_type="capture:hook",
+                source_id="cap_semantic",
+                trust_level=TrustLevel.MEDIUM,
+            ),
+        )
+    )
+
+    assert [candidate.kind for candidate in candidates] == [
+        MemoryKind.ARCHITECTURE_DECISION,
+        MemoryKind.CONSTRAINT,
+        MemoryKind.USER_PREFERENCE,
+        MemoryKind.NOTE,
+    ]
+    assert all(candidate.operation_hint == CandidateOperation.ADD for candidate in candidates)
+    assert all(candidate.confidence == Confidence.LOW for candidate in candidates)
+    assert candidates[0].safe_reason == "semantic_decision_statement"
+    assert candidates[1].text == "Must not store raw API tokens in diagnostics."
+
+
+def test_rule_based_classifier_keeps_semantic_questions_and_noise_out() -> None:
+    classifier = RuleBasedMemoryClassifier()
+
+    candidates = asyncio.run(
+        classifier.classify(
+            text=(
+                "Should we decided that Graphiti is the engine?\n"
+                "Can the project uses Qdrant here?\n"
+                "# Remember: copied code comment."
+            ),
+            source=SourceProvenance(
+                source_type="capture:hook",
+                source_id="cap_semantic_noise",
+                trust_level=TrustLevel.MEDIUM,
+            ),
+        )
+    )
+
+    assert candidates == ()
