@@ -90,6 +90,14 @@ def _candidate_rejection_code(
     normalized_source: str,
 ) -> str | None:
     operation = candidate.operation_hint
+    if operation in {
+        CandidateOperation.ADD,
+        CandidateOperation.REVIEW,
+        CandidateOperation.NOOP,
+    } and (candidate.target_fact_id or candidate.target_fact_version is not None):
+        return "target_fact_not_allowed"
+    if operation in {CandidateOperation.ADD, CandidateOperation.NOOP} and candidate.target_hint:
+        return "target_hint_not_allowed"
     if operation == CandidateOperation.NOOP:
         return None
     if operation in {CandidateOperation.ADD, CandidateOperation.UPDATE} and not candidate.text:

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from memo_stack_core.application.extractor import validate_extractor_candidates
 from memo_stack_core.domain.entities import Confidence, MemoryKind, SourceRef
-from memo_stack_core.ports.auto_memory import MemoryCandidate
+from memo_stack_core.ports.auto_memory import CandidateOperation, MemoryCandidate
 
 
 def test_extractor_validation_rejects_invalid_validity_window() -> None:
@@ -72,11 +72,67 @@ def test_extractor_validation_rejects_source_refs_without_evidence_quote() -> No
     assert result.rejected_codes == ("evidence_quote_required",)
 
 
+def test_extractor_validation_rejects_add_target_metadata() -> None:
+    result = validate_extractor_candidates(
+        candidates=(
+            _candidate(
+                valid_from=None,
+                valid_until=None,
+                operation=CandidateOperation.ADD,
+                target_hint="old fact text",
+            ),
+        ),
+        source_text="TEMPORAL_MARKER fact from source.",
+    )
+
+    assert result.candidates == ()
+    assert result.rejected_codes == ("target_hint_not_allowed",)
+
+
+def test_extractor_validation_rejects_review_target_fact_id() -> None:
+    result = validate_extractor_candidates(
+        candidates=(
+            _candidate(
+                valid_from=None,
+                valid_until=None,
+                operation=CandidateOperation.REVIEW,
+                target_fact_id="fact_existing",
+                target_fact_version=3,
+            ),
+        ),
+        source_text="TEMPORAL_MARKER fact from source.",
+    )
+
+    assert result.candidates == ()
+    assert result.rejected_codes == ("target_fact_not_allowed",)
+
+
+def test_extractor_validation_allows_review_target_hint() -> None:
+    result = validate_extractor_candidates(
+        candidates=(
+            _candidate(
+                valid_from=None,
+                valid_until=None,
+                operation=CandidateOperation.REVIEW,
+                target_hint="old fact text",
+            ),
+        ),
+        source_text="TEMPORAL_MARKER fact from source.",
+    )
+
+    assert len(result.candidates) == 1
+    assert result.rejected_codes == ()
+
+
 def _candidate(
     *,
     valid_from: datetime | None,
     valid_until: datetime | None,
     source_refs: tuple[SourceRef, ...] | None = None,
+    operation: CandidateOperation = CandidateOperation.ADD,
+    target_fact_id: str | None = None,
+    target_fact_version: int | None = None,
+    target_hint: str | None = None,
 ) -> MemoryCandidate:
     return MemoryCandidate(
         text="TEMPORAL_MARKER fact from source.",
@@ -92,6 +148,10 @@ def _candidate(
             ),
         ),
         safe_reason="test",
+        operation_hint=operation,
+        target_fact_id=target_fact_id,
+        target_fact_version=target_fact_version,
+        target_hint=target_hint,
         valid_from=valid_from,
         valid_until=valid_until,
     )
