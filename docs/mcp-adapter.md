@@ -340,6 +340,20 @@ or `.txt` fixtures. JSON/JSONL cases can provide `turns`, `transcript`,
 `MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_FILES` and
 `MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_BYTES` to bound corpus scope.
 
+To create a safe corpus from local real agent logs:
+
+```bash
+MEMORY_AGENT_TRANSCRIPT_INPUT=/path/to/raw-agent-logs \
+MEMORY_AGENT_TRANSCRIPT_OUTPUT=/path/to/redacted-corpus \
+make memo-stack-agent-transcript-corpus-redact
+```
+
+The redactor accepts explicit files or a non-recursive directory, masks common
+API keys, bearer tokens, passwords, emails and home paths, hashes source ids and
+keeps raw source paths out of emitted fixtures. Use the redacted output as
+`MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR`; then add manual expected checks for
+high-signal release gates.
+
 Full real-memory confidence gate:
 
 ```bash

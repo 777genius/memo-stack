@@ -355,6 +355,12 @@ memo-stack-agent-transcript-corpus-bench:
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	$(PYTHON) scripts/clean_full_smoke.py
 
+.PHONY: memo-stack-agent-transcript-corpus-redact
+memo-stack-agent-transcript-corpus-redact:
+	@test -n "$${MEMORY_AGENT_TRANSCRIPT_INPUT:-}" || (echo "Set MEMORY_AGENT_TRANSCRIPT_INPUT to a transcript file or directory."; exit 1)
+	@test -n "$${MEMORY_AGENT_TRANSCRIPT_OUTPUT:-}" || (echo "Set MEMORY_AGENT_TRANSCRIPT_OUTPUT to the redacted corpus output directory."; exit 1)
+	$(PYTHON) scripts/agent_transcript_corpus_redactor.py "$${MEMORY_AGENT_TRANSCRIPT_INPUT}" "$${MEMORY_AGENT_TRANSCRIPT_OUTPUT}"
+
 .PHONY: memo-stack-full-provider-canary
 memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke
 

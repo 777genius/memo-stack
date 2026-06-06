@@ -293,6 +293,20 @@ conversation logs without changing code, set
 are bounded by `MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_FILES` and
 `MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_MAX_BYTES`.
 
+To build a safe corpus from local agent logs, first redact them into fixtures:
+
+```bash
+MEMORY_AGENT_TRANSCRIPT_INPUT=/path/to/raw-agent-logs \
+MEMORY_AGENT_TRANSCRIPT_OUTPUT=/path/to/redacted-corpus \
+make memo-stack-agent-transcript-corpus-redact
+```
+
+The redactor reads explicit files or a non-recursive directory, masks common
+API keys, bearer tokens, passwords, emails and home paths, hashes source ids and
+does not write raw source paths into fixtures. Manual annotation is still
+recommended for high-signal expected memory checks before treating a corpus as a
+release gate.
+
 For the broad paid/manual "real memory in battle" gate:
 
 ```bash

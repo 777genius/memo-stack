@@ -228,6 +228,7 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     assert ".PHONY: memo-stack-agent-realistic-bench" in makefile
     assert ".PHONY: memo-stack-agent-live-session-bench" in makefile
     assert ".PHONY: memo-stack-agent-transcript-corpus-bench" in makefile
+    assert ".PHONY: memo-stack-agent-transcript-corpus-redact" in makefile
     assert ".PHONY: memo-stack-real-memory-confidence" in makefile
     assert "MEMORY_AGENT_BENCH_MODEL" in makefile
     assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in makefile
@@ -237,6 +238,8 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     assert "MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS" in makefile
     assert "MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS" in makefile
     assert "MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR" in makefile
+    assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in makefile
+    assert "MEMORY_AGENT_TRANSCRIPT_OUTPUT" in makefile
     assert "$(MAKE) memo-stack-full-provider-canary" in makefile
     assert "$(MAKE) memo-stack-prod-load-canary" in makefile
     assert "$(MAKE) memo-stack-agent-live-session-bench" in makefile
@@ -897,7 +900,9 @@ def test_real_stack_mcp_canary_docs_are_env_based() -> None:
     assert "memo-stack-prod-load-canary" in docs
     assert "memo-stack-agent-live-session-bench" in docs
     assert "memo-stack-agent-transcript-corpus-bench" in docs
+    assert "memo-stack-agent-transcript-corpus-redact" in docs
     assert "MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR" in docs
+    assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in docs
     assert "memo-stack-real-memory-confidence" in docs
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=true" in docs
     assert "--auth-token" not in docs
