@@ -320,6 +320,25 @@ def test_makefile_has_public_memory_benchmark_gate() -> None:
     assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in makefile
 
 
+def test_makefile_has_official_public_benchmark_canary() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = "\n".join(
+        _make_target_recipe(makefile, "memo-stack-official-public-benchmark-canary")
+    )
+    script = (ROOT / "scripts" / "official_public_benchmark_canary.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert ".PHONY: memo-stack-official-public-benchmark-canary" in makefile
+    assert "$(PYTHON) scripts/official_public_benchmark_canary.py" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_REPORT_OUT" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_API_URL" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN" in recipe
+    assert "snap-research/locomo" in script
+    assert "longmemeval_s_cleaned.json" in script
+
+
 def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 

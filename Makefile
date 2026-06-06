@@ -86,6 +86,18 @@ memo-stack-public-benchmark:
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-}" ]; then set -- "$$@" --max-cases "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES}"; fi; \
 	$(PYTHON) -m memo_stack_server eval public-benchmark "$$@"
 
+.PHONY: memo-stack-official-public-benchmark-canary
+memo-stack-official-public-benchmark-canary:
+	@set -e; \
+	set --; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_NAME:-}" ]; then set -- "$$@" --benchmark "$${MEMORY_PUBLIC_BENCHMARK_NAME}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-}" ]; then set -- "$$@" --max-cases "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-}" ]; then set -- "$$@" --min-accuracy "$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_API_URL:-}" ]; then set -- "$$@" --api-url "$${MEMORY_PUBLIC_BENCHMARK_API_URL}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN:-}" ]; then set -- "$$@" --auth-token "$${MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT:-}" ]; then set -- "$$@" --report-out "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT}"; fi; \
+	$(PYTHON) scripts/official_public_benchmark_canary.py "$$@"
+
 .PHONY: memo-stack-test-quality
 memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
 
