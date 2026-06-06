@@ -15,7 +15,7 @@ from memo_stack_adapters.qdrant import QdrantVectorMemoryAdapter
 from memo_stack_core.domain.entities import TrustLevel
 from memo_stack_core.domain.errors import MemoryInfrastructureError, MemoryValidationError
 from memo_stack_core.ports.adapters import PortStatus, VectorUpsertItem
-from memo_stack_core.ports.auto_memory import SourceProvenance
+from memo_stack_core.ports.auto_memory import CandidateOperation, SourceProvenance
 from memo_stack_core.ports.capabilities import (
     CapabilityRecallQuery,
     CapabilityStatus,
@@ -137,6 +137,36 @@ class FakeOpenAIEmbeddingAdapter(OpenAIEmbeddingAdapter):
 
     async def _client(self) -> FakeOpenAIEmbeddingClient:
         return self.client
+
+
+def _openai_candidate_payload(
+    *,
+    text: str,
+    evidence_quote: str | None,
+    operation: str = "add",
+    kind: str = "note",
+    confidence: str = "medium",
+    safe_reason: str = "explicit_user_memory",
+    target_hint: str | None = None,
+    ttl_policy: str | None = None,
+) -> dict[str, object]:
+    return {
+        "text": text,
+        "kind": kind,
+        "confidence": confidence,
+        "safe_reason": safe_reason,
+        "operation": operation,
+        "evidence_quote": evidence_quote,
+        "category": None,
+        "tags": [],
+        "ttl_policy": ttl_policy,
+        "target_fact_id": None,
+        "target_fact_version": None,
+        "target_hint": target_hint,
+        "valid_from": None,
+        "valid_until": None,
+        "expires_at": None,
+    }
 
 
 class FakeOpenAIError(RuntimeError):
@@ -1117,6 +1147,137 @@ def test_openai_json_memory_extractor_maps_structured_response() -> None:
         assert candidates[0].ttl_policy == "durable"
         assert candidates[0].target_hint is None
         assert candidates[0].source_refs[0].source_id == "cap_test"
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_maps_update_delete_and_noop() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="OPENAI_EVOLVE_MODE: Agent benchmark mode is stable.",
+                        operation="update",
+                        evidence_quote="Update memory: Agent benchmark mode alpha -> stable",
+                        target_hint="Agent benchmark mode alpha",
+                    ),
+                    _openai_candidate_payload(
+                        text="OPENAI_EVOLVE_REMOVE legacy hook cache",
+                        operation="delete",
+                        confidence="low",
+                        evidence_quote="Forget legacy hook cache",
+                        target_hint="legacy hook cache",
+                        ttl_policy="delete_review",
+                    ),
+                    _openai_candidate_payload(
+                        text="No durable memory.",
+                        operation="noop",
+                        confidence="low",
+                        evidence_quote=None,
+                    ),
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_evolution",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        candidates = await extractor.extract_facts(
+            text=(
+                "Update memory: Agent benchmark mode alpha -> stable. "
+                "Forget legacy hook cache. This last sentence is noise."
+            ),
+            source=source,
+        )
+
+        assert [candidate.operation_hint for candidate in candidates] == [
+            CandidateOperation.UPDATE,
+            CandidateOperation.DELETE,
+            CandidateOperation.NOOP,
+        ]
+        assert candidates[0].target_hint == "Agent benchmark mode alpha"
+        assert candidates[1].target_hint == "legacy hook cache"
+        assert candidates[1].ttl_policy == "delete_review"
+        assert candidates[0].source_refs[0].quote_preview == (
+            "Update memory: Agent benchmark mode alpha -> stable"
+        )
+        assert candidates[2].source_refs == ()
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_missing_evidence_for_memory_candidate() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="MISSING_EVIDENCE_MARKER should fail.",
+                        operation="add",
+                        evidence_quote=None,
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_missing_evidence",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="MISSING_EVIDENCE_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "evidence_quote_required" in str(exc)
+        else:
+            raise AssertionError("Expected missing evidence quote to fail")
+
+    asyncio.run(run())
+
+
+def test_openai_json_memory_extractor_rejects_invented_evidence_quote() -> None:
+    async def run() -> None:
+        fake = FakeOpenAIClient(
+            {
+                "candidates": [
+                    _openai_candidate_payload(
+                        text="INVENTED_EVIDENCE_MARKER should fail.",
+                        operation="add",
+                        evidence_quote="not present in source text",
+                    )
+                ]
+            }
+        )
+        extractor = OpenAIJsonMemoryExtractor(
+            api_key=None,
+            model="test-extractor-model",
+            client_factory=lambda: fake,
+        )
+        source = SourceProvenance(
+            source_type="capture:hook",
+            source_id="cap_invented_evidence",
+            trust_level=TrustLevel.MEDIUM,
+        )
+
+        try:
+            await extractor.extract_facts(text="INVENTED_EVIDENCE_MARKER", source=source)
+        except MemoryValidationError as exc:
+            assert "evidence_quote_not_found" in str(exc)
+        else:
+            raise AssertionError("Expected invented evidence quote to fail")
 
     asyncio.run(run())
 

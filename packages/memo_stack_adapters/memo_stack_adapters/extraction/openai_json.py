@@ -108,7 +108,7 @@ class OpenAIJsonMemoryExtractor(MemoryExtractorPort):
         finally:
             await _close_client(client)
 
-        return _parse_response(response=response, source=source)
+        return _parse_response(response=response, source=source, source_text=text)
 
     def _client(self):
         if self._client_factory is not None:
@@ -122,6 +122,7 @@ def _parse_response(
     *,
     response: Any,
     source: SourceProvenance,
+    source_text: str,
 ) -> tuple[MemoryCandidate, ...]:
     raw_text = _response_output_text(response)
     try:
@@ -136,13 +137,17 @@ def _parse_response(
         raise MemoryValidationError("extractor.openai.candidates_not_array")
     if len(raw_candidates) > MAX_CANDIDATES:
         raise MemoryValidationError("extractor.openai.too_many_candidates")
-    return tuple(_candidate_from_payload(candidate, source=source) for candidate in raw_candidates)
+    return tuple(
+        _candidate_from_payload(candidate, source=source, source_text=source_text)
+        for candidate in raw_candidates
+    )
 
 
 def _candidate_from_payload(
     payload: Any,
     *,
     source: SourceProvenance,
+    source_text: str,
 ) -> MemoryCandidate:
     if not isinstance(payload, dict):
         raise MemoryValidationError("extractor.openai.candidate_not_object")
@@ -154,6 +159,11 @@ def _candidate_from_payload(
         "extractor.openai.invalid_operation",
     )
     evidence_quote = _optional_str(payload.get("evidence_quote"), max_chars=240)
+    _validate_evidence_quote(
+        operation=operation,
+        evidence_quote=evidence_quote,
+        source_text=source_text,
+    )
     return MemoryCandidate(
         text=_required_str(payload, "text", max_chars=MAX_TEXT_CHARS),
         kind=_enum_value(
@@ -196,6 +206,24 @@ def _source_refs(
             quote_preview=evidence_quote,
         ),
     )
+
+
+def _validate_evidence_quote(
+    *,
+    operation: CandidateOperation,
+    evidence_quote: str | None,
+    source_text: str,
+) -> None:
+    if operation == CandidateOperation.NOOP:
+        return
+    if not evidence_quote:
+        raise MemoryValidationError("extractor.openai.evidence_quote_required")
+    if _normalize_evidence(evidence_quote) not in _normalize_evidence(source_text):
+        raise MemoryValidationError("extractor.openai.evidence_quote_not_found")
+
+
+def _normalize_evidence(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 def _reject_unknown_keys(payload: dict[str, Any], allowed: set[str], code: str) -> None:
