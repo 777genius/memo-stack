@@ -165,6 +165,75 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.equal(conflictFiles(vaultPath).length, 0);
   });
 
+  it("keeps readonly managed note edits out of the backend and visible as conflicts", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO readonly initial fact.",
+      sourceId: "wdio-readonly-note-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    replaceFrontmatterValue(exportedFact, "memo_stack_sync_mode", "readonly");
+    replaceManagedText(exportedFact, "Obsidian WDIO readonly local draft must stay local.");
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(
+      (await getFact(baseUrl, fact.id)).text,
+      "Obsidian WDIO readonly initial fact.",
+    );
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /readonly local draft must stay local/);
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /Existing managed note has unimported local edits/);
+    assert.match(conflict, new RegExp(fact.id));
+  });
+
+  it("turns duplicate managed fact IDs in the vault into visible conflicts", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO duplicate managed note initial fact.",
+      sourceId: "wdio-duplicate-managed-note-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    const duplicateRelativePath = path.join(
+      scopedRoot,
+      "generated",
+      "facts",
+      "zzz-duplicate-managed.md",
+    );
+    writeVaultFile(
+      vaultPath,
+      duplicateRelativePath,
+      fs.readFileSync(exportedFact, "utf8"),
+    );
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(
+      (await getFact(baseUrl, fact.id)).text,
+      "Obsidian WDIO duplicate managed note initial fact.",
+    );
+    assert.equal(factFiles(vaultPath).length, 2);
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /Duplicate memo_stack_id in vault/);
+    assert.match(conflict, /zzz-duplicate-managed\.md/);
+  });
+
   it("continues managed note sync after an Obsidian reload", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO reload initial fact.",
@@ -814,6 +883,13 @@ function replaceManagedText(filePath: string, text: string): void {
   assert.ok(start >= textStart.length);
   assert.ok(end > start);
   fs.writeFileSync(filePath, `${old.slice(0, start)}\n${text}\n${old.slice(end)}`, "utf8");
+}
+
+function replaceFrontmatterValue(filePath: string, key: string, value: string): void {
+  const old = fs.readFileSync(filePath, "utf8");
+  const pattern = new RegExp(`^${key}: .*$`, "m");
+  assert.match(old, pattern);
+  fs.writeFileSync(filePath, old.replace(pattern, `${key}: ${value}`), "utf8");
 }
 
 function readVaultFile(vaultPath: string, relativePath: string): string {
