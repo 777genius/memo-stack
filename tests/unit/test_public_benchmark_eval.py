@@ -52,14 +52,18 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert result["metrics"]["accuracy"] == 1.0
     assert result["metrics"]["locomo_accuracy"] == 1.0
     assert result["metrics"]["longmemeval_accuracy"] == 1.0
+    assert isinstance(result["dataset_hash"], str)
+    assert len(result["dataset_hash"]) == 64
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
     assert all(case["status"] == "ok" for case in result["cases"])
     assert result["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
     assert result["provenance"]["suite"] == "public-memory-benchmark"
+    assert result["provenance"]["run_id"] == result["dataset_hash"][:16]
     assert result["provenance"]["git"]["dirty"] in {True, False}
     assert report.exists()
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["ok"] is True
+    assert written["dataset_hash"] == result["dataset_hash"]
     assert written["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
 
 

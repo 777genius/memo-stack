@@ -83,6 +83,8 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["metrics"]["case_count"] == 2
     assert result["metrics"]["accuracy"] == 1.0
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
+    assert set(result["dataset_hashes"]) == {"locomo", "longmemeval"}
+    assert all(len(value) == 64 for value in result["dataset_hashes"].values())
     assert result["provenance"]["generated_by"] == (
         "memo_stack_server.official_public_benchmark"
     )
@@ -135,6 +137,7 @@ def test_official_public_benchmark_canary_can_run_single_dataset(tmp_path: Path)
     assert result["ok"] is True
     assert result["metrics"]["benchmark_count"] == 1
     assert result["metrics"]["locomo_case_count"] == 1
+    assert set(result["dataset_hashes"]) == {"locomo"}
     assert result["source_urls"] == {"locomo": canary.LOCOMO_URL}
 
 

@@ -392,6 +392,10 @@ def _public_benchmark_report() -> dict[str, Any]:
                 "metrics": {"accuracy": 0.902, "case_count": 500},
             },
         ],
+        "dataset_hashes": {
+            "locomo": "locomo-dataset-sha256",
+            "longmemeval": "longmemeval-dataset-sha256",
+        },
         "metrics": {"benchmark_count": 2},
     }
 
@@ -1522,6 +1526,9 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     assert policy["public_benchmark"]["top_evidence_required_safety_checks"] == [
         "no_sensitive_text"
     ]
+    assert policy["public_benchmark"][
+        "top_evidence_requires_dataset_fingerprint"
+    ] is True
     assert "provenance_generator_allowed" in policy["agent_behavior"][
         "top_evidence_required_provenance_checks"
     ]
@@ -1615,6 +1622,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     suite_results["locomo"] = {
         "suite": "locomo",
         "ok": True,
+        "dataset_hash": "locomo-dataset-sha256",
         "provenance": _scorecard_provenance(
             generated_by="memo_stack_server.public_benchmark",
             suite="locomo",
@@ -1624,6 +1632,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     suite_results["longmemeval"] = {
         "suite": "longmemeval",
         "ok": True,
+        "dataset_hash": "longmemeval-dataset-sha256",
         "provenance": _scorecard_provenance(
             generated_by="memo_stack_server.public_benchmark",
             suite="longmemeval",
@@ -1638,8 +1647,30 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     assert public_benchmark["ok"] is True
     assert public_benchmark["benchmark_count"] == 2
     assert public_benchmark["competitive_floor_ok"] is True
+    assert public_benchmark["dataset_evidence_ok"] is True
     assert public_benchmark["benchmarks"]["locomo"]["case_count"] == 600
     assert public_benchmark["benchmarks"]["longmemeval"]["accuracy"] == 0.902
+
+
+def test_memory_quality_scorecard_requires_public_benchmark_dataset_fingerprint() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    public_benchmark = _public_benchmark_report()
+    public_benchmark.pop("dataset_hashes")
+    suite_results["public-memory-benchmark"] = public_benchmark
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["public_benchmark"]["quality_ok"] is True
+    assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence"]["missing_reports"] == [
+        "public-memory-benchmark"
+    ]
+    assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
 
 
 def test_memory_quality_scorecard_rejects_underpowered_public_benchmark_evidence() -> None:
@@ -2096,6 +2127,7 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     assert result["external_evidence"]["agent_behavior_benchmark"]["safety_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["provenance_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["safety_ok"] is True
+    assert result["external_evidence"]["public_benchmark"]["dataset_evidence_ok"] is True
     assert (
         result["external_evidence"]["confidence_tier"]
         == "full_provider_agent_and_public_benchmark_evaluated"

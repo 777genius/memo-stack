@@ -476,6 +476,7 @@ def memory_quality_scorecard_policy_snapshot(
             ),
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
+            "top_evidence_requires_dataset_fingerprint": True,
         },
     }
 
@@ -816,6 +817,8 @@ def _scorecard_external_evidence(
             evidence_gaps.append("public_benchmark_provenance_failed")
         if public_benchmark_summary.get("safety_ok") is False:
             evidence_gaps.append("public_benchmark_safety_failed")
+        if public_benchmark_summary.get("dataset_evidence_ok") is False:
+            evidence_gaps.append("public_benchmark_dataset_evidence_failed")
         if public_benchmark_summary.get("competitive_floor_ok") is False:
             evidence_gaps.append("public_benchmark_competitive_floor_failed")
 
@@ -917,8 +920,11 @@ def _scorecard_public_benchmark_evidence_summary(
         report["ok"] is True for report in safety_reports
     )
     safety = _scorecard_combined_safety_summary(safety_reports)
+    dataset_evidence = _scorecard_public_benchmark_dataset_evidence_summary(reports)
+    dataset_evidence_ok = dataset_evidence["ok"] is True
     ok = quality_ok and (
-        not require_top_evidence or (provenance_ok and safety_ok)
+        not require_top_evidence
+        or (provenance_ok and safety_ok and dataset_evidence_ok)
     )
     return {
         "present": bool(reports),
@@ -929,6 +935,8 @@ def _scorecard_public_benchmark_evidence_summary(
         "safety_ok": safety_ok if require_top_evidence else None,
         "safety": safety,
         "safety_reports": safety_reports,
+        "dataset_evidence_ok": dataset_evidence_ok if require_top_evidence else None,
+        "dataset_evidence": dataset_evidence,
         "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
         "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
         "missing_benchmarks": missing,
@@ -979,6 +987,83 @@ def _scorecard_combined_safety_summary(
             if isinstance(path, str)
         ][:10],
     }
+
+
+def _scorecard_public_benchmark_dataset_evidence_summary(
+    reports: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    report_summaries: list[dict[str, object]] = []
+    missing_reports: list[str] = []
+    for index, report in enumerate(reports):
+        report_label = str(report.get("suite") or f"report_{index}")
+        benchmark_names = _scorecard_public_benchmark_names_in_report(report)
+        missing_benchmarks = [
+            name
+            for name in benchmark_names
+            if not _scorecard_public_benchmark_has_dataset_fingerprint(report, name)
+        ]
+        ok = bool(benchmark_names) and not missing_benchmarks
+        if not ok:
+            missing_reports.append(report_label)
+        report_summaries.append(
+            {
+                "report": report_label,
+                "ok": ok,
+                "benchmarks": benchmark_names,
+                "missing_benchmarks": missing_benchmarks,
+                "has_dataset_hash": _scorecard_nonempty_string(
+                    report.get("dataset_hash")
+                ),
+                "has_dataset_hashes": isinstance(report.get("dataset_hashes"), Mapping),
+            }
+        )
+    return {
+        "ok": bool(reports) and not missing_reports,
+        "report_count": len(reports),
+        "missing_reports": missing_reports,
+        "reports": report_summaries,
+    }
+
+
+def _scorecard_public_benchmark_names_in_report(
+    report: Mapping[str, object],
+) -> list[str]:
+    names: set[str] = set()
+    raw_items = report.get("benchmarks")
+    if isinstance(raw_items, list | tuple):
+        for item in raw_items:
+            if isinstance(item, Mapping):
+                name = _scorecard_normalize_public_benchmark_name(
+                    item.get("name") or item.get("benchmark") or item.get("suite")
+                )
+                if name:
+                    names.add(name)
+    name = _scorecard_normalize_public_benchmark_name(
+        report.get("benchmark") or report.get("name") or report.get("suite")
+    )
+    if name:
+        names.add(name)
+    metrics = _scorecard_result_metrics(dict(report))
+    for benchmark in _PUBLIC_MEMORY_BENCHMARK_REQUIRED:
+        if f"{benchmark}_accuracy" in metrics or f"{benchmark}_case_count" in metrics:
+            names.add(benchmark)
+    return sorted(names)
+
+
+def _scorecard_public_benchmark_has_dataset_fingerprint(
+    report: Mapping[str, object],
+    benchmark: str,
+) -> bool:
+    if _scorecard_nonempty_string(report.get("dataset_hash")):
+        return True
+    dataset_hashes = report.get("dataset_hashes")
+    if isinstance(dataset_hashes, Mapping):
+        return _scorecard_nonempty_string(dataset_hashes.get(benchmark))
+    return False
+
+
+def _scorecard_nonempty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _scorecard_collect_public_benchmarks(

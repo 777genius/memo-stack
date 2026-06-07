@@ -198,6 +198,10 @@ def _minimal_public_benchmark_report(
                 "metrics": {"accuracy": 0.902, "case_count": 500},
             },
         ],
+        "dataset_hashes": {
+            "locomo": "locomo-dataset-sha256",
+            "longmemeval": "longmemeval-dataset-sha256",
+        },
     }
     if include_provenance:
         report["provenance"] = _strict_provenance(
@@ -385,9 +389,13 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                             "metrics": {"accuracy": 0.902, "case_count": 500},
                         },
                     ],
+                    "dataset_hashes": {
+                        "locomo": "locomo-dataset-sha256",
+                        "longmemeval": "longmemeval-dataset-sha256",
+                    },
                 },
             }
-        ),
+            ),
         encoding="utf-8",
     )
 
@@ -836,6 +844,10 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                         "metrics": {"accuracy": 0.902, "case_count": 500},
                     },
                 ],
+                "dataset_hashes": {
+                    "locomo": "locomo-dataset-sha256",
+                    "longmemeval": "longmemeval-dataset-sha256",
+                },
             }
         ),
         encoding="utf-8",

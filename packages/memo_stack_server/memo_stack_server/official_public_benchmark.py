@@ -220,6 +220,7 @@ def _merge_reports(
     cases: list[object] = []
     benchmarks: list[object] = []
     failures: list[object] = []
+    dataset_hashes: dict[str, str] = {}
     checks = {
         "official_sources_configured": True,
         "case_count": True,
@@ -258,6 +259,11 @@ def _merge_reports(
         report_benchmarks = report.get("benchmarks")
         if isinstance(report_benchmarks, list):
             benchmarks.extend(report_benchmarks)
+            dataset_hash = report.get("dataset_hash")
+            if isinstance(dataset_hash, str) and dataset_hash:
+                for item in report_benchmarks:
+                    if isinstance(item, Mapping) and isinstance(item.get("name"), str):
+                        dataset_hashes[item["name"]] = dataset_hash
         report_failures = report.get("failures")
         if isinstance(report_failures, list):
             failures.extend(report_failures)
@@ -278,6 +284,7 @@ def _merge_reports(
         "source_urls": {
             name: OFFICIAL_DATASETS[name].url for name in _selected_benchmarks(benchmark)
         },
+        "dataset_hashes": dataset_hashes,
         "api_url": api_url,
         "max_cases_per_benchmark": max_cases,
         "min_accuracy": min_accuracy,
