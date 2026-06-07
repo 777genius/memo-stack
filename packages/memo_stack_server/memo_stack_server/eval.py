@@ -55,6 +55,7 @@ GRAPH_NATIVE_GOLDEN_SUITE = "graph-native-golden"
 MEMORY_QUALITY_SCORECARD_SUITE = "memory-quality-scorecard"
 FULL_PROVIDER_CANARY_SUITE = "memo-stack-full-provider-canary"
 AGENT_BEHAVIOR_BENCH_SUITE = "memory_mcp_agent_behavior"
+AGENT_LIVE_SMOKE_SUITE = "memo-stack-agent-live-smoke"
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
 LOCOMO_BENCHMARK_SUITE = "locomo"
 LONGMEMEVAL_BENCHMARK_SUITE = "longmemeval"
@@ -156,6 +157,22 @@ _AGENT_BEHAVIOR_ZERO_COUNT_METRICS = (
     "stale_leak_count",
     "deleted_leak_count",
     "critical_safety_failures",
+)
+_AGENT_LIVE_SMOKE_SUITE_ALIASES = (
+    AGENT_LIVE_SMOKE_SUITE,
+    "memory-agent-live-smoke",
+)
+_AGENT_LIVE_SMOKE_REQUIRED_GENERATED_MCP_CHECKS = (
+    "codex_claude_cursor_package",
+    "gemini",
+    "opencode",
+    "cursor_workspace",
+)
+_AGENT_LIVE_SMOKE_REQUIRED_AGENT_CLI_CHECKS = (
+    "claude",
+    "gemini",
+    "opencode",
+    "codex",
 )
 _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
     LOCOMO_BENCHMARK_SUITE: frozenset(("locomo", "lo_co_mo", "long-context-memory")),
@@ -466,6 +483,22 @@ def memory_quality_scorecard_policy_snapshot(
             ),
             "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
             "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
+            "top_evidence_requires_provenance": True,
+            "top_evidence_required_provenance_checks": list(
+                TOP_EVIDENCE_PROVENANCE_CHECKS
+            ),
+            "top_evidence_requires_safety_scan": True,
+            "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
+        },
+        "agent_live_smoke": {
+            "suite_aliases": list(_AGENT_LIVE_SMOKE_SUITE_ALIASES),
+            "required_generated_mcp_checks": list(
+                _AGENT_LIVE_SMOKE_REQUIRED_GENERATED_MCP_CHECKS
+            ),
+            "required_agent_cli_checks": list(
+                _AGENT_LIVE_SMOKE_REQUIRED_AGENT_CLI_CHECKS
+            ),
+            "requires_strict_agent_cli": True,
             "top_evidence_requires_provenance": True,
             "top_evidence_required_provenance_checks": list(
                 TOP_EVIDENCE_PROVENANCE_CHECKS
@@ -786,12 +819,17 @@ def _scorecard_external_evidence(
 ) -> dict[str, object]:
     full_provider = _scorecard_find_full_provider_report(suite_results)
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
+    agent_live_smoke = _scorecard_find_agent_live_smoke_report(suite_results)
     full_provider_summary = _scorecard_full_provider_evidence_summary(
         full_provider,
         require_top_evidence=require_top_evidence,
     )
     agent_behavior_summary = _scorecard_agent_behavior_evidence_summary(
         agent_behavior,
+        require_top_evidence=require_top_evidence,
+    )
+    agent_live_smoke_summary = _scorecard_agent_live_smoke_evidence_summary(
+        agent_live_smoke,
         require_top_evidence=require_top_evidence,
     )
     public_benchmark_summary = _scorecard_public_benchmark_evidence_summary(
@@ -801,10 +839,12 @@ def _scorecard_external_evidence(
     )
     full_provider_ok = full_provider_summary["ok"] is True
     agent_behavior_ok = agent_behavior_summary["ok"] is True
+    agent_live_smoke_ok = agent_live_smoke_summary["ok"] is True
     public_benchmark_ok = public_benchmark_summary["ok"] is True
     confidence_tier = _scorecard_confidence_tier(
         full_provider_ok=full_provider_ok,
         agent_behavior_ok=agent_behavior_ok,
+        agent_live_smoke_ok=agent_live_smoke_ok,
         public_benchmark_ok=public_benchmark_ok,
     )
 
@@ -827,6 +867,16 @@ def _scorecard_external_evidence(
             evidence_gaps.append("agent_behavior_benchmark_safety_failed")
         if agent_behavior_summary.get("quality_floor_ok") is False:
             evidence_gaps.append("agent_behavior_quality_floor_failed")
+    if not agent_live_smoke_summary["present"]:
+        evidence_gaps.append("agent_live_smoke_missing")
+    elif not agent_live_smoke_ok:
+        evidence_gaps.append("agent_live_smoke_failed")
+        if agent_live_smoke_summary.get("provenance_ok") is False:
+            evidence_gaps.append("agent_live_smoke_provenance_failed")
+        if agent_live_smoke_summary.get("safety_ok") is False:
+            evidence_gaps.append("agent_live_smoke_safety_failed")
+        if agent_live_smoke_summary.get("quality_floor_ok") is False:
+            evidence_gaps.append("agent_live_smoke_quality_floor_failed")
     if not public_benchmark_summary["present"]:
         evidence_gaps.append("public_benchmark_evidence_missing")
     elif not public_benchmark_ok:
@@ -845,6 +895,7 @@ def _scorecard_external_evidence(
         "required_for_gate": require_top_evidence,
         "top_library_comparison_ready": full_provider_ok
         and agent_behavior_ok
+        and agent_live_smoke_ok
         and public_benchmark_ok,
         "benchmark_note": (
             "Internal deterministic suites are the local quality gate. "
@@ -854,6 +905,7 @@ def _scorecard_external_evidence(
         "evidence_gaps": evidence_gaps,
         "full_provider_canary": full_provider_summary,
         "agent_behavior_benchmark": agent_behavior_summary,
+        "agent_live_smoke": agent_live_smoke_summary,
         "public_benchmark": public_benchmark_summary,
     }
 
@@ -881,30 +933,127 @@ def _scorecard_find_agent_behavior_report(
     return nested if isinstance(nested, dict) else None
 
 
+def _scorecard_find_agent_live_smoke_report(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object] | None:
+    for suite in _AGENT_LIVE_SMOKE_SUITE_ALIASES:
+        result = suite_results.get(suite)
+        if result is not None:
+            return result
+    return None
+
+
 def _scorecard_confidence_tier(
     *,
     full_provider_ok: bool,
     agent_behavior_ok: bool,
+    agent_live_smoke_ok: bool,
     public_benchmark_ok: bool,
 ) -> str:
-    if full_provider_ok and agent_behavior_ok and public_benchmark_ok:
-        return "full_provider_agent_and_public_benchmark_evaluated"
-    if full_provider_ok and agent_behavior_ok:
-        return "full_provider_and_agent_evaluated"
-    if full_provider_ok and public_benchmark_ok:
-        return "full_provider_and_public_benchmark_evaluated"
-    if agent_behavior_ok and public_benchmark_ok:
-        return "agent_and_public_benchmark_evaluated"
     labels = []
     if full_provider_ok:
         labels.append("full_provider")
     if agent_behavior_ok:
-        labels.append("agent")
+        labels.append("agent_behavior")
+    if agent_live_smoke_ok:
+        labels.append("agent_live_smoke")
     if public_benchmark_ok:
         labels.append("public_benchmark")
     if not labels:
         return "internal_deterministic"
     return "_and_".join(labels) + "_evaluated"
+
+
+def _scorecard_agent_live_smoke_evidence_summary(
+    result: dict[str, object] | None,
+    *,
+    require_top_evidence: bool = False,
+) -> dict[str, object]:
+    if result is None:
+        return {"present": False, "ok": None}
+    checks_raw = result.get("checks")
+    checks_map = checks_raw if isinstance(checks_raw, Mapping) else {}
+    generated_mcp = checks_map.get("generated_mcp")
+    generated_mcp_map = generated_mcp if isinstance(generated_mcp, Mapping) else {}
+    agent_cli = checks_map.get("agent_cli")
+    agent_cli_map = agent_cli if isinstance(agent_cli, Mapping) else {}
+    required_checks: dict[str, bool] = {
+        "result_ok": result.get("ok") is True,
+        "strict_agent_cli_enabled": result.get("strict_agent_cli") is True,
+        "generated_mcp_checks_present": bool(generated_mcp_map),
+        "agent_cli_checks_present": bool(agent_cli_map),
+    }
+    for name in _AGENT_LIVE_SMOKE_REQUIRED_GENERATED_MCP_CHECKS:
+        required_checks[f"generated_mcp_{name}_ok"] = _scorecard_live_check_ok(
+            generated_mcp_map.get(name),
+            ok_key="ok",
+            expected=True,
+        )
+    for name in _AGENT_LIVE_SMOKE_REQUIRED_AGENT_CLI_CHECKS:
+        required_checks[f"agent_cli_{name}_ok"] = _scorecard_live_check_ok(
+            agent_cli_map.get(name),
+            ok_key="status",
+            expected="ok",
+        )
+    failed_required_checks = sorted(
+        check for check, ok in required_checks.items() if ok is not True
+    )
+    provenance = top_evidence_provenance_summary(result)
+    safety = top_evidence_safety_summary(result)
+    quality_ok = not failed_required_checks
+    return {
+        "present": True,
+        "suite": result.get("suite", AGENT_LIVE_SMOKE_SUITE),
+        "ok": quality_ok
+        and (
+            not require_top_evidence
+            or (provenance["ok"] is True and safety["ok"] is True)
+        ),
+        "quality_ok": quality_ok,
+        "quality_floor_ok": quality_ok,
+        "provenance_ok": provenance["ok"] if require_top_evidence else None,
+        "provenance": provenance,
+        "safety_ok": safety["ok"] if require_top_evidence else None,
+        "safety": safety,
+        "strict_agent_cli": result.get("strict_agent_cli"),
+        "required_checks": required_checks,
+        "failed_required_checks": failed_required_checks,
+        "generated_mcp": _scorecard_live_check_statuses(generated_mcp_map),
+        "agent_cli": _scorecard_live_check_statuses(agent_cli_map),
+        "generated_mcp_failures": _scorecard_string_list(
+            result.get("generated_mcp_failures")
+        ),
+        "agent_cli_failures": _scorecard_string_list(result.get("agent_cli_failures")),
+    }
+
+
+def _scorecard_live_check_ok(
+    value: object,
+    *,
+    ok_key: str,
+    expected: object,
+) -> bool:
+    return isinstance(value, Mapping) and value.get(ok_key) == expected
+
+
+def _scorecard_live_check_statuses(
+    checks: Mapping[object, object],
+) -> dict[str, object]:
+    statuses: dict[str, object] = {}
+    for name, value in checks.items():
+        if not isinstance(name, str) or not isinstance(value, Mapping):
+            continue
+        if "status" in value:
+            statuses[name] = value.get("status")
+        elif "ok" in value:
+            statuses[name] = value.get("ok")
+    return statuses
+
+
+def _scorecard_string_list(value: object) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _scorecard_public_benchmark_evidence_summary(

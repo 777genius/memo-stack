@@ -177,6 +177,44 @@ def _agent_behavior_scenario_report(
     }
 
 
+def _minimal_agent_live_smoke_report(
+    *,
+    include_provenance: bool = True,
+    commit: str = "abc123",
+    dirty: bool = False,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "suite": "memo-stack-agent-live-smoke",
+        "ok": True,
+        "strict_agent_cli": True,
+        "checks": {
+            "generated_mcp": {
+                "codex_claude_cursor_package": {"ok": True},
+                "gemini": {"ok": True},
+                "opencode": {"ok": True},
+                "cursor_workspace": {"ok": True},
+            },
+            "agent_cli": {
+                "claude": {"status": "ok"},
+                "gemini": {"status": "ok"},
+                "opencode": {"status": "ok"},
+                "codex": {"status": "ok"},
+            },
+        },
+        "generated_mcp_failures": [],
+        "agent_cli_failures": [],
+        "failures": [],
+    }
+    if include_provenance:
+        report["provenance"] = _strict_provenance(
+            generated_by="scripts/agent_install_verification.py",
+            suite="memo-stack-agent-live-smoke",
+            commit=commit,
+            dirty=dirty,
+        )
+    return report
+
+
 def _minimal_public_benchmark_report(
     *,
     include_provenance: bool = True,
@@ -300,6 +338,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     tmp_path: Path,
 ) -> None:
     external_report = tmp_path / "full-provider-agent-public.json"
+    live_smoke_report = tmp_path / "agent-live-smoke.json"
     external_report.write_text(
         json.dumps(
             {
@@ -434,10 +473,14 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
             ),
         encoding="utf-8",
     )
+    live_smoke_report.write_text(
+        json.dumps(_minimal_agent_live_smoke_report()),
+        encoding="utf-8",
+    )
 
     result = build_quality_evidence_bundle(
         output_dir=tmp_path / "evidence",
-        extra_report_paths=(external_report,),
+        extra_report_paths=(external_report, live_smoke_report),
         require_top_evidence=True,
         expected_git_commit="abc123",
     )
@@ -446,7 +489,8 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     assert result["expected_git_commit"] == "abc123"
     assert result["allow_dirty_top_evidence"] is False
     assert result["scorecard"]["confidence_tier"] == (
-        "full_provider_agent_and_public_benchmark_evaluated"
+        "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
+        "public_benchmark_evaluated"
     )
     assert result["scorecard"]["top_library_comparison_ready"] is True
     assert result["scorecard"]["evidence_gaps"] == []
@@ -468,6 +512,13 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     )
     assert policy["agent_behavior"]["rate_floors"]["search_before_write_rate"] == 0.9
     assert "secret_leak_count" in policy["agent_behavior"]["zero_count_metrics"]
+    assert policy["agent_live_smoke"]["requires_strict_agent_cli"] is True
+    assert policy["agent_live_smoke"]["required_agent_cli_checks"] == [
+        "claude",
+        "gemini",
+        "opencode",
+        "codex",
+    ]
     assert policy["public_benchmark"]["competitive_floors"]["locomo"] == {
         "min_accuracy": 0.947,
         "min_case_count": 600,
@@ -477,7 +528,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         "min_case_count": 500,
     }
     assert result["manifest_path"].endswith("quality-evidence-manifest.json")
-    assert len(external_artifacts) == 1
+    assert len(external_artifacts) == 2
     assert external_artifacts[0]["path"] == str(external_report)
     assert external_artifacts[0]["relative_path"] is None
     assert external_artifacts[0]["report"]["suite"] == "memo-stack-full-provider-canary"
@@ -485,6 +536,11 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         "scripts/clean_full_smoke.py"
     )
     assert external_artifacts[0]["report"]["provenance"]["git"]["commit"] == "abc123"
+    assert external_artifacts[1]["path"] == str(live_smoke_report)
+    assert external_artifacts[1]["report"]["suite"] == "memo-stack-agent-live-smoke"
+    assert external_artifacts[1]["report"]["provenance"]["generated_by"] == (
+        "scripts/agent_install_verification.py"
+    )
 
 
 def test_quality_evidence_bundle_requires_full_provider_nested_agent_provenance(
@@ -916,7 +972,10 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
 
     assert result["ok"] is False
     assert result["scorecard"]["top_library_comparison_ready"] is False
-    assert result["scorecard"]["evidence_gaps"] == ["full_provider_canary_missing"]
+    assert result["scorecard"]["evidence_gaps"] == [
+        "full_provider_canary_missing",
+        "agent_live_smoke_missing",
+    ]
 
 
 def test_quality_evidence_bundle_rejects_wrong_top_evidence_schema_version(

@@ -34,6 +34,12 @@ AGENT_BEHAVIOR_TOP_EVIDENCE_GENERATORS = frozenset(
     {"memo_stack_mcp.agent_behavior_bench"}
 )
 AGENT_BEHAVIOR_TOP_EVIDENCE_SUITES = frozenset({"memory_mcp_agent_behavior"})
+AGENT_LIVE_SMOKE_TOP_EVIDENCE_GENERATORS = frozenset(
+    {"scripts/agent_install_verification.py"}
+)
+AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES = frozenset(
+    {"memo-stack-agent-live-smoke", "memory-agent-live-smoke"}
+)
 PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS = frozenset(
     {
         "memo_stack_server.official_public_benchmark",
@@ -78,6 +84,13 @@ TOP_EVIDENCE_REPORT_POLICIES = {
             provenance_suites=AGENT_BEHAVIOR_TOP_EVIDENCE_SUITES,
         )
         for suite in AGENT_BEHAVIOR_TOP_EVIDENCE_SUITES
+    },
+    **{
+        suite: TopEvidenceReportPolicy(
+            expected_generators=AGENT_LIVE_SMOKE_TOP_EVIDENCE_GENERATORS,
+            provenance_suites=AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES,
+        )
+        for suite in AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES
     },
     **{
         suite: TopEvidenceReportPolicy(

@@ -22,6 +22,7 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from memo_stack_core.reporting import with_report_provenance
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memo-stack-agent-plugin"
@@ -33,6 +34,7 @@ INTEGRATION_ID = "memo-stack-agent-plugin"
 GEMINI_HOOK_INTEGRATION_ID = "memo-stack-agent-plugin-gemini-hooks"
 DEFAULT_API_URL = "http://127.0.0.1:7788"
 DEFAULT_AUTH_TOKEN = "local-dev-token"
+AGENT_LIVE_SMOKE_SUITE = "memo-stack-agent-live-smoke"
 SENSITIVE_KEY_RE = re.compile(
     r"(TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL|DATABASE_URL|DB_URL|DSN)$",
     re.IGNORECASE,
@@ -280,7 +282,8 @@ async def run_live_smoke(
     failures = list(generated_mcp_failures)
     if strict_agent_cli:
         failures.extend(f"agent_cli:{name}" for name in agent_cli_failures)
-    return {
+    report = {
+        "suite": AGENT_LIVE_SMOKE_SUITE,
         "ok": not failures,
         "api_url": api_url,
         "checks": {
@@ -292,6 +295,13 @@ async def run_live_smoke(
         "agent_cli_failures": agent_cli_failures,
         "failures": failures,
     }
+    return with_report_provenance(
+        report,
+        generated_by="scripts/agent_install_verification.py",
+        suite=AGENT_LIVE_SMOKE_SUITE,
+        project="memo-stack",
+        cwd=PROJECT_ROOT,
+    )
 
 
 async def run_generated_mcp_status(

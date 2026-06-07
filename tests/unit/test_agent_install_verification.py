@@ -685,6 +685,9 @@ def test_live_smoke_strict_agent_cli_failures_make_result_not_ok(monkeypatch) ->
     )
 
     assert result["ok"] is False
+    assert result["suite"] == "memo-stack-agent-live-smoke"
+    assert result["provenance"]["generated_by"] == "scripts/agent_install_verification.py"
+    assert result["provenance"]["suite"] == "memo-stack-agent-live-smoke"
     assert result["generated_mcp_failures"] == []
     assert result["agent_cli_failures"] == ["gemini"]
     assert result["failures"] == ["agent_cli:gemini"]

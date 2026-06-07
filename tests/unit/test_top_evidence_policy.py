@@ -1,4 +1,6 @@
 from memo_stack_server.top_evidence_policy import (
+    AGENT_LIVE_SMOKE_TOP_EVIDENCE_GENERATORS,
+    AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES,
     FULL_PROVIDER_TOP_EVIDENCE_GENERATORS,
     FULL_PROVIDER_TOP_EVIDENCE_SUITES,
     PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS,
@@ -31,6 +33,15 @@ def test_top_evidence_policy_accepts_full_provider_aliases() -> None:
         assert policy is not None
         assert policy.expected_generators == FULL_PROVIDER_TOP_EVIDENCE_GENERATORS
         assert policy.provenance_suites == FULL_PROVIDER_TOP_EVIDENCE_SUITES
+
+
+def test_top_evidence_policy_accepts_agent_live_smoke_aliases() -> None:
+    for suite in AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES:
+        policy = top_evidence_report_policy(suite)
+
+        assert policy is not None
+        assert policy.expected_generators == AGENT_LIVE_SMOKE_TOP_EVIDENCE_GENERATORS
+        assert policy.provenance_suites == AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES
 
 
 def test_top_evidence_policy_summarizes_valid_public_benchmark_provenance() -> None:

@@ -314,6 +314,35 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
     }
 
 
+def _agent_live_smoke_report() -> dict[str, Any]:
+    return {
+        "suite": "memo-stack-agent-live-smoke",
+        "ok": True,
+        "provenance": _scorecard_provenance(
+            generated_by="scripts/agent_install_verification.py",
+            suite="memo-stack-agent-live-smoke",
+        ),
+        "strict_agent_cli": True,
+        "checks": {
+            "generated_mcp": {
+                "codex_claude_cursor_package": {"ok": True},
+                "gemini": {"ok": True},
+                "opencode": {"ok": True},
+                "cursor_workspace": {"ok": True},
+            },
+            "agent_cli": {
+                "claude": {"status": "ok"},
+                "gemini": {"status": "ok"},
+                "opencode": {"status": "ok"},
+                "codex": {"status": "ok"},
+            },
+        },
+        "generated_mcp_failures": [],
+        "agent_cli_failures": [],
+        "failures": [],
+    }
+
+
 def _agent_behavior_scenario_reports(
     *,
     scenario_count: int = 41,
@@ -1483,6 +1512,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["external_evidence"]["evidence_gaps"] == [
         "full_provider_canary_missing",
         "agent_behavior_benchmark_missing",
+        "agent_live_smoke_missing",
         "public_benchmark_evidence_missing",
     ]
     assert result["metrics"]["safety_leak_count"] == 0
@@ -1541,6 +1571,21 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "no_sensitive_text",
         "no_local_home_paths",
     ]
+    assert policy["agent_live_smoke"]["required_generated_mcp_checks"] == [
+        "codex_claude_cursor_package",
+        "gemini",
+        "opencode",
+        "cursor_workspace",
+    ]
+    assert policy["agent_live_smoke"]["required_agent_cli_checks"] == [
+        "claude",
+        "gemini",
+        "opencode",
+        "codex",
+    ]
+    assert policy["agent_live_smoke"]["requires_strict_agent_cli"] is True
+    assert policy["agent_live_smoke"]["top_evidence_requires_provenance"] is True
+    assert policy["agent_live_smoke"]["top_evidence_requires_safety_scan"] is True
     assert policy["public_benchmark"]["top_evidence_requires_provenance"] is True
     assert policy["public_benchmark"]["top_evidence_requires_safety_scan"] is True
     assert policy["public_benchmark"]["top_evidence_required_safety_checks"] == [
@@ -1610,9 +1655,12 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
 
     assert result["ok"] is True
     evidence = result["external_evidence"]
-    assert evidence["confidence_tier"] == "full_provider_and_agent_evaluated"
+    assert evidence["confidence_tier"] == "full_provider_and_agent_behavior_evaluated"
     assert evidence["top_library_comparison_ready"] is False
-    assert evidence["evidence_gaps"] == ["public_benchmark_evidence_missing"]
+    assert evidence["evidence_gaps"] == [
+        "agent_live_smoke_missing",
+        "public_benchmark_evidence_missing",
+    ]
     assert evidence["full_provider_canary"]["ok"] is True
     assert evidence["full_provider_canary"]["adapters"]["graphiti"] == "ok"
     assert evidence["full_provider_canary"]["failed_required_checks"] == []
@@ -1638,7 +1686,7 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     assert evidence["public_benchmark"]["present"] is False
 
 
-def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmarks() -> None:
+def test_memory_quality_scorecard_requires_live_agent_smoke_for_top_ready() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
@@ -1647,10 +1695,56 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
     result = build_memory_quality_scorecard(suite_results)
 
     evidence = result["external_evidence"]
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["agent_live_smoke"]["present"] is False
+    assert evidence["evidence_gaps"] == ["agent_live_smoke_missing"]
+
+
+def test_memory_quality_scorecard_rejects_weak_live_agent_smoke_evidence() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+    live_smoke = suite_results["memo-stack-agent-live-smoke"]
+    live_smoke["strict_agent_cli"] = False
+    live_smoke["checks"]["agent_cli"]["gemini"] = {
+        "status": "blocked",
+        "reason": "gemini auth unavailable",
+    }
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    evidence = result["external_evidence"]
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["agent_live_smoke"]["ok"] is False
+    assert evidence["agent_live_smoke"]["failed_required_checks"] == [
+        "agent_cli_gemini_ok",
+        "strict_agent_cli_enabled",
+    ]
+    assert "agent_live_smoke_failed" in evidence["evidence_gaps"]
+    assert "agent_live_smoke_quality_floor_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmarks() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    evidence = result["external_evidence"]
     assert result["ok"] is True
-    assert evidence["confidence_tier"] == "full_provider_agent_and_public_benchmark_evaluated"
+    assert evidence["confidence_tier"] == (
+        "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
+        "public_benchmark_evaluated"
+    )
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
+    assert evidence["agent_live_smoke"]["ok"] is True
+    assert evidence["agent_live_smoke"]["agent_cli"]["claude"] == "ok"
     assert evidence["public_benchmark"]["ok"] is True
     assert evidence["public_benchmark"]["competitive_floor_ok"] is True
     assert evidence["public_benchmark"]["benchmarks"]["locomo"]["accuracy"] == 0.947
@@ -1661,6 +1755,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     suite_results = _scorecard_fixture_results()
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["locomo"] = {
         "suite": "locomo",
         "ok": True,
@@ -2157,7 +2252,9 @@ def test_memory_quality_scorecard_can_use_nested_agent_evidence() -> None:
 
     result = build_memory_quality_scorecard(suite_results)
 
-    assert result["external_evidence"]["confidence_tier"] == "full_provider_and_agent_evaluated"
+    assert result["external_evidence"]["confidence_tier"] == (
+        "full_provider_and_agent_behavior_evaluated"
+    )
     assert result["external_evidence"]["agent_behavior_benchmark"]["scenario_set"] == "realistic"
 
 
@@ -2167,13 +2264,17 @@ def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> 
     full_provider["public_benchmark"] = _public_benchmark_report()
     suite_results["memo-stack-full-provider-canary"] = full_provider
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
 
     evidence = result["external_evidence"]
     assert result["ok"] is True
     assert result["gates"]["top_library_external_evidence"] is True
-    assert evidence["confidence_tier"] == "full_provider_agent_and_public_benchmark_evaluated"
+    assert evidence["confidence_tier"] == (
+        "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
+        "public_benchmark_evaluated"
+    )
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
     assert evidence["public_benchmark"]["benchmark_count"] == 2
@@ -2217,6 +2318,7 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_provenance() -> N
     agent_behavior.pop("provenance")
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
+    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
@@ -2249,6 +2351,11 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_proven
             "full_provider_canary_provenance_failed",
         ),
         (
+            "memo-stack-agent-live-smoke",
+            "agent_live_smoke",
+            "agent_live_smoke_provenance_failed",
+        ),
+        (
             "public-memory-benchmark",
             "public_benchmark",
             "public_benchmark_provenance_failed",
@@ -2257,6 +2364,7 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_proven
         suite_results = _scorecard_fixture_results()
         suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+        suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
         suite_results[target].pop("provenance")
 
@@ -2283,6 +2391,11 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
             "agent_behavior_benchmark_safety_failed",
         ),
         (
+            "memo-stack-agent-live-smoke",
+            "agent_live_smoke",
+            "agent_live_smoke_safety_failed",
+        ),
+        (
             "public-memory-benchmark",
             "public_benchmark",
             "public_benchmark_safety_failed",
@@ -2291,6 +2404,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
         suite_results = _scorecard_fixture_results()
         suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+        suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
         suite_results[target]["debug"] = {
             "unsafe_note": "REPORT_TOKEN=abcdefghijklmnopqrstuvwxyz"
@@ -2323,6 +2437,11 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
             "agent_behavior_benchmark_safety_failed",
         ),
         (
+            "memo-stack-agent-live-smoke",
+            "agent_live_smoke",
+            "agent_live_smoke_safety_failed",
+        ),
+        (
             "public-memory-benchmark",
             "public_benchmark",
             "public_benchmark_safety_failed",
@@ -2331,6 +2450,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
         suite_results = _scorecard_fixture_results()
         suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+        suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
         suite_results[target]["debug"] = {"local_path": "/Users/alice/private/report.json"}
 
@@ -2354,6 +2474,7 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     suite_results = _scorecard_fixture_results()
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
@@ -2365,12 +2486,17 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     assert result["external_evidence"]["full_provider_canary"]["safety_ok"] is True
     assert result["external_evidence"]["agent_behavior_benchmark"]["provenance_ok"] is True
     assert result["external_evidence"]["agent_behavior_benchmark"]["safety_ok"] is True
+    assert result["external_evidence"]["agent_live_smoke"]["provenance_ok"] is True
+    assert result["external_evidence"]["agent_live_smoke"]["safety_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["provenance_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["safety_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["dataset_evidence_ok"] is True
     assert (
         result["external_evidence"]["confidence_tier"]
-        == "full_provider_agent_and_public_benchmark_evaluated"
+        == (
+            "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
+            "public_benchmark_evaluated"
+        )
     )
 
 
