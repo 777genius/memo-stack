@@ -176,6 +176,9 @@ export function safeRootFolder(value: string): string {
   if (!raw) {
     throw new Error("Folder cannot be empty");
   }
+  if (raw.startsWith("/") || raw.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(raw)) {
+    throw new Error("Folder must be relative to the vault");
+  }
   const path = normalizePath(raw);
   if (path.startsWith("/")) {
     throw new Error("Folder must be relative to the vault");

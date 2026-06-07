@@ -444,6 +444,7 @@ export default class MemoStackPlugin extends Plugin {
       return;
     }
     try {
+      this.layoutPaths();
       this.busyLabel = connectorBusyLabel(command);
       this.refreshControlViews();
       const result = await this.runConnector(command);
