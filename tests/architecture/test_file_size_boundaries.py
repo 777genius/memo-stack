@@ -18,7 +18,6 @@ IDEAL_LINES = 1000
 
 LEGACY_OVER_MAX_ALLOWLIST = {
     "packages/memo_stack_server/memo_stack_server/eval.py",
-    "tests/unit/test_legacy_and_context_api.py",
 }
 
 IDEAL_OVER_1000_DEBT_ALLOWLIST = {
@@ -36,6 +35,8 @@ IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     "tests/unit/test_admin_tokens.py",
     "tests/unit/test_agent_behavior_bench.py",
     "tests/unit/test_capture_worker.py",
+    "tests/unit/test_context_provider_consistency.py",
+    "tests/unit/test_legacy_and_context_api.py",
     "tests/unit/test_local_runbook.py",
     "tests/unit/test_mcp_adapter.py",
     "tests/unit/test_provider_adapters.py",
