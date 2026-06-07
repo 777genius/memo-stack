@@ -88,6 +88,21 @@ _FULL_PROVIDER_CANARY_SUITE_ALIASES = (
     "clean-full-smoke",
     "clean_full_smoke",
 )
+_FULL_PROVIDER_REQUIRED_ADAPTERS = ("qdrant", "graphiti", "embeddings")
+_FULL_PROVIDER_REQUIRED_CHECK_KEYS = (
+    "fact_created",
+    "updated_fact_versioned",
+    "forgotten_fact_deleted",
+    "providers_are_healthy",
+    "context_provider_status_ok",
+    "mcp_provider_diagnostics_ok",
+    "mcp_search_has_graphiti_fact_after_worker",
+    "mcp_search_has_qdrant_document_chunk_after_worker",
+    "mcp_search_hides_old_fact_after_update",
+    "mcp_search_hides_deleted_fact",
+    "outbox_has_no_pending_or_dead",
+    "mcp_outbox_has_no_pending_or_dead",
+)
 _PUBLIC_MEMORY_BENCHMARK_SUITE_ALIASES = (
     PUBLIC_MEMORY_BENCHMARK_SUITE,
     "public_memory_benchmark",
@@ -904,18 +919,26 @@ def _scorecard_full_provider_evidence_summary(
     mcp = result.get("mcp", {})
     mcp_map = mcp if isinstance(mcp, dict) else {}
     required_checks = {
-        "providers_are_healthy": checks_map.get("providers_are_healthy") is True,
-        "context_provider_status_ok": checks_map.get("context_provider_status_ok") is True,
-        "mcp_provider_diagnostics_ok": (
-            mcp_map.get("skipped") is True or checks_map.get("mcp_provider_diagnostics_ok") is True
-        ),
+        **{
+            check_key: checks_map.get(check_key) is True
+            for check_key in _FULL_PROVIDER_REQUIRED_CHECK_KEYS
+        },
+        **{
+            f"{adapter_name}_adapter_ok": adapters_map.get(adapter_name) == "ok"
+            for adapter_name in _FULL_PROVIDER_REQUIRED_ADAPTERS
+        },
+        "mcp_lifecycle_included": bool(mcp_map) and mcp_map.get("ok") is True,
     }
     check_values = [value is True for value in checks_map.values()]
+    failed_required_checks = sorted(
+        check for check, ok in required_checks.items() if ok is not True
+    )
     return {
         "present": True,
         "suite": result.get("suite", FULL_PROVIDER_CANARY_SUITE),
-        "ok": result.get("ok") is True and all(required_checks.values()),
+        "ok": result.get("ok") is True and not failed_required_checks,
         "required_checks": required_checks,
+        "failed_required_checks": failed_required_checks,
         "checks_ok_count": sum(1 for value in check_values if value),
         "checks_total": len(check_values),
         "adapters": {

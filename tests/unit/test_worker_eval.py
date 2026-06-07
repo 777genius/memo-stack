@@ -225,6 +225,10 @@ def _full_provider_canary_report() -> dict[str, Any]:
             "mcp_provider_diagnostics_ok": True,
             "mcp_search_has_graphiti_fact_after_worker": True,
             "mcp_search_has_qdrant_document_chunk_after_worker": True,
+            "mcp_search_hides_old_fact_after_update": True,
+            "mcp_search_hides_deleted_fact": True,
+            "outbox_has_no_pending_or_dead": True,
+            "mcp_outbox_has_no_pending_or_dead": True,
         },
         "adapters": {
             "qdrant": "ok",
@@ -1382,6 +1386,7 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     assert evidence["evidence_gaps"] == ["public_benchmark_evidence_missing"]
     assert evidence["full_provider_canary"]["ok"] is True
     assert evidence["full_provider_canary"]["adapters"]["graphiti"] == "ok"
+    assert evidence["full_provider_canary"]["failed_required_checks"] == []
     assert evidence["agent_behavior_benchmark"]["ok"] is True
     assert evidence["agent_behavior_benchmark"]["metrics"]["tool_choice_accuracy"] == 1.0
     assert evidence["public_benchmark"]["present"] is False
@@ -1466,6 +1471,44 @@ def test_memory_quality_scorecard_rejects_underpowered_public_benchmark_evidence
         "longmemeval",
     ]
     assert "public_benchmark_competitive_floor_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_rejects_shallow_full_provider_evidence() -> None:
+    suite_results = _scorecard_fixture_results()
+    full_provider = _full_provider_canary_report()
+    full_provider["checks"]["mcp_search_has_graphiti_fact_after_worker"] = False
+    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["full_provider_canary"]["ok"] is False
+    assert "full_provider_canary_failed" in evidence["evidence_gaps"]
+    assert evidence["full_provider_canary"]["failed_required_checks"] == [
+        "mcp_search_has_graphiti_fact_after_worker"
+    ]
+
+
+def test_memory_quality_scorecard_requires_full_provider_mcp_lifecycle() -> None:
+    suite_results = _scorecard_fixture_results()
+    full_provider = _full_provider_canary_report()
+    full_provider["mcp"] = {"skipped": True, "reason": "manual skip"}
+    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["full_provider_canary"]["required_checks"]["mcp_lifecycle_included"] is False
+    assert evidence["full_provider_canary"]["failed_required_checks"] == [
+        "mcp_lifecycle_included"
+    ]
 
 
 def test_memory_quality_scorecard_can_use_nested_agent_evidence() -> None:

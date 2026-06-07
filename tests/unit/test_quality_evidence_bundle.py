@@ -67,11 +67,18 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                 "suite": "memo-stack-full-provider-canary",
                 "ok": True,
                 "checks": {
+                    "fact_created": True,
+                    "updated_fact_versioned": True,
+                    "forgotten_fact_deleted": True,
                     "providers_are_healthy": True,
                     "context_provider_status_ok": True,
                     "mcp_provider_diagnostics_ok": True,
                     "mcp_search_has_graphiti_fact_after_worker": True,
                     "mcp_search_has_qdrant_document_chunk_after_worker": True,
+                    "mcp_search_hides_old_fact_after_update": True,
+                    "mcp_search_hides_deleted_fact": True,
+                    "outbox_has_no_pending_or_dead": True,
+                    "mcp_outbox_has_no_pending_or_dead": True,
                 },
                 "adapters": {
                     "qdrant": "ok",
