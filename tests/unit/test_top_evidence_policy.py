@@ -50,6 +50,43 @@ def test_top_evidence_policy_summarizes_valid_public_benchmark_provenance() -> N
     assert summary["runtime_present"] is True
 
 
+def test_top_evidence_policy_rejects_dirty_provenance_by_default() -> None:
+    report = {
+        "suite": "locomo",
+        "provenance": _provenance(
+            generated_by=next(iter(PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS)),
+            suite="locomo",
+        )
+        | {"git": {"commit": "abc123", "dirty": True}},
+    }
+
+    summary = top_evidence_provenance_summary(report)
+
+    assert summary["ok"] is False
+    assert summary["failed_checks"] == ["provenance_git_clean_or_dirty_allowed"]
+    assert summary["dirty"] is True
+
+
+def test_top_evidence_policy_allows_dirty_only_for_explicit_diagnostics() -> None:
+    report = {
+        "suite": "locomo",
+        "provenance": _provenance(
+            generated_by=next(iter(PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS)),
+            suite="locomo",
+        )
+        | {"git": {"commit": "abc123", "dirty": True}},
+    }
+
+    summary = top_evidence_provenance_summary(
+        report,
+        allow_dirty_top_evidence=True,
+    )
+
+    assert summary["ok"] is True
+    assert summary["failed_checks"] == []
+    assert summary["dirty"] is True
+
+
 def test_top_evidence_policy_check_names_match_summary_contract() -> None:
     report = {
         "suite": "locomo",

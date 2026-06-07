@@ -1999,6 +1999,7 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_provenance() -> N
     assert evidence["agent_behavior_benchmark"]["provenance"]["failed_checks"] == [
         "provenance_dirty_state_present",
         "provenance_generator_allowed",
+        "provenance_git_clean_or_dirty_allowed",
         "provenance_git_commit_present",
         "provenance_present",
         "provenance_runtime_platform_present",

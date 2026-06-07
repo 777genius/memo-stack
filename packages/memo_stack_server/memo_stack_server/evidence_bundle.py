@@ -287,7 +287,11 @@ def _validate_top_evidence_payload_provenance(
     policy = top_evidence_report_policy(suite)
     if policy is None:
         return
-    summary = top_evidence_provenance_summary(payload, policy=policy)
+    summary = top_evidence_provenance_summary(
+        payload,
+        policy=policy,
+        allow_dirty_top_evidence=allow_dirty_top_evidence,
+    )
     if summary["ok"] is not True:
         _raise_top_evidence_provenance_failure(
             summary["failed_checks"],
@@ -343,6 +347,9 @@ def _raise_top_evidence_provenance_failure(
         ),
         "provenance_dirty_state_present": (
             f"Top evidence report is missing provenance dirty state: {source_label}"
+        ),
+        "provenance_git_clean_or_dirty_allowed": (
+            f"Top evidence report was generated from a dirty worktree: {source_label}"
         ),
         "provenance_runtime_python_version_present": (
             "Top evidence report is missing provenance runtime python_version: "

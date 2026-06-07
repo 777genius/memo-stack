@@ -15,6 +15,7 @@ TOP_EVIDENCE_PROVENANCE_CHECKS = (
     "provenance_generator_allowed",
     "provenance_git_commit_present",
     "provenance_dirty_state_present",
+    "provenance_git_clean_or_dirty_allowed",
     "provenance_runtime_python_version_present",
     "provenance_runtime_platform_present",
 )
@@ -94,6 +95,7 @@ def top_evidence_provenance_summary(
     result: Mapping[str, object],
     *,
     policy: TopEvidenceReportPolicy | None = None,
+    allow_dirty_top_evidence: bool = False,
 ) -> dict[str, object]:
     resolved_policy = policy or top_evidence_report_policy(result.get("suite"))
     expected_generators = (
@@ -121,6 +123,8 @@ def top_evidence_provenance_summary(
         "provenance_generator_allowed": generated_by in expected_generators,
         "provenance_git_commit_present": isinstance(commit, str) and bool(commit),
         "provenance_dirty_state_present": isinstance(dirty, bool),
+        "provenance_git_clean_or_dirty_allowed": isinstance(dirty, bool)
+        and (dirty is False or allow_dirty_top_evidence),
         "provenance_runtime_python_version_present": (
             isinstance(python_version, str) and bool(python_version)
         ),
