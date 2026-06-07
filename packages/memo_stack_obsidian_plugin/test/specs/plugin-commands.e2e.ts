@@ -191,6 +191,35 @@ describe("Memo Stack Obsidian plugin", function () {
     assert.match(snapshot.lastResult.stderr, /Forced fake connector failure/);
   });
 
+  it("handles a missing connector binary without leaving the plugin busy", async function () {
+    const vaultPath = await resetVaultAndConfigure({
+      cliPath: path.join(vaultPathPlaceholder(), "missing-memo-stack-obsidian"),
+    });
+
+    await browser.executeObsidianCommand("memo-stack:preview-sync");
+    await waitForPluginIdle();
+    const snapshot = await memoStackSnapshot();
+
+    assert.equal(readCliCalls(vaultPath).length, 0);
+    assert.equal(snapshot.busyLabel, "");
+    assert.equal(snapshot.lastCommand, "preview");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+  });
+
+  it("clears busy state when a connector command times out", async function () {
+    const vaultPath = await resetVaultAndConfigure({ commandTimeoutMs: 1000 });
+    await setFakeEnv({ MEMO_STACK_FAKE_OBSIDIAN_DELAY_MS: "5000" });
+
+    await browser.executeObsidianCommand("memo-stack:preview-sync");
+    await waitForPluginIdle();
+    const snapshot = await memoStackSnapshot();
+
+    assert.equal(readCliCalls(vaultPath).length, 0);
+    assert.equal(snapshot.busyLabel, "");
+    assert.equal(snapshot.lastCommand, "preview");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+  });
+
   it("stops prepare before vault writes when local init fails", async function () {
     const vaultPath = await resetVaultAndConfigure();
     await setFakeEnv({ MEMO_STACK_FAKE_LOCAL_FAIL_COMMAND: "init" });
@@ -321,12 +350,59 @@ describe("Memo Stack Obsidian plugin", function () {
     const fact = readVaultFile(vaultPath, path.join(persistedFactsDir, "plugin-e2e.md"));
     assert.match(fact, /Plugin E2E fact/);
   });
+
+  it("survives invalid persisted layout settings after an Obsidian reload", async function () {
+    const obsidianPage = await browser.getObsidianPage();
+    await obsidianPage.resetVault({
+      "Welcome.md": "# Welcome\n\nInvalid persisted settings E2E vault.\n",
+    });
+    const vaultPath = obsidianPage.getVaultPath();
+
+    writeVaultFile(
+      vaultPath,
+      path.join(".obsidian", "plugins", pluginId, "data.json"),
+      JSON.stringify(
+        {
+          apiUrl: "http://127.0.0.1:65533",
+          token: "invalid-layout-token",
+          localCliPath: fakeLocalCliPath,
+          cliPath: fakeCliPath,
+          vaultPathOverride: path.resolve(vaultPath),
+          spaceSlug,
+          profileExternalRef,
+          rootFolder: "../escape",
+          layoutVersion: "v2",
+          applyImportOnSync: true,
+          commandTimeoutMs: 10000,
+        },
+        null,
+        2,
+      ),
+    );
+
+    await browser.reloadObsidian();
+    await browser.waitUntil(async () => (await memoStackSnapshot()).rootFolder === "../escape", {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack plugin did not reload invalid persisted settings",
+    });
+
+    const snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.busyLabel, "");
+    assert.equal(snapshot.rootFolder, "../escape");
+    assert.match(snapshot.pathError, /Folder cannot contain/);
+    assert.equal(snapshot.readmeExists, false);
+
+    await browser.executeObsidianCommand("memo-stack:open-inbox");
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.length, 0);
+  });
 });
 
 async function resetVaultAndConfigure(
   overrides: Partial<{
     applyImportOnSync: boolean;
     commandTimeoutMs: number;
+    cliPath: string;
   }> = {},
 ): Promise<string> {
   const obsidianPage = await browser.getObsidianPage();
@@ -344,7 +420,7 @@ async function resetVaultAndConfigure(
       apiUrl: "http://127.0.0.1:65535",
       token: "wdio-token",
       localCliPath: fakeLocalCliPath,
-      cliPath: fakeCliPath,
+      cliPath: overrides.cliPath ?? fakeCliPath,
       vaultPathOverride: vaultPath,
       spaceSlug,
       profileExternalRef,
@@ -355,6 +431,10 @@ async function resetVaultAndConfigure(
     },
   );
   return vaultPath;
+}
+
+function vaultPathPlaceholder(): string {
+  return path.resolve("test", "missing-bin");
 }
 
 async function setFakeEnv(values: Record<string, string>): Promise<void> {
