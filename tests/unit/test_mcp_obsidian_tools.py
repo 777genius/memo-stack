@@ -72,6 +72,7 @@ def test_obsidian_setup_can_install_plugin_with_local_cli_path(tmp_path: Path) -
     assert applied["data"]["plugin_installed"] is True
     assert applied["data"]["plugin_enabled"] is True
     assert settings["localCliPath"] == "memo-stack"
+    assert settings["vaultPathOverride"] == str(tmp_path.resolve())
 
 
 def test_obsidian_sync_apply_requires_separate_sync_gate(tmp_path: Path) -> None:

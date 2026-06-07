@@ -7,13 +7,26 @@ import asyncio
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
+import time
+from multiprocessing import Process
 from pathlib import Path
 from typing import Any
 
+import httpx
+import uvicorn
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from memo_stack_server.config import DeployProfile, Settings
+from memo_stack_server.main import create_app
+
+TOKEN = "obsidian-mcp-e2e-token"
+LIVE_SPACE = "mcp-live"
+PROFILE = "default"
+TEXT_START = "<!-- memo-stack-managed:fact-text:start -->"
+TEXT_END = "<!-- memo-stack-managed:fact-text:end -->"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,9 +51,11 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     local_home = temp_dir / "memo-home"
     prepare_home = temp_dir / "prepare-home"
     prepare_vault = temp_dir / "PrepareVault"
+    live_vault = temp_dir / "LiveVault"
     vault = temp_dir / "Vault"
     vault.mkdir()
     prepare_vault.mkdir()
+    live_vault.mkdir()
 
     disabled = await _with_session(
         repo_root=repo_root,
@@ -257,6 +272,12 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "mutating sync should require the sync env gate",
     )
 
+    live_report = await _run_live_backend_sync(
+        repo_root=repo_root,
+        temp_dir=temp_dir,
+        vault=live_vault,
+    )
+
     return {
         "ok": True,
         "vault": str(vault),
@@ -268,7 +289,387 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "local_runtime_start_disabled_code": local_start_blocked["error"]["code"],
         "prepare_status": prepare_applied["data"]["status"],
         "facts_dir": str(expected_facts),
+        "live_backend_sync": live_report,
     }
+
+
+async def _run_live_backend_sync(
+    *,
+    repo_root: Path,
+    temp_dir: Path,
+    vault: Path,
+) -> dict[str, Any]:
+    db_path = temp_dir / "mcp-live-memory.db"
+    port = _free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    server = Process(target=_run_server, args=(db_path, port), daemon=True)
+    server.start()
+    try:
+        _wait_for_health(base_url)
+        fact = _create_fact(base_url, text="MCP Obsidian live initial fact.")
+        env = {
+            "MEMORY_MCP_API_URL": base_url,
+            "MEMORY_MCP_AUTH_TOKEN": TOKEN,
+            "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
+            "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "true",
+            "MEMORY_MCP_OBSIDIAN_VAULT": str(vault),
+            "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
+            "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
+            "MEMORY_MCP_DEFAULT_SPACE_SLUG": LIVE_SPACE,
+            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": PROFILE,
+        }
+
+        setup = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_setup",
+                {"apply": True, "install_plugin": True, "enable_plugin": True},
+            ),
+        )
+        live_facts_dir = (
+            vault / f"Memo Stack/spaces/{LIVE_SPACE}/profiles/{PROFILE}/generated/facts"
+        )
+        _assert(setup["ok"] is True, "live MCP setup should succeed")
+        _assert(setup["data"]["plugin_installed"] is True, "live setup should install plugin")
+        _assert(setup["data"]["plugin_enabled"] is True, "live setup should enable plugin")
+        _assert(live_facts_dir.exists(), "live setup should write scoped facts directory")
+        plugin_settings = json.loads(
+            (vault / ".obsidian/plugins/memo-stack/data.json").read_text(encoding="utf-8")
+        )
+        _assert(plugin_settings["apiUrl"] == base_url, "plugin settings should use live API URL")
+        _assert(
+            plugin_settings["vaultPathOverride"] == str(vault.resolve()),
+            "plugin settings should pin resolved vault",
+        )
+        _assert(plugin_settings["spaceSlug"] == LIVE_SPACE, "plugin settings should pin space")
+        _assert(plugin_settings["token"] == "", "MCP plugin install must not persist service token")
+
+        status = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_status",
+                {"require_plugin": True},
+            ),
+        )
+        _assert(
+            status["data"]["status"] == "ready",
+            f"live MCP status should be ready: {status['data']}",
+        )
+
+        preview = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(session, "memory_obsidian_preview", {}),
+        )
+        _assert(preview["data"]["status"] == "preview_ok", "live preview should be ok")
+        _assert(
+            preview["data"]["export_result"]["exported"] >= 1,
+            "live preview should see backend export",
+        )
+        _assert(not _fact_files(vault), "live preview must not write fact notes")
+
+        dry_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(session, "memory_obsidian_sync", {"apply": False}),
+        )
+        _assert(dry_sync["data"]["dry_run"] is True, "apply=false sync should stay dry-run")
+        _assert(not _fact_files(vault), "apply=false sync must not write fact notes")
+
+        export_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_sync",
+                {"apply": True, "apply_import": True},
+            ),
+        )
+        _assert(export_sync["data"]["status"] == "sync_ok", "live export sync should be ok")
+        _assert(
+            "obsidian_sync" in export_sync["diagnostics"]["side_effects"],
+            "mutating MCP sync should report side effect",
+        )
+        fact_file = _only_fact_file(vault)
+        _assert(
+            fact["text"] in fact_file.read_text(encoding="utf-8"),
+            "fact note should be exported",
+        )
+
+        _replace_managed_text(fact_file, "MCP Obsidian live markdown edit.")
+        edit_preview = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(session, "memory_obsidian_preview", {}),
+        )
+        _assert(
+            edit_preview["data"]["import_result"]["would_update"] == 1,
+            "live preview should detect direct markdown edit",
+        )
+        _assert(
+            _get_fact(base_url, fact["id"])["text"] == "MCP Obsidian live initial fact.",
+            "preview must not update backend fact",
+        )
+
+        no_import_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_sync",
+                {"apply": True, "apply_import": False},
+            ),
+        )
+        _assert(
+            no_import_sync["data"]["status"] == "sync_needs_review",
+            "apply without apply_import should pause direct edit",
+        )
+        _assert(no_import_sync["data"]["export_skipped"] is True, "direct edit should pause export")
+        _assert(
+            _get_fact(base_url, fact["id"])["text"] == "MCP Obsidian live initial fact.",
+            "apply_import=false must not update backend fact",
+        )
+        _assert(
+            "MCP Obsidian live markdown edit." in fact_file.read_text(encoding="utf-8"),
+            "apply_import=false must leave markdown edit for review",
+        )
+
+        import_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_sync",
+                {"apply": True, "apply_import": True},
+            ),
+        )
+        _assert(import_sync["data"]["status"] == "sync_ok", "apply_import sync should succeed")
+        _assert(import_sync["data"]["import_result"]["updated"] == 1, "direct edit should import")
+        updated = _get_fact(base_url, fact["id"])
+        _assert(updated["text"] == "MCP Obsidian live markdown edit.", "backend should import edit")
+        _assert(updated["version"] == 2, "backend fact should increment version")
+
+        marker = "MCP Obsidian live inbox suggestion marker."
+        _write_inbox_note(vault, marker)
+        inbox_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_sync",
+                {"apply": True, "apply_import": True},
+            ),
+        )
+        _assert(inbox_sync["data"]["import_result"]["suggested"] == 1, "inbox should suggest")
+        repeat_inbox_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_sync",
+                {"apply": True, "apply_import": True},
+            ),
+        )
+        _assert(
+            repeat_inbox_sync["data"]["import_result"]["suggested"] == 0,
+            "repeat MCP sync must not duplicate inbox suggestion",
+        )
+        matching = [
+            item for item in _list_suggestions(base_url) if marker in item["candidate_text"]
+        ]
+        _assert(len(matching) == 1, "backend should contain exactly one MCP inbox suggestion")
+
+        backend_update = _update_fact(
+            base_url,
+            fact["id"],
+            expected_version=updated["version"],
+            text="MCP Obsidian backend update before stale edit.",
+        )
+        _replace_managed_text(fact_file, "MCP Obsidian stale local edit.")
+        stale_sync = await _with_session(
+            repo_root=repo_root,
+            env=env,
+            callback=lambda session: _call(
+                session,
+                "memory_obsidian_sync",
+                {"apply": True, "apply_import": True},
+            ),
+        )
+        _assert(
+            stale_sync["data"]["status"] == "sync_needs_review",
+            "stale MCP sync should need review",
+        )
+        _assert(stale_sync["data"]["import_result"]["conflicts"] == 1, "stale edit should conflict")
+        _assert(stale_sync["data"]["export_skipped"] is True, "stale conflict should skip export")
+        conflict_artifacts = stale_sync["data"]["import_result"]["conflict_artifacts"]
+        _assert(conflict_artifacts, "stale MCP sync should write conflict artifact")
+        _assert(
+            all((vault / path).exists() for path in conflict_artifacts),
+            "MCP conflict artifact paths should exist",
+        )
+        _assert(
+            "MCP Obsidian stale local edit." in fact_file.read_text(encoding="utf-8"),
+            "stale MCP local edit must remain in note",
+        )
+        _assert(
+            _get_fact(base_url, fact["id"])["text"] == backend_update["text"],
+            "stale MCP sync must not overwrite backend fact",
+        )
+
+        return {
+            "base_url": base_url,
+            "fact_id": fact["id"],
+            "status": status["data"]["status"],
+            "exported": export_sync["data"]["export_result"]["exported"],
+            "direct_edit_imported_version": updated["version"],
+            "suggestions_matching_marker": len(matching),
+            "stale_conflict_artifacts_written": stale_sync["data"]["import_result"][
+                "conflict_artifacts_written"
+            ],
+        }
+    finally:
+        server.terminate()
+        server.join(timeout=5)
+
+
+def _run_server(db_path: Path, port: int) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            auto_create_schema=True,
+            host="127.0.0.1",
+            port=port,
+            service_token=TOKEN,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            ui_enabled=False,
+        )
+    )
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_health(base_url: str) -> None:
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        try:
+            response = httpx.get(f"{base_url}/v1/health", timeout=1)
+            if response.status_code == 200:
+                return
+        except httpx.HTTPError:
+            time.sleep(0.2)
+    raise RuntimeError(f"Memo Stack server did not become healthy at {base_url}")
+
+
+def _headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {TOKEN}"}
+
+
+def _create_fact(base_url: str, *, text: str) -> dict[str, Any]:
+    response = httpx.post(
+        f"{base_url}/v1/facts",
+        headers=_headers(),
+        json={
+            "space_slug": LIVE_SPACE,
+            "profile_external_ref": PROFILE,
+            "text": text,
+            "kind": "note",
+            "source_refs": [
+                {
+                    "source_type": "manual",
+                    "source_id": "obsidian-mcp-live-seed",
+                    "quote_preview": text,
+                }
+            ],
+        },
+        timeout=5,
+    )
+    response.raise_for_status()
+    return dict(response.json()["data"])
+
+
+def _get_fact(base_url: str, fact_id: str) -> dict[str, Any]:
+    response = httpx.get(f"{base_url}/v1/facts/{fact_id}", headers=_headers(), timeout=5)
+    response.raise_for_status()
+    return dict(response.json()["data"])
+
+
+def _update_fact(
+    base_url: str,
+    fact_id: str,
+    *,
+    expected_version: int,
+    text: str,
+) -> dict[str, Any]:
+    response = httpx.patch(
+        f"{base_url}/v1/facts/{fact_id}",
+        headers=_headers(),
+        json={
+            "expected_version": expected_version,
+            "text": text,
+            "reason": "MCP Obsidian live smoke backend-side update",
+            "source_refs": [
+                {
+                    "source_type": "manual",
+                    "source_id": "obsidian-mcp-live-backend-update",
+                    "quote_preview": text,
+                }
+            ],
+        },
+        timeout=5,
+    )
+    response.raise_for_status()
+    return dict(response.json()["data"])
+
+
+def _list_suggestions(base_url: str) -> list[dict[str, Any]]:
+    response = httpx.get(
+        f"{base_url}/v1/suggestions",
+        headers=_headers(),
+        params={
+            "space_slug": LIVE_SPACE,
+            "profile_external_ref": PROFILE,
+            "status": "pending",
+        },
+        timeout=5,
+    )
+    response.raise_for_status()
+    return [dict(item) for item in response.json()["data"]]
+
+
+def _fact_files(vault: Path) -> list[Path]:
+    files = sorted((vault / "Memo Stack").glob("**/generated/facts/*.md"))
+    return [path for path in files if not path.name.startswith(".")]
+
+
+def _only_fact_file(vault: Path) -> Path:
+    files = _fact_files(vault)
+    _assert(len(files) == 1, f"expected exactly one exported fact note, got {files}")
+    return files[0]
+
+
+def _replace_managed_text(path: Path, text: str) -> None:
+    old = path.read_text(encoding="utf-8")
+    start = old.index(TEXT_START) + len(TEXT_START)
+    end = old.index(TEXT_END)
+    path.write_text(old[:start] + f"\n{text}\n" + old[end:], encoding="utf-8")
+
+
+def _write_inbox_note(vault: Path, text: str) -> None:
+    path = vault / f"Memo Stack/spaces/{LIVE_SPACE}/profiles/{PROFILE}/inbox/mcp-live-inbox.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 async def _with_session(

@@ -365,12 +365,13 @@ class ObsidianMcpService:
         }
 
     def _plugin_settings(self, request: dict[str, Any]) -> dict[str, Any]:
+        vault_path = Path(str(request["vault_path"])).expanduser().resolve()
         return {
             "apiUrl": self._settings.api_url,
             "token": "",
             "localCliPath": "memo-stack",
             "cliPath": "memo-stack-obsidian",
-            "vaultPathOverride": str(request["vault_path"]),
+            "vaultPathOverride": str(vault_path),
             "spaceSlug": str(request["space_slug"]),
             "profileExternalRef": str(request["profile_external_ref"]),
             "rootFolder": str(request["root_folder"]),
