@@ -187,6 +187,67 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.status === 0));
   });
+
+  it("keeps friendly scoped sync state after an Obsidian reload", async function () {
+    await createFact(baseUrl, {
+      text: "Friendly reload persisted backend fact.",
+      sourceId: "wdio-friendly-reload-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = onlyFactFile(vaultPath);
+    const inboxPath = path.join(scopedRoot, "inbox", "reload-friendly-inbox.md");
+    const firstMarker = "WDIO friendly reload inbox first marker";
+    const secondMarker = "WDIO friendly reload inbox second marker";
+    writeVaultFile(vaultPath, inboxPath, firstMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, firstMarker, 1);
+
+    await browser.reloadObsidian();
+    await waitForPluginScope(primaryScope);
+    await waitForPluginIdle();
+
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.apiUrl, baseUrl);
+    assert.equal(snapshot.spaceSlug, rawSpaceSlug);
+    assert.equal(snapshot.profileExternalRef, rawProfileExternalRef);
+    assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
+    assert.equal(snapshot.paths.inbox, posixPath(path.join(scopedRoot, "inbox")));
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /Friendly reload persisted backend fact/);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    assert.equal((await suggestionsContaining(baseUrl, firstMarker)).length, 1);
+
+    writeVaultFile(vaultPath, inboxPath, secondMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, secondMarker, 1);
+    assert.equal((await suggestionsContaining(baseUrl, firstMarker)).length, 1);
+
+    await browser.executeObsidianCommand("memo-stack:open-inbox");
+    assert.equal(await activeFilePath(), posixPath(path.join(scopedRoot, "inbox", "README.md")));
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.paths.conflicts, posixPath(path.join(scopedRoot, "conflicts")));
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "sync", "sync"]);
+    assertCallsUseScope(calls, primaryScope);
+    assert.ok(calls.every((call) => call.status === 0));
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string, scope: Scope = primaryScope): Promise<string> {
@@ -394,6 +455,23 @@ async function waitForPluginIdle(): Promise<void> {
     timeout: 20000,
     timeoutMsg: "Memo Stack plugin did not become idle",
   });
+}
+
+async function waitForPluginScope(scope: Scope): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const snapshot = await memoStackSnapshot();
+        return snapshot.spaceSlug === scope.spaceSlug && snapshot.profileExternalRef === scope.profileExternalRef;
+      } catch (_error) {
+        return false;
+      }
+    },
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack plugin did not reload friendly scope settings",
+    },
+  );
 }
 
 async function memoStackSnapshot(): Promise<any> {
