@@ -148,6 +148,44 @@ _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
         ("longmemeval", "longmem_eval", "longmem-eval", "long_memory_eval")
     ),
 }
+_TOP_EVIDENCE_PROVENANCE_CHECKS = (
+    "provenance_present",
+    "provenance_schema_version_1",
+    "provenance_suite_allowed",
+    "provenance_generator_allowed",
+    "provenance_git_commit_present",
+    "provenance_dirty_state_present",
+    "provenance_runtime_python_version_present",
+    "provenance_runtime_platform_present",
+)
+_FULL_PROVIDER_TOP_EVIDENCE_GENERATORS = frozenset({"scripts/clean_full_smoke.py"})
+_FULL_PROVIDER_TOP_EVIDENCE_SUITES = frozenset(
+    {
+        FULL_PROVIDER_CANARY_SUITE,
+        "memo_stack_full_provider_canary",
+        "memo-stack-clean-full-smoke",
+        "clean-full-smoke",
+        "clean_full_smoke",
+    }
+)
+_AGENT_BEHAVIOR_TOP_EVIDENCE_GENERATORS = frozenset(
+    {"memo_stack_mcp.agent_behavior_bench"}
+)
+_PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS = frozenset(
+    {
+        "memo_stack_server.official_public_benchmark",
+        "memo_stack_server.public_benchmark",
+    }
+)
+_PUBLIC_BENCHMARK_TOP_EVIDENCE_SUITES = frozenset(
+    {
+        PUBLIC_MEMORY_BENCHMARK_SUITE,
+        "public_memory_benchmark",
+        "memory-public-benchmarks",
+        LOCOMO_BENCHMARK_SUITE,
+        LONGMEMEVAL_BENCHMARK_SUITE,
+    }
+)
 
 
 def _eval_auth_token_from_env() -> str | None:
@@ -425,6 +463,10 @@ def memory_quality_scorecard_policy_snapshot(
             "required_adapters": list(_FULL_PROVIDER_REQUIRED_ADAPTERS),
             "required_checks": list(_FULL_PROVIDER_REQUIRED_CHECK_KEYS),
             "requires_mcp_lifecycle": True,
+            "top_evidence_requires_provenance": True,
+            "top_evidence_required_provenance_checks": list(
+                _TOP_EVIDENCE_PROVENANCE_CHECKS
+            ),
         },
         "agent_behavior": {
             "accepted_scenario_sets": list(_AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS),
@@ -445,6 +487,10 @@ def memory_quality_scorecard_policy_snapshot(
             ),
             "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
             "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
+            "top_evidence_requires_provenance": True,
+            "top_evidence_required_provenance_checks": list(
+                _TOP_EVIDENCE_PROVENANCE_CHECKS
+            ),
         },
         "public_benchmark": {
             "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
@@ -452,6 +498,10 @@ def memory_quality_scorecard_policy_snapshot(
                 name: dict(floor)
                 for name, floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.items()
             },
+            "top_evidence_requires_provenance": True,
+            "top_evidence_required_provenance_checks": list(
+                _TOP_EVIDENCE_PROVENANCE_CHECKS
+            ),
         },
     }
 
@@ -743,7 +793,10 @@ def _scorecard_external_evidence(
 ) -> dict[str, object]:
     full_provider = _scorecard_find_full_provider_report(suite_results)
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
-    full_provider_summary = _scorecard_full_provider_evidence_summary(full_provider)
+    full_provider_summary = _scorecard_full_provider_evidence_summary(
+        full_provider,
+        require_top_evidence=require_top_evidence,
+    )
     agent_behavior_summary = _scorecard_agent_behavior_evidence_summary(
         agent_behavior,
         require_top_evidence=require_top_evidence,
@@ -751,6 +804,7 @@ def _scorecard_external_evidence(
     public_benchmark_summary = _scorecard_public_benchmark_evidence_summary(
         suite_results,
         full_provider=full_provider,
+        require_top_evidence=require_top_evidence,
     )
     full_provider_ok = full_provider_summary["ok"] is True
     agent_behavior_ok = agent_behavior_summary["ok"] is True
@@ -766,16 +820,22 @@ def _scorecard_external_evidence(
         evidence_gaps.append("full_provider_canary_missing")
     elif not full_provider_ok:
         evidence_gaps.append("full_provider_canary_failed")
+        if full_provider_summary.get("provenance_ok") is False:
+            evidence_gaps.append("full_provider_canary_provenance_failed")
     if not agent_behavior_summary["present"]:
         evidence_gaps.append("agent_behavior_benchmark_missing")
     elif not agent_behavior_ok:
         evidence_gaps.append("agent_behavior_benchmark_failed")
+        if agent_behavior_summary.get("provenance_ok") is False:
+            evidence_gaps.append("agent_behavior_benchmark_provenance_failed")
         if agent_behavior_summary.get("quality_floor_ok") is False:
             evidence_gaps.append("agent_behavior_quality_floor_failed")
     if not public_benchmark_summary["present"]:
         evidence_gaps.append("public_benchmark_evidence_missing")
     elif not public_benchmark_ok:
         evidence_gaps.append("public_benchmark_evidence_failed")
+        if public_benchmark_summary.get("provenance_ok") is False:
+            evidence_gaps.append("public_benchmark_provenance_failed")
         if public_benchmark_summary.get("competitive_floor_ok") is False:
             evidence_gaps.append("public_benchmark_competitive_floor_failed")
 
@@ -846,10 +906,59 @@ def _scorecard_confidence_tier(
     return "_and_".join(labels) + "_evaluated"
 
 
+def _scorecard_top_evidence_provenance_summary(
+    result: Mapping[str, object],
+    *,
+    expected_generators: frozenset[str],
+    provenance_suites: frozenset[str],
+) -> dict[str, object]:
+    provenance = result.get("provenance")
+    provenance_map = provenance if isinstance(provenance, Mapping) else {}
+    git = provenance_map.get("git")
+    git_map = git if isinstance(git, Mapping) else {}
+    runtime = provenance_map.get("runtime")
+    runtime_map = runtime if isinstance(runtime, Mapping) else {}
+    generated_by = provenance_map.get("generated_by")
+    suite = provenance_map.get("suite")
+    commit = git_map.get("commit")
+    dirty = git_map.get("dirty")
+    python_version = runtime_map.get("python_version")
+    runtime_platform = runtime_map.get("platform")
+    checks = {
+        "provenance_present": bool(provenance_map),
+        "provenance_schema_version_1": provenance_map.get("schema_version") == 1,
+        "provenance_suite_allowed": suite in provenance_suites,
+        "provenance_generator_allowed": generated_by in expected_generators,
+        "provenance_git_commit_present": isinstance(commit, str) and bool(commit),
+        "provenance_dirty_state_present": isinstance(dirty, bool),
+        "provenance_runtime_python_version_present": (
+            isinstance(python_version, str) and bool(python_version)
+        ),
+        "provenance_runtime_platform_present": (
+            isinstance(runtime_platform, str) and bool(runtime_platform)
+        ),
+    }
+    failed_checks = sorted(check for check, ok in checks.items() if ok is not True)
+    return {
+        "ok": not failed_checks,
+        "checks": checks,
+        "failed_checks": failed_checks,
+        "generated_by": generated_by if isinstance(generated_by, str) else None,
+        "suite": suite if isinstance(suite, str) else None,
+        "git_commit_present": checks["provenance_git_commit_present"],
+        "dirty": dirty if isinstance(dirty, bool) else None,
+        "runtime_present": (
+            checks["provenance_runtime_python_version_present"]
+            and checks["provenance_runtime_platform_present"]
+        ),
+    }
+
+
 def _scorecard_public_benchmark_evidence_summary(
     suite_results: Mapping[str, dict[str, object]],
     *,
     full_provider: dict[str, object] | None = None,
+    require_top_evidence: bool = False,
 ) -> dict[str, object]:
     reports = _scorecard_public_benchmark_reports(suite_results)
     if full_provider is not None:
@@ -866,10 +975,25 @@ def _scorecard_public_benchmark_evidence_summary(
         and all(benchmarks[name]["ok"] is True for name in _PUBLIC_MEMORY_BENCHMARK_REQUIRED)
     )
     competitive_floor = _scorecard_public_benchmark_competitive_floor(benchmarks)
-    ok = ok and competitive_floor["ok"] is True
+    quality_ok = ok and competitive_floor["ok"] is True
+    provenance_reports = [
+        _scorecard_top_evidence_provenance_summary(
+            report,
+            expected_generators=_PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS,
+            provenance_suites=_PUBLIC_BENCHMARK_TOP_EVIDENCE_SUITES,
+        )
+        for report in reports
+    ]
+    provenance_ok = bool(provenance_reports) and all(
+        report["ok"] is True for report in provenance_reports
+    )
+    ok = quality_ok and (not require_top_evidence or provenance_ok)
     return {
         "present": bool(reports),
         "ok": ok,
+        "quality_ok": quality_ok,
+        "provenance_ok": provenance_ok if require_top_evidence else None,
+        "provenance_reports": provenance_reports,
         "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
         "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
         "missing_benchmarks": missing,
@@ -992,6 +1116,8 @@ def _scorecard_normalize_public_benchmark_name(value: object) -> str | None:
 
 def _scorecard_full_provider_evidence_summary(
     result: dict[str, object] | None,
+    *,
+    require_top_evidence: bool = False,
 ) -> dict[str, object]:
     if result is None:
         return {"present": False, "ok": None}
@@ -1016,10 +1142,19 @@ def _scorecard_full_provider_evidence_summary(
     failed_required_checks = sorted(
         check for check, ok in required_checks.items() if ok is not True
     )
+    provenance = _scorecard_top_evidence_provenance_summary(
+        result,
+        expected_generators=_FULL_PROVIDER_TOP_EVIDENCE_GENERATORS,
+        provenance_suites=_FULL_PROVIDER_TOP_EVIDENCE_SUITES,
+    )
+    quality_ok = result.get("ok") is True and not failed_required_checks
     return {
         "present": True,
         "suite": result.get("suite", FULL_PROVIDER_CANARY_SUITE),
-        "ok": result.get("ok") is True and not failed_required_checks,
+        "ok": quality_ok and (not require_top_evidence or provenance["ok"] is True),
+        "quality_ok": quality_ok,
+        "provenance_ok": provenance["ok"] if require_top_evidence else None,
+        "provenance": provenance,
         "required_checks": required_checks,
         "failed_required_checks": failed_required_checks,
         "checks_ok_count": sum(1 for value in check_values if value),
@@ -1074,10 +1209,19 @@ def _scorecard_agent_behavior_evidence_summary(
     failed_required_checks = sorted(
         check for check, ok in required_checks.items() if ok is not True
     )
+    provenance = _scorecard_top_evidence_provenance_summary(
+        result,
+        expected_generators=_AGENT_BEHAVIOR_TOP_EVIDENCE_GENERATORS,
+        provenance_suites=frozenset({AGENT_BEHAVIOR_BENCH_SUITE}),
+    )
+    quality_ok = result.get("ok") is True and not failed_required_checks
     return {
         "present": True,
         "suite": result.get("suite", AGENT_BEHAVIOR_BENCH_SUITE),
-        "ok": result.get("ok") is True and not failed_required_checks,
+        "ok": quality_ok and (not require_top_evidence or provenance["ok"] is True),
+        "quality_ok": quality_ok,
+        "provenance_ok": provenance["ok"] if require_top_evidence else None,
+        "provenance": provenance,
         "scenario_set": result.get("scenario_set"),
         "model": result.get("model"),
         "quality_floor_ok": not failed_required_checks,

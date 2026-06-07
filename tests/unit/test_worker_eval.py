@@ -216,10 +216,30 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
     }
 
 
+def _scorecard_provenance(
+    *,
+    generated_by: str,
+    suite: str,
+    commit: str = "abc123",
+    dirty: bool = False,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "generated_by": generated_by,
+        "suite": suite,
+        "git": {"commit": commit, "dirty": dirty},
+        "runtime": {"python_version": "3.13.5", "platform": "test-platform"},
+    }
+
+
 def _full_provider_canary_report() -> dict[str, Any]:
     return {
         "suite": "memo-stack-full-provider-canary",
         "ok": True,
+        "provenance": _scorecard_provenance(
+            generated_by="scripts/clean_full_smoke.py",
+            suite="memo-stack-full-provider-canary",
+        ),
         "checks": {
             "fact_created": True,
             "updated_fact_versioned": True,
@@ -248,6 +268,10 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
     return {
         "suite": "memory_mcp_agent_behavior",
         "ok": True,
+        "provenance": _scorecard_provenance(
+            generated_by="memo_stack_mcp.agent_behavior_bench",
+            suite="memory_mcp_agent_behavior",
+        ),
         "scenario_set": "all",
         "model": "gpt-5.4-mini",
         "metrics": {
@@ -352,6 +376,10 @@ def _public_benchmark_report() -> dict[str, Any]:
     return {
         "suite": "public-memory-benchmark",
         "ok": True,
+        "provenance": _scorecard_provenance(
+            generated_by="memo_stack_server.official_public_benchmark",
+            suite="public-memory-benchmark",
+        ),
         "benchmarks": [
             {
                 "name": "locomo",
@@ -1479,6 +1507,12 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "scenario_reports_all_passed",
         "canonical_scenario_ids_present",
     ]
+    assert policy["full_provider"]["top_evidence_requires_provenance"] is True
+    assert policy["agent_behavior"]["top_evidence_requires_provenance"] is True
+    assert policy["public_benchmark"]["top_evidence_requires_provenance"] is True
+    assert "provenance_generator_allowed" in policy["agent_behavior"][
+        "top_evidence_required_provenance_checks"
+    ]
     assert policy["agent_behavior"]["rate_floors"]["adversarial_pass_rate"] == 0.9
     assert "unsafe_write_count" in policy["agent_behavior"]["zero_count_metrics"]
     assert policy["public_benchmark"]["required_benchmarks"] == [
@@ -1569,11 +1603,19 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
     suite_results["locomo"] = {
         "suite": "locomo",
         "ok": True,
+        "provenance": _scorecard_provenance(
+            generated_by="memo_stack_server.public_benchmark",
+            suite="locomo",
+        ),
         "metrics": {"accuracy": 0.947, "case_count": 600},
     }
     suite_results["longmemeval"] = {
         "suite": "longmemeval",
         "ok": True,
+        "provenance": _scorecard_provenance(
+            generated_by="memo_stack_server.public_benchmark",
+            suite="longmemeval",
+        ),
         "metrics": {"accuracy": 0.902, "case_count": 500},
     }
 
@@ -1926,6 +1968,64 @@ def test_memory_quality_scorecard_strict_top_evidence_fails_without_external_rep
     )
 
 
+def test_memory_quality_scorecard_strict_top_evidence_requires_provenance() -> None:
+    suite_results = _scorecard_fixture_results()
+    agent_behavior = _agent_behavior_benchmark_report()
+    agent_behavior.pop("provenance")
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = agent_behavior
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert result["gates"]["top_library_external_evidence"] is False
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["agent_behavior_benchmark"]["quality_ok"] is True
+    assert evidence["agent_behavior_benchmark"]["provenance_ok"] is False
+    assert evidence["agent_behavior_benchmark"]["provenance"]["failed_checks"] == [
+        "provenance_dirty_state_present",
+        "provenance_generator_allowed",
+        "provenance_git_commit_present",
+        "provenance_present",
+        "provenance_runtime_platform_present",
+        "provenance_runtime_python_version_present",
+        "provenance_schema_version_1",
+        "provenance_suite_allowed",
+    ]
+    assert "agent_behavior_benchmark_provenance_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_provenance() -> None:
+    for target, summary_key, failed_gap in (
+        (
+            "memo-stack-full-provider-canary",
+            "full_provider_canary",
+            "full_provider_canary_provenance_failed",
+        ),
+        (
+            "public-memory-benchmark",
+            "public_benchmark",
+            "public_benchmark_provenance_failed",
+        ),
+    ):
+        suite_results = _scorecard_fixture_results()
+        suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+        suite_results["public-memory-benchmark"] = _public_benchmark_report()
+        suite_results[target].pop("provenance")
+
+        result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+        evidence = result["external_evidence"]
+        assert result["ok"] is False
+        assert evidence["top_library_comparison_ready"] is False
+        assert evidence[summary_key]["quality_ok"] is True
+        assert evidence[summary_key]["provenance_ok"] is False
+        assert failed_gap in evidence["evidence_gaps"]
+
+
 def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
@@ -1937,6 +2037,9 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     assert result["ok"] is True
     assert result["gates"]["top_library_external_evidence"] is True
     assert result["external_evidence"]["required_for_gate"] is True
+    assert result["external_evidence"]["full_provider_canary"]["provenance_ok"] is True
+    assert result["external_evidence"]["agent_behavior_benchmark"]["provenance_ok"] is True
+    assert result["external_evidence"]["public_benchmark"]["provenance_ok"] is True
     assert (
         result["external_evidence"]["confidence_tier"]
         == "full_provider_agent_and_public_benchmark_evaluated"
