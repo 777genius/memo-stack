@@ -252,10 +252,12 @@ Use `memo-stack-full-provider-canary-interactive` when the key is not already
 exported; it reads the key with terminal echo disabled and passes it only via
 process environment.
 Use `memo-stack-prod-confidence-strict` when the final release gate must include
-both the paid full-provider canary and strict real-agent CLI auth. It requires
-the OpenAI key in process env and authenticated Codex, Claude, Gemini and
-OpenCode CLIs. It runs `memo-stack-prod-confidence-strict-preflight` before the
-paid provider canary, so missing key/auth fails before starting the full stack.
+publishable top-evidence plus strict real-agent CLI auth. It requires the OpenAI
+key in process env, `MEMORY_AGENT_BENCH_MODEL`, representative LoCoMo and
+LongMemEval dataset files, a clean worktree and authenticated Codex, Claude,
+Gemini and OpenCode CLIs. It runs `memo-stack-prod-confidence-strict-preflight`
+before paid provider/model work, so missing key/model/datasets/auth fails before
+starting the full stack.
 `memo-stack-prod-confidence-full` is an alias for the same gate.
 
 The historical clean full smoke target also runs MCP checks by default. Use

@@ -57,12 +57,20 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     bundle_script = (ROOT / "scripts" / "quality_evidence_bundle.py").read_text(
         encoding="utf-8"
     )
+    top_evidence_preflight = (
+        ROOT
+        / "packages"
+        / "memo_stack_server"
+        / "memo_stack_server"
+        / "top_evidence_preflight.py"
+    ).read_text(encoding="utf-8")
 
     assert ".PHONY: memo-stack-quality-scorecard" in makefile
     assert "$(PYTHON) -m memo_stack_server eval scorecard" in makefile
     assert ".PHONY: memo-stack-quality-scorecard-from-reports" in makefile
     assert ".PHONY: memo-stack-quality-scorecard-top-evidence" in makefile
     assert ".PHONY: memo-stack-quality-evidence-bundle" in makefile
+    assert ".PHONY: memo-stack-top-evidence-preflight" in makefile
     assert ".PHONY: memo-stack-top-evidence-bundle" in makefile
     assert "MEMORY_SCORECARD_SUITE_REPORTS" in makefile
     assert "MEMORY_SCORECARD_EXTRA_REPORTS" in makefile
@@ -73,10 +81,13 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
         _make_target_recipe(makefile, "memo-stack-top-evidence-bundle")
     )
     assert 'MEMORY_CLEAN_SMOKE_REPORT_OUT="$$external_report"' in top_evidence_recipe
+    assert "$(PYTHON) -m memo_stack_server.top_evidence_preflight --json" in (
+        top_evidence_recipe
+    )
     assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in top_evidence_recipe
     assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in top_evidence_recipe
-    assert "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET" in top_evidence_recipe
-    assert "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET" in top_evidence_recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET" in top_evidence_preflight
+    assert "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET" in top_evidence_preflight
     assert 'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"' in (
         top_evidence_recipe
     )
@@ -180,15 +191,15 @@ def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     assert "$(MAKE) memo-stack-plugin-test" in recipe
     assert "$(MAKE) memo-stack-test-quality" in recipe
     assert "$(MAKE) memo-stack-agent-install-doctor" in recipe
-    assert "$(MAKE) memo-stack-full-provider-public-benchmark-suite" in recipe
+    assert "$(MAKE) memo-stack-top-evidence-bundle" in recipe
+    assert "$(MAKE) memo-stack-full-provider-public-benchmark-suite" not in recipe
     assert "$(MAKE) memo-stack-agent-live-smoke" in recipe
     assert "$(MAKE) memo-stack-agent-live-smoke-agents-strict" in recipe
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
     assert "MEMORY_PROD_CONFIDENCE_SERVER_PORT" in recipe
     assert "git diff --check" in recipe
     assert "$(MAKE) memo-stack-secret-scan" in recipe
-    assert "MEMORY_OPENAI_API_KEY" in preflight_recipe
-    assert "OPENAI_API_KEY" in preflight_recipe
+    assert "$(MAKE) memo-stack-top-evidence-preflight" in preflight_recipe
     assert "$(MAKE) memo-stack-agent-auth-doctor-strict" in preflight_recipe
     assert "$(MAKE) memo-stack-agent-live-smoke-agents;" not in recipe
     assert "$(MAKE) memo-stack-agent-auth-doctor;" not in recipe
@@ -344,7 +355,7 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_OUTPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT" in makefile
-    assert "$(MAKE) memo-stack-full-provider-public-benchmark-suite" in makefile
+    assert "$(MAKE) memo-stack-top-evidence-bundle" in makefile
     assert "$(MAKE) memo-stack-prod-load-canary" in makefile
     assert "$(MAKE) memo-stack-agent-live-session-bench" in makefile
     assert "$(MAKE) memo-stack-agent-transcript-corpus-bench" in makefile

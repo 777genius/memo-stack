@@ -174,7 +174,7 @@ memo-stack-prod-confidence-strict:
 	$(MAKE) memo-stack-plugin-test; \
 	$(MAKE) memo-stack-test-quality; \
 	$(MAKE) memo-stack-agent-install-doctor; \
-	$(MAKE) memo-stack-full-provider-public-benchmark-suite; \
+	$(MAKE) memo-stack-top-evidence-bundle; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) memo-stack-agent-live-smoke; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) memo-stack-agent-live-smoke-agents-strict; \
 	git diff --check; \
@@ -185,7 +185,7 @@ memo-stack-prod-confidence-full: memo-stack-prod-confidence-strict
 
 .PHONY: memo-stack-prod-confidence-strict-preflight
 memo-stack-prod-confidence-strict-preflight:
-	@test -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" || (echo "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running strict prod confidence."; exit 1)
+	$(MAKE) memo-stack-top-evidence-preflight
 	$(MAKE) memo-stack-agent-auth-doctor-strict
 
 .PHONY: memo-stack-api-smoke
@@ -512,7 +512,7 @@ memo-stack-real-memory-confidence:
 	@set -e; \
 	cleanup() { $(MAKE) memo-stack-down >/dev/null || true; }; \
 	trap cleanup EXIT INT TERM; \
-	$(MAKE) memo-stack-full-provider-public-benchmark-suite; \
+	$(MAKE) memo-stack-top-evidence-bundle; \
 	$(MAKE) memo-stack-prod-load-canary; \
 	$(MAKE) memo-stack-agent-live-session-bench; \
 	$(MAKE) memo-stack-agent-transcript-corpus-bench; \

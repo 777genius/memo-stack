@@ -141,11 +141,14 @@ isolated live MCP smoke, advisory real-agent smoke, advisory auth doctor,
 `git diff --check` and a repository secret scan. It also installs a cleanup trap
 and runs `memo-stack-down` on exit.
 `memo-stack-prod-confidence-strict` is the paid/local-auth hard gate for a fully
-green release. It additionally requires `MEMORY_OPENAI_API_KEY` or
-`OPENAI_API_KEY`, runs the isolated full-provider Graphiti/Qdrant/OpenAI MCP
-canary, and treats real Codex/Claude/Gemini/OpenCode CLI auth failures as hard
-failures. `memo-stack-prod-confidence-strict-preflight` runs first and fails before
-the paid full-provider canary when the OpenAI key or real-agent auth is missing.
+green release. It runs the strict top-evidence bundle, which requires
+`MEMORY_OPENAI_API_KEY` or `OPENAI_API_KEY`, `MEMORY_AGENT_BENCH_MODEL`,
+representative LoCoMo and LongMemEval dataset files, a clean worktree, the
+isolated Graphiti/Qdrant/OpenAI MCP canary, real agent-behavior evidence and the
+public benchmark evidence bundle. It also treats real
+Codex/Claude/Gemini/OpenCode CLI auth failures as hard failures.
+`memo-stack-prod-confidence-strict-preflight` runs first and fails before paid
+provider/model work when top-evidence config or real-agent auth is missing.
 `memo-stack-prod-confidence-full` is an alias for the strict gate.
 
 Agent install verification is separate from package validation because
@@ -345,7 +348,10 @@ MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-r
 
 That gate runs the full-provider MCP canary, prod-load canary, live-session
 agent benchmark and transcript-corpus benchmark before `git diff --check` and
-secret scan. Paid agent benchmark targets default
+secret scan. It uses `memo-stack-top-evidence-bundle` for the full-provider plus
+public benchmark path, so the scorecard only becomes top-library-comparison-ready
+when strict provenance, Graphiti/Qdrant/OpenAI, agent behavior and public
+benchmark evidence are all present. Paid agent benchmark targets default
 `MEMORY_AGENT_BENCH_FAIL_ON_WORKER_ERROR=true`, so provider projection worker
 failures after mutating MCP tools fail the benchmark instead of being treated as
 soft warnings.
