@@ -19,16 +19,11 @@ from pathlib import Path
 from memo_stack_core.reporting import git_metadata
 
 from memo_stack_server.eval import (
-    AGENT_BEHAVIOR_BENCH_SUITE,
     AUTO_MEMORY_GOLDEN_SUITE,
-    FULL_PROVIDER_CANARY_SUITE,
     GRAPH_NATIVE_GOLDEN_SUITE,
-    LOCOMO_BENCHMARK_SUITE,
     LONG_MEMORY_GOLDEN_SUITE,
-    LONGMEMEVAL_BENCHMARK_SUITE,
     MEMORY_QUALITY_SCORECARD_SUITE,
     PROMPT_CONTRACT_SUITE,
-    PUBLIC_MEMORY_BENCHMARK_SUITE,
     QUALITY_GOLDEN_SUITE,
     SMALL_GOLDEN_SUITE,
     memory_quality_scorecard_policy_snapshot,
@@ -40,61 +35,13 @@ from memo_stack_server.eval import (
     run_quality_golden,
     run_small_golden,
 )
+from memo_stack_server.top_evidence_policy import (
+    FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS,
+    FULL_PROVIDER_TOP_EVIDENCE_SUITES,
+    top_evidence_report_policy,
+)
 
 DEFAULT_EVIDENCE_DIR = Path(".tmp") / "memo-stack-quality-evidence"
-
-
-@dataclass(frozen=True)
-class TopEvidenceReportPolicy:
-    expected_generators: frozenset[str]
-    provenance_suites: frozenset[str]
-
-
-_PUBLIC_BENCHMARK_REPORT_GENERATORS = frozenset(
-    {
-        "memo_stack_server.official_public_benchmark",
-        "memo_stack_server.public_benchmark",
-    }
-)
-_FULL_PROVIDER_REPORT_SUITES = frozenset(
-    {
-        FULL_PROVIDER_CANARY_SUITE,
-        "memo_stack_full_provider_canary",
-        "memo-stack-clean-full-smoke",
-        "clean-full-smoke",
-        "clean_full_smoke",
-    }
-)
-_PUBLIC_BENCHMARK_REPORT_SUITES = frozenset(
-    {
-        PUBLIC_MEMORY_BENCHMARK_SUITE,
-        "public_memory_benchmark",
-        "memory-public-benchmarks",
-        LOCOMO_BENCHMARK_SUITE,
-        LONGMEMEVAL_BENCHMARK_SUITE,
-    }
-)
-_TOP_EVIDENCE_REPORT_POLICIES = {
-    **{
-        suite: TopEvidenceReportPolicy(
-            expected_generators=frozenset({"scripts/clean_full_smoke.py"}),
-            provenance_suites=_FULL_PROVIDER_REPORT_SUITES,
-        )
-        for suite in _FULL_PROVIDER_REPORT_SUITES
-    },
-    AGENT_BEHAVIOR_BENCH_SUITE: TopEvidenceReportPolicy(
-        expected_generators=frozenset({"memo_stack_mcp.agent_behavior_bench"}),
-        provenance_suites=frozenset({AGENT_BEHAVIOR_BENCH_SUITE}),
-    ),
-    **{
-        suite: TopEvidenceReportPolicy(
-            expected_generators=_PUBLIC_BENCHMARK_REPORT_GENERATORS,
-            provenance_suites=_PUBLIC_BENCHMARK_REPORT_SUITES,
-        )
-        for suite in _PUBLIC_BENCHMARK_REPORT_SUITES
-    },
-}
-_FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS = ("agent_behavior", "public_benchmark")
 
 
 @dataclass(frozen=True)
@@ -335,7 +282,7 @@ def _validate_top_evidence_payload_provenance(
     allow_dirty_top_evidence: bool,
 ) -> None:
     suite = payload.get("suite")
-    policy = _top_evidence_report_policy(suite)
+    policy = top_evidence_report_policy(suite)
     if policy is None:
         return
     provenance = payload.get("provenance")
@@ -383,7 +330,7 @@ def _validate_top_evidence_payload_provenance(
         raise ValueError(
             f"Top evidence report is missing provenance runtime platform: {source_label}"
         )
-    if isinstance(suite, str) and suite in _FULL_PROVIDER_REPORT_SUITES:
+    if isinstance(suite, str) and suite in FULL_PROVIDER_TOP_EVIDENCE_SUITES:
         _validate_full_provider_nested_top_evidence(
             payload,
             source_label=source_label,
@@ -399,7 +346,7 @@ def _validate_full_provider_nested_top_evidence(
     expected_git_commit: str,
     allow_dirty_top_evidence: bool,
 ) -> None:
-    for key in _FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS:
+    for key in FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS:
         nested = payload.get(key)
         if nested is None:
             continue
@@ -415,12 +362,6 @@ def _validate_full_provider_nested_top_evidence(
             expected_git_commit=expected_git_commit,
             allow_dirty_top_evidence=allow_dirty_top_evidence,
         )
-
-
-def _top_evidence_report_policy(suite: object) -> TopEvidenceReportPolicy | None:
-    if not isinstance(suite, str):
-        return None
-    return _TOP_EVIDENCE_REPORT_POLICIES.get(suite)
 
 
 def _read_json_object(path: Path) -> dict[str, object]:
