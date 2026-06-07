@@ -641,8 +641,10 @@ async function resetVaultAndConfigure(
 async function connectAndExportFact(vaultPath: string): Promise<string> {
   await browser.executeObsidianCommand("memo-stack:connect-vault");
   await waitForCliCalls(vaultPath, 1);
+  await waitForMemoStackIdle();
   await browser.executeObsidianCommand("memo-stack:sync-now");
   await waitForCliCalls(vaultPath, 2);
+  await waitForMemoStackIdle();
   return onlyFactFile(vaultPath);
 }
 
@@ -740,6 +742,13 @@ async function waitForMemoStackApiUrl(apiUrl: string): Promise<void> {
   await browser.waitUntil(async () => (await memoStackSnapshot()).apiUrl === apiUrl, {
     timeout: 20000,
     timeoutMsg: "Memo Stack plugin did not reload persisted API URL",
+  });
+}
+
+async function waitForMemoStackIdle(): Promise<void> {
+  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+    timeout: 20000,
+    timeoutMsg: "Memo Stack plugin did not become idle",
   });
 }
 

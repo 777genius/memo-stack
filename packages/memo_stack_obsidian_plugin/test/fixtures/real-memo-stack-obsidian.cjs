@@ -12,6 +12,8 @@ const vault = valueAfter("--vault");
 const env = { ...process.env };
 env.PYTHONPATH = pythonpath(repoRoot, env.PYTHONPATH);
 
+delayFromEnv("MEMO_STACK_REAL_OBSIDIAN_DELAY_MS");
+
 const result = spawnSync(python, ["-m", "memo_stack_obsidian.cli", ...args], {
   cwd: repoRoot,
   env,
@@ -53,4 +55,11 @@ function pythonpath(root, existing) {
     values.push(existing);
   }
   return values.join(path.delimiter);
+}
+
+function delayFromEnv(name) {
+  const ms = Number.parseInt(process.env[name] || "0", 10);
+  if (Number.isFinite(ms) && ms > 0) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  }
 }
