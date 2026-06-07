@@ -94,6 +94,7 @@ _TOP_EVIDENCE_REPORT_POLICIES = {
         for suite in _PUBLIC_BENCHMARK_REPORT_SUITES
     },
 }
+_FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS = ("agent_behavior", "public_benchmark")
 
 
 @dataclass(frozen=True)
@@ -318,43 +319,102 @@ def _validate_top_evidence_report_provenance(
     allow_dirty_top_evidence: bool,
 ) -> None:
     payload = _read_json_object(path)
-    policy = _top_evidence_report_policy(payload.get("suite"))
+    _validate_top_evidence_payload_provenance(
+        payload,
+        source_label=str(path),
+        expected_git_commit=expected_git_commit,
+        allow_dirty_top_evidence=allow_dirty_top_evidence,
+    )
+
+
+def _validate_top_evidence_payload_provenance(
+    payload: dict[str, object],
+    *,
+    source_label: str,
+    expected_git_commit: str,
+    allow_dirty_top_evidence: bool,
+) -> None:
+    suite = payload.get("suite")
+    policy = _top_evidence_report_policy(suite)
     if policy is None:
         return
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
-        raise ValueError(f"Top evidence report is missing provenance: {path}")
+        raise ValueError(f"Top evidence report is missing provenance: {source_label}")
     if provenance.get("schema_version") != 1:
-        raise ValueError(f"Top evidence report has unsupported provenance schema: {path}")
+        raise ValueError(
+            f"Top evidence report has unsupported provenance schema: {source_label}"
+        )
     if provenance.get("suite") not in policy.provenance_suites:
-        raise ValueError(f"Top evidence report provenance suite mismatch: {path}")
+        raise ValueError(f"Top evidence report provenance suite mismatch: {source_label}")
     if provenance.get("generated_by") not in policy.expected_generators:
         raise ValueError(
-            f"Top evidence report has unsupported provenance generator: {path}"
+            f"Top evidence report has unsupported provenance generator: {source_label}"
         )
     git = provenance.get("git")
     commit = git.get("commit") if isinstance(git, dict) else None
     dirty = git.get("dirty") if isinstance(git, dict) else None
     if not isinstance(commit, str) or not commit:
-        raise ValueError(f"Top evidence report is missing provenance git commit: {path}")
+        raise ValueError(
+            f"Top evidence report is missing provenance git commit: {source_label}"
+        )
     if not isinstance(dirty, bool):
-        raise ValueError(f"Top evidence report is missing provenance dirty state: {path}")
+        raise ValueError(
+            f"Top evidence report is missing provenance dirty state: {source_label}"
+        )
     if commit != expected_git_commit:
         raise ValueError(
-            "Top evidence report commit mismatch: "
+            f"Top evidence report commit mismatch: {source_label}: "
             f"expected {expected_git_commit}, got {commit}"
         )
     if dirty and not allow_dirty_top_evidence:
-        raise ValueError(f"Top evidence report was generated from a dirty worktree: {path}")
+        raise ValueError(
+            f"Top evidence report was generated from a dirty worktree: {source_label}"
+        )
     runtime = provenance.get("runtime")
     python_version = runtime.get("python_version") if isinstance(runtime, dict) else None
     runtime_platform = runtime.get("platform") if isinstance(runtime, dict) else None
     if not isinstance(python_version, str) or not python_version:
         raise ValueError(
-            f"Top evidence report is missing provenance runtime python_version: {path}"
+            "Top evidence report is missing provenance runtime python_version: "
+            f"{source_label}"
         )
     if not isinstance(runtime_platform, str) or not runtime_platform:
-        raise ValueError(f"Top evidence report is missing provenance runtime platform: {path}")
+        raise ValueError(
+            f"Top evidence report is missing provenance runtime platform: {source_label}"
+        )
+    if isinstance(suite, str) and suite in _FULL_PROVIDER_REPORT_SUITES:
+        _validate_full_provider_nested_top_evidence(
+            payload,
+            source_label=source_label,
+            expected_git_commit=expected_git_commit,
+            allow_dirty_top_evidence=allow_dirty_top_evidence,
+        )
+
+
+def _validate_full_provider_nested_top_evidence(
+    payload: dict[str, object],
+    *,
+    source_label: str,
+    expected_git_commit: str,
+    allow_dirty_top_evidence: bool,
+) -> None:
+    for key in _FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS:
+        nested = payload.get(key)
+        if nested is None:
+            continue
+        nested_label = f"{source_label}#{key}"
+        if not isinstance(nested, dict):
+            raise ValueError(
+                f"Top evidence full-provider nested {key} must be an object: "
+                f"{nested_label}"
+            )
+        _validate_top_evidence_payload_provenance(
+            nested,
+            source_label=nested_label,
+            expected_git_commit=expected_git_commit,
+            allow_dirty_top_evidence=allow_dirty_top_evidence,
+        )
 
 
 def _top_evidence_report_policy(suite: object) -> TopEvidenceReportPolicy | None:

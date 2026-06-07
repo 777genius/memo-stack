@@ -31,6 +31,132 @@ def _strict_provenance(
     return provenance
 
 
+def _minimal_full_provider_report(
+    *,
+    agent_behavior: dict[str, object] | None = None,
+    public_benchmark: dict[str, object] | None = None,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "suite": "memo-stack-full-provider-canary",
+        "ok": True,
+        "provenance": _strict_provenance(
+            generated_by="scripts/clean_full_smoke.py",
+            suite="memo-stack-full-provider-canary",
+        ),
+        "checks": {
+            "fact_created": True,
+            "updated_fact_versioned": True,
+            "forgotten_fact_deleted": True,
+            "providers_are_healthy": True,
+            "context_provider_status_ok": True,
+            "mcp_provider_diagnostics_ok": True,
+            "mcp_search_has_graphiti_fact_after_worker": True,
+            "mcp_search_has_qdrant_document_chunk_after_worker": True,
+            "mcp_search_hides_old_fact_after_update": True,
+            "mcp_search_hides_deleted_fact": True,
+            "outbox_has_no_pending_or_dead": True,
+            "mcp_outbox_has_no_pending_or_dead": True,
+        },
+        "adapters": {
+            "qdrant": "ok",
+            "graphiti": "ok",
+            "embeddings": "ok",
+            "cognee": "disabled",
+        },
+        "mcp": {"ok": True},
+    }
+    if agent_behavior is not None:
+        report["agent_behavior"] = agent_behavior
+    if public_benchmark is not None:
+        report["public_benchmark"] = public_benchmark
+    return report
+
+
+def _minimal_agent_behavior_report(
+    *,
+    include_provenance: bool = True,
+    commit: str = "abc123",
+    dirty: bool = False,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "suite": "memory_mcp_agent_behavior",
+        "ok": True,
+        "scenario_set": "realistic",
+        "metrics": {
+            "tool_choice_accuracy": 1.0,
+            "search_before_write_rate": 1.0,
+            "update_vs_duplicate_rate": 1.0,
+            "document_routing_accuracy": 1.0,
+            "answer_support_rate": 1.0,
+            "live_session_pass_rate": 1.0,
+            "transcript_corpus_pass_rate": 1.0,
+            "adversarial_pass_rate": 1.0,
+            "unsafe_write_count": 0,
+            "secret_leak_count": 0,
+            "cross_scope_leak_count": 0,
+            "stale_leak_count": 0,
+            "deleted_leak_count": 0,
+            "critical_safety_failures": 0,
+        },
+        "gates": {
+            "critical_safety_failures_zero": True,
+            "secret_leak_count_zero": True,
+            "unsafe_write_count_zero": True,
+            "cross_scope_leak_count_zero": True,
+            "stale_leak_count_zero": True,
+            "deleted_leak_count_zero": True,
+            "search_before_write_rate_min_0_90": True,
+            "update_vs_duplicate_rate_min_0_80": True,
+            "tool_choice_accuracy_min_0_80": True,
+            "answer_support_rate_min_0_80": True,
+            "live_session_pass_rate_min_0_80": True,
+            "transcript_corpus_pass_rate_min_0_80": True,
+            "adversarial_pass_rate_min_0_90": True,
+            "critical_scenarios_pass": True,
+        },
+    }
+    if include_provenance:
+        report["provenance"] = _strict_provenance(
+            generated_by="memo_stack_mcp.agent_behavior_bench",
+            suite="memory_mcp_agent_behavior",
+            commit=commit,
+            dirty=dirty,
+        )
+    return report
+
+
+def _minimal_public_benchmark_report(
+    *,
+    include_provenance: bool = True,
+    commit: str = "abc123",
+    dirty: bool = False,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "suite": "public-memory-benchmark",
+        "ok": True,
+        "benchmarks": [
+            {
+                "name": "locomo",
+                "ok": True,
+                "metrics": {"accuracy": 0.947, "case_count": 600},
+            },
+            {
+                "name": "longmemeval",
+                "ok": True,
+                "metrics": {"accuracy": 0.902, "case_count": 500},
+            },
+        ],
+    }
+    if include_provenance:
+        report["provenance"] = _strict_provenance(
+            generated_by="memo_stack_server.official_public_benchmark",
+            suite="public-memory-benchmark",
+            commit=commit,
+            dirty=dirty,
+        )
+    return report
+
+
 def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> None:
     result = build_quality_evidence_bundle(output_dir=tmp_path)
 
@@ -146,6 +272,10 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                     "suite": "memory_mcp_agent_behavior",
                     "ok": True,
                     "scenario_set": "realistic",
+                    "provenance": _strict_provenance(
+                        generated_by="memo_stack_mcp.agent_behavior_bench",
+                        suite="memory_mcp_agent_behavior",
+                    ),
                     "metrics": {
                         "tool_choice_accuracy": 1.0,
                         "search_before_write_rate": 1.0,
@@ -182,6 +312,10 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                 "public_benchmark": {
                     "suite": "public-memory-benchmark",
                     "ok": True,
+                    "provenance": _strict_provenance(
+                        generated_by="memo_stack_server.official_public_benchmark",
+                        suite="public-memory-benchmark",
+                    ),
                     "benchmarks": [
                         {
                             "name": "locomo",
@@ -250,6 +384,91 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         "scripts/clean_full_smoke.py"
     )
     assert external_artifacts[0]["report"]["provenance"]["git"]["commit"] == "abc123"
+
+
+def test_quality_evidence_bundle_requires_full_provider_nested_agent_provenance(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "full-provider-missing-agent-provenance.json"
+    external_report.write_text(
+        json.dumps(
+            _minimal_full_provider_report(
+                agent_behavior=_minimal_agent_behavior_report(include_provenance=False),
+                public_benchmark=_minimal_public_benchmark_report(),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "missing provenance" in str(exc)
+        assert "#agent_behavior" in str(exc)
+    else:
+        raise AssertionError("expected missing nested agent provenance to fail")
+
+
+def test_quality_evidence_bundle_rejects_full_provider_nested_public_commit_mismatch(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "full-provider-stale-public-benchmark.json"
+    external_report.write_text(
+        json.dumps(
+            _minimal_full_provider_report(
+                agent_behavior=_minimal_agent_behavior_report(),
+                public_benchmark=_minimal_public_benchmark_report(commit="old-commit"),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "commit mismatch" in str(exc)
+        assert "#public_benchmark" in str(exc)
+        assert "expected abc123, got old-commit" in str(exc)
+    else:
+        raise AssertionError("expected stale nested public benchmark evidence to fail")
+
+
+def test_quality_evidence_bundle_rejects_full_provider_nested_agent_dirty_state(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "full-provider-dirty-agent-benchmark.json"
+    external_report.write_text(
+        json.dumps(
+            _minimal_full_provider_report(
+                agent_behavior=_minimal_agent_behavior_report(dirty=True),
+                public_benchmark=_minimal_public_benchmark_report(),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "dirty worktree" in str(exc)
+        assert "#agent_behavior" in str(exc)
+    else:
+        raise AssertionError("expected dirty nested agent evidence to fail")
 
 
 def test_quality_evidence_bundle_rejects_stale_top_evidence_report(
