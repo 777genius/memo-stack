@@ -146,6 +146,60 @@ describe("Memo Stack batch sync E2E", function () {
     assert.equal(conflictFiles(vaultPath).length, 0);
     assert.match(fs.readFileSync(factFileForId(vaultPath, fact.id), "utf8"), /memo_stack_version: 1/);
   });
+
+  it("surfaces corrupted local sync state and recovers after state reset", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO corrupt state initial fact.",
+      sourceId: "wdio-corrupt-state-export",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, fact.id);
+    const localDraft = "Obsidian WDIO corrupt state local draft must survive.";
+    replaceManagedText(exportedFact, localDraft);
+    corruptSyncState(vaultPath);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.match(snapshot.lastResult.stderr, /file is not a database|database disk image is malformed/);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO corrupt state initial fact.");
+    assert.match(fs.readFileSync(exportedFact, "utf8"), new RegExp(localDraft));
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    removeSyncState(vaultPath);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, fact.id, localDraft);
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    const recoveredFact = await getFact(baseUrl, fact.id);
+    assert.equal(recoveredFact.version, 2);
+    assert.equal(recoveredFact.text, localDraft);
+    const recoveredMarkdown = fs.readFileSync(factFileForId(vaultPath, fact.id), "utf8");
+    assert.match(recoveredMarkdown, new RegExp(localDraft));
+    assert.match(recoveredMarkdown, /memo_stack_version: 2/);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
@@ -354,6 +408,19 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
   });
 }
 
+async function waitForPluginIdle(): Promise<void> {
+  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+    timeout: 20000,
+    timeoutMsg: "Memo Stack plugin did not become idle",
+  });
+}
+
+async function memoStackSnapshot(): Promise<any> {
+  return await browser.executeObsidian(({ plugins }) => {
+    return (plugins.memoStack as any).snapshot();
+  });
+}
+
 async function waitUntil(check: () => Promise<boolean>, message: string): Promise<void> {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
@@ -405,6 +472,11 @@ function removeSyncState(vaultPath: string): void {
       force: true,
     });
   }
+}
+
+function corruptSyncState(vaultPath: string): void {
+  removeSyncState(vaultPath);
+  writeVaultFile(vaultPath, path.join(".memo-stack", "obsidian-sync.sqlite3"), "not a sqlite database");
 }
 
 function replaceManagedText(filePath: string, text: string): void {
