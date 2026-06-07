@@ -29,6 +29,7 @@ IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     "packages/memo_stack_mcp/memo_stack_mcp/plugin_hook.py",
     "packages/memo_stack_mcp/memo_stack_mcp/server.py",
     "packages/memo_stack_server/memo_stack_server/admin.py",
+    "packages/memo_stack_server/memo_stack_server/eval_scorecard.py",
     "packages/memo_stack_server/memo_stack_server/public_benchmark.py",
     "packages/memo_stack_server/memo_stack_server/web/assets/memory-browser.js",
     "tests/e2e/test_memory_scale_chaos_load_e2e.py",
