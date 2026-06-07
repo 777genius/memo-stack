@@ -117,6 +117,77 @@ describe("Memo Stack prepare flow E2E", function () {
     const exportedFact = onlyFactFile(vaultPath);
     assert.match(fs.readFileSync(exportedFact, "utf8"), /Obsidian WDIO prepare visible fact/);
   });
+
+  it("recovers prepare after the local stack becomes ready", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO prepare delayed stack fact.",
+      sourceId: "wdio-delayed-prepare-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    await setLocalEnv({ MEMO_STACK_FAKE_LOCAL_STATUS_READY: "false" });
+
+    await browser.executeObsidianCommand("memo-stack:prepare-vault");
+    await waitForLocalStackCalls(vaultPath, 2);
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+
+    let localCalls = readLocalStackCalls(vaultPath);
+    let connectorCalls = readCliCalls(vaultPath);
+    assert.deepEqual(
+      localCalls.map((call) => `${call.command}:${call.status}`),
+      ["init:0", "status:0"],
+    );
+    assert.deepEqual(
+      connectorCalls.map((call) => `${call.command}:${call.status}`),
+      ["connect:0"],
+    );
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.lastStackCommand, "status");
+    assert.equal(snapshot.lastStackResult.exitCode, 0);
+    assert.equal(snapshot.lastStackResult.payload.health.status_code, 503);
+    assert.equal(snapshot.lastCommand, "connect");
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal(snapshot.readmeExists, true);
+    assert.equal(snapshot.inboxExists, true);
+    assert.equal(snapshot.conflictsExists, true);
+    assert.equal(factFiles(vaultPath).length, 0, "not-ready prepare must not preview-export facts");
+
+    await setLocalEnv({ MEMO_STACK_FAKE_LOCAL_STATUS_READY: "true" });
+    await browser.executeObsidianCommand("memo-stack:prepare-vault");
+    await waitForLocalStackCalls(vaultPath, 4);
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    localCalls = readLocalStackCalls(vaultPath);
+    connectorCalls = readCliCalls(vaultPath);
+    assert.deepEqual(
+      localCalls.map((call) => `${call.command}:${call.status}`),
+      ["init:0", "status:0", "init:0", "status:0"],
+    );
+    assert.deepEqual(
+      connectorCalls.map((call) => `${call.command}:${call.status}`),
+      ["connect:0", "connect:0", "preview:0"],
+    );
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.lastStackResult.payload.health.status_code, 200);
+    assert.equal(snapshot.lastCommand, "preview");
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.ok(snapshot.lastResult.payload.export.would_export >= 1);
+    assert.equal(factFiles(vaultPath).length, 0, "recovered prepare preview must not export facts");
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+
+    connectorCalls = readCliCalls(vaultPath);
+    assert.deepEqual(
+      connectorCalls.map((call) => `${call.command}:${call.status}`),
+      ["connect:0", "connect:0", "preview:0", "sync:0"],
+    );
+    const exportedFact = onlyFactFile(vaultPath);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /Obsidian WDIO prepare delayed stack fact/);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO prepare delayed stack fact.");
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
