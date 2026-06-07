@@ -113,6 +113,55 @@ describe("Memo Stack path safety E2E", function () {
     assert.ok(calls.every((call) => !call.args.includes(unsafeSpaceSlug)));
   });
 
+  it("disables Control Center vault actions until the user fixes an unsafe path", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO path safety Control Center backend fact.",
+      sourceId: "wdio-path-safety-control-center-seed",
+    });
+    const vaultPath = await resetVault();
+    const outsideVaultRoot = path.join(tempDir, "outside-control-center-memory");
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", outsideVaultRoot);
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPathError(/Folder must be relative to the vault/);
+
+    await openMemoStackControlCenter();
+    await waitForVaultActionDisabled("Connect", true);
+    await waitForVaultActionDisabled("Preview", true);
+    await waitForVaultActionDisabled("Sync", true);
+    assert.equal(readCliCalls(vaultPath).length, 0);
+
+    await openMemoStackSettings();
+    await setSettingsInput("rootFolder", rootFolder);
+    await waitForPathReady(rootFolder, spaceSlug);
+    await openMemoStackControlCenter();
+    await waitForVaultActionDisabled("Connect", false);
+    await waitForVaultActionDisabled("Preview", false);
+    await waitForVaultActionDisabled("Sync", false);
+
+    await clickVaultActionButton("Connect");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await clickVaultActionButton("Sync");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, fact.id);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /path safety Control Center backend fact/);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
+    assert.ok(calls.every((call) => call.status === 0));
+  });
+
   it("recovers after the user fixes a missing connector CLI path in settings", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO connector path recovery backend fact.",
@@ -470,6 +519,20 @@ async function openMemoStackSettings(): Promise<void> {
   );
 }
 
+async function openMemoStackControlCenter(): Promise<void> {
+  await browser.executeObsidianCommand("memo-stack:open-control-center");
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(() =>
+        Boolean(document.querySelector(".memo-stack-panel .memo-stack-vault-actions")),
+      ),
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack Control Center did not open",
+    },
+  );
+}
+
 async function setSettingsInput(name: string, value: string): Promise<void> {
   const changed = await browser.execute(
     (settingName, nextValue) => {
@@ -515,6 +578,47 @@ async function clickSettingsButton(settingName: string, buttonText: string): Pro
     buttonText,
   );
   assert.equal(clicked, true, `Could not click Memo Stack settings button ${settingName}/${buttonText}`);
+}
+
+async function waitForVaultActionDisabled(buttonText: string, expected: boolean): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const state = await vaultActionButtonState(buttonText);
+      return state.exists && state.disabled === expected;
+    },
+    {
+      timeout: 20000,
+      timeoutMsg: `Memo Stack Control Center button ${buttonText} disabled state did not become ${expected}`,
+    },
+  );
+}
+
+async function clickVaultActionButton(buttonText: string): Promise<void> {
+  const clicked = await browser.execute((nextButtonText) => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".memo-stack-vault-actions button"),
+    );
+    const button = buttons.find((candidate) => candidate.innerText.trim() === nextButtonText);
+    if (!button || button.disabled) {
+      return false;
+    }
+    button.click();
+    return true;
+  }, buttonText);
+  assert.equal(clicked, true, `Could not click Memo Stack Control Center button ${buttonText}`);
+}
+
+async function vaultActionButtonState(buttonText: string): Promise<{ exists: boolean; disabled: boolean }> {
+  return await browser.execute((nextButtonText) => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".memo-stack-vault-actions button"),
+    );
+    const button = buttons.find((candidate) => candidate.innerText.trim() === nextButtonText);
+    return {
+      exists: Boolean(button),
+      disabled: button?.disabled ?? false,
+    };
+  }, buttonText);
 }
 
 async function memoStackSnapshot(): Promise<any> {
