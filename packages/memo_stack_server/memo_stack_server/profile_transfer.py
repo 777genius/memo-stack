@@ -21,6 +21,11 @@ from memo_stack_adapters.postgres.models import (
     MemorySourceRefRow,
     MemorySpaceRow,
 )
+from memo_stack_core.profile_snapshot_preview import (
+    build_profile_snapshot_import_preview,
+    import_counts,
+    skipped_snapshot_ids,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -225,17 +230,24 @@ async def import_profile_payload(
                 chunks=chunks,
             )
         )
+        conflict_id_set = set(conflict_ids)
+        preview = build_profile_snapshot_import_preview(
+            payload=payload,
+            merge_strategy=merge_strategy,
+            conflict_ids=conflict_id_set,
+        )
         if conflict_ids and merge_strategy == "fail_on_conflict":
             return {
                 "status": "conflict",
                 "conflict_count": len(conflict_ids),
                 "conflict_ids": conflict_ids[:20],
                 "dry_run": dry_run,
+                "preview": preview,
             }
         if dry_run:
-            skipped = _skipped_ids(
+            skipped = skipped_snapshot_ids(
                 merge_strategy=merge_strategy,
-                conflict_ids=set(conflict_ids),
+                conflict_ids=conflict_id_set,
                 facts=facts,
                 documents=documents,
                 chunks=chunks,
@@ -243,7 +255,7 @@ async def import_profile_payload(
             result: dict[str, object] = {
                 "status": "ok",
                 "dry_run": True,
-                "would_import": _import_counts(
+                "would_import": import_counts(
                     facts=facts,
                     documents=documents,
                     chunks=chunks,
@@ -252,22 +264,27 @@ async def import_profile_payload(
                 ),
                 "conflict_count": len(conflict_ids),
                 "merge_strategy": merge_strategy,
+                "preview": preview,
             }
             if merge_strategy == "create_new_profile":
                 result["would_create_profile"] = True
+                preview["would_create_profile"] = True
             return {
                 **result,
             }
 
-        skipped = _skipped_ids(
+        skipped = skipped_snapshot_ids(
             merge_strategy=merge_strategy,
-            conflict_ids=set(conflict_ids),
+            conflict_ids=conflict_id_set,
             facts=facts,
             documents=documents,
             chunks=chunks,
         )
         if merge_strategy == "supersede_matching_facts":
-            superseded_fact_ids = _fact_conflict_ids(facts=facts, conflict_ids=set(conflict_ids))
+            superseded_fact_ids = _fact_conflict_ids(
+                facts=facts,
+                conflict_ids=conflict_id_set,
+            )
             fact_id_map = {
                 fact_id: _stable_id("fact", target_profile_id, fact_id, import_batch_id)
                 for fact_id in superseded_fact_ids
@@ -388,13 +405,14 @@ async def import_profile_payload(
         "status": "ok",
         "dry_run": False,
         "merge_strategy": merge_strategy,
-        "imported": _import_counts(
+        "imported": import_counts(
             facts=facts,
             documents=documents,
             chunks=chunks,
             source_refs=source_refs,
             skipped=skipped,
         ),
+        "preview": preview,
     }
     if created_profile is not None:
         result["created_profile"] = created_profile
@@ -530,60 +548,6 @@ async def _chunk_hash_conflicts(
         for row_id, source_hash in rows
         if str(row_id) != by_hash[str(source_hash)]
     ]
-
-
-def _skipped_ids(
-    *,
-    merge_strategy: str,
-    conflict_ids: set[str],
-    facts: list[dict[str, Any]],
-    documents: list[dict[str, Any]],
-    chunks: list[dict[str, Any]],
-) -> dict[str, set[str]]:
-    fact_ids = {str(item["id"]) for item in facts}
-    document_ids = {str(item["id"]) for item in documents}
-    chunk_ids = {str(item["id"]) for item in chunks}
-    skipped_facts = fact_ids & conflict_ids if merge_strategy == "skip_existing" else set()
-    skipped_documents = document_ids & conflict_ids
-    skipped_chunks = chunk_ids & conflict_ids
-    skipped_chunks.update(
-        str(chunk["id"])
-        for chunk in chunks
-        if chunk.get("document_id") is None
-        or str(chunk["document_id"]) not in document_ids
-        or str(chunk["document_id"]) in skipped_documents
-    )
-    return {
-        "facts": skipped_facts,
-        "documents": skipped_documents,
-        "chunks": skipped_chunks,
-    }
-
-
-def _import_counts(
-    *,
-    facts: list[dict[str, Any]],
-    documents: list[dict[str, Any]],
-    chunks: list[dict[str, Any]],
-    source_refs: list[dict[str, Any]],
-    skipped: dict[str, set[str]],
-) -> dict[str, int]:
-    skipped_source_refs = {
-        index
-        for index, ref in enumerate(source_refs)
-        if str(ref.get("fact_id")) in skipped["facts"]
-        or (ref.get("chunk_id") is not None and str(ref["chunk_id"]) in skipped["chunks"])
-    }
-    return {
-        "facts": len(facts) - _count_skipped(facts, skipped["facts"]),
-        "documents": len(documents) - _count_skipped(documents, skipped["documents"]),
-        "chunks": len(chunks) - _count_skipped(chunks, skipped["chunks"]),
-        "source_refs": len(source_refs) - len(skipped_source_refs),
-    }
-
-
-def _count_skipped(items: list[dict[str, Any]], skipped: set[str]) -> int:
-    return sum(1 for item in items if str(item["id"]) in skipped)
 
 
 def _contains_redacted_memory(

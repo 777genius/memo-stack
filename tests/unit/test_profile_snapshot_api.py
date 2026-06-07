@@ -114,12 +114,60 @@ def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) ->
     assert dry_run.json()["data"]["dry_run"] is True
     assert dry_run.json()["data"]["would_create_profile"] is True
     assert dry_run.json()["data"]["would_import"]["facts"] == 1
+    assert dry_run.json()["data"]["preview"]["would_create_profile"] is True
+    assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 1
     assert refused.status_code == 400
     assert imported.status_code == 200
     assert imported.json()["data"]["merge_strategy"] == "create_new_profile"
     assert restored.status_code == 200
     assert restored.json()["data"][0]["text"] == snapshot["facts"][0]["text"]
     assert restored.json()["data"][0]["id"] != created.json()["data"]["id"]
+
+
+def test_profile_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "source-profile",
+                "text": "SNAPSHOT_API_CONFLICT_MARKER: conflict preview is explicit.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "snapshot-conflict"}],
+            },
+            headers=auth_headers(),
+        )
+        exported = client.get(
+            "/v1/export/profile-snapshot",
+            params={
+                "space_slug": "agents",
+                "profile_external_ref": "source-profile",
+                "redacted": False,
+            },
+            headers=auth_headers(),
+        )
+        imported = client.post(
+            "/v1/export/profile-snapshot/import",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "source-profile",
+                "snapshot": exported.json()["data"],
+                "manifest": exported.json()["manifest"],
+                "dry_run": True,
+                "merge_strategy": "fail_on_conflict",
+            },
+            headers=auth_headers(),
+        )
+
+    data = imported.json()["data"]
+    preview = data["preview"]
+    assert imported.status_code == 200
+    assert data["status"] == "conflict"
+    assert data["conflict_count"] == 1
+    assert preview["conflict_count"] == 1
+    assert preview["conflicts"]["facts"] == [exported.json()["data"]["facts"][0]["id"]]
+    assert preview["would_import"]["facts"] == 1
+    assert "conflicts_block_import" in preview["warnings"]
 
 
 def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> None:

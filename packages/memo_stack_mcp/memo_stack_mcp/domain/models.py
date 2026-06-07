@@ -431,6 +431,39 @@ class MemoryProfileSnapshotManifestData(McpDataModel):
     )
 
 
+class MemoryProfileSnapshotImportConflictsData(McpDataModel):
+    facts: list[str] = Field(default_factory=list)
+    documents: list[str] = Field(default_factory=list)
+    chunks: list[str] = Field(default_factory=list)
+    unknown: list[str] = Field(default_factory=list)
+
+
+class MemoryProfileSnapshotImportSupersedeData(McpDataModel):
+    facts: int | None = None
+    fact_ids: list[str] = Field(default_factory=list)
+
+
+class MemoryProfileSnapshotImportPreviewData(McpDataModel):
+    snapshot_counts: MemoryProfileSnapshotManifestCountsData = Field(
+        default_factory=MemoryProfileSnapshotManifestCountsData
+    )
+    conflict_count: int | None = None
+    conflicts: MemoryProfileSnapshotImportConflictsData = Field(
+        default_factory=MemoryProfileSnapshotImportConflictsData
+    )
+    would_import: MemoryProfileSnapshotManifestCountsData = Field(
+        default_factory=MemoryProfileSnapshotManifestCountsData
+    )
+    would_skip: MemoryProfileSnapshotManifestCountsData = Field(
+        default_factory=MemoryProfileSnapshotManifestCountsData
+    )
+    would_supersede: MemoryProfileSnapshotImportSupersedeData = Field(
+        default_factory=MemoryProfileSnapshotImportSupersedeData
+    )
+    warnings: list[str] = Field(default_factory=list)
+    would_create_profile: bool | None = None
+
+
 class MemoryProfileSnapshotExportData(McpDataModel):
     status: str | None = None
     snapshot: MemoryProfileSnapshotData = Field(default_factory=MemoryProfileSnapshotData)
@@ -450,6 +483,7 @@ class MemoryProfileSnapshotImportData(McpDataModel):
     conflict_count: int | None = None
     conflict_ids: list[str] = Field(default_factory=list)
     created_profile: dict[str, str] | None = None
+    preview: MemoryProfileSnapshotImportPreviewData | None = None
     reason: str | None = None
 
 
