@@ -31,7 +31,7 @@ if [ ! -x "${python_bin}" ]; then
   fi
 fi
 
-memory_pythonpath="${repo_root}/packages/memo_stack_core:${repo_root}/packages/memo_stack_server:${repo_root}/packages/memo_stack_adapters:${repo_root}/packages/memo_stack_sdk:${repo_root}/packages/memo_stack_obsidian:${repo_root}/packages/memo_stack_mcp"
+memory_pythonpath="${repo_root}/packages/memo_stack_core:${repo_root}/packages/memo_stack_server:${repo_root}/packages/memo_stack_adapters:${repo_root}/packages/memo_stack_sdk:${repo_root}/packages/memo_stack_obsidian:${repo_root}/packages/memo_stack_mcp:${repo_root}/packages/memo_stack_cli"
 if [ -n "${PYTHONPATH:-}" ]; then
   export PYTHONPATH="${memory_pythonpath}:${PYTHONPATH}"
 else
