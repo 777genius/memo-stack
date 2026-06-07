@@ -82,6 +82,16 @@ def test_memory_mcp_does_not_depend_on_server_adapters_or_providers() -> None:
     )
 
 
+def test_memory_server_does_not_depend_on_mcp_adapter_layer() -> None:
+    _assert_no_imports(
+        "packages/memo_stack_server/memo_stack_server",
+        {
+            "mcp",
+            "memo_stack_mcp",
+        },
+    )
+
+
 def test_memory_sdk_stays_transport_client_only() -> None:
     _assert_no_imports(
         "packages/memo_stack_sdk/memo_stack_sdk",

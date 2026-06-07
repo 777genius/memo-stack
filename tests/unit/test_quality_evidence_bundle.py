@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memo_stack_mcp.agent_behavior_contract import (
+from memo_stack_core.agent_behavior_contract import (
     AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
 from memo_stack_server.evidence_bundle import build_quality_evidence_bundle

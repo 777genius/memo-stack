@@ -1,4 +1,4 @@
-"""Lightweight contract for publishable Memo Stack agent-behavior evidence."""
+"""Shared contract for publishable Memo Stack agent-behavior evidence."""
 
 from __future__ import annotations
 

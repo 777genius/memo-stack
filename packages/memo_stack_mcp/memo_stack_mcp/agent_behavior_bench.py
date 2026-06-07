@@ -24,14 +24,13 @@ from typing import Any, Protocol
 import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from memo_stack_core.reporting import with_report_provenance
-
-from memo_stack_mcp.agent_behavior_contract import (
+from memo_stack_core.agent_behavior_contract import (
     ADVERSARIAL_TAG,
     EXTERNAL_TRANSCRIPT_TAG,
     LIVE_SESSION_TAG,
     TRANSCRIPT_CORPUS_TAG,
 )
+from memo_stack_core.reporting import with_report_provenance
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_NAMES = (

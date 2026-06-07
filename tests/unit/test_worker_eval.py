@@ -7,6 +7,9 @@ from typing import Any
 from fastapi.testclient import TestClient
 from memo_stack_adapters.postgres import create_schema
 from memo_stack_adapters.postgres.models import MemoryFactRow, MemoryOutboxRow
+from memo_stack_core.agent_behavior_contract import (
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
+)
 from memo_stack_core.ports.adapters import (
     AdapterCapabilities,
     EmbeddingResult,
@@ -17,9 +20,6 @@ from memo_stack_core.ports.capabilities import (
     CapabilityStatus,
     ProjectionForgetResult,
     ProjectionWriteResult,
-)
-from memo_stack_mcp.agent_behavior_contract import (
-    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
 from memo_stack_server.admin import (
     ACTIVE_CONTEXT_MANUAL_CHECK_NAMES,

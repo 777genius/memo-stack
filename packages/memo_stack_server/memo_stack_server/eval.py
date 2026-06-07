@@ -13,6 +13,13 @@ from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
+from memo_stack_core.agent_behavior_contract import (
+    AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_INTEGRITY_CHECKS,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS,
+)
 from memo_stack_core.application import BuildContextUseCase
 from memo_stack_core.application.auto_memory import MemoryAdmissionService
 from memo_stack_core.application.context_packer import ContextPacker
@@ -28,13 +35,6 @@ from memo_stack_core.ports.adapters import (
     GraphSearchResult,
 )
 from memo_stack_core.ports.auto_memory import CandidateOperation, SourceProvenance
-from memo_stack_mcp.agent_behavior_contract import (
-    AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS,
-    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
-    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_INTEGRITY_CHECKS,
-    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET,
-    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS,
-)
 
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
