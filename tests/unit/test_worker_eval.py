@@ -403,6 +403,7 @@ def _public_benchmark_report() -> dict[str, Any]:
                 "path_label": "locomo.json",
                 "sha256": "locomo-dataset-sha256",
                 "size_bytes": 1000,
+                "case_count": 600,
             },
             "longmemeval": {
                 "source_kind": "official_download",
@@ -410,6 +411,7 @@ def _public_benchmark_report() -> dict[str, Any]:
                 "path_label": "longmemeval.json",
                 "sha256": "longmemeval-dataset-sha256",
                 "size_bytes": 1000,
+                "case_count": 500,
             },
         },
         "metrics": {"benchmark_count": 2},
@@ -1555,6 +1557,9 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "top_evidence_requires_dataset_path_label"
     ] is True
     assert policy["public_benchmark"][
+        "top_evidence_requires_dataset_source_case_count"
+    ] is True
+    assert policy["public_benchmark"][
         "top_evidence_requires_official_url_for_official_sources"
     ] is True
     assert policy["public_benchmark"]["top_evidence_allowed_dataset_source_kinds"] == [
@@ -1662,6 +1667,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
                 "path_label": "locomo.json",
                 "sha256": "locomo-dataset-sha256",
                 "size_bytes": 1000,
+                "case_count": 600,
             }
         },
         "provenance": _scorecard_provenance(
@@ -1680,6 +1686,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
                 "path_label": "longmemeval.json",
                 "sha256": "longmemeval-dataset-sha256",
                 "size_bytes": 1000,
+                "case_count": 500,
             }
         },
         "provenance": _scorecard_provenance(
@@ -1802,6 +1809,44 @@ def test_memory_quality_scorecard_requires_official_url_for_official_sources() -
     assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
         "dataset_source_failures"
     ] == {"locomo": ["official_url_missing"]}
+    assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_rejects_public_benchmark_source_case_count_mismatch() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    public_benchmark = _public_benchmark_report()
+    public_benchmark["dataset_sources"]["locomo"]["case_count"] = 599
+    suite_results["public-memory-benchmark"] = public_benchmark
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
+        "dataset_source_failures"
+    ] == {"locomo": ["case_count_mismatch"]}
+    assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_requires_public_benchmark_source_case_count() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    public_benchmark = _public_benchmark_report()
+    public_benchmark["dataset_sources"]["locomo"].pop("case_count")
+    suite_results["public-memory-benchmark"] = public_benchmark
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
+        "dataset_source_failures"
+    ] == {"locomo": ["case_count_missing"]}
     assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
 
 

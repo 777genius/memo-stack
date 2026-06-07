@@ -60,6 +60,7 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
         "path_label": dataset.name,
         "sha256": result["dataset_hash"],
         "size_bytes": dataset.stat().st_size,
+        "case_count": 1,
     }
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
     assert all(case["status"] == "ok" for case in result["cases"])

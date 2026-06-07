@@ -489,6 +489,7 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_requires_dataset_source_metadata": True,
             "top_evidence_requires_dataset_source_hash_match": True,
             "top_evidence_requires_dataset_path_label": True,
+            "top_evidence_requires_dataset_source_case_count": True,
             "top_evidence_requires_official_url_for_official_sources": True,
             "top_evidence_allowed_dataset_source_kinds": list(
                 _PUBLIC_MEMORY_BENCHMARK_DATASET_SOURCE_KINDS
@@ -1106,7 +1107,9 @@ def _scorecard_public_benchmark_dataset_source_failures(
     size_bytes = source.get("size_bytes")
     path_label = source.get("path_label")
     official_url = source.get("official_url")
+    source_case_count = source.get("case_count")
     expected_sha256 = _scorecard_public_benchmark_dataset_fingerprint(report, benchmark)
+    expected_case_count = _scorecard_public_benchmark_case_count(report, benchmark)
     if source_kind not in _PUBLIC_MEMORY_BENCHMARK_DATASET_SOURCE_KINDS:
         failures.append("source_kind_not_allowed")
     if not _scorecard_nonempty_string(sha256):
@@ -1115,6 +1118,10 @@ def _scorecard_public_benchmark_dataset_source_failures(
         failures.append("sha256_mismatch")
     if not isinstance(size_bytes, int) or size_bytes <= 0:
         failures.append("size_bytes_missing")
+    if not isinstance(source_case_count, int) or source_case_count <= 0:
+        failures.append("case_count_missing")
+    elif source_case_count != expected_case_count:
+        failures.append("case_count_mismatch")
     if not _scorecard_nonempty_string(path_label):
         failures.append("path_label_missing")
     if source_kind in _PUBLIC_MEMORY_BENCHMARK_OFFICIAL_SOURCE_KINDS and not (
@@ -1137,6 +1144,36 @@ def _scorecard_public_benchmark_dataset_fingerprint(
         if _scorecard_nonempty_string(benchmark_hash):
             return str(benchmark_hash).strip()
     return None
+
+
+def _scorecard_public_benchmark_case_count(
+    report: Mapping[str, object],
+    benchmark: str,
+) -> int | None:
+    raw_items = report.get("benchmarks")
+    if isinstance(raw_items, list | tuple):
+        for item in raw_items:
+            if not isinstance(item, Mapping):
+                continue
+            name = _scorecard_normalize_public_benchmark_name(
+                item.get("name") or item.get("benchmark") or item.get("suite")
+            )
+            if name == benchmark:
+                return _scorecard_public_benchmark_item_case_count(item)
+    name = _scorecard_normalize_public_benchmark_name(
+        report.get("benchmark") or report.get("name") or report.get("suite")
+    )
+    if name == benchmark:
+        return _scorecard_public_benchmark_item_case_count(report)
+    metrics = _scorecard_result_metrics(dict(report))
+    return _scorecard_int(metrics.get(f"{benchmark}_case_count"))
+
+
+def _scorecard_public_benchmark_item_case_count(
+    item: Mapping[str, object],
+) -> int | None:
+    metrics = _scorecard_result_metrics(dict(item))
+    return _scorecard_int(metrics.get("case_count", item.get("case_count")))
 
 
 def _scorecard_nonempty_string(value: object) -> bool:

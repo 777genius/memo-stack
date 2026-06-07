@@ -209,6 +209,7 @@ def _minimal_public_benchmark_report(
                 "path_label": "locomo.json",
                 "sha256": "locomo-dataset-sha256",
                 "size_bytes": 1000,
+                "case_count": 600,
             },
             "longmemeval": {
                 "source_kind": "official_download",
@@ -216,6 +217,7 @@ def _minimal_public_benchmark_report(
                 "path_label": "longmemeval.json",
                 "sha256": "longmemeval-dataset-sha256",
                 "size_bytes": 1000,
+                "case_count": 500,
             },
         },
     }
@@ -416,6 +418,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                             "path_label": "locomo.json",
                             "sha256": "locomo-dataset-sha256",
                             "size_bytes": 1000,
+                            "case_count": 600,
                         },
                         "longmemeval": {
                             "source_kind": "official_download",
@@ -423,6 +426,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                             "path_label": "longmemeval.json",
                             "sha256": "longmemeval-dataset-sha256",
                             "size_bytes": 1000,
+                            "case_count": 500,
                         },
                     },
                 },
@@ -887,6 +891,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                         "path_label": "locomo.json",
                         "sha256": "locomo-dataset-sha256",
                         "size_bytes": 1000,
+                        "case_count": 600,
                     },
                     "longmemeval": {
                         "source_kind": "official_download",
@@ -894,6 +899,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                         "path_label": "longmemeval.json",
                         "sha256": "longmemeval-dataset-sha256",
                         "size_bytes": 1000,
+                        "case_count": 500,
                     },
                 },
             }

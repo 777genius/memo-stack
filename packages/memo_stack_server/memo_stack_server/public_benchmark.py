@@ -321,6 +321,7 @@ def _execute_cases(
                 dataset_path=dataset_path,
                 dataset_hash=dataset_hash,
                 source_kind="local_dataset",
+                case_count=_benchmark_summary_case_count(summary),
             )
             for summary in benchmarks
             if isinstance(summary.get("name"), str)
@@ -995,13 +996,25 @@ def _dataset_source_metadata(
     dataset_path: Path,
     dataset_hash: str,
     source_kind: str,
+    case_count: int | None,
 ) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "source_kind": source_kind,
         "path_label": dataset_path.name,
         "sha256": dataset_hash,
         "size_bytes": dataset_path.stat().st_size,
     }
+    if isinstance(case_count, int):
+        result["case_count"] = case_count
+    return result
+
+
+def _benchmark_summary_case_count(summary: Mapping[str, object]) -> int | None:
+    metrics = summary.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return None
+    case_count = metrics.get("case_count")
+    return case_count if isinstance(case_count, int) else None
 
 
 def _case_hash(raw: Mapping[str, object]) -> str:
