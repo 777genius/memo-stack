@@ -862,12 +862,13 @@ class MemoStackSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Apply imports on sync")
       .setDesc("When disabled, Sync now reports direct note edits without updating Memo Stack.")
-      .addToggle((toggle) =>
+      .addToggle((toggle) => {
+        toggle.toggleEl.dataset.memoStackSetting = "applyImportOnSync";
         toggle.setValue(this.plugin.settings.applyImportOnSync).onChange(async (value) => {
           this.plugin.settings.applyImportOnSync = value;
           await this.plugin.saveSettings();
-        }),
-      );
+        });
+      });
 
     new Setting(containerEl)
       .setName("Command timeout")
