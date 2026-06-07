@@ -100,6 +100,53 @@ def _build_parser() -> argparse.ArgumentParser:
     digest_parser.add_argument("--no-related", action="store_true")
     digest_parser.set_defaults(handler=_cmd_digest)
 
+    insights_parser = subparsers.add_parser("insights", help="Build memory health insights.")
+    insights_parser.add_argument("--space", dest="space_slug", default=None)
+    insights_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    insights_parser.add_argument("--thread", dest="thread_external_ref", default=None)
+    insights_parser.add_argument("--max-facts", type=int, default=200)
+    insights_parser.add_argument("--max-documents", type=int, default=100)
+    insights_parser.add_argument("--max-suggestions", type=int, default=100)
+    insights_parser.add_argument("--max-captures", type=int, default=100)
+    insights_parser.add_argument("--json", action="store_true")
+    insights_parser.set_defaults(handler=_cmd_insights)
+
+    export_parser = subparsers.add_parser(
+        "profile-export",
+        help="Export a portable profile snapshot.",
+    )
+    export_parser.add_argument("--space", dest="space_slug", default=None)
+    export_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    export_parser.add_argument("--out", type=Path, required=True)
+    export_parser.add_argument(
+        "--include-private",
+        action="store_true",
+        help="Export restorable raw memory text. Default output is redacted.",
+    )
+    export_parser.set_defaults(handler=_cmd_profile_export)
+
+    import_parser = subparsers.add_parser(
+        "profile-import",
+        help="Import a portable profile snapshot. Dry-run by default.",
+    )
+    import_parser.add_argument("--space", dest="space_slug", default=None)
+    import_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    import_parser.add_argument("--in", dest="in_path", type=Path, required=True)
+    import_parser.add_argument(
+        "--merge-strategy",
+        choices=(
+            "fail_on_conflict",
+            "skip_existing",
+            "create_new_profile",
+            "supersede_matching_facts",
+        ),
+        default="fail_on_conflict",
+    )
+    import_parser.add_argument("--source-name", default="cli-profile-snapshot")
+    import_parser.add_argument("--apply", action="store_true")
+    import_parser.add_argument("--confirmed", action="store_true")
+    import_parser.set_defaults(handler=_cmd_profile_import)
+
     return parser
 
 
@@ -219,6 +266,65 @@ def _cmd_digest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_insights(args: argparse.Namespace) -> int:
+    config = load_config()
+    client = MemoStackClient(base_url=config.api_url, token=config.service_token)
+    payload = client.build_insights(
+        scope=_read_scope_from_args(args, config),
+        max_facts=args.max_facts,
+        max_documents=args.max_documents,
+        max_suggestions=args.max_suggestions,
+        max_captures=args.max_captures,
+    )
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    print(f"health_score: {data.get('health_score')}")
+    metrics = data.get("metrics", {}) if isinstance(data.get("metrics"), dict) else {}
+    action_items = data.get("action_items", [])
+    print(f"pending_suggestions: {_nested(metrics, 'suggestions', 'pending')}")
+    print(f"expired_active_facts: {_nested(metrics, 'facts', 'expired_active')}")
+    print(f"documents_without_chunks: {_nested(metrics, 'documents', 'without_chunks')}")
+    print(f"action_items: {len(action_items) if isinstance(action_items, list) else 0}")
+    return 0
+
+
+def _cmd_profile_export(args: argparse.Namespace) -> int:
+    config = load_config()
+    out_path = args.out.expanduser()
+    client = MemoStackClient(base_url=config.api_url, token=config.service_token)
+    payload = client.export_profile_snapshot(
+        space_slug=args.space_slug or config.default_space_slug,
+        profile_external_ref=args.profile_external_ref or config.default_profile_external_ref,
+        redacted=not args.include_private,
+    )
+    snapshot = payload.get("data", payload) if isinstance(payload, dict) else payload
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8")
+    print(str(out_path))
+    return 0
+
+
+def _cmd_profile_import(args: argparse.Namespace) -> int:
+    if args.apply and not args.confirmed:
+        raise ValueError("profile-import --apply requires --confirmed")
+    config = load_config()
+    snapshot = json.loads(args.in_path.expanduser().read_text(encoding="utf-8"))
+    client = MemoStackClient(base_url=config.api_url, token=config.service_token)
+    payload = client.import_profile_snapshot(
+        space_slug=args.space_slug or config.default_space_slug,
+        profile_external_ref=args.profile_external_ref or config.default_profile_external_ref,
+        snapshot=snapshot,
+        dry_run=not args.apply,
+        merge_strategy=args.merge_strategy,
+        confirmed=args.confirmed,
+        source_name=args.source_name,
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def _status_payload(config) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {config.service_token}"}
     payload: dict[str, Any] = {
@@ -262,3 +368,21 @@ def _print_payload(payload: dict[str, Any], *, as_json: bool) -> None:
         return
     for key, value in payload.items():
         print(f"{key}: {value}")
+
+
+def _read_scope_from_args(args: argparse.Namespace, config) -> ReadScope:
+    return ReadScope(
+        space_slug=args.space_slug or config.default_space_slug,
+        profile_external_ref=args.profile_external_ref
+        or config.default_profile_external_ref,
+        thread_external_ref=args.thread_external_ref,
+    )
+
+
+def _nested(payload: dict[str, Any], *keys: str) -> Any:
+    current: Any = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
