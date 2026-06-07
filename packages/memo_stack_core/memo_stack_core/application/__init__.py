@@ -4,6 +4,7 @@ from memo_stack_core.application.dto import (
     ApproveSuggestionCommand,
     BuildContextQuery,
     BuildMemoryDigestQuery,
+    BuildMemoryInsightsQuery,
     CaptureResult,
     ConsistencyMode,
     ConsolidateCaptureCommand,
@@ -43,6 +44,8 @@ from memo_stack_core.application.dto import (
     ListSuggestionsQuery,
     MemoryDigest,
     MemoryDigestSection,
+    MemoryInsightActionItem,
+    MemoryInsightsResult,
     ProcessDocumentCommand,
     ProcessDocumentResult,
     ProfileResult,
@@ -58,6 +61,7 @@ from memo_stack_core.application.dto import (
 )
 from memo_stack_core.application.use_cases.build_context import BuildContextUseCase
 from memo_stack_core.application.use_cases.build_memory_digest import BuildMemoryDigestUseCase
+from memo_stack_core.application.use_cases.build_memory_insights import BuildMemoryInsightsUseCase
 from memo_stack_core.application.use_cases.consolidate_capture import ConsolidateCaptureUseCase
 from memo_stack_core.application.use_cases.delete_document import DeleteDocumentUseCase
 from memo_stack_core.application.use_cases.delete_thread_memory import DeleteThreadMemoryUseCase
@@ -112,6 +116,8 @@ __all__ = [
     "BuildContextUseCase",
     "BuildMemoryDigestQuery",
     "BuildMemoryDigestUseCase",
+    "BuildMemoryInsightsQuery",
+    "BuildMemoryInsightsUseCase",
     "CapabilitiesResult",
     "ConsistencyMode",
     "ContextBundle",
@@ -178,6 +184,8 @@ __all__ = [
     "ListSpacesUseCase",
     "MemoryDigest",
     "MemoryDigestSection",
+    "MemoryInsightActionItem",
+    "MemoryInsightsResult",
     "ProcessDocumentCommand",
     "ProcessDocumentResult",
     "ProcessDocumentUseCase",

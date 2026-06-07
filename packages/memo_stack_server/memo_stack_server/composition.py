@@ -21,6 +21,7 @@ from memo_stack_core.application import (
     ApproveSuggestionUseCase,
     BuildContextUseCase,
     BuildMemoryDigestUseCase,
+    BuildMemoryInsightsUseCase,
     ConsolidateCaptureUseCase,
     CreateProfileUseCase,
     CreateSpaceUseCase,
@@ -119,6 +120,7 @@ class Container:
     delete_document: DeleteDocumentUseCase
     build_context: BuildContextUseCase
     build_memory_digest: BuildMemoryDigestUseCase
+    build_memory_insights: BuildMemoryInsightsUseCase
     export_graph: ExportGraphUseCase
     delete_thread_memory: DeleteThreadMemoryUseCase
     get_session_status: GetSessionStatusUseCase
@@ -240,6 +242,11 @@ def build_container(settings: Settings | None = None) -> Container:
         ids=ids,
         context_builder=build_context,
     )
+    build_memory_insights = BuildMemoryInsightsUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+    )
     export_graph = ExportGraphUseCase(uow_factory=uow_factory)
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
     get_session_status = GetSessionStatusUseCase(uow_factory=uow_factory)
@@ -314,6 +321,7 @@ def build_container(settings: Settings | None = None) -> Container:
         delete_document=delete_document,
         build_context=build_context,
         build_memory_digest=build_memory_digest,
+        build_memory_insights=build_memory_insights,
         export_graph=export_graph,
         delete_thread_memory=delete_thread_memory,
         get_session_status=get_session_status,

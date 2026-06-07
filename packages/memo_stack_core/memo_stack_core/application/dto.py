@@ -347,6 +347,42 @@ class MemoryDigest:
 
 
 @dataclass(frozen=True)
+class BuildMemoryInsightsQuery:
+    space_id: SpaceId
+    profile_ids: tuple[ProfileId, ...]
+    thread_id: ThreadId | None = None
+    max_facts: int = 200
+    max_documents: int = 100
+    max_suggestions: int = 100
+    max_captures: int = 100
+
+
+@dataclass(frozen=True)
+class MemoryInsightActionItem:
+    id: str
+    severity: str
+    action: str
+    target_type: str
+    target_id: str | None
+    profile_id: str
+    reason: str
+    preview: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class MemoryInsightsResult:
+    insights_id: str
+    generated_at: datetime
+    scope: dict[str, object]
+    health_score: float
+    metrics: dict[str, object]
+    taxonomy: dict[str, object]
+    action_items: tuple[MemoryInsightActionItem, ...]
+    diagnostics: dict[str, object]
+
+
+@dataclass(frozen=True)
 class DeleteThreadMemoryCommand:
     space_id: SpaceId
     profile_id: ProfileId

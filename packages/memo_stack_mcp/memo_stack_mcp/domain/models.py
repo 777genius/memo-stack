@@ -229,6 +229,108 @@ class MemoryDigestData(McpDataModel):
     effective_max_suggestions: int | None = None
 
 
+class MemoryInsightActionItemData(McpDataModel):
+    id: str | None = None
+    severity: Literal["critical", "warning", "info"] | str | None = None
+    action: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    profile_id: str | None = None
+    reason: str | None = None
+    preview: str | None = None
+    metadata: dict[str, JsonScalar | list[JsonScalar]] = Field(default_factory=dict)
+
+
+class MemoryInsightCountData(McpDataModel):
+    value: str | None = None
+    count: int | None = None
+
+
+class MemoryInsightFactsMetricsData(McpDataModel):
+    total_sampled: int | None = None
+    active: int | None = None
+    expired_active: int | None = None
+    uncategorized_active: int | None = None
+    untagged_active: int | None = None
+    by_status: dict[str, int] = Field(default_factory=dict)
+
+
+class MemoryInsightDocumentMetricsData(McpDataModel):
+    active: int | None = None
+    chunks_sampled: int | None = None
+    without_chunks: int | None = None
+
+
+class MemoryInsightSuggestionMetricsData(McpDataModel):
+    total_sampled: int | None = None
+    pending: int | None = None
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_operation: dict[str, int] = Field(default_factory=dict)
+
+
+class MemoryInsightCaptureMetricsData(McpDataModel):
+    attention_needed: int | None = None
+    by_consolidation_status: dict[str, int] = Field(default_factory=dict)
+
+
+class MemoryInsightsMetricsData(McpDataModel):
+    profiles: int | None = None
+    facts: MemoryInsightFactsMetricsData = Field(
+        default_factory=MemoryInsightFactsMetricsData
+    )
+    documents: MemoryInsightDocumentMetricsData = Field(
+        default_factory=MemoryInsightDocumentMetricsData
+    )
+    suggestions: MemoryInsightSuggestionMetricsData = Field(
+        default_factory=MemoryInsightSuggestionMetricsData
+    )
+    captures: MemoryInsightCaptureMetricsData = Field(
+        default_factory=MemoryInsightCaptureMetricsData
+    )
+
+
+class MemoryInsightsTaxonomyData(McpDataModel):
+    top_categories: list[MemoryInsightCountData] = Field(default_factory=list)
+    top_tags: list[MemoryInsightCountData] = Field(default_factory=list)
+    ttl_policies: list[MemoryInsightCountData] = Field(default_factory=list)
+
+
+class MemoryInsightsDiagnosticsData(McpDataModel):
+    evidence_only: bool | None = None
+    read_only: bool | None = None
+    sample_limited: bool | None = None
+    retrieval_disabled: bool | None = None
+    scope_not_found: bool | None = None
+    policy_mode: str | None = None
+    max_facts_per_profile: int | None = None
+    max_documents_per_profile: int | None = None
+    max_suggestions_per_profile: int | None = None
+    max_captures_per_profile: int | None = None
+    profiles_sampled: int | None = None
+
+
+class MemoryInsightsData(McpDataModel):
+    insights_id: str | None = None
+    generated_at: str | None = None
+    scope: dict[str, JsonScalar | list[str]] = Field(default_factory=dict)
+    health_score: float | None = None
+    metrics: MemoryInsightsMetricsData = Field(default_factory=MemoryInsightsMetricsData)
+    taxonomy: MemoryInsightsTaxonomyData = Field(default_factory=MemoryInsightsTaxonomyData)
+    action_items: list[MemoryInsightActionItemData] = Field(default_factory=list)
+    diagnostics: MemoryInsightsDiagnosticsData = Field(
+        default_factory=MemoryInsightsDiagnosticsData
+    )
+    requested_profile_external_refs: list[str] = Field(default_factory=list)
+    requested_max_facts: int | None = None
+    effective_max_facts: int | None = None
+    requested_max_documents: int | None = None
+    effective_max_documents: int | None = None
+    requested_max_suggestions: int | None = None
+    effective_max_suggestions: int | None = None
+    requested_max_captures: int | None = None
+    effective_max_captures: int | None = None
+
+
 class MemoryGraphNodeData(McpDataModel):
     id: str
     type: str
@@ -405,6 +507,7 @@ class MemoryToolData(
     MemoryStatusData,
     MemorySearchData,
     MemoryDigestData,
+    MemoryInsightsData,
     MemoryFactListData,
     MemoryFactMutationData,
     MemorySuggestionListData,
@@ -441,6 +544,10 @@ class MemorySearchResponse(McpToolResponse):
 
 class MemoryDigestResponse(McpToolResponse):
     data: MemoryDigestData | None = None
+
+
+class MemoryInsightsResponse(McpToolResponse):
+    data: MemoryInsightsData | None = None
 
 
 class MemoryFactResponse(McpToolResponse):

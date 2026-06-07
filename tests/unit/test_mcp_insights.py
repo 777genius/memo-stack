@@ -1,0 +1,65 @@
+import asyncio
+from typing import Any
+
+from memo_stack_mcp.application.service import MemoryToolService
+from memo_stack_mcp.config import MemoryMcpSettings
+from memo_stack_mcp.server import create_mcp_server
+
+
+class InsightsGateway:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def build_insights(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("build_insights", kwargs))
+        return {
+            "data": {
+                "insights_id": "ins_1",
+                "health_score": 87.5,
+                "metrics": {"suggestions": {"pending": 1}},
+                "taxonomy": {"top_tags": [{"value": "memory", "count": 2}]},
+                "action_items": [
+                    {
+                        "id": "mai_1",
+                        "severity": "warning",
+                        "action": "review_pending_suggestions",
+                        "target_type": "suggestion_queue",
+                        "target_id": None,
+                        "profile_id": "profile_default",
+                        "reason": "1 pending suggestions need review.",
+                    }
+                ],
+                "diagnostics": {"evidence_only": True, "read_only": True},
+            }
+        }
+
+
+def test_mcp_insights_structured_output_and_scope() -> None:
+    async def run() -> None:
+        gateway = InsightsGateway()
+        server = create_mcp_server(
+            service=MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+        )
+
+        result = await server.call_tool(
+            "memory_insights",
+            {
+                "profile_external_refs": ["engineering", "product"],
+                "max_suggestions": 25,
+            },
+        )
+
+        assert result.structuredContent["ok"] is True
+        assert result.structuredContent["data"]["insights_id"] == "ins_1"
+        assert result.structuredContent["data"]["health_score"] == 87.5
+        assert result.structuredContent["data"]["action_items"][0]["action"] == (
+            "review_pending_suggestions"
+        )
+        assert gateway.calls[0][0] == "build_insights"
+        assert gateway.calls[0][1]["max_suggestions"] == 25
+        assert gateway.calls[0][1]["scope"].profile_external_refs == (
+            "engineering",
+            "product",
+        )
+
+    asyncio.run(run())

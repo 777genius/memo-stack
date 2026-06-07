@@ -21,6 +21,7 @@ from memo_stack_mcp.domain.models import (
     MemoryFactMutationResponse,
     MemoryFactResponse,
     MemoryGraphExportResponse,
+    MemoryInsightsResponse,
     MemoryProfileSnapshotExportResponse,
     MemoryProfileSnapshotImportResponse,
     MemoryProposalResponse,
@@ -355,6 +356,100 @@ def create_mcp_server(
                 include_related=include_related,
             ),
             MemoryDigestResponse,
+        )
+
+    @mcp.tool(
+        name="memory_insights",
+        title="Build Memory Insights",
+        description=(
+            "Build a read-only maintenance report for the current memory scope: health score, "
+            "pending review load, expired facts, document indexing coverage, taxonomy hotspots, "
+            "and cleanup action items. Use this before memory cleanup, review sessions, or when "
+            "the user asks how healthy/stable the memory is. This tool never mutates memory and "
+            "action_items are guidance only."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_insights(
+        space_slug: Annotated[
+            str | None,
+            Field(
+                default=None,
+                min_length=1,
+                max_length=160,
+                description="Project/team memory namespace. Defaults from env.",
+            ),
+        ] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(
+                default=None,
+                min_length=1,
+                max_length=160,
+                description=(
+                    "Single profile/person/category memory scope. Defaults from env. Do not "
+                    "also pass profile_external_refs unless reading multiple profiles."
+                ),
+            ),
+        ] = None,
+        profile_external_refs: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=160)]] | None,
+            Field(
+                default=None,
+                min_length=1,
+                max_length=8,
+                description="Optional multi-profile read scope.",
+            ),
+        ] = None,
+        thread_external_ref: Annotated[
+            str | None,
+            Field(
+                default=None,
+                min_length=1,
+                max_length=160,
+                description="Optional thread/session scope.",
+            ),
+        ] = None,
+        max_facts: Annotated[
+            int,
+            Field(default=200, ge=0, le=1000, description="Maximum facts sampled per profile."),
+        ] = 200,
+        max_documents: Annotated[
+            int,
+            Field(default=100, ge=0, le=500, description="Maximum documents sampled per profile."),
+        ] = 100,
+        max_suggestions: Annotated[
+            int,
+            Field(
+                default=100,
+                ge=0,
+                le=500,
+                description="Maximum suggestions sampled per profile.",
+            ),
+        ] = 100,
+        max_captures: Annotated[
+            int,
+            Field(default=100, ge=0, le=500, description="Maximum captures sampled per profile."),
+        ] = 100,
+    ) -> Annotated[CallToolResult, MemoryInsightsResponse]:
+        return _tool_response(
+            await tool_service.insights(
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                profile_external_refs=profile_external_refs,
+                thread_external_ref=thread_external_ref,
+                max_facts=max_facts,
+                max_documents=max_documents,
+                max_suggestions=max_suggestions,
+                max_captures=max_captures,
+            ),
+            MemoryInsightsResponse,
         )
 
     @mcp.tool(

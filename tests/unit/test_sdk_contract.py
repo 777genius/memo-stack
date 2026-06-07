@@ -165,6 +165,43 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
     }
 
 
+def test_sdk_sends_memory_insights_scope_and_limits() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(200, json={"data": {"insights_id": "ins_1"}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.build_insights(
+        space_slug="atlas",
+        profile_external_refs=["engineering", "product"],
+        max_facts=50,
+        max_suggestions=25,
+    )
+
+    assert response == {"data": {"insights_id": "ins_1"}}
+    assert seen == {
+        "method": "POST",
+        "url": "http://memory.test/v1/insights",
+        "body": {
+            "space_slug": "atlas",
+            "profile_external_refs": ["engineering", "product"],
+            "max_facts": 50,
+            "max_documents": 100,
+            "max_suggestions": 25,
+            "max_captures": 100,
+        },
+    }
+
+
 def test_sdk_facade_accepts_additive_response_fields() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

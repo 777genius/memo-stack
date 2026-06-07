@@ -411,6 +411,83 @@ class MemoryToolService:
 
         return await self._guard(action)
 
+    async def insights(
+        self,
+        *,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        profile_external_refs: list[str] | None = None,
+        thread_external_ref: str | None = None,
+        max_facts: int = 200,
+        max_documents: int = 100,
+        max_suggestions: int = 100,
+        max_captures: int = 100,
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            effective_max_facts, fact_warnings = self._clamp_int(
+                name="max_facts",
+                value=max_facts,
+                minimum=0,
+                maximum=1000,
+            )
+            effective_max_documents, document_warnings = self._clamp_int(
+                name="max_documents",
+                value=max_documents,
+                minimum=0,
+                maximum=500,
+            )
+            effective_max_suggestions, suggestion_warnings = self._clamp_int(
+                name="max_suggestions",
+                value=max_suggestions,
+                minimum=0,
+                maximum=500,
+            )
+            effective_max_captures, capture_warnings = self._clamp_int(
+                name="max_captures",
+                value=max_captures,
+                minimum=0,
+                maximum=500,
+            )
+            warnings = (
+                fact_warnings
+                + document_warnings
+                + suggestion_warnings
+                + capture_warnings
+            )
+            scope = self._read_scope(
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                profile_external_refs=profile_external_refs,
+                thread_external_ref=thread_external_ref,
+            )
+            payload = await self._gateway.build_insights(
+                scope=scope,
+                max_facts=effective_max_facts,
+                max_documents=effective_max_documents,
+                max_suggestions=effective_max_suggestions,
+                max_captures=effective_max_captures,
+            )
+            data = payload.get("data", {})
+            if not isinstance(data, dict):
+                data = {}
+            data = self._redact_sensitive_search_data(data)
+            data.setdefault("requested_profile_external_refs", list(scope.profile_external_refs))
+            data.setdefault("requested_max_facts", max_facts)
+            data.setdefault("effective_max_facts", effective_max_facts)
+            data.setdefault("requested_max_documents", max_documents)
+            data.setdefault("effective_max_documents", effective_max_documents)
+            data.setdefault("requested_max_suggestions", max_suggestions)
+            data.setdefault("effective_max_suggestions", effective_max_suggestions)
+            data.setdefault("requested_max_captures", max_captures)
+            data.setdefault("effective_max_captures", effective_max_captures)
+            return self._ok(
+                "Memory insights completed. Use action_items as review/cleanup guidance only.",
+                data=data,
+                warnings=warnings,
+            )
+
+        return await self._guard(action)
+
     def _redact_sensitive_search_data(self, value: Any) -> Any:
         if isinstance(value, str):
             return redact_sensitive_text(value)

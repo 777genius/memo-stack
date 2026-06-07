@@ -65,6 +65,7 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
             "memory_status",
             "memory_search",
             "memory_digest",
+            "memory_insights",
             "memory_remember_fact",
             "memory_update_fact",
             "memory_forget_fact",
@@ -98,6 +99,12 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         assert status["data"]["default_scope"]["space_slug"] == "mcp-e2e"
         assert status["data"]["auth_configured"] is True
         assert token not in _dump(status)
+
+        insights = await _call(session, "memory_insights", {"max_facts": 20})
+        assert insights["ok"] is True
+        assert insights["data"]["diagnostics"]["evidence_only"] is True
+        assert insights["data"]["diagnostics"]["read_only"] is True
+        assert token not in _dump(insights)
 
         rejected = await session.call_tool(
             "memory_remember_fact",

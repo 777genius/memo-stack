@@ -12,6 +12,7 @@ from memo_stack_server.api.v1.episodes import router as episodes_router
 from memo_stack_server.api.v1.export import router as export_router
 from memo_stack_server.api.v1.facts import router as facts_router
 from memo_stack_server.api.v1.health import router as health_router
+from memo_stack_server.api.v1.insights import router as insights_router
 from memo_stack_server.api.v1.spaces_profiles import router as spaces_profiles_router
 from memo_stack_server.api.v1.suggestions import router as suggestions_router
 from memo_stack_server.api.v1.thread_memory import router as thread_memory_router
@@ -26,6 +27,7 @@ router.include_router(episodes_router)
 router.include_router(captures_router)
 router.include_router(context_router)
 router.include_router(digest_router)
+router.include_router(insights_router)
 router.include_router(thread_memory_router)
 router.include_router(suggestions_router)
 router.include_router(diagnostics_router)

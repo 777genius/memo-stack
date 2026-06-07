@@ -40,6 +40,16 @@ class MemoryGatewayPort(Protocol):
         include_related: bool,
     ) -> dict[str, Any]: ...
 
+    async def build_insights(
+        self,
+        *,
+        scope: MemoryReadScope,
+        max_facts: int,
+        max_documents: int,
+        max_suggestions: int,
+        max_captures: int,
+    ) -> dict[str, Any]: ...
+
     async def export_graph(
         self,
         *,

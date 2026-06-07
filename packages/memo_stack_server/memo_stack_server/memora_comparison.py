@@ -109,11 +109,12 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="forget_delete_and_review_control",
         label="Forget/delete and review-gated control",
         weight=0.12,
-        memo_stack_score=9.1,
+        memo_stack_score=9.3,
         memora_score=7.8,
         memo_stack_rationale=(
             "MCP defaults are suggestion-first, delete can be disabled, and "
-            "fact/suggestion/capture review tools are first-class."
+            "fact/suggestion/capture review tools plus read-only memory_insights "
+            "are first-class."
         ),
         memora_rationale=(
             "Memora has delete, batch delete, document fragment guards and "
@@ -209,12 +210,13 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="ops_and_production_evidence",
         label="Operational confidence and benchmark evidence",
         weight=0.10,
-        memo_stack_score=9.0,
+        memo_stack_score=9.1,
         memora_score=7.7,
         memo_stack_rationale=(
             "Quality scorecard, full-provider canary, public benchmark canary, "
             "agent behavior benchmark, secret/top-evidence gates, and portable "
-            "profile snapshot export/import via API, SDK and MCP exist."
+            "profile snapshot export/import plus memory insights via API, SDK "
+            "and MCP exist."
         ),
         memora_rationale=(
             "Direct temp-db smoke passed and public repo is active, but we did "
@@ -279,6 +281,7 @@ def build_memora_agent_memory_comparison(
                 "tests/unit/test_document_fragments.py",
                 "tests/unit/test_document_fragment_api.py",
                 "tests/unit/test_fact_taxonomy_api.py",
+                "tests/unit/test_memory_insights_api.py",
                 "tests/unit/test_graph_export_api.py",
                 "tests/unit/test_profile_snapshot_api.py",
                 "tests/e2e/test_memory_quality_e2e.py",

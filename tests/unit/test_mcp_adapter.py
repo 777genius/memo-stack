@@ -2027,6 +2027,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_status",
             "memory_search",
             "memory_digest",
+            "memory_insights",
             "memory_export_graph",
             "memory_export_profile_snapshot",
             "memory_import_profile_snapshot",

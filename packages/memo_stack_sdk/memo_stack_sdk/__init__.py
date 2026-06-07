@@ -274,6 +274,48 @@ class MemoStackClient:
     def diagnostics_profile(self, profile_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/diagnostics/profile/{profile_id}")
 
+    def build_insights(
+        self,
+        *,
+        scope: ReadScope | None = None,
+        space_id: str | None = None,
+        profile_ids: list[str] | None = None,
+        thread_id: str | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        profile_external_refs: list[str] | None = None,
+        thread_external_ref: str | None = None,
+        max_facts: int = 200,
+        max_documents: int = 100,
+        max_suggestions: int = 100,
+        max_captures: int = 100,
+    ) -> dict[str, Any]:
+        scope_payload = (
+            scope.to_payload()
+            if scope is not None
+            else _context_scope_payload(
+                space_id=space_id,
+                profile_ids=profile_ids,
+                thread_id=thread_id,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                profile_external_refs=profile_external_refs,
+                thread_external_ref=thread_external_ref,
+            )
+        )
+        _validate_read_scope_payload(scope_payload)
+        return self._request(
+            "POST",
+            "/v1/insights",
+            json={
+                **scope_payload,
+                "max_facts": max_facts,
+                "max_documents": max_documents,
+                "max_suggestions": max_suggestions,
+                "max_captures": max_captures,
+            },
+        )
+
     def export_profile_snapshot(
         self,
         *,

@@ -104,6 +104,32 @@ class HttpMemoryGateway:
             ),
         )
 
+    async def build_insights(
+        self,
+        *,
+        scope: MemoryReadScope,
+        max_facts: int,
+        max_documents: int,
+        max_suggestions: int,
+        max_captures: int,
+    ) -> dict[str, Any]:
+        profile_payload = _read_scope_profile_payload(scope)
+        return await self._request(
+            "POST",
+            "/v1/insights",
+            json=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    **profile_payload,
+                    "thread_external_ref": scope.thread_external_ref,
+                    "max_facts": max_facts,
+                    "max_documents": max_documents,
+                    "max_suggestions": max_suggestions,
+                    "max_captures": max_captures,
+                }
+            ),
+        )
+
     async def export_graph(
         self,
         *,

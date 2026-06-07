@@ -635,6 +635,7 @@ async def _run_generated_plugin_status(
         tool_names = {tool.name for tool in tools.tools}
         assert "memory_status" in tool_names
         assert "memory_search" in tool_names
+        assert "memory_insights" in tool_names
         result = await session.call_tool("memory_status", {})
         assert result.isError is False
         payload = _structured(result)
