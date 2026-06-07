@@ -27,30 +27,27 @@ describe("Memo Stack full Obsidian E2E", function () {
   let server: ChildProcess | undefined;
   let tempDir = "";
   let baseUrl = "";
-  let seededFactId = "";
 
-  before(async function () {
+  beforeEach(async function () {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "memo-stack-wdio-full-"));
     const port = await freePort();
     baseUrl = `http://127.0.0.1:${port}`;
     server = startMemoStackServer(path.join(tempDir, "memory.db"), port);
     await waitForHealth(baseUrl);
-    seededFactId = (await createFact(baseUrl)).id;
   });
 
-  after(function () {
+  afterEach(function () {
     server?.kill("SIGTERM");
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it("syncs through real Obsidian plugin, connector CLI, HTTP API and vault files", async function () {
-    const obsidianPage = await browser.getObsidianPage();
-    await obsidianPage.resetVault({
-      "Welcome.md": "# Welcome\n\nFull E2E vault.\n",
+    const seededFact = await createFact(baseUrl, {
+      text: "Obsidian WDIO full E2E initial fact.",
+      sourceId: "wdio-full-e2e-seed",
     });
-    const vaultPath = obsidianPage.getVaultPath();
-
-    await configurePlugin(vaultPath, baseUrl);
+    const seededFactId = seededFact.id;
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 1);
@@ -84,12 +81,12 @@ describe("Memo Stack full Obsidian E2E", function () {
     );
     await browser.executeObsidianCommand("memo-stack:sync-now");
     await waitForCliCalls(vaultPath, 5);
-    await waitForSuggestions(baseUrl, 1);
+    await waitForSuggestionsContaining(baseUrl, "WDIO full E2E inbox marker", 1);
 
     await browser.executeObsidianCommand("memo-stack:sync-now");
     await waitForCliCalls(vaultPath, 6);
     await sleep(300);
-    assert.equal((await matchingSuggestions(baseUrl)).length, 1);
+    assert.equal((await suggestionsContaining(baseUrl, "WDIO full E2E inbox marker")).length, 1);
 
     await browser.executeObsidianCommand("memo-stack:open-memo-stack-readme");
     const activeFilePath = await browser.executeObsidian(({ app }) => {
@@ -111,10 +108,141 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.ok(calls.every((call) => call.args.includes("--layout")));
     assert.ok(calls.every((call) => call.args.includes("v2")));
     assert.ok(calls.slice(2).every((call) => call.args.includes("--apply-import")));
+    assert.ok(calls.every((call) => call.status === 0));
+  });
+
+  it("surfaces stale direct-edit conflicts without overwriting local notes", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO stale initial fact.",
+      sourceId: "wdio-stale-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+
+    replaceManagedText(exportedFact, "Obsidian WDIO stale local draft should survive.");
+    const backendUpdate = await updateFact(baseUrl, fact.id, {
+      expectedVersion: fact.version,
+      text: "Obsidian WDIO stale backend moved first.",
+      reason: "External WDIO stale update",
+    });
+    assert.equal(backendUpdate.version, 2);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /stale local draft should survive/);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO stale backend moved first.");
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /Stale version/);
+    assert.match(conflict, new RegExp(fact.id));
+  });
+
+  it("keeps dry-run sync from applying direct managed note edits", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO dry-run initial fact.",
+      sourceId: "wdio-dry-run-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl, false);
+    const exportedFact = await connectAndExportFact(vaultPath);
+
+    replaceManagedText(exportedFact, "Obsidian WDIO dry-run local draft must not apply.");
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.ok(!calls.at(-1)?.args.includes("--apply-import"));
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO dry-run initial fact.");
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /dry-run local draft must not apply/);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+  });
+
+  it("imports legacy inbox notes once under the v2 layout", async function () {
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO legacy inbox scope seed.",
+      sourceId: "wdio-legacy-inbox-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    await connectAndExportFact(vaultPath);
+
+    const marker = "WDIO legacy inbox marker";
+    writeVaultFile(vaultPath, path.join(rootFolder, "inbox", "legacy-e2e-inbox.md"), marker);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForSuggestionsContaining(baseUrl, marker, 1);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await sleep(300);
+
+    const calls = readCliCalls(vaultPath);
+    assert.ok(calls.slice(2).every((call) => call.status === 0));
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 1);
+  });
+
+  it("turns oversized inbox notes into visible conflict artifacts without suggestions", async function () {
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO oversized inbox scope seed.",
+      sourceId: "wdio-oversized-inbox-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    await connectAndExportFact(vaultPath);
+
+    const marker = "WDIO oversized inbox marker";
+    writeVaultFile(
+      vaultPath,
+      path.join(scopedRoot, "inbox", "oversized-e2e-inbox.md"),
+      `${marker} ${"x".repeat(4001)}`,
+    );
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 0);
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Inbox note is too large/);
+    assert.match(conflict, /oversized-e2e-inbox\.md/);
   });
 });
 
-async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void> {
+async function resetVaultAndConfigure(apiUrl: string, applyImportOnSync = true): Promise<string> {
+  const obsidianPage = await browser.getObsidianPage();
+  await obsidianPage.resetVault({
+    "Welcome.md": "# Welcome\n\nFull E2E vault.\n",
+  });
+  const vaultPath = obsidianPage.getVaultPath();
+  await configurePlugin(vaultPath, apiUrl, applyImportOnSync);
+  return vaultPath;
+}
+
+async function connectAndExportFact(vaultPath: string): Promise<string> {
+  await browser.executeObsidianCommand("memo-stack:connect-vault");
+  await waitForCliCalls(vaultPath, 1);
+  await browser.executeObsidianCommand("memo-stack:sync-now");
+  await waitForCliCalls(vaultPath, 2);
+  return onlyFactFile(vaultPath);
+}
+
+async function configurePlugin(
+  vaultPath: string,
+  apiUrl: string,
+  applyImportOnSync = true,
+): Promise<void> {
   await browser.executeObsidian(
     async ({ plugins }, settings) => {
       const plugin = plugins.memoStack as any;
@@ -130,7 +258,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
       profileExternalRef,
       rootFolder,
       layoutVersion: "v2",
-      applyImportOnSync: true,
+      applyImportOnSync,
       commandTimeoutMs: 20000,
     },
   );
@@ -193,21 +321,59 @@ async function waitForHealth(apiUrl: string): Promise<void> {
   }, "Memo Stack server did not become healthy");
 }
 
-async function createFact(apiUrl: string): Promise<Record<string, any>> {
+async function createFact(
+  apiUrl: string,
+  {
+    text,
+    sourceId,
+  }: {
+    text: string;
+    sourceId: string;
+  },
+): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
     profile_external_ref: profileExternalRef,
-    text: "Obsidian WDIO full E2E initial fact.",
+    text,
     kind: "note",
     source_refs: [
       {
         source_type: "manual",
-        source_id: "wdio-full-e2e-seed",
-        quote_preview: "Obsidian WDIO full E2E initial fact.",
+        source_id: sourceId,
+        quote_preview: text,
       },
     ],
   });
   assert.equal(response.status, 201);
+  return response.body.data;
+}
+
+async function updateFact(
+  apiUrl: string,
+  factId: string,
+  {
+    expectedVersion,
+    text,
+    reason,
+  }: {
+    expectedVersion: number;
+    text: string;
+    reason: string;
+  },
+): Promise<Record<string, any>> {
+  const response = await requestJson("PATCH", `${apiUrl}/v1/facts/${factId}`, {
+    expected_version: expectedVersion,
+    text,
+    reason,
+    source_refs: [
+      {
+        source_type: "manual",
+        source_id: `${factId}-external-wdio`,
+        quote_preview: text,
+      },
+    ],
+  });
+  assert.equal(response.status, 200);
   return response.body.data;
 }
 
@@ -228,11 +394,18 @@ async function waitForBackendFactText(
   }, `Backend fact did not reach expected text: ${expectedText}`);
 }
 
-async function waitForSuggestions(apiUrl: string, count: number): Promise<void> {
-  await waitUntil(async () => (await matchingSuggestions(apiUrl)).length >= count, "Suggestion was not created");
+async function waitForSuggestionsContaining(
+  apiUrl: string,
+  marker: string,
+  count: number,
+): Promise<void> {
+  await waitUntil(
+    async () => (await suggestionsContaining(apiUrl, marker)).length >= count,
+    "Suggestion was not created",
+  );
 }
 
-async function matchingSuggestions(apiUrl: string): Promise<Record<string, any>[]> {
+async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: spaceSlug,
     profile_external_ref: profileExternalRef,
@@ -241,12 +414,12 @@ async function matchingSuggestions(apiUrl: string): Promise<Record<string, any>[
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
   assert.equal(response.status, 200);
   return response.body.data.filter((item: Record<string, any>) =>
-    String(item.candidate_text).includes("WDIO full E2E inbox marker"),
+    String(item.candidate_text).includes(marker),
   );
 }
 
 async function requestJson(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   url: string,
   body?: Record<string, any>,
 ): Promise<{ status: number; body: any }> {
@@ -333,6 +506,17 @@ function onlyFactFile(vaultPath: string): string {
   return files[0];
 }
 
+function conflictFiles(vaultPath: string): string[] {
+  const conflictsDir = path.join(vaultPath, scopedRoot, "conflicts");
+  if (!fs.existsSync(conflictsDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(conflictsDir)
+    .filter((name) => name.endsWith(".md") && !name.startsWith(".") && name !== "README.md")
+    .map((name) => path.join(conflictsDir, name));
+}
+
 function replaceManagedText(filePath: string, text: string): void {
   const old = fs.readFileSync(filePath, "utf8");
   const start = old.indexOf(textStart) + textStart.length;
@@ -352,7 +536,7 @@ function writeVaultFile(vaultPath: string, relativePath: string, content: string
   fs.writeFileSync(target, content, "utf8");
 }
 
-function readCliCalls(vaultPath: string): Array<{ command: string; args: string[] }> {
+function readCliCalls(vaultPath: string): Array<{ command: string; args: string[]; status: number }> {
   const logPath = path.join(vaultPath, ".memo-stack/real-plugin-cli-calls.jsonl");
   if (!fs.existsSync(logPath)) {
     return [];
