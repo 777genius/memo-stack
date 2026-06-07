@@ -15,6 +15,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert result["scorecard"]["maturity_score_10"] == 10.0
     assert result["scorecard"]["confidence_tier"] == "internal_deterministic"
     assert result["scorecard"]["top_library_comparison_ready"] is False
+    assert result["allow_dirty_top_evidence"] is False
     assert report_names == {
         "small-golden.json",
         "quality-golden.json",
@@ -36,6 +37,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert manifest["policy"]["schema_version"] == 1
     assert manifest["policy"]["suite"] == "memory-quality-scorecard"
     assert manifest["policy"]["require_top_evidence"] is False
+    assert manifest["allow_dirty_top_evidence"] is False
     assert manifest["expected_git_commit"] is None
     assert manifest["policy"]["minimum_maturity_score_10"] == 9.0
     assert "auto-memory-golden" in manifest["policy"]["required_suites"]
@@ -182,6 +184,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
 
     assert result["ok"] is True
     assert result["expected_git_commit"] == "abc123"
+    assert result["allow_dirty_top_evidence"] is False
     assert result["scorecard"]["confidence_tier"] == (
         "full_provider_agent_and_public_benchmark_evaluated"
     )
@@ -193,6 +196,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         item for item in manifest["artifacts"] if item["kind"] == "external_report"
     ]
     assert policy["require_top_evidence"] is True
+    assert manifest["allow_dirty_top_evidence"] is False
     assert manifest["expected_git_commit"] == "abc123"
     assert policy["full_provider"]["required_adapters"] == [
         "qdrant",
@@ -234,7 +238,7 @@ def test_quality_evidence_bundle_rejects_stale_top_evidence_report(
                 "ok": True,
                 "provenance": {
                     "generated_by": "scripts/clean_full_smoke.py",
-                    "git": {"commit": "old-commit"},
+                    "git": {"commit": "old-commit", "dirty": False},
                 },
             }
         ),
@@ -253,6 +257,104 @@ def test_quality_evidence_bundle_rejects_stale_top_evidence_report(
         assert "expected new-commit, got old-commit" in str(exc)
     else:
         raise AssertionError("expected stale full-provider evidence to fail")
+
+
+def test_quality_evidence_bundle_rejects_dirty_top_evidence_report(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "dirty-full-provider.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memo-stack-full-provider-canary",
+                "ok": True,
+                "provenance": {
+                    "generated_by": "scripts/clean_full_smoke.py",
+                    "git": {"commit": "abc123", "dirty": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "dirty worktree" in str(exc)
+    else:
+        raise AssertionError("expected dirty full-provider evidence to fail")
+
+
+def test_quality_evidence_bundle_can_allow_dirty_top_evidence_for_local_diagnostics(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "dirty-diagnostic-full-provider.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memo-stack-full-provider-canary",
+                "ok": True,
+                "provenance": {
+                    "generated_by": "scripts/clean_full_smoke.py",
+                    "git": {"commit": "abc123", "dirty": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_quality_evidence_bundle(
+        output_dir=tmp_path / "evidence",
+        extra_report_paths=(external_report,),
+        require_top_evidence=True,
+        expected_git_commit="abc123",
+        allow_dirty_top_evidence=True,
+    )
+
+    assert result["allow_dirty_top_evidence"] is True
+    assert result["scorecard"]["top_library_comparison_ready"] is False
+    manifest = json.loads(((tmp_path / "evidence") / "quality-evidence-manifest.json").read_text())
+    external_artifact = next(
+        item for item in manifest["artifacts"] if item["kind"] == "external_report"
+    )
+    assert manifest["allow_dirty_top_evidence"] is True
+    assert external_artifact["report"]["provenance"]["git"]["dirty"] is True
+
+
+def test_quality_evidence_bundle_requires_top_evidence_dirty_state(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "missing-dirty-full-provider.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memo-stack-full-provider-canary",
+                "ok": True,
+                "provenance": {
+                    "generated_by": "scripts/clean_full_smoke.py",
+                    "git": {"commit": "abc123"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "missing provenance dirty state" in str(exc)
+    else:
+        raise AssertionError("expected missing dirty state to fail")
 
 
 def test_quality_evidence_bundle_requires_top_evidence_provenance(

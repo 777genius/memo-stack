@@ -95,6 +95,7 @@ def build_quality_evidence_bundle(
     extra_report_paths: Sequence[Path] = (),
     require_top_evidence: bool = False,
     expected_git_commit: str | None = None,
+    allow_dirty_top_evidence: bool = False,
 ) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     suite_report_paths: list[Path] = []
@@ -116,6 +117,7 @@ def build_quality_evidence_bundle(
         extra_report_paths,
         require_top_evidence=require_top_evidence,
         expected_git_commit=expected_git_commit,
+        allow_dirty_top_evidence=allow_dirty_top_evidence,
     )
     scorecard_path = output_dir / "memory-quality-scorecard.json"
     scorecard = run_memory_quality_scorecard(
@@ -130,6 +132,7 @@ def build_quality_evidence_bundle(
         "scorecard_report_path": str(scorecard_path),
         "manifest_path": str(output_dir / "quality-evidence-manifest.json"),
         "require_top_evidence": require_top_evidence,
+        "allow_dirty_top_evidence": allow_dirty_top_evidence,
         "expected_git_commit": expected_git_commit
         if expected_git_commit is not None
         else _current_git_commit()
@@ -163,6 +166,7 @@ def build_quality_evidence_bundle(
         scorecard_path=scorecard_path,
         bundle_path=bundle_path,
         require_top_evidence=require_top_evidence,
+        allow_dirty_top_evidence=allow_dirty_top_evidence,
         expected_git_commit=result["expected_git_commit"],
     )
     _write_json(output_dir / "quality-evidence-manifest.json", manifest)
@@ -192,6 +196,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Defaults to the current repository HEAD when --require-top-evidence is set."
         ),
     )
+    parser.add_argument(
+        "--allow-dirty-top-evidence",
+        action="store_true",
+        help=(
+            "Allow strict top-evidence full-provider reports generated from a dirty worktree. "
+            "Intended only for local diagnostics; publishable evidence should be clean."
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         result = build_quality_evidence_bundle(
@@ -199,6 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             extra_report_paths=tuple(args.extra_report),
             require_top_evidence=args.require_top_evidence,
             expected_git_commit=args.expected_git_commit,
+            allow_dirty_top_evidence=args.allow_dirty_top_evidence,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
@@ -211,6 +224,7 @@ def _validated_extra_reports(
     *,
     require_top_evidence: bool,
     expected_git_commit: str | None,
+    allow_dirty_top_evidence: bool,
 ) -> list[Path]:
     result: list[Path] = []
     resolved_expected_commit = (
@@ -227,6 +241,7 @@ def _validated_extra_reports(
             _validate_top_evidence_report_provenance(
                 path,
                 expected_git_commit=resolved_expected_commit,
+                allow_dirty_top_evidence=allow_dirty_top_evidence,
             )
         result.append(path)
     return result
@@ -251,6 +266,7 @@ def _validate_top_evidence_report_provenance(
     path: Path,
     *,
     expected_git_commit: str,
+    allow_dirty_top_evidence: bool,
 ) -> None:
     payload = _read_json_object(path)
     if payload.get("suite") not in _FULL_PROVIDER_REPORT_SUITES:
@@ -264,14 +280,23 @@ def _validate_top_evidence_report_provenance(
         )
     git = provenance.get("git")
     commit = git.get("commit") if isinstance(git, dict) else None
+    dirty = git.get("dirty") if isinstance(git, dict) else None
     if not isinstance(commit, str) or not commit:
         raise ValueError(
             f"Top evidence full-provider report is missing provenance git commit: {path}"
+        )
+    if not isinstance(dirty, bool):
+        raise ValueError(
+            f"Top evidence full-provider report is missing provenance dirty state: {path}"
         )
     if commit != expected_git_commit:
         raise ValueError(
             "Top evidence full-provider report commit mismatch: "
             f"expected {expected_git_commit}, got {commit}"
+        )
+    if dirty and not allow_dirty_top_evidence:
+        raise ValueError(
+            f"Top evidence full-provider report was generated from a dirty worktree: {path}"
         )
 
 
@@ -302,6 +327,7 @@ def _build_manifest(
     scorecard_path: Path,
     bundle_path: Path,
     require_top_evidence: bool,
+    allow_dirty_top_evidence: bool,
     expected_git_commit: object,
 ) -> dict[str, object]:
     artifacts = [
@@ -320,6 +346,7 @@ def _build_manifest(
         "schema_version": 1,
         "suite": "memo-stack-quality-evidence-manifest",
         "require_top_evidence": require_top_evidence,
+        "allow_dirty_top_evidence": allow_dirty_top_evidence,
         "expected_git_commit": expected_git_commit,
         "output_dir": str(output_dir),
         "git": _git_metadata(),
