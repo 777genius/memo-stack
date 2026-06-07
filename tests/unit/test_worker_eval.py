@@ -1532,17 +1532,20 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     assert policy["full_provider"]["top_evidence_requires_provenance"] is True
     assert policy["full_provider"]["top_evidence_requires_safety_scan"] is True
     assert policy["full_provider"]["top_evidence_required_safety_checks"] == [
-        "no_sensitive_text"
+        "no_sensitive_text",
+        "no_local_home_paths",
     ]
     assert policy["agent_behavior"]["top_evidence_requires_provenance"] is True
     assert policy["agent_behavior"]["top_evidence_requires_safety_scan"] is True
     assert policy["agent_behavior"]["top_evidence_required_safety_checks"] == [
-        "no_sensitive_text"
+        "no_sensitive_text",
+        "no_local_home_paths",
     ]
     assert policy["public_benchmark"]["top_evidence_requires_provenance"] is True
     assert policy["public_benchmark"]["top_evidence_requires_safety_scan"] is True
     assert policy["public_benchmark"]["top_evidence_required_safety_checks"] == [
-        "no_sensitive_text"
+        "no_sensitive_text",
+        "no_local_home_paths",
     ]
     assert policy["public_benchmark"][
         "top_evidence_requires_dataset_fingerprint"
@@ -2304,6 +2307,46 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
             "no_sensitive_text"
         ]
         assert evidence[summary_key]["safety"]["sensitive_path_count"] == 1
+        assert failed_gap in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths() -> None:
+    for target, summary_key, failed_gap in (
+        (
+            "memo-stack-full-provider-canary",
+            "full_provider_canary",
+            "full_provider_canary_safety_failed",
+        ),
+        (
+            "memory_mcp_agent_behavior",
+            "agent_behavior_benchmark",
+            "agent_behavior_benchmark_safety_failed",
+        ),
+        (
+            "public-memory-benchmark",
+            "public_benchmark",
+            "public_benchmark_safety_failed",
+        ),
+    ):
+        suite_results = _scorecard_fixture_results()
+        suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+        suite_results["public-memory-benchmark"] = _public_benchmark_report()
+        suite_results[target]["debug"] = {"local_path": "/Users/alice/private/report.json"}
+
+        result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+        evidence = result["external_evidence"]
+        assert result["ok"] is False
+        assert evidence["top_library_comparison_ready"] is False
+        assert evidence[summary_key]["quality_ok"] is True
+        assert evidence[summary_key]["safety_ok"] is False
+        assert evidence[summary_key]["safety"]["failed_checks"] == [
+            "no_local_home_paths"
+        ]
+        assert evidence[summary_key]["safety"]["local_path_count"] == 1
+        assert evidence[summary_key]["safety"]["local_paths"] == ["$.debug.local_path"]
+        assert "/Users/alice" not in repr(evidence[summary_key]["safety"])
         assert failed_gap in evidence["evidence_gaps"]
 
 

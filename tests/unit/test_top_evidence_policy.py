@@ -133,8 +133,38 @@ def test_top_evidence_policy_safety_summary_reports_only_safe_paths() -> None:
         "$.debug.[sensitive-key]",
         "$.scenarios[0].message",
     ]
+    assert summary["local_path_count"] == 0
+    assert summary["local_paths"] == []
     assert "abcdefghijklmnopqrstuvwxyz" not in repr(summary["sensitive_paths"])
     assert "user:password" not in repr(summary["sensitive_paths"])
+
+
+def test_top_evidence_policy_rejects_local_home_paths_without_echoing_values() -> None:
+    report = {
+        "suite": "memory_mcp_agent_behavior",
+        "debug": {
+            "dataset_path": "/Users/alice/private/locomo.json",
+            "/home/bob/private/key": "redacted key sample must hide key",
+        },
+        "scenarios": [
+            {"id": "windows_path", "log_path": r"C:\Users\alice\agent\session.json"},
+        ],
+    }
+
+    summary = top_evidence_safety_summary(report)
+
+    assert summary["ok"] is False
+    assert summary["failed_checks"] == ["no_local_home_paths"]
+    assert summary["sensitive_path_count"] == 0
+    assert summary["local_path_count"] == 3
+    assert summary["local_paths"] == [
+        "$.debug.dataset_path",
+        "$.debug.[local-home-path-key]",
+        "$.scenarios[0].log_path",
+    ]
+    assert "/Users/alice" not in repr(summary["local_paths"])
+    assert "/home/bob" not in repr(summary["local_paths"])
+    assert "C:\\Users\\alice" not in repr(summary["local_paths"])
 
 
 def test_top_evidence_policy_rejects_wrong_generator_and_missing_runtime() -> None:

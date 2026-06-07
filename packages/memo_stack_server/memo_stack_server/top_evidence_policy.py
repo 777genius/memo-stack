@@ -19,7 +19,7 @@ TOP_EVIDENCE_PROVENANCE_CHECKS = (
     "provenance_runtime_python_version_present",
     "provenance_runtime_platform_present",
 )
-TOP_EVIDENCE_SAFETY_CHECKS = ("no_sensitive_text",)
+TOP_EVIDENCE_SAFETY_CHECKS = ("no_sensitive_text", "no_local_home_paths")
 FULL_PROVIDER_TOP_EVIDENCE_GENERATORS = frozenset({"scripts/clean_full_smoke.py"})
 FULL_PROVIDER_TOP_EVIDENCE_SUITES = frozenset(
     {
@@ -51,6 +51,10 @@ PUBLIC_BENCHMARK_TOP_EVIDENCE_SUITES = frozenset(
 )
 FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS = ("agent_behavior", "public_benchmark")
 _SAFE_PATH_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
+_LOCAL_HOME_PATH_PATTERNS = (
+    re.compile(r"(?<![:A-Za-z0-9_])/(?:Users|home)/[^/\s]+(?:/[^\s'\"<>]+)*"),
+    re.compile(r"\b[A-Za-z]:\\Users\\[^\\\s]+(?:\\[^\s'\"<>]+)*"),
+)
 _MAX_SENSITIVE_PATH_SAMPLES = 10
 
 
@@ -150,12 +154,17 @@ def top_evidence_provenance_summary(
 
 def top_evidence_safety_summary(result: Mapping[str, object]) -> dict[str, object]:
     sensitive_path_samples: list[str] = []
+    local_path_samples: list[str] = []
     sensitive_path_count = _collect_sensitive_paths(
         result,
         "$",
         sensitive_path_samples,
     )
-    checks = {"no_sensitive_text": sensitive_path_count == 0}
+    local_path_count = _collect_local_home_paths(result, "$", local_path_samples)
+    checks = {
+        "no_sensitive_text": sensitive_path_count == 0,
+        "no_local_home_paths": local_path_count == 0,
+    }
     failed_checks = sorted(check for check, ok in checks.items() if ok is not True)
     return {
         "ok": not failed_checks,
@@ -163,6 +172,8 @@ def top_evidence_safety_summary(result: Mapping[str, object]) -> dict[str, objec
         "failed_checks": failed_checks,
         "sensitive_path_count": sensitive_path_count,
         "sensitive_paths": sensitive_path_samples,
+        "local_path_count": local_path_count,
+        "local_paths": local_path_samples,
     }
 
 
@@ -187,6 +198,33 @@ def _collect_sensitive_paths(
             total += _collect_sensitive_paths(child, f"{path}[{index}]", samples)
         return total
     return 0
+
+
+def _collect_local_home_paths(
+    value: object,
+    path: str,
+    samples: list[str],
+) -> int:
+    if isinstance(value, str):
+        return _record_sensitive_path(path, samples) if _has_local_home_path(value) else 0
+    if isinstance(value, Mapping):
+        total = 0
+        for key, child in value.items():
+            child_path = f"{path}{_safe_path_key(key)}"
+            if isinstance(key, str) and _has_local_home_path(key):
+                total += _record_sensitive_path(f"{path}.[local-home-path-key]", samples)
+            total += _collect_local_home_paths(child, child_path, samples)
+        return total
+    if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
+        total = 0
+        for index, child in enumerate(value):
+            total += _collect_local_home_paths(child, f"{path}[{index}]", samples)
+        return total
+    return 0
+
+
+def _has_local_home_path(value: str) -> bool:
+    return any(pattern.search(value) for pattern in _LOCAL_HOME_PATH_PATTERNS)
 
 
 def _record_sensitive_path(path: str, samples: list[str]) -> int:

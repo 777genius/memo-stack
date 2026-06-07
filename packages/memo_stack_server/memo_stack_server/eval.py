@@ -989,11 +989,13 @@ def _scorecard_combined_safety_summary(
             if isinstance(check, str)
         }
     )
+    checks = {
+        check: bool(reports) and check not in failed_checks
+        for check in TOP_EVIDENCE_SAFETY_CHECKS
+    }
     return {
         "ok": bool(reports) and not failed_checks,
-        "checks": {
-            "no_sensitive_text": bool(reports) and not failed_checks,
-        },
+        "checks": checks,
         "failed_checks": failed_checks,
         "sensitive_path_count": sum(
             int(report.get("sensitive_path_count", 0)) for report in reports
@@ -1002,6 +1004,15 @@ def _scorecard_combined_safety_summary(
             path
             for report in reports
             for path in report.get("sensitive_paths", ())
+            if isinstance(path, str)
+        ][:10],
+        "local_path_count": sum(
+            int(report.get("local_path_count", 0)) for report in reports
+        ),
+        "local_paths": [
+            path
+            for report in reports
+            for path in report.get("local_paths", ())
             if isinstance(path, str)
         ][:10],
     }
