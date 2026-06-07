@@ -165,6 +165,70 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.equal(conflictFiles(vaultPath).length, 0);
   });
 
+  it("continues managed note sync after an Obsidian reload", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO reload initial fact.",
+      sourceId: "wdio-reload-managed-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+
+    await browser.reloadObsidian();
+    await waitForMemoStackApiUrl(baseUrl);
+
+    replaceManagedText(exportedFact, "Obsidian WDIO reload local edit persisted.");
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForBackendFactText(
+      baseUrl,
+      fact.id,
+      "Obsidian WDIO reload local edit persisted.",
+    );
+
+    const updatedFact = await getFact(baseUrl, fact.id);
+    assert.equal(updatedFact.version, 2);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /memo_stack_version: 2/);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync"]);
+    assert.ok(calls.every((call) => call.status === 0));
+  });
+
+  it("keeps inbox import state across reload and imports changed inbox text once", async function () {
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO reload inbox scope seed.",
+      sourceId: "wdio-reload-inbox-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    await connectAndExportFact(vaultPath);
+    const inboxPath = path.join(scopedRoot, "inbox", "reload-inbox.md");
+    const firstMarker = "WDIO reload inbox first marker";
+    const secondMarker = "WDIO reload inbox second marker";
+
+    writeVaultFile(vaultPath, inboxPath, firstMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForSuggestionsContaining(baseUrl, firstMarker, 1);
+
+    await browser.reloadObsidian();
+    await waitForMemoStackApiUrl(baseUrl);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await sleep(300);
+    assert.equal((await suggestionsContaining(baseUrl, firstMarker)).length, 1);
+
+    writeVaultFile(vaultPath, inboxPath, secondMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForSuggestionsContaining(baseUrl, secondMarker, 1);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 6);
+    await sleep(300);
+
+    assert.equal((await suggestionsContaining(baseUrl, firstMarker)).length, 1);
+    assert.equal((await suggestionsContaining(baseUrl, secondMarker)).length, 1);
+  });
+
   it("keeps backend facts out of the vault when the plugin token is invalid", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO invalid token hidden fact.",
@@ -429,24 +493,30 @@ async function configurePlugin(
   applyImportOnSync = true,
   options: { tokenOverride?: string } = {},
 ): Promise<void> {
+  const settings = {
+    apiUrl,
+    token: options.tokenOverride ?? token,
+    cliPath: realCliPath,
+    vaultPathOverride: vaultPath,
+    spaceSlug,
+    profileExternalRef,
+    rootFolder,
+    layoutVersion: "v2",
+    applyImportOnSync,
+    commandTimeoutMs: 20000,
+  };
+  writeVaultFile(
+    vaultPath,
+    path.join(".obsidian", "plugins", "memo-stack", "data.json"),
+    JSON.stringify(settings, null, 2),
+  );
   await browser.executeObsidian(
     async ({ plugins }, settings) => {
       const plugin = plugins.memoStack as any;
       Object.assign(plugin.settings, settings);
       await plugin.saveSettings();
     },
-    {
-      apiUrl,
-      token: options.tokenOverride ?? token,
-      cliPath: realCliPath,
-      vaultPathOverride: vaultPath,
-      spaceSlug,
-      profileExternalRef,
-      rootFolder,
-      layoutVersion: "v2",
-      applyImportOnSync,
-      commandTimeoutMs: 20000,
-    },
+    settings,
   );
 }
 
@@ -505,6 +575,19 @@ async function waitForHealth(apiUrl: string): Promise<void> {
       return false;
     }
   }, "Memo Stack server did not become healthy");
+}
+
+async function waitForMemoStackApiUrl(apiUrl: string): Promise<void> {
+  await browser.waitUntil(async () => (await memoStackSnapshot()).apiUrl === apiUrl, {
+    timeout: 20000,
+    timeoutMsg: "Memo Stack plugin did not reload persisted API URL",
+  });
+}
+
+async function memoStackSnapshot(): Promise<any> {
+  return await browser.executeObsidian(({ plugins }) => {
+    return (plugins.memoStack as any).snapshot();
+  });
 }
 
 async function waitForUnhealthy(apiUrl: string): Promise<void> {
