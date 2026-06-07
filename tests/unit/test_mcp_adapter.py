@@ -52,6 +52,22 @@ def test_load_settings_parses_new_policy_modes() -> None:
     assert settings.deletes_enabled is True
 
 
+def test_load_settings_parses_local_runtime_gates() -> None:
+    settings = load_settings(
+        {
+            "MEMORY_MCP_LOCAL_RUNTIME_ENABLED": "true",
+            "MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED": "yes",
+            "MEMORY_MCP_LOCAL_RUNTIME_HOME": "/tmp/memo-home",
+            "MEMORY_MCP_LOCAL_RUNTIME_REPO_DIR": "/tmp/memo-repo",
+        }
+    )
+
+    assert settings.local_runtime_enabled is True
+    assert settings.local_runtime_start_enabled is True
+    assert settings.local_runtime_home == "/tmp/memo-home"
+    assert settings.local_runtime_repo_dir == "/tmp/memo-repo"
+
+
 def test_load_settings_uses_safe_policy_defaults() -> None:
     settings = load_settings({})
 

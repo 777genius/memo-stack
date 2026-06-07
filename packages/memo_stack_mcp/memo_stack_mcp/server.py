@@ -9,8 +9,12 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import ConfigDict, Field
 
 from memo_stack_mcp.adapters.http_gateway import HttpMemoryGateway
+from memo_stack_mcp.application.local_runtime import LocalRuntimeMcpService
+from memo_stack_mcp.application.obsidian import ObsidianMcpService
+from memo_stack_mcp.application.prepare import ObsidianPrepareMcpService
 from memo_stack_mcp.application.service import MEMORY_USAGE_GUIDE, MemoryToolService
 from memo_stack_mcp.config import McpTransport, MemoryMcpSettings, load_settings
+from memo_stack_mcp.domain.local_runtime_models import MemoryLocalRuntimeResponse
 from memo_stack_mcp.domain.models import (
     McpToolResponse,
     MemoryCaptureListResponse,
@@ -38,6 +42,8 @@ from memo_stack_mcp.domain.models import (
     MemorySuggestionListResponse,
     MemoryUpdateCandidateInput,
 )
+from memo_stack_mcp.domain.obsidian_models import MemoryObsidianResponse
+from memo_stack_mcp.domain.prepare_models import MemoryObsidianPrepareResponse
 
 TResponse = TypeVar("TResponse", bound=McpToolResponse)
 _IGNORED_HOST_TOOL_ARGUMENTS = frozenset({"wait_for_previous"})
@@ -67,6 +73,7 @@ CaptureConsolidationStatus = Literal[
     "skipped",
 ]
 ConfidenceValue = Literal["low", "medium", "high"]
+RuntimeProfile = Literal["lite", "full"]
 ReviewAction = Literal["approve", "reject", "expire"]
 ProfileSnapshotMergeStrategy = Literal[
     "fail_on_conflict",
@@ -74,6 +81,7 @@ ProfileSnapshotMergeStrategy = Literal[
     "create_new_profile",
     "supersede_matching_facts",
 ]
+ObsidianLayoutVersion = Literal["v1", "v2"]
 SourceType = Literal[
     "manual",
     "document",
@@ -109,6 +117,12 @@ def create_mcp_server(
 ) -> FastMCP:
     resolved_settings = settings or load_settings()
     tool_service = service or create_service(resolved_settings)
+    local_runtime_service = LocalRuntimeMcpService(settings=resolved_settings)
+    obsidian_service = ObsidianMcpService(settings=resolved_settings)
+    obsidian_prepare_service = ObsidianPrepareMcpService(
+        local_runtime=local_runtime_service,
+        obsidian=obsidian_service,
+    )
     mcp = FastMCP("Memo Stack", instructions=MEMORY_USAGE_GUIDE)
 
     @mcp.tool(
@@ -134,6 +148,474 @@ def create_mcp_server(
     )
     async def memory_status() -> Annotated[CallToolResult, MemoryStatusResponse]:
         return _tool_response(await tool_service.status(), MemoryStatusResponse)
+
+    @mcp.tool(
+        name="memory_local_runtime_status",
+        title="Local Memo Stack Runtime Status",
+        description=(
+            "Check local Memo Stack runtime configuration and API reachability without writing "
+            "files, starting Docker, or launching Obsidian. If disabled, reports the required "
+            "env gate instead of touching the filesystem."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_local_runtime_status(
+        home: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+    ) -> Annotated[CallToolResult, MemoryLocalRuntimeResponse]:
+        return _tool_response(
+            await local_runtime_service.status(home=home),
+            MemoryLocalRuntimeResponse,
+        )
+
+    @mcp.tool(
+        name="memory_local_runtime_init",
+        title="Initialize Local Memo Stack Runtime",
+        description=(
+            "Plan or apply local Memo Stack config initialization. Dry-run by default and never "
+            "starts services. Requires MEMORY_MCP_LOCAL_RUNTIME_ENABLED=true before it can write "
+            "the local config or env file. The service token is never returned."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_local_runtime_init(
+        home: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        repo_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        api_url: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        apply: Annotated[
+            bool,
+            Field(default=False, description="Actually write local config files after approval."),
+        ] = False,
+        force: Annotated[
+            bool,
+            Field(default=False, description="Overwrite existing local config and env files."),
+        ] = False,
+    ) -> Annotated[CallToolResult, MemoryLocalRuntimeResponse]:
+        return _tool_response(
+            await local_runtime_service.init(
+                home=home,
+                repo_dir=repo_dir,
+                api_url=api_url,
+                apply=apply,
+                force=force,
+            ),
+            MemoryLocalRuntimeResponse,
+        )
+
+    @mcp.tool(
+        name="memory_local_runtime_doctor",
+        title="Diagnose Local Memo Stack Runtime",
+        description=(
+            "Run local Memo Stack diagnostics without writing files or starting services. Checks "
+            "repo root, Docker availability, service token configuration, and API endpoints."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_local_runtime_doctor(
+        home: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+    ) -> Annotated[CallToolResult, MemoryLocalRuntimeResponse]:
+        return _tool_response(
+            await local_runtime_service.doctor(home=home),
+            MemoryLocalRuntimeResponse,
+        )
+
+    @mcp.tool(
+        name="memory_local_runtime_start",
+        title="Start Local Memo Stack Runtime",
+        description=(
+            "Plan or start the local Memo Stack Docker runtime. With apply=false this only "
+            "returns the docker compose command. Mutating start requires both apply=true and "
+            "MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED=true. It never launches Obsidian."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_local_runtime_start(
+        profile: Annotated[
+            RuntimeProfile,
+            Field(default="lite", description="Runtime profile to start."),
+        ] = "lite",
+        home: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        apply: Annotated[
+            bool,
+            Field(default=False, description="Actually run docker compose up after approval."),
+        ] = False,
+    ) -> Annotated[CallToolResult, MemoryLocalRuntimeResponse]:
+        return _tool_response(
+            await local_runtime_service.start(profile=profile, home=home, apply=apply),
+            MemoryLocalRuntimeResponse,
+        )
+
+    @mcp.tool(
+        name="memory_obsidian_prepare",
+        title="Prepare Memo Stack Obsidian Vault",
+        description=(
+            "Run the safe first-use setup flow for a local Memo Stack Obsidian vault. Dry-run "
+            "by default. With apply=true it initializes local Memo Stack config, writes vault "
+            "setup/plugin files, checks local backend status, and runs preview only if the API "
+            "is already ready. It never starts Docker, launches Obsidian, runs a watcher, or "
+            "runs mutating sync."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_obsidian_prepare(
+        vault_path: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        root_folder: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
+        layout_version: Annotated[
+            ObsidianLayoutVersion | None,
+            Field(default=None),
+        ] = None,
+        space_slug: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        home: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        repo_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        api_url: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        apply: Annotated[
+            bool,
+            Field(default=False, description="Actually write setup files after approval."),
+        ] = False,
+        force: Annotated[
+            bool,
+            Field(default=False, description="Overwrite local runtime config/env files."),
+        ] = False,
+        overwrite: Annotated[
+            bool,
+            Field(default=False, description="Overwrite existing vault guide/plugin files."),
+        ] = False,
+        install_plugin: Annotated[
+            bool,
+            Field(default=True, description="Install bundled Obsidian plugin files."),
+        ] = True,
+        enable_plugin: Annotated[
+            bool,
+            Field(default=True, description="Enable the bundled Obsidian plugin id."),
+        ] = True,
+        include_inbox: Annotated[bool, Field(default=True)] = True,
+    ) -> Annotated[CallToolResult, MemoryObsidianPrepareResponse]:
+        return _tool_response(
+            await obsidian_prepare_service.prepare(
+                vault_path=vault_path,
+                root_folder=root_folder,
+                layout_version=layout_version,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                home=home,
+                repo_dir=repo_dir,
+                api_url=api_url,
+                apply=apply,
+                force=force,
+                overwrite=overwrite,
+                install_plugin=install_plugin,
+                enable_plugin=enable_plugin,
+                include_inbox=include_inbox,
+            ),
+            MemoryObsidianPrepareResponse,
+        )
+
+    @mcp.tool(
+        name="memory_obsidian_status",
+        title="Obsidian Vault Status",
+        description=(
+            "Check Memo Stack Obsidian integration readiness without writing files, starting "
+            "servers, launching Obsidian, or running a watcher. Safe to call when the user asks "
+            "whether a vault is connected. If disabled, reports the required env gate instead "
+            "of touching the filesystem."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_obsidian_status(
+        vault_path: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        root_folder: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
+        layout_version: Annotated[
+            ObsidianLayoutVersion | None,
+            Field(default=None),
+        ] = None,
+        space_slug: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        require_plugin: Annotated[
+            bool,
+            Field(default=False, description="Also verify plugin files/settings."),
+        ] = False,
+    ) -> Annotated[CallToolResult, MemoryObsidianResponse]:
+        return _tool_response(
+            await obsidian_service.status(
+                vault_path=vault_path,
+                root_folder=root_folder,
+                layout_version=layout_version,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                require_plugin=require_plugin,
+            ),
+            MemoryObsidianResponse,
+        )
+
+    @mcp.tool(
+        name="memory_obsidian_setup",
+        title="Set Up Obsidian Vault",
+        description=(
+            "Plan or apply Memo Stack Obsidian vault setup. Dry-run by default and never "
+            "imports or exports memory. Requires MEMORY_MCP_OBSIDIAN_ENABLED=true before it "
+            "can inspect or write the vault. Set apply=true only after the user approves the "
+            "planned folder and plugin changes."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_obsidian_setup(
+        vault_path: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        root_folder: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
+        layout_version: Annotated[
+            ObsidianLayoutVersion | None,
+            Field(default=None),
+        ] = None,
+        space_slug: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        apply: Annotated[
+            bool,
+            Field(default=False, description="Actually write setup files after approval."),
+        ] = False,
+        overwrite: Annotated[
+            bool,
+            Field(default=False, description="Overwrite existing connector guide files."),
+        ] = False,
+        install_plugin: Annotated[
+            bool,
+            Field(default=False, description="Also install bundled plugin assets."),
+        ] = False,
+        enable_plugin: Annotated[
+            bool,
+            Field(default=False, description="Also add the plugin id to community plugins."),
+        ] = False,
+    ) -> Annotated[CallToolResult, MemoryObsidianResponse]:
+        return _tool_response(
+            await obsidian_service.setup(
+                vault_path=vault_path,
+                root_folder=root_folder,
+                layout_version=layout_version,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                apply=apply,
+                overwrite=overwrite,
+                install_plugin=install_plugin,
+                enable_plugin=enable_plugin,
+            ),
+            MemoryObsidianResponse,
+        )
+
+    @mcp.tool(
+        name="memory_obsidian_preview",
+        title="Preview Obsidian Sync",
+        description=(
+            "Preview Obsidian vault import/export effects without writing vault files or backend "
+            "memory. Requires MEMORY_MCP_OBSIDIAN_ENABLED=true. Use this before any Obsidian "
+            "sync action."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_obsidian_preview(
+        vault_path: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        root_folder: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
+        layout_version: Annotated[
+            ObsidianLayoutVersion | None,
+            Field(default=None),
+        ] = None,
+        space_slug: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        include_inbox: Annotated[bool, Field(default=True)] = True,
+    ) -> Annotated[CallToolResult, MemoryObsidianResponse]:
+        return _tool_response(
+            await obsidian_service.preview(
+                vault_path=vault_path,
+                root_folder=root_folder,
+                layout_version=layout_version,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                include_inbox=include_inbox,
+            ),
+            MemoryObsidianResponse,
+        )
+
+    @mcp.tool(
+        name="memory_obsidian_sync",
+        title="Sync Obsidian Vault",
+        description=(
+            "Run Obsidian sync only when explicitly requested. With apply=false this behaves "
+            "as a preview and does not write. Mutating sync requires both apply=true and "
+            "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED=true. It never starts Memo Stack services or "
+            "launches Obsidian."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_obsidian_sync(
+        vault_path: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        root_folder: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
+        layout_version: Annotated[
+            ObsidianLayoutVersion | None,
+            Field(default=None),
+        ] = None,
+        space_slug: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        apply: Annotated[
+            bool,
+            Field(default=False, description="Actually run a mutating sync after approval."),
+        ] = False,
+        apply_import: Annotated[
+            bool,
+            Field(default=False, description="Apply direct managed note imports."),
+        ] = False,
+        include_inbox: Annotated[bool, Field(default=True)] = True,
+    ) -> Annotated[CallToolResult, MemoryObsidianResponse]:
+        return _tool_response(
+            await obsidian_service.sync(
+                vault_path=vault_path,
+                root_folder=root_folder,
+                layout_version=layout_version,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                apply=apply,
+                apply_import=apply_import,
+                include_inbox=include_inbox,
+            ),
+            MemoryObsidianResponse,
+        )
 
     @mcp.tool(
         name="memory_search",

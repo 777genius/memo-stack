@@ -65,6 +65,15 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
 
         assert tool_names == {
             "memory_status",
+            "memory_local_runtime_status",
+            "memory_local_runtime_init",
+            "memory_local_runtime_doctor",
+            "memory_local_runtime_start",
+            "memory_obsidian_prepare",
+            "memory_obsidian_status",
+            "memory_obsidian_setup",
+            "memory_obsidian_preview",
+            "memory_obsidian_sync",
             "memory_search",
             "memory_digest",
             "memory_insights",
@@ -143,6 +152,33 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert "do not call it as a substitute" in status_description
         assert "status alone does not complete" in status_description
         assert "call this before relying on memory" not in status_description
+        runtime_status = next(
+            tool for tool in tools if tool.name == "memory_local_runtime_status"
+        )
+        runtime_start = next(
+            tool for tool in tools if tool.name == "memory_local_runtime_start"
+        )
+        assert runtime_status.annotations.readOnlyHint is True
+        assert "without writing files" in runtime_status.description
+        assert "starting docker" in runtime_status.description.casefold()
+        assert runtime_start.annotations.readOnlyHint is False
+        assert runtime_start.inputSchema["properties"]["profile"]["default"] == "lite"
+        assert set(runtime_start.inputSchema["properties"]["profile"]["enum"]) == {
+            "lite",
+            "full",
+        }
+        assert "apply=false" in runtime_start.description
+        assert "MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED=true" in runtime_start.description
+        obsidian_prepare = next(
+            tool for tool in tools if tool.name == "memory_obsidian_prepare"
+        )
+        assert obsidian_prepare.annotations.readOnlyHint is False
+        assert obsidian_prepare.annotations.destructiveHint is False
+        assert obsidian_prepare.inputSchema["properties"]["apply"]["default"] is False
+        assert obsidian_prepare.inputSchema["properties"]["install_plugin"]["default"] is True
+        assert obsidian_prepare.inputSchema["properties"]["enable_plugin"]["default"] is True
+        assert "never starts docker" in obsidian_prepare.description.casefold()
+        assert "runs mutating sync" in obsidian_prepare.description.casefold()
         related = next(tool for tool in tools if tool.name == "memory_related_facts")
         assert related.annotations.readOnlyHint is True
         assert "relation_reasons" in related.description

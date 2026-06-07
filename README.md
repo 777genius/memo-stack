@@ -138,6 +138,27 @@ memo-stack digest "current architecture decisions" --space default --profile def
 `memo-stack mcp-config` redacts the generated local service token by default. Use
 `--include-token` only when intentionally writing a private local config file.
 
+Agent-assisted local setup is also available through MCP, but it is off by
+default so agents do not create files or start background services unexpectedly:
+
+```bash
+export MEMORY_MCP_LOCAL_RUNTIME_ENABLED=true
+export MEMORY_MCP_LOCAL_RUNTIME_HOME="$HOME/.memo-stack"
+export MEMORY_MCP_LOCAL_RUNTIME_REPO_DIR="$(pwd)"
+```
+
+Then an agent can call `memory_obsidian_prepare` for the safe first-use flow:
+dry-run local config, vault folders and plugin install, then apply after user
+approval. It never starts Docker or runs mutating sync. Lower-level
+`memory_local_runtime_status`, `memory_local_runtime_init`,
+`memory_local_runtime_doctor` and dry-run `memory_local_runtime_start` remain
+available for diagnostics. A real Docker start still requires a separate
+explicit gate:
+
+```bash
+export MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED=true
+```
+
 Install once:
 
 ```bash

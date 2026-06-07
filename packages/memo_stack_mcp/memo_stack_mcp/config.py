@@ -40,6 +40,15 @@ class MemoryMcpSettings:
     ingest_mode: MemoryMcpIngestMode = MemoryMcpIngestMode.SMALL_DOCS
     small_doc_max_chars: int = 50_000
     transport: McpTransport = McpTransport.STDIO
+    obsidian_enabled: bool = False
+    obsidian_sync_enabled: bool = False
+    obsidian_vault_path: str | None = None
+    obsidian_root_folder: str = "Memo Stack"
+    obsidian_layout_version: str = "v2"
+    local_runtime_enabled: bool = False
+    local_runtime_start_enabled: bool = False
+    local_runtime_home: str | None = None
+    local_runtime_repo_dir: str | None = None
 
     def __post_init__(self) -> None:
         if self.max_token_budget < self.min_token_budget:
@@ -109,6 +118,23 @@ def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
             "MEMORY_MCP_SMALL_DOC_MAX_CHARS",
         ),
         transport=McpTransport(_get(values, "MEMORY_MCP_TRANSPORT", McpTransport.STDIO.value)),
+        obsidian_enabled=_bool(_get(values, "MEMORY_MCP_OBSIDIAN_ENABLED", "false")),
+        obsidian_sync_enabled=_bool(
+            _get(values, "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED", "false")
+        ),
+        obsidian_vault_path=_empty_to_none(_get(values, "MEMORY_MCP_OBSIDIAN_VAULT")),
+        obsidian_root_folder=_get(values, "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER", "Memo Stack"),
+        obsidian_layout_version=_get(values, "MEMORY_MCP_OBSIDIAN_LAYOUT", "v2"),
+        local_runtime_enabled=_bool(
+            _get(values, "MEMORY_MCP_LOCAL_RUNTIME_ENABLED", "false")
+        ),
+        local_runtime_start_enabled=_bool(
+            _get(values, "MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED", "false")
+        ),
+        local_runtime_home=_empty_to_none(_get(values, "MEMORY_MCP_LOCAL_RUNTIME_HOME")),
+        local_runtime_repo_dir=_empty_to_none(
+            _get(values, "MEMORY_MCP_LOCAL_RUNTIME_REPO_DIR")
+        ),
     )
 
 
@@ -141,6 +167,10 @@ def _positive_int(value: str, name: str) -> int:
     if parsed <= 0:
         raise ValueError(f"{name} must be positive")
     return parsed
+
+
+def _bool(value: str) -> bool:
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _write_mode(values: Mapping[str, str]) -> MemoryMcpWriteMode:
