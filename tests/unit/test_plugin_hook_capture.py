@@ -17,11 +17,13 @@ from memo_stack_mcp.plugin_hook import (
 class FakeGateway(MemoryHookGateway):
     def __init__(self, *, captures_enabled: bool = True, capabilities_error: bool = False) -> None:
         self.captures: list[dict[str, Any]] = []
+        self.queries: list[str] = []
         self.capability_checks = 0
         self.captures_enabled = captures_enabled
         self.capabilities_error = capabilities_error
 
     def build_context(self, event: HookEvent, query: str) -> dict[str, Any]:
+        self.queries.append(query)
         return {"data": {"rendered_text": "Known project memory."}}
 
     def create_capture(
@@ -344,10 +346,39 @@ def test_hook_capture_skips_sensitive_input_without_leaking_value() -> None:
         )
     )
 
-    assert result.stdout == ""
+    assert "Known project memory." in result.stdout
     assert gateway.captures == []
+    assert gateway.queries == ["Remember: token=[redacted]"]
     assert "sk-proj" not in result.stderr
+    assert "sk-proj" not in result.stdout
     assert "looks sensitive" in result.stderr
+
+
+def test_hook_redacts_sensitive_query_for_retrieval_but_blocks_capture() -> None:
+    gateway = FakeGateway()
+    app = MemoryPluginHookApp(settings=settings(), gateway=gateway)
+
+    result = app.run(
+        HookEvent(
+            name="UserPromptSubmit",
+            payload={
+                "prompt": (
+                    "Which memory architecture decision applies here? "
+                    "sk-proj-abcdefghijklmnopqrstuvwxyz123456"
+                )
+            },
+            raw_payload="",
+            cwd="/tmp/project",
+        )
+    )
+
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert result.exit_code == 0
+    assert "Known project memory." in result.stdout
+    assert gateway.captures == []
+    assert gateway.queries == ["Which memory architecture decision applies here? [redacted]"]
+    assert "sk-proj" not in combined_output
+    assert "input looks sensitive" in result.stderr
 
 
 def test_hook_capture_reads_safe_claude_transcript_tail(tmp_path: Path) -> None:

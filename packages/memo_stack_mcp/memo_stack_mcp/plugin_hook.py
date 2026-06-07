@@ -20,7 +20,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from memo_stack_mcp.domain.models import contains_sensitive_value, safe_message
+from memo_stack_mcp.domain.models import (
+    contains_sensitive_value,
+    redact_sensitive_text,
+    safe_message,
+)
 
 NO_DEFAULT_THREAD_SENTINEL = "__MEMO_STACK_NO_DEFAULT_THREAD__"
 NO_DEFAULT_THREAD_SENTINELS = frozenset({NO_DEFAULT_THREAD_SENTINEL})
@@ -339,32 +343,37 @@ class MemoryPluginHookApp:
         try:
             stderr_parts: list[str] = []
             rendered_context = ""
-            query = _truncate(event.query_text, self._settings.max_input_chars)
-            if contains_sensitive_value(query):
-                return self._host_result(
-                    event,
-                    stderr=(
-                        "memo-stack-plugin-hook: skipped memory lookup because hook input "
-                        "looks sensitive\n"
-                    ),
-                )
+            source_text = _truncate(event.query_text, self._settings.max_input_chars)
+            query = _client_retrieval_query(source_text, self._settings.max_input_chars)
 
             if event.name in self._settings.context_events:
-                rendered_context, context_stderr = self._build_context(event, query)
-                stderr_parts.append(context_stderr)
+                if contains_sensitive_value(query):
+                    stderr_parts.append(
+                        "memo-stack-plugin-hook: skipped memory lookup because hook input "
+                        "looks sensitive\n"
+                    )
+                else:
+                    rendered_context, context_stderr = self._build_context(event, query)
+                    stderr_parts.append(context_stderr)
 
             if (
                 event.name in self._settings.ingest_events
                 and self._settings.capture_mode == HookCaptureMode.EPISODES
             ):
-                stderr_parts.append(self._capture_episode(event, query))
+                if contains_sensitive_value(source_text):
+                    stderr_parts.append(
+                        "memo-stack-plugin-hook: episode capture skipped because input "
+                        "looks sensitive\n"
+                    )
+                else:
+                    stderr_parts.append(self._capture_episode(event, source_text))
             elif (
                 event.name in self._settings.ingest_events
                 and self._settings.capture_mode == HookCaptureMode.CAPTURES
             ):
                 capture_stderr = self._preflight_capture()
                 if capture_stderr is None:
-                    stderr_parts.append(self._capture(event, query))
+                    stderr_parts.append(self._capture(event, source_text))
                 else:
                     stderr_parts.append(capture_stderr)
 
@@ -463,8 +472,9 @@ class MemoryPluginHookApp:
         elif _should_require_transcript_tail(event, self._settings.transcript_tail_mode):
             return "memo-stack-plugin-hook: capture skipped: transcript tail unavailable\n"
 
+        raw_capture_text_looks_sensitive = contains_sensitive_value(capture_text)
         minimized = _client_minimize(capture_text, self._settings.max_input_chars)
-        if contains_sensitive_value(minimized):
+        if raw_capture_text_looks_sensitive or contains_sensitive_value(minimized):
             return "memo-stack-plugin-hook: capture skipped because input looks sensitive\n"
         try:
             self._gateway.create_capture(
@@ -657,6 +667,10 @@ def _client_minimize(text: str, max_chars: int) -> str:
     for key in ("authorization", "api_key", "token", "password", "secret"):
         minimized = _redact_key_value(minimized, key)
     return minimized
+
+
+def _client_retrieval_query(text: str, max_chars: int) -> str:
+    return redact_sensitive_text(_client_minimize(text, max_chars))
 
 
 def _redact_key_value(text: str, key: str) -> str:
