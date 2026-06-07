@@ -215,6 +215,54 @@ describe("Memo Stack path safety E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
     assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
   });
+
+  it("keeps current vault sync after reload when the vault path override is blank", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO blank override reload backend fact.",
+      sourceId: "wdio-blank-override-reload-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", "");
+    await setSettingsInput("rootFolder", rootFolder);
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPathReady(rootFolder, spaceSlug);
+    await waitForSettingsFile(vaultPath, rootFolder);
+
+    await browser.reloadObsidian();
+    await waitForPathReady(rootFolder, spaceSlug);
+
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.vaultPath, vaultPath);
+    assert.equal(snapshot.pathError, "");
+    assert.equal(readCliCalls(vaultPath).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, fact.id);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /blank override reload backend fact/);
+
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.vaultPath, vaultPath);
+    assert.equal(snapshot.generatedFactsExists, true);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
+    assert.ok(calls.every((call) => call.status === 0));
+    assert.ok(calls.every((call) => valueAfter(call.args, "--vault") === vaultPath));
+  });
 });
 
 async function resetVault(): Promise<string> {
