@@ -48,6 +48,9 @@ The target writes a reusable JSON report to
 `.tmp/memora-direct-smoke.json` by default. `make memo-stack-compare-memora`
 automatically includes that report when it exists, or use
 `MEMORA_DIRECT_SMOKE_REPORT=/path/to/report.json` for an explicit report path.
+The report includes safe provenance metadata: generator, suite, git commit,
+dirty state and Python/platform runtime, but no Memora database contents or
+tokens.
 
 The direct smoke uses:
 

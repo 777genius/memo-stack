@@ -407,6 +407,7 @@ def _summarize_memora_direct_smoke(
         "llm_enabled": memora_direct_smoke.get("llm_enabled"),
         "tool_count": memora_direct_smoke.get("tool_count"),
         "document_fragment_count": memora_direct_smoke.get("document_fragment_count"),
+        "provenance": _provenance_summary(memora_direct_smoke.get("provenance")),
         "required_checks": list(DIRECT_MEMORA_SMOKE_REQUIREMENTS),
         "passed_checks": passed,
         "failed_checks": failed,
@@ -417,6 +418,22 @@ def _scenario_count(value: object) -> int | None:
     if isinstance(value, list):
         return len(value)
     return None
+
+
+def _provenance_summary(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    git = value.get("git")
+    runtime = value.get("runtime")
+    return {
+        "schema_version": value.get("schema_version"),
+        "generated_by": value.get("generated_by"),
+        "suite": value.get("suite"),
+        "run_id": value.get("run_id"),
+        "project": value.get("project"),
+        "git": git if isinstance(git, Mapping) else None,
+        "runtime": runtime if isinstance(runtime, Mapping) else None,
+    }
 
 
 def _load_json(path: Path) -> dict[str, Any]:

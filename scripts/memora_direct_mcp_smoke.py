@@ -17,6 +17,7 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from memo_stack_core.reporting import with_report_provenance
 
 MEMORA_UVX_ARGS = (
     "--from",
@@ -345,6 +346,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     report = asyncio.run(run_memora_direct_mcp_smoke())
+    report = with_report_provenance(
+        report,
+        generated_by="scripts/memora_direct_mcp_smoke.py",
+        suite="memora-direct-mcp-smoke",
+        run_id=str(report.get("scenario_set") or "unknown"),
+        project="memo-stack-competitor-evidence",
+        cwd=Path(__file__).resolve().parents[1],
+    )
     rendered = json.dumps(report, indent=2, sort_keys=True)
     if args.report_out is not None:
         args.report_out.parent.mkdir(parents=True, exist_ok=True)

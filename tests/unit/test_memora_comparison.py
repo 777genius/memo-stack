@@ -27,6 +27,15 @@ def _passing_memora_smoke() -> dict[str, object]:
         "llm_enabled": False,
         "tool_count": 42,
         "document_fragment_count": 4,
+        "provenance": {
+            "schema_version": 1,
+            "generated_by": "scripts/memora_direct_mcp_smoke.py",
+            "suite": "memora-direct-mcp-smoke",
+            "run_id": "prod_realistic_coding_agent_memory_v1",
+            "project": "memo-stack-competitor-evidence",
+            "git": {"commit": "abc123", "short_commit": "abc123", "dirty": False},
+            "runtime": {"python_version": "3.13.0", "platform": "unit"},
+        },
         "checks": {check_id: True for check_id in DIRECT_MEMORA_SMOKE_REQUIREMENTS},
         "ok": True,
     }
@@ -48,6 +57,8 @@ def test_comparison_credits_memora_direct_smoke_strengths() -> None:
     assert smoke["tool_count"] == 42
     assert smoke["scenario_count"] == 7
     assert smoke["failed_checks"] == []
+    assert smoke["provenance"]["generated_by"] == "scripts/memora_direct_mcp_smoke.py"
+    assert smoke["provenance"]["git"]["commit"] == "abc123"
 
     by_id = {item["id"]: item for item in report["dimensions"]}
     assert by_id["retrieval_and_digest_quality"]["winner"] == "memo_stack"
@@ -62,6 +73,7 @@ def test_comparison_does_not_overclaim_when_memora_was_not_run() -> None:
     report = build_memora_agent_memory_comparison()
 
     assert report["direct_memora_smoke"]["status"] == "not_run"
+    assert "provenance" not in report["direct_memora_smoke"]
     assert report["evidence_policy"]["competitor_paid_openai_llm_mode_verified"] is False
     assert (
         "Do not claim Memora failed production OpenAI mode."
@@ -113,4 +125,10 @@ def test_memora_direct_smoke_script_writes_report_out(tmp_path, monkeypatch, cap
     assert exit_code == 0
     assert report_path.exists()
     assert json.loads(report_path.read_text(encoding="utf-8"))["ok"] is True
-    assert json.loads(captured.out)["system"] == "agentic-box/memora"
+    written = json.loads(report_path.read_text(encoding="utf-8"))
+    stdout = json.loads(captured.out)
+    assert stdout["system"] == "agentic-box/memora"
+    assert written["provenance"]["generated_by"] == "scripts/memora_direct_mcp_smoke.py"
+    assert written["provenance"]["suite"] == "memora-direct-mcp-smoke"
+    assert written["provenance"]["run_id"] == "unknown"
+    assert stdout["provenance"] == written["provenance"]

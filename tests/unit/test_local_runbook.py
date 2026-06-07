@@ -421,6 +421,9 @@ def test_makefile_persists_and_reuses_memora_direct_smoke_report() -> None:
     assert "MEMORA_DIRECT_SMOKE_REPORT ?= .tmp/memora-direct-smoke.json" in makefile
     assert ".tmp/" in gitignore
     assert '--report-out "$(MEMORA_DIRECT_SMOKE_REPORT)"' in smoke_recipe
+    assert "with_report_provenance(" in (
+        ROOT / "scripts" / "memora_direct_mcp_smoke.py"
+    ).read_text(encoding="utf-8")
     assert 'smoke_report="$${MEMORA_DIRECT_SMOKE_REPORT:-$(MEMORA_DIRECT_SMOKE_REPORT)}"' in (
         compare_recipe
     )
