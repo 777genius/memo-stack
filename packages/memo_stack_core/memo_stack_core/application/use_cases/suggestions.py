@@ -142,6 +142,10 @@ class ApproveSuggestionUseCase:
                         text=suggestion.candidate_text,
                         source_refs=suggestion.source_refs,
                         reason=command.reason or suggestion.safe_reason,
+                        category=suggestion.category,
+                        tags=suggestion.tags,
+                        ttl_policy=suggestion.ttl_policy,
+                        expires_at=suggestion.expires_at,
                         now=now,
                     )
                 fact = await uow.facts.save(fact)
@@ -157,6 +161,10 @@ class ApproveSuggestionUseCase:
                     source_refs=suggestion.source_refs,
                     confidence=suggestion.confidence,
                     trust_level=suggestion.trust_level,
+                    category=suggestion.category,
+                    tags=suggestion.tags,
+                    ttl_policy=suggestion.ttl_policy,
+                    expires_at=suggestion.expires_at,
                     now=now,
                 )
                 fact = await uow.facts.create(fact)

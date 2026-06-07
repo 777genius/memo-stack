@@ -56,6 +56,9 @@ class MemoryGatewayPort(Protocol):
         source_refs: list[SourceRef],
         classification: str,
         idempotency_key: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
     ) -> dict[str, Any]: ...
 
     async def list_facts(
@@ -65,6 +68,8 @@ class MemoryGatewayPort(Protocol):
         status: str | None,
         limit: int,
         cursor: str | None,
+        category: str | None = None,
+        tag: str | None = None,
     ) -> dict[str, Any]: ...
 
     async def get_fact(self, *, fact_id: str) -> dict[str, Any]: ...
@@ -93,6 +98,9 @@ class MemoryGatewayPort(Protocol):
         confidence: str,
         trust_level: str,
         safe_reason: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
     ) -> dict[str, Any]: ...
 
     async def list_suggestions(

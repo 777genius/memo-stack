@@ -70,6 +70,59 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
     ]
 
 
+def test_sdk_sends_fact_taxonomy_fields_and_filters() -> None:
+    seen: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else None
+        seen.append((request.method, str(request.url), body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.remember_fact(
+        space_id="space_client_app",
+        profile_id="profile_default",
+        text="Use taxonomy for canonical facts.",
+        kind="architecture_decision",
+        source_refs=[{"source_type": "manual", "source_id": "taxonomy"}],
+        category="architecture",
+        tags=["memory", "graph"],
+        ttl_policy="durable",
+    )
+    client.list_facts(
+        space_id="space_client_app",
+        profile_id="profile_default",
+        category="architecture",
+        tag="memory",
+    )
+
+    assert seen[0] == (
+        "POST",
+        "http://memory.test/v1/facts",
+        {
+            "space_id": "space_client_app",
+            "profile_id": "profile_default",
+            "text": "Use taxonomy for canonical facts.",
+            "kind": "architecture_decision",
+            "source_refs": [{"source_type": "manual", "source_id": "taxonomy"}],
+            "classification": "internal",
+            "category": "architecture",
+            "tags": ["memory", "graph"],
+            "ttl_policy": "durable",
+        },
+    )
+    assert seen[1] == (
+        "GET",
+        "http://memory.test/v1/facts?space_id=space_client_app&profile_id=profile_default&category=architecture&tag=memory&limit=100&status=active",
+        None,
+    )
+
+
 def test_sdk_exposes_capability_diagnostics_facade() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url) == "http://memory.test/v1/capabilities"

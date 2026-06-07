@@ -111,11 +111,17 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
                     if column["name"]
                     in {"profile_ids_json", "permissions_json", "last_used_at", "expires_at"}
                 }
+                fact_taxonomy_columns = {
+                    column["name"]: column
+                    for column in inspector.get_columns("memory_facts")
+                    if column["name"] in {"category", "tags_json", "ttl_policy", "expires_at"}
+                }
                 document_indexes = {
                     index["name"]: index for index in inspector.get_indexes("memory_documents")
                 }
                 return {
                     **classification_columns,
+                    "memory_fact_taxonomy": fact_taxonomy_columns,
                     "memory_service_tokens": token_columns,
                     "memory_document_indexes": document_indexes,
                 }
@@ -130,6 +136,12 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
     assert columns["memory_facts"]["classification"]["nullable"] is False
     assert columns["memory_documents"]["classification"]["nullable"] is False
     assert columns["memory_chunks"]["classification"]["nullable"] is False
+    assert set(columns["memory_fact_taxonomy"]) == {
+        "category",
+        "tags_json",
+        "ttl_policy",
+        "expires_at",
+    }
     assert set(columns["memory_service_tokens"]) == {
         "profile_ids_json",
         "permissions_json",

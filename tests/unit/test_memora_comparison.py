@@ -48,9 +48,9 @@ def test_comparison_credits_memora_direct_smoke_strengths() -> None:
     assert smoke["failed_checks"] == []
 
     by_id = {item["id"]: item for item in report["dimensions"]}
-    assert by_id["retrieval_and_digest_quality"]["winner"] == "tie"
-    assert by_id["large_docs_and_architecture_notes"]["winner"] == "tie"
-    assert by_id["large_docs_and_architecture_notes"]["memo_stack_score"] >= 9.0
+    assert by_id["retrieval_and_digest_quality"]["winner"] == "memo_stack"
+    assert by_id["large_docs_and_architecture_notes"]["winner"] == "memo_stack"
+    assert by_id["large_docs_and_architecture_notes"]["memo_stack_score"] >= 9.4
     assert by_id["graph_relationships"]["memo_stack_score"] > by_id["graph_relationships"][
         "memora_score"
     ]

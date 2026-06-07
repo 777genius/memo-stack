@@ -93,6 +93,7 @@ class MemoryFactRow(Base):
     __table_args__ = (
         CheckConstraint("version > 0", name="ck_fact_version_positive"),
         Index("ix_memory_facts_scope_status", "space_id", "profile_id", "status", "updated_at"),
+        Index("ix_memory_facts_taxonomy", "space_id", "profile_id", "category", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
@@ -105,6 +106,10 @@ class MemoryFactRow(Base):
     confidence: Mapped[str] = mapped_column(String(40), nullable=False)
     trust_level: Mapped[str] = mapped_column(String(40), nullable=False)
     classification: Mapped[str] = mapped_column(String(40), nullable=False, default="internal")
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tags_json: Mapped[list[str]] = mapped_column(json_type(), nullable=False, default=list)
+    ttl_policy: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

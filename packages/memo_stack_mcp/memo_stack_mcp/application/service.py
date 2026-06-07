@@ -6,7 +6,7 @@ import hashlib
 import json
 import unicodedata
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
@@ -398,11 +398,15 @@ class MemoryToolService:
         source_id: str | None = None,
         quote_preview: str | None = None,
         classification: str = "internal",
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             self._ensure_choice("kind", kind, _MEMORY_KINDS)
             self._ensure_choice("classification", classification, _CLASSIFICATIONS)
+            safe_tags = _normalize_tool_tags(tags or ())
             scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
             source = self._source_ref(
                 source_type=source_type,
@@ -424,6 +428,9 @@ class MemoryToolService:
                     confidence="medium",
                     trust_level="medium",
                     safe_reason=policy.code,
+                    category=category,
+                    tags=safe_tags,
+                    ttl_policy=ttl_policy,
                 )
                 return self._ok(
                     "Suggestion created for review. It will not affect context until approved.",
@@ -455,6 +462,9 @@ class MemoryToolService:
                     confidence="medium",
                     trust_level="medium",
                     safe_reason="memo_stack_mcp.conflict.requires_review",
+                    category=category,
+                    tags=safe_tags,
+                    ttl_policy=ttl_policy,
                 )
                 return self._ok(
                     "Potentially conflicting memory found. Suggestion created for review.",
@@ -470,6 +480,9 @@ class MemoryToolService:
                 kind=kind,
                 source_refs=[source],
                 classification=classification,
+                category=category,
+                tags=safe_tags,
+                ttl_policy=ttl_policy,
                 idempotency_key=safe_key,
             )
             return self._ok(
@@ -489,6 +502,8 @@ class MemoryToolService:
         profile_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = "active",
+        category: str | None = None,
+        tag: str | None = None,
         limit: int = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
@@ -498,6 +513,8 @@ class MemoryToolService:
             payload = await self._gateway.list_facts(
                 scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
                 status=status,
+                category=_normalize_optional_label(category),
+                tag=_normalize_optional_label(tag),
                 limit=limit,
                 cursor=cursor,
             )
@@ -2113,6 +2130,17 @@ def _normalize_optional_label(value: str | None) -> str | None:
         return None
     normalized = value.strip().lower()
     return normalized or None
+
+
+def _normalize_tool_tags(values: Iterable[str]) -> list[str]:
+    tags: list[str] = []
+    for value in values:
+        normalized = _normalize_optional_label(value)
+        if normalized and normalized not in tags:
+            tags.append(normalized)
+        if len(tags) >= 10:
+            break
+    return tags
 
 
 def _drop_none_values(value: Any) -> Any:

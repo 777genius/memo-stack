@@ -445,6 +445,26 @@ def create_mcp_server(
             MemoryClassification,
             Field(default="internal", description="public, internal, restricted, or unknown."),
         ] = "internal",
+        category: Annotated[
+            str | None,
+            Field(
+                default=None,
+                max_length=80,
+                description="Optional normalized memory category, e.g. architecture.",
+            ),
+        ] = None,
+        tags: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=48)]] | None,
+            Field(
+                default=None,
+                max_length=10,
+                description="Optional memory tags for later filtering.",
+            ),
+        ] = None,
+        ttl_policy: Annotated[
+            str | None,
+            Field(default=None, max_length=80, description="Optional TTL policy name."),
+        ] = None,
         idempotency_key: Annotated[
             str | None,
             Field(
@@ -466,6 +486,9 @@ def create_mcp_server(
                 source_id=source_id,
                 quote_preview=quote_preview,
                 classification=classification,
+                category=category,
+                tags=tags,
+                ttl_policy=ttl_policy,
                 idempotency_key=idempotency_key,
             ),
             MemoryFactMutationResponse,
@@ -497,6 +520,8 @@ def create_mcp_server(
             FactStatus | None,
             Field(default="active", description="active, superseded, disputed, deleted, or null."),
         ] = "active",
+        category: Annotated[str | None, Field(default=None, max_length=80)] = None,
+        tag: Annotated[str | None, Field(default=None, max_length=48)] = None,
         limit: Annotated[int, Field(default=50, ge=1, le=500)] = 50,
         cursor: Annotated[str | None, Field(default=None, min_length=1, max_length=240)] = None,
     ) -> Annotated[CallToolResult, MemoryFactListResponse]:
@@ -506,6 +531,8 @@ def create_mcp_server(
                 profile_external_ref=profile_external_ref,
                 thread_external_ref=thread_external_ref,
                 status=status,
+                category=category,
+                tag=tag,
                 limit=limit,
                 cursor=cursor,
             ),

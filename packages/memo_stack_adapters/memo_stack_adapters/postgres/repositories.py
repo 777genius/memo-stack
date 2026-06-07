@@ -511,8 +511,9 @@ class PostgresScopeRepository(ScopeRepositoryPort):
 
 
 class PostgresFactRepository(FactRepositoryPort):
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, now: datetime | None = None) -> None:
         self._session = session
+        self._now = now
 
     async def create(self, fact: MemoryFact) -> MemoryFact:
         row = MemoryFactRow(
@@ -526,6 +527,10 @@ class PostgresFactRepository(FactRepositoryPort):
             confidence=fact.confidence.value,
             trust_level=fact.trust_level.value,
             classification=fact.classification,
+            category=fact.category,
+            tags_json=list(fact.tags),
+            ttl_policy=fact.ttl_policy,
+            expires_at=fact.expires_at,
             version=fact.version,
             created_at=fact.created_at,
             updated_at=fact.updated_at,
@@ -570,6 +575,10 @@ class PostgresFactRepository(FactRepositoryPort):
                 confidence=fact.confidence.value,
                 trust_level=fact.trust_level.value,
                 classification=fact.classification,
+                category=fact.category,
+                tags_json=list(fact.tags),
+                ttl_policy=fact.ttl_policy,
+                expires_at=fact.expires_at,
                 version=fact.version,
                 created_at=fact.created_at,
                 updated_at=fact.updated_at,
@@ -637,6 +646,10 @@ class PostgresFactRepository(FactRepositoryPort):
                 confidence=current.confidence,
                 trust_level=current.trust_level,
                 classification=current.classification,
+                category=current.category,
+                tags=current.tags,
+                ttl_policy=current.ttl_policy,
+                expires_at=current.expires_at,
                 created_at=current.created_at,
                 updated_at=version_row.created_at,
             )
@@ -657,6 +670,7 @@ class PostgresFactRepository(FactRepositoryPort):
             MemoryFactRow.profile_id.in_(profile_ids),
             MemoryFactRow.status == "active",
             MemoryFactRow.classification != "restricted",
+            _not_expired(MemoryFactRow, self._now),
         ]
         if thread_id is not None:
             conditions.append(
@@ -689,6 +703,8 @@ class PostgresFactRepository(FactRepositoryPort):
         limit: int,
         cursor_updated_at: datetime | None = None,
         cursor_id: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
     ) -> list[MemoryFact]:
         conditions = [
             MemoryFactRow.space_id == space_id,
@@ -696,6 +712,10 @@ class PostgresFactRepository(FactRepositoryPort):
         ]
         if status:
             conditions.append(MemoryFactRow.status == status)
+            if status == "active":
+                conditions.append(_not_expired(MemoryFactRow, self._now))
+        if category:
+            conditions.append(MemoryFactRow.category == category)
         if thread_id is not None:
             conditions.append(
                 or_(MemoryFactRow.thread_id == thread_id, MemoryFactRow.thread_id.is_(None))
@@ -714,14 +734,17 @@ class PostgresFactRepository(FactRepositoryPort):
                     select(MemoryFactRow)
                     .where(*conditions)
                     .order_by(MemoryFactRow.updated_at.desc(), MemoryFactRow.id.desc())
-                    .limit(limit)
+                    .limit(_retrieval_candidate_limit(limit) if tag else limit)
                 )
             ).scalars()
         )
         facts = []
         for row in rows:
             refs = await self._load_source_refs(fact_id=row.id, version=row.version)
-            facts.append(fact_row_to_domain(row, refs))
+            fact = fact_row_to_domain(row, refs)
+            if tag and tag not in fact.tags:
+                continue
+            facts.append(fact)
         return facts
 
     async def delete_facts_sourced_only_by_chunks(
@@ -1394,6 +1417,11 @@ def _retrieval_candidate_limit(limit: int) -> int:
     if limit <= 0:
         return 0
     return min(max(limit * 20, limit), 2000)
+
+
+def _not_expired(model: type, now: datetime | None):
+    comparable_now = now if now is not None else func.now()
+    return or_(model.expires_at.is_(None), model.expires_at > comparable_now)
 
 
 def _source_ref_points_to_deleted_document(

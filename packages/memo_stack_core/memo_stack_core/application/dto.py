@@ -61,6 +61,10 @@ class RememberFactCommand:
     thread_id: ThreadId | None = None
     idempotency_key: str | None = None
     classification: str = "internal"
+    category: str | None = None
+    tags: tuple[str, ...] = ()
+    ttl_policy: str | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +106,8 @@ class ListFactsQuery:
     limit: int
     cursor_updated_at: datetime | None = None
     cursor_id: str | None = None
+    category: str | None = None
+    tag: str | None = None
 
 
 @dataclass(frozen=True)

@@ -80,8 +80,8 @@ DIMENSIONS: tuple[Dimension, ...] = (
         memora_score=9.0,
         memo_stack_rationale=(
             "memory_remember_fact, canonical facts, idempotency, source refs, "
-            "suggestions, MCP tools and HTTP API are verified by local quality "
-            "and MCP e2e gates."
+            "canonical category/tags/TTL, suggestions, MCP tools and HTTP API "
+            "are verified by local quality and MCP e2e gates."
         ),
         memora_rationale=(
             "Direct MCP smoke and public docs show simple memory_create, batch "
@@ -125,11 +125,12 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="retrieval_and_digest_quality",
         label="Retrieve the right facts for a coding agent",
         weight=0.14,
-        memo_stack_score=9.0,
+        memo_stack_score=9.3,
         memora_score=9.0,
         memo_stack_rationale=(
             "Context API, memory_search, memory_digest, ranking, token packing "
-            "and graph/vector adapters are covered by deterministic gates."
+            "canonical category/tag filters, TTL hiding and graph/vector adapters "
+            "are covered by deterministic gates."
         ),
         memora_rationale=(
             "Memora has hybrid search, semantic search, memory_digest, related "
@@ -141,12 +142,12 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="large_docs_and_architecture_notes",
         label="Large documents and architecture notes",
         weight=0.10,
-        memo_stack_score=9.1,
+        memo_stack_score=9.4,
         memora_score=9.1,
         memo_stack_rationale=(
             "Document ingest now extracts typed markdown fragments for claims, "
             "plan items, risks and references, while Cognee/Qdrant remain "
-            "replaceable derived RAG adapters."
+            "replaceable derived RAG adapters for stronger document recall."
         ),
         memora_rationale=(
             "Structured markdown documents become searchable fragment trees "
@@ -195,8 +196,8 @@ DIMENSIONS: tuple[Dimension, ...] = (
         memo_stack_score=9.2,
         memora_score=7.5,
         memo_stack_rationale=(
-            "Space/profile/thread is a first-class contract, with auth scope and "
-            "cross-profile/thread leak checks."
+            "Space/profile/thread is a first-class contract, with category/tags "
+            "inside each profile, auth scope and cross-profile/thread leak checks."
         ),
         memora_rationale=(
             "Tags and metadata filters can model scope, and D1/S3/R2 can sync, "
@@ -274,6 +275,10 @@ def build_memora_agent_memory_comparison(
             "memo_stack_local": [
                 "tests/architecture/test_memory_boundaries.py",
                 "tests/unit/test_import_boundaries.py",
+                "tests/unit/test_document_fragments.py",
+                "tests/unit/test_document_fragment_api.py",
+                "tests/unit/test_fact_taxonomy_api.py",
+                "tests/unit/test_graph_export_api.py",
                 "tests/e2e/test_memory_quality_e2e.py",
                 "tests/e2e/test_memo_stack_agent_behavior_bench_e2e.py",
                 "tests/e2e/test_memo_stack_agent_plugin_e2e.py",

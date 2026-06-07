@@ -2828,6 +2828,7 @@ def _install_eval_graph_adapter(app, graph: EvalGraphMemoryAdapter) -> None:
         vector_index=container.vector_index,
         graph_index=graph,
         embedder=container.embedder,
+        clock=container.clock,
         rag_recall=container.cognee_memory,
         packer=ContextPacker(),
     )

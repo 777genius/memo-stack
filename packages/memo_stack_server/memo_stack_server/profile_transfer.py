@@ -737,6 +737,10 @@ def _fact_to_json(row: MemoryFactRow, *, redacted: bool) -> dict[str, Any]:
         "confidence": row.confidence,
         "trust_level": row.trust_level,
         "classification": row.classification,
+        "category": row.category,
+        "tags": list(row.tags_json or []),
+        "ttl_policy": row.ttl_policy,
+        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         "version": row.version,
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
@@ -813,6 +817,10 @@ def _fact_from_json(
         confidence=str(item.get("confidence", "medium")),
         trust_level=str(item.get("trust_level", "medium")),
         classification=str(item.get("classification", "internal")),
+        category=_bounded_optional_text(item.get("category"), 80),
+        tags_json=_bounded_tags(item.get("tags")),
+        ttl_policy=_bounded_optional_text(item.get("ttl_policy"), 80),
+        expires_at=_parse_optional_dt(item.get("expires_at")),
         version=int(item.get("version", 1)),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
@@ -920,7 +928,26 @@ def _parse_dt(value: object, fallback: datetime) -> datetime:
     return datetime.fromisoformat(str(value))
 
 
+def _parse_optional_dt(value: object) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(str(value))
+
+
 def _bounded_optional_text(value: object, limit: int) -> str | None:
     if value is None:
         return None
     return str(value)[:limit]
+
+
+def _bounded_tags(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    tags: list[str] = []
+    for item in value:
+        tag = str(item).strip().lower()[:48]
+        if tag and tag not in tags:
+            tags.append(tag)
+        if len(tags) >= 10:
+            break
+    return tags

@@ -45,7 +45,13 @@ _ADDITIVE_SCHEMA_COLUMNS = {
         ("last_used_at", "TIMESTAMPTZ"),
         ("expires_at", "TIMESTAMPTZ"),
     ),
-    "memory_facts": (("classification", "VARCHAR(40) NOT NULL DEFAULT 'internal'"),),
+    "memory_facts": (
+        ("classification", "VARCHAR(40) NOT NULL DEFAULT 'internal'"),
+        ("category", "VARCHAR(80)"),
+        ("tags_json", "JSON NOT NULL DEFAULT '[]'"),
+        ("ttl_policy", "VARCHAR(80)"),
+        ("expires_at", "TIMESTAMPTZ"),
+    ),
     "memory_documents": (("classification", "VARCHAR(40) NOT NULL DEFAULT 'unknown'"),),
     "memory_chunks": (("classification", "VARCHAR(40) NOT NULL DEFAULT 'unknown'"),),
     "memory_outbox": (
@@ -302,7 +308,7 @@ class PostgresUnitOfWork:
         self._session = self._session_factory()
         now = self._clock.now()
         self.scope = PostgresScopeRepository(self._session)
-        self.facts = PostgresFactRepository(self._session)
+        self.facts = PostgresFactRepository(self._session, now=now)
         self.episodes = PostgresEpisodeRepository(self._session)
         self.documents = PostgresDocumentRepository(self._session)
         self.chunks = PostgresChunkRepository(self._session)

@@ -125,6 +125,9 @@ class MemoStackClient:
         thread_external_ref: str | None = None,
         idempotency_key: str | None = None,
         classification: str = "internal",
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
     ) -> dict[str, Any]:
         scope_payload = (
             scope.to_payload()
@@ -138,18 +141,22 @@ class MemoStackClient:
                 thread_external_ref=thread_external_ref,
             )
         )
+        payload = {
+            **scope_payload,
+            "text": text,
+            "kind": kind,
+            "source_refs": source_refs,
+            "classification": classification,
+            "category": category,
+            "ttl_policy": ttl_policy,
+        }
+        if tags is not None:
+            payload["tags"] = tags
+
         return self._request(
             "POST",
             "/v1/facts",
-            json=_without_none(
-                {
-                    **scope_payload,
-                    "text": text,
-                    "kind": kind,
-                    "source_refs": source_refs,
-                    "classification": classification,
-                }
-            ),
+            json=_without_none(payload),
             idempotency_key=idempotency_key,
         )
 
@@ -192,6 +199,8 @@ class MemoStackClient:
         thread_id: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = "active",
+        category: str | None = None,
+        tag: str | None = None,
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
@@ -203,6 +212,8 @@ class MemoStackClient:
                 "profile_external_ref": profile_external_ref,
                 "thread_id": thread_id,
                 "thread_external_ref": thread_external_ref,
+                "category": category,
+                "tag": tag,
                 "limit": limit,
             }
         )

@@ -63,6 +63,9 @@ class RememberFactRequest(BaseModel):
     kind: str = "note"
     source_refs: list[SourceRefRequest] = Field(min_length=1)
     classification: str = Field(default="internal", max_length=40)
+    category: str | None = Field(default=None, max_length=80)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    ttl_policy: str | None = Field(default=None, max_length=80)
 
 
 class UpdateFactRequest(BaseModel):
@@ -105,6 +108,10 @@ def fact_to_response(fact: MemoryFact, indexing_status: str | None = None) -> di
         "confidence": fact.confidence.value,
         "trust_level": fact.trust_level.value,
         "classification": fact.classification,
+        "category": fact.category,
+        "tags": list(fact.tags),
+        "ttl_policy": fact.ttl_policy,
+        "expires_at": fact.expires_at.isoformat() if fact.expires_at else None,
         "source_refs": [
             {
                 "source_type": ref.source_type,
@@ -151,6 +158,9 @@ async def remember_fact(
             kind=map_memory_kind(request.kind),
             source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),
             classification=request.classification,
+            category=request.category,
+            tags=tuple(request.tags),
+            ttl_policy=request.ttl_policy,
             idempotency_key=idempotency_key,
         )
     )
@@ -169,6 +179,8 @@ async def list_facts(
     thread_id: Annotated[str | None, Query(max_length=80)] = None,
     thread_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "active",
+    category: Annotated[str | None, Query(max_length=80)] = None,
+    tag: Annotated[str | None, Query(max_length=48)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     cursor: Annotated[str | None, Query(max_length=1000)] = None,
 ) -> dict[str, Any]:
@@ -195,6 +207,8 @@ async def list_facts(
             limit=limit + 1,
             cursor_updated_at=cursor_datetime(decoded_cursor, "updated_at"),
             cursor_id=cursor_str(decoded_cursor, "id"),
+            category=category,
+            tag=tag,
         )
     )
     facts = list(result.facts)

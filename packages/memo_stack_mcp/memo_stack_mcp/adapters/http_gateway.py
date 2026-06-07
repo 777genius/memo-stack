@@ -132,6 +132,9 @@ class HttpMemoryGateway:
         source_refs: list[SourceRef],
         classification: str,
         idempotency_key: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "POST",
@@ -145,6 +148,9 @@ class HttpMemoryGateway:
                     "kind": kind,
                     "source_refs": [source.to_payload() for source in source_refs],
                     "classification": classification,
+                    "category": category,
+                    "tags": tags,
+                    "ttl_policy": ttl_policy,
                 }
             ),
             idempotency_key=idempotency_key,
@@ -157,6 +163,8 @@ class HttpMemoryGateway:
         status: str | None,
         limit: int,
         cursor: str | None,
+        category: str | None = None,
+        tag: str | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "GET",
@@ -166,6 +174,8 @@ class HttpMemoryGateway:
                     "space_slug": scope.space_slug,
                     "profile_external_ref": scope.profile_external_ref,
                     "status": status,
+                    "category": category,
+                    "tag": tag,
                     "limit": limit,
                     "cursor": cursor,
                 }
@@ -211,6 +221,9 @@ class HttpMemoryGateway:
         confidence: str,
         trust_level: str,
         safe_reason: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        ttl_policy: str | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "POST",
@@ -225,6 +238,9 @@ class HttpMemoryGateway:
                     "confidence": confidence,
                     "trust_level": trust_level,
                     "safe_reason": safe_reason,
+                    "category": category,
+                    "tags": tags or [],
+                    "ttl_policy": ttl_policy,
                 }
             ),
         )

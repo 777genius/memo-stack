@@ -21,6 +21,7 @@ from memo_stack_core.application.dto import (
 from memo_stack_core.domain.entities import SourceRef
 from memo_stack_core.ports.adapters import EmbeddingPort, GraphMemoryPort, VectorMemoryPort
 from memo_stack_core.ports.capabilities import RagRecallPort
+from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
@@ -34,6 +35,7 @@ class BuildContextUseCase:
         vector_index: VectorMemoryPort,
         graph_index: GraphMemoryPort,
         embedder: EmbeddingPort,
+        clock: ClockPort | None = None,
         rag_recall: RagRecallPort | None = None,
         packer: ContextPacker | None = None,
     ) -> None:
@@ -43,7 +45,7 @@ class BuildContextUseCase:
         self._graph_index = graph_index
         self._embedder = embedder
         self._packer = packer or ContextPacker()
-        self._hydrator = ContextHydrator(uow_factory=uow_factory)
+        self._hydrator = ContextHydrator(uow_factory=uow_factory, clock=clock)
         self._canonical_collector = CanonicalContextCollector(uow_factory=uow_factory)
         self._vector_collector = VectorContextCollector(
             vector_index=vector_index,

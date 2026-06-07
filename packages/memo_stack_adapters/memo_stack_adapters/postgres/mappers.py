@@ -85,6 +85,10 @@ def fact_row_to_domain(row: MemoryFactRow, source_refs: list[MemorySourceRefRow]
         confidence=Confidence(row.confidence),
         trust_level=TrustLevel(row.trust_level),
         classification=row.classification,
+        category=getattr(row, "category", None),
+        tags=tuple(getattr(row, "tags_json", None) or ()),
+        ttl_policy=getattr(row, "ttl_policy", None),
+        expires_at=getattr(row, "expires_at", None),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -123,6 +127,10 @@ def apply_fact_to_row(fact: MemoryFact, row: MemoryFactRow) -> None:
     row.confidence = fact.confidence.value
     row.trust_level = fact.trust_level.value
     row.classification = fact.classification
+    row.category = fact.category
+    row.tags_json = list(fact.tags)
+    row.ttl_policy = fact.ttl_policy
+    row.expires_at = fact.expires_at
     row.version = fact.version
     row.created_at = fact.created_at
     row.updated_at = fact.updated_at

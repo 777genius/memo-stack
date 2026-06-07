@@ -252,6 +252,10 @@ class MemoryFact:
     created_at: datetime
     updated_at: datetime
     classification: str = "internal"
+    category: str | None = None
+    tags: tuple[str, ...] = ()
+    ttl_policy: str | None = None
+    expires_at: datetime | None = None
 
     @classmethod
     def create(
@@ -268,11 +272,16 @@ class MemoryFact:
         confidence: Confidence = Confidence.MEDIUM,
         trust_level: TrustLevel = TrustLevel.MEDIUM,
         classification: str = "internal",
+        category: str | None = None,
+        tags: tuple[str, ...] = (),
+        ttl_policy: str | None = None,
+        expires_at: datetime | None = None,
     ) -> MemoryFact:
         if not text.strip():
             raise MemoryValidationError("Active fact text is required")
         if not source_refs:
             raise MemoryValidationError("Active fact requires source refs")
+        _validate_taxonomy(tags=tags, ttl_policy=ttl_policy)
         return cls(
             id=fact_id,
             space_id=space_id,
@@ -286,6 +295,10 @@ class MemoryFact:
             confidence=confidence,
             trust_level=trust_level,
             classification=_classification_value(classification),
+            category=category,
+            tags=tuple(tags),
+            ttl_policy=ttl_policy,
+            expires_at=expires_at,
             created_at=now,
             updated_at=now,
         )
@@ -298,6 +311,10 @@ class MemoryFact:
         source_refs: tuple[SourceRef, ...],
         reason: str,
         now: datetime,
+        category: str | None = None,
+        tags: tuple[str, ...] | None = None,
+        ttl_policy: str | None = None,
+        expires_at: datetime | None = None,
     ) -> MemoryFact:
         if self.status == FactStatus.DELETED:
             raise MemoryConflictError("Deleted fact cannot be updated")
@@ -309,11 +326,17 @@ class MemoryFact:
             raise MemoryValidationError("Active fact requires source refs")
         if not reason.strip():
             raise MemoryValidationError("Fact update requires reason")
+        next_tags = self.tags if tags is None else tuple(tags)
+        _validate_taxonomy(tags=next_tags, ttl_policy=ttl_policy or self.ttl_policy)
         return replace(
             self,
             text=text.strip(),
             source_refs=source_refs,
             version=self.version + 1,
+            category=self.category if category is None else category,
+            tags=next_tags,
+            ttl_policy=self.ttl_policy if ttl_policy is None else ttl_policy,
+            expires_at=self.expires_at if expires_at is None else expires_at,
             updated_at=now,
         )
 
@@ -524,6 +547,15 @@ def _classification_value(value: str) -> str:
         return DataClassification(value).value
     except ValueError as exc:
         raise MemoryValidationError("Unknown data classification") from exc
+
+
+def _validate_taxonomy(*, tags: tuple[str, ...], ttl_policy: str | None) -> None:
+    if len(tags) > 10:
+        raise MemoryValidationError("Fact tags exceed limit")
+    if any(len(tag) > 48 for tag in tags):
+        raise MemoryValidationError("Fact tag exceeds max length")
+    if ttl_policy is not None and len(ttl_policy) > 80:
+        raise MemoryValidationError("Fact ttl_policy exceeds max length")
 
 
 @dataclass(frozen=True)

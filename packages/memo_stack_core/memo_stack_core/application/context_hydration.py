@@ -9,12 +9,19 @@ from memo_stack_core.application.context_policy import (
 from memo_stack_core.application.document_text import document_chunk_retrieval_text
 from memo_stack_core.application.dto import BuildContextQuery, ContextItem
 from memo_stack_core.domain.entities import MemoryChunk, SourceRef
+from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 
 class ContextHydrator:
-    def __init__(self, *, uow_factory: UnitOfWorkFactoryPort) -> None:
+    def __init__(
+        self,
+        *,
+        uow_factory: UnitOfWorkFactoryPort,
+        clock: ClockPort | None = None,
+    ) -> None:
         self._uow_factory = uow_factory
+        self._clock = clock
 
     async def hydrate_visible_chunks(
         self,
@@ -42,12 +49,14 @@ class ContextHydrator:
         async with self._uow_factory() as uow:
             hydrated: list[ContextItem] = []
             stale_count = 0
+            now = self._clock.now() if self._clock is not None else None
             for fact_id in fact_ids:
                 fact = await uow.facts.get_by_id(fact_id)
                 if fact is not None and is_graph_fact_visible(
                     fact,
                     query=query,
                     profile_ids=profile_ids,
+                    now=now,
                 ):
                     hydrated.append(
                         ContextItem(
@@ -87,6 +96,7 @@ class ContextHydrator:
         }
         async with self._uow_factory() as uow:
             visible_facts = {}
+            now = self._clock.now() if self._clock is not None else None
             for item in items:
                 if item.item_type != "fact":
                     continue
@@ -95,6 +105,7 @@ class ContextHydrator:
                     fact,
                     query=query,
                     profile_ids=profile_ids,
+                    now=now,
                 ):
                     visible_facts[str(fact.id)] = fact
 

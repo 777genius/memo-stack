@@ -27,6 +27,8 @@ class ListFactsUseCase:
                 limit=query.limit,
                 cursor_updated_at=query.cursor_updated_at,
                 cursor_id=query.cursor_id,
+                category=query.category,
+                tag=query.tag,
             )
         return FactsQueryResult(facts=tuple(facts))
 

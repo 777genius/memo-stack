@@ -127,6 +127,8 @@ class FactRepositoryPort(Protocol):
         limit: int,
         cursor_updated_at: datetime | None = None,
         cursor_id: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
     ) -> list[MemoryFact]:
         """List facts for a single scope."""
 

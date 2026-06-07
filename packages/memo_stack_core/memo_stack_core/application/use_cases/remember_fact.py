@@ -6,10 +6,12 @@ from hashlib import sha256
 
 from memo_stack_core.application.dto import FactResult, RememberFactCommand
 from memo_stack_core.application.normalize import scoped_idempotency_key
-from memo_stack_core.domain.entities import MemoryFact, MemoryFactId
+from memo_stack_core.domain.entities import Confidence, MemoryFact, MemoryFactId
 from memo_stack_core.domain.errors import MemoryConflictError, MemoryInvariantError
 from memo_stack_core.domain.events import OutboxEvent
 from memo_stack_core.domain.idempotency import IdempotencyRecord
+from memo_stack_core.domain.taxonomy import DefaultTaxonomyPolicy
+from memo_stack_core.ports.auto_memory import MemoryCandidate
 from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
@@ -21,7 +23,9 @@ def remember_fact_fingerprint(command: RememberFactCommand) -> str:
     )
     raw = (
         f"{command.space_id}:{command.profile_id}:{command.thread_id or ''}:"
-        f"{command.kind}:{command.text}:{command.classification}:{source_keys}"
+        f"{command.kind}:{command.text}:{command.classification}:"
+        f"{command.category or ''}:{','.join(command.tags)}:{command.ttl_policy or ''}:"
+        f"{command.expires_at.isoformat() if command.expires_at else ''}:{source_keys}"
     )
     return sha256(raw.encode("utf-8")).hexdigest()
 
@@ -66,6 +70,19 @@ class RememberFactUseCase:
                     return FactResult(fact=fact, indexing_status="already_indexed_or_pending")
 
             now = self._clock.now()
+            taxonomy = DefaultTaxonomyPolicy().normalize(
+                MemoryCandidate(
+                    text=command.text,
+                    kind=command.kind,
+                    confidence=Confidence.MEDIUM,
+                    source_refs=command.source_refs,
+                    safe_reason="direct_remember",
+                    category=command.category,
+                    tags=command.tags,
+                    ttl_policy=command.ttl_policy,
+                    expires_at=command.expires_at,
+                )
+            )
             fact = MemoryFact.create(
                 fact_id=MemoryFactId(self._ids.new_id("fact")),
                 space_id=command.space_id,
@@ -75,6 +92,15 @@ class RememberFactUseCase:
                 kind=command.kind,
                 source_refs=command.source_refs,
                 classification=command.classification,
+                category=taxonomy.category,
+                tags=taxonomy.tags,
+                ttl_policy=taxonomy.ttl_policy.name,
+                expires_at=command.expires_at
+                or (
+                    now + taxonomy.ttl_policy.duration
+                    if taxonomy.ttl_policy.duration is not None
+                    else None
+                ),
                 now=now,
             )
             saved = await uow.facts.create(fact)

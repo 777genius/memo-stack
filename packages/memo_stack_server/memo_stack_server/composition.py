@@ -231,6 +231,7 @@ def build_container(settings: Settings | None = None) -> Container:
         vector_index=vector,
         graph_index=graph,
         embedder=query_embeddings,
+        clock=clock,
         rag_recall=cognee,
         packer=ContextPacker(),
     )
