@@ -110,7 +110,7 @@ make memo-stack-compare-memora
 | --- | ---: | ---: | --- |
 | Remember durable coding facts | 9.2 | 9.0 | Tie |
 | Update facts without stale answers | 9.2 | 8.1 | Memo Stack |
-| Forget/delete and review-gated control | 9.4 | 7.8 | Memo Stack |
+| Forget/delete and review-gated control | 9.5 | 7.8 | Memo Stack |
 | Retrieve the right facts for a coding agent | 9.5 | 9.0 | Memo Stack |
 | Large documents and architecture notes | 9.4 | 9.1 | Memo Stack |
 | Graph relationships and temporal context | 9.5 | 8.4 | Memo Stack |
@@ -121,7 +121,7 @@ make memo-stack-compare-memora
 
 Weighted total:
 
-- Memo Stack: 9.31
+- Memo Stack: 9.32
 - Memora: 8.19
 
 ## Honest conclusion
@@ -153,7 +153,8 @@ surface through HTTP API, SDK and MCP, returning deterministic conflicts,
 skipped records, would-import counts and superseded facts before a destructive
 restore. Read-only memory insights are available through HTTP API, SDK, MCP and
 CLI for pending review load, expired facts, document indexing coverage,
-taxonomy hotspots, recent activity and cleanup action items. Memora still has
+taxonomy hotspots, recent activity, duplicate/similar fact review and cleanup action items.
+Memora still has
 more polished local graph UI. Memo Stack now also has `memory_related_facts` and
 `GET /v1/facts/{fact_id}/related`, giving agents read-only related fact
 traversal with explainable relation reasons before update/delete or summary

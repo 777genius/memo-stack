@@ -56,6 +56,38 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             },
             headers=auth_headers(),
         )
+        similar_a = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "text": (
+                    "Memo Stack should use Graphiti as the temporal graph adapter "
+                    "for coding agent memory."
+                ),
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "insights-similar-a"}],
+                "category": "architecture",
+                "tags": ["memory", "graph"],
+            },
+            headers=auth_headers(),
+        )
+        similar_b = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "text": (
+                    "Memo Stack should use Graphiti as temporal graph engine adapter "
+                    "for coding-agent memory."
+                ),
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "insights-similar-b"}],
+                "category": "architecture",
+                "tags": ["memory", "graph"],
+            },
+            headers=auth_headers(),
+        )
         expiring = client.post(
             "/v1/facts",
             json={
@@ -99,6 +131,8 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
         )
 
     assert active.status_code == 201
+    assert similar_a.status_code == 201
+    assert similar_b.status_code == 201
     assert expiring.status_code == 201
     assert suggestion.status_code == 201
     assert insights.status_code == 200
@@ -108,10 +142,15 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
     assert data["health_score"] < 100
     assert data["metrics"]["facts"]["expired_active"] == 1
     assert data["metrics"]["suggestions"]["pending"] == 1
-    assert {"value": "architecture", "count": 1} in data["taxonomy"]["top_categories"]
+    assert {"value": "architecture", "count": 3} in data["taxonomy"]["top_categories"]
     actions = {item["action"] for item in data["action_items"]}
+    similar_action = next(
+        item for item in data["action_items"] if item["action"] == "review_similar_facts"
+    )
     assert "review_expired_fact" in actions
     assert "review_pending_suggestions" in actions
+    assert similar_action["metadata"]["match_type"] == "same_kind_category_token_overlap"
+    assert similar_action["metadata"]["similarity"] >= 0.82
     activity_types = {item["event_type"] for item in data["recent_activity"]}
     assert {"fact_created", "suggestion_created"} <= activity_types
     assert all(item["preview"] for item in data["recent_activity"])

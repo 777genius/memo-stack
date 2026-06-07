@@ -340,6 +340,7 @@ def _action_items(
                     },
                 )
             )
+        items.extend(_fact_consolidation_actions(sample=sample, now=now))
         expired = [
             fact
             for fact in sample.facts
@@ -411,6 +412,113 @@ def _action_items(
                 )
             )
     return sorted(items, key=_action_sort_key)
+
+
+def _fact_consolidation_actions(
+    *,
+    sample: _ProfileSample,
+    now: datetime,
+) -> list[MemoryInsightActionItem]:
+    active_facts = [
+        fact
+        for fact in sample.facts
+        if fact.status == FactStatus.ACTIVE and not _is_expired(fact.expires_at, now)
+    ]
+    items = _exact_duplicate_fact_actions(sample.profile_id, active_facts)
+    items.extend(_similar_fact_actions(sample.profile_id, active_facts))
+    return items[:10]
+
+
+def _exact_duplicate_fact_actions(
+    profile_id: str,
+    facts: list[MemoryFact],
+) -> list[MemoryInsightActionItem]:
+    by_key: dict[str, list[MemoryFact]] = {}
+    for fact in facts:
+        key = _fact_normalized_text(fact.text)
+        if key:
+            by_key.setdefault(key, []).append(fact)
+
+    items: list[MemoryInsightActionItem] = []
+    for duplicates in by_key.values():
+        if len(duplicates) < 2:
+            continue
+        ordered = sorted(duplicates, key=lambda fact: (fact.updated_at, str(fact.id)), reverse=True)
+        primary = ordered[0]
+        duplicate_ids = [str(fact.id) for fact in ordered[1:]]
+        items.append(
+            _item(
+                severity="warning",
+                action="review_duplicate_facts",
+                target_type="fact_set",
+                target_id=str(primary.id),
+                profile_id=profile_id,
+                reason=f"{len(ordered)} active facts have equivalent text.",
+                preview=_preview(primary.text),
+                metadata={
+                    "match_type": "exact_normalized_text",
+                    "canonical_candidate_id": str(primary.id),
+                    "duplicate_fact_ids": duplicate_ids[:10],
+                    "duplicate_count": len(duplicate_ids),
+                },
+            )
+        )
+    return sorted(items, key=lambda item: (item.profile_id, item.target_id or item.id))[:5]
+
+
+def _similar_fact_actions(
+    profile_id: str,
+    facts: list[MemoryFact],
+) -> list[MemoryInsightActionItem]:
+    candidates: list[tuple[float, MemoryFact, MemoryFact]] = []
+    token_cache = {str(fact.id): _fact_terms(fact.text) for fact in facts}
+    for index, left in enumerate(facts):
+        left_terms = token_cache[str(left.id)]
+        if len(left_terms) < 5:
+            continue
+        for right in facts[index + 1 :]:
+            if left.kind != right.kind or left.category != right.category:
+                continue
+            right_terms = token_cache[str(right.id)]
+            if len(right_terms) < 5:
+                continue
+            similarity = _jaccard(left_terms, right_terms)
+            if 0.82 <= similarity < 1.0 and len(set(left_terms) & set(right_terms)) >= 5:
+                candidates.append((similarity, left, right))
+
+    items: list[MemoryInsightActionItem] = []
+    seen: set[frozenset[str]] = set()
+    for similarity, left, right in sorted(candidates, key=lambda item: item[0], reverse=True):
+        pair_key = frozenset((str(left.id), str(right.id)))
+        if pair_key in seen:
+            continue
+        seen.add(pair_key)
+        newest, older = sorted(
+            (left, right),
+            key=lambda fact: (fact.updated_at, str(fact.id)),
+        )[::-1]
+        items.append(
+            _item(
+                severity="info",
+                action="review_similar_facts",
+                target_type="fact_set",
+                target_id=str(newest.id),
+                profile_id=profile_id,
+                reason="Two active facts look similar enough to review for consolidation.",
+                preview=_preview(newest.text),
+                metadata={
+                    "match_type": "same_kind_category_token_overlap",
+                    "canonical_candidate_id": str(newest.id),
+                    "similar_fact_ids": [str(older.id)],
+                    "similarity": round(similarity, 3),
+                    "kind": newest.kind.value,
+                    "category": newest.category,
+                },
+            )
+        )
+        if len(items) >= 5:
+            break
+    return items
 
 
 def _recent_activity(
@@ -638,6 +746,28 @@ def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
 def _preview(value: str, *, max_chars: int = 240) -> str:
     redacted = redact_sensitive_text(value, marker="[redacted]")
     return redacted if len(redacted) <= max_chars else redacted[:max_chars] + "...[truncated]"
+
+
+def _fact_normalized_text(value: str) -> str:
+    return " ".join(_fact_terms(value))
+
+
+def _fact_terms(value: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for raw_token in value.casefold().replace("-", " ").split():
+        token = raw_token.strip(".,:;!?()[]{}\"'`")
+        if len(token) < 3 or token in {"the", "and", "for", "with", "that", "this"}:
+            continue
+        tokens.append(token)
+    return tuple(tokens)
+
+
+def _jaccard(left: tuple[str, ...], right: tuple[str, ...]) -> float:
+    left_set = set(left)
+    right_set = set(right)
+    if not left_set or not right_set:
+        return 0.0
+    return len(left_set & right_set) / len(left_set | right_set)
 
 
 def _top_counts(counter: Counter[str], *, limit: int = 20) -> list[dict[str, object]]:
