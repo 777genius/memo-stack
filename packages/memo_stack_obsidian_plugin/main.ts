@@ -61,6 +61,57 @@ const DEFAULT_SETTINGS: MemoStackSettings = {
 const VIEW_TYPE_MEMO_STACK = "memo-stack-control-center";
 const START_LITE_COOLDOWN_MS = 30000;
 
+function normalizeSettings(value: unknown): MemoStackSettings {
+  const data = isRecord(value) ? value : {};
+  return {
+    apiUrl: stringSetting(data, "apiUrl", DEFAULT_SETTINGS.apiUrl),
+    token: stringSetting(data, "token", DEFAULT_SETTINGS.token),
+    localCliPath: stringSetting(data, "localCliPath", DEFAULT_SETTINGS.localCliPath),
+    cliPath: stringSetting(data, "cliPath", DEFAULT_SETTINGS.cliPath),
+    vaultPathOverride: stringSetting(
+      data,
+      "vaultPathOverride",
+      DEFAULT_SETTINGS.vaultPathOverride,
+    ),
+    rootFolder: stringSetting(data, "rootFolder", DEFAULT_SETTINGS.rootFolder),
+    layoutVersion: layoutVersionSetting(data.layoutVersion),
+    spaceSlug: stringSetting(data, "spaceSlug", DEFAULT_SETTINGS.spaceSlug),
+    profileExternalRef: stringSetting(
+      data,
+      "profileExternalRef",
+      DEFAULT_SETTINGS.profileExternalRef,
+    ),
+    applyImportOnSync:
+      typeof data.applyImportOnSync === "boolean"
+        ? data.applyImportOnSync
+        : DEFAULT_SETTINGS.applyImportOnSync,
+    commandTimeoutMs: timeoutSetting(data.commandTimeoutMs),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringSetting(
+  data: Record<string, unknown>,
+  key: keyof MemoStackSettings,
+  fallback: string,
+): string {
+  const value = data[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function layoutVersionSetting(value: unknown): "v1" | "v2" {
+  return value === "v1" || value === "v2" ? value : DEFAULT_SETTINGS.layoutVersion;
+}
+
+function timeoutSetting(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_SETTINGS.commandTimeoutMs;
+}
+
 export default class MemoStackPlugin extends Plugin {
   settings: MemoStackSettings = { ...DEFAULT_SETTINGS };
   private lastResult: ConnectorRunResult | null = null;
@@ -202,7 +253,12 @@ export default class MemoStackPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    try {
+      this.settings = normalizeSettings(await this.loadData());
+    } catch (error) {
+      console.warn("Memo Stack settings could not be loaded; using defaults.", error);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
   }
 
   async saveSettings() {
