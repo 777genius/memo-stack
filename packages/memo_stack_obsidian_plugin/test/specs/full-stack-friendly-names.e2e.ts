@@ -299,6 +299,95 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.status === 0));
   });
+
+  it("switches profiles inside one friendly project through settings without mixing notes", async function () {
+    const teamProfileScope: Scope = {
+      spaceSlug: primaryScope.spaceSlug,
+      profileExternalRef: "Research Lead+Ops",
+    };
+    await createFact(baseUrl, {
+      text: "Primary profile same project backend fact.",
+      sourceId: "wdio-same-project-primary-profile-seed",
+      scope: primaryScope,
+    });
+    await createFact(baseUrl, {
+      text: "Team profile same project backend fact.",
+      sourceId: "wdio-same-project-team-profile-seed",
+      scope: teamProfileScope,
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", rootFolder);
+    await setSettingsInput("spaceSlug", primaryScope.spaceSlug);
+    await setSettingsInput("profileExternalRef", primaryScope.profileExternalRef);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPluginScope(primaryScope);
+    await waitForSettingsFile(vaultPath, primaryScope.profileExternalRef);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const primaryFile = onlyFactFile(vaultPath, primaryScope);
+    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary profile same project backend fact/);
+    assert.equal(factFiles(vaultPath, teamProfileScope).length, 0);
+
+    const primaryInboxMarker = "WDIO same project primary profile inbox marker";
+    writeVaultFile(vaultPath, path.join(scopedRootFor(primaryScope), "inbox", "primary-profile.md"), primaryInboxMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, primaryInboxMarker, 1, primaryScope);
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamProfileScope)).length, 0);
+
+    await openMemoStackSettings();
+    await setSettingsInput("profileExternalRef", teamProfileScope.profileExternalRef);
+    await waitForPluginScope(teamProfileScope);
+    await waitForSettingsFile(vaultPath, teamProfileScope.profileExternalRef);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+
+    const teamFile = onlyFactFile(vaultPath, teamProfileScope);
+    assert.match(fs.readFileSync(teamFile, "utf8"), /Team profile same project backend fact/);
+    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary profile same project backend fact/);
+    assert.equal(factFiles(vaultPath, primaryScope).length, 1);
+    assert.equal(factFiles(vaultPath, teamProfileScope).length, 1);
+    assert.equal(path.dirname(primaryFile).includes(safeScopeSegment(primaryScope.spaceSlug)), true);
+    assert.equal(path.dirname(teamFile).includes(safeScopeSegment(primaryScope.spaceSlug)), true);
+    assert.notEqual(path.dirname(primaryFile), path.dirname(teamFile));
+
+    const teamInboxMarker = "WDIO same project team profile inbox marker";
+    writeVaultFile(vaultPath, path.join(scopedRootFor(teamProfileScope), "inbox", "team-profile.md"), teamInboxMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 6);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, teamInboxMarker, 1, teamProfileScope);
+    assert.equal((await suggestionsContaining(baseUrl, teamInboxMarker, primaryScope)).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:open-inbox");
+    assert.equal(await activeFilePath(), posixPath(path.join(scopedRootFor(teamProfileScope), "inbox", "README.md")));
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "connect", "sync", "sync"]);
+    assertCallsUseScope(calls.slice(0, 3), primaryScope);
+    assertCallsUseScope(calls.slice(3), teamProfileScope);
+    assert.ok(calls.every((call) => call.args.includes(rootFolder)));
+    assert.ok(calls.every((call) => call.status === 0));
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string, scope: Scope = primaryScope): Promise<string> {
@@ -529,10 +618,10 @@ async function waitForPluginScope(scope: Scope): Promise<void> {
   );
 }
 
-async function waitForSettingsFile(vaultPath: string): Promise<void> {
+async function waitForSettingsFile(vaultPath: string, marker: string = rawSpaceSlug): Promise<void> {
   const settingsPath = path.join(vaultPath, ".obsidian", "plugins", "memo-stack", "data.json");
   await waitUntil(
-    async () => fs.existsSync(settingsPath) && fs.readFileSync(settingsPath, "utf8").includes(rawSpaceSlug),
+    async () => fs.existsSync(settingsPath) && fs.readFileSync(settingsPath, "utf8").includes(marker),
     "Memo Stack settings UI did not persist data.json",
   );
 }
