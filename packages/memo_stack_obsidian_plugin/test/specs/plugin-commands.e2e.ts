@@ -182,6 +182,50 @@ describe("Memo Stack Obsidian plugin", function () {
     assert.equal(calls[0].status, 0);
   });
 
+  it("keeps Control Center actions disabled while busy and shows local stack cooldown", async function () {
+    const vaultPath = await resetVaultAndConfigure({ commandTimeoutMs: 5000 });
+    await resetStartLiteCooldown();
+
+    await browser.executeObsidianCommand("memo-stack:open-control-center");
+    await waitForPanelText("Local stack");
+
+    await clickPanelButton("Status");
+    await waitForLocalStackCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await waitForPanelText("Local stack: ok");
+
+    await setFakeEnv({ MEMO_STACK_FAKE_OBSIDIAN_DELAY_MS: "1200" });
+    await clickPanelButton("Sync");
+    try {
+      await waitForPanelText("Running: syncing vault");
+      const panel = await panelState();
+      assert.equal(panel.buttons.Sync.disabled, true);
+      assert.equal(panel.buttons.Connect.disabled, true);
+      assert.equal(panel.buttons.Preview.disabled, true);
+      assert.equal(panel.buttons.Health.disabled, true);
+      assert.equal(panel.buttons["Start lite"].disabled, true);
+    } finally {
+      await waitForCliCalls(vaultPath, 1);
+      await waitForPluginIdle();
+      await clearFakeEnv();
+    }
+    await waitForPanelText("Last run: ok");
+
+    await clickPanelButton("Start lite");
+    await waitForLocalStackCalls(vaultPath, 2);
+    await waitForPluginIdle();
+    await waitForStartLiteCooldown();
+
+    const panel = await panelState();
+    const startLiteKey = Object.keys(panel.buttons).find((label) => label.startsWith("Start lite "));
+    assert.ok(startLiteKey, "Control Center must show Start lite cooldown seconds");
+    assert.equal(panel.buttons[startLiteKey].disabled, true);
+    assert.deepEqual(
+      readLocalStackCalls(vaultPath).map((call) => call.args.join(" ")),
+      ["status --json", "up --lite"],
+    );
+  });
+
   it("surfaces connector failures and clears busy state", async function () {
     const vaultPath = await resetVaultAndConfigure();
     await setFakeEnv({ MEMO_STACK_FAKE_OBSIDIAN_FAIL_COMMAND: "preview" });
@@ -474,6 +518,79 @@ async function waitForPluginIdle(): Promise<void> {
     timeout: 10000,
     timeoutMsg: "Memo Stack plugin did not become idle",
   });
+}
+
+async function resetStartLiteCooldown(): Promise<void> {
+  await browser.executeObsidian(({ plugins }) => {
+    (plugins.memoStack as any).lastStartLiteAt = 0;
+  });
+}
+
+async function panelState(): Promise<{
+  text: string;
+  buttons: Record<string, { disabled: boolean }>;
+}> {
+  return await browser.execute(() => {
+    const panel = document.querySelector(".memo-stack-panel");
+    if (!panel) {
+      return { text: "", buttons: {} };
+    }
+    const buttons: Record<string, { disabled: boolean }> = {};
+    for (const button of Array.from(panel.querySelectorAll("button"))) {
+      const key = button.textContent?.trim() || "";
+      buttons[key] = { disabled: (button as HTMLButtonElement).disabled };
+    }
+    return {
+      text: ((panel as HTMLElement).innerText || panel.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim(),
+      buttons,
+    };
+  });
+}
+
+async function waitForPanelText(text: string): Promise<void> {
+  await browser.waitUntil(async () => (await panelState()).text.includes(text), {
+    timeout: 10000,
+    timeoutMsg: `Control Center panel did not contain: ${text}`,
+  });
+}
+
+async function waitForStartLiteCooldown(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      Object.entries((await panelState()).buttons).some(
+        ([label, state]) => label.startsWith("Start lite ") && state.disabled,
+      ),
+    {
+      timeout: 10000,
+      timeoutMsg: "Control Center did not show Start lite cooldown",
+    },
+  );
+}
+
+async function clickPanelButton(label: string): Promise<void> {
+  await browser.waitUntil(async () => {
+    return await browser.execute((buttonLabel) => {
+      const buttons = Array.from(
+        document.querySelectorAll(".memo-stack-panel button"),
+      ) as HTMLButtonElement[];
+      return buttons.some((button) => button.textContent?.trim() === buttonLabel && !button.disabled);
+    }, label);
+  }, {
+    timeout: 10000,
+    timeoutMsg: `Control Center button was not clickable: ${label}`,
+  });
+  await browser.execute((buttonLabel) => {
+    const buttons = Array.from(
+      document.querySelectorAll(".memo-stack-panel button"),
+    ) as HTMLButtonElement[];
+    const button = buttons.find((item) => item.textContent?.trim() === buttonLabel && !item.disabled);
+    if (!button) {
+      throw new Error(`Button not found: ${buttonLabel}`);
+    }
+    button.click();
+  }, label);
 }
 
 function writeVaultFile(vaultPath: string, relativePath: string, content: string): void {
