@@ -242,6 +242,79 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.equal((await getFact(baseUrl, fact.id)).status, "deleted");
   });
 
+  it("keeps dirty local notes visible when backend facts are deleted", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO dirty delete-race initial fact.",
+      sourceId: "wdio-dirty-delete-race-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    replaceManagedText(exportedFact, "Obsidian WDIO dirty delete-race local draft survives.");
+
+    const deleted = await deleteFact(baseUrl, fact.id);
+    assert.equal(deleted.status, "deleted");
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.match(
+      fs.readFileSync(exportedFact, "utf8"),
+      /dirty delete-race local draft survives/,
+    );
+    assert.equal((await getFact(baseUrl, fact.id)).status, "deleted");
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /Stale version/);
+    assert.match(conflict, new RegExp(fact.id));
+  });
+
+  it("exports only the configured project and profile scope", async function () {
+    const scopedFact = await createFact(baseUrl, {
+      text: "Obsidian WDIO scoped export visible fact.",
+      sourceId: "wdio-scope-visible-seed",
+    });
+    const otherSpace = "wdio-other-space";
+    const otherProfile = "other-profile";
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO other scope hidden fact.",
+      sourceId: "wdio-scope-hidden-seed",
+      space: otherSpace,
+      profile: otherProfile,
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+
+    const exportedFact = onlyFactFile(vaultPath);
+    const exportedMarkdown = fs.readFileSync(exportedFact, "utf8");
+    assert.match(exportedMarkdown, /Obsidian WDIO scoped export visible fact/);
+    assert.doesNotMatch(exportedMarkdown, /Obsidian WDIO other scope hidden fact/);
+    assert.equal(
+      (await getFact(baseUrl, scopedFact.id)).text,
+      "Obsidian WDIO scoped export visible fact.",
+    );
+    assert.equal(
+      fs.existsSync(
+        path.join(vaultPath, rootFolder, "spaces", otherSpace, "profiles", otherProfile),
+      ),
+      false,
+    );
+
+    const calls = readCliCalls(vaultPath);
+    assert.ok(calls.every((call) => call.args.includes("--space")));
+    assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
+    assert.ok(!calls.some((call) => call.args.includes(otherSpace)));
+  });
+
   it("turns corrupt managed notes into visible conflicts without overwriting them", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO corrupt note initial fact.",
@@ -383,14 +456,18 @@ async function createFact(
   {
     text,
     sourceId,
+    space = spaceSlug,
+    profile = profileExternalRef,
   }: {
     text: string;
     sourceId: string;
+    space?: string;
+    profile?: string;
   },
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
-    space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    space_slug: space,
+    profile_external_ref: profile,
     text,
     kind: "note",
     source_refs: [
