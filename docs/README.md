@@ -110,10 +110,11 @@ live/transcript/adversarial pass rates from being satisfied by zero-case or
 under-sized reports. The strict scorecard also requires scenario-level evidence
 whose tag counts match the published metrics, so a report cannot claim benchmark
 coverage with metrics alone. Scenario entries must be well-formed, have unique
-ids and have `passed` status for publishable evidence. It also parses the LoCoMo
-and LongMemEval dataset files through the same normalizer used by the benchmark
-runner and rejects empty, invalid or under-sized datasets before paid provider
-work starts. It prints only safe diagnostics and never echoes API keys.
+ids, have `passed` status and include every built-in canonical scenario id for
+publishable evidence. It also parses the LoCoMo and LongMemEval dataset files
+through the same normalizer used by the benchmark runner and rejects empty,
+invalid or under-sized datasets before paid provider work starts. It prints only
+safe diagnostics and never echoes API keys.
 `MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP=true` is accepted only for local
 diagnostics; publishable evidence should stay clean. Floor overrides such as
 `MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES` and

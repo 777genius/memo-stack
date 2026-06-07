@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from memo_stack_mcp.agent_behavior_contract import (
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
+)
 from memo_stack_server.evidence_bundle import build_quality_evidence_bundle
 
 
@@ -161,7 +164,9 @@ def _agent_behavior_scenario_report(
     tags: tuple[str, ...],
 ) -> dict[str, object]:
     return {
-        "id": f"agent-scenario-{index}",
+        "id": AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS[index]
+        if index < len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS)
+        else f"external-agent-scenario-{index}",
         "category": "answer",
         "tags": list(tags),
         "critical": True,

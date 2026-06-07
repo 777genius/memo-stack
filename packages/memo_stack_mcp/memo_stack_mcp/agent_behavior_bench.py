@@ -26,6 +26,13 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from memo_stack_core.reporting import with_report_provenance
 
+from memo_stack_mcp.agent_behavior_contract import (
+    ADVERSARIAL_TAG,
+    EXTERNAL_TRANSCRIPT_TAG,
+    LIVE_SESSION_TAG,
+    TRANSCRIPT_CORPUS_TAG,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_NAMES = (
     "memo_stack_adapters",
@@ -39,10 +46,6 @@ DEFAULT_OUTPUT_LIMIT_CHARS = 12_000
 DEFAULT_LLM_CALL_TIMEOUT_SECONDS = 240.0
 DEFAULT_LLM_HTTP_TIMEOUT_SECONDS = 180.0
 DEFAULT_SCENARIO_TIMEOUT_SECONDS = 900.0
-LIVE_SESSION_TAG = "live_session"
-ADVERSARIAL_TAG = "adversarial"
-TRANSCRIPT_CORPUS_TAG = "transcript_corpus"
-EXTERNAL_TRANSCRIPT_TAG = "external_transcript"
 DEFAULT_TRANSCRIPT_CORPUS_MAX_FILES = 20
 DEFAULT_TRANSCRIPT_CORPUS_MAX_BYTES = 200_000
 WRITE_TOOLS = {

@@ -28,6 +28,13 @@ from memo_stack_core.ports.adapters import (
     GraphSearchResult,
 )
 from memo_stack_core.ports.auto_memory import CandidateOperation, SourceProvenance
+from memo_stack_mcp.agent_behavior_contract import (
+    AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_INTEGRITY_CHECKS,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET,
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS,
+)
 
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
@@ -117,7 +124,6 @@ _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS = {
     LONGMEMEVAL_BENCHMARK_SUITE: {"min_accuracy": 0.902, "min_case_count": 500},
 }
 _AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS = ("realistic", "live", "transcript", "all")
-_AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET = "all"
 _AGENT_BEHAVIOR_RATE_FLOORS = {
     "tool_choice_accuracy": 0.80,
     "search_before_write_rate": 0.90,
@@ -136,17 +142,6 @@ _AGENT_BEHAVIOR_ZERO_COUNT_METRICS = (
     "deleted_leak_count",
     "critical_safety_failures",
 )
-_AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS = {
-    "scenario_count": 41,
-    "live_session_case_count": 11,
-    "transcript_corpus_case_count": 5,
-    "adversarial_case_count": 9,
-}
-_AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS = {
-    "live_session_case_count": "live_session",
-    "transcript_corpus_case_count": "transcript_corpus",
-    "adversarial_case_count": "adversarial",
-}
 _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
     LOCOMO_BENCHMARK_SUITE: frozenset(("locomo", "lo_co_mo", "long-context-memory")),
     LONGMEMEVAL_BENCHMARK_SUITE: frozenset(
@@ -434,20 +429,20 @@ def memory_quality_scorecard_policy_snapshot(
         "agent_behavior": {
             "accepted_scenario_sets": list(_AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS),
             "top_evidence_required_scenario_set": (
-                _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
             ),
             "top_evidence_required_case_count_floors": dict(
-                _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS
+                AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS
             ),
             "top_evidence_required_scenario_tag_metrics": dict(
-                _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS
             ),
-            "top_evidence_required_scenario_integrity_checks": [
-                "scenario_reports_well_formed",
-                "scenario_report_ids_present",
-                "scenario_report_ids_unique",
-                "scenario_reports_all_passed",
-            ],
+            "top_evidence_required_scenario_integrity_checks": list(
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_INTEGRITY_CHECKS
+            ),
+            "top_evidence_required_canonical_scenario_count": len(
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS
+            ),
             "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
             "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
         },
@@ -1117,9 +1112,9 @@ def _scorecard_agent_behavior_required_checks(
         checks[f"{metric}_zero"] = value == 0
     if require_top_evidence:
         checks["scenario_set_all_for_top_evidence"] = (
-            result.get("scenario_set") == _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
+            result.get("scenario_set") == AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
         )
-        for metric, floor in _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS.items():
+        for metric, floor in AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS.items():
             value = _scorecard_int(metrics.get(metric))
             checks[f"{metric}_min_{floor}"] = value is not None and value >= floor
         scenario_evidence = _scorecard_agent_behavior_scenario_evidence(result)
@@ -1138,9 +1133,12 @@ def _scorecard_agent_behavior_required_checks(
         checks["scenario_reports_all_passed"] = (
             scenario_evidence.get("non_passed_count") == 0
         )
+        checks["canonical_scenario_ids_present"] = (
+            scenario_evidence.get("missing_canonical_id_count") == 0
+        )
         checks["scenario_report_count_min_41"] = (
             scenario_count is not None
-            and scenario_count >= _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS[
+            and scenario_count >= AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS[
                 "scenario_count"
             ]
         )
@@ -1151,7 +1149,7 @@ def _scorecard_agent_behavior_required_checks(
         )
         tag_counts = scenario_evidence.get("tag_counts")
         tag_counts_map = tag_counts if isinstance(tag_counts, Mapping) else {}
-        for metric, tag in _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.items():
+        for metric, tag in AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.items():
             tag_count = _scorecard_int(tag_counts_map.get(tag))
             metric_count = _scorecard_int(metrics.get(metric))
             checks[f"{tag}_scenario_report_count_matches_metric"] = (
@@ -1175,9 +1173,11 @@ def _scorecard_agent_behavior_scenario_evidence(
             "missing_id_count": None,
             "duplicate_id_count": None,
             "non_passed_count": None,
+            "missing_canonical_id_count": None,
+            "missing_canonical_ids": [],
         }
     tag_counts = {
-        tag: 0 for tag in _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.values()
+        tag: 0 for tag in AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.values()
     }
     seen_ids: set[str] = set()
     invalid_entry_count = 0
@@ -1204,6 +1204,9 @@ def _scorecard_agent_behavior_scenario_evidence(
         for tag in tag_counts:
             if tag in tag_set:
                 tag_counts[tag] += 1
+    missing_canonical_ids = sorted(
+        set(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS) - seen_ids
+    )
     return {
         "present": True,
         "scenario_count": len(scenarios),
@@ -1212,6 +1215,8 @@ def _scorecard_agent_behavior_scenario_evidence(
         "missing_id_count": missing_id_count,
         "duplicate_id_count": duplicate_id_count,
         "non_passed_count": non_passed_count,
+        "missing_canonical_id_count": len(missing_canonical_ids),
+        "missing_canonical_ids": missing_canonical_ids,
     }
 
 

@@ -33,6 +33,9 @@ from memo_stack_mcp.agent_behavior_bench import (
     run_tool_loop,
     scenarios_for_set,
 )
+from memo_stack_mcp.agent_behavior_contract import (
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
+)
 
 
 class FakeLlmClient:
@@ -228,6 +231,9 @@ def test_scenario_sets_include_realistic_adversarial_cases() -> None:
     assert len(live) >= 6
     assert len(transcript) >= 5
     assert len(combined) == len(core) + len(realistic) + len(live) + len(transcript)
+    assert tuple(scenario.id for scenario in combined) == (
+        AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS
+    )
     assert sum("live_session" in scenario.tags for scenario in combined) == 11
     assert sum("transcript_corpus" in scenario.tags for scenario in combined) == 5
     assert sum("adversarial" in scenario.tags for scenario in combined) == 9

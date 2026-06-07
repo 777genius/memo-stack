@@ -263,7 +263,8 @@ realistic, live-session and transcript-corpus scenarios in one publishable run.
 The strict scorecard rejects under-sized agent reports below 41 total cases, 11
 live-session cases, 5 transcript-corpus cases and 9 adversarial cases, and it
 requires the scenario list tag counts to match the published metrics. Scenario
-entries must be well-formed, have unique ids and have `passed` status.
+entries must be well-formed, have unique ids, have `passed` status and include
+every built-in canonical scenario id.
 `memo-stack-prod-confidence-full` is an alias for the same gate.
 
 The historical clean full smoke target also runs MCP checks by default. Use

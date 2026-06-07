@@ -18,6 +18,9 @@ from memo_stack_core.ports.capabilities import (
     ProjectionForgetResult,
     ProjectionWriteResult,
 )
+from memo_stack_mcp.agent_behavior_contract import (
+    AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
+)
 from memo_stack_server.admin import (
     ACTIVE_CONTEXT_MANUAL_CHECK_NAMES,
     invariant_check,
@@ -332,7 +335,9 @@ def _agent_behavior_scenario_report(
     tags: tuple[str, ...],
 ) -> dict[str, Any]:
     return {
-        "id": f"agent-scenario-{index}",
+        "id": AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS[index]
+        if index < len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS)
+        else f"external-agent-scenario-{index}",
         "category": "answer",
         "tags": list(tags),
         "critical": True,
@@ -1472,6 +1477,7 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "scenario_report_ids_present",
         "scenario_report_ids_unique",
         "scenario_reports_all_passed",
+        "canonical_scenario_ids_present",
     ]
     assert policy["agent_behavior"]["rate_floors"]["adversarial_pass_rate"] == 0.9
     assert "unsafe_write_count" in policy["agent_behavior"]["zero_count_metrics"]
@@ -1531,6 +1537,8 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
         "missing_id_count": 0,
         "duplicate_id_count": 0,
         "non_passed_count": 0,
+        "missing_canonical_id_count": 0,
+        "missing_canonical_ids": [],
     }
     assert evidence["public_benchmark"]["present"] is False
 
@@ -1739,6 +1747,7 @@ def test_memory_quality_scorecard_requires_nonzero_agent_case_counts_for_top_evi
     assert result["ok"] is False
     assert evidence["agent_behavior_benchmark"]["failed_required_checks"] == [
         "adversarial_case_count_min_9",
+        "canonical_scenario_ids_present",
         "live_session_case_count_min_11",
         "scenario_count_min_41",
         "scenario_report_count_min_41",
@@ -1770,13 +1779,39 @@ def test_memory_quality_scorecard_requires_agent_scenario_reports_for_top_eviden
         "missing_id_count": 0,
         "duplicate_id_count": 0,
         "non_passed_count": 0,
+        "missing_canonical_id_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
+        "missing_canonical_ids": sorted(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
     }
     assert evidence["agent_behavior_benchmark"]["failed_required_checks"] == [
         "adversarial_scenario_report_count_matches_metric",
+        "canonical_scenario_ids_present",
         "live_session_scenario_report_count_matches_metric",
         "scenario_report_count_matches_metric",
         "scenario_report_count_min_41",
         "transcript_corpus_scenario_report_count_matches_metric",
+    ]
+
+
+def test_memory_quality_scorecard_requires_canonical_agent_scenario_ids() -> None:
+    suite_results = _scorecard_fixture_results()
+    agent_behavior = _agent_behavior_benchmark_report()
+    scenarios = []
+    for index, scenario in enumerate(agent_behavior["scenarios"]):
+        scenarios.append({**scenario, "id": f"synthetic-agent-scenario-{index}"})
+    agent_behavior["scenarios"] = scenarios
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = agent_behavior
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["agent_behavior_benchmark"]["scenario_evidence"][
+        "missing_canonical_id_count"
+    ] == len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS)
+    assert evidence["agent_behavior_benchmark"]["failed_required_checks"] == [
+        "canonical_scenario_ids_present"
     ]
 
 
@@ -1809,8 +1844,17 @@ def test_memory_quality_scorecard_rejects_malformed_agent_scenario_reports() -> 
         "missing_id_count": 1,
         "duplicate_id_count": 1,
         "non_passed_count": 1,
+        "missing_canonical_id_count": 3,
+        "missing_canonical_ids": sorted(
+            (
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS[1],
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS[2],
+                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS[-1],
+            )
+        ),
     }
     assert evidence["agent_behavior_benchmark"]["failed_required_checks"] == [
+        "canonical_scenario_ids_present",
         "scenario_report_ids_present",
         "scenario_report_ids_unique",
         "scenario_reports_all_passed",
