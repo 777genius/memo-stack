@@ -165,6 +165,57 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.equal(conflictFiles(vaultPath).length, 0);
   });
 
+  it("keeps backend facts out of the vault when the plugin token is invalid", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO invalid token hidden fact.",
+      sourceId: "wdio-invalid-token-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl, true, {
+      tokenOverride: "wrong-wdio-token",
+    });
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(factFiles(vaultPath).length, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    assert.equal(
+      (await getFact(baseUrl, fact.id)).text,
+      "Obsidian WDIO invalid token hidden fact.",
+    );
+  });
+
+  it("keeps local managed edits intact when the backend is unavailable", async function () {
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO backend outage initial fact.",
+      sourceId: "wdio-backend-outage-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    replaceManagedText(exportedFact, "Obsidian WDIO backend outage local draft survives.");
+
+    server?.kill("SIGTERM");
+    server = undefined;
+    await waitForUnhealthy(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.match(
+      fs.readFileSync(exportedFact, "utf8"),
+      /backend outage local draft survives/,
+    );
+    assert.equal(conflictFiles(vaultPath).length, 0);
+  });
+
   it("imports legacy inbox notes once under the v2 layout", async function () {
     await createFact(baseUrl, {
       text: "Obsidian WDIO legacy inbox scope seed.",
@@ -350,13 +401,17 @@ describe("Memo Stack full Obsidian E2E", function () {
   });
 });
 
-async function resetVaultAndConfigure(apiUrl: string, applyImportOnSync = true): Promise<string> {
+async function resetVaultAndConfigure(
+  apiUrl: string,
+  applyImportOnSync = true,
+  options: { tokenOverride?: string } = {},
+): Promise<string> {
   const obsidianPage = await browser.getObsidianPage();
   await obsidianPage.resetVault({
     "Welcome.md": "# Welcome\n\nFull E2E vault.\n",
   });
   const vaultPath = obsidianPage.getVaultPath();
-  await configurePlugin(vaultPath, apiUrl, applyImportOnSync);
+  await configurePlugin(vaultPath, apiUrl, applyImportOnSync, options);
   return vaultPath;
 }
 
@@ -372,6 +427,7 @@ async function configurePlugin(
   vaultPath: string,
   apiUrl: string,
   applyImportOnSync = true,
+  options: { tokenOverride?: string } = {},
 ): Promise<void> {
   await browser.executeObsidian(
     async ({ plugins }, settings) => {
@@ -381,7 +437,7 @@ async function configurePlugin(
     },
     {
       apiUrl,
-      token,
+      token: options.tokenOverride ?? token,
       cliPath: realCliPath,
       vaultPathOverride: vaultPath,
       spaceSlug,
@@ -449,6 +505,17 @@ async function waitForHealth(apiUrl: string): Promise<void> {
       return false;
     }
   }, "Memo Stack server did not become healthy");
+}
+
+async function waitForUnhealthy(apiUrl: string): Promise<void> {
+  await waitUntil(async () => {
+    try {
+      const response = await requestJson("GET", `${apiUrl}/v1/health`);
+      return response.status !== 200;
+    } catch (_error) {
+      return true;
+    }
+  }, "Memo Stack server stayed healthy");
 }
 
 async function createFact(
