@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
-from datetime import UTC, datetime
 from typing import Any
 
 from memo_stack_mcp.application.normalization import (
@@ -24,6 +20,39 @@ from memo_stack_mcp.application.policy import MemoryPolicyService
 from memo_stack_mcp.application.ports import MemoryGatewayPort
 from memo_stack_mcp.application.readiness import build_readiness, safe_gateway_error
 from memo_stack_mcp.application.review_batch import normalize_review_batch_items
+from memo_stack_mcp.application.service_constants import (
+    CAPTURE_CONSOLIDATION_STATUSES,
+    CAPTURE_STATUSES,
+    CLASSIFICATIONS,
+    CONFIDENCE_VALUES,
+    FACT_RELATION_STATUSES,
+    FACT_RELATION_TYPES,
+    FACT_STATUSES,
+    MEMORY_KINDS,
+    PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+    SOURCE_TYPES,
+    SUGGESTION_OPERATIONS,
+    SUGGESTION_STATUSES,
+    TRUST_VALUES,
+    UNCERTAIN_EVIDENCE_MARKERS,
+)
+from memo_stack_mcp.application.service_helpers import (
+    bounded_resource_value,
+    candidate_fingerprint,
+    clamp_int,
+    ensure_bool,
+    ensure_choice,
+    generated_at,
+    looks_conflicting_fact,
+    meaningful_terms,
+    normalize_candidate,
+    payload_items,
+    resource_json,
+    stable_key,
+)
+from memo_stack_mcp.application.service_helpers import (
+    candidate_result as build_candidate_result,
+)
 from memo_stack_mcp.application.suggest_batch import normalize_suggest_batch_items
 from memo_stack_mcp.application.usage_guide import MEMORY_USAGE_GUIDE
 from memo_stack_mcp.config import MemoryMcpSettings
@@ -51,77 +80,6 @@ from memo_stack_mcp.domain.policy import (
     MemoryPolicyOperation,
     MemoryPolicyResult,
 )
-
-_MEMORY_KINDS = {"note", "architecture_decision", "constraint", "user_preference"}
-_CLASSIFICATIONS = {"public", "internal", "restricted", "unknown"}
-_FACT_STATUSES = {"active", "superseded", "disputed", "deleted"}
-_FACT_RELATION_TYPES = {
-    "supports",
-    "supersedes",
-    "contradicts",
-    "duplicates",
-    "references",
-    "depends_on",
-    "related_to",
-}
-_FACT_RELATION_STATUSES = {"active", "deleted"}
-_SUGGESTION_STATUSES = {"pending", "approved", "rejected", "expired"}
-_SUGGESTION_OPERATIONS = {"add", "update", "delete", "review"}
-_CAPTURE_STATUSES = {"accepted", "rejected", "redacted", "purged"}
-_CAPTURE_CONSOLIDATION_STATUSES = {
-    "not_required",
-    "pending",
-    "running",
-    "consolidated",
-    "retry_pending",
-    "dead",
-    "skipped",
-}
-_CONFIDENCE_VALUES = {"low", "medium", "high"}
-_TRUST_VALUES = {"low", "medium", "high"}
-_PROFILE_SNAPSHOT_MERGE_STRATEGIES = {
-    "fail_on_conflict",
-    "skip_existing",
-    "create_new_profile",
-    "supersede_matching_facts",
-}
-_UNCERTAIN_EVIDENCE_MARKERS = (
-    "could be",
-    "guess",
-    "guessed",
-    "i am not sure",
-    "i heard",
-    "i might",
-    "if true",
-    "low confidence",
-    "maybe",
-    "might",
-    "not confirmed",
-    "not sure",
-    "possibly",
-    "probably",
-    "review needed",
-    "rumor",
-    "rumour",
-    "unconfirmed",
-    "uncertain",
-)
-_SOURCE_TYPES = {
-    "manual",
-    "document",
-    "system_audio",
-    "microphone",
-    "manual_prompt",
-    "focus_copy",
-    "browser_selection",
-    "ai_response",
-    "assistant_answer",
-    "assistant_summary",
-    "tool_result",
-    "retrieved_memory",
-    "codex_thread",
-    "unknown",
-}
 
 
 class MemoryToolService:
@@ -199,19 +157,19 @@ class MemoryToolService:
                     message="Search query contains a credential-like value",
                     retryable=False,
                 )
-            effective_token_budget, token_warnings = self._clamp_int(
+            effective_token_budget, token_warnings = clamp_int(
                 name="token_budget",
                 value=token_budget,
                 minimum=self._settings.min_token_budget,
                 maximum=self._settings.max_token_budget,
             )
-            effective_max_facts, facts_warnings = self._clamp_int(
+            effective_max_facts, facts_warnings = clamp_int(
                 name="max_facts",
                 value=max_facts,
                 minimum=0,
                 maximum=self._settings.max_search_items,
             )
-            effective_max_chunks, chunks_warnings = self._clamp_int(
+            effective_max_chunks, chunks_warnings = clamp_int(
                 name="max_chunks",
                 value=max_chunks,
                 minimum=0,
@@ -310,25 +268,25 @@ class MemoryToolService:
                     message="Digest topic contains a credential-like value",
                     retryable=False,
                 )
-            effective_token_budget, token_warnings = self._clamp_int(
+            effective_token_budget, token_warnings = clamp_int(
                 name="token_budget",
                 value=token_budget,
                 minimum=self._settings.min_token_budget,
                 maximum=self._settings.max_token_budget,
             )
-            effective_max_facts, facts_warnings = self._clamp_int(
+            effective_max_facts, facts_warnings = clamp_int(
                 name="max_facts",
                 value=max_facts,
                 minimum=0,
                 maximum=self._settings.max_search_items,
             )
-            effective_max_chunks, chunks_warnings = self._clamp_int(
+            effective_max_chunks, chunks_warnings = clamp_int(
                 name="max_chunks",
                 value=max_chunks,
                 minimum=0,
                 maximum=self._settings.max_search_items,
             )
-            effective_max_suggestions, suggestions_warnings = self._clamp_int(
+            effective_max_suggestions, suggestions_warnings = clamp_int(
                 name="max_suggestions",
                 value=max_suggestions,
                 minimum=0,
@@ -397,25 +355,25 @@ class MemoryToolService:
         max_captures: int = 100,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            effective_max_facts, fact_warnings = self._clamp_int(
+            effective_max_facts, fact_warnings = clamp_int(
                 name="max_facts",
                 value=max_facts,
                 minimum=0,
                 maximum=1000,
             )
-            effective_max_documents, document_warnings = self._clamp_int(
+            effective_max_documents, document_warnings = clamp_int(
                 name="max_documents",
                 value=max_documents,
                 minimum=0,
                 maximum=500,
             )
-            effective_max_suggestions, suggestion_warnings = self._clamp_int(
+            effective_max_suggestions, suggestion_warnings = clamp_int(
                 name="max_suggestions",
                 value=max_suggestions,
                 minimum=0,
                 maximum=500,
             )
-            effective_max_captures, capture_warnings = self._clamp_int(
+            effective_max_captures, capture_warnings = clamp_int(
                 name="max_captures",
                 value=max_captures,
                 minimum=0,
@@ -488,8 +446,8 @@ class MemoryToolService:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_choice("kind", kind, _MEMORY_KINDS)
-            self._ensure_choice("classification", classification, _CLASSIFICATIONS)
+            ensure_choice("kind", kind, MEMORY_KINDS)
+            ensure_choice("classification", classification, CLASSIFICATIONS)
             safe_tags = _normalize_tool_tags(tags or ())
             scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
             source = self._source_ref(
@@ -557,7 +515,7 @@ class MemoryToolService:
                     side_effects=["created_suggestion"],
                     warnings=[*policy.warnings, "memo_stack_mcp.conflict.requires_review"],
                 )
-            safe_key = idempotency_key or self._stable_key("mcp-remember", scope, kind, text)
+            safe_key = idempotency_key or stable_key("mcp-remember", scope, kind, text)
             payload = await self._gateway.remember_fact(
                 scope=scope,
                 text=text,
@@ -593,7 +551,7 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             if status is not None:
-                self._ensure_choice("status", status, _FACT_STATUSES)
+                ensure_choice("status", status, FACT_STATUSES)
             payload = await self._gateway.list_facts(
                 scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
                 status=status,
@@ -621,7 +579,7 @@ class MemoryToolService:
         include_other_threads: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            effective_limit, warnings = self._clamp_int(
+            effective_limit, warnings = clamp_int(
                 name="limit",
                 value=limit,
                 minimum=1,
@@ -652,7 +610,7 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             self._ensure_writes_allowed()
-            self._ensure_choice("relation_type", relation_type, _FACT_RELATION_TYPES)
+            ensure_choice("relation_type", relation_type, FACT_RELATION_TYPES)
             if not reason.strip():
                 raise MemoryGatewayError(
                     status_code=400,
@@ -690,8 +648,8 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             if status is not None:
-                self._ensure_choice("status", status, _FACT_RELATION_STATUSES)
-            effective_limit, warnings = self._clamp_int(
+                ensure_choice("status", status, FACT_RELATION_STATUSES)
+            effective_limit, warnings = clamp_int(
                 name="limit",
                 value=limit,
                 minimum=1,
@@ -810,9 +768,9 @@ class MemoryToolService:
         safe_reason: str = "mcp_agent_suggestion_requires_review",
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_choice("kind", kind, _MEMORY_KINDS)
-            self._ensure_choice("confidence", confidence, _CONFIDENCE_VALUES)
-            self._ensure_choice("trust_level", trust_level, _TRUST_VALUES)
+            ensure_choice("kind", kind, MEMORY_KINDS)
+            ensure_choice("confidence", confidence, CONFIDENCE_VALUES)
+            ensure_choice("trust_level", trust_level, TRUST_VALUES)
             scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
             source = self._source_ref(
                 source_type=source_type,
@@ -857,7 +815,7 @@ class MemoryToolService:
         continue_on_error: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_bool("continue_on_error", continue_on_error)
+            ensure_bool("continue_on_error", continue_on_error)
             scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
             payload_items, policy_text = normalize_suggest_batch_items(
                 items=items,
@@ -911,8 +869,8 @@ class MemoryToolService:
         user_confirmed: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_bool("dry_run", dry_run)
-            self._ensure_bool("user_confirmed", user_confirmed)
+            ensure_bool("dry_run", dry_run)
+            ensure_bool("user_confirmed", user_confirmed)
             if not candidates:
                 raise MemoryGatewayError(
                     status_code=400,
@@ -961,7 +919,7 @@ class MemoryToolService:
                     target_key = f"{operation.value}:{candidate.target_fact_id}"
                     if target_key in touched_targets:
                         result["conflicts"].append(
-                            self._candidate_result(
+                            build_candidate_result(
                                 index,
                                 "conflict",
                                 "memo_stack_mcp.conflict.same_target_in_batch",
@@ -971,14 +929,14 @@ class MemoryToolService:
                         )
                         continue
                     touched_targets.add(target_key)
-                candidate_key = self._candidate_fingerprint(
+                candidate_key = candidate_fingerprint(
                     scope=scope,
                     candidate=candidate,
                     source_id=source_id,
                 )
                 if candidate_key in seen:
                     result["duplicates"].append(
-                        self._candidate_result(
+                        build_candidate_result(
                             index,
                             "duplicate",
                             "memo_stack_mcp.duplicate.same_batch",
@@ -1006,7 +964,7 @@ class MemoryToolService:
                         else "unsafe_rejected"
                     )
                     result[bucket].append(
-                        self._candidate_result(
+                        build_candidate_result(
                             index,
                             "conflict" if bucket == "conflicts" else "unsafe_rejected",
                             decision_code,
@@ -1046,9 +1004,9 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             if status is not None:
-                self._ensure_choice("status", status, _SUGGESTION_STATUSES)
+                ensure_choice("status", status, SUGGESTION_STATUSES)
             if operation is not None:
-                self._ensure_choice("operation", operation, _SUGGESTION_OPERATIONS)
+                ensure_choice("operation", operation, SUGGESTION_OPERATIONS)
             payload = await self._gateway.list_suggestions(
                 scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
                 status=status,
@@ -1069,7 +1027,7 @@ class MemoryToolService:
         force: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_bool("force", force)
+            ensure_bool("force", force)
             policy = self._decide_policy(
                 operation=MemoryPolicyOperation.REVIEW,
                 text=suggestion_id,
@@ -1151,7 +1109,7 @@ class MemoryToolService:
         force: bool = False,
     ) -> dict[str, Any]:
         async def run() -> dict[str, Any]:
-            self._ensure_bool("force", force)
+            ensure_bool("force", force)
             if action not in {"approve", "reject", "expire"}:
                 raise MemoryGatewayError(
                     status_code=400,
@@ -1203,7 +1161,7 @@ class MemoryToolService:
         continue_on_error: bool = False,
     ) -> dict[str, Any]:
         async def run() -> dict[str, Any]:
-            self._ensure_bool("continue_on_error", continue_on_error)
+            ensure_bool("continue_on_error", continue_on_error)
             normalized = normalize_review_batch_items(items)
             policy = self._decide_policy(
                 operation=MemoryPolicyOperation.REVIEW,
@@ -1241,14 +1199,14 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             if status is not None:
-                self._ensure_choice("status", status, _CAPTURE_STATUSES)
+                ensure_choice("status", status, CAPTURE_STATUSES)
             if consolidation_status is not None:
-                self._ensure_choice(
+                ensure_choice(
                     "consolidation_status",
                     consolidation_status,
-                    _CAPTURE_CONSOLIDATION_STATUSES,
+                    CAPTURE_CONSOLIDATION_STATUSES,
                 )
-            effective_limit, warnings = self._clamp_int(
+            effective_limit, warnings = clamp_int(
                 name="limit",
                 value=limit,
                 minimum=1,
@@ -1275,7 +1233,7 @@ class MemoryToolService:
         force: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_bool("force", force)
+            ensure_bool("force", force)
             policy = self._decide_policy(
                 operation=MemoryPolicyOperation.REVIEW,
                 text=capture_id,
@@ -1312,21 +1270,21 @@ class MemoryToolService:
         max_chunks: int = 500,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_bool("include_deleted", include_deleted)
-            self._ensure_bool("include_restricted", include_restricted)
-            bounded_facts, fact_warnings = self._clamp_int(
+            ensure_bool("include_deleted", include_deleted)
+            ensure_bool("include_restricted", include_restricted)
+            bounded_facts, fact_warnings = clamp_int(
                 name="max_facts",
                 value=max_facts,
                 minimum=0,
                 maximum=1_000,
             )
-            bounded_documents, document_warnings = self._clamp_int(
+            bounded_documents, document_warnings = clamp_int(
                 name="max_documents",
                 value=max_documents,
                 minimum=0,
                 maximum=500,
             )
-            bounded_chunks, chunk_warnings = self._clamp_int(
+            bounded_chunks, chunk_warnings = clamp_int(
                 name="max_chunks",
                 value=max_chunks,
                 minimum=0,
@@ -1359,7 +1317,7 @@ class MemoryToolService:
         redacted: bool = True,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_bool("redacted", redacted)
+            ensure_bool("redacted", redacted)
             scope = self._scope(space_slug, profile_external_ref, None)
             payload = await self._gateway.export_profile_snapshot(
                 scope=scope,
@@ -1410,12 +1368,12 @@ class MemoryToolService:
                     message="manifest must be a JSON object when provided",
                     retryable=False,
                 )
-            self._ensure_bool("dry_run", dry_run)
-            self._ensure_bool("confirmed", confirmed)
-            self._ensure_choice(
+            ensure_bool("dry_run", dry_run)
+            ensure_bool("confirmed", confirmed)
+            ensure_choice(
                 "merge_strategy",
                 merge_strategy,
-                _PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+                PROFILE_SNAPSHOT_MERGE_STRATEGIES,
             )
             normalized_source_name = (source_name.strip() or "mcp-profile-snapshot")[:160]
             scope = self._scope(space_slug, profile_external_ref, None)
@@ -1481,10 +1439,10 @@ class MemoryToolService:
                     message="manifest must be a JSON object when provided",
                     retryable=False,
                 )
-            self._ensure_choice(
+            ensure_choice(
                 "merge_strategy",
                 merge_strategy,
-                _PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+                PROFILE_SNAPSHOT_MERGE_STRATEGIES,
             )
             scope = self._scope(space_slug, profile_external_ref, None)
             payload = await self._gateway.preview_profile_snapshot_import(
@@ -1516,7 +1474,7 @@ class MemoryToolService:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
-            self._ensure_choice("classification", classification, _CLASSIFICATIONS)
+            ensure_choice("classification", classification, CLASSIFICATIONS)
             scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
             policy = self._decide_policy(
                 operation=MemoryPolicyOperation.INGEST_DOCUMENT,
@@ -1524,10 +1482,10 @@ class MemoryToolService:
                 source_type=source_type,
                 text_length=len(text),
             )
-            safe_source_id = source_external_id or self._stable_key(
+            safe_source_id = source_external_id or stable_key(
                 "mcp-doc-source", scope, title, text
             )
-            safe_key = idempotency_key or self._stable_key("mcp-doc", scope, safe_source_id, text)
+            safe_key = idempotency_key or stable_key("mcp-doc", scope, safe_source_id, text)
             payload = await self._gateway.ingest_document(
                 scope=scope,
                 title=title,
@@ -1548,7 +1506,7 @@ class MemoryToolService:
         return await self._guard(action)
 
     async def resource_status(self) -> str:
-        return self._resource_json(await self.status())
+        return resource_json(await self.status())
 
     async def resource_scope_summary(self, *, space_slug: str, profile_external_ref: str) -> str:
         scope = self._resource_scope(space_slug, profile_external_ref)
@@ -1561,14 +1519,18 @@ class MemoryToolService:
             tag=None,
             limit=10,
         )
-        active_facts, facts_truncated = self._bounded_resource_value(self._payload_items(facts))
-        pending_suggestions, suggestions_truncated = self._bounded_resource_value(
-            self._payload_items(suggestions)
+        active_facts, facts_truncated = bounded_resource_value(
+            payload_items(facts),
+            max_string_chars=self._settings.max_tool_text_chars,
         )
-        return self._resource_json(
+        pending_suggestions, suggestions_truncated = bounded_resource_value(
+            payload_items(suggestions),
+            max_string_chars=self._settings.max_tool_text_chars,
+        )
+        return resource_json(
             {
                 "resource_type": "scope_summary",
-                "generated_at": self._generated_at(),
+                "generated_at": generated_at(),
                 "scope": asdict(scope),
                 "active_facts_preview": active_facts,
                 "pending_suggestions_preview": pending_suggestions,
@@ -1585,11 +1547,14 @@ class MemoryToolService:
             limit=50,
             cursor=None,
         )
-        facts, truncated = self._bounded_resource_value(self._payload_items(payload))
-        return self._resource_json(
+        facts, truncated = bounded_resource_value(
+            payload_items(payload),
+            max_string_chars=self._settings.max_tool_text_chars,
+        )
+        return resource_json(
             {
                 "resource_type": "scope_facts",
-                "generated_at": self._generated_at(),
+                "generated_at": generated_at(),
                 "scope": asdict(scope),
                 "facts": facts,
                 "truncated": truncated,
@@ -1612,11 +1577,14 @@ class MemoryToolService:
             tag=None,
             limit=50,
         )
-        suggestions, truncated = self._bounded_resource_value(self._payload_items(payload))
-        return self._resource_json(
+        suggestions, truncated = bounded_resource_value(
+            payload_items(payload),
+            max_string_chars=self._settings.max_tool_text_chars,
+        )
+        return resource_json(
             {
                 "resource_type": "scope_suggestions",
-                "generated_at": self._generated_at(),
+                "generated_at": generated_at(),
                 "scope": asdict(scope),
                 "suggestions": suggestions,
                 "truncated": truncated,
@@ -1627,11 +1595,14 @@ class MemoryToolService:
     async def resource_fact(self, *, fact_id: str) -> str:
         safe_fact_id = self._resource_arg("fact_id", fact_id)
         payload = await self._gateway.get_fact(fact_id=safe_fact_id)
-        fact, truncated = self._bounded_resource_value(payload.get("data", payload))
-        return self._resource_json(
+        fact, truncated = bounded_resource_value(
+            payload.get("data", payload),
+            max_string_chars=self._settings.max_tool_text_chars,
+        )
+        return resource_json(
             {
                 "resource_type": "fact",
-                "generated_at": self._generated_at(),
+                "generated_at": generated_at(),
                 "fact": fact,
                 "truncated": truncated,
                 "evidence_only": True,
@@ -1641,11 +1612,14 @@ class MemoryToolService:
     async def resource_fact_versions(self, *, fact_id: str) -> str:
         safe_fact_id = self._resource_arg("fact_id", fact_id)
         payload = await self._gateway.list_fact_versions(fact_id=safe_fact_id)
-        versions, truncated = self._bounded_resource_value(payload.get("data", payload))
-        return self._resource_json(
+        versions, truncated = bounded_resource_value(
+            payload.get("data", payload),
+            max_string_chars=self._settings.max_tool_text_chars,
+        )
+        return resource_json(
             {
                 "resource_type": "fact_versions",
-                "generated_at": self._generated_at(),
+                "generated_at": generated_at(),
                 "versions": versions,
                 "truncated": truncated,
                 "evidence_only": True,
@@ -1706,7 +1680,7 @@ class MemoryToolService:
         )
         if dry_run:
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "needs_review",
                     "memo_stack_mcp.policy.dry_run",
@@ -1717,7 +1691,7 @@ class MemoryToolService:
             }
         if self._evidence_mismatch(candidate, source, user_confirmed):
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "needs_review",
                     "memo_stack_mcp.policy.evidence_mismatch",
@@ -1757,7 +1731,7 @@ class MemoryToolService:
             duplicate_kind, duplicate_id = duplicate
             if duplicate_kind == "conflict":
                 return {
-                    **self._candidate_result(
+                    **build_candidate_result(
                         candidate_index,
                         "conflict",
                         "memo_stack_mcp.conflict.requires_review",
@@ -1767,7 +1741,7 @@ class MemoryToolService:
                     "_bucket": "conflicts",
                 }
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "duplicate",
                     "memo_stack_mcp.duplicate.existing_memory",
@@ -1787,7 +1761,7 @@ class MemoryToolService:
                 safe_reason="memo_stack_mcp.policy.uncertain_claim",
             )
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "accepted_suggestion",
                     "memo_stack_mcp.policy.uncertain_claim",
@@ -1811,7 +1785,7 @@ class MemoryToolService:
                 safe_reason="memo_stack_mcp.policy.evidence_required",
             )
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "accepted_suggestion",
                     "memo_stack_mcp.policy.evidence_required",
@@ -1828,10 +1802,10 @@ class MemoryToolService:
                 kind=candidate.kind,
                 source_refs=[source],
                 classification="internal",
-                idempotency_key=self._stable_key("mcp-proposal-remember", scope, candidate.text),
+                idempotency_key=stable_key("mcp-proposal-remember", scope, candidate.text),
             )
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "direct_write",
                     policy.code,
@@ -1851,7 +1825,7 @@ class MemoryToolService:
             safe_reason=policy.code,
         )
         return {
-            **self._candidate_result(
+            **build_candidate_result(
                 candidate_index,
                 "accepted_suggestion",
                 policy.code,
@@ -1877,7 +1851,7 @@ class MemoryToolService:
         )
         if not self._has_direct_write_evidence(source=source, user_confirmed=user_confirmed):
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "needs_review",
                     "memo_stack_mcp.policy.evidence_required",
@@ -1888,7 +1862,7 @@ class MemoryToolService:
             }
         if self._needs_review_for_uncertainty(candidate, source):
             return {
-                **self._candidate_result(
+                **build_candidate_result(
                     candidate_index,
                     "needs_review",
                     "memo_stack_mcp.policy.uncertain_claim",
@@ -1905,7 +1879,7 @@ class MemoryToolService:
             source_refs=[source],
         )
         return {
-            **self._candidate_result(
+            **build_candidate_result(
                 candidate_index,
                 "direct_update",
                 policy.code,
@@ -1928,7 +1902,7 @@ class MemoryToolService:
         )
         payload = await self._gateway.forget_fact(fact_id=str(candidate.target_fact_id))
         return {
-            **self._candidate_result(
+            **build_candidate_result(
                 candidate_index,
                 "direct_forget",
                 policy.code,
@@ -1949,7 +1923,7 @@ class MemoryToolService:
     ) -> bool:
         if candidate.confidence == "low":
             return True
-        text = self._normalize_candidate(
+        text = normalize_candidate(
             " ".join(
                 item
                 for item in (
@@ -1962,7 +1936,7 @@ class MemoryToolService:
                 if item
             )
         )
-        return any(marker in text for marker in _UNCERTAIN_EVIDENCE_MARKERS)
+        return any(marker in text for marker in UNCERTAIN_EVIDENCE_MARKERS)
 
     def _evidence_mismatch(
         self,
@@ -1978,53 +1952,30 @@ class MemoryToolService:
             MemoryCandidateOperation.UNKNOWN,
         }:
             return False
-        candidate_text = self._normalize_candidate(candidate.text)
-        evidence_text = self._normalize_candidate(source.quote_preview)
+        candidate_text = normalize_candidate(candidate.text)
+        evidence_text = normalize_candidate(source.quote_preview)
         if not candidate_text or not evidence_text:
             return False
         if candidate_text in evidence_text or evidence_text in candidate_text:
             return False
-        candidate_terms = self._meaningful_terms(candidate_text)
-        evidence_terms = self._meaningful_terms(evidence_text)
+        candidate_terms = meaningful_terms(candidate_text)
+        evidence_terms = meaningful_terms(evidence_text)
         if not candidate_terms:
             return False
         overlap = candidate_terms & evidence_terms
         required = max(1, min(3, len(candidate_terms) // 2))
         return len(overlap) < required
 
-    @staticmethod
-    def _meaningful_terms(text: str) -> set[str]:
-        stop_words = {
-            "the",
-            "and",
-            "for",
-            "with",
-            "that",
-            "this",
-            "use",
-            "uses",
-            "user",
-            "decided",
-            "should",
-            "memory",
-        }
-        return {
-            token.strip(".,:;!?()[]{}\"'")
-            for token in text.split()
-            if len(token.strip(".,:;!?()[]{}\"'")) >= 4
-            and token.strip(".,:;!?()[]{}\"'") not in stop_words
-        }
-
     async def _find_duplicate(self, scope: MemoryScope, text: str) -> tuple[str, str] | None:
-        normalized = self._normalize_candidate(text)
+        normalized = normalize_candidate(text)
         facts = await self._gateway.list_facts(scope=scope, status="active", limit=50, cursor=None)
         possible_conflict: str | None = None
-        for item in self._payload_items(facts):
+        for item in payload_items(facts):
             item_text = str(item.get("text", ""))
             item_id = str(item.get("id") or item.get("fact_id") or "")
-            if self._normalize_candidate(item_text) == normalized:
+            if normalize_candidate(item_text) == normalized:
                 return ("duplicate", item_id)
-            if possible_conflict is None and self._looks_conflicting_fact(text, item_text):
+            if possible_conflict is None and looks_conflicting_fact(text, item_text):
                 possible_conflict = item_id
         suggestions = await self._gateway.list_suggestions(
             scope=scope,
@@ -2034,50 +1985,13 @@ class MemoryToolService:
             tag=None,
             limit=50,
         )
-        for item in self._payload_items(suggestions):
+        for item in payload_items(suggestions):
             candidate_text = str(item.get("candidate_text") or item.get("text") or "")
-            if self._normalize_candidate(candidate_text) == normalized:
+            if normalize_candidate(candidate_text) == normalized:
                 return ("duplicate", str(item.get("id") or item.get("suggestion_id") or ""))
         if possible_conflict is not None:
             return ("conflict", possible_conflict)
         return None
-
-    def _looks_conflicting_fact(self, candidate_text: str, existing_text: str) -> bool:
-        candidate_normalized = self._normalize_candidate(candidate_text)
-        existing_normalized = self._normalize_candidate(existing_text)
-        if not candidate_normalized or not existing_normalized:
-            return False
-        if candidate_normalized == existing_normalized:
-            return False
-        decision_terms = {
-            "adapter",
-            "backend",
-            "cache",
-            "canonical",
-            "database",
-            "engine",
-            "memory",
-            "model",
-            "provider",
-            "storage",
-            "truth",
-            "vector",
-        }
-        candidate_terms = self._meaningful_terms(candidate_normalized)
-        existing_terms = self._meaningful_terms(existing_normalized)
-        overlap = candidate_terms & existing_terms
-        return len(overlap) >= 2 and bool(overlap & decision_terms)
-
-    @staticmethod
-    def _payload_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        data = payload.get("data", payload)
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-        if isinstance(data, dict):
-            items = data.get("items")
-            if isinstance(items, list):
-                return [item for item in items if isinstance(item, dict)]
-        return []
 
     def _with_search_resource_links(self, data: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(data)
@@ -2104,59 +2018,6 @@ class MemoryToolService:
             normalized.setdefault("resource_uris", sorted(set(resource_uris)))
         return normalized
 
-    def _candidate_fingerprint(
-        self,
-        *,
-        scope: MemoryScope,
-        candidate: MemoryUpdateCandidateInput,
-        source_id: str | None,
-    ) -> str:
-        return self._stable_key(
-            "mcp-candidate",
-            scope.space_slug,
-            scope.profile_external_ref,
-            scope.thread_external_ref,
-            candidate.operation.value,
-            candidate.target_fact_id,
-            candidate.expected_version,
-            self._normalize_candidate(candidate.text),
-            source_id or "",
-        )
-
-    @staticmethod
-    def _normalize_candidate(text: str) -> str:
-        normalized = unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
-        return " ".join(normalized.strip().casefold().split())
-
-    @staticmethod
-    def _candidate_result(
-        candidate_index: int,
-        status: str,
-        decision_code: str,
-        *,
-        text: str,
-        fact_id: str | None = None,
-        suggestion_id: str | None = None,
-        duplicate_id: str | None = None,
-        target_fact_id: str | None = None,
-        retryable: bool = False,
-        message: str | None = None,
-    ) -> dict[str, Any]:
-        resource_uri = f"memory://fact/{fact_id}" if fact_id else None
-        return {
-            "candidate_index": candidate_index,
-            "status": status,
-            "decision_code": decision_code,
-            "text": text,
-            "fact_id": fact_id,
-            "suggestion_id": suggestion_id,
-            "duplicate_id": duplicate_id,
-            "target_fact_id": target_fact_id,
-            "resource_uri": resource_uri,
-            "retryable": retryable,
-            "message": message,
-        }
-
     def _resource_scope(self, space_slug: str, profile_external_ref: str) -> MemoryScope:
         return MemoryScope(
             space_slug=self._resource_arg("space_slug", space_slug),
@@ -2178,37 +2039,6 @@ class MemoryToolService:
         if has_control_characters(safe_value) or has_zero_width_characters(safe_value):
             raise ValueError(f"{field_name} contains unsafe formatting characters")
         return safe_value
-
-    @staticmethod
-    def _resource_json(payload: dict[str, Any]) -> str:
-        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
-
-    def _bounded_resource_value(self, value: Any) -> tuple[Any, bool]:
-        if isinstance(value, str):
-            if len(value) > self._settings.max_tool_text_chars:
-                return value[: self._settings.max_tool_text_chars] + "\n[truncated]", True
-            return value, False
-        if isinstance(value, list):
-            bounded_items: list[Any] = []
-            truncated = False
-            for item in value:
-                bounded_item, item_truncated = self._bounded_resource_value(item)
-                bounded_items.append(bounded_item)
-                truncated = truncated or item_truncated
-            return bounded_items, truncated
-        if isinstance(value, dict):
-            bounded_dict: dict[str, Any] = {}
-            truncated = False
-            for key, item in value.items():
-                bounded_item, item_truncated = self._bounded_resource_value(item)
-                bounded_dict[str(key)] = bounded_item
-                truncated = truncated or item_truncated
-            return bounded_dict, truncated
-        return value, False
-
-    @staticmethod
-    def _generated_at() -> str:
-        return datetime.now(UTC).isoformat()
 
     def _default_scope(self) -> MemoryScope:
         return MemoryScope(
@@ -2281,7 +2111,7 @@ class MemoryToolService:
             return SourceRef(
                 source_type=self._safe_source_type(source_type),
                 source_id=self._safe_source_id(
-                    source_id or self._stable_key("mcp-source", fallback_seed)
+                    source_id or stable_key("mcp-source", fallback_seed)
                 ),
                 quote_preview=quote,
             )
@@ -2295,7 +2125,7 @@ class MemoryToolService:
 
     def _safe_source_type(self, source_type: str | None) -> str:
         value = (source_type or self._settings.source_type).strip()
-        if value not in _SOURCE_TYPES:
+        if value not in SOURCE_TYPES:
             raise MemoryGatewayError(
                 status_code=400,
                 code="memo_stack_mcp.validation.invalid_source_ref",
@@ -2321,7 +2151,7 @@ class MemoryToolService:
                 retryable=False,
             )
         if value.startswith(("/Users/", "/home/")) or "\\Users\\" in value:
-            return self._stable_key("mcp-source-path", value)
+            return stable_key("mcp-source-path", value)
         return value
 
     def _decide_policy(
@@ -2384,47 +2214,10 @@ class MemoryToolService:
                 retryable=False,
             )
 
-    def _ensure_choice(self, field_name: str, value: str, allowed: set[str]) -> None:
-        if value not in allowed:
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.validation.invalid_input",
-                message=f"Invalid {field_name}: {safe_message(value)}",
-                retryable=False,
-            )
-
-    def _ensure_bool(self, field_name: str, value: object) -> None:
-        if not isinstance(value, bool):
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.validation.invalid_input",
-                message=f"{field_name} must be a boolean",
-                retryable=False,
-            )
-
-    @staticmethod
-    def _clamp_int(
-        *,
-        name: str,
-        value: int,
-        minimum: int,
-        maximum: int,
-    ) -> tuple[int, list[str]]:
-        if value < minimum:
-            return minimum, [f"{name}_clamped_to_min"]
-        if value > maximum:
-            return maximum, [f"{name}_clamped_to_max"]
-        return value, []
-
     def _truncate(self, value: str) -> str:
         if len(value) <= self._settings.max_tool_text_chars:
             return value
         return value[: self._settings.max_tool_text_chars] + "\n[truncated]"
-
-    @staticmethod
-    def _stable_key(prefix: str, *parts: object) -> str:
-        digest = hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
-        return f"{prefix}:{digest[:32]}"
 
     async def _guard(self, action) -> dict[str, Any]:
         try:
