@@ -1,0 +1,10 @@
+{
+  "id": "memo-stack",
+  "name": "Memo Stack",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Thin Obsidian control surface for the local Memo Stack connector.",
+  "author": "Memo Stack",
+  "authorUrl": "https://github.com/belief-ai/memo-stack",
+  "isDesktopOnly": true
+}

@@ -1,0 +1,1 @@
+"""Bundled Obsidian plugin assets."""

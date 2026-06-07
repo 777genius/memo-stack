@@ -824,6 +824,7 @@ class MemoStackClient:
         category: str | None = None,
         tags: list[str] | None = None,
         ttl_policy: str | None = None,
+        candidate_fingerprint: str | None = None,
         review_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._request(
@@ -846,6 +847,7 @@ class MemoStackClient:
                 category=category,
                 tags=tags,
                 ttl_policy=ttl_policy,
+                candidate_fingerprint=candidate_fingerprint,
                 review_payload=review_payload,
             ),
         )

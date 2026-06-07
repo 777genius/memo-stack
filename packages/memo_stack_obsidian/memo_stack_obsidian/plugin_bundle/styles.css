@@ -1,0 +1,119 @@
+.memo-stack-settings-warning {
+  color: var(--text-warning);
+}
+
+.memo-stack-settings-code {
+  font-family: var(--font-monospace);
+}
+
+.memo-stack-panel {
+  padding: 12px;
+}
+
+.memo-stack-panel h2,
+.memo-stack-panel h3 {
+  margin: 0 0 10px;
+}
+
+.memo-stack-panel h3 {
+  margin-top: 18px;
+  font-size: var(--font-ui-medium);
+}
+
+.memo-stack-status-grid,
+.memo-stack-path-list {
+  display: grid;
+  gap: 6px;
+}
+
+.memo-stack-status-row,
+.memo-stack-path-row {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+}
+
+.memo-stack-status-row {
+  grid-template-columns: minmax(72px, 0.4fr) minmax(0, 1fr);
+}
+
+.memo-stack-path-row {
+  grid-template-columns: 52px 72px minmax(0, 1fr);
+}
+
+.memo-stack-status-label,
+.memo-stack-muted {
+  color: var(--text-muted);
+}
+
+.memo-stack-ok {
+  color: var(--text-success);
+}
+
+.memo-stack-bad {
+  color: var(--text-error);
+}
+
+.memo-stack-path-row code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.memo-stack-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.memo-stack-action-grid button {
+  width: 100%;
+}
+
+.memo-stack-setup-list {
+  display: grid;
+  gap: 8px;
+}
+
+.memo-stack-setup-row {
+  display: grid;
+  grid-template-columns: 24px minmax(72px, 0.8fr) minmax(0, 1fr) minmax(74px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.memo-stack-setup-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+.memo-stack-setup-row button {
+  min-width: 74px;
+}
+
+.memo-stack-busy {
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+}
+
+.memo-stack-last-run {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.memo-stack-last-run pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  white-space: pre-wrap;
+}

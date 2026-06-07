@@ -169,6 +169,7 @@ def suggestion_body(
     tags: list[str] | None,
     ttl_policy: str | None,
     review_payload: dict[str, Any] | None,
+    candidate_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     return without_none(
         {
@@ -188,6 +189,7 @@ def suggestion_body(
             "category": category,
             "tags": tags or [],
             "ttl_policy": ttl_policy,
+            "candidate_fingerprint": candidate_fingerprint,
             "review_payload": review_payload,
         }
     )

@@ -46,6 +46,7 @@ memo-stack = "memo_stack_cli.cli:main"
 memo-stack-mcp = "memo_stack_mcp.server:main"
 memo-stack-mcp-bench = "memo_stack_mcp.bench:main"
 memo-stack-mcp-agent-bench = "memo_stack_mcp.agent_behavior_bench:main"
+memo-stack-obsidian = "memo_stack_obsidian.cli:main"
 
 [tool.setuptools.packages.find]
 where = [
@@ -55,12 +56,16 @@ where = [
   "packages/memo_stack_sdk",
   "packages/memo_stack_mcp",
   "packages/memo_stack_cli",
+  "packages/memo_stack_obsidian",
 ]
 
 [tool.setuptools.package-data]
 memo_stack_adapters = [
   "extraction/prompts/*.md",
   "extraction/schemas/*.json",
+]
+memo_stack_obsidian = [
+  "plugin_bundle/*",
 ]
 
 [tool.pytest.ini_options]
@@ -72,6 +77,7 @@ pythonpath = [
   "packages/memo_stack_sdk",
   "packages/memo_stack_mcp",
   "packages/memo_stack_cli",
+  "packages/memo_stack_obsidian",
 ]
 
 [tool.ruff]
