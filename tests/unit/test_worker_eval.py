@@ -1559,6 +1559,7 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     assert policy["public_benchmark"][
         "top_evidence_requires_dataset_source_case_count"
     ] is True
+    assert policy["public_benchmark"]["top_evidence_rejects_raw_dataset_paths"] is True
     assert policy["public_benchmark"][
         "top_evidence_requires_official_url_for_official_sources"
     ] is True
@@ -1847,6 +1848,25 @@ def test_memory_quality_scorecard_requires_public_benchmark_source_case_count() 
     assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
         "dataset_source_failures"
     ] == {"locomo": ["case_count_missing"]}
+    assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_rejects_public_benchmark_raw_dataset_path() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    public_benchmark = _public_benchmark_report()
+    public_benchmark["dataset_path"] = "/Users/alice/private/locomo.json"
+    suite_results["public-memory-benchmark"] = public_benchmark
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
+        "report_failures"
+    ] == ["dataset_path_not_redacted"]
     assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
 
 

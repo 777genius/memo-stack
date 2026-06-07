@@ -314,7 +314,7 @@ def _execute_cases(
         "ok": ok,
         "benchmark_scope": "normalized_public_memory_retrieval",
         "evaluation_mode": "retrieved_expected_terms",
-        "dataset_path": str(dataset_path),
+        "dataset_path_label": dataset_path.name,
         "dataset_hash": dataset_hash,
         "dataset_sources": {
             summary["name"]: _dataset_source_metadata(

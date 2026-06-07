@@ -54,6 +54,9 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert result["metrics"]["longmemeval_accuracy"] == 1.0
     assert isinstance(result["dataset_hash"], str)
     assert len(result["dataset_hash"]) == 64
+    assert "dataset_path" not in result
+    assert result["dataset_path_label"] == dataset.name
+    assert str(tmp_path) not in json.dumps(result, sort_keys=True)
     assert set(result["dataset_sources"]) == {"locomo", "longmemeval"}
     assert result["dataset_sources"]["locomo"] == {
         "source_kind": "local_dataset",
@@ -71,6 +74,9 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert report.exists()
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["ok"] is True
+    assert "dataset_path" not in written
+    assert written["dataset_path_label"] == dataset.name
+    assert str(tmp_path) not in report.read_text(encoding="utf-8")
     assert written["dataset_hash"] == result["dataset_hash"]
     assert written["dataset_sources"] == result["dataset_sources"]
     assert written["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"

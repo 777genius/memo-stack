@@ -490,6 +490,7 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_requires_dataset_source_hash_match": True,
             "top_evidence_requires_dataset_path_label": True,
             "top_evidence_requires_dataset_source_case_count": True,
+            "top_evidence_rejects_raw_dataset_paths": True,
             "top_evidence_requires_official_url_for_official_sources": True,
             "top_evidence_allowed_dataset_source_kinds": list(
                 _PUBLIC_MEMORY_BENCHMARK_DATASET_SOURCE_KINDS
@@ -1014,6 +1015,7 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
     for index, report in enumerate(reports):
         report_label = str(report.get("suite") or f"report_{index}")
         benchmark_names = _scorecard_public_benchmark_names_in_report(report)
+        report_failures = _scorecard_public_benchmark_report_failures(report)
         missing_fingerprints = [
             name
             for name in benchmark_names
@@ -1026,7 +1028,12 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
         missing_sources = [
             name for name, failures in source_failures.items() if failures
         ]
-        ok = bool(benchmark_names) and not missing_fingerprints and not missing_sources
+        ok = (
+            bool(benchmark_names)
+            and not report_failures
+            and not missing_fingerprints
+            and not missing_sources
+        )
         if not ok:
             missing_reports.append(report_label)
         report_summaries.append(
@@ -1034,6 +1041,7 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
                 "report": report_label,
                 "ok": ok,
                 "benchmarks": benchmark_names,
+                "report_failures": list(report_failures),
                 "missing_benchmarks": sorted(
                     set(missing_fingerprints) | set(missing_sources)
                 ),
@@ -1082,6 +1090,15 @@ def _scorecard_public_benchmark_names_in_report(
         if f"{benchmark}_accuracy" in metrics or f"{benchmark}_case_count" in metrics:
             names.add(benchmark)
     return sorted(names)
+
+
+def _scorecard_public_benchmark_report_failures(
+    report: Mapping[str, object],
+) -> tuple[str, ...]:
+    failures: list[str] = []
+    if _scorecard_nonempty_string(report.get("dataset_path")):
+        failures.append("dataset_path_not_redacted")
+    return tuple(failures)
 
 
 def _scorecard_public_benchmark_has_dataset_fingerprint(
