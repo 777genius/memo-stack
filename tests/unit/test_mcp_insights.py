@@ -29,6 +29,18 @@ class InsightsGateway:
                         "reason": "1 pending suggestions need review.",
                     }
                 ],
+                "recent_activity": [
+                    {
+                        "id": "act_1",
+                        "occurred_at": "2026-06-07T10:00:00+00:00",
+                        "event_type": "suggestion_created",
+                        "entity_type": "suggestion",
+                        "entity_id": "sug_1",
+                        "profile_id": "profile_default",
+                        "status": "pending",
+                        "preview": "Review pending memory.",
+                    }
+                ],
                 "diagnostics": {"evidence_only": True, "read_only": True},
             }
         }
@@ -54,6 +66,9 @@ def test_mcp_insights_structured_output_and_scope() -> None:
         assert result.structuredContent["data"]["health_score"] == 87.5
         assert result.structuredContent["data"]["action_items"][0]["action"] == (
             "review_pending_suggestions"
+        )
+        assert result.structuredContent["data"]["recent_activity"][0]["event_type"] == (
+            "suggestion_created"
         )
         assert gateway.calls[0][0] == "build_insights"
         assert gateway.calls[0][1]["max_suggestions"] == 25

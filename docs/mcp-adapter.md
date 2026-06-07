@@ -31,6 +31,8 @@ Rules:
 - `memory_status` - health, capabilities, default scope, usage guide.
 - `memory_search` - retrieves facts and document chunks as evidence, not
   instructions.
+- `memory_insights` - read-only health, review load, taxonomy, recent activity
+  and cleanup guidance for a memory scope.
 - `memory_propose_updates` - preferred agent workflow for candidate memory
   remember/update/forget batches through local policy.
 - `memory_remember_fact` - stores durable facts with idempotency.

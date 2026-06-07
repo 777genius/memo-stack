@@ -9,11 +9,12 @@ from datetime import UTC, datetime
 
 from memo_stack_core.application.dto import (
     BuildMemoryInsightsQuery,
+    MemoryActivityItem,
     MemoryInsightActionItem,
     MemoryInsightsResult,
 )
 from memo_stack_core.application.sensitive_text import redact_sensitive_text
-from memo_stack_core.domain.capture import ConsolidationStatus
+from memo_stack_core.domain.capture import CanonicalCapture, ConsolidationStatus
 from memo_stack_core.domain.entities import (
     FactStatus,
     MemoryDocument,
@@ -50,6 +51,7 @@ class _ProfileSample:
     documents: tuple[MemoryDocument, ...]
     document_chunk_counts: dict[str, int]
     suggestions: tuple[MemorySuggestion, ...]
+    captures: tuple[CanonicalCapture, ...]
     capture_status_counts: dict[str, int]
 
 
@@ -73,6 +75,7 @@ class BuildMemoryInsightsUseCase:
         metrics = _metrics(samples=samples, now=now)
         taxonomy = _taxonomy(samples)
         action_items = _action_items(samples=samples, now=now)
+        recent_activity = _recent_activity(samples, limit=query.max_activity)
         return MemoryInsightsResult(
             insights_id=self._ids.new_id("ins"),
             generated_at=now,
@@ -85,6 +88,7 @@ class BuildMemoryInsightsUseCase:
             metrics=metrics,
             taxonomy=taxonomy,
             action_items=tuple(action_items[:50]),
+            recent_activity=tuple(recent_activity),
             diagnostics={
                 "evidence_only": True,
                 "read_only": True,
@@ -93,6 +97,7 @@ class BuildMemoryInsightsUseCase:
                 "max_documents_per_profile": query.max_documents,
                 "max_suggestions_per_profile": query.max_suggestions,
                 "max_captures_per_profile": query.max_captures,
+                "max_activity": query.max_activity,
                 "profiles_sampled": len(samples),
             },
         )
@@ -119,7 +124,7 @@ class BuildMemoryInsightsUseCase:
                     chunks = await uow.documents.list_chunks(str(document.id), limit=501)
                     chunk_counts[str(document.id)] = min(len(chunks), 500)
                 suggestions = await self._load_suggestions(query, profile_id=profile_id, uow=uow)
-                capture_counts = await self._load_capture_counts(
+                captures, capture_counts = await self._load_captures(
                     query,
                     profile_id=profile_id,
                     uow=uow,
@@ -131,6 +136,7 @@ class BuildMemoryInsightsUseCase:
                         documents=documents,
                         document_chunk_counts=chunk_counts,
                         suggestions=tuple(suggestions),
+                        captures=captures,
                         capture_status_counts=capture_counts,
                     )
                 )
@@ -185,24 +191,26 @@ class BuildMemoryInsightsUseCase:
             )
         return _dedupe_suggestions(tuple(suggestions))
 
-    async def _load_capture_counts(
+    async def _load_captures(
         self,
         query: BuildMemoryInsightsQuery,
         *,
         profile_id: ProfileId,
         uow: object,
-    ) -> dict[str, int]:
+    ) -> tuple[tuple[CanonicalCapture, ...], dict[str, int]]:
         counts: dict[str, int] = {}
+        captures: list[CanonicalCapture] = []
         for consolidation_status in _CAPTURE_CONSOLIDATION_STATUSES:
-            captures = await uow.captures.list_for_scope(
+            status_captures = await uow.captures.list_for_scope(
                 space_id=str(query.space_id),
                 profile_id=str(profile_id),
                 status=None,
                 consolidation_status=consolidation_status,
                 limit=query.max_captures,
             )
-            counts[consolidation_status] = len(captures)
-        return counts
+            counts[consolidation_status] = len(status_captures)
+            captures.extend(status_captures)
+        return _dedupe_captures(tuple(captures)), counts
 
 
 def _metrics(*, samples: tuple[_ProfileSample, ...], now: datetime) -> dict[str, object]:
@@ -405,6 +413,110 @@ def _action_items(
     return sorted(items, key=_action_sort_key)
 
 
+def _recent_activity(
+    samples: tuple[_ProfileSample, ...],
+    *,
+    limit: int,
+) -> list[MemoryActivityItem]:
+    if limit <= 0:
+        return []
+    items: list[MemoryActivityItem] = []
+    for sample in samples:
+        for fact in sample.facts:
+            event_type = "fact_created"
+            if fact.status == FactStatus.DELETED:
+                event_type = "fact_deleted"
+            elif fact.version > 1:
+                event_type = "fact_updated"
+            items.append(
+                _activity_item(
+                    occurred_at=fact.updated_at,
+                    event_type=event_type,
+                    entity_type="fact",
+                    entity_id=str(fact.id),
+                    profile_id=sample.profile_id,
+                    thread_id=str(fact.thread_id) if fact.thread_id else None,
+                    status=fact.status.value,
+                    preview=_preview(fact.text),
+                    metadata={
+                        "version": fact.version,
+                        "kind": fact.kind.value,
+                        "category": fact.category,
+                        "tags": list(fact.tags),
+                    },
+                )
+            )
+        for suggestion in sample.suggestions:
+            event_type = (
+                "suggestion_created"
+                if suggestion.status.value == "pending"
+                else "suggestion_reviewed"
+            )
+            items.append(
+                _activity_item(
+                    occurred_at=suggestion.updated_at,
+                    event_type=event_type,
+                    entity_type="suggestion",
+                    entity_id=str(suggestion.id),
+                    profile_id=sample.profile_id,
+                    thread_id=None,
+                    status=suggestion.status.value,
+                    preview=_preview(suggestion.candidate_text),
+                    metadata={
+                        "operation": suggestion.operation.value,
+                        "target_fact_id": str(suggestion.target_fact_id)
+                        if suggestion.target_fact_id
+                        else None,
+                        "reviewed_at": suggestion.reviewed_at.isoformat()
+                        if suggestion.reviewed_at
+                        else None,
+                    },
+                )
+            )
+        for document in sample.documents:
+            event_type = (
+                "document_deleted"
+                if document.status.value == "deleted"
+                else "document_ingested"
+            )
+            items.append(
+                _activity_item(
+                    occurred_at=document.updated_at,
+                    event_type=event_type,
+                    entity_type="document",
+                    entity_id=str(document.id),
+                    profile_id=sample.profile_id,
+                    thread_id=str(document.thread_id) if document.thread_id else None,
+                    status=document.status.value,
+                    preview=_preview(document.title),
+                    metadata={
+                        "source_type": document.source_type,
+                        "classification": document.classification,
+                    },
+                )
+            )
+        for capture in sample.captures:
+            event_type = _capture_activity_type(capture)
+            items.append(
+                _activity_item(
+                    occurred_at=capture.updated_at,
+                    event_type=event_type,
+                    entity_type="capture",
+                    entity_id=str(capture.id),
+                    profile_id=sample.profile_id,
+                    thread_id=str(capture.thread_id) if capture.thread_id else None,
+                    status=capture.consolidation_status.value,
+                    preview=_preview(capture.text),
+                    metadata={
+                        "source_agent": capture.source_agent,
+                        "source_kind": capture.source_kind.value,
+                        "event_type": capture.event_type,
+                    },
+                )
+            )
+    return sorted(items, key=_activity_sort_key, reverse=True)[:limit]
+
+
 def _health_score(metrics: dict[str, object]) -> float:
     facts = metrics["facts"]
     documents = metrics["documents"]
@@ -447,6 +559,34 @@ def _item(
     )
 
 
+def _activity_item(
+    *,
+    occurred_at: datetime,
+    event_type: str,
+    entity_type: str,
+    entity_id: str,
+    profile_id: str,
+    thread_id: str | None,
+    status: str,
+    preview: str | None,
+    metadata: dict[str, object],
+) -> MemoryActivityItem:
+    stable = "|".join((event_type, entity_type, entity_id, profile_id, occurred_at.isoformat()))
+    digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()[:24]
+    return MemoryActivityItem(
+        id=f"act_{digest}",
+        occurred_at=occurred_at,
+        event_type=event_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        profile_id=profile_id,
+        thread_id=thread_id,
+        status=status,
+        preview=preview,
+        metadata=metadata,
+    )
+
+
 def _action_sort_key(item: MemoryInsightActionItem) -> tuple[int, str, str]:
     severity_rank = {"critical": 0, "warning": 1, "info": 2}
     return (
@@ -454,6 +594,10 @@ def _action_sort_key(item: MemoryInsightActionItem) -> tuple[int, str, str]:
         item.profile_id,
         item.target_id or item.action,
     )
+
+
+def _activity_sort_key(item: MemoryActivityItem) -> tuple[datetime, str]:
+    return (item.occurred_at, item.id)
 
 
 def _dedupe_facts(facts: tuple[MemoryFact, ...]) -> tuple[MemoryFact, ...]:
@@ -469,6 +613,13 @@ def _dedupe_suggestions(
     by_id: dict[str, MemorySuggestion] = {}
     for suggestion in suggestions:
         by_id[str(suggestion.id)] = suggestion
+    return tuple(by_id.values())
+
+
+def _dedupe_captures(captures: tuple[CanonicalCapture, ...]) -> tuple[CanonicalCapture, ...]:
+    by_id: dict[str, CanonicalCapture] = {}
+    for capture in captures:
+        by_id[str(capture.id)] = capture
     return tuple(by_id.values())
 
 
@@ -494,3 +645,13 @@ def _top_counts(counter: Counter[str], *, limit: int = 20) -> list[dict[str, obj
         {"value": value, "count": count}
         for value, count in counter.most_common(limit)
     ]
+
+
+def _capture_activity_type(capture: CanonicalCapture) -> str:
+    if capture.consolidation_status == ConsolidationStatus.DEAD:
+        return "capture_dead"
+    if capture.consolidation_status == ConsolidationStatus.CONSOLIDATED:
+        return "capture_consolidated"
+    if capture.consolidation_status == ConsolidationStatus.RETRY_PENDING:
+        return "capture_retry_pending"
+    return "capture_received"

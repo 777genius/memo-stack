@@ -93,6 +93,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
                 "profile_ids": ["profile_default"],
                 "max_facts": 20,
                 "max_suggestions": 20,
+                "max_activity": 10,
             },
             headers=auth_headers(),
         )
@@ -111,3 +112,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
     actions = {item["action"] for item in data["action_items"]}
     assert "review_expired_fact" in actions
     assert "review_pending_suggestions" in actions
+    activity_types = {item["event_type"] for item in data["recent_activity"]}
+    assert {"fact_created", "suggestion_created"} <= activity_types
+    assert all(item["preview"] for item in data["recent_activity"])
+    assert data["diagnostics"]["max_activity"] == 10

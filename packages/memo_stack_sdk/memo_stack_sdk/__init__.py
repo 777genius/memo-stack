@@ -272,6 +272,7 @@ class MemoStackClient:
         max_documents: int = 100,
         max_suggestions: int = 100,
         max_captures: int = 100,
+        max_activity: int = 50,
     ) -> dict[str, Any]:
         scope_payload = (
             scope.to_payload()
@@ -296,6 +297,7 @@ class MemoStackClient:
                 "max_documents": max_documents,
                 "max_suggestions": max_suggestions,
                 "max_captures": max_captures,
+                "max_activity": max_activity,
             },
         )
 

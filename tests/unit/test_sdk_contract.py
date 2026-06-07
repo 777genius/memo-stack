@@ -198,6 +198,7 @@ def test_sdk_sends_memory_insights_scope_and_limits() -> None:
         profile_external_refs=["engineering", "product"],
         max_facts=50,
         max_suggestions=25,
+        max_activity=12,
     )
 
     assert response == {"data": {"insights_id": "ins_1"}}
@@ -211,6 +212,7 @@ def test_sdk_sends_memory_insights_scope_and_limits() -> None:
             "max_documents": 100,
             "max_suggestions": 25,
             "max_captures": 100,
+            "max_activity": 12,
         },
     }
 

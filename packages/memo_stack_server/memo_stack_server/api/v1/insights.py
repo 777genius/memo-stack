@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from memo_stack_core.application import (
     BuildMemoryInsightsQuery,
+    MemoryActivityItem,
     MemoryInsightActionItem,
     MemoryInsightsResult,
 )
@@ -36,6 +37,7 @@ class InsightsRequest(BaseModel):
     max_documents: int = Field(default=100, ge=0, le=500)
     max_suggestions: int = Field(default=100, ge=0, le=500)
     max_captures: int = Field(default=100, ge=0, le=500)
+    max_activity: int = Field(default=50, ge=0, le=100)
 
 
 @router.post("/insights")
@@ -91,6 +93,7 @@ async def build_insights(
             max_documents=request.max_documents,
             max_suggestions=request.max_suggestions,
             max_captures=request.max_captures,
+            max_activity=request.max_activity,
         )
     )
     response = {
@@ -116,6 +119,7 @@ def insights_to_response(insights: MemoryInsightsResult) -> dict[str, Any]:
         "metrics": insights.metrics,
         "taxonomy": insights.taxonomy,
         "action_items": [_action_item_to_response(item) for item in insights.action_items],
+        "recent_activity": [_activity_item_to_response(item) for item in insights.recent_activity],
         "diagnostics": insights.diagnostics,
     }
 
@@ -129,6 +133,21 @@ def _action_item_to_response(item: MemoryInsightActionItem) -> dict[str, Any]:
         "target_id": item.target_id,
         "profile_id": item.profile_id,
         "reason": item.reason,
+        "preview": item.preview,
+        "metadata": item.metadata or {},
+    }
+
+
+def _activity_item_to_response(item: MemoryActivityItem) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "occurred_at": item.occurred_at.isoformat(),
+        "event_type": item.event_type,
+        "entity_type": item.entity_type,
+        "entity_id": item.entity_id,
+        "profile_id": item.profile_id,
+        "thread_id": item.thread_id,
+        "status": item.status,
         "preview": item.preview,
         "metadata": item.metadata or {},
     }
@@ -164,6 +183,7 @@ def _empty_insights_response(
             "metrics": {},
             "taxonomy": {},
             "action_items": [],
+            "recent_activity": [],
             "diagnostics": diagnostics,
         },
     }

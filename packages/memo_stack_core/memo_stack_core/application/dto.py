@@ -415,6 +415,7 @@ class BuildMemoryInsightsQuery:
     max_documents: int = 100
     max_suggestions: int = 100
     max_captures: int = 100
+    max_activity: int = 50
 
 
 @dataclass(frozen=True)
@@ -431,6 +432,20 @@ class MemoryInsightActionItem:
 
 
 @dataclass(frozen=True)
+class MemoryActivityItem:
+    id: str
+    occurred_at: datetime
+    event_type: str
+    entity_type: str
+    entity_id: str
+    profile_id: str
+    thread_id: str | None
+    status: str
+    preview: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class MemoryInsightsResult:
     insights_id: str
     generated_at: datetime
@@ -439,6 +454,7 @@ class MemoryInsightsResult:
     metrics: dict[str, object]
     taxonomy: dict[str, object]
     action_items: tuple[MemoryInsightActionItem, ...]
+    recent_activity: tuple[MemoryActivityItem, ...]
     diagnostics: dict[str, object]
 
 

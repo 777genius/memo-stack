@@ -381,9 +381,9 @@ def create_mcp_server(
         description=(
             "Build a read-only maintenance report for the current memory scope: health score, "
             "pending review load, expired facts, document indexing coverage, taxonomy hotspots, "
-            "and cleanup action items. Use this before memory cleanup, review sessions, or when "
-            "the user asks how healthy/stable the memory is. This tool never mutates memory and "
-            "action_items are guidance only."
+            "recent activity and cleanup action items. Use this before memory cleanup, review "
+            "sessions, audit/history checks, or when the user asks how healthy/stable the memory "
+            "is. This tool never mutates memory and action_items are guidance only."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
