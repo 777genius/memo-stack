@@ -27,6 +27,7 @@ def test_openapi_contains_stable_v1_fields() -> None:
     assert "/v1/search" in paths
     assert "/v1/digest" in paths
     assert "/v1/export/graph.json" in paths
+    assert "/v1/export/profile-snapshot/preview" in paths
 
     schemas = body["components"]["schemas"]
     assert set(schemas["RememberFactRequest"]["required"]) == {"text", "source_refs"}
@@ -60,6 +61,8 @@ def test_openapi_contains_stable_v1_fields() -> None:
         "ThreadMemoryScopeRequest",
         "CreateCaptureRequest",
         "CreateSuggestionRequest",
+        "ImportProfileSnapshotRequest",
+        "PreviewProfileSnapshotRequest",
     ):
         assert schemas[schema_name]["additionalProperties"] is False
 
@@ -115,6 +118,15 @@ def test_v1_request_models_reject_unknown_fields() -> None:
                 "space_id": "space",
                 "profile_id": "profile",
                 "thread_id": "thread",
+                "unexpected": "raw",
+            },
+        ),
+        (
+            "/v1/export/profile-snapshot/preview",
+            {
+                "space_slug": "space",
+                "profile_external_ref": "profile",
+                "snapshot": {"schema_version": 1},
                 "unexpected": "raw",
             },
         ),

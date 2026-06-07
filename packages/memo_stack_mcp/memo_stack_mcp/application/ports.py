@@ -80,6 +80,15 @@ class MemoryGatewayPort(Protocol):
         source_name: str,
     ) -> dict[str, Any]: ...
 
+    async def preview_profile_snapshot_import(
+        self,
+        *,
+        scope: MemoryScope,
+        snapshot: dict[str, Any],
+        manifest: dict[str, Any] | None,
+        merge_strategy: str,
+    ) -> dict[str, Any]: ...
+
     async def remember_fact(
         self,
         *,

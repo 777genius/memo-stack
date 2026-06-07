@@ -12,8 +12,9 @@ MEMORY_USAGE_GUIDE = """Memo Stack MCP usage guide:
   memory_search or memory_get_fact.
 - Use memory_export_graph for graph.json, backup, visualization, or git-syncable evidence export.
   It is read-only and exports canonical facts, documents, typed fragments, and evidence links.
-- Use memory_export_profile_snapshot and memory_import_profile_snapshot for portable profile
-  backup/restore. Import defaults to dry-run and real writes require explicit confirmation.
+- Use memory_export_profile_snapshot, memory_preview_profile_snapshot_import, and
+  memory_import_profile_snapshot for portable profile backup/restore. Preview first; import
+  defaults to dry-run and real writes require explicit confirmation.
 - If the user asks to search, check, look up, or compare memory, call memory_search before
   answering. Do not answer with an intent to search without actually using the tool.
 - Use memory_status only when readiness, policy, or provider diagnostics are unknown or requested.

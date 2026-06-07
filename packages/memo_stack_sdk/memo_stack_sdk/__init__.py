@@ -360,6 +360,27 @@ class MemoStackClient:
             },
         )
 
+    def preview_profile_snapshot_import(
+        self,
+        *,
+        space_slug: str,
+        profile_external_ref: str,
+        snapshot: dict[str, Any],
+        manifest: dict[str, Any] | None = None,
+        merge_strategy: str = "fail_on_conflict",
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/export/profile-snapshot/preview",
+            json={
+                "space_slug": space_slug,
+                "profile_external_ref": profile_external_ref,
+                "snapshot": snapshot,
+                "manifest": manifest,
+                "merge_strategy": merge_strategy,
+            },
+        )
+
     def ingest_document(
         self,
         *,

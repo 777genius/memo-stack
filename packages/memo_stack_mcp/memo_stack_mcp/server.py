@@ -546,6 +546,56 @@ def create_mcp_server(
         )
 
     @mcp.tool(
+        name="memory_preview_profile_snapshot_import",
+        title="Preview Profile Snapshot Import",
+        description=(
+            "Build a read-only import preview for a portable profile snapshot before using "
+            "memory_import_profile_snapshot. This verifies the optional manifest and reports "
+            "conflicts, would-import counts, skipped records and superseded facts without "
+            "writing memory."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_preview_profile_snapshot_import(
+        snapshot: Annotated[
+            dict[str, Any],
+            Field(description="Portable profile snapshot returned by export_profile_snapshot."),
+        ],
+        manifest: Annotated[
+            dict[str, Any] | None,
+            Field(
+                default=None,
+                description="Optional manifest returned by export_profile_snapshot.",
+            ),
+        ] = None,
+        space_slug: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        merge_strategy: Annotated[
+            ProfileSnapshotMergeStrategy,
+            Field(default="fail_on_conflict"),
+        ] = "fail_on_conflict",
+    ) -> Annotated[CallToolResult, MemoryProfileSnapshotImportResponse]:
+        return _tool_response(
+            await tool_service.preview_profile_snapshot_import(
+                snapshot=snapshot,
+                manifest=manifest,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                merge_strategy=merge_strategy,
+            ),
+            MemoryProfileSnapshotImportResponse,
+        )
+
+    @mcp.tool(
         name="memory_import_profile_snapshot",
         title="Import Profile Snapshot",
         description=(

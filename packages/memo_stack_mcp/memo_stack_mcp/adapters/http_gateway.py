@@ -199,6 +199,26 @@ class HttpMemoryGateway:
             },
         )
 
+    async def preview_profile_snapshot_import(
+        self,
+        *,
+        scope: MemoryScope,
+        snapshot: dict[str, Any],
+        manifest: dict[str, Any] | None,
+        merge_strategy: str,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/export/profile-snapshot/preview",
+            json={
+                "space_slug": scope.space_slug,
+                "profile_external_ref": scope.profile_external_ref,
+                "snapshot": snapshot,
+                "manifest": manifest,
+                "merge_strategy": merge_strategy,
+            },
+        )
+
     async def remember_fact(
         self,
         *,

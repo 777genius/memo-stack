@@ -2032,6 +2032,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_insights",
             "memory_export_graph",
             "memory_export_profile_snapshot",
+            "memory_preview_profile_snapshot_import",
             "memory_import_profile_snapshot",
             "memory_remember_fact",
             "memory_list_facts",
@@ -2108,6 +2109,12 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         snapshot_import = next(
             tool for tool in tools if tool.name == "memory_import_profile_snapshot"
         )
+        snapshot_preview = next(
+            tool for tool in tools if tool.name == "memory_preview_profile_snapshot_import"
+        )
+        assert snapshot_preview.annotations.readOnlyHint is True
+        assert snapshot_preview.annotations.destructiveHint is False
+        assert "without writing memory" in snapshot_preview.description
         assert snapshot_import.annotations.destructiveHint is True
         assert snapshot_import.inputSchema["properties"]["dry_run"]["default"] is True
         assert "manifest" in snapshot_import.inputSchema["properties"]

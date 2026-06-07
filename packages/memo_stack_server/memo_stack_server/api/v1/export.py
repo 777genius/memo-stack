@@ -44,6 +44,16 @@ class ImportProfileSnapshotRequest(BaseModel):
     source_name: str = Field(default="api-profile-snapshot", max_length=160)
 
 
+class PreviewProfileSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    space_slug: str = Field(min_length=1, max_length=160)
+    profile_external_ref: str = Field(min_length=1, max_length=200)
+    snapshot: dict[str, Any]
+    manifest: dict[str, Any] | None = None
+    merge_strategy: str = Field(default="fail_on_conflict", max_length=80)
+
+
 @router.get("/graph.json")
 async def export_graph_json(
     container: Annotated[Container, Depends(get_container)],
@@ -136,17 +146,7 @@ async def import_profile_snapshot(
         raise MemoryValidationError("Unsupported profile snapshot merge strategy")
     if not request.dry_run and not request.confirmed:
         raise MemoryValidationError("Profile snapshot import requires confirmed=true")
-    if request.manifest is not None:
-        verification = verify_snapshot_manifest_payload(
-            snapshot=request.snapshot,
-            manifest=request.manifest,
-            expected_snapshot_file=None,
-        )
-        if not verification["ok"]:
-            errors = ", ".join(verification["errors"])
-            raise MemoryValidationError(
-                f"Profile snapshot manifest verification failed: {errors}"
-            )
+    _verify_profile_snapshot_manifest(request.snapshot, request.manifest)
 
     if request.dry_run:
         scope = await resolve_existing_single_scope(
@@ -183,6 +183,53 @@ async def import_profile_snapshot(
         source_name=request.source_name,
     )
     return {"data": result}
+
+
+@router.post("/profile-snapshot/preview")
+async def preview_profile_snapshot_import(
+    request: PreviewProfileSnapshotRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    if request.merge_strategy not in SUPPORTED_MERGE_STRATEGIES:
+        raise MemoryValidationError("Unsupported profile snapshot merge strategy")
+    _verify_profile_snapshot_manifest(request.snapshot, request.manifest)
+    scope = await resolve_existing_single_scope(
+        container,
+        space_id=None,
+        profile_id=None,
+        thread_id=None,
+        space_slug=request.space_slug,
+        profile_external_ref=request.profile_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
+    result = await import_profile_payload(
+        engine=container.engine,
+        now=container.clock.now(),
+        space_id=str(scope.space_id) if scope else "",
+        profile_id=str(scope.profile_id) if scope else "",
+        payload=request.snapshot,
+        dry_run=True,
+        merge_strategy=request.merge_strategy,
+        source_name="api-profile-snapshot-preview",
+    )
+    return {"data": result}
+
+
+def _verify_profile_snapshot_manifest(
+    snapshot: dict[str, Any],
+    manifest: dict[str, Any] | None,
+) -> None:
+    if manifest is None:
+        return
+    verification = verify_snapshot_manifest_payload(
+        snapshot=snapshot,
+        manifest=manifest,
+        expected_snapshot_file=None,
+    )
+    if not verification["ok"]:
+        errors = ", ".join(verification["errors"])
+        raise MemoryValidationError(f"Profile snapshot manifest verification failed: {errors}")
 
 
 def graph_export_to_response(graph: GraphExportResult) -> dict[str, Any]:

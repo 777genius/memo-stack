@@ -678,6 +678,13 @@ def test_sdk_supports_profile_snapshot_export_import() -> None:
         confirmed=True,
         source_name="sdk-test",
     )
+    client.preview_profile_snapshot_import(
+        space_slug="agents",
+        profile_external_ref="restore",
+        snapshot=snapshot,
+        manifest=manifest,
+        merge_strategy="skip_existing",
+    )
 
     assert seen[0] == (
         "/v1/export/profile-snapshot",
@@ -700,6 +707,17 @@ def test_sdk_supports_profile_snapshot_export_import() -> None:
             "merge_strategy": "create_new_profile",
             "confirmed": True,
             "source_name": "sdk-test",
+        },
+    )
+    assert seen[2] == (
+        "/v1/export/profile-snapshot/preview",
+        {},
+        {
+            "space_slug": "agents",
+            "profile_external_ref": "restore",
+            "snapshot": snapshot,
+            "manifest": manifest,
+            "merge_strategy": "skip_existing",
         },
     )
 

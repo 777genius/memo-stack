@@ -1230,6 +1230,51 @@ class MemoryToolService:
 
         return await self._guard(action)
 
+    async def preview_profile_snapshot_import(
+        self,
+        *,
+        snapshot: dict[str, Any],
+        manifest: dict[str, Any] | None = None,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        merge_strategy: str = "fail_on_conflict",
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            if not isinstance(snapshot, dict):
+                raise MemoryGatewayError(
+                    status_code=400,
+                    code="memo_stack_mcp.validation.invalid_input",
+                    message="snapshot must be a JSON object",
+                    retryable=False,
+                )
+            if manifest is not None and not isinstance(manifest, dict):
+                raise MemoryGatewayError(
+                    status_code=400,
+                    code="memo_stack_mcp.validation.invalid_input",
+                    message="manifest must be a JSON object when provided",
+                    retryable=False,
+                )
+            self._ensure_choice(
+                "merge_strategy",
+                merge_strategy,
+                _PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+            )
+            scope = self._scope(space_slug, profile_external_ref, None)
+            payload = await self._gateway.preview_profile_snapshot_import(
+                scope=scope,
+                snapshot=snapshot,
+                manifest=manifest,
+                merge_strategy=merge_strategy,
+            )
+            return self._ok(
+                "Profile memory snapshot import preview built.",
+                data=payload.get("data", payload),
+                scope=asdict(scope),
+                side_effects=[],
+            )
+
+        return await self._guard(action)
+
     async def ingest_document(
         self,
         *,

@@ -158,14 +158,29 @@ def test_profile_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path
             },
             headers=auth_headers(),
         )
+        preview_response = client.post(
+            "/v1/export/profile-snapshot/preview",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "source-profile",
+                "snapshot": exported.json()["data"],
+                "manifest": exported.json()["manifest"],
+                "merge_strategy": "fail_on_conflict",
+            },
+            headers=auth_headers(),
+        )
 
     data = imported.json()["data"]
+    preview_data = preview_response.json()["data"]
     preview = data["preview"]
     assert imported.status_code == 200
+    assert preview_response.status_code == 200
     assert data["status"] == "conflict"
+    assert preview_data["status"] == "conflict"
     assert data["conflict_count"] == 1
     assert preview["conflict_count"] == 1
     assert preview["conflicts"]["facts"] == [exported.json()["data"]["facts"][0]["id"]]
+    assert preview_data["preview"] == preview
     assert preview["would_import"]["facts"] == 1
     assert "conflicts_block_import" in preview["warnings"]
 
@@ -205,9 +220,21 @@ def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> No
             },
             headers=auth_headers(),
         )
+        previewed = client.post(
+            "/v1/export/profile-snapshot/preview",
+            json={
+                "space_slug": "agents",
+                "profile_external_ref": "restore-base",
+                "snapshot": snapshot,
+                "manifest": exported.json()["manifest"],
+            },
+            headers=auth_headers(),
+        )
 
     assert imported.status_code == 400
+    assert previewed.status_code == 400
     assert "manifest verification failed" in imported.text
+    assert "manifest verification failed" in previewed.text
     assert "snapshot_sha256_mismatch" in imported.text
 
 
