@@ -50,6 +50,8 @@ MEMORY_USAGE_GUIDE = """Memo Stack MCP usage guide:
   memory_search or memory_get_fact.
 - Use memory_export_graph for graph.json, backup, visualization, or git-syncable evidence export.
   It is read-only and exports canonical facts, documents, typed fragments, and evidence links.
+- Use memory_export_profile_snapshot and memory_import_profile_snapshot for portable profile
+  backup/restore. Import defaults to dry-run and real writes require explicit confirmation.
 - If the user asks to search, check, look up, or compare memory, call memory_search before
   answering. Do not answer with an intent to search without actually using the tool.
 - Use memory_status only when readiness, policy, or provider diagnostics are unknown or requested.
@@ -106,6 +108,12 @@ _CAPTURE_CONSOLIDATION_STATUSES = {
 }
 _CONFIDENCE_VALUES = {"low", "medium", "high"}
 _TRUST_VALUES = {"low", "medium", "high"}
+_PROFILE_SNAPSHOT_MERGE_STRATEGIES = {
+    "fail_on_conflict",
+    "skip_existing",
+    "create_new_profile",
+    "supersede_matching_facts",
+}
 _UNCERTAIN_EVIDENCE_MARKERS = (
     "could be",
     "guess",
@@ -1061,6 +1069,102 @@ class MemoryToolService:
                 scope=asdict(scope),
                 side_effects=[],
                 warnings=[*fact_warnings, *document_warnings, *chunk_warnings],
+            )
+
+        return await self._guard(action)
+
+    async def export_profile_snapshot(
+        self,
+        *,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        redacted: bool = True,
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            self._ensure_bool("redacted", redacted)
+            scope = self._scope(space_slug, profile_external_ref, None)
+            payload = await self._gateway.export_profile_snapshot(
+                scope=scope,
+                redacted=redacted,
+            )
+            status = str(payload.get("status") or "ok")
+            data = {
+                "status": status,
+                "snapshot": payload.get("data") or {},
+                "counts": payload.get("counts") or {},
+                "redacted": payload.get("redacted"),
+            }
+            return self._ok(
+                "Portable profile memory snapshot exported.",
+                data=data,
+                scope=asdict(scope),
+                side_effects=[],
+                warnings=[] if status == "ok" else [status],
+            )
+
+        return await self._guard(action)
+
+    async def import_profile_snapshot(
+        self,
+        *,
+        snapshot: dict[str, Any],
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        dry_run: bool = True,
+        merge_strategy: str = "fail_on_conflict",
+        confirmed: bool = False,
+        source_name: str = "mcp-profile-snapshot",
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            if not isinstance(snapshot, dict):
+                raise MemoryGatewayError(
+                    status_code=400,
+                    code="memo_stack_mcp.validation.invalid_input",
+                    message="snapshot must be a JSON object",
+                    retryable=False,
+                )
+            self._ensure_bool("dry_run", dry_run)
+            self._ensure_bool("confirmed", confirmed)
+            self._ensure_choice(
+                "merge_strategy",
+                merge_strategy,
+                _PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+            )
+            normalized_source_name = (source_name.strip() or "mcp-profile-snapshot")[:160]
+            scope = self._scope(space_slug, profile_external_ref, None)
+            policy = None
+            side_effects: list[str] = []
+            if not dry_run:
+                if not confirmed:
+                    raise MemoryGatewayError(
+                        status_code=403,
+                        code="memo_stack_mcp.policy.explicit_confirmation_required",
+                        message="Profile snapshot import requires confirmed=true",
+                        retryable=False,
+                    )
+                policy = self._decide_policy(
+                    operation=MemoryPolicyOperation.REVIEW,
+                    text=f"profile_snapshot_import:{normalized_source_name}",
+                    source_type="profile_snapshot",
+                    user_confirmed=True,
+                )
+                side_effects.append("imported_profile_snapshot")
+            payload = await self._gateway.import_profile_snapshot(
+                scope=scope,
+                snapshot=snapshot,
+                dry_run=dry_run,
+                merge_strategy=merge_strategy,
+                confirmed=confirmed,
+                source_name=normalized_source_name,
+            )
+            return self._ok(
+                "Profile memory snapshot import checked."
+                if dry_run
+                else "Profile memory snapshot imported.",
+                data=payload.get("data", payload),
+                scope=asdict(scope),
+                policy=self._policy_payload(policy) if policy is not None else None,
+                side_effects=side_effects,
             )
 
         return await self._guard(action)

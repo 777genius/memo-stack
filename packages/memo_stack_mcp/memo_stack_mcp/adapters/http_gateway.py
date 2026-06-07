@@ -123,6 +123,46 @@ class HttpMemoryGateway:
             ),
         )
 
+    async def export_profile_snapshot(
+        self,
+        *,
+        scope: MemoryScope,
+        redacted: bool,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/export/profile-snapshot",
+            params={
+                "space_slug": scope.space_slug,
+                "profile_external_ref": scope.profile_external_ref,
+                "redacted": redacted,
+            },
+        )
+
+    async def import_profile_snapshot(
+        self,
+        *,
+        scope: MemoryScope,
+        snapshot: dict[str, Any],
+        dry_run: bool,
+        merge_strategy: str,
+        confirmed: bool,
+        source_name: str,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/export/profile-snapshot/import",
+            json={
+                "space_slug": scope.space_slug,
+                "profile_external_ref": scope.profile_external_ref,
+                "snapshot": snapshot,
+                "dry_run": dry_run,
+                "merge_strategy": merge_strategy,
+                "confirmed": confirmed,
+                "source_name": source_name,
+            },
+        )
+
     async def remember_fact(
         self,
         *,

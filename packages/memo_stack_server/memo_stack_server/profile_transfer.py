@@ -32,13 +32,36 @@ SUPPORTED_MERGE_STRATEGIES = {
     "supersede_matching_facts",
 }
 
-
 async def export_profile(
     *,
     engine: AsyncEngine,
     space_slug: str,
     profile_external_ref: str,
     out_path: Path,
+    redacted: bool,
+) -> dict[str, object]:
+    result = await export_profile_payload(
+        engine=engine,
+        space_slug=space_slug,
+        profile_external_ref=profile_external_ref,
+        redacted=redacted,
+    )
+    if result["status"] != "ok":
+        return {"status": result["status"], "out": str(out_path)}
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(result["snapshot"], ensure_ascii=False, indent=2), "utf-8")
+    counts = result["counts"]
+    return {
+        "status": "ok", "out": str(out_path), "facts": counts["facts"],
+        "documents": counts["documents"], "chunks": counts["chunks"], "redacted": redacted,
+    }
+
+
+async def export_profile_payload(
+    *,
+    engine: AsyncEngine,
+    space_slug: str,
+    profile_external_ref: str,
     redacted: bool,
 ) -> dict[str, object]:
     async with AsyncSession(engine) as session:
@@ -48,7 +71,7 @@ async def export_profile(
             profile_external_ref=profile_external_ref,
         )
         if scope is None:
-            return {"status": "not_found", "out": str(out_path)}
+            return {"status": "not_found"}
         space, profile = scope
         facts = list(
             (
@@ -110,14 +133,15 @@ async def export_profile(
         "exported_at": datetime.now(UTC).isoformat(),
         "redacted": redacted,
     }
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "status": "ok",
-        "out": str(out_path),
-        "facts": len(facts),
-        "documents": len(documents),
-        "chunks": len(chunks),
+        "snapshot": payload,
+        "counts": {
+            "facts": len(facts),
+            "documents": len(documents),
+            "chunks": len(chunks),
+            "source_refs": len(source_refs),
+        },
         "redacted": redacted,
     }
 
@@ -133,6 +157,29 @@ async def import_profile(
     merge_strategy: str,
 ) -> dict[str, object]:
     payload = json.loads(in_path.read_text(encoding="utf-8"))
+    return await import_profile_payload(
+        engine=engine,
+        now=now,
+        space_id=space_id,
+        profile_id=profile_id,
+        payload=payload,
+        dry_run=dry_run,
+        merge_strategy=merge_strategy,
+        source_name=in_path.name,
+    )
+
+
+async def import_profile_payload(
+    *,
+    engine: AsyncEngine,
+    now: datetime,
+    space_id: str,
+    profile_id: str,
+    payload: dict[str, Any],
+    dry_run: bool,
+    merge_strategy: str,
+    source_name: str = "profile-snapshot",
+) -> dict[str, object]:
     if int(payload.get("schema_version", 0)) != SCHEMA_VERSION:
         return {"status": "failed", "reason": "unsupported_schema_version"}
     if merge_strategy not in SUPPORTED_MERGE_STRATEGIES:
@@ -148,7 +195,7 @@ async def import_profile(
     async with AsyncSession(engine) as session:
         target_profile_id = profile_id
         created_profile: dict[str, str] | None = None
-        import_batch_id = _stable_id("import", str(in_path), now.isoformat())
+        import_batch_id = _stable_id("import", source_name, now.isoformat())
         fact_id_map: dict[str, str] = {}
         document_id_map: dict[str, str] = {}
         chunk_id_map: dict[str, str] = {}
@@ -313,7 +360,7 @@ async def import_profile(
                     fact_id=fact_id,
                     fact_version=fact_version,
                     source_type="import",
-                    source_id=_bounded_optional_text(f"profile-import:{in_path.name}", 160)
+                    source_id=_bounded_optional_text(f"profile-import:{source_name}", 160)
                     or "profile-import",
                     chunk_id=None,
                     char_start=None,

@@ -67,6 +67,35 @@ class RecordingGateway:
             }
         }
 
+    async def export_profile_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("export_profile_snapshot", kwargs))
+        return {
+            "status": "ok",
+            "counts": {"facts": 1, "documents": 0, "chunks": 0, "source_refs": 1},
+            "redacted": kwargs["redacted"],
+            "data": {
+                "schema_version": 1,
+                "space": {"slug": kwargs["scope"].space_slug},
+                "profile": {"external_ref": kwargs["scope"].profile_external_ref},
+                "facts": [{"id": "fact_1", "text": None if kwargs["redacted"] else "fact"}],
+                "documents": [],
+                "chunks": [],
+                "source_refs": [],
+                "redacted": kwargs["redacted"],
+            },
+        }
+
+    async def import_profile_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("import_profile_snapshot", kwargs))
+        return {
+            "data": {
+                "status": "ok",
+                "dry_run": kwargs["dry_run"],
+                "merge_strategy": kwargs["merge_strategy"],
+                "would_import": {"facts": 1, "documents": 0, "chunks": 0, "source_refs": 1},
+            }
+        }
+
     async def remember_fact(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("remember_fact", kwargs))
         return {
@@ -209,6 +238,58 @@ def test_load_settings_uses_safe_policy_defaults() -> None:
 def test_mcp_sdk_protocol_version_is_explicitly_guarded() -> None:
     assert LATEST_PROTOCOL_VERSION == "2025-11-25"
     assert "2025-11-25" in SUPPORTED_PROTOCOL_VERSIONS
+
+
+def test_service_profile_snapshot_export_and_import_are_policy_gated() -> None:
+    async def run() -> None:
+        gateway = RecordingGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(
+                default_space_slug="project-a",
+                default_profile_external_ref="backend",
+            ),
+        )
+        snapshot = {
+            "schema_version": 1,
+            "facts": [{"id": "fact_1", "text": "Portable profile snapshot fact."}],
+            "documents": [],
+            "chunks": [],
+            "source_refs": [],
+        }
+
+        exported = await service.export_profile_snapshot(redacted=True)
+        dry_run = await service.import_profile_snapshot(snapshot=snapshot)
+        refused = await service.import_profile_snapshot(
+            snapshot=snapshot,
+            dry_run=False,
+            confirmed=False,
+        )
+        imported = await service.import_profile_snapshot(
+            snapshot=snapshot,
+            dry_run=False,
+            confirmed=True,
+            merge_strategy="create_new_profile",
+            source_name="unit-snapshot",
+        )
+
+        assert exported["ok"] is True
+        assert exported["data"]["status"] == "ok"
+        assert exported["data"]["redacted"] is True
+        assert dry_run["data"]["dry_run"] is True
+        assert refused["ok"] is False
+        assert refused["error"]["code"] == "memo_stack_mcp.policy.explicit_confirmation_required"
+        assert imported["ok"] is True
+        assert imported["diagnostics"]["side_effects"] == ["imported_profile_snapshot"]
+        assert (
+            "export_profile_snapshot",
+            {"scope": MemoryScope("project-a", "backend", None), "redacted": True},
+        ) in gateway.calls
+        assert gateway.calls[-1][0] == "import_profile_snapshot"
+        assert gateway.calls[-1][1]["merge_strategy"] == "create_new_profile"
+        assert gateway.calls[-1][1]["source_name"] == "unit-snapshot"
+
+    asyncio.run(run())
 
 
 def test_service_remember_fact_uses_default_scope_and_stable_idempotency() -> None:
@@ -1924,6 +2005,8 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_search",
             "memory_digest",
             "memory_export_graph",
+            "memory_export_profile_snapshot",
+            "memory_import_profile_snapshot",
             "memory_remember_fact",
             "memory_list_facts",
             "memory_get_fact",
@@ -1963,7 +2046,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             )
             assert '"additionalProperties": true' not in data_schema
             assert '"items": {}' not in data_schema
-            if tool.name == "memory_forget_fact":
+            if tool.name in {"memory_forget_fact", "memory_import_profile_snapshot"}:
                 assert tool.annotations.destructiveHint is True
             else:
                 assert tool.annotations.destructiveHint is False
@@ -1986,6 +2069,17 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert graph_export.annotations.readOnlyHint is True
         assert "graph.json" in graph_export.description
         assert "canonical" in graph_export.description.casefold()
+        snapshot_export = next(
+            tool for tool in tools if tool.name == "memory_export_profile_snapshot"
+        )
+        assert snapshot_export.annotations.readOnlyHint is True
+        assert "redacted=true" in snapshot_export.description
+        snapshot_import = next(
+            tool for tool in tools if tool.name == "memory_import_profile_snapshot"
+        )
+        assert snapshot_import.annotations.destructiveHint is True
+        assert snapshot_import.inputSchema["properties"]["dry_run"]["default"] is True
+        assert "confirmed=true" in snapshot_import.description
         propose = next(tool for tool in tools if tool.name == "memory_propose_updates")
         propose_description = propose.description.casefold()
         assert "mutating tool" in propose_description

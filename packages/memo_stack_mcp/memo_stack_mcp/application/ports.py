@@ -47,6 +47,24 @@ class MemoryGatewayPort(Protocol):
         max_chunks: int,
     ) -> dict[str, Any]: ...
 
+    async def export_profile_snapshot(
+        self,
+        *,
+        scope: MemoryScope,
+        redacted: bool,
+    ) -> dict[str, Any]: ...
+
+    async def import_profile_snapshot(
+        self,
+        *,
+        scope: MemoryScope,
+        snapshot: dict[str, Any],
+        dry_run: bool,
+        merge_strategy: str,
+        confirmed: bool,
+        source_name: str,
+    ) -> dict[str, Any]: ...
+
     async def remember_fact(
         self,
         *,

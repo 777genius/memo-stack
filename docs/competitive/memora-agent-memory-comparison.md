@@ -27,6 +27,7 @@ Memo Stack local evidence:
 - `tests/unit/test_fact_taxonomy_api.py`
 - `tests/unit/test_graph_export_api.py`
 - `tests/unit/test_graph_export_mcp.py`
+- `tests/unit/test_profile_snapshot_api.py`
 - `tests/e2e/test_memory_quality_e2e.py`
 - `tests/e2e/test_memo_stack_agent_behavior_bench_e2e.py`
 - `tests/e2e/test_memo_stack_agent_plugin_e2e.py`
@@ -110,12 +111,12 @@ make memo-stack-compare-memora
 | Graph relationships and temporal context | 9.2 | 8.4 | Memo Stack |
 | Agent hooks, plugins and real agent ergonomics | 8.9 | 7.8 | Memo Stack |
 | Project/team/profile isolation | 9.2 | 7.5 | Memo Stack |
-| Operational confidence and benchmark evidence | 8.6 | 7.7 | Memo Stack |
+| Operational confidence and benchmark evidence | 9.0 | 7.7 | Memo Stack |
 | Clean Architecture and extensibility | 9.1 | 6.8 | Memo Stack |
 
 Weighted total:
 
-- Memo Stack: 9.12
+- Memo Stack: 9.16
 - Memora: 8.19
 
 ## Honest conclusion
@@ -137,8 +138,9 @@ response returns a fragment summary. Cognee/Qdrant remain the stronger
 replaceable RAG path. Memo Stack also exposes portable canonical graph export
 for facts, documents, typed fragments and evidence links. Canonical facts now
 carry category/tags/TTL and expired active facts are hidden from active
-list/context/export surfaces while staying auditable by direct id. Memora still
-has more polished local graph UI.
+list/context/export surfaces while staying auditable by direct id. Profile
+snapshot export/import is available through HTTP API, SDK and MCP with dry-run
+and explicit confirmation gates. Memora still has more polished local graph UI.
 
 ## Practical recommendation
 
@@ -147,7 +149,7 @@ Use Memora as a competitive benchmark and inspiration for UX features:
 - ready ADR/notes views on top of the structured fragment contract
 - graph visualization on top of the portable graph export
 - memory insights
-- simple import UI
+- simple import UI on top of profile snapshots
 - easy local install
 
 Do not replace Memo Stack with Memora if the goal is a reusable platform behind

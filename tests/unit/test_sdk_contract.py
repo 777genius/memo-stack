@@ -607,6 +607,60 @@ def test_sdk_remember_fact_sends_classification() -> None:
     assert seen["body"]["classification"] == "restricted"
 
 
+def test_sdk_supports_profile_snapshot_export_import() -> None:
+    seen: list[tuple[str, dict[str, object], dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.url.path, dict(request.url.params), body))
+        return httpx.Response(200, json={"data": {"status": "ok"}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+    snapshot = {"schema_version": 1, "facts": [], "documents": [], "chunks": []}
+
+    client.export_profile_snapshot(
+        space_slug="agents",
+        profile_external_ref="default",
+        redacted=True,
+    )
+    client.import_profile_snapshot(
+        space_slug="agents",
+        profile_external_ref="restore",
+        snapshot=snapshot,
+        dry_run=False,
+        merge_strategy="create_new_profile",
+        confirmed=True,
+        source_name="sdk-test",
+    )
+
+    assert seen[0] == (
+        "/v1/export/profile-snapshot",
+        {
+            "space_slug": "agents",
+            "profile_external_ref": "default",
+            "redacted": "true",
+        },
+        {},
+    )
+    assert seen[1] == (
+        "/v1/export/profile-snapshot/import",
+        {},
+        {
+            "space_slug": "agents",
+            "profile_external_ref": "restore",
+            "snapshot": snapshot,
+            "dry_run": False,
+            "merge_strategy": "create_new_profile",
+            "confirmed": True,
+            "source_name": "sdk-test",
+        },
+    )
+
+
 def test_sdk_raises_typed_server_error_envelope() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

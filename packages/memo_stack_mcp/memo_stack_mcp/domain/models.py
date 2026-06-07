@@ -255,6 +255,77 @@ class MemoryGraphExportData(McpDataModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class MemoryProfileSnapshotDocumentData(McpDataModel):
+    id: str | None = None
+    thread_id: str | None = None
+    title: str | None = None
+    source_type: str | None = None
+    source_external_id: str | None = None
+    content_hash: str | None = None
+    classification: str | None = None
+    status: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class MemoryProfileSnapshotChunkData(McpDataModel):
+    id: str | None = None
+    thread_id: str | None = None
+    document_id: str | None = None
+    episode_id: str | None = None
+    source_type: str | None = None
+    source_external_id: str | None = None
+    source_hash: str | None = None
+    kind: str | None = None
+    text: str | None = None
+    normalized_text: str | None = None
+    status: str | None = None
+    sequence: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    token_estimate: int | None = None
+    classification: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    metadata_json: dict[str, JsonScalar] = Field(default_factory=dict)
+
+
+class MemoryProfileSnapshotSourceRefData(MemorySourceRefData):
+    fact_id: str | None = None
+    fact_version: int | None = None
+
+
+class MemoryProfileSnapshotData(McpDataModel):
+    schema_version: int | None = None
+    space: dict[str, JsonScalar] = Field(default_factory=dict)
+    profile: dict[str, JsonScalar] = Field(default_factory=dict)
+    facts: list[MemoryRecordData] = Field(default_factory=list)
+    documents: list[MemoryProfileSnapshotDocumentData] = Field(default_factory=list)
+    chunks: list[MemoryProfileSnapshotChunkData] = Field(default_factory=list)
+    source_refs: list[MemoryProfileSnapshotSourceRefData] = Field(default_factory=list)
+    exported_at: str | None = None
+    redacted: bool | None = None
+
+
+class MemoryProfileSnapshotExportData(McpDataModel):
+    status: str | None = None
+    snapshot: MemoryProfileSnapshotData = Field(default_factory=MemoryProfileSnapshotData)
+    counts: dict[str, int] = Field(default_factory=dict)
+    redacted: bool | None = None
+
+
+class MemoryProfileSnapshotImportData(McpDataModel):
+    status: str | None = None
+    dry_run: bool | None = None
+    merge_strategy: str | None = None
+    would_import: dict[str, int] | None = None
+    imported: dict[str, int] | None = None
+    conflict_count: int | None = None
+    conflict_ids: list[str] = Field(default_factory=list)
+    created_profile: dict[str, str] | None = None
+    reason: str | None = None
+
+
 class MemoryFactListData(McpDataModel):
     items: list[MemoryRecordData] = Field(default_factory=list)
     next_cursor: str | None = None
@@ -410,6 +481,14 @@ class MemoryDocumentIngestResponse(McpToolResponse):
 
 class MemoryGraphExportResponse(McpToolResponse):
     data: MemoryGraphExportData | None = None
+
+
+class MemoryProfileSnapshotExportResponse(McpToolResponse):
+    data: MemoryProfileSnapshotExportData | None = None
+
+
+class MemoryProfileSnapshotImportResponse(McpToolResponse):
+    data: MemoryProfileSnapshotImportData | None = None
 
 
 class MemoryCandidateOperation(StrEnum):
