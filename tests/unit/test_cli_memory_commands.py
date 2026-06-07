@@ -29,6 +29,13 @@ class FakeMemoStackClient:
                     "suggestions": {"pending": 3},
                 },
                 "action_items": [{"id": "mai_1"}],
+                "consolidation_plan": [
+                    {
+                        "plan_type": "similar_fact_review",
+                        "canonical_candidate_id": "fact_1",
+                        "candidate_fact_ids": ["fact_2"],
+                    }
+                ],
             }
         }
 
@@ -71,6 +78,8 @@ def test_cli_insights_prints_summary_and_uses_default_scope(
     assert exit_code == 0
     assert "health_score: 91.5" in captured.out
     assert "pending_suggestions: 3" in captured.out
+    assert "consolidation_plan: 1" in captured.out
+    assert "similar_fact_review: fact_1 <- fact_2" in captured.out
     call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
     assert call_name == "build_insights"
     assert kwargs["scope"].space_slug == "default"

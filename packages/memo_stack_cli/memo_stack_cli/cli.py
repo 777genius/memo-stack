@@ -300,10 +300,28 @@ def _cmd_insights(args: argparse.Namespace) -> int:
     print(f"health_score: {data.get('health_score')}")
     metrics = data.get("metrics", {}) if isinstance(data.get("metrics"), dict) else {}
     action_items = data.get("action_items", [])
+    consolidation_plan = data.get("consolidation_plan", [])
     print(f"pending_suggestions: {_nested(metrics, 'suggestions', 'pending')}")
     print(f"expired_active_facts: {_nested(metrics, 'facts', 'expired_active')}")
     print(f"documents_without_chunks: {_nested(metrics, 'documents', 'without_chunks')}")
     print(f"action_items: {len(action_items) if isinstance(action_items, list) else 0}")
+    print(
+        "consolidation_plan: "
+        f"{len(consolidation_plan) if isinstance(consolidation_plan, list) else 0}"
+    )
+    if isinstance(consolidation_plan, list):
+        for item in consolidation_plan[:3]:
+            if not isinstance(item, dict):
+                continue
+            fact_ids = item.get("candidate_fact_ids")
+            fact_label = ", ".join(str(value) for value in fact_ids[:3]) if isinstance(
+                fact_ids, list
+            ) else ""
+            print(
+                "  - "
+                f"{item.get('plan_type')}: {item.get('canonical_candidate_id')}"
+                f"{' <- ' + fact_label if fact_label else ''}"
+            )
     return 0
 
 
