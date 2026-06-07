@@ -7,6 +7,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from typing import Any
 
+from memo_stack_core.application.semantic_dedupe import (
+    looks_conflicting_fact,
+    looks_equivalent_fact,
+)
+
 from memo_stack_mcp.application.normalization import (
     drop_none_values as _drop_none_values,
 )
@@ -43,8 +48,6 @@ from memo_stack_mcp.application.service_helpers import (
     ensure_bool,
     ensure_choice,
     generated_at,
-    looks_conflicting_fact,
-    looks_equivalent_fact,
     meaningful_terms,
     normalize_candidate,
     payload_items,

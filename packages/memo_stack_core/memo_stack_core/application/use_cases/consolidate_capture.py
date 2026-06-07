@@ -13,6 +13,10 @@ from memo_stack_core.application.extractor import (
     RuleBasedMemoryExtractor,
     validate_extractor_candidates,
 )
+from memo_stack_core.application.semantic_dedupe import (
+    looks_equivalent_fact,
+    normalize_memory_text,
+)
 from memo_stack_core.domain.capture import (
     CaptureActorRole,
     ConsolidationStatus,
@@ -208,7 +212,7 @@ class ConsolidateCaptureUseCase:
                 seen_fingerprints.add(fingerprint)
                 active_duplicate = None
                 if candidate.operation_hint in {CandidateOperation.ADD, CandidateOperation.UPDATE}:
-                    active_duplicate = await _find_exact_active_duplicate(
+                    active_duplicate = await _find_active_duplicate(
                         uow,
                         space_id=str(current.space_id),
                         profile_id=str(current.profile_id),
@@ -501,7 +505,7 @@ def _expires_at(now: datetime, duration) -> datetime | None:
     return now + duration
 
 
-async def _find_exact_active_duplicate(
+async def _find_active_duplicate(
     uow,
     *,
     space_id: str,
@@ -510,22 +514,61 @@ async def _find_exact_active_duplicate(
     text: str,
     kind: str,
 ):
-    normalized = _normalize_fact_text(text)
-    candidates = await uow.facts.find_active(
+    normalized = normalize_memory_text(text)
+    candidates = await _active_duplicate_candidates(
+        uow,
+        space_id=space_id,
+        profile_id=profile_id,
+        thread_id=thread_id,
+        text=text,
+    )
+    seen_ids: set[str] = set()
+    for fact in candidates:
+        seen_ids.add(str(fact.id))
+        if fact.kind.value != kind:
+            continue
+        if normalize_memory_text(fact.text) == normalized or looks_equivalent_fact(
+            text,
+            fact.text,
+        ):
+            return fact
+    fallback_candidates = await uow.facts.find_active(
+        space_id=space_id,
+        profile_ids=(profile_id,),
+        thread_id=thread_id,
+        query="",
+        limit=50,
+    )
+    for fact in fallback_candidates:
+        if str(fact.id) in seen_ids or fact.kind.value != kind:
+            continue
+        if normalize_memory_text(fact.text) == normalized or looks_equivalent_fact(
+            text,
+            fact.text,
+        ):
+            return fact
+    return None
+
+
+async def _active_duplicate_candidates(
+    uow,
+    *,
+    space_id: str,
+    profile_id: str,
+    thread_id: str | None,
+    text: str,
+):
+    return await uow.facts.find_active(
         space_id=space_id,
         profile_ids=(profile_id,),
         thread_id=thread_id,
         query=text,
         limit=10,
     )
-    for fact in candidates:
-        if fact.kind.value == kind and _normalize_fact_text(fact.text) == normalized:
-            return fact
-    return None
 
 
 def _normalize_fact_text(value: str) -> str:
-    return " ".join(value.casefold().split())
+    return normalize_memory_text(value)
 
 
 def _normalize_target_hint(value: str) -> str:

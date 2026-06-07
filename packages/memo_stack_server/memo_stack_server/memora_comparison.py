@@ -137,7 +137,10 @@ DIMENSIONS: tuple[Dimension, ...] = (
             "Context API, memory_search, memory_digest, ranking, token packing "
             "canonical category plus tags_any/tags_all/tags_none filters, "
             "memory_related_facts with explainable relation reasons, TTL hiding "
-            "and graph/vector adapters are covered by deterministic gates."
+            "and graph/vector adapters are covered by deterministic gates. "
+            "Semantic-equivalent duplicate checks now run in core consolidation "
+            "and MCP preflight, so paraphrased facts are suppressed before they "
+            "pollute recall."
         ),
         memora_rationale=(
             "Memora has hybrid search, semantic search, memory_digest, related "
@@ -293,6 +296,8 @@ def build_memora_agent_memory_comparison(
                 "tests/unit/test_import_boundaries.py",
                 "tests/unit/test_document_fragments.py",
                 "tests/unit/test_document_fragment_api.py",
+                "tests/unit/test_semantic_dedupe.py",
+                "tests/unit/test_capture_semantic_dedupe.py",
                 "tests/unit/test_fact_taxonomy_api.py",
                 "tests/unit/test_cli_memory_commands.py",
                 "tests/unit/test_memory_insights_api.py",

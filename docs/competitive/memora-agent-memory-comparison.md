@@ -24,6 +24,8 @@ Memo Stack local evidence:
 - `tests/unit/test_import_boundaries.py`
 - `tests/unit/test_document_fragments.py`
 - `tests/unit/test_document_fragment_api.py`
+- `tests/unit/test_semantic_dedupe.py`
+- `tests/unit/test_capture_semantic_dedupe.py`
 - `tests/unit/test_fact_taxonomy_api.py`
 - `tests/unit/test_cli_memory_commands.py`
 - `tests/unit/test_memory_insights_api.py`
@@ -144,7 +146,8 @@ memory for coding agents. The big differences are first-class
 space/profile/thread isolation, canonical fact lifecycle, expected-version
 updates, review-gated suggestions, bounded batch suggestion create/review with
 per-item failures, DB-enforced race-safe pending suggestion dedupe, conservative
-semantic-equivalent duplicate suppression, safer delete policy,
+semantic-equivalent duplicate suppression in core consolidation and MCP
+preflight, safer delete policy,
 Cognee/Qdrant/Graphiti as replaceable adapters,
 plugin-kit-ai generated agent plugins, hook capture tests and architecture
 boundary tests. For documents/ADR/notes, Memo Stack now
