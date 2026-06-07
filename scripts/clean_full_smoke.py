@@ -289,6 +289,8 @@ def _run_public_benchmark_canary(*, base_url: str, token: str) -> dict[str, obje
         min_accuracy=_float_env("MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY", 0.5),
         api_url=base_url,
         auth_token=token,
+        locomo_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET"),
+        longmemeval_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET"),
         download_timeout_seconds=_float_env(
             "MEMORY_PUBLIC_BENCHMARK_DOWNLOAD_TIMEOUT_SECONDS",
             180.0,
@@ -333,6 +335,13 @@ def _float_env(name: str, default: float) -> float:
     if value < 0:
         raise CleanSmokeFailure(f"{name} must be non-negative")
     return value
+
+
+def _optional_path_env(name: str) -> Path | None:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return None
+    return Path(raw).expanduser()
 
 
 def _ports() -> dict[str, int]:

@@ -86,6 +86,8 @@ memo-stack-quality-evidence-bundle:
 memo-stack-top-evidence-bundle:
 	@test -n "$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-}}" || (echo "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running top evidence bundle."; exit 1)
 	@test -n "$${MEMORY_AGENT_BENCH_MODEL:-}" || (echo "Set MEMORY_AGENT_BENCH_MODEL before running top evidence bundle."; exit 1)
+	@test -n "$${MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET to a representative LoCoMo dataset before running top evidence bundle."; exit 1)
+	@test -n "$${MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET to a representative LongMemEval dataset before running top evidence bundle."; exit 1)
 	@set -e; \
 	evidence_dir="$${MEMORY_QUALITY_EVIDENCE_DIR:-.tmp/memo-stack-top-evidence}"; \
 	external_report="$$evidence_dir/full-provider-agent-public.json"; \
@@ -97,8 +99,8 @@ memo-stack-top-evidence-bundle:
 	export MEMORY_AGENT_BENCH_SCENARIO_SET="$${MEMORY_AGENT_BENCH_SCENARIO_SET:-realistic}"; \
 	export MEMORY_AGENT_BENCH_OPENAI_API_KEY="$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}}"; \
 	export MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"; \
-	export MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-1}"; \
-	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.5}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-600}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"; \
 	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	$(PYTHON) scripts/clean_full_smoke.py; \
@@ -460,8 +462,11 @@ memo-stack-full-provider-public-benchmark-canary:
 
 .PHONY: memo-stack-full-provider-public-benchmark-suite
 memo-stack-full-provider-public-benchmark-suite:
+	@test -n "$${MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET to a representative LoCoMo dataset before running public benchmark suite."; exit 1)
+	@test -n "$${MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET to a representative LongMemEval dataset before running public benchmark suite."; exit 1)
 	MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}" \
-	MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-1}" \
+	MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-600}" \
+	MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}" \
 	$(MAKE) memo-stack-full-provider-public-benchmark-canary
 
 .PHONY: memo-stack-full-provider-canary-interactive

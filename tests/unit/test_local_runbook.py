@@ -75,8 +75,18 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     assert 'MEMORY_CLEAN_SMOKE_REPORT_OUT="$$external_report"' in top_evidence_recipe
     assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in top_evidence_recipe
     assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in top_evidence_recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET" in top_evidence_recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET" in top_evidence_recipe
     assert 'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"' in (
         top_evidence_recipe
+    )
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-600}"'
+        in top_evidence_recipe
+    )
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"'
+        in top_evidence_recipe
     )
     assert '$(PYTHON) scripts/quality_evidence_bundle.py \\' in top_evidence_recipe
     assert '--output-dir "$$evidence_dir"' in top_evidence_recipe
@@ -210,11 +220,28 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
         in public_recipe
     )
     assert "$(PYTHON) scripts/clean_full_smoke.py" in public_recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET" in public_suite_recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET" in public_suite_recipe
     assert 'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"' in (
         public_suite_recipe
     )
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-600}"'
+        in public_suite_recipe
+    )
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"'
+        in public_suite_recipe
+    )
     assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in public_suite_recipe
     assert "run_official_public_benchmark_canary" in clean_full_smoke
+    assert 'locomo_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET")' in (
+        clean_full_smoke
+    )
+    assert (
+        'longmemeval_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET")'
+        in clean_full_smoke
+    )
     assert "public_benchmark_ok" in clean_full_smoke
     assert ".PHONY: memo-stack-full-provider-canary-interactive" in makefile
     interactive_recipe = "\n".join(
