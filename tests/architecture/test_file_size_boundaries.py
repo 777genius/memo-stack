@@ -16,9 +16,7 @@ IGNORED_PATH_PARTS = {
 MAX_LINES = 2500
 IDEAL_LINES = 1000
 
-LEGACY_OVER_MAX_ALLOWLIST = {
-    "packages/memo_stack_server/memo_stack_server/eval.py",
-}
+LEGACY_OVER_MAX_ALLOWLIST: set[str] = set()
 
 IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     *LEGACY_OVER_MAX_ALLOWLIST,
@@ -29,6 +27,8 @@ IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     "packages/memo_stack_mcp/memo_stack_mcp/plugin_hook.py",
     "packages/memo_stack_mcp/memo_stack_mcp/server.py",
     "packages/memo_stack_server/memo_stack_server/admin.py",
+    "packages/memo_stack_server/memo_stack_server/eval.py",
+    "packages/memo_stack_server/memo_stack_server/eval_auto_memory.py",
     "packages/memo_stack_server/memo_stack_server/eval_scorecard.py",
     "packages/memo_stack_server/memo_stack_server/public_benchmark.py",
     "packages/memo_stack_server/memo_stack_server/web/assets/memory-browser.js",
