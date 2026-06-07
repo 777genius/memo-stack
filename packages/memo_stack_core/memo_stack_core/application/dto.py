@@ -496,10 +496,33 @@ class CreateSuggestionCommand:
 
 
 @dataclass(frozen=True)
+class CreateSuggestionsBatchCommand:
+    items: tuple[CreateSuggestionCommand, ...]
+    continue_on_error: bool = False
+
+
+@dataclass(frozen=True)
 class SuggestionResult:
     suggestion: MemorySuggestion
     fact: MemoryFact | None = None
     indexing_status: str | None = None
+
+
+@dataclass(frozen=True)
+class CreateSuggestionBatchItemResult:
+    index: int
+    status: str
+    result: SuggestionResult | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+@dataclass(frozen=True)
+class CreateSuggestionsBatchResult:
+    created: int
+    failed: int
+    stopped: bool
+    results: tuple[CreateSuggestionBatchItemResult, ...]
 
 
 @dataclass(frozen=True)

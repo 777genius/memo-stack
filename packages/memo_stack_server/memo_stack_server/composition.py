@@ -25,6 +25,7 @@ from memo_stack_core.application import (
     ConsolidateCaptureUseCase,
     CreateProfileUseCase,
     CreateSpaceUseCase,
+    CreateSuggestionsBatchUseCase,
     CreateSuggestionUseCase,
     DeleteDocumentUseCase,
     DeleteThreadMemoryUseCase,
@@ -134,6 +135,7 @@ class Container:
     delete_thread_memory: DeleteThreadMemoryUseCase
     get_session_status: GetSessionStatusUseCase
     create_suggestion: CreateSuggestionUseCase
+    create_suggestions_batch: CreateSuggestionsBatchUseCase
     list_suggestions: ListSuggestionsUseCase
     approve_suggestion: ApproveSuggestionUseCase
     reject_suggestion: RejectSuggestionUseCase
@@ -265,6 +267,9 @@ def build_container(settings: Settings | None = None) -> Container:
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
     get_session_status = GetSessionStatusUseCase(uow_factory=uow_factory)
     create_suggestion = CreateSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
+    create_suggestions_batch = CreateSuggestionsBatchUseCase(
+        create_suggestion=create_suggestion
+    )
     list_suggestions = ListSuggestionsUseCase(uow_factory=uow_factory)
     approve_suggestion = ApproveSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     reject_suggestion = RejectSuggestionUseCase(uow_factory=uow_factory, clock=clock)
@@ -349,6 +354,7 @@ def build_container(settings: Settings | None = None) -> Container:
         delete_thread_memory=delete_thread_memory,
         get_session_status=get_session_status,
         create_suggestion=create_suggestion,
+        create_suggestions_batch=create_suggestions_batch,
         list_suggestions=list_suggestions,
         approve_suggestion=approve_suggestion,
         reject_suggestion=reject_suggestion,

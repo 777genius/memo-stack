@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from memo_stack_core.application import (
     ApproveSuggestionCommand,
     CreateSuggestionCommand,
+    CreateSuggestionsBatchCommand,
     ExpireSuggestionCommand,
     ListSuggestionsQuery,
     RejectSuggestionCommand,
@@ -71,6 +72,40 @@ class CreateSuggestionRequest(BaseModel):
     candidate_fingerprint: str | None = Field(default=None, max_length=80)
     review_payload: dict[str, Any] | None = None
     auto_approve: bool = False
+
+
+class CreateSuggestionBatchItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_text: str = Field(min_length=1, max_length=4000)
+    kind: str = "note"
+    source_refs: list[SourceRefRequest] = Field(default_factory=list)
+    confidence: str = "medium"
+    trust_level: str = "medium"
+    safe_reason: str = Field(min_length=1, max_length=320)
+    target_fact_id: str | None = Field(default=None, max_length=80)
+    target_fact_version: int | None = Field(default=None, ge=1)
+    operation: str = Field(default="add", max_length=40)
+    category: str | None = Field(default=None, max_length=80)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    ttl_policy: str | None = Field(default=None, max_length=80)
+    expires_at: datetime | None = None
+    expiry_reason: str | None = Field(default=None, max_length=160)
+    created_from_capture_id: str | None = Field(default=None, max_length=80)
+    candidate_fingerprint: str | None = Field(default=None, max_length=80)
+    review_payload: dict[str, Any] | None = None
+    auto_approve: bool = False
+
+
+class CreateSuggestionsBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    space_id: str | None = Field(default=None, min_length=1, max_length=80)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    space_slug: str | None = Field(default=None, min_length=1, max_length=160)
+    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    items: list[CreateSuggestionBatchItemRequest] = Field(min_length=1, max_length=50)
+    continue_on_error: bool = False
 
 
 class ReviewSuggestionRequest(BaseModel):
@@ -155,28 +190,7 @@ async def create_suggestion(
         thread_required=False,
     )
     result = await container.create_suggestion.execute(
-        CreateSuggestionCommand(
-            space_id=scope.space_id,
-            profile_id=scope.profile_id,
-            candidate_text=request.candidate_text,
-            kind=map_memory_kind(request.kind),
-            source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),
-            confidence=request.confidence,
-            trust_level=request.trust_level,
-            safe_reason=request.safe_reason,
-            target_fact_id=request.target_fact_id,
-            target_fact_version=request.target_fact_version,
-            operation=request.operation,
-            category=request.category,
-            tags=tuple(_normalize_tags(request.tags)),
-            ttl_policy=request.ttl_policy,
-            expires_at=request.expires_at,
-            expiry_reason=request.expiry_reason,
-            created_from_capture_id=request.created_from_capture_id,
-            candidate_fingerprint=request.candidate_fingerprint,
-            review_payload=request.review_payload,
-            auto_approve=request.auto_approve,
-        )
+        _create_suggestion_command(request, scope.space_id, scope.profile_id)
     )
     return {"data": suggestion_to_response(result.suggestion)}
 
@@ -222,6 +236,37 @@ async def list_suggestions(
         )
     )
     return {"data": [suggestion_to_response(suggestion) for suggestion in suggestions]}
+
+
+@router.post("/batch", status_code=status.HTTP_201_CREATED)
+async def create_suggestions_batch(
+    request: CreateSuggestionsBatchRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    for item in request.items:
+        _validate_confidence_and_trust(item.confidence, item.trust_level)
+        _validate_operation(item.operation)
+    scope = await resolve_single_scope(
+        container,
+        space_id=request.space_id,
+        profile_id=request.profile_id,
+        thread_id=None,
+        space_slug=request.space_slug,
+        profile_external_ref=request.profile_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
+    result = await container.create_suggestions_batch.execute(
+        CreateSuggestionsBatchCommand(
+            items=tuple(
+                _create_suggestion_command(item, scope.space_id, scope.profile_id)
+                for item in request.items
+            ),
+            continue_on_error=request.continue_on_error,
+        )
+    )
+    return {"data": _create_batch_to_response(result)}
 
 
 @router.post("/review-batch")
@@ -349,6 +394,60 @@ def _review_batch_item_payload(item: Any) -> dict[str, Any]:
     if item.result.fact is not None:
         payload["fact"] = fact_to_response(item.result.fact, item.result.indexing_status)
     return payload
+
+
+def _create_batch_to_response(result: Any) -> dict[str, Any]:
+    return {
+        "created": result.created,
+        "failed": result.failed,
+        "stopped": result.stopped,
+        "results": [
+            {
+                "index": item.index,
+                "status": item.status,
+                **_create_batch_item_payload(item),
+            }
+            for item in result.results
+        ],
+    }
+
+
+def _create_batch_item_payload(item: Any) -> dict[str, Any]:
+    if item.result is None:
+        return {
+            "error_code": item.error_code,
+            "error_message": item.error_message,
+        }
+    return {"suggestion": suggestion_to_response(item.result.suggestion)}
+
+
+def _create_suggestion_command(
+    request: CreateSuggestionRequest | CreateSuggestionBatchItemRequest,
+    space_id: Any,
+    profile_id: Any,
+) -> CreateSuggestionCommand:
+    return CreateSuggestionCommand(
+        space_id=space_id,
+        profile_id=profile_id,
+        candidate_text=request.candidate_text,
+        kind=map_memory_kind(request.kind),
+        source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),
+        confidence=request.confidence,
+        trust_level=request.trust_level,
+        safe_reason=request.safe_reason,
+        target_fact_id=request.target_fact_id,
+        target_fact_version=request.target_fact_version,
+        operation=request.operation,
+        category=request.category,
+        tags=tuple(_normalize_tags(request.tags)),
+        ttl_policy=request.ttl_policy,
+        expires_at=request.expires_at,
+        expiry_reason=request.expiry_reason,
+        created_from_capture_id=request.created_from_capture_id,
+        candidate_fingerprint=request.candidate_fingerprint,
+        review_payload=request.review_payload,
+        auto_approve=request.auto_approve,
+    )
 
 
 def _normalize_tags(tags: list[str]) -> list[str]:

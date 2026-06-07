@@ -47,6 +47,8 @@ Rules:
 - `memory_update_fact` - updates one fact with optimistic locking.
 - `memory_forget_fact` - deletes one fact from active retrieval.
 - `memory_ingest_document` - stores larger text for RAG-style retrieval.
+- `memory_suggest_facts_batch` - creates a bounded batch of pending suggestions
+  with per-item success/failure reporting.
 - `memory_review_suggestion` - approve, reject, or expire one suggestion.
 - `memory_review_suggestions_batch` - approve, reject, or expire a bounded
   batch of suggestions with per-item success/failure reporting.
@@ -108,7 +110,8 @@ Recommended agent workflow:
 
 1. Call `memory_search` before relying on memory.
 2. Call `memory_status` only for readiness, policy, provider health, or scope diagnostics.
-3. Use `memory_propose_updates` for agent-generated memory candidates.
+3. Use `memory_propose_updates` for mixed agent-generated memory candidates.
+   Use `memory_suggest_facts_batch` when every item should stay pending review.
 4. Use `memory_related_facts` after search/get when adjacent decisions or
    update/delete targets need extra evidence.
 5. Use `memory_link_facts` only when the relation itself should become durable

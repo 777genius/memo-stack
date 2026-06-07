@@ -24,6 +24,7 @@ from memo_stack_mcp.application.policy import MemoryPolicyService
 from memo_stack_mcp.application.ports import MemoryGatewayPort
 from memo_stack_mcp.application.readiness import build_readiness, safe_gateway_error
 from memo_stack_mcp.application.review_batch import normalize_review_batch_items
+from memo_stack_mcp.application.suggest_batch import normalize_suggest_batch_items
 from memo_stack_mcp.application.usage_guide import MEMORY_USAGE_GUIDE
 from memo_stack_mcp.config import MemoryMcpSettings
 from memo_stack_mcp.domain.models import (
@@ -34,6 +35,7 @@ from memo_stack_mcp.domain.models import (
     MemoryGatewayError,
     MemoryReadScope,
     MemoryScope,
+    MemorySuggestBatchItemInput,
     MemoryUpdateCandidateInput,
     SourceRef,
     contains_sensitive_value,
@@ -837,6 +839,59 @@ class MemoryToolService:
                 data=payload.get("data", payload),
                 policy=self._policy_payload(policy),
                 side_effects=["created_suggestion"],
+                warnings=list(policy.warnings),
+            )
+
+        return await self._guard(action)
+
+    async def suggest_facts_batch(
+        self,
+        *,
+        items: list[MemorySuggestBatchItemInput | dict[str, Any]],
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        quote_preview: str | None = None,
+        continue_on_error: bool = False,
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            self._ensure_bool("continue_on_error", continue_on_error)
+            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            payload_items, policy_text = normalize_suggest_batch_items(
+                items=items,
+                scope=scope,
+                source_type=source_type,
+                source_id=source_id,
+                quote_preview=quote_preview,
+                source_ref_factory=lambda kind, source, quote, seed: self._source_ref(
+                    source_type=kind,
+                    source_id=source,
+                    quote_preview=quote,
+                    fallback_seed=seed,
+                ),
+            )
+            policy = self._decide_policy(
+                operation=MemoryPolicyOperation.SUGGEST,
+                text=policy_text,
+                source_type=source_type,
+            )
+            payload = await self._gateway.create_suggestions_batch(
+                scope=scope,
+                items=payload_items,
+                continue_on_error=continue_on_error,
+            )
+            data = payload.get("data", payload)
+            failed = int(data.get("failed", 0)) if isinstance(data, dict) else 0
+            return self._ok(
+                "Suggestion batch created for review."
+                if failed == 0
+                else "Suggestion batch finished with item failures.",
+                data=data,
+                policy=self._policy_payload(policy),
+                side_effects=["created_suggestions_batch"],
+                degraded=failed > 0,
                 warnings=list(policy.warnings),
             )
 

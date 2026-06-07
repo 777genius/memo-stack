@@ -579,6 +579,21 @@ class MemoryProposalBatchData(McpDataModel):
     needs_review: list[MemoryProposalItemData] = Field(default_factory=list)
 
 
+class MemorySuggestBatchItemData(McpDataModel):
+    index: int | None = None
+    status: str | None = None
+    suggestion: MemoryRecordData | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class MemorySuggestBatchData(McpDataModel):
+    created: int | None = None
+    failed: int | None = None
+    stopped: bool | None = None
+    results: list[MemorySuggestBatchItemData] = Field(default_factory=list)
+
+
 class MemoryReviewSuggestionData(MemoryFactMutationData):
     pass
 
@@ -624,6 +639,7 @@ class MemoryToolData(
     MemoryCaptureListData,
     MemoryCaptureMutationData,
     MemoryProposalBatchData,
+    MemorySuggestBatchData,
     MemoryReviewSuggestionsBatchData,
 ):
     chunks: int | list[MemorySearchItemData] | list[MemoryRecordData] | None = None
@@ -701,6 +717,10 @@ class MemoryProposalResponse(McpToolResponse):
     data: MemoryProposalBatchData | None = None
 
 
+class MemorySuggestBatchResponse(McpToolResponse):
+    data: MemorySuggestBatchData | None = None
+
+
 class MemoryReviewSuggestionResponse(McpToolResponse):
     data: MemoryReviewSuggestionData | None = None
 
@@ -742,6 +762,18 @@ class MemoryUpdateCandidateInput(McpPublicModel):
     reason: str = Field(default="", max_length=320)
     evidence_quote: str | None = Field(default=None, max_length=500)
     labels: list[Annotated[str, Field(max_length=80)]] = Field(default_factory=list, max_length=12)
+
+
+class MemorySuggestBatchItemInput(McpPublicModel):
+    candidate_text: str = Field(min_length=1, max_length=4000)
+    kind: Literal["note", "architecture_decision", "constraint", "user_preference"] = "note"
+    confidence: Literal["low", "medium", "high"] = "medium"
+    trust_level: Literal["low", "medium", "high"] = "medium"
+    safe_reason: str = Field(default="mcp_agent_suggestion_requires_review", max_length=320)
+    quote_preview: str | None = Field(default=None, max_length=500)
+    category: str | None = Field(default=None, max_length=80)
+    tags: list[Annotated[str, Field(max_length=80)]] = Field(default_factory=list, max_length=10)
+    ttl_policy: str | None = Field(default=None, max_length=80)
 
 
 class MemoryReviewSuggestionBatchItemInput(McpPublicModel):

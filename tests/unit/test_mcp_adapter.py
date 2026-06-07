@@ -2043,6 +2043,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_update_fact",
             "memory_forget_fact",
             "memory_suggest_fact",
+            "memory_suggest_facts_batch",
             "memory_propose_updates",
             "memory_list_suggestions",
             "memory_list_captures",

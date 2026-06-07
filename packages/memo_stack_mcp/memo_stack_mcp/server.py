@@ -33,6 +33,8 @@ from memo_stack_mcp.domain.models import (
     MemoryReviewSuggestionsBatchResponse,
     MemorySearchResponse,
     MemoryStatusResponse,
+    MemorySuggestBatchItemInput,
+    MemorySuggestBatchResponse,
     MemorySuggestionListResponse,
     MemoryUpdateCandidateInput,
 )
@@ -1148,6 +1150,56 @@ def create_mcp_server(
                 safe_reason=safe_reason,
             ),
             MemoryFactMutationResponse,
+        )
+
+    @mcp.tool(
+        name="memory_suggest_facts_batch",
+        title="Suggest Facts Batch",
+        description=(
+            "Create a bounded batch of pending memory suggestions for review. Use this for "
+            "multiple unreviewed agent-inferred facts or transcript-derived facts. It does "
+            "not activate memory; use memory_review_suggestions_batch after the user reviews "
+            "the returned per-item suggestions."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_suggest_facts_batch(
+        items: Annotated[
+            list[MemorySuggestBatchItemInput],
+            Field(min_length=1, max_length=50, description="Candidate suggestions."),
+        ],
+        space_slug: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        profile_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        thread_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        source_type: Annotated[SourceType | None, Field(default=None)] = None,
+        source_id: Annotated[str | None, Field(default=None, min_length=1, max_length=240)] = None,
+        quote_preview: Annotated[str | None, Field(default=None, max_length=240)] = None,
+        continue_on_error: Annotated[bool, Field(default=False)] = False,
+    ) -> Annotated[CallToolResult, MemorySuggestBatchResponse]:
+        return _tool_response(
+            await tool_service.suggest_facts_batch(
+                items=items,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                thread_external_ref=thread_external_ref,
+                source_type=source_type,
+                source_id=source_id,
+                quote_preview=quote_preview,
+                continue_on_error=continue_on_error,
+            ),
+            MemorySuggestBatchResponse,
         )
 
     @mcp.tool(

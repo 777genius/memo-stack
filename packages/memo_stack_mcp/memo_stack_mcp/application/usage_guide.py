@@ -30,6 +30,8 @@ MEMORY_USAGE_GUIDE = """Memo Stack MCP usage guide:
 - Direct remember is only for explicit, confirmed durable facts from the user or task.
 - Use suggestions/proposals for unreviewed auto-memory, uncertain claims, guesses, or
   inferred facts.
+- Use memory_suggest_facts_batch when you have several unreviewed durable candidates from
+  one evidence source. It creates pending suggestions only; it does not activate memory.
 - Use memory_review_suggestions_batch after memory_list_suggestions or memory_digest when the
   user asks to review several pending suggestions. Keep batches small, inspect per-item failures,
   and set continue_on_error only when the user accepts partial success.

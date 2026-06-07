@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from memo_stack_core.application.dto import (
     ApproveSuggestionCommand,
+    CreateSuggestionBatchItemResult,
     CreateSuggestionCommand,
+    CreateSuggestionsBatchCommand,
+    CreateSuggestionsBatchResult,
     ExpireSuggestionCommand,
     ListSuggestionsQuery,
     RejectSuggestionCommand,
@@ -80,6 +83,66 @@ class CreateSuggestionUseCase:
             saved = await uow.suggestions.create(suggestion)
             await uow.commit()
         return SuggestionResult(suggestion=saved)
+
+
+class CreateSuggestionsBatchUseCase:
+    def __init__(self, *, create_suggestion: CreateSuggestionUseCase) -> None:
+        self._create_suggestion = create_suggestion
+
+    async def execute(self, command: CreateSuggestionsBatchCommand) -> CreateSuggestionsBatchResult:
+        if not command.items:
+            raise MemoryValidationError("Batch suggestion create requires at least one item")
+        if len(command.items) > 50:
+            raise MemoryValidationError("Batch suggestion create supports at most 50 items")
+
+        results: list[CreateSuggestionBatchItemResult] = []
+        stopped = False
+        seen: set[tuple[object, ...]] = set()
+        for index, item in enumerate(command.items):
+            duplicate_key = _batch_candidate_key(item)
+            if duplicate_key in seen:
+                results.append(
+                    CreateSuggestionBatchItemResult(
+                        index=index,
+                        status="failed",
+                        error_code=MemoryConflictError.code,
+                        error_message="Duplicate suggestion candidate in batch",
+                    )
+                )
+                if not command.continue_on_error:
+                    stopped = True
+                    break
+                continue
+            seen.add(duplicate_key)
+            try:
+                result = await self._create_suggestion.execute(item)
+                results.append(
+                    CreateSuggestionBatchItemResult(
+                        index=index,
+                        status="created",
+                        result=result,
+                    )
+                )
+            except MemoryError as exc:
+                results.append(
+                    CreateSuggestionBatchItemResult(
+                        index=index,
+                        status="failed",
+                        error_code=exc.code,
+                        error_message=str(exc),
+                    )
+                )
+                if not command.continue_on_error:
+                    stopped = True
+                    break
+
+        failed = sum(1 for result in results if result.status == "failed")
+        return CreateSuggestionsBatchResult(
+            created=len(results) - failed,
+            failed=failed,
+            stopped=stopped,
+            results=tuple(results),
+        )
 
 
 class ListSuggestionsUseCase:
@@ -315,3 +378,17 @@ def _safe_reason(reason: str, auto_approve: bool, trust: TrustLevel) -> str:
 
 def _has_independent_source(suggestion: MemorySuggestion) -> bool:
     return any(ref.source_type not in _ASSISTANT_SOURCES for ref in suggestion.source_refs)
+
+
+def _batch_candidate_key(command: CreateSuggestionCommand) -> tuple[object, ...]:
+    return (
+        str(command.space_id),
+        str(command.profile_id),
+        command.operation,
+        command.target_fact_id or "",
+        command.target_fact_version or 0,
+        getattr(command.kind, "value", str(command.kind)),
+        " ".join(command.candidate_text.strip().casefold().split()),
+        command.category or "",
+        tuple(command.tags),
+    )

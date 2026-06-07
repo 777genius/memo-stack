@@ -172,6 +172,14 @@ class MemoryGatewayPort(Protocol):
         ttl_policy: str | None = None,
     ) -> dict[str, Any]: ...
 
+    async def create_suggestions_batch(
+        self,
+        *,
+        scope: MemoryScope,
+        items: list[dict[str, Any]],
+        continue_on_error: bool,
+    ) -> dict[str, Any]: ...
+
     async def list_suggestions(
         self,
         *,

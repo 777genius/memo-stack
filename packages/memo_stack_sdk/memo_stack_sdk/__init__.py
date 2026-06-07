@@ -7,21 +7,7 @@ from typing import Any
 
 import httpx
 
-from memo_stack_sdk._payloads import (
-    context_body as _context_body,
-)
-from memo_stack_sdk._payloads import (
-    context_scope_payload as _context_scope_payload,
-)
-from memo_stack_sdk._payloads import (
-    single_scope_body as _single_scope_body,
-)
-from memo_stack_sdk._payloads import (
-    validate_read_scope_payload as _validate_read_scope_payload,
-)
-from memo_stack_sdk._payloads import (
-    without_none as _without_none,
-)
+import memo_stack_sdk._payloads as _payloads
 from memo_stack_sdk.scopes import MemoryScope, ReadScope
 
 
@@ -99,7 +85,7 @@ class MemoStackClient:
         scope_payload = (
             scope.to_payload()
             if scope is not None
-            else _single_scope_body(
+                else _payloads.single_scope_body(
                 space_id=space_id,
                 profile_id=profile_id,
                 thread_id=thread_id,
@@ -123,7 +109,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/facts",
-            json=_without_none(payload),
+            json=_payloads.without_none(payload),
             idempotency_key=idempotency_key,
         )
 
@@ -220,7 +206,7 @@ class MemoStackClient:
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        params = _without_none(
+        params = _payloads.without_none(
             {
                 "space_id": space_id,
                 "profile_id": profile_id,
@@ -290,7 +276,7 @@ class MemoStackClient:
         scope_payload = (
             scope.to_payload()
             if scope is not None
-            else _context_scope_payload(
+            else _payloads.context_scope_payload(
                 space_id=space_id,
                 profile_ids=profile_ids,
                 thread_id=thread_id,
@@ -300,7 +286,7 @@ class MemoStackClient:
                 thread_external_ref=thread_external_ref,
             )
         )
-        _validate_read_scope_payload(scope_payload)
+        _payloads.validate_read_scope_payload(scope_payload)
         return self._request(
             "POST",
             "/v1/insights",
@@ -397,7 +383,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/documents",
-            json=_without_none(
+            json=_payloads.without_none(
                 {
                     "space_id": space_id,
                     "profile_id": profile_id,
@@ -438,7 +424,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/episodes",
-            json=_without_none(
+            json=_payloads.without_none(
                 {
                     "space_id": space_id,
                     "profile_id": profile_id,
@@ -495,7 +481,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/captures",
-            json=_without_none(
+            json=_payloads.without_none(
                 {
                     "space_id": space_id,
                     "profile_id": profile_id,
@@ -546,7 +532,7 @@ class MemoStackClient:
         return self._request(
             "GET",
             "/v1/captures",
-            params=_without_none(
+            params=_payloads.without_none(
                 {
                     "space_id": space_id,
                     "profile_id": profile_id,
@@ -591,7 +577,7 @@ class MemoStackClient:
         return self._request(
             "GET",
             "/v1/diagnostics/captures",
-            params=_without_none(
+            params=_payloads.without_none(
                 {
                     "space_id": space_id,
                     "profile_id": profile_id,
@@ -657,7 +643,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/context",
-            json=_context_body(
+            json=_payloads.context_body(
                 scope_payload=scope_payload,
                 space_id=space_id,
                 profile_ids=profile_ids,
@@ -701,7 +687,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/search",
-            json=_context_body(
+            json=_payloads.context_body(
                 scope_payload=scope_payload,
                 space_id=space_id,
                 profile_ids=profile_ids,
@@ -743,7 +729,7 @@ class MemoStackClient:
         format: str = "markdown",
     ) -> dict[str, Any]:
         scope_payload = read_scope.to_payload() if read_scope is not None else None
-        payload = scope_payload or _context_scope_payload(
+        payload = scope_payload or _payloads.context_scope_payload(
             space_id=space_id,
             profile_ids=profile_ids,
             thread_id=thread_id,
@@ -755,7 +741,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/digest",
-            json=_without_none(
+            json=_payloads.without_none(
                 {
                     **payload,
                     "topic": topic,
@@ -784,7 +770,7 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/thread-memory/status",
-            json=_single_scope_body(
+            json=_payloads.single_scope_body(
                 space_id=space_id,
                 profile_id=profile_id,
                 thread_id=thread_id,
@@ -807,7 +793,7 @@ class MemoStackClient:
         return self._request(
             "DELETE",
             "/v1/thread-memory",
-            json=_single_scope_body(
+            json=_payloads.single_scope_body(
                 space_id=space_id,
                 profile_id=profile_id,
                 thread_id=thread_id,
@@ -841,26 +827,43 @@ class MemoStackClient:
         return self._request(
             "POST",
             "/v1/suggestions",
-            json=_without_none(
-                {
-                    "space_id": space_id,
-                    "profile_id": profile_id,
-                    "space_slug": space_slug,
-                    "profile_external_ref": profile_external_ref,
-                    "candidate_text": candidate_text,
-                    "safe_reason": safe_reason,
-                    "kind": kind,
-                    "source_refs": source_refs or [],
-                    "trust_level": trust_level,
-                    "confidence": confidence,
-                    "target_fact_id": target_fact_id,
-                    "target_fact_version": target_fact_version,
-                    "operation": operation,
-                    "category": category,
-                    "tags": tags or [],
-                    "ttl_policy": ttl_policy,
-                    "review_payload": review_payload,
-                }
+            json=_payloads.suggestion_body(
+                space_id=space_id,
+                profile_id=profile_id,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                candidate_text=candidate_text,
+                safe_reason=safe_reason,
+                kind=kind,
+                source_refs=source_refs,
+                trust_level=trust_level,
+                confidence=confidence,
+                target_fact_id=target_fact_id,
+                target_fact_version=target_fact_version,
+                operation=operation,
+                category=category,
+                tags=tags,
+                ttl_policy=ttl_policy,
+                review_payload=review_payload,
+            ),
+        )
+
+    def create_suggestions_batch(
+        self, *, items: list[dict[str, Any]], space_id: str | None = None,
+        profile_id: str | None = None, space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        continue_on_error: bool = False,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/suggestions/batch",
+            json=_payloads.suggestions_batch_body(
+                items=items,
+                space_id=space_id,
+                profile_id=profile_id,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+                continue_on_error=continue_on_error,
             ),
         )
 
@@ -877,7 +880,7 @@ class MemoStackClient:
         tag: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        params = _without_none(
+        params = _payloads.without_none(
             {
                 "space_id": space_id,
                 "profile_id": profile_id,

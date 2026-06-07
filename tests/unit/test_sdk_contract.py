@@ -691,6 +691,44 @@ def test_sdk_supports_review_suggestions_batch() -> None:
     }
 
 
+def test_sdk_supports_create_suggestions_batch() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(201, json={"data": {"created": 2, "failed": 0}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.create_suggestions_batch(
+        space_slug="client-app",
+        profile_external_ref="default",
+        items=[
+            {"candidate_text": "Batch SDK fact A.", "safe_reason": "review"},
+            {"candidate_text": "Batch SDK fact B.", "safe_reason": "review"},
+        ],
+        continue_on_error=True,
+    )
+
+    assert seen == {
+        "path": "/v1/suggestions/batch",
+        "body": {
+            "space_slug": "client-app",
+            "profile_external_ref": "default",
+            "items": [
+                {"candidate_text": "Batch SDK fact A.", "safe_reason": "review"},
+                {"candidate_text": "Batch SDK fact B.", "safe_reason": "review"},
+            ],
+            "continue_on_error": True,
+        },
+    }
+
+
 def test_sdk_supports_profile_snapshot_export_import() -> None:
     seen: list[tuple[str, dict[str, object], dict[str, object]]] = []
 

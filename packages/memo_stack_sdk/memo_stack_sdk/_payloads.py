@@ -129,6 +129,70 @@ def context_scope_body(
     )
 
 
+def suggestions_batch_body(
+    *,
+    items: list[dict[str, Any]],
+    space_id: str | None,
+    profile_id: str | None,
+    space_slug: str | None,
+    profile_external_ref: str | None,
+    continue_on_error: bool,
+) -> dict[str, Any]:
+    return without_none(
+        {
+            "space_id": space_id,
+            "profile_id": profile_id,
+            "space_slug": space_slug,
+            "profile_external_ref": profile_external_ref,
+            "items": items,
+            "continue_on_error": continue_on_error,
+        }
+    )
+
+
+def suggestion_body(
+    *,
+    space_id: str | None,
+    profile_id: str | None,
+    space_slug: str | None,
+    profile_external_ref: str | None,
+    candidate_text: str,
+    safe_reason: str,
+    kind: str,
+    source_refs: list[dict[str, Any]] | None,
+    trust_level: str,
+    confidence: str,
+    target_fact_id: str | None,
+    target_fact_version: int | None,
+    operation: str,
+    category: str | None,
+    tags: list[str] | None,
+    ttl_policy: str | None,
+    review_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return without_none(
+        {
+            "space_id": space_id,
+            "profile_id": profile_id,
+            "space_slug": space_slug,
+            "profile_external_ref": profile_external_ref,
+            "candidate_text": candidate_text,
+            "safe_reason": safe_reason,
+            "kind": kind,
+            "source_refs": source_refs or [],
+            "trust_level": trust_level,
+            "confidence": confidence,
+            "target_fact_id": target_fact_id,
+            "target_fact_version": target_fact_version,
+            "operation": operation,
+            "category": category,
+            "tags": tags or [],
+            "ttl_policy": ttl_policy,
+            "review_payload": review_payload,
+        }
+    )
+
+
 def validate_single_scope_payload(payload: dict[str, Any]) -> None:
     canonical = any(payload.get(key) for key in ("space_id", "profile_id", "thread_id"))
     external = any(

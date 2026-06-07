@@ -76,12 +76,13 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="remember_durable_facts",
         label="Remember durable coding facts",
         weight=0.12,
-        memo_stack_score=9.1,
+        memo_stack_score=9.2,
         memora_score=9.0,
         memo_stack_rationale=(
             "memory_remember_fact, canonical facts, idempotency, source refs, "
-            "canonical category/tags/TTL, suggestions, MCP tools and HTTP API "
-            "are verified by local quality and MCP e2e gates."
+            "canonical category/tags/TTL, suggestions, bounded batch suggestion "
+            "create, MCP tools and HTTP API are verified by local quality and "
+            "MCP e2e gates."
         ),
         memora_rationale=(
             "Direct MCP smoke and public docs show simple memory_create, batch "
@@ -183,12 +184,12 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="agent_hooks_and_plugin_distribution",
         label="Agent hooks, plugins and real agent ergonomics",
         weight=0.10,
-        memo_stack_score=9.1,
+        memo_stack_score=9.2,
         memora_score=7.8,
         memo_stack_rationale=(
             "Repo includes plugin-kit-ai generated artifacts, MCP doctor, stdio "
             "e2e, hook capture tests, CLI memory operations and bounded MCP batch "
-            "suggestion review for agent workflows."
+            "suggestion create/review for agent workflows."
         ),
         memora_rationale=(
             "Memora ships MCP config and Claude/Cursor integration examples. "

@@ -390,6 +390,32 @@ class HttpMemoryGateway:
             ),
         )
 
+    async def create_suggestions_batch(
+        self,
+        *,
+        scope: MemoryScope,
+        items: list[dict[str, Any]],
+        continue_on_error: bool,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/suggestions/batch",
+            json={
+                "space_slug": scope.space_slug,
+                "profile_external_ref": scope.profile_external_ref,
+                "items": [
+                    {
+                        **item,
+                        "source_refs": [
+                            source.to_payload() for source in item.get("source_refs", [])
+                        ],
+                    }
+                    for item in items
+                ],
+                "continue_on_error": continue_on_error,
+            },
+        )
+
     async def list_suggestions(
         self,
         *,

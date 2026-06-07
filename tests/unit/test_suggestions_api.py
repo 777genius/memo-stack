@@ -131,6 +131,95 @@ def test_create_suggestion_rejects_unknown_source_ref_fields(tmp_path: Path) -> 
     assert created.json()["error"]["code"] == "memory.validation"
 
 
+def test_create_suggestions_batch_creates_review_queue_items(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/suggestions/batch",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "items": [
+                    {
+                        "candidate_text": "Batch suggest keeps Postgres canonical.",
+                        "kind": "architecture_decision",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-1"}],
+                    },
+                    {
+                        "candidate_text": "Batch suggest routes documents through Cognee.",
+                        "kind": "architecture_decision",
+                        "safe_reason": "batch_review",
+                        "category": "architecture",
+                        "tags": ["RAG", "cognee", "rag"],
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-2"}],
+                    },
+                ],
+            },
+            headers=auth_headers(),
+        )
+        listed = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "status": "pending",
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    data = created.json()["data"]
+    assert data["created"] == 2
+    assert data["failed"] == 0
+    assert [item["status"] for item in data["results"]] == ["created", "created"]
+    suggestions = listed.json()["data"]
+    by_text = {item["candidate_text"]: item for item in suggestions}
+    assert sorted(by_text) == [
+        "Batch suggest keeps Postgres canonical.",
+        "Batch suggest routes documents through Cognee.",
+    ]
+    assert by_text["Batch suggest routes documents through Cognee."]["tags"] == ["rag", "cognee"]
+
+
+def test_create_suggestions_batch_reports_duplicate_item_failures(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/suggestions/batch",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "continue_on_error": True,
+                "items": [
+                    {
+                        "candidate_text": "Duplicate batch suggestion marker.",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-1"}],
+                    },
+                    {
+                        "candidate_text": "  duplicate   batch suggestion marker. ",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-2"}],
+                    },
+                    {
+                        "candidate_text": "Distinct batch suggestion marker.",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-3"}],
+                    },
+                ],
+            },
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    data = created.json()["data"]
+    assert data["created"] == 2
+    assert data["failed"] == 1
+    assert data["stopped"] is False
+    assert data["results"][1]["status"] == "failed"
+    assert data["results"][1]["error_code"] == "memory.conflict"
+
+
 def test_review_suggestion_rejects_unknown_fields(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         created = client.post(
