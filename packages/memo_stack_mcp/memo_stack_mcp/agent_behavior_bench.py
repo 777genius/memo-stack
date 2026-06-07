@@ -76,6 +76,7 @@ PACKAGE_NAMES = (
     "memo_stack_adapters",
     "memo_stack_core",
     "memo_stack_mcp",
+    "memo_stack_obsidian",
     "memo_stack_sdk",
     "memo_stack_server",
 )

@@ -209,7 +209,7 @@ if [ ! -x "\${python_bin}" ]; then
 fi
 export MEMO_STACK_HOME="${PREFIX}"
 export MEMO_STACK_REPO_ROOT="\${repo_root}"
-memo_stack_pythonpath="\${repo_root}/packages/memo_stack_core:\${repo_root}/packages/memo_stack_server:\${repo_root}/packages/memo_stack_adapters:\${repo_root}/packages/memo_stack_sdk:\${repo_root}/packages/memo_stack_mcp:\${repo_root}/packages/memo_stack_cli"
+memo_stack_pythonpath="\${repo_root}/packages/memo_stack_core:\${repo_root}/packages/memo_stack_server:\${repo_root}/packages/memo_stack_adapters:\${repo_root}/packages/memo_stack_sdk:\${repo_root}/packages/memo_stack_obsidian:\${repo_root}/packages/memo_stack_mcp:\${repo_root}/packages/memo_stack_cli"
 if [ -n "\${PYTHONPATH:-}" ]; then
   export PYTHONPATH="\${memo_stack_pythonpath}:\${PYTHONPATH}"
 else
