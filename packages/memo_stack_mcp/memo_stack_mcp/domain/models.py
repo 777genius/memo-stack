@@ -7,20 +7,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
+from memo_stack_core.application.sensitive_text import (
+    contains_sensitive_text,
+)
+from memo_stack_core.application.sensitive_text import (
+    redact_sensitive_text as redact_core_sensitive_text,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-_SECRET_PATTERNS = (
-    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
-    re.compile(r"sk-[A-Za-z0-9_-]{12,}"),
-    re.compile(r"gh[pousr]_[A-Za-z0-9_]{12,}"),
-    re.compile(r"AKIA[0-9A-Z]{12,}"),
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(
-        r"(?i)(api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*['\"]?"
-        r"[A-Za-z0-9_./+=-]{20,}"
-    ),
-)
-_USERINFO_PATTERN = re.compile(r"(https?://)[^/@\s]+@")
 _SOURCE_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,79}$")
 _CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _BIDI_CONTROL_PATTERN = re.compile("[\u202a-\u202e\u2066-\u2069]")
@@ -551,18 +545,11 @@ def safe_message(value: str) -> str:
 
 
 def redact_sensitive_text(value: str) -> str:
-    redacted = _USERINFO_PATTERN.sub(r"\1[redacted]@", value)
-    for pattern in _SECRET_PATTERNS:
-        redacted = pattern.sub("[redacted]", redacted)
-    return redacted
+    return redact_core_sensitive_text(value, marker="[redacted]")
 
 
 def contains_sensitive_value(value: str | None) -> bool:
-    if not value:
-        return False
-    if _USERINFO_PATTERN.search(value):
-        return True
-    return any(pattern.search(value) for pattern in _SECRET_PATTERNS)
+    return contains_sensitive_text(value)
 
 
 def has_control_characters(value: str | None) -> bool:
