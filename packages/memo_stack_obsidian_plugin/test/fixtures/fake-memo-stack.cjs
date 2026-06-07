@@ -9,22 +9,19 @@ const vault = process.env.MEMO_STACK_OBSIDIAN_VAULT || process.cwd();
 
 const memoDir = path.join(vault, ".memo-stack");
 fs.mkdirSync(memoDir, { recursive: true });
-fs.appendFileSync(
-  path.join(memoDir, "local-stack-calls.jsonl"),
-  JSON.stringify({
-    command,
-    args,
-    apiUrl: process.env.MEMORY_API_URL || "",
-    envToken: process.env.MEMORY_SERVICE_TOKEN || "",
-  }) + "\n",
-);
+
+delayFromEnv("MEMO_STACK_FAKE_LOCAL_DELAY_MS");
+if (process.env.MEMO_STACK_FAKE_LOCAL_FAIL_COMMAND === command) {
+  fail(`Forced fake local stack failure: ${command}`);
+}
 
 if (command === "status") {
+  const ready = process.env.MEMO_STACK_FAKE_LOCAL_STATUS_READY !== "false";
   emit({
     ok: true,
     api_url: process.env.MEMORY_API_URL || "http://127.0.0.1:7788",
-    health: { status_code: 200, data: { ok: true } },
-    capabilities: { status_code: 200, data: { ok: true } },
+    health: { status_code: ready ? 200 : 503, data: { ok: ready } },
+    capabilities: { status_code: ready ? 200 : 503, data: { ok: ready } },
   });
 }
 
@@ -49,14 +46,15 @@ if (command === "doctor") {
 }
 
 if (command === "up" && args.includes("--lite")) {
+  recordCall(0);
   process.stdout.write("local stack started\n");
   process.exit(0);
 }
 
-process.stderr.write(`Unknown fake memo-stack command: ${args.join(" ")}\n`);
-process.exit(1);
+fail(`Unknown fake memo-stack command: ${args.join(" ")}`);
 
 function emit(payload) {
+  recordCall(0);
   process.stdout.write(`${JSON.stringify(payload)}\n`);
   process.exit(0);
 }
@@ -64,4 +62,30 @@ function emit(payload) {
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : "";
+}
+
+function fail(message) {
+  recordCall(1);
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+}
+
+function recordCall(status) {
+  fs.appendFileSync(
+    path.join(memoDir, "local-stack-calls.jsonl"),
+    JSON.stringify({
+      command,
+      args,
+      apiUrl: process.env.MEMORY_API_URL || "",
+      envToken: process.env.MEMORY_SERVICE_TOKEN || "",
+      status,
+    }) + "\n",
+  );
+}
+
+function delayFromEnv(name) {
+  const ms = Number.parseInt(process.env[name] || "0", 10);
+  if (Number.isFinite(ms) && ms > 0) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  }
 }

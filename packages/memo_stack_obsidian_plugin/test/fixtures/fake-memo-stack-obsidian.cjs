@@ -13,10 +13,11 @@ if (!command || !vault) {
 const memoDir = path.join(vault, ".memo-stack");
 const layout = layoutPaths();
 fs.mkdirSync(memoDir, { recursive: true });
-fs.appendFileSync(
-  path.join(memoDir, "plugin-cli-calls.jsonl"),
-  JSON.stringify({ command, args, envToken: process.env.MEMORY_SERVICE_TOKEN || "" }) + "\n",
-);
+
+delayFromEnv("MEMO_STACK_FAKE_OBSIDIAN_DELAY_MS");
+if (process.env.MEMO_STACK_FAKE_OBSIDIAN_FAIL_COMMAND === command) {
+  fail(`Forced fake connector failure: ${command}`);
+}
 
 if (command === "connect") {
   write(layout.readme, "# Memo Stack\n\nConnected by plugin E2E.\n");
@@ -132,11 +133,34 @@ function layoutPaths() {
 }
 
 function emit(payload) {
+  recordCall(0);
   process.stdout.write(`${JSON.stringify(payload)}\n`);
   process.exit(0);
 }
 
 function fail(message) {
+  if (command && vault) {
+    recordCall(1);
+  }
   process.stderr.write(`${message}\n`);
   process.exit(1);
+}
+
+function recordCall(status) {
+  fs.appendFileSync(
+    path.join(memoDir, "plugin-cli-calls.jsonl"),
+    JSON.stringify({
+      command,
+      args,
+      envToken: process.env.MEMORY_SERVICE_TOKEN || "",
+      status,
+    }) + "\n",
+  );
+}
+
+function delayFromEnv(name) {
+  const ms = Number.parseInt(process.env[name] || "0", 10);
+  if (Number.isFinite(ms) && ms > 0) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  }
 }
