@@ -2,6 +2,7 @@ from memo_stack_server.top_evidence_policy import (
     FULL_PROVIDER_TOP_EVIDENCE_GENERATORS,
     FULL_PROVIDER_TOP_EVIDENCE_SUITES,
     PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS,
+    TOP_EVIDENCE_PROVENANCE_CHECKS,
     top_evidence_provenance_summary,
     top_evidence_report_policy,
 )
@@ -45,6 +46,20 @@ def test_top_evidence_policy_summarizes_valid_public_benchmark_provenance() -> N
     assert summary["failed_checks"] == []
     assert summary["git_commit_present"] is True
     assert summary["runtime_present"] is True
+
+
+def test_top_evidence_policy_check_names_match_summary_contract() -> None:
+    report = {
+        "suite": "locomo",
+        "provenance": _provenance(
+            generated_by=next(iter(PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS)),
+            suite="locomo",
+        ),
+    }
+
+    summary = top_evidence_provenance_summary(report)
+
+    assert set(summary["checks"]) == set(TOP_EVIDENCE_PROVENANCE_CHECKS)
 
 
 def test_top_evidence_policy_rejects_wrong_generator_and_missing_runtime() -> None:

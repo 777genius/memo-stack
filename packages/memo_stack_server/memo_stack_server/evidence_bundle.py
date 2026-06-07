@@ -38,6 +38,8 @@ from memo_stack_server.eval import (
 from memo_stack_server.top_evidence_policy import (
     FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS,
     FULL_PROVIDER_TOP_EVIDENCE_SUITES,
+    TOP_EVIDENCE_PROVENANCE_CHECKS,
+    top_evidence_provenance_summary,
     top_evidence_report_policy,
 )
 
@@ -285,30 +287,22 @@ def _validate_top_evidence_payload_provenance(
     policy = top_evidence_report_policy(suite)
     if policy is None:
         return
+    summary = top_evidence_provenance_summary(payload, policy=policy)
+    if summary["ok"] is not True:
+        _raise_top_evidence_provenance_failure(
+            summary["failed_checks"],
+            source_label=source_label,
+        )
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
-        raise ValueError(f"Top evidence report is missing provenance: {source_label}")
-    if provenance.get("schema_version") != 1:
-        raise ValueError(
-            f"Top evidence report has unsupported provenance schema: {source_label}"
-        )
-    if provenance.get("suite") not in policy.provenance_suites:
-        raise ValueError(f"Top evidence report provenance suite mismatch: {source_label}")
-    if provenance.get("generated_by") not in policy.expected_generators:
-        raise ValueError(
-            f"Top evidence report has unsupported provenance generator: {source_label}"
-        )
+        raise AssertionError("top evidence provenance summary accepted missing provenance")
     git = provenance.get("git")
     commit = git.get("commit") if isinstance(git, dict) else None
     dirty = git.get("dirty") if isinstance(git, dict) else None
     if not isinstance(commit, str) or not commit:
-        raise ValueError(
-            f"Top evidence report is missing provenance git commit: {source_label}"
-        )
+        raise AssertionError("top evidence provenance summary accepted missing git commit")
     if not isinstance(dirty, bool):
-        raise ValueError(
-            f"Top evidence report is missing provenance dirty state: {source_label}"
-        )
+        raise AssertionError("top evidence provenance summary accepted missing dirty state")
     if commit != expected_git_commit:
         raise ValueError(
             f"Top evidence report commit mismatch: {source_label}: "
@@ -318,18 +312,6 @@ def _validate_top_evidence_payload_provenance(
         raise ValueError(
             f"Top evidence report was generated from a dirty worktree: {source_label}"
         )
-    runtime = provenance.get("runtime")
-    python_version = runtime.get("python_version") if isinstance(runtime, dict) else None
-    runtime_platform = runtime.get("platform") if isinstance(runtime, dict) else None
-    if not isinstance(python_version, str) or not python_version:
-        raise ValueError(
-            "Top evidence report is missing provenance runtime python_version: "
-            f"{source_label}"
-        )
-    if not isinstance(runtime_platform, str) or not runtime_platform:
-        raise ValueError(
-            f"Top evidence report is missing provenance runtime platform: {source_label}"
-        )
     if isinstance(suite, str) and suite in FULL_PROVIDER_TOP_EVIDENCE_SUITES:
         _validate_full_provider_nested_top_evidence(
             payload,
@@ -337,6 +319,43 @@ def _validate_top_evidence_payload_provenance(
             expected_git_commit=expected_git_commit,
             allow_dirty_top_evidence=allow_dirty_top_evidence,
         )
+
+
+def _raise_top_evidence_provenance_failure(
+    failed_checks: object,
+    *,
+    source_label: str,
+) -> None:
+    failures = failed_checks if isinstance(failed_checks, list) else []
+    messages = {
+        "provenance_present": f"Top evidence report is missing provenance: {source_label}",
+        "provenance_schema_version_1": (
+            f"Top evidence report has unsupported provenance schema: {source_label}"
+        ),
+        "provenance_suite_allowed": (
+            f"Top evidence report provenance suite mismatch: {source_label}"
+        ),
+        "provenance_generator_allowed": (
+            f"Top evidence report has unsupported provenance generator: {source_label}"
+        ),
+        "provenance_git_commit_present": (
+            f"Top evidence report is missing provenance git commit: {source_label}"
+        ),
+        "provenance_dirty_state_present": (
+            f"Top evidence report is missing provenance dirty state: {source_label}"
+        ),
+        "provenance_runtime_python_version_present": (
+            "Top evidence report is missing provenance runtime python_version: "
+            f"{source_label}"
+        ),
+        "provenance_runtime_platform_present": (
+            f"Top evidence report is missing provenance runtime platform: {source_label}"
+        ),
+    }
+    for check in TOP_EVIDENCE_PROVENANCE_CHECKS:
+        if check in failures:
+            raise ValueError(messages[check])
+    raise ValueError(f"Top evidence report provenance validation failed: {source_label}")
 
 
 def _validate_full_provider_nested_top_evidence(
