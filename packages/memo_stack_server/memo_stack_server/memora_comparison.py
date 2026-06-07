@@ -178,11 +178,11 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="agent_hooks_and_plugin_distribution",
         label="Agent hooks, plugins and real agent ergonomics",
         weight=0.10,
-        memo_stack_score=8.9,
+        memo_stack_score=9.0,
         memora_score=7.8,
         memo_stack_rationale=(
             "Repo includes plugin-kit-ai generated artifacts, MCP doctor, stdio "
-            "e2e and hook capture tests for agent workflows."
+            "e2e, hook capture tests and CLI memory operations for agent workflows."
         ),
         memora_rationale=(
             "Memora ships MCP config and Claude/Cursor integration examples. "
@@ -210,13 +210,13 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="ops_and_production_evidence",
         label="Operational confidence and benchmark evidence",
         weight=0.10,
-        memo_stack_score=9.1,
+        memo_stack_score=9.2,
         memora_score=7.7,
         memo_stack_rationale=(
             "Quality scorecard, full-provider canary, public benchmark canary, "
             "agent behavior benchmark, secret/top-evidence gates, and portable "
             "profile snapshot export/import plus memory insights via API, SDK "
-            "and MCP exist."
+            "MCP and CLI exist."
         ),
         memora_rationale=(
             "Direct temp-db smoke passed and public repo is active, but we did "
@@ -281,6 +281,7 @@ def build_memora_agent_memory_comparison(
                 "tests/unit/test_document_fragments.py",
                 "tests/unit/test_document_fragment_api.py",
                 "tests/unit/test_fact_taxonomy_api.py",
+                "tests/unit/test_cli_memory_commands.py",
                 "tests/unit/test_memory_insights_api.py",
                 "tests/unit/test_graph_export_api.py",
                 "tests/unit/test_profile_snapshot_api.py",

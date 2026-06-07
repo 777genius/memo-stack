@@ -25,6 +25,7 @@ Memo Stack local evidence:
 - `tests/unit/test_document_fragments.py`
 - `tests/unit/test_document_fragment_api.py`
 - `tests/unit/test_fact_taxonomy_api.py`
+- `tests/unit/test_cli_memory_commands.py`
 - `tests/unit/test_memory_insights_api.py`
 - `tests/unit/test_graph_export_api.py`
 - `tests/unit/test_graph_export_mcp.py`
@@ -110,14 +111,14 @@ make memo-stack-compare-memora
 | Retrieve the right facts for a coding agent | 9.4 | 9.0 | Memo Stack |
 | Large documents and architecture notes | 9.4 | 9.1 | Memo Stack |
 | Graph relationships and temporal context | 9.2 | 8.4 | Memo Stack |
-| Agent hooks, plugins and real agent ergonomics | 8.9 | 7.8 | Memo Stack |
+| Agent hooks, plugins and real agent ergonomics | 9.0 | 7.8 | Memo Stack |
 | Project/team/profile isolation | 9.2 | 7.5 | Memo Stack |
-| Operational confidence and benchmark evidence | 9.1 | 7.7 | Memo Stack |
+| Operational confidence and benchmark evidence | 9.2 | 7.7 | Memo Stack |
 | Clean Architecture and extensibility | 9.1 | 6.8 | Memo Stack |
 
 Weighted total:
 
-- Memo Stack: 9.20
+- Memo Stack: 9.22
 - Memora: 8.19
 
 ## Honest conclusion
@@ -141,11 +142,11 @@ for facts, documents, typed fragments and evidence links. Canonical facts now
 carry category/tags/TTL and expired active facts are hidden from active
 list/context/export surfaces while staying auditable by direct id. Context/search
 now support category plus tags_any/tags_all/tags_none filters for canonical facts. Profile
-snapshot export/import is available through HTTP API, SDK and MCP with dry-run
-and explicit confirmation gates. Read-only memory insights are available through
-HTTP API, SDK and MCP for pending review load, expired facts, document indexing
-coverage, taxonomy hotspots and cleanup action items. Memora still has more
-polished local graph UI.
+snapshot export/import is available through HTTP API, SDK, MCP and CLI with
+dry-run and explicit confirmation gates. Read-only memory insights are available
+through HTTP API, SDK, MCP and CLI for pending review load, expired facts,
+document indexing coverage, taxonomy hotspots and cleanup action items. Memora
+still has more polished local graph UI.
 
 ## Practical recommendation
 
