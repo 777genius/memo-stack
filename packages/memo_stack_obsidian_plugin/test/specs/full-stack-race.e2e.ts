@@ -144,6 +144,54 @@ describe("Memo Stack real sync race E2E", function () {
     assert.match(markdown, new RegExp(recoveredText));
     assert.match(markdown, /memo_stack_version: 2/);
   });
+
+  it("recovers dirty local edits after a real connector timeout", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO real timeout initial fact.",
+      sourceId: "wdio-real-timeout-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    const recoveredText = "Obsidian WDIO real timeout local draft recovered.";
+    replaceManagedText(exportedFact, recoveredText);
+    await updatePluginSettings({ commandTimeoutMs: 1000 });
+    await setRealEnv({ MEMO_STACK_REAL_OBSIDIAN_DELAY_MS: "3000" });
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.deepEqual(
+      calls.map((call) => call.command),
+      ["connect", "sync"],
+    );
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO real timeout initial fact.");
+    assert.match(fs.readFileSync(exportedFact, "utf8"), new RegExp(recoveredText));
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await clearRealEnv();
+    await updatePluginSettings({ commandTimeoutMs: 5000 });
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, fact.id, recoveredText);
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    const recoveredFact = await getFact(baseUrl, fact.id);
+    assert.equal(recoveredFact.version, 2);
+    assert.equal(recoveredFact.text, recoveredText);
+    const markdown = fs.readFileSync(onlyFactFile(vaultPath), "utf8");
+    assert.match(markdown, new RegExp(recoveredText));
+    assert.match(markdown, /memo_stack_version: 2/);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
@@ -360,6 +408,17 @@ async function memoStackSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
     return (plugins.memoStack as any).snapshot();
   });
+}
+
+async function updatePluginSettings(values: Record<string, unknown>): Promise<void> {
+  await browser.executeObsidian(
+    async ({ plugins }, payload) => {
+      const plugin = plugins.memoStack as any;
+      Object.assign(plugin.settings, payload);
+      await plugin.saveSettings();
+    },
+    values,
+  );
 }
 
 async function waitUntil(check: () => Promise<boolean>, message: string): Promise<void> {
