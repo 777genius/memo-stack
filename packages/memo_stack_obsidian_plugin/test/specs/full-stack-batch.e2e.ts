@@ -111,6 +111,41 @@ describe("Memo Stack batch sync E2E", function () {
     assert.match(untouchedMarkdown, /Obsidian WDIO batch exported fact 1/);
     assert.match(untouchedMarkdown, /memo_stack_version: 1/);
   });
+
+  it("keeps clean vault and inbox suggestions idempotent after local sync state is lost", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO state loss exported fact.",
+      sourceId: "wdio-state-loss-export",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const inboxMarker = "WDIO state loss inbox marker";
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    writeVaultFile(vaultPath, path.join(scopedRoot, "inbox", "state-loss.md"), inboxMarker);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForSuggestionsContaining(baseUrl, inboxMarker, 1);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.match(fs.readFileSync(factFileForId(vaultPath, fact.id), "utf8"), /memo_stack_version: 1/);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    removeSyncState(vaultPath);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await sleep(300);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.equal((await suggestionsContaining(baseUrl, inboxMarker)).length, 1);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    assert.match(fs.readFileSync(factFileForId(vaultPath, fact.id), "utf8"), /memo_stack_version: 1/);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
@@ -362,6 +397,14 @@ function conflictFiles(vaultPath: string): string[] {
     .readdirSync(conflictsDir)
     .filter((name) => name.endsWith(".md") && !name.startsWith(".") && name !== "README.md")
     .map((name) => path.join(conflictsDir, name));
+}
+
+function removeSyncState(vaultPath: string): void {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    fs.rmSync(path.join(vaultPath, ".memo-stack", `obsidian-sync.sqlite3${suffix}`), {
+      force: true,
+    });
+  }
 }
 
 function replaceManagedText(filePath: string, text: string): void {
