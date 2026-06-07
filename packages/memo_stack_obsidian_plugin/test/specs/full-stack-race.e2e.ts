@@ -87,6 +87,63 @@ describe("Memo Stack real sync race E2E", function () {
     assert.match(markdown, new RegExp(appliedText));
     assert.match(markdown, /memo_stack_version: 2/);
   });
+
+  it("recovers dirty local edits after the backend dies during real sync", async function () {
+    const dbPath = path.join(tempDir, "memory.db");
+    const port = Number(new URL(baseUrl).port);
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO backend restart initial fact.",
+      sourceId: "wdio-backend-restart-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    const recoveredText = "Obsidian WDIO backend restart local draft recovered.";
+    replaceManagedText(exportedFact, recoveredText);
+    await setRealEnv({ MEMO_STACK_REAL_OBSIDIAN_DELAY_MS: "900" });
+
+    const duringSync = await browser.executeObsidian(async ({ plugins }) => {
+      const plugin = plugins.memoStack as any;
+      void plugin.syncNow();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return plugin.snapshot();
+    });
+    assert.equal(duringSync.busyLabel, "syncing vault");
+
+    server?.kill("SIGTERM");
+    server = undefined;
+    await waitForUnhealthy(baseUrl);
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    assert.deepEqual(
+      calls.map((call) => call.command),
+      ["connect", "sync", "sync"],
+    );
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), new RegExp(recoveredText));
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await clearRealEnv();
+    server = startMemoStackServer(dbPath, port);
+    await waitForHealth(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, fact.id, recoveredText);
+
+    calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    const recoveredFact = await getFact(baseUrl, fact.id);
+    assert.equal(recoveredFact.version, 2);
+    assert.equal(recoveredFact.text, recoveredText);
+    const markdown = fs.readFileSync(onlyFactFile(vaultPath), "utf8");
+    assert.match(markdown, new RegExp(recoveredText));
+    assert.match(markdown, /memo_stack_version: 2/);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
@@ -102,8 +159,10 @@ async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
 async function connectAndExportFact(vaultPath: string): Promise<string> {
   await browser.executeObsidianCommand("memo-stack:connect-vault");
   await waitForCliCalls(vaultPath, 1);
+  await waitForPluginIdle();
   await browser.executeObsidianCommand("memo-stack:sync-now");
   await waitForCliCalls(vaultPath, 2);
+  await waitForPluginIdle();
   return onlyFactFile(vaultPath);
 }
 
@@ -190,6 +249,17 @@ async function waitForHealth(apiUrl: string): Promise<void> {
       return false;
     }
   }, "Memo Stack server did not become healthy");
+}
+
+async function waitForUnhealthy(apiUrl: string): Promise<void> {
+  await waitUntil(async () => {
+    try {
+      const response = await requestJson("GET", `${apiUrl}/v1/health`);
+      return response.status !== 200;
+    } catch (_error) {
+      return true;
+    }
+  }, "Memo Stack server stayed healthy");
 }
 
 async function createFact(
