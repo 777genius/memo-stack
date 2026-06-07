@@ -55,6 +55,7 @@ describe("Memo Stack friendly project names E2E", function () {
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 1);
     await waitForPluginIdle();
+    await waitForConnectedLayout(primaryScope);
 
     let snapshot = await memoStackSnapshot();
     assert.equal(snapshot.spaceSlug, rawSpaceSlug);
@@ -146,6 +147,7 @@ describe("Memo Stack friendly project names E2E", function () {
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 4);
     await waitForPluginIdle();
+    await waitForConnectedLayout(secondaryScope);
 
     let snapshot = await memoStackSnapshot();
     assert.equal(snapshot.spaceSlug, secondaryScope.spaceSlug);
@@ -614,6 +616,31 @@ async function waitForPluginScope(scope: Scope): Promise<void> {
     {
       timeout: 20000,
       timeoutMsg: "Memo Stack plugin did not reload friendly scope settings",
+    },
+  );
+}
+
+async function waitForConnectedLayout(scope: Scope): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const snapshot = await memoStackSnapshot();
+        return (
+          snapshot.spaceSlug === scope.spaceSlug &&
+          snapshot.profileExternalRef === scope.profileExternalRef &&
+          snapshot.paths.generatedFacts === posixPath(path.join(scopedRootFor(scope), "generated", "facts")) &&
+          snapshot.readmeExists === true &&
+          snapshot.generatedFactsExists === true &&
+          snapshot.inboxExists === true &&
+          snapshot.conflictsExists === true
+        );
+      } catch (_error) {
+        return false;
+      }
+    },
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack plugin did not observe the connected friendly layout",
     },
   );
 }
