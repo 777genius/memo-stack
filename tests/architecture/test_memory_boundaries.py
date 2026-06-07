@@ -35,6 +35,17 @@ def _assert_no_imports(package: str, forbidden_roots: set[str]) -> None:
     assert not violations, "Forbidden architecture imports:\n" + "\n".join(violations)
 
 
+def _assert_file_no_imports(relative_path: str, forbidden_imports: set[str]) -> None:
+    path = REPO_ROOT / relative_path
+    violations = []
+    for imported in sorted(_imports(path)):
+        root = imported.split(".", 1)[0]
+        if root in forbidden_imports or imported in forbidden_imports:
+            violations.append(f"{path.relative_to(REPO_ROOT)}: imports {imported}")
+
+    assert not violations, "Forbidden architecture imports:\n" + "\n".join(violations)
+
+
 def test_memory_core_has_no_infrastructure_dependencies() -> None:
     _assert_no_imports(
         "packages/memo_stack_core/memo_stack_core",
@@ -88,6 +99,26 @@ def test_memory_server_does_not_depend_on_mcp_adapter_layer() -> None:
         {
             "mcp",
             "memo_stack_mcp",
+        },
+    )
+
+
+def test_top_evidence_policy_stays_lightweight() -> None:
+    _assert_file_no_imports(
+        "packages/memo_stack_server/memo_stack_server/top_evidence_policy.py",
+        {
+            "anthropic",
+            "fastapi",
+            "graphiti",
+            "httpx",
+            "memo_stack_adapters",
+            "memo_stack_mcp",
+            "memo_stack_server.eval",
+            "memo_stack_server.main",
+            "mcp",
+            "openai",
+            "qdrant_client",
+            "sqlalchemy",
         },
     )
 
