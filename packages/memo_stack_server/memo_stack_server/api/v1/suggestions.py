@@ -399,6 +399,7 @@ def _review_batch_item_payload(item: Any) -> dict[str, Any]:
 def _create_batch_to_response(result: Any) -> dict[str, Any]:
     return {
         "created": result.created,
+        "existing": result.existing,
         "failed": result.failed,
         "stopped": result.stopped,
         "results": [

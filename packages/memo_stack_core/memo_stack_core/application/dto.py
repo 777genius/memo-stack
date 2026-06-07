@@ -537,6 +537,7 @@ class SuggestionResult:
     suggestion: MemorySuggestion
     fact: MemoryFact | None = None
     indexing_status: str | None = None
+    created: bool = True
 
 
 @dataclass(frozen=True)
@@ -551,6 +552,7 @@ class CreateSuggestionBatchItemResult:
 @dataclass(frozen=True)
 class CreateSuggestionsBatchResult:
     created: int
+    existing: int
     failed: int
     stopped: bool
     results: tuple[CreateSuggestionBatchItemResult, ...]

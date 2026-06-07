@@ -220,6 +220,93 @@ def test_create_suggestions_batch_reports_duplicate_item_failures(tmp_path: Path
     assert data["results"][1]["error_code"] == "memory.conflict"
 
 
+def test_create_suggestion_reuses_existing_pending_duplicate(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        first = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="  Duplicate pending suggestion should be reused.  ",
+                source_refs=[{"source_type": "manual", "source_id": "dup-1"}],
+            ),
+            headers=auth_headers(),
+        )
+        second = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="duplicate   pending suggestion should be reused.",
+                source_refs=[{"source_type": "manual", "source_id": "dup-2"}],
+            ),
+            headers=auth_headers(),
+        )
+        listed = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "status": "pending",
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["data"]["id"] == first.json()["data"]["id"]
+    assert second.json()["data"]["candidate_fingerprint"]
+    assert [item["id"] for item in listed.json()["data"]] == [first.json()["data"]["id"]]
+
+
+def test_create_suggestions_batch_marks_existing_pending_duplicates(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        existing = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(candidate_text="Batch existing suggestion should be reused."),
+            headers=auth_headers(),
+        )
+        created = client.post(
+            "/v1/suggestions/batch",
+            json={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "items": [
+                    {
+                        "candidate_text": "batch existing suggestion should be reused.",
+                        "kind": "architecture_decision",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-existing"}],
+                    },
+                    {
+                        "candidate_text": "Batch brand new suggestion should be created.",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-new"}],
+                    },
+                ],
+            },
+            headers=auth_headers(),
+        )
+        listed = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "profile_id": "profile_default",
+                "status": "pending",
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert existing.status_code == 201
+    assert created.status_code == 201
+    data = created.json()["data"]
+    assert data["created"] == 1
+    assert data["existing"] == 1
+    assert data["failed"] == 0
+    assert data["results"][0]["status"] == "existing"
+    assert data["results"][0]["suggestion"]["id"] == existing.json()["data"]["id"]
+    assert data["results"][1]["status"] == "created"
+    assert len(listed.json()["data"]) == 2
+
+
 def test_review_suggestion_rejects_unknown_fields(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         created = client.post(

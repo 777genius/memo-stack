@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from hashlib import sha256
+
 from memo_stack_core.application.dto import (
     ApproveSuggestionCommand,
     CreateSuggestionBatchItemResult,
@@ -56,6 +59,11 @@ class CreateSuggestionUseCase:
     async def execute(self, command: CreateSuggestionCommand) -> SuggestionResult:
         now = self._clock.now()
         trust = TrustLevel(command.trust_level)
+        operation = SuggestionOperation(command.operation)
+        candidate_fingerprint = command.candidate_fingerprint or _suggestion_fingerprint(
+            command=command,
+            operation=operation,
+        )
         suggestion = MemorySuggestion.create(
             suggestion_id=MemorySuggestionId(self._ids.new_id("sug")),
             space_id=command.space_id,
@@ -68,18 +76,27 @@ class CreateSuggestionUseCase:
             trust_level=trust,
             target_fact_id=MemoryFactId(command.target_fact_id) if command.target_fact_id else None,
             target_fact_version=command.target_fact_version,
-            operation=SuggestionOperation(command.operation),
+            operation=operation,
             category=command.category,
             tags=command.tags,
             ttl_policy=command.ttl_policy,
             expires_at=command.expires_at,
             expiry_reason=command.expiry_reason,
             created_from_capture_id=command.created_from_capture_id,
-            candidate_fingerprint=command.candidate_fingerprint,
+            candidate_fingerprint=candidate_fingerprint,
             review_payload=command.review_payload,
             now=now,
         )
         async with self._uow_factory() as uow:
+            duplicate = await uow.suggestions.find_pending_duplicate(
+                space_id=str(command.space_id),
+                profile_id=str(command.profile_id),
+                candidate_fingerprint=candidate_fingerprint,
+                operation=operation.value,
+                target_fact_id=command.target_fact_id,
+            )
+            if duplicate is not None:
+                return SuggestionResult(suggestion=duplicate, created=False)
             saved = await uow.suggestions.create(suggestion)
             await uow.commit()
         return SuggestionResult(suggestion=saved)
@@ -116,10 +133,11 @@ class CreateSuggestionsBatchUseCase:
             seen.add(duplicate_key)
             try:
                 result = await self._create_suggestion.execute(item)
+                status = "created" if result.created else "existing"
                 results.append(
                     CreateSuggestionBatchItemResult(
                         index=index,
-                        status="created",
+                        status=status,
                         result=result,
                     )
                 )
@@ -136,9 +154,12 @@ class CreateSuggestionsBatchUseCase:
                     stopped = True
                     break
 
+        created = sum(1 for result in results if result.status == "created")
+        existing = sum(1 for result in results if result.status == "existing")
         failed = sum(1 for result in results if result.status == "failed")
         return CreateSuggestionsBatchResult(
-            created=len(results) - failed,
+            created=created,
+            existing=existing,
             failed=failed,
             stopped=stopped,
             results=tuple(results),
@@ -374,6 +395,32 @@ def _safe_reason(reason: str, auto_approve: bool, trust: TrustLevel) -> str:
     if auto_approve:
         return f"{reason}; auto_approve_requires_review"
     return reason
+
+
+def _suggestion_fingerprint(
+    *,
+    command: CreateSuggestionCommand,
+    operation: SuggestionOperation,
+) -> str:
+    raw = "|".join(
+        (
+            str(command.space_id),
+            str(command.profile_id),
+            operation.value,
+            command.target_fact_id or "",
+            str(command.target_fact_version or ""),
+            command.kind.value,
+            command.category or "",
+            command.ttl_policy or "",
+            ",".join(command.tags),
+            _normalize_candidate_text(command.candidate_text),
+        )
+    )
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _normalize_candidate_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
 
 
 def _has_independent_source(suggestion: MemorySuggestion) -> bool:
