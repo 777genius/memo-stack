@@ -91,15 +91,19 @@ describe("Memo Stack Obsidian plugin", function () {
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
     const readme = readVaultFile(vaultPath, "Memo Stack/README.md");
     assert.match(readme, /Connected by plugin E2E/);
 
     await browser.executeObsidianCommand("memo-stack:run-doctor");
     await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
     await browser.executeObsidianCommand("memo-stack:preview-sync");
     await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
     await browser.executeObsidianCommand("memo-stack:sync-now");
     await waitForCliCalls(vaultPath, 6);
+    await waitForPluginIdle();
     const fact = readVaultFile(vaultPath, path.join(factsDir, "plugin-e2e.md"));
     assert.match(fact, /Plugin E2E fact/);
 

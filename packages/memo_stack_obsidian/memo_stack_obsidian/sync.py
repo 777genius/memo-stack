@@ -64,6 +64,10 @@ class ImportVaultChangesResult:
         return sum(1 for change in self.changes if change.status == ImportStatus.UPDATED)
 
     @property
+    def removed(self) -> int:
+        return sum(1 for change in self.changes if change.status == ImportStatus.REMOVED)
+
+    @property
     def conflicts(self) -> int:
         return sum(1 for change in self.changes if change.status == ImportStatus.CONFLICT)
 
@@ -356,6 +360,16 @@ class ImportVaultChangesUseCase:
                 version=note.version,
             )
         if not note.changed_since_export:
+            backend_fact = self._backend_fact(note.fact_id)
+            if str(backend_fact.get("status") or "") == "deleted":
+                self.vault.delete_text(path)
+                return ImportChange(
+                    status=ImportStatus.REMOVED,
+                    path=path,
+                    fact_id=note.fact_id,
+                    message="Removed clean local note for deleted backend fact",
+                    version=note.version,
+                )
             self.state.save(state_record_for_note(note))
             return ImportChange(
                 status=ImportStatus.UNCHANGED,

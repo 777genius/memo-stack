@@ -451,6 +451,7 @@ def _import_payload(result: ImportVaultChangesResult, *, applied: bool) -> dict[
         "ok": result.conflicts == 0,
         "applied": applied,
         "updated": result.updated,
+        "removed": result.removed,
         "would_update": result.would_update,
         "suggested": result.suggested,
         "would_suggest": result.would_suggest,

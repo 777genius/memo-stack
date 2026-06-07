@@ -36,6 +36,9 @@ class FilesystemVault:
             temp_path = Path(handle.name)
         temp_path.replace(path)
 
+    def delete_text(self, relative_path: PurePosixPath) -> None:
+        self._resolve(relative_path).unlink(missing_ok=True)
+
     def read_text(self, relative_path: PurePosixPath) -> str:
         return self._resolve(relative_path).read_text(encoding="utf-8")
 

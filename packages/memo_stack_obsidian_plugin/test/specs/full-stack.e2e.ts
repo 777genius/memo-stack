@@ -218,6 +218,63 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.match(conflict, /Inbox note is too large/);
     assert.match(conflict, /oversized-e2e-inbox\.md/);
   });
+
+  it("removes clean exported notes after backend facts are deleted", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO backend delete target.",
+      sourceId: "wdio-backend-delete-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    assert.equal(fs.existsSync(exportedFact), true);
+
+    const deleted = await deleteFact(baseUrl, fact.id);
+    assert.equal(deleted.status, "deleted");
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(fs.existsSync(exportedFact), false);
+    assert.equal(factFiles(vaultPath).length, 0);
+    assert.equal((await getFact(baseUrl, fact.id)).status, "deleted");
+  });
+
+  it("turns corrupt managed notes into visible conflicts without overwriting them", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO corrupt note initial fact.",
+      sourceId: "wdio-corrupt-note-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    fs.writeFileSync(exportedFact, "not a memo stack fact note", "utf8");
+
+    await updateFact(baseUrl, fact.id, {
+      expectedVersion: fact.version,
+      text: "Obsidian WDIO corrupt note backend update.",
+      reason: "External WDIO corrupt note update",
+    });
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    const calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(fs.readFileSync(exportedFact, "utf8"), "not a memo stack fact note");
+    assert.equal(
+      (await getFact(baseUrl, fact.id)).text,
+      "Obsidian WDIO corrupt note backend update.",
+    );
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /Unsupported note schema: missing/);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string, applyImportOnSync = true): Promise<string> {
@@ -383,6 +440,12 @@ async function getFact(apiUrl: string, factId: string): Promise<Record<string, a
   return response.body.data;
 }
 
+async function deleteFact(apiUrl: string, factId: string): Promise<Record<string, any>> {
+  const response = await requestJson("DELETE", `${apiUrl}/v1/facts/${factId}`);
+  assert.equal(response.status, 200);
+  return response.body.data;
+}
+
 async function waitForBackendFactText(
   apiUrl: string,
   factId: string,
@@ -419,7 +482,7 @@ async function suggestionsContaining(apiUrl: string, marker: string): Promise<Re
 }
 
 async function requestJson(
-  method: "GET" | "POST" | "PATCH",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   url: string,
   body?: Record<string, any>,
 ): Promise<{ status: number; body: any }> {

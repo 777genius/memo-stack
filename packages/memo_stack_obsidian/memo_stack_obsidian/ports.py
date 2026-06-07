@@ -54,6 +54,9 @@ class VaultPort(Protocol):
     def write_text(self, relative_path: PurePosixPath, text: str) -> None:
         """Write text atomically under the vault root."""
 
+    def delete_text(self, relative_path: PurePosixPath) -> None:
+        """Delete a text file under the vault root if it exists."""
+
     def read_text(self, relative_path: PurePosixPath) -> str:
         """Read text from a relative vault path."""
 

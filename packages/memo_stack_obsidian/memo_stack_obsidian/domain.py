@@ -28,6 +28,7 @@ class NoteKind(StrEnum):
 
 class ImportStatus(StrEnum):
     UNCHANGED = "unchanged"
+    REMOVED = "removed"
     WOULD_SUGGEST = "would_suggest"
     SUGGESTED = "suggested"
     WOULD_UPDATE = "would_update"

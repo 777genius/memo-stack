@@ -211,6 +211,56 @@ def test_deleted_generated_fact_is_recreated_on_next_export(tmp_path: Path) -> N
     assert "Use Qdrant for document recall." in fact_path.read_text(encoding="utf-8")
 
 
+def test_sync_once_removes_clean_generated_note_when_backend_fact_is_deleted(
+    tmp_path: Path,
+) -> None:
+    gateway = FakeMemoryGateway()
+    exporter, _importer = use_cases(tmp_path, gateway)
+    syncer = syncer_use_case(tmp_path, gateway)
+    exporter.execute(space_slug="default", profile_external_ref="me")
+    fact_path = tmp_path / FACTS_DIR / "fact_123.md"
+    gateway.fact["status"] = "deleted"
+    gateway.fact["version"] = 2
+
+    result = syncer.execute(
+        space_slug="default",
+        profile_external_ref="me",
+        apply_import=True,
+    )
+
+    assert result.ok is True
+    assert result.import_result.removed == 1
+    assert result.import_result.changes[0].status == ImportStatus.REMOVED
+    assert not fact_path.exists()
+    assert result.export_result.changes == ()
+
+
+def test_sync_once_keeps_dirty_generated_note_when_backend_fact_is_deleted(
+    tmp_path: Path,
+) -> None:
+    gateway = FakeMemoryGateway()
+    exporter, _importer = use_cases(tmp_path, gateway)
+    syncer = syncer_use_case(tmp_path, gateway)
+    exporter.execute(space_slug="default", profile_external_ref="me")
+    fact_path = tmp_path / FACTS_DIR / "fact_123.md"
+    replace_managed_text(tmp_path, "Local delete-race edit must survive.")
+    gateway.fact["status"] = "deleted"
+    gateway.fact["version"] = 2
+
+    result = syncer.execute(
+        space_slug="default",
+        profile_external_ref="me",
+        apply_import=True,
+    )
+
+    assert result.ok is False
+    assert result.export_skipped is True
+    assert result.import_result.conflicts == 1
+    assert result.import_result.changes[0].status == ImportStatus.CONFLICT
+    assert "Stale version" in result.import_result.changes[0].message
+    assert "Local delete-race edit must survive." in fact_path.read_text(encoding="utf-8")
+
+
 def test_sync_once_skips_export_when_managed_note_is_corrupt(
     tmp_path: Path,
 ) -> None:
@@ -462,6 +512,8 @@ class FakeMemoryGateway:
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, object]:
+        if self.fact["status"] != "active":
+            return {"data": [], "next_cursor": None}
         return {"data": [deepcopy(self.fact)], "next_cursor": None}
 
     def get_fact(self, fact_id: str) -> dict[str, object]:
