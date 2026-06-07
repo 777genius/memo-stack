@@ -455,6 +455,15 @@ def create_mcp_server(
             int,
             Field(default=100, ge=0, le=500, description="Maximum captures sampled per profile."),
         ] = 100,
+        max_activity: Annotated[
+            int,
+            Field(
+                default=50,
+                ge=0,
+                le=100,
+                description="Maximum recent activity events returned per profile.",
+            ),
+        ] = 50,
     ) -> Annotated[CallToolResult, MemoryInsightsResponse]:
         return _tool_response(
             await tool_service.insights(
@@ -466,6 +475,7 @@ def create_mcp_server(
                 max_documents=max_documents,
                 max_suggestions=max_suggestions,
                 max_captures=max_captures,
+                max_activity=max_activity,
             ),
             MemoryInsightsResponse,
         )

@@ -113,6 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
     insights_parser.add_argument("--max-documents", type=int, default=100)
     insights_parser.add_argument("--max-suggestions", type=int, default=100)
     insights_parser.add_argument("--max-captures", type=int, default=100)
+    insights_parser.add_argument("--max-activity", type=int, default=50)
     insights_parser.add_argument("--json", action="store_true")
     insights_parser.set_defaults(handler=_cmd_insights)
 
@@ -292,6 +293,7 @@ def _cmd_insights(args: argparse.Namespace) -> int:
         max_documents=args.max_documents,
         max_suggestions=args.max_suggestions,
         max_captures=args.max_captures,
+        max_activity=args.max_activity,
     )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

@@ -48,6 +48,7 @@ class MemoryGatewayPort(Protocol):
         max_documents: int,
         max_suggestions: int,
         max_captures: int,
+        max_activity: int,
     ) -> dict[str, Any]: ...
 
     async def export_graph(

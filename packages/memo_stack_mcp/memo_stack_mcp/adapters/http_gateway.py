@@ -112,6 +112,7 @@ class HttpMemoryGateway:
         max_documents: int,
         max_suggestions: int,
         max_captures: int,
+        max_activity: int,
     ) -> dict[str, Any]:
         profile_payload = _read_scope_profile_payload(scope)
         return await self._request(
@@ -126,6 +127,7 @@ class HttpMemoryGateway:
                     "max_documents": max_documents,
                     "max_suggestions": max_suggestions,
                     "max_captures": max_captures,
+                    "max_activity": max_activity,
                 }
             ),
         )

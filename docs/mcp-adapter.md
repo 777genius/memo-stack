@@ -33,7 +33,8 @@ Rules:
   instructions.
 - `memory_insights` - read-only health, review load, taxonomy, recent activity,
   duplicate/similar fact review, a safe `consolidation_plan` and cleanup
-  guidance for a memory scope.
+  guidance for a memory scope. Supports `max_activity` so agents can cap
+  timeline evidence instead of pulling noisy recent history.
 - `memory_propose_updates` - preferred agent workflow for candidate memory
   remember/update/forget batches through local policy.
 - `memory_remember_fact` - stores durable facts with idempotency.

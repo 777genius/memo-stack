@@ -70,6 +70,7 @@ def test_mcp_insights_structured_output_and_scope() -> None:
             {
                 "profile_external_refs": ["engineering", "product"],
                 "max_suggestions": 25,
+                "max_activity": 7,
             },
         )
 
@@ -87,6 +88,7 @@ def test_mcp_insights_structured_output_and_scope() -> None:
         )
         assert gateway.calls[0][0] == "build_insights"
         assert gateway.calls[0][1]["max_suggestions"] == 25
+        assert gateway.calls[0][1]["max_activity"] == 7
         assert gateway.calls[0][1]["scope"].profile_external_refs == (
             "engineering",
             "product",

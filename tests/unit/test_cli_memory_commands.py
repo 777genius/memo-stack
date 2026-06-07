@@ -72,7 +72,7 @@ def test_cli_insights_prints_summary_and_uses_default_scope(
     monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
     FakeMemoStackClient.instances.clear()
 
-    exit_code = cli.main(["insights"])
+    exit_code = cli.main(["insights", "--max-activity", "9"])
 
     captured = capsys.readouterr()
     assert exit_code == 0
@@ -84,6 +84,7 @@ def test_cli_insights_prints_summary_and_uses_default_scope(
     assert call_name == "build_insights"
     assert kwargs["scope"].space_slug == "default"
     assert kwargs["scope"].profile_external_ref == "default"
+    assert kwargs["max_activity"] == 9
 
 
 def test_cli_profile_export_is_redacted_by_default(

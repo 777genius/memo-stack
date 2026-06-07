@@ -29,7 +29,8 @@ facts that may have changed, document recall, or cross-agent continuity.
 2. Call `memory_status` only when readiness, policy, provider health, or active scope is unknown.
 3. Prefer `memory_propose_updates` for agent-generated remember, update, or forget candidates.
 4. Use `memory_insights` when the user asks for memory health, pending review, recent activity,
-   duplicate/similar fact cleanup, or a consolidation plan.
+   duplicate/similar fact cleanup, or a consolidation plan. Pass `max_activity` when recent
+   activity is only supporting evidence and should stay compact.
 5. Use `memory_suggest_facts_batch` when several extracted facts should all stay pending review.
 6. Use direct lifecycle tools only when the user explicitly asks or the local write policy allows it.
 7. Include evidence and source references when proposing memory changes.

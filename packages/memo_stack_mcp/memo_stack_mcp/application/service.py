@@ -353,6 +353,7 @@ class MemoryToolService:
         max_documents: int = 100,
         max_suggestions: int = 100,
         max_captures: int = 100,
+        max_activity: int = 50,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             effective_max_facts, fact_warnings = clamp_int(
@@ -379,11 +380,18 @@ class MemoryToolService:
                 minimum=0,
                 maximum=500,
             )
+            effective_max_activity, activity_warnings = clamp_int(
+                name="max_activity",
+                value=max_activity,
+                minimum=0,
+                maximum=100,
+            )
             warnings = (
                 fact_warnings
                 + document_warnings
                 + suggestion_warnings
                 + capture_warnings
+                + activity_warnings
             )
             scope = self._read_scope(
                 space_slug=space_slug,
@@ -397,6 +405,7 @@ class MemoryToolService:
                 max_documents=effective_max_documents,
                 max_suggestions=effective_max_suggestions,
                 max_captures=effective_max_captures,
+                max_activity=effective_max_activity,
             )
             data = payload.get("data", {})
             if not isinstance(data, dict):
@@ -411,6 +420,8 @@ class MemoryToolService:
             data.setdefault("effective_max_suggestions", effective_max_suggestions)
             data.setdefault("requested_max_captures", max_captures)
             data.setdefault("effective_max_captures", effective_max_captures)
+            data.setdefault("requested_max_activity", max_activity)
+            data.setdefault("effective_max_activity", effective_max_activity)
             return self._ok(
                 "Memory insights completed. Use action_items as review/cleanup guidance only.",
                 data=data,
