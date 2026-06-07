@@ -38,6 +38,12 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert manifest["policy"]["require_top_evidence"] is False
     assert manifest["policy"]["minimum_maturity_score_10"] == 9.0
     assert "auto-memory-golden" in manifest["policy"]["required_suites"]
+    reports_by_name = {item["relative_path"]: item["report"] for item in manifest["artifacts"]}
+    assert reports_by_name["small-golden.json"]["suite"] == "small-golden"
+    assert reports_by_name["small-golden.json"]["ok"] is True
+    assert reports_by_name["memory-quality-scorecard.json"]["suite"] == (
+        "memory-quality-scorecard"
+    )
     assert artifact_names == {
         "small-golden.json",
         "quality-golden.json",
@@ -71,6 +77,22 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
             {
                 "suite": "memo-stack-full-provider-canary",
                 "ok": True,
+                "provenance": {
+                    "schema_version": 1,
+                    "generated_by": "scripts/clean_full_smoke.py",
+                    "suite": "memo-stack-full-provider-canary",
+                    "run_id": "unit-run",
+                    "project": "unit-project",
+                    "git": {
+                        "commit": "abc123",
+                        "short_commit": "abc123",
+                        "dirty": False,
+                    },
+                    "runtime": {
+                        "python_version": "3.13.0",
+                        "platform": "darwin",
+                    },
+                },
                 "checks": {
                     "fact_created": True,
                     "updated_fact_versioned": True,
@@ -190,3 +212,8 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     assert len(external_artifacts) == 1
     assert external_artifacts[0]["path"] == str(external_report)
     assert external_artifacts[0]["relative_path"] is None
+    assert external_artifacts[0]["report"]["suite"] == "memo-stack-full-provider-canary"
+    assert external_artifacts[0]["report"]["provenance"]["generated_by"] == (
+        "scripts/clean_full_smoke.py"
+    )
+    assert external_artifacts[0]["report"]["provenance"]["git"]["commit"] == "abc123"

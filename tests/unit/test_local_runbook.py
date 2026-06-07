@@ -533,6 +533,26 @@ def test_clean_full_smoke_uses_current_postgres_database_name(monkeypatch) -> No
     assert not env["MEMORY_DATABASE_URL"].endswith(":15432/memory")
 
 
+def test_clean_full_smoke_report_provenance_is_safe_and_auditable() -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    provenance = module._report_provenance(
+        run_id="unit-run",
+        project_name="unit-project",
+    )
+    redacted = module._redact_payload(provenance)
+
+    assert provenance["schema_version"] == 1
+    assert provenance["generated_by"] == "scripts/clean_full_smoke.py"
+    assert provenance["suite"] == "memo-stack-full-provider-canary"
+    assert provenance["run_id"] == "unit-run"
+    assert provenance["project"] == "unit-project"
+    assert set(provenance["git"]) == {"commit", "short_commit", "dirty"}
+    assert "python_version" in provenance["runtime"]
+    assert "platform" in provenance["runtime"]
+    assert redacted == provenance
+
+
 def test_clean_full_smoke_keeps_safe_check_names_with_token_word() -> None:
     module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
 

@@ -242,7 +242,26 @@ def _artifact_summary(path: Path, *, kind: str, output_dir: Path) -> dict[str, o
         "relative_path": _relative_path(path, output_dir),
         "size_bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
+        "report": _artifact_report_metadata(data),
     }
+
+
+def _artifact_report_metadata(data: bytes) -> dict[str, object] | None:
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    metadata: dict[str, object] = {
+        key: payload[key]
+        for key in ("suite", "status", "ok")
+        if key in payload and isinstance(payload[key], str | bool)
+    }
+    provenance = payload.get("provenance")
+    if isinstance(provenance, dict):
+        metadata["provenance"] = provenance
+    return metadata or None
 
 
 def _relative_path(path: Path, output_dir: Path) -> str | None:

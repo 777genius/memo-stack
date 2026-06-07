@@ -253,6 +253,7 @@ def main() -> int:
                 )
         result["suite"] = FULL_PROVIDER_CANARY_SUITE
         result["project"] = project_name
+        result["provenance"] = _report_provenance(run_id=run_id, project_name=project_name)
         result["elapsed_seconds"] = round(time.perf_counter() - started, 3)
         _emit_report(result, env=server_env)
         return 0
@@ -263,6 +264,7 @@ def main() -> int:
             "error": exc.__class__.__name__,
             "message": _redact_text(str(exc), env=server_env),
             "project": project_name,
+            "provenance": _report_provenance(run_id=run_id, project_name=project_name),
         }
         if server is not None:
             details["server_output_tail"] = _redact_text(_stop_server(server), env=server_env)
@@ -342,6 +344,51 @@ def _optional_path_env(name: str) -> Path | None:
     if raw is None or raw.strip() == "":
         return None
     return Path(raw).expanduser()
+
+
+def _report_provenance(*, run_id: str, project_name: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "generated_by": "scripts/clean_full_smoke.py",
+        "suite": FULL_PROVIDER_CANARY_SUITE,
+        "run_id": run_id,
+        "project": project_name,
+        "git": _git_metadata(),
+        "runtime": {
+            "python_version": sys.version.split()[0],
+            "platform": sys.platform,
+        },
+    }
+
+
+def _git_metadata() -> dict[str, Any]:
+    return {
+        "commit": _git_output("rev-parse", "HEAD"),
+        "short_commit": _git_output("rev-parse", "--short", "HEAD"),
+        "dirty": _git_dirty(),
+    }
+
+
+def _git_dirty() -> bool | None:
+    status = _git_output("status", "--short")
+    return None if status is None else bool(status.strip())
+
+
+def _git_output(*args: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
 
 
 def _ports() -> dict[str, int]:
