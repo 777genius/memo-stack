@@ -9,6 +9,7 @@ from memo_stack_server.api.v1.diagnostics import router as diagnostics_router
 from memo_stack_server.api.v1.digest import router as digest_router
 from memo_stack_server.api.v1.documents import router as documents_router
 from memo_stack_server.api.v1.episodes import router as episodes_router
+from memo_stack_server.api.v1.export import router as export_router
 from memo_stack_server.api.v1.facts import router as facts_router
 from memo_stack_server.api.v1.health import router as health_router
 from memo_stack_server.api.v1.spaces_profiles import router as spaces_profiles_router
@@ -28,3 +29,4 @@ router.include_router(digest_router)
 router.include_router(thread_memory_router)
 router.include_router(suggestions_router)
 router.include_router(diagnostics_router)
+router.include_router(export_router)

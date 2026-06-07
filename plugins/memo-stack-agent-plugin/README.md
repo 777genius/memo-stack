@@ -253,6 +253,8 @@ config.
 
 - Search before remember/update/forget/document ingest actions.
 - Use `memory_propose_updates` for agent-generated memory writes.
+- Use `memory_export_graph` for graph.json, portable backup, git-syncable
+  evidence export, or visualization data.
 - Use `memory_list_captures` and `memory_consolidate_capture` only for
   auto-memory diagnostics/review workflows; captures are not active memory.
 - Use `memory_status` only for readiness/policy/provider diagnostics; it is not

@@ -174,6 +174,17 @@ class DocumentRepositoryPort(Protocol):
     ) -> list[MemoryChunk]:
         """List active chunks for a document."""
 
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        thread_id: str | None,
+        status: str | None,
+        limit: int,
+    ) -> list[MemoryDocument]:
+        """List documents for a single scope."""
+
     async def soft_delete_with_chunks(
         self,
         *,

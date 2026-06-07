@@ -201,6 +201,47 @@ class DocumentChunksQueryResult:
 
 
 @dataclass(frozen=True)
+class ExportGraphQuery:
+    space_id: SpaceId
+    profile_id: ProfileId
+    thread_id: ThreadId | None
+    include_deleted: bool
+    include_restricted: bool
+    max_facts: int
+    max_documents: int
+    max_chunks: int
+
+
+@dataclass(frozen=True)
+class GraphExportNode:
+    id: str
+    type: str
+    label: str
+    data: dict[str, object]
+
+
+@dataclass(frozen=True)
+class GraphExportEdge:
+    id: str
+    type: str
+    source: str
+    target: str
+    label: str
+    data: dict[str, object]
+
+
+@dataclass(frozen=True)
+class GraphExportResult:
+    schema_version: str
+    scope: dict[str, object]
+    nodes: tuple[GraphExportNode, ...]
+    edges: tuple[GraphExportEdge, ...]
+    counts: dict[str, int]
+    truncated: bool
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class DeleteDocumentCommand:
     document_id: str
 

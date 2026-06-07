@@ -12,6 +12,7 @@ from memo_stack_core.application import (
     ListDocumentChunksQuery,
     ProcessDocumentCommand,
 )
+from memo_stack_core.application.document_fragments import document_fragment_summary_from_nodes
 from memo_stack_core.domain.entities import MemoryChunk, MemoryDocument
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,6 +51,7 @@ def document_to_response(
     document: MemoryDocument,
     *,
     chunks: int | None = None,
+    chunk_items: tuple[MemoryChunk, ...] = (),
     duplicate_chunks: int | None = None,
     indexing_status: str | None = None,
     deleted_chunks: int | None = None,
@@ -71,6 +73,11 @@ def document_to_response(
     }
     if chunks is not None:
         body["chunks"] = chunks
+        if chunk_items:
+            body["fragment_summary"] = document_fragment_summary_from_nodes(
+                (str(chunk.metadata.get("node_kind") or chunk.kind.value), chunk.sequence)
+                for chunk in chunk_items
+            )
     if duplicate_chunks is not None:
         body["duplicate_chunks"] = duplicate_chunks
     if indexing_status is not None:
@@ -91,6 +98,7 @@ def chunk_to_response(chunk: MemoryChunk) -> dict[str, Any]:
         "sequence": chunk.sequence,
         "status": chunk.status.value,
         "classification": chunk.classification,
+        "metadata": chunk.metadata,
     }
 
 
@@ -134,6 +142,7 @@ async def ingest_document(
         "data": document_to_response(
             result.document,
             chunks=len(result.chunks),
+            chunk_items=result.chunks,
             duplicate_chunks=result.duplicate_chunks,
             indexing_status=result.indexing_status,
         )

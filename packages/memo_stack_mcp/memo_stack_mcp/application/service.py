@@ -48,6 +48,8 @@ MEMORY_USAGE_GUIDE = """Memo Stack MCP usage guide:
 - Use memory_digest for broad topic/project summaries, architecture overviews, or review prep.
   For precise lookup, answering from a specific fact, or any write/update/forget flow, use
   memory_search or memory_get_fact.
+- Use memory_export_graph for graph.json, backup, visualization, or git-syncable evidence export.
+  It is read-only and exports canonical facts, documents, typed fragments, and evidence links.
 - If the user asks to search, check, look up, or compare memory, call memory_search before
   answering. Do not answer with an intent to search without actually using the tool.
 - Use memory_status only when readiness, policy, or provider diagnostics are unknown or requested.
@@ -990,6 +992,58 @@ class MemoryToolService:
                 policy=self._policy_payload(policy),
                 side_effects=side_effects,
                 warnings=list(policy.warnings),
+            )
+
+        return await self._guard(action)
+
+    async def export_graph(
+        self,
+        *,
+        space_slug: str | None = None,
+        profile_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
+        include_deleted: bool = False,
+        include_restricted: bool = False,
+        max_facts: int = 250,
+        max_documents: int = 100,
+        max_chunks: int = 500,
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            self._ensure_bool("include_deleted", include_deleted)
+            self._ensure_bool("include_restricted", include_restricted)
+            bounded_facts, fact_warnings = self._clamp_int(
+                name="max_facts",
+                value=max_facts,
+                minimum=0,
+                maximum=1_000,
+            )
+            bounded_documents, document_warnings = self._clamp_int(
+                name="max_documents",
+                value=max_documents,
+                minimum=0,
+                maximum=500,
+            )
+            bounded_chunks, chunk_warnings = self._clamp_int(
+                name="max_chunks",
+                value=max_chunks,
+                minimum=0,
+                maximum=2_000,
+            )
+            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            payload = await self._gateway.export_graph(
+                scope=scope,
+                include_deleted=include_deleted,
+                include_restricted=include_restricted,
+                max_facts=bounded_facts,
+                max_documents=bounded_documents,
+                max_chunks=bounded_chunks,
+            )
+            return self._ok(
+                "Portable canonical memory graph exported.",
+                data=payload.get("data", payload),
+                scope=asdict(scope),
+                side_effects=[],
+                warnings=[*fact_warnings, *document_warnings, *chunk_warnings],
             )
 
         return await self._guard(action)
@@ -1957,21 +2011,24 @@ class MemoryToolService:
         degraded: bool = False,
         backend: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        response = McpToolResponse(
-            ok=True,
-            message=message,
-            data=data,
-            diagnostics=McpDiagnostics(
-                trace_id=self._trace_id(),
-                scope=scope,
-                policy=policy or {},
-                side_effects=side_effects or [],
-                warnings=warnings or [],
-                degraded=degraded,
-                backend=backend or {},
-            ),
+        diagnostics = McpDiagnostics(
+            trace_id=self._trace_id(),
+            scope=scope,
+            policy=policy or {},
+            side_effects=side_effects or [],
+            warnings=warnings or [],
+            degraded=degraded,
+            backend=backend or {},
         )
-        return response.model_dump(exclude_none=True)
+        clean_data = _drop_none_values(data)
+        response_data: dict[str, Any] | list[Any]
+        response_data = {"items": clean_data} if isinstance(clean_data, list) else clean_data
+        return {
+            "ok": True,
+            "message": message,
+            "data": response_data,
+            "diagnostics": diagnostics.model_dump(exclude_none=True),
+        }
 
     async def _capture_gateway(
         self,
@@ -2056,3 +2113,15 @@ def _normalize_optional_label(value: str | None) -> str | None:
         return None
     normalized = value.strip().lower()
     return normalized or None
+
+
+def _drop_none_values(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _drop_none_values(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    if isinstance(value, list):
+        return [_drop_none_values(item) for item in value]
+    return value

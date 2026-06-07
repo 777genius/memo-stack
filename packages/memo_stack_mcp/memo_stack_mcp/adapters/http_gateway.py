@@ -96,6 +96,33 @@ class HttpMemoryGateway:
             ),
         )
 
+    async def export_graph(
+        self,
+        *,
+        scope: MemoryScope,
+        include_deleted: bool,
+        include_restricted: bool,
+        max_facts: int,
+        max_documents: int,
+        max_chunks: int,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/export/graph.json",
+            params=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    "profile_external_ref": scope.profile_external_ref,
+                    "thread_external_ref": scope.thread_external_ref,
+                    "include_deleted": include_deleted,
+                    "include_restricted": include_restricted,
+                    "max_facts": max_facts,
+                    "max_documents": max_documents,
+                    "max_chunks": max_chunks,
+                }
+            ),
+        )
+
     async def remember_fact(
         self,
         *,

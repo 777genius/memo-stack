@@ -36,6 +36,17 @@ class MemoryGatewayPort(Protocol):
         include_related: bool,
     ) -> dict[str, Any]: ...
 
+    async def export_graph(
+        self,
+        *,
+        scope: MemoryScope,
+        include_deleted: bool,
+        include_restricted: bool,
+        max_facts: int,
+        max_documents: int,
+        max_chunks: int,
+    ) -> dict[str, Any]: ...
+
     async def remember_fact(
         self,
         *,

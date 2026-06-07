@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from memo_stack_core.application.chunker import chunk_text
+from memo_stack_core.application.document_fragments import fragment_document_text
 from memo_stack_core.application.document_text import document_chunk_retrieval_text
 from memo_stack_core.application.dto import IngestDocumentCommand, IngestDocumentResult
 from memo_stack_core.application.normalize import (
@@ -15,7 +15,6 @@ from memo_stack_core.application.normalize import (
 from memo_stack_core.domain.entities import (
     MemoryChunk,
     MemoryChunkId,
-    MemoryChunkKind,
     MemoryDocument,
     MemoryDocumentId,
 )
@@ -151,7 +150,7 @@ class IngestDocumentUseCase:
                 )
             stored_chunks = []
             duplicate_chunks = 0
-            for piece in chunk_text(command.text):
+            for piece in fragment_document_text(command.text):
                 retrieval_text = document_chunk_retrieval_text(
                     text=piece.text,
                     title=saved_document.title,
@@ -172,7 +171,7 @@ class IngestDocumentUseCase:
                         piece.sequence,
                         normalize_text(piece.text),
                     ),
-                    kind=MemoryChunkKind.DOCUMENT_SECTION,
+                    kind=piece.kind,
                     text=piece.text,
                     normalized_text=normalize_text(retrieval_text),
                     sequence=piece.sequence,
@@ -180,7 +179,12 @@ class IngestDocumentUseCase:
                     char_end=piece.char_end,
                     token_estimate=estimate_tokens(retrieval_text),
                     now=now,
-                    metadata={"title": saved_document.title},
+                    metadata={
+                        "title": saved_document.title,
+                        "node_kind": piece.node_kind,
+                        "heading": piece.heading,
+                        "ordinal_in_heading": piece.ordinal_in_heading,
+                    },
                     classification=saved_document.classification,
                 )
                 upsert = await uow.chunks.upsert(chunk)

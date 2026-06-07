@@ -30,6 +30,7 @@ from memo_stack_core.application import (
     EnsureScopeUseCase,
     ExpirePendingSuggestionsUseCase,
     ExpireSuggestionUseCase,
+    ExportGraphUseCase,
     ForgetFactUseCase,
     GetCapabilitiesUseCase,
     GetCaptureUseCase,
@@ -118,6 +119,7 @@ class Container:
     delete_document: DeleteDocumentUseCase
     build_context: BuildContextUseCase
     build_memory_digest: BuildMemoryDigestUseCase
+    export_graph: ExportGraphUseCase
     delete_thread_memory: DeleteThreadMemoryUseCase
     get_session_status: GetSessionStatusUseCase
     create_suggestion: CreateSuggestionUseCase
@@ -237,6 +239,7 @@ def build_container(settings: Settings | None = None) -> Container:
         ids=ids,
         context_builder=build_context,
     )
+    export_graph = ExportGraphUseCase(uow_factory=uow_factory)
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
     get_session_status = GetSessionStatusUseCase(uow_factory=uow_factory)
     create_suggestion = CreateSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
@@ -310,6 +313,7 @@ def build_container(settings: Settings | None = None) -> Container:
         delete_document=delete_document,
         build_context=build_context,
         build_memory_digest=build_memory_digest,
+        export_graph=export_graph,
         delete_thread_memory=delete_thread_memory,
         get_session_status=get_session_status,
         create_suggestion=create_suggestion,

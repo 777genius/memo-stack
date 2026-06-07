@@ -20,6 +20,7 @@ from memo_stack_core.application.dto import (
     DocumentQueryResult,
     EnsureScopeCommand,
     ExpireSuggestionCommand,
+    ExportGraphQuery,
     FactQueryResult,
     FactResult,
     FactsQueryResult,
@@ -29,6 +30,9 @@ from memo_stack_core.application.dto import (
     GetDocumentQuery,
     GetFactQuery,
     GetSessionStatusQuery,
+    GraphExportEdge,
+    GraphExportNode,
+    GraphExportResult,
     IngestDocumentCommand,
     IngestDocumentResult,
     IngestEpisodeCommand,
@@ -62,6 +66,7 @@ from memo_stack_core.application.use_cases.expire_suggestions import (
     ExpirePendingSuggestionsResult,
     ExpirePendingSuggestionsUseCase,
 )
+from memo_stack_core.application.use_cases.export_graph import ExportGraphUseCase
 from memo_stack_core.application.use_cases.forget_fact import ForgetFactUseCase
 from memo_stack_core.application.use_cases.get_capabilities import (
     CapabilitiesResult,
@@ -130,6 +135,8 @@ __all__ = [
     "DocumentQueryResult",
     "EnsureScopeCommand",
     "EnsureScopeUseCase",
+    "ExportGraphQuery",
+    "ExportGraphUseCase",
     "ExpireSuggestionCommand",
     "ExpirePendingSuggestionsResult",
     "ExpirePendingSuggestionsUseCase",
@@ -149,6 +156,9 @@ __all__ = [
     "GetCapabilitiesUseCase",
     "GetSessionStatusQuery",
     "GetSessionStatusUseCase",
+    "GraphExportEdge",
+    "GraphExportNode",
+    "GraphExportResult",
     "IngestDocumentCommand",
     "IngestDocumentResult",
     "IngestDocumentUseCase",

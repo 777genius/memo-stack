@@ -1923,6 +1923,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_status",
             "memory_search",
             "memory_digest",
+            "memory_export_graph",
             "memory_remember_fact",
             "memory_list_facts",
             "memory_get_fact",
@@ -1981,6 +1982,10 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert "do not call it as a substitute" in status_description
         assert "status alone does not complete" in status_description
         assert "call this before relying on memory" not in status_description
+        graph_export = next(tool for tool in tools if tool.name == "memory_export_graph")
+        assert graph_export.annotations.readOnlyHint is True
+        assert "graph.json" in graph_export.description
+        assert "canonical" in graph_export.description.casefold()
         propose = next(tool for tool in tools if tool.name == "memory_propose_updates")
         propose_description = propose.description.casefold()
         assert "mutating tool" in propose_description

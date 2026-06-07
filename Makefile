@@ -127,6 +127,20 @@ memo-stack-public-benchmark:
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-}" ]; then set -- "$$@" --max-cases "$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES}"; fi; \
 	$(PYTHON) -m memo_stack_server eval public-benchmark "$$@"
 
+.PHONY: memo-stack-memora-direct-smoke
+memo-stack-memora-direct-smoke:
+	@$(PYTHON) scripts/memora_direct_mcp_smoke.py
+
+.PHONY: memo-stack-compare-memora
+memo-stack-compare-memora:
+	@set -e; \
+	smoke_report="$${MEMORA_DIRECT_SMOKE_REPORT:-}"; \
+	if [ -n "$$smoke_report" ]; then \
+		$(PYTHON) -m memo_stack_server.memora_comparison --memora-smoke-report "$$smoke_report"; \
+	else \
+		$(PYTHON) -m memo_stack_server.memora_comparison; \
+	fi
+
 .PHONY: memo-stack-official-public-benchmark-canary
 memo-stack-official-public-benchmark-canary:
 	@set -e; \

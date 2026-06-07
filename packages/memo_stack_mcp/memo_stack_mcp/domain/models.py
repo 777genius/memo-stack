@@ -19,6 +19,7 @@ _SOURCE_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,79}$")
 _CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _BIDI_CONTROL_PATTERN = re.compile("[\u202a-\u202e\u2066-\u2069]")
 _ZERO_WIDTH_PATTERN = re.compile("[\u200b-\u200f\ufeff]")
+JsonScalar = str | int | float | bool | None
 
 
 class McpPublicModel(BaseModel):
@@ -228,6 +229,32 @@ class MemoryDigestData(McpDataModel):
     effective_max_suggestions: int | None = None
 
 
+class MemoryGraphNodeData(McpDataModel):
+    id: str
+    type: str
+    label: str
+    data: dict[str, JsonScalar] = Field(default_factory=dict)
+
+
+class MemoryGraphEdgeData(McpDataModel):
+    id: str
+    type: str
+    source: str
+    target: str
+    label: str
+    data: dict[str, JsonScalar] = Field(default_factory=dict)
+
+
+class MemoryGraphExportData(McpDataModel):
+    schema_version: str | None = None
+    scope: dict[str, JsonScalar] = Field(default_factory=dict)
+    nodes: list[MemoryGraphNodeData] = Field(default_factory=list)
+    edges: list[MemoryGraphEdgeData] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+    truncated: bool | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class MemoryFactListData(McpDataModel):
     items: list[MemoryRecordData] = Field(default_factory=list)
     next_cursor: str | None = None
@@ -290,8 +317,17 @@ class MemoryReviewSuggestionData(MemoryFactMutationData):
     pass
 
 
+class MemoryDocumentFragmentSummaryData(McpDataModel):
+    fragment_count: int | None = None
+    node_counts: dict[str, int] = Field(default_factory=dict)
+    node_map: dict[str, list[int]] = Field(default_factory=dict)
+
+
 class MemoryDocumentIngestData(MemoryFactMutationData):
     chunks: int | None = None
+    fragment_summary: MemoryDocumentFragmentSummaryData = Field(
+        default_factory=MemoryDocumentFragmentSummaryData
+    )
 
 
 class MemoryToolData(
@@ -370,6 +406,10 @@ class MemoryReviewSuggestionResponse(McpToolResponse):
 
 class MemoryDocumentIngestResponse(McpToolResponse):
     data: MemoryDocumentIngestData | None = None
+
+
+class MemoryGraphExportResponse(McpToolResponse):
+    data: MemoryGraphExportData | None = None
 
 
 class MemoryCandidateOperation(StrEnum):

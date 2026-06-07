@@ -26,6 +26,7 @@ def test_openapi_contains_stable_v1_fields() -> None:
     assert "/v1/context" in paths
     assert "/v1/search" in paths
     assert "/v1/digest" in paths
+    assert "/v1/export/graph.json" in paths
 
     schemas = body["components"]["schemas"]
     assert set(schemas["RememberFactRequest"]["required"]) == {"text", "source_refs"}

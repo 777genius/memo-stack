@@ -95,6 +95,10 @@ class MemoryChunkKind(StrEnum):
     SELECTED_MESSAGE = "selected_message"
     USER_PROMPT = "user_prompt"
     DOCUMENT_SECTION = "document_section"
+    DOCUMENT_CLAIM = "document_claim"
+    DOCUMENT_PLAN_ITEM = "document_plan_item"
+    DOCUMENT_RISK = "document_risk"
+    DOCUMENT_REFERENCE = "document_reference"
     FACT_EVIDENCE = "fact_evidence"
     AI_RESPONSE = "ai_response"
 

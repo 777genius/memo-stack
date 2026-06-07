@@ -928,6 +928,35 @@ class PostgresDocumentRepository(DocumentRepositoryPort):
         rows = (await self._session.execute(statement)).scalars()
         return [chunk_row_to_domain(row) for row in rows]
 
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        profile_id: str,
+        thread_id: str | None,
+        status: str | None,
+        limit: int,
+    ) -> list[MemoryDocument]:
+        conditions = [
+            MemoryDocumentRow.space_id == space_id,
+            MemoryDocumentRow.profile_id == profile_id,
+        ]
+        if status:
+            conditions.append(MemoryDocumentRow.status == status)
+        if thread_id is not None:
+            conditions.append(
+                or_(MemoryDocumentRow.thread_id == thread_id, MemoryDocumentRow.thread_id.is_(None))
+            )
+        rows = (
+            await self._session.execute(
+                select(MemoryDocumentRow)
+                .where(*conditions)
+                .order_by(MemoryDocumentRow.updated_at.desc(), MemoryDocumentRow.id.desc())
+                .limit(limit)
+            )
+        ).scalars()
+        return [document_row_to_domain(row) for row in rows]
+
     async def soft_delete_with_chunks(
         self,
         *,
