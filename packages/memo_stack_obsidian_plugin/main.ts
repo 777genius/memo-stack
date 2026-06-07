@@ -112,6 +112,10 @@ function timeoutSetting(value: unknown): number {
     : DEFAULT_SETTINGS.commandTimeoutMs;
 }
 
+function markSettingInput(inputEl: HTMLInputElement, name: string): void {
+  inputEl.dataset.memoStackSetting = name;
+}
+
 export default class MemoStackPlugin extends Plugin {
   settings: MemoStackSettings = { ...DEFAULT_SETTINGS };
   private lastResult: ConnectorRunResult | null = null;
@@ -724,21 +728,23 @@ class MemoStackSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("API URL")
       .setDesc("Local Memo Stack server URL.")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "apiUrl");
         text
           .setPlaceholder(DEFAULT_SETTINGS.apiUrl)
           .setValue(this.plugin.settings.apiUrl)
           .onChange(async (value) => {
             this.plugin.settings.apiUrl = value.trim();
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Service token")
       .setDesc("Stored in Obsidian plugin data and passed to the CLI through env.")
       .addText((text) => {
         text.inputEl.type = "password";
+        markSettingInput(text.inputEl, "token");
         text
           .setPlaceholder("optional")
           .setValue(this.plugin.settings.token)
@@ -751,7 +757,8 @@ class MemoStackSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Local CLI path")
       .setDesc("Use an absolute path if Obsidian does not inherit your shell PATH.")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "localCliPath");
         text
           .setPlaceholder(DEFAULT_SETTINGS.localCliPath)
           .setValue(this.plugin.settings.localCliPath)
@@ -759,47 +766,50 @@ class MemoStackSettingTab extends PluginSettingTab {
             this.plugin.settings.localCliPath =
               value.trim() || DEFAULT_SETTINGS.localCliPath;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Connector CLI path")
       .setDesc("Use an absolute path if Obsidian does not inherit your shell PATH.")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "cliPath");
         text
           .setPlaceholder(DEFAULT_SETTINGS.cliPath)
           .setValue(this.plugin.settings.cliPath)
           .onChange(async (value) => {
             this.plugin.settings.cliPath = value.trim() || DEFAULT_SETTINGS.cliPath;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Vault path override")
       .setDesc("Optional. Leave empty to use the current desktop vault path.")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "vaultPathOverride");
         text
           .setPlaceholder("/Users/me/Notes")
           .setValue(this.plugin.settings.vaultPathOverride)
           .onChange(async (value) => {
             this.plugin.settings.vaultPathOverride = value.trim();
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Folder")
       .setDesc("Root folder inside the vault where Memo Stack writes project memory.")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "rootFolder");
         text
           .setPlaceholder(DEFAULT_SETTINGS.rootFolder)
           .setValue(this.plugin.settings.rootFolder)
           .onChange(async (value) => {
             this.plugin.settings.rootFolder = value.trim() || DEFAULT_SETTINGS.rootFolder;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Layout")
@@ -817,19 +827,21 @@ class MemoStackSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Project")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "spaceSlug");
         text
           .setPlaceholder(DEFAULT_SETTINGS.spaceSlug)
           .setValue(this.plugin.settings.spaceSlug)
           .onChange(async (value) => {
             this.plugin.settings.spaceSlug = value.trim() || DEFAULT_SETTINGS.spaceSlug;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Profile")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "profileExternalRef");
         text
           .setPlaceholder(DEFAULT_SETTINGS.profileExternalRef)
           .setValue(this.plugin.settings.profileExternalRef)
@@ -837,8 +849,8 @@ class MemoStackSettingTab extends PluginSettingTab {
             this.plugin.settings.profileExternalRef =
               value.trim() || DEFAULT_SETTINGS.profileExternalRef;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Apply imports on sync")
@@ -853,7 +865,8 @@ class MemoStackSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Command timeout")
       .setDesc("Milliseconds before the connector command is stopped.")
-      .addText((text) =>
+      .addText((text) => {
+        markSettingInput(text.inputEl, "commandTimeoutMs");
         text
           .setPlaceholder(String(DEFAULT_SETTINGS.commandTimeoutMs))
           .setValue(String(this.plugin.settings.commandTimeoutMs))
@@ -863,8 +876,8 @@ class MemoStackSettingTab extends PluginSettingTab {
               ? Math.max(parsed, 1000)
               : DEFAULT_SETTINGS.commandTimeoutMs;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Local stack")

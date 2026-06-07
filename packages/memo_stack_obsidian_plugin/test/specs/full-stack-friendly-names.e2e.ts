@@ -248,16 +248,71 @@ describe("Memo Stack friendly project names E2E", function () {
     assertCallsUseScope(calls, primaryScope);
     assert.ok(calls.every((call) => call.status === 0));
   });
+
+  it("configures a friendly scoped vault through the Obsidian settings UI", async function () {
+    await createFact(baseUrl, {
+      text: "Friendly settings UI backend fact.",
+      sourceId: "wdio-friendly-settings-ui-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", rootFolder);
+    await setSettingsInput("spaceSlug", rawSpaceSlug);
+    await setSettingsInput("profileExternalRef", rawProfileExternalRef);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPluginScope(primaryScope);
+
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.apiUrl, baseUrl);
+    assert.equal(snapshot.rootFolder, rootFolder);
+    assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
+    await waitForSettingsFile(vaultPath);
+    assert.match(readVaultFile(vaultPath, path.join(".obsidian", "plugins", "memo-stack", "data.json")), /Client Alpha/);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = onlyFactFile(vaultPath);
+    assert.equal(path.dirname(exportedFact), path.join(vaultPath, scopedRoot, "generated", "facts"));
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /Friendly settings UI backend fact/);
+
+    await browser.executeObsidianCommand("memo-stack:open-inbox");
+    assert.equal(await activeFilePath(), posixPath(path.join(scopedRoot, "inbox", "README.md")));
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.inboxExists, true);
+    assert.equal(snapshot.conflictsExists, true);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
+    assertCallsUseScope(calls, primaryScope);
+    assert.ok(calls.every((call) => call.args.includes(baseUrl)));
+    assert.ok(calls.every((call) => call.args.includes(rootFolder)));
+    assert.ok(calls.every((call) => call.status === 0));
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string, scope: Scope = primaryScope): Promise<string> {
+  const vaultPath = await resetVault();
+  await configurePlugin(vaultPath, apiUrl, scope);
+  return vaultPath;
+}
+
+async function resetVault(): Promise<string> {
   const obsidianPage = await browser.getObsidianPage();
   await obsidianPage.resetVault({
     "Welcome.md": "# Welcome\n\nFriendly names E2E vault.\n",
   });
-  const vaultPath = obsidianPage.getVaultPath();
-  await configurePlugin(vaultPath, apiUrl, scope);
-  return vaultPath;
+  return obsidianPage.getVaultPath();
 }
 
 async function configurePlugin(vaultPath: string, apiUrl: string, scope: Scope = primaryScope): Promise<void> {
@@ -472,6 +527,54 @@ async function waitForPluginScope(scope: Scope): Promise<void> {
       timeoutMsg: "Memo Stack plugin did not reload friendly scope settings",
     },
   );
+}
+
+async function waitForSettingsFile(vaultPath: string): Promise<void> {
+  const settingsPath = path.join(vaultPath, ".obsidian", "plugins", "memo-stack", "data.json");
+  await waitUntil(
+    async () => fs.existsSync(settingsPath) && fs.readFileSync(settingsPath, "utf8").includes(rawSpaceSlug),
+    "Memo Stack settings UI did not persist data.json",
+  );
+}
+
+async function openMemoStackSettings(): Promise<void> {
+  await browser.executeObsidian(({ app }) => {
+    const setting = (app as any).setting;
+    setting.open();
+    setting.openTabById("memo-stack");
+  });
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(() =>
+        Boolean(document.querySelector('input[data-memo-stack-setting="apiUrl"]')),
+      ),
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack settings UI did not open",
+    },
+  );
+}
+
+async function setSettingsInput(name: string, value: string): Promise<void> {
+  const changed = await browser.execute(
+    (settingName, nextValue) => {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[data-memo-stack-setting="${settingName}"]`,
+      );
+      if (!input) {
+        return false;
+      }
+      input.focus();
+      input.value = nextValue;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.blur();
+      return true;
+    },
+    name,
+    value,
+  );
+  assert.equal(changed, true, `Could not change Memo Stack settings input ${name}`);
 }
 
 async function memoStackSnapshot(): Promise<any> {
