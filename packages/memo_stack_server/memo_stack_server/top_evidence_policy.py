@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+
+from memo_stack_core.application.sensitive_text import contains_sensitive_text
 
 TOP_EVIDENCE_PROVENANCE_CHECKS = (
     "provenance_present",
@@ -15,6 +18,7 @@ TOP_EVIDENCE_PROVENANCE_CHECKS = (
     "provenance_runtime_python_version_present",
     "provenance_runtime_platform_present",
 )
+TOP_EVIDENCE_SAFETY_CHECKS = ("no_sensitive_text",)
 FULL_PROVIDER_TOP_EVIDENCE_GENERATORS = frozenset({"scripts/clean_full_smoke.py"})
 FULL_PROVIDER_TOP_EVIDENCE_SUITES = frozenset(
     {
@@ -45,6 +49,8 @@ PUBLIC_BENCHMARK_TOP_EVIDENCE_SUITES = frozenset(
     }
 )
 FULL_PROVIDER_NESTED_TOP_EVIDENCE_KEYS = ("agent_behavior", "public_benchmark")
+_SAFE_PATH_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
+_MAX_SENSITIVE_PATH_SAMPLES = 10
 
 
 @dataclass(frozen=True)
@@ -136,3 +142,60 @@ def top_evidence_provenance_summary(
             and checks["provenance_runtime_platform_present"]
         ),
     }
+
+
+def top_evidence_safety_summary(result: Mapping[str, object]) -> dict[str, object]:
+    sensitive_path_samples: list[str] = []
+    sensitive_path_count = _collect_sensitive_paths(
+        result,
+        "$",
+        sensitive_path_samples,
+    )
+    checks = {"no_sensitive_text": sensitive_path_count == 0}
+    failed_checks = sorted(check for check, ok in checks.items() if ok is not True)
+    return {
+        "ok": not failed_checks,
+        "checks": checks,
+        "failed_checks": failed_checks,
+        "sensitive_path_count": sensitive_path_count,
+        "sensitive_paths": sensitive_path_samples,
+    }
+
+
+def _collect_sensitive_paths(
+    value: object,
+    path: str,
+    samples: list[str],
+) -> int:
+    if isinstance(value, str):
+        return _record_sensitive_path(path, samples) if contains_sensitive_text(value) else 0
+    if isinstance(value, Mapping):
+        total = 0
+        for key, child in value.items():
+            child_path = f"{path}{_safe_path_key(key)}"
+            if isinstance(key, str) and contains_sensitive_text(key):
+                total += _record_sensitive_path(f"{path}.[sensitive-key]", samples)
+            total += _collect_sensitive_paths(child, child_path, samples)
+        return total
+    if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
+        total = 0
+        for index, child in enumerate(value):
+            total += _collect_sensitive_paths(child, f"{path}[{index}]", samples)
+        return total
+    return 0
+
+
+def _record_sensitive_path(path: str, samples: list[str]) -> int:
+    if len(samples) < _MAX_SENSITIVE_PATH_SAMPLES:
+        samples.append(path)
+    return 1
+
+
+def _safe_path_key(key: object) -> str:
+    if not isinstance(key, str):
+        return ".[key]"
+    if contains_sensitive_text(key):
+        return ".[sensitive-key]"
+    if _SAFE_PATH_KEY_PATTERN.fullmatch(key):
+        return f".{key}"
+    return ".[key]"

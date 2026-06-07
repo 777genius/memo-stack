@@ -41,7 +41,9 @@ from memo_stack_server.main import create_app
 from memo_stack_server.public_benchmark import run_public_memory_benchmark
 from memo_stack_server.top_evidence_policy import (
     TOP_EVIDENCE_PROVENANCE_CHECKS,
+    TOP_EVIDENCE_SAFETY_CHECKS,
     top_evidence_provenance_summary,
+    top_evidence_safety_summary,
 )
 
 PROMPT_CONTRACT_SUITE = "prompt-contract"
@@ -433,6 +435,8 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_required_provenance_checks": list(
                 TOP_EVIDENCE_PROVENANCE_CHECKS
             ),
+            "top_evidence_requires_safety_scan": True,
+            "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
         },
         "agent_behavior": {
             "accepted_scenario_sets": list(_AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS),
@@ -457,6 +461,8 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_required_provenance_checks": list(
                 TOP_EVIDENCE_PROVENANCE_CHECKS
             ),
+            "top_evidence_requires_safety_scan": True,
+            "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
         },
         "public_benchmark": {
             "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
@@ -468,6 +474,8 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_required_provenance_checks": list(
                 TOP_EVIDENCE_PROVENANCE_CHECKS
             ),
+            "top_evidence_requires_safety_scan": True,
+            "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
         },
     }
 
@@ -788,12 +796,16 @@ def _scorecard_external_evidence(
         evidence_gaps.append("full_provider_canary_failed")
         if full_provider_summary.get("provenance_ok") is False:
             evidence_gaps.append("full_provider_canary_provenance_failed")
+        if full_provider_summary.get("safety_ok") is False:
+            evidence_gaps.append("full_provider_canary_safety_failed")
     if not agent_behavior_summary["present"]:
         evidence_gaps.append("agent_behavior_benchmark_missing")
     elif not agent_behavior_ok:
         evidence_gaps.append("agent_behavior_benchmark_failed")
         if agent_behavior_summary.get("provenance_ok") is False:
             evidence_gaps.append("agent_behavior_benchmark_provenance_failed")
+        if agent_behavior_summary.get("safety_ok") is False:
+            evidence_gaps.append("agent_behavior_benchmark_safety_failed")
         if agent_behavior_summary.get("quality_floor_ok") is False:
             evidence_gaps.append("agent_behavior_quality_floor_failed")
     if not public_benchmark_summary["present"]:
@@ -802,6 +814,8 @@ def _scorecard_external_evidence(
         evidence_gaps.append("public_benchmark_evidence_failed")
         if public_benchmark_summary.get("provenance_ok") is False:
             evidence_gaps.append("public_benchmark_provenance_failed")
+        if public_benchmark_summary.get("safety_ok") is False:
+            evidence_gaps.append("public_benchmark_safety_failed")
         if public_benchmark_summary.get("competitive_floor_ok") is False:
             evidence_gaps.append("public_benchmark_competitive_floor_failed")
 
@@ -894,20 +908,27 @@ def _scorecard_public_benchmark_evidence_summary(
     )
     competitive_floor = _scorecard_public_benchmark_competitive_floor(benchmarks)
     quality_ok = ok and competitive_floor["ok"] is True
-    provenance_reports = [
-        top_evidence_provenance_summary(report)
-        for report in reports
-    ]
+    provenance_reports = [top_evidence_provenance_summary(report) for report in reports]
     provenance_ok = bool(provenance_reports) and all(
         report["ok"] is True for report in provenance_reports
     )
-    ok = quality_ok and (not require_top_evidence or provenance_ok)
+    safety_reports = [top_evidence_safety_summary(report) for report in reports]
+    safety_ok = bool(safety_reports) and all(
+        report["ok"] is True for report in safety_reports
+    )
+    safety = _scorecard_combined_safety_summary(safety_reports)
+    ok = quality_ok and (
+        not require_top_evidence or (provenance_ok and safety_ok)
+    )
     return {
         "present": bool(reports),
         "ok": ok,
         "quality_ok": quality_ok,
         "provenance_ok": provenance_ok if require_top_evidence else None,
         "provenance_reports": provenance_reports,
+        "safety_ok": safety_ok if require_top_evidence else None,
+        "safety": safety,
+        "safety_reports": safety_reports,
         "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
         "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
         "missing_benchmarks": missing,
@@ -929,6 +950,35 @@ def _scorecard_public_benchmark_reports(
         if _scorecard_normalize_public_benchmark_name(suite):
             reports.append(result)
     return reports
+
+
+def _scorecard_combined_safety_summary(
+    reports: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    failed_checks = sorted(
+        {
+            check
+            for report in reports
+            for check in report.get("failed_checks", ())
+            if isinstance(check, str)
+        }
+    )
+    return {
+        "ok": bool(reports) and not failed_checks,
+        "checks": {
+            "no_sensitive_text": bool(reports) and not failed_checks,
+        },
+        "failed_checks": failed_checks,
+        "sensitive_path_count": sum(
+            int(report.get("sensitive_path_count", 0)) for report in reports
+        ),
+        "sensitive_paths": [
+            path
+            for report in reports
+            for path in report.get("sensitive_paths", ())
+            if isinstance(path, str)
+        ][:10],
+    }
 
 
 def _scorecard_collect_public_benchmarks(
@@ -1057,14 +1107,21 @@ def _scorecard_full_provider_evidence_summary(
         check for check, ok in required_checks.items() if ok is not True
     )
     provenance = top_evidence_provenance_summary(result)
+    safety = top_evidence_safety_summary(result)
     quality_ok = result.get("ok") is True and not failed_required_checks
     return {
         "present": True,
         "suite": result.get("suite", FULL_PROVIDER_CANARY_SUITE),
-        "ok": quality_ok and (not require_top_evidence or provenance["ok"] is True),
+        "ok": quality_ok
+        and (
+            not require_top_evidence
+            or (provenance["ok"] is True and safety["ok"] is True)
+        ),
         "quality_ok": quality_ok,
         "provenance_ok": provenance["ok"] if require_top_evidence else None,
         "provenance": provenance,
+        "safety_ok": safety["ok"] if require_top_evidence else None,
+        "safety": safety,
         "required_checks": required_checks,
         "failed_required_checks": failed_required_checks,
         "checks_ok_count": sum(1 for value in check_values if value),
@@ -1120,14 +1177,21 @@ def _scorecard_agent_behavior_evidence_summary(
         check for check, ok in required_checks.items() if ok is not True
     )
     provenance = top_evidence_provenance_summary(result)
+    safety = top_evidence_safety_summary(result)
     quality_ok = result.get("ok") is True and not failed_required_checks
     return {
         "present": True,
         "suite": result.get("suite", AGENT_BEHAVIOR_BENCH_SUITE),
-        "ok": quality_ok and (not require_top_evidence or provenance["ok"] is True),
+        "ok": quality_ok
+        and (
+            not require_top_evidence
+            or (provenance["ok"] is True and safety["ok"] is True)
+        ),
         "quality_ok": quality_ok,
         "provenance_ok": provenance["ok"] if require_top_evidence else None,
         "provenance": provenance,
+        "safety_ok": safety["ok"] if require_top_evidence else None,
+        "safety": safety,
         "scenario_set": result.get("scenario_set"),
         "model": result.get("model"),
         "quality_floor_ok": not failed_required_checks,
