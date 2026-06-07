@@ -19,6 +19,7 @@ from pathlib import Path
 
 from memo_stack_server.eval import (
     AUTO_MEMORY_GOLDEN_SUITE,
+    FULL_PROVIDER_CANARY_SUITE,
     GRAPH_NATIVE_GOLDEN_SUITE,
     LONG_MEMORY_GOLDEN_SUITE,
     MEMORY_QUALITY_SCORECARD_SUITE,
@@ -36,6 +37,15 @@ from memo_stack_server.eval import (
 )
 
 DEFAULT_EVIDENCE_DIR = Path(".tmp") / "memo-stack-quality-evidence"
+_FULL_PROVIDER_REPORT_SUITES = frozenset(
+    (
+        FULL_PROVIDER_CANARY_SUITE,
+        "memo_stack_full_provider_canary",
+        "memo-stack-clean-full-smoke",
+        "clean-full-smoke",
+        "clean_full_smoke",
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +94,7 @@ def build_quality_evidence_bundle(
     output_dir: Path = DEFAULT_EVIDENCE_DIR,
     extra_report_paths: Sequence[Path] = (),
     require_top_evidence: bool = False,
+    expected_git_commit: str | None = None,
 ) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     suite_report_paths: list[Path] = []
@@ -101,7 +112,11 @@ def build_quality_evidence_bundle(
             }
         )
 
-    extra_reports = _validated_extra_reports(extra_report_paths)
+    extra_reports = _validated_extra_reports(
+        extra_report_paths,
+        require_top_evidence=require_top_evidence,
+        expected_git_commit=expected_git_commit,
+    )
     scorecard_path = output_dir / "memory-quality-scorecard.json"
     scorecard = run_memory_quality_scorecard(
         report_out=scorecard_path,
@@ -115,6 +130,11 @@ def build_quality_evidence_bundle(
         "scorecard_report_path": str(scorecard_path),
         "manifest_path": str(output_dir / "quality-evidence-manifest.json"),
         "require_top_evidence": require_top_evidence,
+        "expected_git_commit": expected_git_commit
+        if expected_git_commit is not None
+        else _current_git_commit()
+        if require_top_evidence
+        else None,
         "deterministic_reports": suite_summaries,
         "extra_report_paths": [str(path) for path in extra_reports],
         "scorecard": {
@@ -143,6 +163,7 @@ def build_quality_evidence_bundle(
         scorecard_path=scorecard_path,
         bundle_path=bundle_path,
         require_top_evidence=require_top_evidence,
+        expected_git_commit=result["expected_git_commit"],
     )
     _write_json(output_dir / "quality-evidence-manifest.json", manifest)
     return result
@@ -163,12 +184,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Fail unless full-provider, real-agent and public benchmark evidence passes.",
     )
+    parser.add_argument(
+        "--expected-git-commit",
+        default=None,
+        help=(
+            "Expected git commit for strict full-provider external reports. "
+            "Defaults to the current repository HEAD when --require-top-evidence is set."
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         result = build_quality_evidence_bundle(
             output_dir=args.output_dir,
             extra_report_paths=tuple(args.extra_report),
             require_top_evidence=args.require_top_evidence,
+            expected_git_commit=args.expected_git_commit,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
@@ -176,15 +206,83 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0 if result["ok"] else 1
 
 
-def _validated_extra_reports(paths: Sequence[Path]) -> list[Path]:
+def _validated_extra_reports(
+    paths: Sequence[Path],
+    *,
+    require_top_evidence: bool,
+    expected_git_commit: str | None,
+) -> list[Path]:
     result: list[Path] = []
+    resolved_expected_commit = (
+        _required_expected_git_commit(expected_git_commit)
+        if require_top_evidence
+        else None
+    )
     for path in paths:
         if not path.exists():
             raise ValueError(f"Evidence extra report does not exist: {path}")
         if not path.is_file():
             raise ValueError(f"Evidence extra report must be a file: {path}")
+        if require_top_evidence and resolved_expected_commit is not None:
+            _validate_top_evidence_report_provenance(
+                path,
+                expected_git_commit=resolved_expected_commit,
+            )
         result.append(path)
     return result
+
+
+def _required_expected_git_commit(explicit_commit: str | None) -> str:
+    if explicit_commit is not None and explicit_commit.strip():
+        return explicit_commit.strip()
+    current_commit = _current_git_commit()
+    if current_commit is None:
+        raise ValueError(
+            "Unable to determine current git commit for strict top evidence validation"
+        )
+    return current_commit
+
+
+def _current_git_commit() -> str | None:
+    return _git_output("rev-parse", "HEAD", cwd=_repository_root())
+
+
+def _validate_top_evidence_report_provenance(
+    path: Path,
+    *,
+    expected_git_commit: str,
+) -> None:
+    payload = _read_json_object(path)
+    if payload.get("suite") not in _FULL_PROVIDER_REPORT_SUITES:
+        return
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError(f"Top evidence full-provider report is missing provenance: {path}")
+    if provenance.get("generated_by") != "scripts/clean_full_smoke.py":
+        raise ValueError(
+            f"Top evidence full-provider report has unsupported provenance generator: {path}"
+        )
+    git = provenance.get("git")
+    commit = git.get("commit") if isinstance(git, dict) else None
+    if not isinstance(commit, str) or not commit:
+        raise ValueError(
+            f"Top evidence full-provider report is missing provenance git commit: {path}"
+        )
+    if commit != expected_git_commit:
+        raise ValueError(
+            "Top evidence full-provider report commit mismatch: "
+            f"expected {expected_git_commit}, got {commit}"
+        )
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Evidence extra report must be valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Evidence extra report must be a JSON object: {path}")
+    return payload
 
 
 def _nested_get(payload: dict[str, object], *keys: str) -> object:
@@ -204,6 +302,7 @@ def _build_manifest(
     scorecard_path: Path,
     bundle_path: Path,
     require_top_evidence: bool,
+    expected_git_commit: object,
 ) -> dict[str, object]:
     artifacts = [
         *(
@@ -221,6 +320,7 @@ def _build_manifest(
         "schema_version": 1,
         "suite": "memo-stack-quality-evidence-manifest",
         "require_top_evidence": require_top_evidence,
+        "expected_git_commit": expected_git_commit,
         "output_dir": str(output_dir),
         "git": _git_metadata(),
         "runtime": {

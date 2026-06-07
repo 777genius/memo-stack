@@ -36,6 +36,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert manifest["policy"]["schema_version"] == 1
     assert manifest["policy"]["suite"] == "memory-quality-scorecard"
     assert manifest["policy"]["require_top_evidence"] is False
+    assert manifest["expected_git_commit"] is None
     assert manifest["policy"]["minimum_maturity_score_10"] == 9.0
     assert "auto-memory-golden" in manifest["policy"]["required_suites"]
     reports_by_name = {item["relative_path"]: item["report"] for item in manifest["artifacts"]}
@@ -176,9 +177,11 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         output_dir=tmp_path / "evidence",
         extra_report_paths=(external_report,),
         require_top_evidence=True,
+        expected_git_commit="abc123",
     )
 
     assert result["ok"] is True
+    assert result["expected_git_commit"] == "abc123"
     assert result["scorecard"]["confidence_tier"] == (
         "full_provider_agent_and_public_benchmark_evaluated"
     )
@@ -190,6 +193,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         item for item in manifest["artifacts"] if item["kind"] == "external_report"
     ]
     assert policy["require_top_evidence"] is True
+    assert manifest["expected_git_commit"] == "abc123"
     assert policy["full_provider"]["required_adapters"] == [
         "qdrant",
         "graphiti",
@@ -217,3 +221,57 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         "scripts/clean_full_smoke.py"
     )
     assert external_artifacts[0]["report"]["provenance"]["git"]["commit"] == "abc123"
+
+
+def test_quality_evidence_bundle_rejects_stale_top_evidence_report(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "stale-full-provider.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memo-stack-full-provider-canary",
+                "ok": True,
+                "provenance": {
+                    "generated_by": "scripts/clean_full_smoke.py",
+                    "git": {"commit": "old-commit"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="new-commit",
+        )
+    except ValueError as exc:
+        assert "commit mismatch" in str(exc)
+        assert "expected new-commit, got old-commit" in str(exc)
+    else:
+        raise AssertionError("expected stale full-provider evidence to fail")
+
+
+def test_quality_evidence_bundle_requires_top_evidence_provenance(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "missing-provenance-full-provider.json"
+    external_report.write_text(
+        json.dumps({"suite": "memo-stack-full-provider-canary", "ok": True}),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="expected-commit",
+        )
+    except ValueError as exc:
+        assert "missing provenance" in str(exc)
+    else:
+        raise AssertionError("expected missing full-provider provenance to fail")
