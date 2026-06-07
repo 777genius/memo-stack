@@ -16,14 +16,12 @@ import asyncio
 import inspect
 import json
 import os
-import re
 import socket
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -33,68 +31,144 @@ from memo_stack_core.reporting import build_report_provenance
 from memo_stack_server.official_public_benchmark import run_official_public_benchmark_canary
 from neo4j import GraphDatabase
 
+try:
+    from scripts.clean_full_smoke_diagnostics import (
+        context_diagnostic_int as _context_diagnostic_int,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        required_mcp_adapters_ready as _required_mcp_adapters_ready,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        safe_context_diagnostics as _safe_context_diagnostics,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        safe_search_diagnostics as _safe_search_diagnostics,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        safe_status_adapters as _safe_status_adapters,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        safe_status_readiness as _safe_status_readiness,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        search_diagnostic_int as _search_diagnostic_int,
+    )
+    from scripts.clean_full_smoke_diagnostics import (
+        search_diagnostic_status as _search_diagnostic_status,
+    )
+    from scripts.clean_full_smoke_load import (
+        active_outbox_counts as _active_outbox_counts,
+    )
+    from scripts.clean_full_smoke_load import (
+        bounded_float_env as _bounded_float_env_impl,
+    )
+    from scripts.clean_full_smoke_load import (
+        bounded_int_env as _bounded_int_env_impl,
+    )
+    from scripts.clean_full_smoke_load import (
+        large_prod_document_text as _large_prod_document_text,
+    )
+    from scripts.clean_full_smoke_load import (
+        parallel_post_json as _parallel_post_json,
+    )
+    from scripts.clean_full_smoke_load import (
+        percentile as _percentile,
+    )
+    from scripts.clean_full_smoke_load import (
+        prod_load_settings as _prod_load_settings_impl,
+    )
+    from scripts.clean_full_smoke_load import (
+        run_prod_chaos_flood as _run_prod_chaos_flood,
+    )
+    from scripts.clean_full_smoke_load import (
+        single_result_data as _single_result_data_impl,
+    )
+    from scripts.clean_full_smoke_load import (
+        successful_result_ids as _successful_result_ids,
+    )
+    from scripts.clean_full_smoke_redaction import (
+        redact_payload as _redact_payload,
+    )
+    from scripts.clean_full_smoke_redaction import (
+        redact_text as _redact_text,
+    )
+    from scripts.clean_full_smoke_reporting import (
+        emit_report as _emit_report_impl,
+    )
+    from scripts.clean_full_smoke_reporting import (
+        write_report_out as _write_report_out_impl,
+    )
+except ModuleNotFoundError:
+    from clean_full_smoke_diagnostics import (
+        context_diagnostic_int as _context_diagnostic_int,
+    )
+    from clean_full_smoke_diagnostics import (
+        required_mcp_adapters_ready as _required_mcp_adapters_ready,
+    )
+    from clean_full_smoke_diagnostics import (
+        safe_context_diagnostics as _safe_context_diagnostics,
+    )
+    from clean_full_smoke_diagnostics import (
+        safe_search_diagnostics as _safe_search_diagnostics,
+    )
+    from clean_full_smoke_diagnostics import (
+        safe_status_adapters as _safe_status_adapters,
+    )
+    from clean_full_smoke_diagnostics import (
+        safe_status_readiness as _safe_status_readiness,
+    )
+    from clean_full_smoke_diagnostics import (
+        search_diagnostic_int as _search_diagnostic_int,
+    )
+    from clean_full_smoke_diagnostics import (
+        search_diagnostic_status as _search_diagnostic_status,
+    )
+    from clean_full_smoke_load import (
+        active_outbox_counts as _active_outbox_counts,
+    )
+    from clean_full_smoke_load import (
+        bounded_float_env as _bounded_float_env_impl,
+    )
+    from clean_full_smoke_load import (
+        bounded_int_env as _bounded_int_env_impl,
+    )
+    from clean_full_smoke_load import (
+        large_prod_document_text as _large_prod_document_text,
+    )
+    from clean_full_smoke_load import (
+        parallel_post_json as _parallel_post_json,
+    )
+    from clean_full_smoke_load import (
+        percentile as _percentile,
+    )
+    from clean_full_smoke_load import (
+        prod_load_settings as _prod_load_settings_impl,
+    )
+    from clean_full_smoke_load import (
+        run_prod_chaos_flood as _run_prod_chaos_flood,
+    )
+    from clean_full_smoke_load import (
+        single_result_data as _single_result_data_impl,
+    )
+    from clean_full_smoke_load import (
+        successful_result_ids as _successful_result_ids,
+    )
+    from clean_full_smoke_redaction import (
+        redact_payload as _redact_payload,
+    )
+    from clean_full_smoke_redaction import (
+        redact_text as _redact_text,
+    )
+    from clean_full_smoke_reporting import (
+        emit_report as _emit_report_impl,
+    )
+    from clean_full_smoke_reporting import (
+        write_report_out as _write_report_out_impl,
+    )
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 FULL_PROVIDER_CANARY_SUITE = "memo-stack-full-provider-canary"
-SENSITIVE_ENV_KEYS = (
-    "MEMORY_AGENT_BENCH_OPENAI_API_KEY",
-    "MEMORY_MCP_AUTH_TOKEN",
-    "MEMORY_SERVICE_TOKEN",
-    "MEMORY_OPENAI_API_KEY",
-    "OPENAI_API_KEY",
-    "MEMORY_CLEAN_SMOKE_TOKEN",
-    "MEMORY_DATABASE_URL",
-    "MEMORY_GRAPHITI_NEO4J_PASSWORD",
-)
-SENSITIVE_KEY_SUFFIXES = (
-    "_TOKEN",
-    "_KEY",
-    "_SECRET",
-    "_PASSWORD",
-    "_CREDENTIAL",
-    "_DATABASE_URL",
-    "_DB_URL",
-    "_DSN",
-)
-SENSITIVE_HEADER_KEYS = {
-    "authorization",
-    "idempotency-key",
-}
-SENSITIVE_KEY_NAMES = {
-    "api_key",
-    "apikey",
-    "auth",
-    "auth_token",
-    "authorization",
-    "credential",
-    "credentials",
-    "connection_string",
-    "database_url",
-    "db_url",
-    "dsn",
-    "idempotency_key",
-    "idempotency-key",
-    "passwd",
-    "password",
-    "secret",
-    "token",
-}
-SAFE_REPORT_KEY_NAMES = {
-    "mcp_text_fallback_does_not_leak_token",
-    "secret_redaction",
-}
-SENSITIVE_TEXT_PATTERNS = (
-    re.compile(r"Authorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
-    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
-    re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{12,}\b"),
-    re.compile(r"\bAKIA[0-9A-Z]{12,}\b"),
-    re.compile(r"\bbench-secret-[A-Za-z0-9_.:-]+\b", re.IGNORECASE),
-    re.compile(
-        r"(?i)\b(api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*['\"]?"
-        r"[A-Za-z0-9_./+=-]{8,}"
-    ),
-)
 SAFE_MCP_INHERITED_ENV_KEYS = (
     "HOME",
     "LANG",
@@ -107,6 +181,7 @@ SAFE_MCP_INHERITED_ENV_KEYS = (
 )
 DEFAULT_MCP_HTTP_TIMEOUT_SECONDS = "90"
 DEFAULT_MCP_TOOL_TIMEOUT_SECONDS = 180.0
+REPORT_OUT_ENV = "MEMORY_CLEAN_SMOKE_REPORT_OUT"
 
 
 class CleanSmokeFailure(RuntimeError):
@@ -1852,239 +1927,32 @@ def _context_scoped(
     )
 
 
-def _context_diagnostic_int(context: Mapping[str, Any], key: str) -> int:
-    diagnostics = context.get("diagnostics", {})
-    if not isinstance(diagnostics, Mapping):
-        return 0
-    value = diagnostics.get(key)
-    return value if isinstance(value, int) else 0
-
-
 def _prod_load_settings() -> dict[str, int | float | bool]:
-    return {
-        "profiles": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_PROFILES",
-            default=3,
-            minimum=2,
-            maximum=12,
-        ),
-        "facts_per_profile": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE",
-            default=8,
-            minimum=3,
-            maximum=100,
-        ),
-        "documents": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_DOCUMENTS",
-            default=3,
-            minimum=1,
-            maximum=30,
-        ),
-        "large_doc_sections": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_LARGE_DOC_SECTIONS",
-            default=18,
-            minimum=3,
-            maximum=80,
-        ),
-        "concurrency": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_CONCURRENCY",
-            default=6,
-            minimum=1,
-            maximum=24,
-        ),
-        "chaos_requests": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_CHAOS_REQUESTS",
-            default=16,
-            minimum=1,
-            maximum=200,
-        ),
-        "context_requests": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_CONTEXT_REQUESTS",
-            default=10,
-            minimum=1,
-            maximum=200,
-        ),
-        "worker_rounds": _bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_WORKER_ROUNDS",
-            default=40,
-            minimum=1,
-            maximum=300,
-        ),
-        "max_p95_ms": _bounded_float_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_MAX_P95_MS",
-            default=15_000.0,
-            minimum=1_000.0,
-            maximum=120_000.0,
-        ),
-        "restart_server": _bool(os.getenv("MEMORY_CLEAN_SMOKE_LOAD_RESTART_SERVER", "true")),
-        "restart_providers": _bool(os.getenv("MEMORY_CLEAN_SMOKE_LOAD_RESTART_PROVIDERS", "true")),
-        "provider_outage": _bool(os.getenv("MEMORY_CLEAN_SMOKE_LOAD_PROVIDER_OUTAGE", "true")),
-    }
+    return _prod_load_settings_impl(failure_cls=CleanSmokeFailure)
 
 
 def _bounded_int_env(name: str, *, default: int, minimum: int, maximum: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise CleanSmokeFailure(f"{name} must be an integer") from exc
-    if value < minimum or value > maximum:
-        raise CleanSmokeFailure(f"{name} must be between {minimum} and {maximum}")
-    return value
+    return _bounded_int_env_impl(
+        name,
+        default=default,
+        minimum=minimum,
+        maximum=maximum,
+        failure_cls=CleanSmokeFailure,
+    )
 
 
 def _bounded_float_env(name: str, *, default: float, minimum: float, maximum: float) -> float:
-    raw = os.getenv(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise CleanSmokeFailure(f"{name} must be numeric") from exc
-    if value < minimum or value > maximum:
-        raise CleanSmokeFailure(f"{name} must be between {minimum:g} and {maximum:g}")
-    return value
-
-
-def _parallel_post_json(
-    *,
-    base_url: str,
-    token: str,
-    requests: list[dict[str, Any]],
-    concurrency: int,
-) -> list[dict[str, Any]]:
-    def run_one(request: dict[str, Any]) -> dict[str, Any]:
-        headers = {"Authorization": f"Bearer {token}"}
-        idempotency_key = request.get("idempotency_key")
-        if isinstance(idempotency_key, str) and idempotency_key:
-            headers["Idempotency-Key"] = idempotency_key
-        with httpx.Client(base_url=base_url, headers=headers, timeout=90) as client:
-            response = client.post(str(request["path"]), json=request["json"])
-        try:
-            payload: Any = response.json()
-        except ValueError:
-            payload = {"text": response.text}
-        return {
-            "label": request.get("label"),
-            "status": response.status_code,
-            "data": payload.get("data") if isinstance(payload, Mapping) else None,
-            "error": payload.get("error") if isinstance(payload, Mapping) else None,
-        }
-
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(run_one, request) for request in requests]
-        return [future.result() for future in as_completed(futures)]
+    return _bounded_float_env_impl(
+        name,
+        default=default,
+        minimum=minimum,
+        maximum=maximum,
+        failure_cls=CleanSmokeFailure,
+    )
 
 
 def _single_result_data(results: list[dict[str, Any]], label: str) -> dict[str, Any]:
-    matches = [
-        item["data"]
-        for item in results
-        if item.get("label") == label
-        and item.get("status") in {200, 201}
-        and isinstance(item.get("data"), Mapping)
-    ]
-    if len(matches) != 1:
-        raise CleanSmokeFailure(f"Expected one successful result for {label}, got {len(matches)}")
-    return dict(matches[0])
-
-
-def _successful_result_ids(results: list[dict[str, Any]]) -> set[str]:
-    ids: set[str] = set()
-    for item in results:
-        data = item.get("data")
-        if item.get("status") in {200, 201} and isinstance(data, Mapping):
-            item_id = data.get("id")
-            if isinstance(item_id, str):
-                ids.add(item_id)
-    return ids
-
-
-def _large_prod_document_text(*, marker: str, tail_sentinel: str, sections: int) -> str:
-    paragraphs = [
-        (
-            f"{marker}: PROD_LARGE_DOC_SECTION_{index:02d} contains production runbook "
-            "notes about memory worker recovery, provider lag, projection freshness, "
-            "source citations, scoped retrieval, prompt-injection resistance, and "
-            "coding-agent memory continuity after restarts. "
-            "This paragraph is intentionally verbose so the document produces several "
-            "chunks and exercises Qdrant recall beyond a tiny happy-path note."
-        )
-        for index in range(sections)
-    ]
-    paragraphs.append(tail_sentinel)
-    return "\n\n".join(paragraphs)
-
-
-def _run_prod_chaos_flood(
-    *,
-    base_url: str,
-    token: str,
-    marker: str,
-    requests: int,
-) -> dict[str, int]:
-    server_error_count = 0
-    unauthorized_count = 0
-    validation_count = 0
-    not_found_count = 0
-    with (
-        httpx.Client(
-            base_url=base_url,
-            headers={"Authorization": "Bearer prod-load-wrong-token"},
-            timeout=10,
-        ) as wrong_client,
-        httpx.Client(
-            base_url=base_url,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        ) as client,
-    ):
-        for index in range(requests):
-            unauthorized = wrong_client.post(
-                "/v1/facts",
-                json={
-                    "space_slug": "prod-load-chaos",
-                    "profile_external_ref": "wrong-token",
-                    "text": f"{marker}: unauthorized chaos request {index}",
-                    "kind": "note",
-                    "source_refs": [{"source_type": "prod_load", "source_id": f"unauth:{index}"}],
-                },
-            )
-            invalid = client.post(
-                "/v1/context",
-                json={
-                    "space_slug": "prod-load-chaos",
-                    "profile_external_ref": "invalid-context",
-                    "query": "",
-                },
-            )
-            missing = client.patch(
-                f"/v1/facts/missing-{marker}-{index}",
-                json={
-                    "expected_version": 1,
-                    "text": f"{marker}: missing update",
-                    "reason": "prod load chaos missing fact",
-                    "source_refs": [{"source_type": "prod_load", "source_id": f"missing:{index}"}],
-                },
-            )
-            for response in (unauthorized, invalid, missing):
-                if response.status_code >= 500:
-                    server_error_count += 1
-            if unauthorized.status_code == 401:
-                unauthorized_count += 1
-            if invalid.status_code == 400:
-                validation_count += 1
-            if missing.status_code == 404:
-                not_found_count += 1
-    return {
-        "requests": requests * 3,
-        "unauthorized_count": unauthorized_count,
-        "validation_count": validation_count,
-        "not_found_count": not_found_count,
-        "server_error_count": server_error_count,
-    }
+    return _single_result_data_impl(results, label, failure_cls=CleanSmokeFailure)
 
 
 def _worker_until_drained(
@@ -2169,14 +2037,6 @@ def _worker_until_drained_after_retry(
     }
 
 
-def _active_outbox_counts(counts: Mapping[str, Any]) -> dict[str, int]:
-    return {
-        str(key): int(value)
-        for key, value in counts.items()
-        if key != "done" and isinstance(value, int) and value > 0
-    }
-
-
 def _run_context_latency_probe(
     *,
     base_url: str,
@@ -2202,36 +2062,6 @@ def _run_context_latency_probe(
         "p95_ms": round(_percentile(timings_ms, 0.95), 2),
         "max_ms": round(max(timings_ms), 2) if timings_ms else 0.0,
     }
-
-
-def _percentile(values: list[float], percentile: float) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    index = min(len(ordered) - 1, int(round((len(ordered) - 1) * percentile)))
-    return float(ordered[index])
-
-
-def _safe_context_diagnostics(context: Mapping[str, Any]) -> dict[str, Any]:
-    diagnostics = context.get("diagnostics", {})
-    if not isinstance(diagnostics, Mapping):
-        return {}
-    allowed_keys = {
-        "facts_considered",
-        "graph_candidate_count",
-        "graph_hydrated_count",
-        "graph_status",
-        "items_considered",
-        "items_used",
-        "keyword_chunks_considered",
-        "rag_status",
-        "stale_graph_drop_count",
-        "stale_vector_drop_count",
-        "vector_candidate_count",
-        "vector_hydrated_count",
-        "vector_status",
-    }
-    return {key: diagnostics[key] for key in allowed_keys if key in diagnostics}
 
 
 async def _call_mcp_result(
@@ -2368,142 +2198,6 @@ def _search_has_chunk_item(search: Mapping[str, Any]) -> bool:
         ):
             return True
     return False
-
-
-def _search_diagnostic_status(search: Mapping[str, Any], key: str) -> str:
-    data = search.get("data", {})
-    if not isinstance(data, Mapping):
-        return ""
-    diagnostics = data.get("diagnostics", {})
-    if not isinstance(diagnostics, Mapping):
-        return ""
-    return str(diagnostics.get(key) or "")
-
-
-def _search_diagnostic_int(search: Mapping[str, Any], key: str) -> int:
-    data = search.get("data", {})
-    if not isinstance(data, Mapping):
-        return 0
-    diagnostics = data.get("diagnostics", {})
-    if not isinstance(diagnostics, Mapping):
-        return 0
-    value = diagnostics.get(key)
-    return value if isinstance(value, int) else 0
-
-
-def _safe_search_diagnostics(search: Mapping[str, Any]) -> dict[str, Any]:
-    data = search.get("data", {})
-    if not isinstance(data, Mapping):
-        return {}
-    diagnostics = data.get("diagnostics", {})
-    if not isinstance(diagnostics, Mapping):
-        return {}
-    allowed_keys = {
-        "facts_considered",
-        "graph_candidate_count",
-        "graph_hydrated_count",
-        "graph_status",
-        "keyword_chunks_considered",
-        "rag_status",
-        "stale_graph_drop_count",
-        "stale_vector_drop_count",
-        "vector_candidate_count",
-        "vector_hydrated_count",
-        "vector_status",
-    }
-    return {key: diagnostics[key] for key in allowed_keys if key in diagnostics}
-
-
-def _safe_status_readiness(status: Mapping[str, Any]) -> dict[str, Any]:
-    data = status.get("data", {})
-    if not isinstance(data, Mapping):
-        return {}
-    readiness = data.get("readiness", {})
-    if not isinstance(readiness, Mapping):
-        return {}
-    allowed_keys = {
-        "api_reachable",
-        "delete_ready",
-        "projection_ready",
-        "read_ready",
-        "write_ready",
-    }
-    safe = {key: readiness[key] for key in allowed_keys if key in readiness}
-    degraded_reasons = readiness.get("degraded_reasons")
-    if isinstance(degraded_reasons, list):
-        safe["degraded_reasons"] = [
-            str(reason) for reason in degraded_reasons if isinstance(reason, str)
-        ][:20]
-    return safe
-
-
-def _safe_status_adapters(status: Mapping[str, Any]) -> dict[str, Any]:
-    capabilities = _mcp_status_capabilities(status)
-    if not isinstance(capabilities, Mapping):
-        return {}
-    adapters = capabilities.get("adapters", {})
-    result = _adapter_map_status(adapters) if isinstance(adapters, Mapping) else {}
-    capability_items = capabilities.get("capabilities", [])
-    if isinstance(capability_items, list):
-        for item in capability_items:
-            if not isinstance(item, Mapping):
-                continue
-            name = item.get("adapter_name")
-            if not isinstance(name, str) or name in result:
-                continue
-            result[name] = {
-                key: item[key] for key in ("enabled", "healthy", "status") if key in item
-            }
-    return result
-
-
-def _required_mcp_adapters_ready(status: Mapping[str, Any], names: tuple[str, ...]) -> bool:
-    return all(_mcp_adapter_ready(status, name) for name in names)
-
-
-def _mcp_adapter_ready(status: Mapping[str, Any], name: str) -> bool:
-    capabilities = _mcp_status_capabilities(status)
-    if not isinstance(capabilities, Mapping):
-        return False
-    adapters = capabilities.get("adapters", {})
-    if isinstance(adapters, Mapping):
-        adapter = adapters.get(name)
-        if isinstance(adapter, Mapping):
-            return _adapter_status_ready(adapter)
-    capability_items = capabilities.get("capabilities", [])
-    if not isinstance(capability_items, list):
-        return False
-    return any(
-        _adapter_status_ready(item)
-        for item in capability_items
-        if isinstance(item, Mapping) and item.get("adapter_name") == name
-    )
-
-
-def _mcp_status_capabilities(status: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    data = status.get("data", {})
-    if not isinstance(data, Mapping):
-        return None
-    capabilities = data.get("capabilities", {})
-    if not isinstance(capabilities, Mapping):
-        return None
-    return capabilities
-
-
-def _adapter_map_status(adapters: Mapping[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for name, adapter in adapters.items():
-        if isinstance(adapter, Mapping):
-            result[str(name)] = {
-                key: adapter[key] for key in ("enabled", "healthy", "status") if key in adapter
-            }
-    return result
-
-
-def _adapter_status_ready(adapter: Mapping[str, Any]) -> bool:
-    status = str(adapter.get("status") or "")
-    healthy = bool(adapter.get("healthy", status in {"ok", "healthy"}))
-    return adapter.get("enabled") is True and healthy and status in {"", "ok", "healthy"}
 
 
 def _mcp_process_env(
@@ -2776,134 +2470,11 @@ def _emit_report(
     env: Mapping[str, str] | None = None,
     stream: TextIO | None = None,
 ) -> None:
-    serialized = json.dumps(
-        _redact_payload(payload, env=env),
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    _write_report_out(serialized)
-    print(serialized, file=stream or sys.stdout)
+    _emit_report_impl(payload, env=env, stream=stream, failure_cls=CleanSmokeFailure)
 
 
 def _write_report_out(serialized: str) -> None:
-    report_out = os.getenv("MEMORY_CLEAN_SMOKE_REPORT_OUT", "").strip()
-    if not report_out:
-        return
-    if any(pattern.search(serialized) for pattern in SENSITIVE_TEXT_PATTERNS):
-        raise CleanSmokeFailure(
-            "Refusing to write clean smoke report with unredacted secret markers"
-        )
-    path = Path(report_out)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(serialized, encoding="utf-8")
-
-
-def _redact_payload(value: Any, *, env: Mapping[str, str] | None = None) -> Any:
-    if isinstance(value, str):
-        return _redact_text(value, env=env)
-    if isinstance(value, dict):
-        redacted: dict[Any, Any] = {}
-        for key, item in value.items():
-            redacted_key = _redact_key(key, env=env)
-            if isinstance(key, str) and _is_sensitive_key_name(key):
-                redacted_item: Any = "<redacted>"
-            else:
-                redacted_item = _redact_payload(item, env=env)
-            redacted[_dedupe_key(redacted, redacted_key)] = redacted_item
-        return redacted
-    if isinstance(value, list):
-        return [_redact_payload(item, env=env) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_redact_payload(item, env=env) for item in value)
-    return value
-
-
-def _redact_text(text: str, *, env: Mapping[str, str] | None = None) -> str:
-    redacted = text
-    for value in _sensitive_values(env):
-        redacted = redacted.replace(value, "<redacted>")
-    for key in SENSITIVE_ENV_KEYS:
-        redacted = redacted.replace(key, "<redacted-env>")
-    for pattern in SENSITIVE_TEXT_PATTERNS:
-        redacted = pattern.sub("<redacted>", redacted)
-    return redacted
-
-
-def _redact_key(key: Any, *, env: Mapping[str, str] | None = None) -> Any:
-    if not isinstance(key, str):
-        return key
-    if _is_sensitive_key_name(key):
-        return "<redacted-key>"
-    redacted = _redact_text(key, env=env)
-    return "<redacted-key>" if redacted != key else key
-
-
-def _dedupe_key(mapping: Mapping[Any, Any], key: Any) -> Any:
-    if key not in mapping:
-        return key
-    if not isinstance(key, str):
-        return key
-    index = 2
-    while f"{key}-{index}" in mapping:
-        index += 1
-    return f"{key}-{index}"
-
-
-def _is_sensitive_key_name(key: str) -> bool:
-    normalized = key.strip()
-    lowered = normalized.lower()
-    if lowered in SAFE_REPORT_KEY_NAMES:
-        return False
-    if lowered in SENSITIVE_HEADER_KEYS or lowered in SENSITIVE_KEY_NAMES:
-        return True
-    upper = normalized.upper()
-    if upper in SENSITIVE_ENV_KEYS or upper.endswith(SENSITIVE_KEY_SUFFIXES):
-        return True
-    compact = re.sub(r"[^a-z0-9]+", "", lowered)
-    if not compact:
-        return False
-    if compact.endswith(("count", "countzero", "rate", "ratemin080", "ratemin090")):
-        return False
-    sensitive_compact = {
-        re.sub(r"[^a-z0-9]+", "", item) for item in (*SENSITIVE_HEADER_KEYS, *SENSITIVE_KEY_NAMES)
-    }
-    if compact in sensitive_compact:
-        return True
-    if compact.endswith("apikey") or compact.endswith("privatekey"):
-        return True
-    if compact.endswith("token") and not compact.endswith("budget"):
-        return True
-    return any(
-        marker in compact
-        for marker in (
-            "authorization",
-            "credential",
-            "connectionstring",
-            "databaseurl",
-            "password",
-            "passwd",
-            "secret",
-        )
-    )
-
-
-def _sensitive_values(env: Mapping[str, str] | None = None) -> list[str]:
-    envs = [os.environ]
-    if env is not None:
-        envs.append(env)
-    values = set()
-    for item in envs:
-        values.update(
-            str(item.get(key) or "").strip()
-            for key in SENSITIVE_ENV_KEYS
-            if str(item.get(key) or "").strip()
-        )
-        values.update(
-            str(value).strip()
-            for key, value in item.items()
-            if isinstance(key, str) and _is_sensitive_key_name(key) and len(str(value).strip()) >= 8
-        )
-    return sorted(values, key=len, reverse=True)
+    _write_report_out_impl(serialized, failure_cls=CleanSmokeFailure)
 
 
 if __name__ == "__main__":
