@@ -111,6 +111,45 @@ def test_top_evidence_preflight_rejects_tiny_public_benchmark_config(
     assert any("MAX_CASES >= 600" in failure for failure in result.failures)
 
 
+def test_top_evidence_preflight_ignores_lower_publishable_floor_overrides(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(
+            tmp_path,
+            MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES="1",
+            MEMORY_TOP_EVIDENCE_MIN_PUBLIC_ACCURACY="0.1",
+        ),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is True
+    assert result.sanitized_config["top_evidence_min_public_cases"] == 600
+    assert result.sanitized_config["top_evidence_min_public_accuracy"] == 0.902
+    assert result.sanitized_config["public_benchmark_max_cases"] == 600
+    assert result.sanitized_config["public_benchmark_min_accuracy"] == 0.902
+
+
+def test_top_evidence_preflight_allows_only_stricter_case_floor_overrides(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(tmp_path, MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES="700"),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["public_benchmark_case_count_representative"] is True
+    assert result.checks["locomo_dataset_case_count_representative"] is False
+    assert result.checks["longmemeval_dataset_case_count_representative"] is False
+    assert result.sanitized_config["top_evidence_min_public_cases"] == 700
+    assert result.sanitized_config["public_benchmark_max_cases"] == 700
+
+
 def test_top_evidence_preflight_rejects_missing_dataset_file(tmp_path: Path) -> None:
     result = run_top_evidence_preflight(
         env=_top_evidence_env(

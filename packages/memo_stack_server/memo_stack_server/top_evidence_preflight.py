@@ -55,19 +55,57 @@ def run_top_evidence_preflight(
     docker_path = docker_path if docker_path is not None else shutil.which("docker")
     git = git if git is not None else git_metadata(cwd=cwd)
     allow_dirty = _bool_env(env, "MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP")
-    min_public_cases = _positive_int_env(
-        env,
-        "MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES",
+    min_public_cases = max(
         DEFAULT_MIN_PUBLIC_CASES,
+        _positive_int_env(
+            env,
+            "MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES",
+            DEFAULT_MIN_PUBLIC_CASES,
+        ),
     )
-    min_public_accuracy = _float_env(
-        env,
-        "MEMORY_TOP_EVIDENCE_MIN_PUBLIC_ACCURACY",
+    min_public_accuracy = max(
         DEFAULT_MIN_PUBLIC_ACCURACY,
+        _float_env(
+            env,
+            "MEMORY_TOP_EVIDENCE_MIN_PUBLIC_ACCURACY",
+            DEFAULT_MIN_PUBLIC_ACCURACY,
+        ),
     )
+    if min_public_accuracy > 1.0:
+        min_public_accuracy = 1.0
 
     failures: list[str] = []
     checks: dict[str, bool] = {}
+
+    checks["top_evidence_case_floor_publishable"] = min_public_cases >= (
+        DEFAULT_MIN_PUBLIC_CASES
+    )
+    checks["top_evidence_accuracy_floor_publishable"] = min_public_accuracy >= (
+        DEFAULT_MIN_PUBLIC_ACCURACY
+    )
+    _append_failure(
+        checks,
+        failures,
+        "top_evidence_case_floor_publishable",
+        f"Top evidence case floor cannot be lower than {DEFAULT_MIN_PUBLIC_CASES}",
+    )
+    _append_failure(
+        checks,
+        failures,
+        "top_evidence_accuracy_floor_publishable",
+        f"Top evidence accuracy floor cannot be lower than {DEFAULT_MIN_PUBLIC_ACCURACY}",
+    )
+
+    configured_cases = _positive_int_env(
+        env,
+        "MEMORY_PUBLIC_BENCHMARK_MAX_CASES",
+        min_public_cases,
+    )
+    configured_accuracy = _float_env(
+        env,
+        "MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY",
+        min_public_accuracy,
+    )
 
     checks["docker_available"] = bool(docker_path)
     _append_failure(checks, failures, "docker_available", "Docker executable is required")
@@ -99,11 +137,6 @@ def run_top_evidence_preflight(
         "Top evidence requires MEMORY_PUBLIC_BENCHMARK_NAME=all",
     )
 
-    configured_cases = _positive_int_env(
-        env,
-        "MEMORY_PUBLIC_BENCHMARK_MAX_CASES",
-        min_public_cases,
-    )
     checks["public_benchmark_case_count_representative"] = configured_cases >= min_public_cases
     _append_failure(
         checks,
@@ -115,11 +148,6 @@ def run_top_evidence_preflight(
         ),
     )
 
-    configured_accuracy = _float_env(
-        env,
-        "MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY",
-        min_public_accuracy,
-    )
     checks["public_benchmark_accuracy_floor_competitive"] = (
         configured_accuracy >= min_public_accuracy
     )
@@ -243,6 +271,8 @@ def run_top_evidence_preflight(
             "public_benchmark_max_cases": configured_cases,
             "public_benchmark_min_accuracy": configured_accuracy,
             "public_benchmark_name": benchmark_name,
+            "top_evidence_min_public_accuracy": min_public_accuracy,
+            "top_evidence_min_public_cases": min_public_cases,
         },
     )
 

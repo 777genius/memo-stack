@@ -106,7 +106,10 @@ and LongMemEval dataset files through the same normalizer used by the benchmark
 runner and rejects empty, invalid or under-sized datasets before paid provider
 work starts. It prints only safe diagnostics and never echoes API keys.
 `MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP=true` is accepted only for local
-diagnostics; publishable evidence should stay clean.
+diagnostics; publishable evidence should stay clean. Floor overrides such as
+`MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES` and
+`MEMORY_TOP_EVIDENCE_MIN_PUBLIC_ACCURACY` can only make the gate stricter than
+the defaults, not weaker.
 
 Local smoke variables:
 
