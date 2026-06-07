@@ -142,6 +142,11 @@ _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS = {
     "transcript_corpus_case_count": 5,
     "adversarial_case_count": 9,
 }
+_AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS = {
+    "live_session_case_count": "live_session",
+    "transcript_corpus_case_count": "transcript_corpus",
+    "adversarial_case_count": "adversarial",
+}
 _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
     LOCOMO_BENCHMARK_SUITE: frozenset(("locomo", "lo_co_mo", "long-context-memory")),
     LONGMEMEVAL_BENCHMARK_SUITE: frozenset(
@@ -433,6 +438,9 @@ def memory_quality_scorecard_policy_snapshot(
             ),
             "top_evidence_required_case_count_floors": dict(
                 _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS
+            ),
+            "top_evidence_required_scenario_tag_metrics": dict(
+                _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS
             ),
             "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
             "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
@@ -1077,6 +1085,7 @@ def _scorecard_agent_behavior_evidence_summary(
         "gates_ok_count": sum(1 for value in gate_values if value),
         "gates_total": len(gate_values),
         "metrics": {key: metrics[key] for key in metric_keys if key in metrics},
+        "scenario_evidence": _scorecard_agent_behavior_scenario_evidence(result),
     }
 
 
@@ -1107,7 +1116,58 @@ def _scorecard_agent_behavior_required_checks(
         for metric, floor in _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS.items():
             value = _scorecard_int(metrics.get(metric))
             checks[f"{metric}_min_{floor}"] = value is not None and value >= floor
+        scenario_evidence = _scorecard_agent_behavior_scenario_evidence(result)
+        scenario_count = _scorecard_int(scenario_evidence.get("scenario_count"))
+        metric_scenario_count = _scorecard_int(metrics.get("scenario_count"))
+        checks["scenario_reports_present"] = scenario_evidence["present"] is True
+        checks["scenario_report_count_min_41"] = (
+            scenario_count is not None
+            and scenario_count >= _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS[
+                "scenario_count"
+            ]
+        )
+        checks["scenario_report_count_matches_metric"] = (
+            scenario_count is not None
+            and metric_scenario_count is not None
+            and scenario_count == metric_scenario_count
+        )
+        tag_counts = scenario_evidence.get("tag_counts")
+        tag_counts_map = tag_counts if isinstance(tag_counts, Mapping) else {}
+        for metric, tag in _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.items():
+            tag_count = _scorecard_int(tag_counts_map.get(tag))
+            metric_count = _scorecard_int(metrics.get(metric))
+            checks[f"{tag}_scenario_report_count_matches_metric"] = (
+                tag_count is not None
+                and metric_count is not None
+                and tag_count == metric_count
+            )
     return checks
+
+
+def _scorecard_agent_behavior_scenario_evidence(
+    result: Mapping[str, object],
+) -> dict[str, object]:
+    scenarios = result.get("scenarios")
+    if not isinstance(scenarios, list):
+        return {"present": False, "scenario_count": None, "tag_counts": {}}
+    tag_counts = {
+        tag: 0 for tag in _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.values()
+    }
+    for scenario in scenarios:
+        if not isinstance(scenario, Mapping):
+            continue
+        tags = scenario.get("tags")
+        if not isinstance(tags, list):
+            continue
+        tag_set = {tag for tag in tags if isinstance(tag, str)}
+        for tag in tag_counts:
+            if tag in tag_set:
+                tag_counts[tag] += 1
+    return {
+        "present": True,
+        "scenario_count": len(scenarios),
+        "tag_counts": tag_counts,
+    }
 
 
 def _scorecard_capability(name: str, checks: Mapping[str, bool]) -> dict[str, object]:

@@ -107,8 +107,10 @@ agent benchmark to `all`, which runs core, realistic, live-session and transcrip
 corpus scenarios and the scorecard requires at least 41 total agent cases, 11
 live-session cases, 5 transcript-corpus cases and 9 adversarial cases. This keeps
 live/transcript/adversarial pass rates from being satisfied by zero-case or
-under-sized reports. It also parses the LoCoMo and LongMemEval dataset files
-through the same normalizer used by the benchmark runner and rejects empty,
+under-sized reports. The strict scorecard also requires scenario-level evidence
+whose tag counts match the published metrics, so a report cannot claim benchmark
+coverage with metrics alone. It also parses the LoCoMo and LongMemEval dataset
+files through the same normalizer used by the benchmark runner and rejects empty,
 invalid or under-sized datasets before paid provider work starts. It prints only
 safe diagnostics and never echoes API keys.
 `MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP=true` is accepted only for local

@@ -118,6 +118,7 @@ def _minimal_agent_behavior_report(
             "adversarial_pass_rate_min_0_90": True,
             "critical_scenarios_pass": True,
         },
+        "scenarios": _agent_behavior_scenario_reports(),
     }
     if include_provenance:
         report["provenance"] = _strict_provenance(
@@ -127,6 +128,48 @@ def _minimal_agent_behavior_report(
             dirty=dirty,
         )
     return report
+
+
+def _agent_behavior_scenario_reports() -> list[dict[str, object]]:
+    scenarios: list[dict[str, object]] = []
+    for index in range(5):
+        scenarios.append(
+            _agent_behavior_scenario_report(
+                index,
+                tags=("live_session", "transcript_corpus", "adversarial"),
+            )
+        )
+    for index in range(4):
+        scenarios.append(
+            _agent_behavior_scenario_report(
+                len(scenarios) + index,
+                tags=("live_session", "adversarial"),
+            )
+        )
+    while sum("live_session" in scenario["tags"] for scenario in scenarios) < 11:
+        scenarios.append(
+            _agent_behavior_scenario_report(len(scenarios), tags=("live_session",))
+        )
+    while len(scenarios) < 41:
+        scenarios.append(_agent_behavior_scenario_report(len(scenarios), tags=("core",)))
+    return scenarios
+
+
+def _agent_behavior_scenario_report(
+    index: int,
+    *,
+    tags: tuple[str, ...],
+) -> dict[str, object]:
+    return {
+        "id": f"agent-scenario-{index}",
+        "category": "answer",
+        "tags": list(tags),
+        "critical": True,
+        "status": "passed",
+        "tool_calls": [],
+        "failures": [],
+        "memory_checks": [],
+    }
 
 
 def _minimal_public_benchmark_report(
@@ -316,6 +359,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                         "adversarial_pass_rate_min_0_90": True,
                         "critical_scenarios_pass": True,
                     },
+                    "scenarios": _agent_behavior_scenario_reports(),
                 },
                 "public_benchmark": {
                     "suite": "public-memory-benchmark",
@@ -761,6 +805,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                     "adversarial_pass_rate_min_0_90": True,
                     "critical_scenarios_pass": True,
                 },
+                "scenarios": _agent_behavior_scenario_reports(),
             }
         ),
         encoding="utf-8",

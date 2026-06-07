@@ -283,7 +283,63 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
             "adversarial_pass_rate_min_0_90": True,
             "critical_scenarios_pass": True,
         },
-        "scenarios": [],
+        "scenarios": _agent_behavior_scenario_reports(),
+    }
+
+
+def _agent_behavior_scenario_reports(
+    *,
+    scenario_count: int = 41,
+    live_session_count: int = 11,
+    transcript_corpus_count: int = 5,
+    adversarial_count: int = 9,
+) -> list[dict[str, Any]]:
+    scenarios: list[dict[str, Any]] = []
+    transcript_adversarial_count = min(transcript_corpus_count, adversarial_count)
+    for index in range(transcript_adversarial_count):
+        scenarios.append(
+            _agent_behavior_scenario_report(
+                index,
+                tags=("live_session", "transcript_corpus", "adversarial"),
+            )
+        )
+    remaining_adversarial = adversarial_count - transcript_adversarial_count
+    for index in range(remaining_adversarial):
+        scenarios.append(
+            _agent_behavior_scenario_report(
+                len(scenarios) + index,
+                tags=("live_session", "adversarial"),
+            )
+        )
+    remaining_live = live_session_count - sum(
+        "live_session" in scenario["tags"] for scenario in scenarios
+    )
+    for index in range(max(remaining_live, 0)):
+        scenarios.append(
+            _agent_behavior_scenario_report(
+                len(scenarios) + index,
+                tags=("live_session",),
+            )
+        )
+    while len(scenarios) < scenario_count:
+        scenarios.append(_agent_behavior_scenario_report(len(scenarios), tags=("core",)))
+    return scenarios[:scenario_count]
+
+
+def _agent_behavior_scenario_report(
+    index: int,
+    *,
+    tags: tuple[str, ...],
+) -> dict[str, Any]:
+    return {
+        "id": f"agent-scenario-{index}",
+        "category": "answer",
+        "tags": list(tags),
+        "critical": True,
+        "status": "passed",
+        "tool_calls": [],
+        "failures": [],
+        "memory_checks": [],
     }
 
 
@@ -1406,6 +1462,11 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "transcript_corpus_case_count": 5,
         "adversarial_case_count": 9,
     }
+    assert policy["agent_behavior"]["top_evidence_required_scenario_tag_metrics"] == {
+        "live_session_case_count": "live_session",
+        "transcript_corpus_case_count": "transcript_corpus",
+        "adversarial_case_count": "adversarial",
+    }
     assert policy["agent_behavior"]["rate_floors"]["adversarial_pass_rate"] == 0.9
     assert "unsafe_write_count" in policy["agent_behavior"]["zero_count_metrics"]
     assert policy["public_benchmark"]["required_benchmarks"] == [
@@ -1452,6 +1513,15 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     assert evidence["agent_behavior_benchmark"]["quality_floor_ok"] is True
     assert evidence["agent_behavior_benchmark"]["failed_required_checks"] == []
     assert evidence["agent_behavior_benchmark"]["metrics"]["tool_choice_accuracy"] == 1.0
+    assert evidence["agent_behavior_benchmark"]["scenario_evidence"] == {
+        "present": True,
+        "scenario_count": 41,
+        "tag_counts": {
+            "live_session": 11,
+            "transcript_corpus": 5,
+            "adversarial": 9,
+        },
+    }
     assert evidence["public_benchmark"]["present"] is False
 
 
@@ -1641,8 +1711,14 @@ def test_memory_quality_scorecard_requires_nonzero_agent_case_counts_for_top_evi
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior["metrics"]["scenario_count"] = 40
     agent_behavior["metrics"]["live_session_case_count"] = 10
-    agent_behavior["metrics"].pop("transcript_corpus_case_count")
+    agent_behavior["metrics"]["transcript_corpus_case_count"] = 4
     agent_behavior["metrics"]["adversarial_case_count"] = 8
+    agent_behavior["scenarios"] = _agent_behavior_scenario_reports(
+        scenario_count=40,
+        live_session_count=10,
+        transcript_corpus_count=4,
+        adversarial_count=8,
+    )
     suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -1655,7 +1731,38 @@ def test_memory_quality_scorecard_requires_nonzero_agent_case_counts_for_top_evi
         "adversarial_case_count_min_9",
         "live_session_case_count_min_11",
         "scenario_count_min_41",
+        "scenario_report_count_min_41",
         "transcript_corpus_case_count_min_5",
+    ]
+
+
+def test_memory_quality_scorecard_requires_agent_scenario_reports_for_top_evidence() -> None:
+    suite_results = _scorecard_fixture_results()
+    agent_behavior = _agent_behavior_benchmark_report()
+    agent_behavior["scenarios"] = []
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = agent_behavior
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["agent_behavior_benchmark"]["scenario_evidence"] == {
+        "present": True,
+        "scenario_count": 0,
+        "tag_counts": {
+            "live_session": 0,
+            "transcript_corpus": 0,
+            "adversarial": 0,
+        },
+    }
+    assert evidence["agent_behavior_benchmark"]["failed_required_checks"] == [
+        "adversarial_scenario_report_count_matches_metric",
+        "live_session_scenario_report_count_matches_metric",
+        "scenario_report_count_matches_metric",
+        "scenario_report_count_min_41",
+        "transcript_corpus_scenario_report_count_matches_metric",
     ]
 
 
