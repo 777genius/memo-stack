@@ -121,24 +121,38 @@ def looks_conflicting_fact(candidate_text: str, existing_text: str) -> bool:
         return False
     if candidate_normalized == existing_normalized:
         return False
+    if looks_equivalent_fact(candidate_normalized, existing_normalized):
+        return False
     decision_terms = {
         "adapter",
         "backend",
         "cache",
         "canonical",
+        "cognee",
         "database",
         "engine",
+        "graphiti",
         "memory",
         "model",
+        "neo4j",
+        "postgres",
         "provider",
+        "qdrant",
+        "rag",
         "storage",
         "truth",
         "vector",
     }
-    candidate_terms = meaningful_memory_terms(candidate_normalized)
-    existing_terms = meaningful_memory_terms(existing_normalized)
+    candidate_terms = semantic_memory_terms(candidate_normalized)
+    existing_terms = semantic_memory_terms(existing_normalized)
     overlap = candidate_terms & existing_terms
-    return len(overlap) >= 2 and bool(overlap & decision_terms)
+    if len(overlap) < 2:
+        return False
+    if _has_negation_mismatch(candidate_normalized, existing_normalized):
+        return bool(overlap & decision_terms) or len(overlap) >= 3
+    if _has_exclusive_anchor_mismatch(candidate_terms, existing_terms):
+        return bool(overlap & decision_terms)
+    return bool(overlap & decision_terms) and len(overlap) >= 3
 
 
 def _has_negation_mismatch(candidate_text: str, existing_text: str) -> bool:

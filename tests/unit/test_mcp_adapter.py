@@ -231,7 +231,7 @@ def test_service_remember_fact_dedupes_semantic_equivalent_active_fact() -> None
     asyncio.run(run())
 
 
-def test_service_remember_fact_does_not_dedupe_negated_semantic_neighbor() -> None:
+def test_service_remember_fact_routes_negated_semantic_neighbor_to_review() -> None:
     class NegatedNeighborGateway(RecordingGateway):
         async def list_facts(self, **kwargs: Any) -> dict[str, Any]:
             self.calls.append(("list_facts", kwargs))
@@ -259,12 +259,14 @@ def test_service_remember_fact_does_not_dedupe_negated_semantic_neighbor() -> No
         )
 
         assert result["ok"] is True
-        assert result["data"]["id"] == "fact_1"
-        assert result["diagnostics"]["side_effects"] == ["remembered_fact"]
+        assert result["data"]["id"] == "sug_1"
+        assert result["data"]["status"] == "pending"
+        assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
+        assert result["diagnostics"]["warnings"] == ["memo_stack_mcp.conflict.requires_review"]
         assert [name for name, _ in gateway.calls] == [
             "list_facts",
             "list_suggestions",
-            "remember_fact",
+            "create_suggestion",
         ]
 
     asyncio.run(run())

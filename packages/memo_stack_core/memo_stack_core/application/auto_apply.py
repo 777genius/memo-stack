@@ -31,6 +31,7 @@ class AutoApplySafePolicy:
         candidate: MemoryCandidate,
         ttl_policy: str,
         has_active_duplicate: bool,
+        has_active_conflict: bool,
         has_pending_duplicate: bool,
     ) -> AutoApplyDecision:
         if not enabled:
@@ -64,6 +65,8 @@ class AutoApplySafePolicy:
             return AutoApplyDecision(False, "auto_apply_blocks_redacted_candidate")
         if has_active_duplicate:
             return AutoApplyDecision(False, "auto_apply_active_duplicate")
+        if has_active_conflict:
+            return AutoApplyDecision(False, "auto_apply_active_conflict")
         if has_pending_duplicate:
             return AutoApplyDecision(False, "auto_apply_pending_duplicate")
         return AutoApplyDecision(True, "auto_apply_safe_explicit_user_memory")

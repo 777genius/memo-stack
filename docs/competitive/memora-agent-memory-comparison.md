@@ -147,7 +147,7 @@ space/profile/thread isolation, canonical fact lifecycle, expected-version
 updates, review-gated suggestions, bounded batch suggestion create/review with
 per-item failures, DB-enforced race-safe pending suggestion dedupe, conservative
 semantic-equivalent duplicate suppression in core consolidation and MCP
-preflight, safer delete policy,
+preflight, conflict-aware auto-apply gating for competing decisions, safer delete policy,
 Cognee/Qdrant/Graphiti as replaceable adapters,
 plugin-kit-ai generated agent plugins, hook capture tests and architecture
 boundary tests. For documents/ADR/notes, Memo Stack now

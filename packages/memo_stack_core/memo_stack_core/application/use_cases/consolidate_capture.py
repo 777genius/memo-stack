@@ -14,6 +14,7 @@ from memo_stack_core.application.extractor import (
     validate_extractor_candidates,
 )
 from memo_stack_core.application.semantic_dedupe import (
+    looks_conflicting_fact,
     looks_equivalent_fact,
     normalize_memory_text,
 )
@@ -223,6 +224,16 @@ class ConsolidateCaptureUseCase:
                 if active_duplicate is not None:
                     resolver_rejected_codes.append("duplicate_active_fact")
                     continue
+                active_conflict = None
+                if candidate.operation_hint == CandidateOperation.ADD:
+                    active_conflict = await _find_active_conflict(
+                        uow,
+                        space_id=str(current.space_id),
+                        profile_id=str(current.profile_id),
+                        thread_id=str(current.thread_id) if current.thread_id else None,
+                        text=candidate.text,
+                        kind=candidate.kind.value,
+                    )
                 duplicate = await uow.suggestions.find_pending_duplicate(
                     space_id=str(current.space_id),
                     profile_id=str(current.profile_id),
@@ -241,6 +252,7 @@ class ConsolidateCaptureUseCase:
                     candidate=candidate,
                     ttl_policy=taxonomy.ttl_policy.name,
                     has_active_duplicate=False,
+                    has_active_conflict=active_conflict is not None,
                     has_pending_duplicate=False,
                 )
                 if auto_apply.allowed:
@@ -306,6 +318,12 @@ class ConsolidateCaptureUseCase:
                         "target_fact_version": candidate.target_fact_version,
                         "target_hint": candidate.target_hint,
                         "target_resolution": target_resolution,
+                        "conflicting_fact_id": str(active_conflict.id)
+                        if active_conflict is not None
+                        else None,
+                        "conflicting_fact_version": active_conflict.version
+                        if active_conflict is not None
+                        else None,
                         "diff_preview": _diff_preview(target_fact, candidate.text),
                         "valid_from": candidate.valid_from.isoformat()
                         if candidate.valid_from
@@ -546,6 +564,41 @@ async def _find_active_duplicate(
             text,
             fact.text,
         ):
+            return fact
+    return None
+
+
+async def _find_active_conflict(
+    uow,
+    *,
+    space_id: str,
+    profile_id: str,
+    thread_id: str | None,
+    text: str,
+    kind: str,
+):
+    candidates = await uow.facts.find_active(
+        space_id=space_id,
+        profile_ids=(profile_id,),
+        thread_id=thread_id,
+        query=text,
+        limit=50,
+    )
+    for fact in candidates:
+        if fact.kind.value == kind and looks_conflicting_fact(text, fact.text):
+            return fact
+    fallback_candidates = await uow.facts.find_active(
+        space_id=space_id,
+        profile_ids=(profile_id,),
+        thread_id=thread_id,
+        query="",
+        limit=50,
+    )
+    seen_ids = {str(fact.id) for fact in candidates}
+    for fact in fallback_candidates:
+        if str(fact.id) in seen_ids or fact.kind.value != kind:
+            continue
+        if looks_conflicting_fact(text, fact.text):
             return fact
     return None
 

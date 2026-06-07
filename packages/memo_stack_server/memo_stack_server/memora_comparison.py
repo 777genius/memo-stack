@@ -81,8 +81,9 @@ DIMENSIONS: tuple[Dimension, ...] = (
         memo_stack_rationale=(
             "memory_remember_fact, canonical facts, idempotency, source refs, "
             "canonical category/tags/TTL, exact and conservative semantic-equivalent "
-            "duplicate preflight, suggestions, bounded batch suggestion create, "
-            "MCP tools and HTTP API are verified by local quality and MCP e2e gates."
+            "duplicate preflight, conflict-aware auto-apply gating, suggestions, "
+            "bounded batch suggestion create, MCP tools and HTTP API are verified "
+            "by local quality and MCP e2e gates."
         ),
         memora_rationale=(
             "Direct MCP smoke and public docs show simple memory_create, batch "
@@ -139,8 +140,8 @@ DIMENSIONS: tuple[Dimension, ...] = (
             "memory_related_facts with explainable relation reasons, TTL hiding "
             "and graph/vector adapters are covered by deterministic gates. "
             "Semantic-equivalent duplicate checks now run in core consolidation "
-            "and MCP preflight, so paraphrased facts are suppressed before they "
-            "pollute recall."
+            "and MCP preflight, while conflict-aware auto-apply keeps competing "
+            "decisions in review before they pollute recall."
         ),
         memora_rationale=(
             "Memora has hybrid search, semantic search, memory_digest, related "

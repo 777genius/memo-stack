@@ -39,6 +39,14 @@ docs/client-integration/interview-memo-stack-clean-architecture-plan.md
 
 Do not let `memo_stack_core` import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI or client application code.
 
+Keep files small enough to review and maintain:
+
+- target size: up to 1000 lines per source file;
+- hard cap: 2500 lines per source file;
+- when a file approaches the target size, split by domain policy, application use case,
+  DTO/contract, adapter, test fixture or orchestration responsibility instead of adding
+  unrelated behavior to the same module.
+
 Implementation order:
 
 ```text

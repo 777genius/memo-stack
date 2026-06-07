@@ -110,6 +110,61 @@ def test_capture_semantic_dedupe_keeps_engine_mismatch_for_review(tmp_path: Path
     )
 
 
+def test_auto_apply_safe_active_conflict_creates_review_suggestion_not_fact(
+    tmp_path: Path,
+) -> None:
+    app = _capture_app(tmp_path, "capture-semantic-active-conflict.db", CaptureMode.AUTO_APPLY_SAFE)
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        existing = _create_fact(
+            client,
+            headers=headers,
+            text="Postgres owns document vector retrieval.",
+            space_slug="capture-semantic-active-conflict",
+        )
+        capture = _create_capture(
+            client,
+            headers=headers,
+            text="Remember: Docs retrieval should use Qdrant vectors.",
+            space_slug="capture-semantic-active-conflict",
+        )
+        result = _consolidate(
+            client,
+            capture_id=capture.json()["data"]["id"],
+            extractor=StaticExtractor(
+                (
+                    _candidate(
+                        "Docs retrieval should use Qdrant vectors.",
+                        confidence=Confidence.HIGH,
+                        ttl_policy="durable",
+                    ),
+                )
+            ),
+            auto_apply_safe_enabled=True,
+        )
+        facts = _list_facts(client, headers=headers, space_slug="capture-semantic-active-conflict")
+        suggestions = _list_suggestions(
+            client,
+            headers=headers,
+            space_slug="capture-semantic-active-conflict",
+        )
+
+    assert existing.status_code == 201
+    assert result.auto_applied_facts == 0
+    assert result.created_suggestions == 1
+    assert [item["text"] for item in facts.json()["data"]] == [
+        "Postgres owns document vector retrieval."
+    ]
+
+    suggestion = suggestions.json()["data"][0]
+    assert suggestion["candidate_text"] == "Docs retrieval should use Qdrant vectors."
+    assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
+    assert suggestion["review_payload"]["conflicting_fact_version"] == 1
+    assert "auto_apply_active_conflict" in suggestion["review_payload"][
+        "rejected_resolver_codes"
+    ]
+
+
 def _capture_app(tmp_path: Path, database_name: str, capture_mode: CaptureMode):
     return create_app(
         Settings(
