@@ -24,6 +24,7 @@ from typing import Any, Protocol
 import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from memo_stack_core.reporting import with_report_provenance
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_NAMES = (
@@ -351,6 +352,12 @@ class AgentBenchRunner:
             "gates": gates,
             "scenarios": [result.to_report(env=self._config.mcp_env) for result in results],
         }
+        report = with_report_provenance(
+            report,
+            generated_by="memo_stack_mcp.agent_behavior_bench",
+            run_id=self._config.run_id,
+            cwd=PROJECT_ROOT,
+        )
         return _redact_payload(report, env=self._config.mcp_env)
 
     async def _run_scenario(self, scenario: AgentBenchScenario) -> ScenarioRunResult:

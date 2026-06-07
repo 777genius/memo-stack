@@ -452,3 +452,92 @@ def test_quality_evidence_bundle_rejects_wrong_standalone_top_evidence_generator
         assert "unsupported provenance generator" in str(exc)
     else:
         raise AssertionError("expected unsupported standalone top evidence generator to fail")
+
+
+def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
+    tmp_path: Path,
+) -> None:
+    agent_report = tmp_path / "agent-behavior.json"
+    public_report = tmp_path / "public-benchmark.json"
+    agent_report.write_text(
+        json.dumps(
+            {
+                "suite": "memory_mcp_agent_behavior",
+                "ok": True,
+                "scenario_set": "realistic",
+                "provenance": {
+                    "generated_by": "memo_stack_mcp.agent_behavior_bench",
+                    "git": {"commit": "abc123", "dirty": False},
+                },
+                "metrics": {
+                    "tool_choice_accuracy": 1.0,
+                    "search_before_write_rate": 1.0,
+                    "update_vs_duplicate_rate": 1.0,
+                    "document_routing_accuracy": 1.0,
+                    "answer_support_rate": 1.0,
+                    "live_session_pass_rate": 1.0,
+                    "transcript_corpus_pass_rate": 1.0,
+                    "adversarial_pass_rate": 1.0,
+                    "unsafe_write_count": 0,
+                    "secret_leak_count": 0,
+                    "cross_scope_leak_count": 0,
+                    "stale_leak_count": 0,
+                    "deleted_leak_count": 0,
+                    "critical_safety_failures": 0,
+                },
+                "gates": {
+                    "critical_safety_failures_zero": True,
+                    "secret_leak_count_zero": True,
+                    "unsafe_write_count_zero": True,
+                    "cross_scope_leak_count_zero": True,
+                    "stale_leak_count_zero": True,
+                    "deleted_leak_count_zero": True,
+                    "search_before_write_rate_min_0_90": True,
+                    "update_vs_duplicate_rate_min_0_80": True,
+                    "tool_choice_accuracy_min_0_80": True,
+                    "answer_support_rate_min_0_80": True,
+                    "live_session_pass_rate_min_0_80": True,
+                    "transcript_corpus_pass_rate_min_0_80": True,
+                    "adversarial_pass_rate_min_0_90": True,
+                    "critical_scenarios_pass": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    public_report.write_text(
+        json.dumps(
+            {
+                "suite": "public-memory-benchmark",
+                "ok": True,
+                "provenance": {
+                    "generated_by": "memo_stack_server.official_public_benchmark",
+                    "git": {"commit": "abc123", "dirty": False},
+                },
+                "benchmarks": [
+                    {
+                        "name": "locomo",
+                        "ok": True,
+                        "metrics": {"accuracy": 0.947, "case_count": 600},
+                    },
+                    {
+                        "name": "longmemeval",
+                        "ok": True,
+                        "metrics": {"accuracy": 0.902, "case_count": 500},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_quality_evidence_bundle(
+        output_dir=tmp_path / "evidence",
+        extra_report_paths=(agent_report, public_report),
+        require_top_evidence=True,
+        expected_git_commit="abc123",
+    )
+
+    assert result["ok"] is False
+    assert result["scorecard"]["top_library_comparison_ready"] is False
+    assert result["scorecard"]["evidence_gaps"] == ["full_provider_canary_missing"]

@@ -83,8 +83,17 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["metrics"]["case_count"] == 2
     assert result["metrics"]["accuracy"] == 1.0
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
+    assert result["provenance"]["generated_by"] == (
+        "memo_stack_server.official_public_benchmark"
+    )
+    assert result["provenance"]["suite"] == "public-memory-benchmark"
+    assert result["provenance"]["git"]["dirty"] in {True, False}
     assert report.exists()
-    assert json.loads(report.read_text(encoding="utf-8"))["ok"] is True
+    written = json.loads(report.read_text(encoding="utf-8"))
+    assert written["ok"] is True
+    assert written["provenance"]["generated_by"] == (
+        "memo_stack_server.official_public_benchmark"
+    )
 
 
 def test_official_public_benchmark_canary_can_run_single_dataset(tmp_path: Path) -> None:

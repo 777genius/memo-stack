@@ -17,8 +17,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from memo_stack_core.reporting import with_report_provenance
+
 from memo_stack_server.public_benchmark import run_public_memory_benchmark
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
 LOCOMO_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
 LONGMEMEVAL_URL = (
@@ -130,6 +133,7 @@ def run_official_public_benchmark_canary(
     if max_cases < 1:
         raise ValueError("max_cases must be greater than zero")
     selected = _selected_benchmarks(benchmark)
+    run_id = f"official-public-{time.time_ns()}"
     started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="memo-official-public-benchmark-") as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -160,6 +164,12 @@ def run_official_public_benchmark_canary(
         min_accuracy=min_accuracy,
         api_url=api_url,
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
+    result = with_report_provenance(
+        result,
+        generated_by="memo_stack_server.official_public_benchmark",
+        run_id=run_id,
+        cwd=PROJECT_ROOT,
     )
     _write_report(result, report_out)
     return result

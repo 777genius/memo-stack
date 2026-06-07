@@ -1877,6 +1877,10 @@ def test_runner_reports_unexpected_scenario_exception_as_redacted_failure(
     rendered = json.dumps(report, ensure_ascii=False)
 
     assert report["ok"] is False
+    assert report["provenance"]["generated_by"] == "memo_stack_mcp.agent_behavior_bench"
+    assert report["provenance"]["suite"] == "memory_mcp_agent_behavior"
+    assert report["provenance"]["run_id"] == "unit"
+    assert report["provenance"]["git"]["dirty"] in {True, False}
     assert report["scenarios"][0]["status"] == "failed"
     assert report["scenarios"][0]["failures"][0]["code"] == "agent_bench.scenario_failed"
     assert "runner-secret-value" not in rendered

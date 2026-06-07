@@ -51,8 +51,13 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert result["metrics"]["longmemeval_accuracy"] == 1.0
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
     assert all(case["status"] == "ok" for case in result["cases"])
+    assert result["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
+    assert result["provenance"]["suite"] == "public-memory-benchmark"
+    assert result["provenance"]["git"]["dirty"] in {True, False}
     assert report.exists()
-    assert json.loads(report.read_text(encoding="utf-8"))["ok"] is True
+    written = json.loads(report.read_text(encoding="utf-8"))
+    assert written["ok"] is True
+    assert written["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
 
 
 def test_public_memory_benchmark_reports_missing_expected_terms(tmp_path: Path) -> None:

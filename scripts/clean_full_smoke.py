@@ -29,6 +29,7 @@ from typing import Any, TextIO
 
 import httpx
 from memo_stack_adapters.provider_errors import classify_provider_exception
+from memo_stack_core.reporting import build_report_provenance
 from memo_stack_server.official_public_benchmark import run_official_public_benchmark_canary
 from neo4j import GraphDatabase
 
@@ -347,48 +348,13 @@ def _optional_path_env(name: str) -> Path | None:
 
 
 def _report_provenance(*, run_id: str, project_name: str) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "generated_by": "scripts/clean_full_smoke.py",
-        "suite": FULL_PROVIDER_CANARY_SUITE,
-        "run_id": run_id,
-        "project": project_name,
-        "git": _git_metadata(),
-        "runtime": {
-            "python_version": sys.version.split()[0],
-            "platform": sys.platform,
-        },
-    }
-
-
-def _git_metadata() -> dict[str, Any]:
-    return {
-        "commit": _git_output("rev-parse", "HEAD"),
-        "short_commit": _git_output("rev-parse", "--short", "HEAD"),
-        "dirty": _git_dirty(),
-    }
-
-
-def _git_dirty() -> bool | None:
-    status = _git_output("status", "--short")
-    return None if status is None else bool(status.strip())
-
-
-def _git_output(*args: str) -> str | None:
-    try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if completed.returncode != 0:
-        return None
-    return completed.stdout.strip()
+    return build_report_provenance(
+        generated_by="scripts/clean_full_smoke.py",
+        suite=FULL_PROVIDER_CANARY_SUITE,
+        run_id=run_id,
+        project=project_name,
+        cwd=PROJECT_ROOT,
+    )
 
 
 def _ports() -> dict[str, int]:

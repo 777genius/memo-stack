@@ -11,11 +11,12 @@ import argparse
 import hashlib
 import json
 import platform
-import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from memo_stack_core.reporting import git_metadata
 
 from memo_stack_server.eval import (
     AGENT_BEHAVIOR_BENCH_SUITE,
@@ -273,7 +274,8 @@ def _required_expected_git_commit(explicit_commit: str | None) -> str:
 
 
 def _current_git_commit() -> str | None:
-    return _git_output("rev-parse", "HEAD", cwd=_repository_root())
+    commit = git_metadata(cwd=_repository_root()).get("commit")
+    return commit if isinstance(commit, str) and commit else None
 
 
 def _validate_top_evidence_report_provenance(
@@ -414,12 +416,7 @@ def _relative_path(path: Path, output_dir: Path) -> str | None:
 
 
 def _git_metadata() -> dict[str, object]:
-    repo_root = _repository_root()
-    return {
-        "commit": _git_output("rev-parse", "HEAD", cwd=repo_root),
-        "short_commit": _git_output("rev-parse", "--short", "HEAD", cwd=repo_root),
-        "dirty": _git_dirty(cwd=repo_root),
-    }
+    return git_metadata(cwd=_repository_root())
 
 
 def _repository_root() -> Path | None:
@@ -427,28 +424,6 @@ def _repository_root() -> Path | None:
         if (candidate / ".git").exists():
             return candidate
     return None
-
-
-def _git_dirty(*, cwd: Path | None) -> bool | None:
-    status = _git_output("status", "--short", cwd=cwd)
-    return None if status is None else bool(status.strip())
-
-
-def _git_output(*args: str, cwd: Path | None) -> str | None:
-    try:
-        completed = subprocess.run(
-            ["git", *args],
-            capture_output=True,
-            check=False,
-            cwd=cwd,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if completed.returncode != 0:
-        return None
-    return completed.stdout.strip()
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:

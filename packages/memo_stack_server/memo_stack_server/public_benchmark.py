@@ -20,10 +20,12 @@ from typing import Any, Protocol
 
 import httpx
 from fastapi.testclient import TestClient
+from memo_stack_core.reporting import with_report_provenance
 
 from memo_stack_server.config import DeployProfile, Settings
 from memo_stack_server.main import create_app
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
 LOCOMO_BENCHMARK_SUITE = "locomo"
 LONGMEMEVAL_BENCHMARK_SUITE = "longmemeval"
@@ -171,12 +173,14 @@ def run_public_memory_benchmark(
                 }
             ],
         }
+        result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
         _write_report(result, report_out)
         return result
 
     token = auth_token or (Settings().service_token if api_url else "test-token")
     if not token:
         result = _setup_failure_result(reason="auth_token_required", case_count=len(cases))
+        result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
         _write_report(result, report_out)
         return result
 
@@ -215,8 +219,22 @@ def run_public_memory_benchmark(
                     started=started,
                 )
 
+    result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
     _write_report(result, report_out)
     return result
+
+
+def _with_public_benchmark_provenance(
+    result: dict[str, object],
+    *,
+    dataset_path: Path,
+) -> dict[str, object]:
+    return with_report_provenance(
+        result,
+        generated_by="memo_stack_server.public_benchmark",
+        run_id=_dataset_hash(dataset_path)[:16],
+        cwd=PROJECT_ROOT,
+    )
 
 
 def _execute_cases(

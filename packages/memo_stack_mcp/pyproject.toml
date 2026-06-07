@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.28.1,<1.0.0",
   "mcp>=1.27.1,<2.0.0",
+  "memo-stack-core==0.1.0",
 ]
 
 [project.scripts]
