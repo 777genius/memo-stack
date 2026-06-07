@@ -211,6 +211,32 @@ def test_deleted_generated_fact_is_recreated_on_next_export(tmp_path: Path) -> N
     assert "Use Qdrant for document recall." in fact_path.read_text(encoding="utf-8")
 
 
+def test_sync_once_conflicts_on_renamed_generated_note_without_creating_duplicate(
+    tmp_path: Path,
+) -> None:
+    gateway = FakeMemoryGateway()
+    exporter, _importer = use_cases(tmp_path, gateway)
+    syncer = syncer_use_case(tmp_path, gateway)
+    exporter.execute(space_slug="default", profile_external_ref="me")
+    fact_path = tmp_path / FACTS_DIR / "fact_123.md"
+    renamed_path = tmp_path / FACTS_DIR / "renamed-fact.md"
+    fact_path.rename(renamed_path)
+
+    result = syncer.execute(
+        space_slug="default",
+        profile_external_ref="me",
+        apply_import=True,
+    )
+
+    assert result.ok is False
+    assert result.import_result.conflicts == 0
+    assert result.export_result.conflicts == 1
+    assert "non-canonical path" in result.export_result.changes[0].message
+    assert result.export_result.changes[0].path.as_posix().endswith("renamed-fact.md")
+    assert not fact_path.exists()
+    assert len(list((tmp_path / FACTS_DIR).glob("*.md"))) == 1
+
+
 def test_sync_once_removes_clean_generated_note_when_backend_fact_is_deleted(
     tmp_path: Path,
 ) -> None:

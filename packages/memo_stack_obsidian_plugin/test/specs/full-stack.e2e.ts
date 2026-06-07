@@ -234,6 +234,96 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.match(conflict, /zzz-duplicate-managed\.md/);
   });
 
+  it("turns manually renamed managed notes into recoverable conflicts without duplicates", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO renamed note initial fact.",
+      sourceId: "wdio-renamed-managed-note-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    const renamedFact = path.join(
+      vaultPath,
+      scopedRoot,
+      "generated",
+      "facts",
+      "renamed-managed-note.md",
+    );
+    fs.renameSync(exportedFact, renamedFact);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+
+    let calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(fs.existsSync(exportedFact), false);
+    assert.equal(fs.existsSync(renamedFact), true);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.equal(
+      (await getFact(baseUrl, fact.id)).text,
+      "Obsidian WDIO renamed note initial fact.",
+    );
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /non-canonical path/);
+    assert.match(conflict, /renamed-managed-note\.md/);
+    assert.match(conflict, new RegExp(fact.id));
+
+    fs.renameSync(renamedFact, exportedFact);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+
+    calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(fs.existsSync(exportedFact), true);
+    assert.equal(fs.existsSync(renamedFact), false);
+    assert.equal(factFiles(vaultPath).length, 1);
+  });
+
+  it("recovers from stale conflicts after the dirty local note is removed", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO stale recovery initial fact.",
+      sourceId: "wdio-stale-recovery-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    replaceManagedText(exportedFact, "Obsidian WDIO stale recovery local draft.");
+    await updateFact(baseUrl, fact.id, {
+      expectedVersion: fact.version,
+      text: "Obsidian WDIO stale recovery backend won.",
+      reason: "External WDIO stale recovery update",
+    });
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    let calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /stale recovery local draft/);
+    assert.equal(conflictFiles(vaultPath).length, 1);
+
+    fs.unlinkSync(exportedFact);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+
+    calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(factFiles(vaultPath).length, 1);
+    const recovered = fs.readFileSync(onlyFactFile(vaultPath), "utf8");
+    assert.match(recovered, /Obsidian WDIO stale recovery backend won/);
+    assert.match(recovered, /memo_stack_version: 2/);
+    assert.doesNotMatch(recovered, /stale recovery local draft/);
+    assert.equal(
+      (await getFact(baseUrl, fact.id)).text,
+      "Obsidian WDIO stale recovery backend won.",
+    );
+  });
+
   it("continues managed note sync after an Obsidian reload", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO reload initial fact.",

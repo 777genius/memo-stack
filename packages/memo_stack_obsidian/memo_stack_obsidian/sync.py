@@ -142,6 +142,28 @@ class ExportFactsToVaultUseCase:
                 space_slug=space_slug,
                 profile_external_ref=profile_external_ref,
             )
+            relocated_path = _find_relocated_fact_note(
+                vault=self.vault,
+                layout=self.layout,
+                fact_id=fact_id,
+                canonical_path=path,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+            )
+            if relocated_path is not None:
+                changes.append(
+                    ExportChange(
+                        status=ExportStatus.CONFLICT,
+                        path=relocated_path,
+                        fact_id=fact_id,
+                        message=(
+                            "Managed fact note exists at non-canonical path: "
+                            f"{relocated_path.as_posix()}"
+                        ),
+                        version=version,
+                    )
+                )
+                continue
             existing_conflict = self._existing_note_conflict(path)
             if existing_conflict is not None:
                 changes.append(
@@ -252,7 +274,13 @@ class PreviewVaultSyncUseCase:
                 space_slug=space_slug,
                 profile_external_ref=profile_external_ref,
             )
-            change = self._preview_fact_export(fact=fact, path=path, version=version)
+            change = self._preview_fact_export(
+                fact=fact,
+                path=path,
+                version=version,
+                space_slug=space_slug,
+                profile_external_ref=profile_external_ref,
+            )
             changes.append(change)
         return ExportFactsResult(changes=tuple(changes))
 
@@ -262,8 +290,29 @@ class PreviewVaultSyncUseCase:
         fact: dict[str, object],
         path: PurePosixPath,
         version: int,
+        space_slug: str,
+        profile_external_ref: str,
     ) -> ExportChange:
         fact_id = str(fact["id"])
+        relocated_path = _find_relocated_fact_note(
+            vault=self.vault,
+            layout=self.layout,
+            fact_id=fact_id,
+            canonical_path=path,
+            space_slug=space_slug,
+            profile_external_ref=profile_external_ref,
+        )
+        if relocated_path is not None:
+            return ExportChange(
+                status=ExportStatus.CONFLICT,
+                path=relocated_path,
+                fact_id=fact_id,
+                message=(
+                    "Managed fact note exists at non-canonical path: "
+                    f"{relocated_path.as_posix()}"
+                ),
+                version=version,
+            )
         if not self.vault.exists(path):
             return ExportChange(
                 status=ExportStatus.WOULD_EXPORT,
@@ -630,6 +679,31 @@ def _sync_export_skip_reason(
             "--apply-import before exporting fresh backend projections."
         )
     return ""
+
+
+def _find_relocated_fact_note(
+    *,
+    vault: VaultPort,
+    layout: ObsidianVaultLayout,
+    fact_id: str,
+    canonical_path: PurePosixPath,
+    space_slug: str,
+    profile_external_ref: str,
+) -> PurePosixPath | None:
+    for directory in layout.fact_scan_dirs(
+        space_slug=space_slug,
+        profile_external_ref=profile_external_ref,
+    ):
+        for path in vault.iter_markdown_files(directory):
+            if path == canonical_path or _is_hidden_path(path):
+                continue
+            try:
+                note = parse_fact_note(path, vault.read_text(path))
+            except NoteFormatError:
+                continue
+            if note.fact_id == fact_id:
+                return path
+    return None
 
 
 def _inbox_body(markdown: str) -> str:
