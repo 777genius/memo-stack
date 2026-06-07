@@ -42,24 +42,57 @@ from memo_stack_server.eval import (
 )
 
 DEFAULT_EVIDENCE_DIR = Path(".tmp") / "memo-stack-quality-evidence"
+
+
+@dataclass(frozen=True)
+class TopEvidenceReportPolicy:
+    expected_generators: frozenset[str]
+    provenance_suites: frozenset[str]
+
+
 _PUBLIC_BENCHMARK_REPORT_GENERATORS = frozenset(
     {
         "memo_stack_server.official_public_benchmark",
         "memo_stack_server.public_benchmark",
     }
 )
-_TOP_EVIDENCE_REPORT_GENERATORS = {
-    FULL_PROVIDER_CANARY_SUITE: frozenset({"scripts/clean_full_smoke.py"}),
-    "memo_stack_full_provider_canary": frozenset({"scripts/clean_full_smoke.py"}),
-    "memo-stack-clean-full-smoke": frozenset({"scripts/clean_full_smoke.py"}),
-    "clean-full-smoke": frozenset({"scripts/clean_full_smoke.py"}),
-    "clean_full_smoke": frozenset({"scripts/clean_full_smoke.py"}),
-    AGENT_BEHAVIOR_BENCH_SUITE: frozenset({"memo_stack_mcp.agent_behavior_bench"}),
-    PUBLIC_MEMORY_BENCHMARK_SUITE: _PUBLIC_BENCHMARK_REPORT_GENERATORS,
-    "public_memory_benchmark": _PUBLIC_BENCHMARK_REPORT_GENERATORS,
-    "memory-public-benchmarks": _PUBLIC_BENCHMARK_REPORT_GENERATORS,
-    LOCOMO_BENCHMARK_SUITE: _PUBLIC_BENCHMARK_REPORT_GENERATORS,
-    LONGMEMEVAL_BENCHMARK_SUITE: _PUBLIC_BENCHMARK_REPORT_GENERATORS,
+_FULL_PROVIDER_REPORT_SUITES = frozenset(
+    {
+        FULL_PROVIDER_CANARY_SUITE,
+        "memo_stack_full_provider_canary",
+        "memo-stack-clean-full-smoke",
+        "clean-full-smoke",
+        "clean_full_smoke",
+    }
+)
+_PUBLIC_BENCHMARK_REPORT_SUITES = frozenset(
+    {
+        PUBLIC_MEMORY_BENCHMARK_SUITE,
+        "public_memory_benchmark",
+        "memory-public-benchmarks",
+        LOCOMO_BENCHMARK_SUITE,
+        LONGMEMEVAL_BENCHMARK_SUITE,
+    }
+)
+_TOP_EVIDENCE_REPORT_POLICIES = {
+    **{
+        suite: TopEvidenceReportPolicy(
+            expected_generators=frozenset({"scripts/clean_full_smoke.py"}),
+            provenance_suites=_FULL_PROVIDER_REPORT_SUITES,
+        )
+        for suite in _FULL_PROVIDER_REPORT_SUITES
+    },
+    AGENT_BEHAVIOR_BENCH_SUITE: TopEvidenceReportPolicy(
+        expected_generators=frozenset({"memo_stack_mcp.agent_behavior_bench"}),
+        provenance_suites=frozenset({AGENT_BEHAVIOR_BENCH_SUITE}),
+    ),
+    **{
+        suite: TopEvidenceReportPolicy(
+            expected_generators=_PUBLIC_BENCHMARK_REPORT_GENERATORS,
+            provenance_suites=_PUBLIC_BENCHMARK_REPORT_SUITES,
+        )
+        for suite in _PUBLIC_BENCHMARK_REPORT_SUITES
+    },
 }
 
 
@@ -285,13 +318,17 @@ def _validate_top_evidence_report_provenance(
     allow_dirty_top_evidence: bool,
 ) -> None:
     payload = _read_json_object(path)
-    expected_generators = _expected_top_evidence_generators(payload.get("suite"))
-    if expected_generators is None:
+    policy = _top_evidence_report_policy(payload.get("suite"))
+    if policy is None:
         return
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         raise ValueError(f"Top evidence report is missing provenance: {path}")
-    if provenance.get("generated_by") not in expected_generators:
+    if provenance.get("schema_version") != 1:
+        raise ValueError(f"Top evidence report has unsupported provenance schema: {path}")
+    if provenance.get("suite") not in policy.provenance_suites:
+        raise ValueError(f"Top evidence report provenance suite mismatch: {path}")
+    if provenance.get("generated_by") not in policy.expected_generators:
         raise ValueError(
             f"Top evidence report has unsupported provenance generator: {path}"
         )
@@ -309,12 +346,21 @@ def _validate_top_evidence_report_provenance(
         )
     if dirty and not allow_dirty_top_evidence:
         raise ValueError(f"Top evidence report was generated from a dirty worktree: {path}")
+    runtime = provenance.get("runtime")
+    python_version = runtime.get("python_version") if isinstance(runtime, dict) else None
+    runtime_platform = runtime.get("platform") if isinstance(runtime, dict) else None
+    if not isinstance(python_version, str) or not python_version:
+        raise ValueError(
+            f"Top evidence report is missing provenance runtime python_version: {path}"
+        )
+    if not isinstance(runtime_platform, str) or not runtime_platform:
+        raise ValueError(f"Top evidence report is missing provenance runtime platform: {path}")
 
 
-def _expected_top_evidence_generators(suite: object) -> frozenset[str] | None:
+def _top_evidence_report_policy(suite: object) -> TopEvidenceReportPolicy | None:
     if not isinstance(suite, str):
         return None
-    return _TOP_EVIDENCE_REPORT_GENERATORS.get(suite)
+    return _TOP_EVIDENCE_REPORT_POLICIES.get(suite)
 
 
 def _read_json_object(path: Path) -> dict[str, object]:

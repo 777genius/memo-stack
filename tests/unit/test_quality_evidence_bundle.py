@@ -6,6 +6,31 @@ from pathlib import Path
 from memo_stack_server.evidence_bundle import build_quality_evidence_bundle
 
 
+def _strict_provenance(
+    *,
+    generated_by: str,
+    suite: str,
+    commit: str = "abc123",
+    dirty: bool | None = False,
+    schema_version: int = 1,
+    include_runtime: bool = True,
+) -> dict[str, object]:
+    provenance: dict[str, object] = {
+        "schema_version": schema_version,
+        "generated_by": generated_by,
+        "suite": suite,
+        "git": {"commit": commit},
+    }
+    if dirty is not None:
+        provenance["git"]["dirty"] = dirty
+    if include_runtime:
+        provenance["runtime"] = {
+            "python_version": "3.13.0",
+            "platform": "darwin",
+        }
+    return provenance
+
+
 def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> None:
     result = build_quality_evidence_bundle(output_dir=tmp_path)
 
@@ -236,10 +261,11 @@ def test_quality_evidence_bundle_rejects_stale_top_evidence_report(
             {
                 "suite": "memo-stack-full-provider-canary",
                 "ok": True,
-                "provenance": {
-                    "generated_by": "scripts/clean_full_smoke.py",
-                    "git": {"commit": "old-commit", "dirty": False},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="scripts/clean_full_smoke.py",
+                    suite="memo-stack-full-provider-canary",
+                    commit="old-commit",
+                ),
             }
         ),
         encoding="utf-8",
@@ -268,10 +294,11 @@ def test_quality_evidence_bundle_rejects_dirty_top_evidence_report(
             {
                 "suite": "memo-stack-full-provider-canary",
                 "ok": True,
-                "provenance": {
-                    "generated_by": "scripts/clean_full_smoke.py",
-                    "git": {"commit": "abc123", "dirty": True},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="scripts/clean_full_smoke.py",
+                    suite="memo-stack-full-provider-canary",
+                    dirty=True,
+                ),
             }
         ),
         encoding="utf-8",
@@ -299,10 +326,11 @@ def test_quality_evidence_bundle_can_allow_dirty_top_evidence_for_local_diagnost
             {
                 "suite": "memo-stack-full-provider-canary",
                 "ok": True,
-                "provenance": {
-                    "generated_by": "scripts/clean_full_smoke.py",
-                    "git": {"commit": "abc123", "dirty": True},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="scripts/clean_full_smoke.py",
+                    suite="memo-stack-full-provider-canary",
+                    dirty=True,
+                ),
             }
         ),
         encoding="utf-8",
@@ -335,10 +363,11 @@ def test_quality_evidence_bundle_requires_top_evidence_dirty_state(
             {
                 "suite": "memo-stack-full-provider-canary",
                 "ok": True,
-                "provenance": {
-                    "generated_by": "scripts/clean_full_smoke.py",
-                    "git": {"commit": "abc123"},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="scripts/clean_full_smoke.py",
+                    suite="memo-stack-full-provider-canary",
+                    dirty=None,
+                ),
             }
         ),
         encoding="utf-8",
@@ -432,10 +461,10 @@ def test_quality_evidence_bundle_rejects_wrong_standalone_top_evidence_generator
             {
                 "suite": "memory_mcp_agent_behavior",
                 "ok": True,
-                "provenance": {
-                    "generated_by": "scripts/clean_full_smoke.py",
-                    "git": {"commit": "abc123", "dirty": False},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="scripts/clean_full_smoke.py",
+                    suite="memory_mcp_agent_behavior",
+                ),
             }
         ),
         encoding="utf-8",
@@ -465,10 +494,10 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                 "suite": "memory_mcp_agent_behavior",
                 "ok": True,
                 "scenario_set": "realistic",
-                "provenance": {
-                    "generated_by": "memo_stack_mcp.agent_behavior_bench",
-                    "git": {"commit": "abc123", "dirty": False},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="memo_stack_mcp.agent_behavior_bench",
+                    suite="memory_mcp_agent_behavior",
+                ),
                 "metrics": {
                     "tool_choice_accuracy": 1.0,
                     "search_before_write_rate": 1.0,
@@ -510,10 +539,10 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
             {
                 "suite": "public-memory-benchmark",
                 "ok": True,
-                "provenance": {
-                    "generated_by": "memo_stack_server.official_public_benchmark",
-                    "git": {"commit": "abc123", "dirty": False},
-                },
+                "provenance": _strict_provenance(
+                    generated_by="memo_stack_server.official_public_benchmark",
+                    suite="public-memory-benchmark",
+                ),
                 "benchmarks": [
                     {
                         "name": "locomo",
@@ -541,3 +570,98 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
     assert result["ok"] is False
     assert result["scorecard"]["top_library_comparison_ready"] is False
     assert result["scorecard"]["evidence_gaps"] == ["full_provider_canary_missing"]
+
+
+def test_quality_evidence_bundle_rejects_wrong_top_evidence_schema_version(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "wrong-schema-agent-behavior.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memory_mcp_agent_behavior",
+                "ok": True,
+                "provenance": _strict_provenance(
+                    generated_by="memo_stack_mcp.agent_behavior_bench",
+                    suite="memory_mcp_agent_behavior",
+                    schema_version=2,
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "unsupported provenance schema" in str(exc)
+    else:
+        raise AssertionError("expected wrong provenance schema to fail")
+
+
+def test_quality_evidence_bundle_rejects_top_evidence_suite_mismatch(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "suite-mismatch-public-benchmark.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "public-memory-benchmark",
+                "ok": True,
+                "provenance": _strict_provenance(
+                    generated_by="memo_stack_server.official_public_benchmark",
+                    suite="memory_mcp_agent_behavior",
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "provenance suite mismatch" in str(exc)
+    else:
+        raise AssertionError("expected provenance suite mismatch to fail")
+
+
+def test_quality_evidence_bundle_requires_top_evidence_runtime(
+    tmp_path: Path,
+) -> None:
+    external_report = tmp_path / "missing-runtime-agent-behavior.json"
+    external_report.write_text(
+        json.dumps(
+            {
+                "suite": "memory_mcp_agent_behavior",
+                "ok": True,
+                "provenance": _strict_provenance(
+                    generated_by="memo_stack_mcp.agent_behavior_bench",
+                    suite="memory_mcp_agent_behavior",
+                    include_runtime=False,
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        build_quality_evidence_bundle(
+            output_dir=tmp_path / "evidence",
+            extra_report_paths=(external_report,),
+            require_top_evidence=True,
+            expected_git_commit="abc123",
+        )
+    except ValueError as exc:
+        assert "missing provenance runtime python_version" in str(exc)
+    else:
+        raise AssertionError("expected missing provenance runtime to fail")
