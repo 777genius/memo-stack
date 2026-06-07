@@ -11,18 +11,21 @@ import { browser } from "@wdio/globals";
 const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
-const rawSpaceSlug = "Client Alpha / Research 2026";
-const rawProfileExternalRef = "Default User+Agent";
+type Scope = { spaceSlug: string; profileExternalRef: string };
+const primaryScope: Scope = {
+  spaceSlug: "Client Alpha / Research 2026",
+  profileExternalRef: "Default User+Agent",
+};
+const secondaryScope: Scope = {
+  spaceSlug: "Client Beta / Field Notes",
+  profileExternalRef: "Research Lead+Ops",
+};
+const rawSpaceSlug = primaryScope.spaceSlug;
+const rawProfileExternalRef = primaryScope.profileExternalRef;
 const rootFolder = "Team Memory";
 const safeSpaceSlug = safeScopeSegment(rawSpaceSlug);
 const safeProfileExternalRef = safeScopeSegment(rawProfileExternalRef);
-const scopedRoot = path.join(
-  rootFolder,
-  "spaces",
-  safeSpaceSlug,
-  "profiles",
-  safeProfileExternalRef,
-);
+const scopedRoot = scopedRootFor(primaryScope);
 
 describe("Memo Stack friendly project names E2E", function () {
   let server: ChildProcess | undefined;
@@ -104,26 +107,106 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.ok(calls.slice(2).every((call) => call.args.includes("--apply-import")));
     assert.ok(calls.every((call) => call.status === 0));
   });
+
+  it("switches friendly project scopes in one vault without mixing notes or imports", async function () {
+    await createFact(baseUrl, {
+      text: "Primary friendly scope backend fact.",
+      sourceId: "wdio-friendly-primary-seed",
+      scope: primaryScope,
+    });
+    await createFact(baseUrl, {
+      text: "Secondary friendly scope backend fact.",
+      sourceId: "wdio-friendly-secondary-seed",
+      scope: secondaryScope,
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl, primaryScope);
+    const secondaryRoot = scopedRootFor(secondaryScope);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const primaryFile = onlyFactFile(vaultPath, primaryScope);
+    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary friendly scope backend fact/);
+    assert.equal(factFiles(vaultPath, secondaryScope).length, 0);
+    assert.equal(fs.existsSync(path.join(vaultPath, rootFolder, "spaces", "Client Alpha")), false);
+
+    const primaryInboxMarker = "WDIO primary friendly scope inbox marker";
+    writeVaultFile(vaultPath, path.join(scopedRoot, "inbox", "primary-inbox.md"), primaryInboxMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, primaryInboxMarker, 1, primaryScope);
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, secondaryScope)).length, 0);
+
+    await configurePlugin(vaultPath, baseUrl, secondaryScope);
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.spaceSlug, secondaryScope.spaceSlug);
+    assert.equal(snapshot.profileExternalRef, secondaryScope.profileExternalRef);
+    assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(secondaryRoot, "generated", "facts")));
+    assert.equal(snapshot.paths.inbox, posixPath(path.join(secondaryRoot, "inbox")));
+    assert.equal(snapshot.inboxExists, true);
+    assert.equal(fs.existsSync(path.join(vaultPath, rootFolder, "spaces", "Client Beta")), false);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+
+    const secondaryFile = onlyFactFile(vaultPath, secondaryScope);
+    assert.match(fs.readFileSync(secondaryFile, "utf8"), /Secondary friendly scope backend fact/);
+    assert.equal(factFiles(vaultPath, primaryScope).length, 1);
+    assert.equal(factFiles(vaultPath, secondaryScope).length, 1);
+    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary friendly scope backend fact/);
+
+    const secondaryInboxMarker = "WDIO secondary friendly scope inbox marker";
+    writeVaultFile(vaultPath, path.join(secondaryRoot, "inbox", "secondary-inbox.md"), secondaryInboxMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 6);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, secondaryInboxMarker, 1, secondaryScope);
+    assert.equal((await suggestionsContaining(baseUrl, secondaryInboxMarker, primaryScope)).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:open-inbox");
+    assert.equal(await activeFilePath(), posixPath(path.join(secondaryRoot, "inbox", "README.md")));
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.paths.conflicts, posixPath(path.join(secondaryRoot, "conflicts")));
+    assert.equal(conflictFiles(vaultPath, primaryScope).length, 0);
+    assert.equal(conflictFiles(vaultPath, secondaryScope).length, 0);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "connect", "sync", "sync"]);
+    assertCallsUseScope(calls.slice(0, 3), primaryScope);
+    assertCallsUseScope(calls.slice(3), secondaryScope);
+    assert.ok(calls.every((call) => call.args.includes(rootFolder)));
+    assert.ok(calls.every((call) => call.status === 0));
+  });
 });
 
-async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
+async function resetVaultAndConfigure(apiUrl: string, scope: Scope = primaryScope): Promise<string> {
   const obsidianPage = await browser.getObsidianPage();
   await obsidianPage.resetVault({
     "Welcome.md": "# Welcome\n\nFriendly names E2E vault.\n",
   });
   const vaultPath = obsidianPage.getVaultPath();
-  await configurePlugin(vaultPath, apiUrl);
+  await configurePlugin(vaultPath, apiUrl, scope);
   return vaultPath;
 }
 
-async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void> {
+async function configurePlugin(vaultPath: string, apiUrl: string, scope: Scope = primaryScope): Promise<void> {
   const settings = {
     apiUrl,
     token,
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
-    spaceSlug: rawSpaceSlug,
-    profileExternalRef: rawProfileExternalRef,
+    spaceSlug: scope.spaceSlug,
+    profileExternalRef: scope.profileExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -203,11 +286,11 @@ async function waitForHealth(apiUrl: string): Promise<void> {
 
 async function createFact(
   apiUrl: string,
-  { text, sourceId }: { text: string; sourceId: string },
+  { text, sourceId, scope = primaryScope }: { text: string; sourceId: string; scope?: Scope },
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
-    space_slug: rawSpaceSlug,
-    profile_external_ref: rawProfileExternalRef,
+    space_slug: scope.spaceSlug,
+    profile_external_ref: scope.profileExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -232,17 +315,22 @@ async function waitForSuggestionsContaining(
   apiUrl: string,
   marker: string,
   count: number,
+  scope: Scope = primaryScope,
 ): Promise<void> {
   await waitUntil(
-    async () => (await suggestionsContaining(apiUrl, marker)).length >= count,
+    async () => (await suggestionsContaining(apiUrl, marker, scope)).length >= count,
     "Suggestion was not created",
   );
 }
 
-async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
+async function suggestionsContaining(
+  apiUrl: string,
+  marker: string,
+  scope: Scope = primaryScope,
+): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
-    space_slug: rawSpaceSlug,
-    profile_external_ref: rawProfileExternalRef,
+    space_slug: scope.spaceSlug,
+    profile_external_ref: scope.profileExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
@@ -333,8 +421,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function factFiles(vaultPath: string): string[] {
-  const factsDir = path.join(vaultPath, scopedRoot, "generated", "facts");
+function factFiles(vaultPath: string, scope: Scope = primaryScope): string[] {
+  const factsDir = path.join(vaultPath, scopedRootFor(scope), "generated", "facts");
   if (!fs.existsSync(factsDir)) {
     return [];
   }
@@ -345,14 +433,14 @@ function factFiles(vaultPath: string): string[] {
     .sort();
 }
 
-function onlyFactFile(vaultPath: string): string {
-  const files = factFiles(vaultPath);
+function onlyFactFile(vaultPath: string, scope: Scope = primaryScope): string {
+  const files = factFiles(vaultPath, scope);
   assert.equal(files.length, 1);
   return files[0];
 }
 
-function conflictFiles(vaultPath: string): string[] {
-  const conflictsDir = path.join(vaultPath, scopedRoot, "conflicts");
+function conflictFiles(vaultPath: string, scope: Scope = primaryScope): string[] {
+  const conflictsDir = path.join(vaultPath, scopedRootFor(scope), "conflicts");
   if (!fs.existsSync(conflictsDir)) {
     return [];
   }
@@ -383,6 +471,26 @@ function readCliCalls(vaultPath: string): Array<{ command: string; args: string[
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function assertCallsUseScope(
+  calls: Array<{ command: string; args: string[]; status: number }>,
+  scope: Scope,
+): void {
+  assert.ok(calls.every((call) => call.args.includes("--space")));
+  assert.ok(calls.every((call) => call.args.includes(scope.spaceSlug)));
+  assert.ok(calls.every((call) => call.args.includes("--profile")));
+  assert.ok(calls.every((call) => call.args.includes(scope.profileExternalRef)));
+}
+
+function scopedRootFor(scope: Scope): string {
+  return path.join(
+    rootFolder,
+    "spaces",
+    safeScopeSegment(scope.spaceSlug),
+    "profiles",
+    safeScopeSegment(scope.profileExternalRef),
+  );
 }
 
 function safeScopeSegment(value: string): string {
