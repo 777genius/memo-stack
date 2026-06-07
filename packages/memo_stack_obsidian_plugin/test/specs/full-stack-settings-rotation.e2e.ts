@@ -82,6 +82,59 @@ describe("Memo Stack settings rotation E2E", function () {
     assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO token rotation visible fact.");
   });
 
+  it("recovers without reload after the user fixes an invalid token through settings", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO settings UI token recovery fact.",
+      sourceId: "wdio-settings-ui-token-recovery-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", wrongToken);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", rootFolder);
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForMemoStackApiUrl(baseUrl);
+    await waitForSettingsFile(vaultPath, wrongToken);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.equal(factFiles(vaultPath).length, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await openMemoStackSettings();
+    await setSettingsInput("token", token);
+    await waitForSettingsFile(vaultPath, token);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync"]);
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.match(fs.readFileSync(onlyFactFile(vaultPath), "utf8"), /settings UI token recovery fact/);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO settings UI token recovery fact.");
+  });
+
   it("recovers the same vault after the user fixes an unavailable API URL", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO API URL rotation visible fact.",
@@ -128,6 +181,14 @@ describe("Memo Stack settings rotation E2E", function () {
   });
 });
 
+async function resetVault(): Promise<string> {
+  const obsidianPage = await browser.getObsidianPage();
+  await obsidianPage.resetVault({
+    "Welcome.md": "# Welcome\n\nSettings rotation E2E vault.\n",
+  });
+  return obsidianPage.getVaultPath();
+}
+
 async function resetVaultAndConfigure({
   apiUrl,
   serviceToken,
@@ -135,11 +196,7 @@ async function resetVaultAndConfigure({
   apiUrl: string;
   serviceToken: string;
 }): Promise<string> {
-  const obsidianPage = await browser.getObsidianPage();
-  await obsidianPage.resetVault({
-    "Welcome.md": "# Welcome\n\nSettings rotation E2E vault.\n",
-  });
-  const vaultPath = obsidianPage.getVaultPath();
+  const vaultPath = await resetVault();
   await updatePluginSettings({ apiUrl, serviceToken, vaultPath });
   return vaultPath;
 }
@@ -249,6 +306,54 @@ async function waitForPluginIdle(): Promise<void> {
     timeout: 20000,
     timeoutMsg: "Memo Stack plugin did not become idle",
   });
+}
+
+async function waitForSettingsFile(vaultPath: string, marker: string): Promise<void> {
+  const settingsPath = path.join(vaultPath, ".obsidian", "plugins", "memo-stack", "data.json");
+  await waitUntil(
+    async () => fs.existsSync(settingsPath) && fs.readFileSync(settingsPath, "utf8").includes(marker),
+    `Memo Stack settings UI did not persist ${marker}`,
+  );
+}
+
+async function openMemoStackSettings(): Promise<void> {
+  await browser.executeObsidian(({ app }) => {
+    const setting = (app as any).setting;
+    setting.open();
+    setting.openTabById("memo-stack");
+  });
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(() =>
+        Boolean(document.querySelector('input[data-memo-stack-setting="apiUrl"]')),
+      ),
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack settings UI did not open",
+    },
+  );
+}
+
+async function setSettingsInput(name: string, value: string): Promise<void> {
+  const changed = await browser.execute(
+    (settingName, nextValue) => {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[data-memo-stack-setting="${settingName}"]`,
+      );
+      if (!input) {
+        return false;
+      }
+      input.focus();
+      input.value = nextValue;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.blur();
+      return true;
+    },
+    name,
+    value,
+  );
+  assert.equal(changed, true, `Could not change Memo Stack settings input ${name}`);
 }
 
 async function memoStackSnapshot(): Promise<any> {
