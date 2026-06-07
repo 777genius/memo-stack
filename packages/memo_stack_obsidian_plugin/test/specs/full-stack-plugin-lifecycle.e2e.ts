@@ -9,8 +9,9 @@ import { browser } from "@wdio/globals";
 
 const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
-const token = "wdio-full-e2e-token";
-const spaceSlug = "wdio-full-e2e";
+const pluginId = "memo-stack";
+const token = "wdio-lifecycle-token";
+const spaceSlug = "wdio-lifecycle";
 const profileExternalRef = "default";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
@@ -20,34 +21,16 @@ const scopedRoot = path.join(
   "profiles",
   profileExternalRef,
 );
+const textStart = "<!-- memo-stack-managed:fact-text:start -->";
+const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
 
-const frontmatterCorruptions = [
-  {
-    name: "missing memo_stack_id",
-    mutate: (filePath: string) => removeFrontmatterLine(filePath, "memo_stack_id"),
-    reason: /Missing memo_stack_id/,
-  },
-  {
-    name: "non-integer memo_stack_version",
-    mutate: (filePath: string) =>
-      replaceFrontmatterValue(filePath, "memo_stack_version", "not-a-number"),
-    reason: /memo_stack_version must be an integer/,
-  },
-  {
-    name: "unsupported memo_stack_sync_mode",
-    mutate: (filePath: string) =>
-      replaceFrontmatterValue(filePath, "memo_stack_sync_mode", "teleport"),
-    reason: /Unsupported sync mode: teleport/,
-  },
-];
-
-describe("Memo Stack frontmatter corruption E2E", function () {
+describe("Memo Stack plugin lifecycle full-stack E2E", function () {
   let server: ChildProcess | undefined;
   let tempDir = "";
   let baseUrl = "";
 
   beforeEach(async function () {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "memo-stack-wdio-frontmatter-"));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "memo-stack-wdio-lifecycle-"));
     const port = await freePort();
     baseUrl = `http://127.0.0.1:${port}`;
     server = startMemoStackServer(path.join(tempDir, "memory.db"), port);
@@ -59,63 +42,112 @@ describe("Memo Stack frontmatter corruption E2E", function () {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  for (const scenario of frontmatterCorruptions) {
-    it(`keeps ${scenario.name} as a stable visible conflict`, async function () {
-      const fact = await createFact(baseUrl, {
-        text: `Obsidian WDIO ${scenario.name} protected backend fact.`,
-        sourceId: `wdio-${scenario.name.replace(/[^a-z0-9]+/gi, "-")}-seed`,
-      });
-      const vaultPath = await resetVaultAndConfigure(baseUrl);
-      const exportedFact = await connectAndExportFact(vaultPath);
-      scenario.mutate(exportedFact);
-
-      await browser.executeObsidianCommand("memo-stack:sync-now");
-      await waitForCliCalls(vaultPath, 3);
-      await waitForPluginIdle();
-      await browser.executeObsidianCommand("memo-stack:sync-now");
-      await waitForCliCalls(vaultPath, 4);
-      await waitForPluginIdle();
-
-      const calls = readCliCalls(vaultPath);
-      assert.equal(calls.at(-2)?.command, "sync");
-      assert.equal(calls.at(-1)?.command, "sync");
-      assert.equal(calls.at(-2)?.status, 1);
-      assert.equal(calls.at(-1)?.status, 1);
-      assert.equal(factFiles(vaultPath).length, 1);
-      assert.equal(fs.existsSync(exportedFact), true);
-      assert.equal(
-        (await getFact(baseUrl, fact.id)).text,
-        `Obsidian WDIO ${scenario.name} protected backend fact.`,
-      );
-
-      const conflicts = conflictFiles(vaultPath);
-      assert.equal(conflicts.length, 1);
-      const conflict = fs.readFileSync(conflicts[0], "utf8");
-      assert.match(conflict, /Memo Stack Sync Conflict/);
-      assert.match(conflict, scenario.reason);
-      assert.match(conflict, new RegExp(path.basename(exportedFact).replace(".", "\\.")));
+  it("resumes real sync after plugin disable and enable without losing local changes", async function () {
+    const initialFact = await createFact(baseUrl, {
+      text: "Obsidian WDIO lifecycle initial fact.",
+      sourceId: "wdio-lifecycle-initial",
     });
-  }
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const obsidianPage = await browser.getObsidianPage();
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, initialFact.id);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /Obsidian WDIO lifecycle initial fact/);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await obsidianPage.disablePlugin(pluginId);
+    await waitForPluginDisabled();
+    assert.equal(readCliCalls(vaultPath).length, 2);
+
+    const disabledLocalEdit = "Obsidian WDIO lifecycle local edit while plugin disabled.";
+    const disabledInboxMarker = "WDIO lifecycle inbox note written while plugin disabled";
+    replaceManagedText(exportedFact, disabledLocalEdit);
+    writeVaultFile(
+      vaultPath,
+      path.join(scopedRoot, "inbox", "disabled-lifecycle-inbox.md"),
+      disabledInboxMarker,
+    );
+    const lateFact = await createFact(baseUrl, {
+      text: "Obsidian WDIO lifecycle backend fact created while plugin disabled.",
+      sourceId: "wdio-lifecycle-disabled-backend",
+    });
+    assert.equal(readCliCalls(vaultPath).length, 2);
+
+    await obsidianPage.enablePlugin(pluginId);
+    await waitForPluginScope();
+    await waitForPluginIdle();
+
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.spaceSlug, spaceSlug);
+    assert.equal(snapshot.profileExternalRef, profileExternalRef);
+    assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
+    assert.equal(snapshot.paths.inbox, posixPath(path.join(scopedRoot, "inbox")));
+    assert.equal(snapshot.generatedFactsExists, true);
+    assert.equal(snapshot.inboxExists, true);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, initialFact.id, disabledLocalEdit);
+    await waitForSuggestionsContaining(baseUrl, disabledInboxMarker, 1);
+
+    assert.equal(factFiles(vaultPath).length, 2);
+    assert.match(fs.readFileSync(factFileForId(vaultPath, initialFact.id), "utf8"), /memo_stack_version: 2/);
+    assert.match(
+      fs.readFileSync(factFileForId(vaultPath, lateFact.id), "utf8"),
+      /backend fact created while plugin disabled/,
+    );
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await obsidianPage.disablePlugin(pluginId);
+    await waitForPluginDisabled();
+    const secondDisabledEdit = "Obsidian WDIO lifecycle second disabled edit persists.";
+    replaceManagedText(factFileForId(vaultPath, initialFact.id), secondDisabledEdit);
+
+    await obsidianPage.enablePlugin(pluginId);
+    await waitForPluginScope();
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, initialFact.id, secondDisabledEdit);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal((await suggestionsContaining(baseUrl, disabledInboxMarker)).length, 1);
+    assert.equal(factFiles(vaultPath).length, 2);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "sync", "sync"]);
+    assert.ok(calls.every((call) => call.status === 0));
+    assert.ok(calls.every((call) => call.args.includes("--space")));
+    assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
+    assert.ok(calls.every((call) => call.args.includes("--profile")));
+    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
   const obsidianPage = await browser.getObsidianPage();
   await obsidianPage.resetVault({
-    "Welcome.md": "# Welcome\n\nFrontmatter E2E vault.\n",
+    "Welcome.md": "# Welcome\n\nPlugin lifecycle E2E vault.\n",
   });
   const vaultPath = obsidianPage.getVaultPath();
+  installPluginArtifacts(vaultPath);
   await configurePlugin(vaultPath, apiUrl);
   return vaultPath;
-}
-
-async function connectAndExportFact(vaultPath: string): Promise<string> {
-  await browser.executeObsidianCommand("memo-stack:connect-vault");
-  await waitForCliCalls(vaultPath, 1);
-  await waitForPluginIdle();
-  await browser.executeObsidianCommand("memo-stack:sync-now");
-  await waitForCliCalls(vaultPath, 2);
-  await waitForPluginIdle();
-  return onlyFactFile(vaultPath);
 }
 
 async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void> {
@@ -133,7 +165,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
   };
   writeVaultFile(
     vaultPath,
-    path.join(".obsidian", "plugins", "memo-stack", "data.json"),
+    path.join(".obsidian", "plugins", pluginId, "data.json"),
     JSON.stringify(settings, null, 2),
   );
   await browser.executeObsidian(
@@ -230,6 +262,41 @@ async function getFact(apiUrl: string, factId: string): Promise<Record<string, a
   return response.body.data;
 }
 
+async function waitForBackendFactText(
+  apiUrl: string,
+  factId: string,
+  expectedText: string,
+): Promise<void> {
+  await waitUntil(async () => {
+    const fact = await getFact(apiUrl, factId);
+    return fact.text === expectedText;
+  }, `Backend fact did not reach expected text: ${expectedText}`);
+}
+
+async function waitForSuggestionsContaining(
+  apiUrl: string,
+  marker: string,
+  count: number,
+): Promise<void> {
+  await waitUntil(
+    async () => (await suggestionsContaining(apiUrl, marker)).length >= count,
+    "Suggestion was not created",
+  );
+}
+
+async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
+  const query = new URLSearchParams({
+    space_slug: spaceSlug,
+    profile_external_ref: profileExternalRef,
+    status: "pending",
+  });
+  const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
+  assert.equal(response.status, 200);
+  return response.body.data.filter((item: Record<string, any>) =>
+    String(item.candidate_text).includes(marker),
+  );
+}
+
 async function requestJson(
   method: "GET" | "POST",
   url: string,
@@ -286,9 +353,46 @@ async function waitForPluginIdle(): Promise<void> {
   });
 }
 
+async function waitForPluginDisabled(): Promise<void> {
+  await browser.waitUntil(async () => !(await pluginRuntime()).loaded, {
+    timeout: 20000,
+    timeoutMsg: "Memo Stack plugin did not disable",
+  });
+}
+
+async function waitForPluginScope(): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const runtime = await pluginRuntime();
+      return (
+        runtime.loaded &&
+        runtime.enabled &&
+        runtime.snapshot.spaceSlug === spaceSlug &&
+        runtime.snapshot.profileExternalRef === profileExternalRef
+      );
+    },
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack plugin did not enable with lifecycle settings",
+    },
+  );
+}
+
 async function memoStackSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
     return (plugins.memoStack as any).snapshot();
+  });
+}
+
+async function pluginRuntime(): Promise<{ loaded: boolean; enabled: boolean; snapshot: any }> {
+  return await browser.executeObsidian(({ app, plugins }) => {
+    const plugin = (plugins as any).memoStack as any;
+    const enabledPlugins = Array.from(((app as any).plugins.enabledPlugins ?? []) as Iterable<string>);
+    return {
+      loaded: Boolean(plugin),
+      enabled: enabledPlugins.includes("memo-stack"),
+      snapshot: plugin?.snapshot?.() ?? {},
+    };
   });
 }
 
@@ -315,11 +419,14 @@ function factFiles(vaultPath: string): string[] {
   return fs
     .readdirSync(factsDir)
     .filter((name) => name.endsWith(".md") && !name.startsWith("."))
-    .map((name) => path.join(factsDir, name));
+    .map((name) => path.join(factsDir, name))
+    .sort();
 }
 
-function onlyFactFile(vaultPath: string): string {
-  const files = factFiles(vaultPath);
+function factFileForId(vaultPath: string, factId: string): string {
+  const files = factFiles(vaultPath).filter((filePath) =>
+    fs.readFileSync(filePath, "utf8").includes(`memo_stack_id: ${factId}`),
+  );
   assert.equal(files.length, 1);
   return files[0];
 }
@@ -335,24 +442,27 @@ function conflictFiles(vaultPath: string): string[] {
     .map((name) => path.join(conflictsDir, name));
 }
 
-function replaceFrontmatterValue(filePath: string, key: string, value: string): void {
+function replaceManagedText(filePath: string, text: string): void {
   const old = fs.readFileSync(filePath, "utf8");
-  const pattern = new RegExp(`^${key}: .*$`, "m");
-  assert.match(old, pattern);
-  fs.writeFileSync(filePath, old.replace(pattern, `${key}: ${value}`), "utf8");
-}
-
-function removeFrontmatterLine(filePath: string, key: string): void {
-  const old = fs.readFileSync(filePath, "utf8");
-  const pattern = new RegExp(`^${key}: .*\n`, "m");
-  assert.match(old, pattern);
-  fs.writeFileSync(filePath, old.replace(pattern, ""), "utf8");
+  const start = old.indexOf(textStart) + textStart.length;
+  const end = old.indexOf(textEnd);
+  assert.ok(start >= textStart.length);
+  assert.ok(end > start);
+  fs.writeFileSync(filePath, `${old.slice(0, start)}\n${text}\n${old.slice(end)}`, "utf8");
 }
 
 function writeVaultFile(vaultPath: string, relativePath: string, content: string): void {
   const target = path.join(vaultPath, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content, "utf8");
+}
+
+function installPluginArtifacts(vaultPath: string): void {
+  const pluginDir = path.join(vaultPath, ".obsidian", "plugins", pluginId);
+  fs.mkdirSync(pluginDir, { recursive: true });
+  for (const fileName of ["manifest.json", "main.js", "styles.css"]) {
+    fs.copyFileSync(path.join(process.cwd(), fileName), path.join(pluginDir, fileName));
+  }
 }
 
 function readCliCalls(vaultPath: string): Array<{ command: string; args: string[]; status: number }> {
@@ -366,6 +476,10 @@ function readCliCalls(vaultPath: string): Array<{ command: string; args: string[
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function posixPath(filePath: string): string {
+  return filePath.split(path.sep).join("/");
 }
 
 function pythonpath(): string {

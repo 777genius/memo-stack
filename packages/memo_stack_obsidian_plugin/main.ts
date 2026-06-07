@@ -458,7 +458,7 @@ export default class MemoStackPlugin extends Plugin {
       new Notice(`Memo Stack ${command} failed: ${errorMessage(error)}`, 12000);
     } finally {
       this.busyLabel = "";
-      this.refreshControlViews();
+      this.refreshControlViewsAfterVaultWrite();
     }
   }
 
@@ -696,6 +696,13 @@ export default class MemoStackPlugin extends Plugin {
       if (leaf.view instanceof MemoStackControlView) {
         leaf.view.render();
       }
+    }
+  }
+
+  private refreshControlViewsAfterVaultWrite() {
+    this.refreshControlViews();
+    for (const delayMs of [250, 1000, 2500]) {
+      setTimeout(() => this.refreshControlViews(), delayMs);
     }
   }
 

@@ -70,6 +70,7 @@ describe("Memo Stack Obsidian plugin", function () {
     await browser.executeObsidianCommand("memo-stack:prepare-vault");
     await waitForLocalStackCalls(vaultPath, 2);
     await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
     assert.deepEqual(
       readLocalStackCalls(vaultPath).map((call) => call.args.join(" ")),
       ["init --api-url http://127.0.0.1:65535 --json", "status --json"],
@@ -81,10 +82,13 @@ describe("Memo Stack Obsidian plugin", function () {
 
     await browser.executeObsidianCommand("memo-stack:local-stack-init");
     await waitForLocalStackCalls(vaultPath, 3);
+    await waitForPluginIdle();
     await browser.executeObsidianCommand("memo-stack:local-stack-status");
     await waitForLocalStackCalls(vaultPath, 4);
+    await waitForPluginIdle();
     await browser.executeObsidianCommand("memo-stack:start-local-stack-lite");
     await waitForLocalStackCalls(vaultPath, 5);
+    await waitForPluginIdle();
     await browser.executeObsidianCommand("memo-stack:start-local-stack-lite");
     await browser.pause(300);
     assert.equal(readLocalStackCalls(vaultPath).length, 5);
