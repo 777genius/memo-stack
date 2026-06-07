@@ -30,6 +30,7 @@ from memo_stack_server.doctor import run_doctor
 from memo_stack_server.eval import (
     _execute_small_golden,
     build_memory_quality_scorecard,
+    memory_quality_scorecard_policy_snapshot,
     run_auto_memory_golden,
     run_graph_native_golden,
     run_long_memory_golden,
@@ -1374,6 +1375,36 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert payload["ok"] is True
     assert "QUALITY_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
+
+
+def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors() -> None:
+    policy = memory_quality_scorecard_policy_snapshot(require_top_evidence=True)
+
+    assert policy["require_top_evidence"] is True
+    assert policy["full_provider"]["required_adapters"] == [
+        "qdrant",
+        "graphiti",
+        "embeddings",
+    ]
+    assert "mcp_search_has_qdrant_document_chunk_after_worker" in (
+        policy["full_provider"]["required_checks"]
+    )
+    assert policy["agent_behavior"]["accepted_scenario_sets"] == [
+        "realistic",
+        "live",
+        "transcript",
+        "all",
+    ]
+    assert policy["agent_behavior"]["rate_floors"]["adversarial_pass_rate"] == 0.9
+    assert "unsafe_write_count" in policy["agent_behavior"]["zero_count_metrics"]
+    assert policy["public_benchmark"]["required_benchmarks"] == [
+        "locomo",
+        "longmemeval",
+    ]
+    assert policy["public_benchmark"]["competitive_floors"]["locomo"] == {
+        "min_accuracy": 0.947,
+        "min_case_count": 600,
+    }
 
 
 def test_memory_quality_scorecard_loads_existing_suite_reports(tmp_path: Path) -> None:

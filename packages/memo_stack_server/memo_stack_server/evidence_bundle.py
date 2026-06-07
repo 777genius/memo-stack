@@ -25,6 +25,7 @@ from memo_stack_server.eval import (
     PROMPT_CONTRACT_SUITE,
     QUALITY_GOLDEN_SUITE,
     SMALL_GOLDEN_SUITE,
+    memory_quality_scorecard_policy_snapshot,
     run_auto_memory_golden,
     run_graph_native_golden,
     run_long_memory_golden,
@@ -226,6 +227,9 @@ def _build_manifest(
             "python_version": sys.version.split()[0],
             "platform": platform.platform(),
         },
+        "policy": memory_quality_scorecard_policy_snapshot(
+            require_top_evidence=require_top_evidence,
+        ),
         "artifacts": artifacts,
     }
 

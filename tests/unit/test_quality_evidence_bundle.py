@@ -33,6 +33,11 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert manifest["schema_version"] == 1
     assert manifest["suite"] == "memo-stack-quality-evidence-manifest"
     assert manifest["runtime"]["python_version"]
+    assert manifest["policy"]["schema_version"] == 1
+    assert manifest["policy"]["suite"] == "memory-quality-scorecard"
+    assert manifest["policy"]["require_top_evidence"] is False
+    assert manifest["policy"]["minimum_maturity_score_10"] == 9.0
+    assert "auto-memory-golden" in manifest["policy"]["required_suites"]
     assert artifact_names == {
         "small-golden.json",
         "quality-golden.json",
@@ -158,9 +163,29 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     assert result["scorecard"]["top_library_comparison_ready"] is True
     assert result["scorecard"]["evidence_gaps"] == []
     manifest = json.loads(((tmp_path / "evidence") / "quality-evidence-manifest.json").read_text())
+    policy = manifest["policy"]
     external_artifacts = [
         item for item in manifest["artifacts"] if item["kind"] == "external_report"
     ]
+    assert policy["require_top_evidence"] is True
+    assert policy["full_provider"]["required_adapters"] == [
+        "qdrant",
+        "graphiti",
+        "embeddings",
+    ]
+    assert "mcp_search_has_graphiti_fact_after_worker" in (
+        policy["full_provider"]["required_checks"]
+    )
+    assert policy["agent_behavior"]["rate_floors"]["search_before_write_rate"] == 0.9
+    assert "secret_leak_count" in policy["agent_behavior"]["zero_count_metrics"]
+    assert policy["public_benchmark"]["competitive_floors"]["locomo"] == {
+        "min_accuracy": 0.947,
+        "min_case_count": 600,
+    }
+    assert policy["public_benchmark"]["competitive_floors"]["longmemeval"] == {
+        "min_accuracy": 0.902,
+        "min_case_count": 500,
+    }
     assert result["manifest_path"].endswith("quality-evidence-manifest.json")
     assert len(external_artifacts) == 1
     assert external_artifacts[0]["path"] == str(external_report)

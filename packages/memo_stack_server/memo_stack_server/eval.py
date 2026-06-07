@@ -397,6 +397,43 @@ def run_memory_quality_scorecard(
     return result
 
 
+def memory_quality_scorecard_policy_snapshot(
+    *,
+    require_top_evidence: bool,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "suite": MEMORY_QUALITY_SCORECARD_SUITE,
+        "require_top_evidence": require_top_evidence,
+        "minimum_maturity_score_10": _MEMORY_QUALITY_SCORECARD_MIN_SCORE_10,
+        "required_suites": list(_MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES),
+        "min_case_counts": dict(_MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS),
+        "auto_memory": {
+            "min_extraction_cases": _MEMORY_QUALITY_SCORECARD_MIN_EXTRACTION_CASES,
+            "min_semantic_extraction_cases": (
+                _MEMORY_QUALITY_SCORECARD_MIN_SEMANTIC_EXTRACTION_CASES
+            ),
+        },
+        "full_provider": {
+            "required_adapters": list(_FULL_PROVIDER_REQUIRED_ADAPTERS),
+            "required_checks": list(_FULL_PROVIDER_REQUIRED_CHECK_KEYS),
+            "requires_mcp_lifecycle": True,
+        },
+        "agent_behavior": {
+            "accepted_scenario_sets": list(_AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS),
+            "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
+            "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
+        },
+        "public_benchmark": {
+            "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
+            "competitive_floors": {
+                name: dict(floor)
+                for name, floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.items()
+            },
+        },
+    }
+
+
 def _load_scorecard_suite_reports(paths: Sequence[Path]) -> dict[str, dict[str, object]]:
     reports: dict[str, dict[str, object]] = {}
     for path in paths:
