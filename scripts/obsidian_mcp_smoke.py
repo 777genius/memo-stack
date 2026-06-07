@@ -52,10 +52,12 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     prepare_home = temp_dir / "prepare-home"
     prepare_vault = temp_dir / "PrepareVault"
     live_vault = temp_dir / "LiveVault"
+    unsafe_vault = temp_dir / "UnsafeVault"
     vault = temp_dir / "Vault"
     vault.mkdir()
     prepare_vault.mkdir()
     live_vault.mkdir()
+    unsafe_vault.mkdir()
 
     disabled = await _with_session(
         repo_root=repo_root,
@@ -272,6 +274,27 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "mutating sync should require the sync env gate",
     )
 
+    unsafe_layout = await _with_session(
+        repo_root=repo_root,
+        env={
+            **common_env,
+            "MEMORY_MCP_OBSIDIAN_VAULT": str(unsafe_vault),
+        },
+        callback=lambda session: _call_error(
+            session,
+            "memory_obsidian_setup",
+            {"apply": True, "root_folder": "../escape"},
+        ),
+    )
+    _assert(
+        unsafe_layout["error"]["code"] == "memo_stack_mcp.obsidian.error",
+        "unsafe root folder should return an Obsidian MCP error",
+    )
+    _assert(
+        not any(unsafe_vault.iterdir()),
+        "unsafe root folder must not create vault files",
+    )
+
     live_report = await _run_live_backend_sync(
         repo_root=repo_root,
         temp_dir=temp_dir,
@@ -289,6 +312,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "local_runtime_start_disabled_code": local_start_blocked["error"]["code"],
         "prepare_status": prepare_applied["data"]["status"],
         "facts_dir": str(expected_facts),
+        "unsafe_layout_code": unsafe_layout["error"]["code"],
         "live_backend_sync": live_report,
     }
 

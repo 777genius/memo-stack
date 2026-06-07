@@ -7,6 +7,7 @@ const fakeCliPath = path.resolve("test/fixtures/fake-memo-stack-obsidian.cjs");
 const fakeLocalCliPath = path.resolve("test/fixtures/fake-memo-stack.cjs");
 const spaceSlug = "wdio-e2e";
 const profileExternalRef = "default";
+const pluginId = "memo-stack";
 const factsDir = path.join(
   "Memo Stack",
   "spaces",
@@ -245,6 +246,81 @@ describe("Memo Stack Obsidian plugin", function () {
       ["Memo Stack", "spaces", spaceSlug, "profiles", profileExternalRef, "inbox", "README.md"].join("/"),
     );
   });
+
+  it("loads persisted install settings after an Obsidian reload", async function () {
+    const obsidianPage = await browser.getObsidianPage();
+    await obsidianPage.resetVault({
+      "Welcome.md": "# Welcome\n\nPersisted settings E2E vault.\n",
+    });
+    const vaultPath = obsidianPage.getVaultPath();
+    const persistedSpaceSlug = "persisted-project";
+    const persistedProfileRef = "persisted-profile";
+    const persistedRoot = "Persisted Memo";
+    const persistedFactsDir = path.join(
+      persistedRoot,
+      "spaces",
+      persistedSpaceSlug,
+      "profiles",
+      persistedProfileRef,
+      "generated",
+      "facts",
+    );
+
+    writeVaultFile(
+      vaultPath,
+      path.join(".obsidian", "plugins", pluginId, "data.json"),
+      JSON.stringify(
+        {
+          apiUrl: "http://127.0.0.1:65534",
+          token: "persisted-token",
+          localCliPath: fakeLocalCliPath,
+          cliPath: fakeCliPath,
+          vaultPathOverride: path.resolve(vaultPath),
+          spaceSlug: persistedSpaceSlug,
+          profileExternalRef: persistedProfileRef,
+          rootFolder: persistedRoot,
+          layoutVersion: "v2",
+          applyImportOnSync: false,
+          commandTimeoutMs: 10000,
+        },
+        null,
+        2,
+      ),
+    );
+
+    await browser.reloadObsidian();
+    await browser.waitUntil(async () => (await memoStackSnapshot()).spaceSlug === persistedSpaceSlug, {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack plugin did not reload persisted settings",
+    });
+
+    const snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.apiUrl, "http://127.0.0.1:65534");
+    assert.equal(snapshot.spaceSlug, persistedSpaceSlug);
+    assert.equal(snapshot.profileExternalRef, persistedProfileRef);
+    assert.equal(snapshot.rootFolder, persistedRoot);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
+    assert.equal(calls[0].envToken, "persisted-token");
+    assert.ok(calls.every((call) => call.args.includes("--api-url")));
+    assert.ok(calls.every((call) => call.args.includes("http://127.0.0.1:65534")));
+    assert.ok(calls.every((call) => call.args.includes("--space")));
+    assert.ok(calls.every((call) => call.args.includes(persistedSpaceSlug)));
+    assert.ok(calls.every((call) => call.args.includes("--profile")));
+    assert.ok(calls.every((call) => call.args.includes(persistedProfileRef)));
+    assert.ok(calls.every((call) => call.args.includes("--root-folder")));
+    assert.ok(calls.every((call) => call.args.includes(persistedRoot)));
+    assert.ok(!calls[1].args.includes("--apply-import"));
+
+    const fact = readVaultFile(vaultPath, path.join(persistedFactsDir, "plugin-e2e.md"));
+    assert.match(fact, /Plugin E2E fact/);
+  });
 });
 
 async function resetVaultAndConfigure(
@@ -310,6 +386,12 @@ async function waitForPluginIdle(): Promise<void> {
     timeout: 10000,
     timeoutMsg: "Memo Stack plugin did not become idle",
   });
+}
+
+function writeVaultFile(vaultPath: string, relativePath: string, content: string): void {
+  const target = path.join(vaultPath, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content, "utf8");
 }
 
 async function waitForCliCalls(vaultPath: string, count: number): Promise<void> {
