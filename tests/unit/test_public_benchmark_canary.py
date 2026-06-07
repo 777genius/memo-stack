@@ -85,6 +85,15 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
     assert set(result["dataset_hashes"]) == {"locomo", "longmemeval"}
     assert all(len(value) == 64 for value in result["dataset_hashes"].values())
+    assert set(result["dataset_sources"]) == {"locomo", "longmemeval"}
+    assert result["dataset_sources"]["locomo"]["source_kind"] == "local_override"
+    assert result["dataset_sources"]["locomo"]["official_url"] == canary.LOCOMO_URL
+    assert result["dataset_sources"]["locomo"]["path_label"] == locomo.name
+    assert result["dataset_sources"]["locomo"]["sha256"] == result["dataset_hashes"][
+        "locomo"
+    ]
+    assert result["dataset_sources"]["locomo"]["size_bytes"] == locomo.stat().st_size
+    assert result["dataset_sources"]["locomo"]["case_count"] == 1
     assert result["provenance"]["generated_by"] == (
         "memo_stack_server.official_public_benchmark"
     )
@@ -138,6 +147,11 @@ def test_official_public_benchmark_canary_can_run_single_dataset(tmp_path: Path)
     assert result["metrics"]["benchmark_count"] == 1
     assert result["metrics"]["locomo_case_count"] == 1
     assert set(result["dataset_hashes"]) == {"locomo"}
+    assert set(result["dataset_sources"]) == {"locomo"}
+    assert result["dataset_sources"]["locomo"]["source_kind"] == "local_override"
+    assert result["dataset_sources"]["locomo"]["sha256"] == result["dataset_hashes"][
+        "locomo"
+    ]
     assert result["source_urls"] == {"locomo": canary.LOCOMO_URL}
 
 

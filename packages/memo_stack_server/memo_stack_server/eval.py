@@ -477,6 +477,7 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
             "top_evidence_requires_dataset_fingerprint": True,
+            "top_evidence_requires_dataset_source_metadata": True,
         },
     }
 
@@ -997,12 +998,17 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
     for index, report in enumerate(reports):
         report_label = str(report.get("suite") or f"report_{index}")
         benchmark_names = _scorecard_public_benchmark_names_in_report(report)
-        missing_benchmarks = [
+        missing_fingerprints = [
             name
             for name in benchmark_names
             if not _scorecard_public_benchmark_has_dataset_fingerprint(report, name)
         ]
-        ok = bool(benchmark_names) and not missing_benchmarks
+        missing_sources = [
+            name
+            for name in benchmark_names
+            if not _scorecard_public_benchmark_has_dataset_source(report, name)
+        ]
+        ok = bool(benchmark_names) and not missing_fingerprints and not missing_sources
         if not ok:
             missing_reports.append(report_label)
         report_summaries.append(
@@ -1010,11 +1016,16 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
                 "report": report_label,
                 "ok": ok,
                 "benchmarks": benchmark_names,
-                "missing_benchmarks": missing_benchmarks,
+                "missing_benchmarks": sorted(
+                    set(missing_fingerprints) | set(missing_sources)
+                ),
+                "missing_dataset_fingerprints": missing_fingerprints,
+                "missing_dataset_sources": missing_sources,
                 "has_dataset_hash": _scorecard_nonempty_string(
                     report.get("dataset_hash")
                 ),
                 "has_dataset_hashes": isinstance(report.get("dataset_hashes"), Mapping),
+                "has_dataset_sources": isinstance(report.get("dataset_sources"), Mapping),
             }
         )
     return {
@@ -1054,12 +1065,45 @@ def _scorecard_public_benchmark_has_dataset_fingerprint(
     report: Mapping[str, object],
     benchmark: str,
 ) -> bool:
-    if _scorecard_nonempty_string(report.get("dataset_hash")):
-        return True
+    return _scorecard_public_benchmark_dataset_fingerprint(report, benchmark) is not None
+
+
+def _scorecard_public_benchmark_has_dataset_source(
+    report: Mapping[str, object],
+    benchmark: str,
+) -> bool:
+    dataset_sources = report.get("dataset_sources")
+    if not isinstance(dataset_sources, Mapping):
+        return False
+    source = dataset_sources.get(benchmark)
+    if not isinstance(source, Mapping):
+        return False
+    source_kind = source.get("source_kind")
+    sha256 = source.get("sha256")
+    size_bytes = source.get("size_bytes")
+    expected_sha256 = _scorecard_public_benchmark_dataset_fingerprint(report, benchmark)
+    return (
+        _scorecard_nonempty_string(source_kind)
+        and _scorecard_nonempty_string(sha256)
+        and sha256 == expected_sha256
+        and isinstance(size_bytes, int)
+        and size_bytes > 0
+    )
+
+
+def _scorecard_public_benchmark_dataset_fingerprint(
+    report: Mapping[str, object],
+    benchmark: str,
+) -> str | None:
+    dataset_hash = report.get("dataset_hash")
+    if _scorecard_nonempty_string(dataset_hash):
+        return str(dataset_hash).strip()
     dataset_hashes = report.get("dataset_hashes")
     if isinstance(dataset_hashes, Mapping):
-        return _scorecard_nonempty_string(dataset_hashes.get(benchmark))
-    return False
+        benchmark_hash = dataset_hashes.get(benchmark)
+        if _scorecard_nonempty_string(benchmark_hash):
+            return str(benchmark_hash).strip()
+    return None
 
 
 def _scorecard_nonempty_string(value: object) -> bool:

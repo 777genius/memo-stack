@@ -396,6 +396,22 @@ def _public_benchmark_report() -> dict[str, Any]:
             "locomo": "locomo-dataset-sha256",
             "longmemeval": "longmemeval-dataset-sha256",
         },
+        "dataset_sources": {
+            "locomo": {
+                "source_kind": "official_download",
+                "official_url": "https://example.test/locomo.json",
+                "path_label": "locomo.json",
+                "sha256": "locomo-dataset-sha256",
+                "size_bytes": 1000,
+            },
+            "longmemeval": {
+                "source_kind": "official_download",
+                "official_url": "https://example.test/longmemeval.json",
+                "path_label": "longmemeval.json",
+                "sha256": "longmemeval-dataset-sha256",
+                "size_bytes": 1000,
+            },
+        },
         "metrics": {"benchmark_count": 2},
     }
 
@@ -1529,6 +1545,9 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     assert policy["public_benchmark"][
         "top_evidence_requires_dataset_fingerprint"
     ] is True
+    assert policy["public_benchmark"][
+        "top_evidence_requires_dataset_source_metadata"
+    ] is True
     assert "provenance_generator_allowed" in policy["agent_behavior"][
         "top_evidence_required_provenance_checks"
     ]
@@ -1623,6 +1642,13 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
         "suite": "locomo",
         "ok": True,
         "dataset_hash": "locomo-dataset-sha256",
+        "dataset_sources": {
+            "locomo": {
+                "source_kind": "local_dataset",
+                "sha256": "locomo-dataset-sha256",
+                "size_bytes": 1000,
+            }
+        },
         "provenance": _scorecard_provenance(
             generated_by="memo_stack_server.public_benchmark",
             suite="locomo",
@@ -1633,6 +1659,13 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
         "suite": "longmemeval",
         "ok": True,
         "dataset_hash": "longmemeval-dataset-sha256",
+        "dataset_sources": {
+            "longmemeval": {
+                "source_kind": "local_dataset",
+                "sha256": "longmemeval-dataset-sha256",
+                "size_bytes": 1000,
+            }
+        },
         "provenance": _scorecard_provenance(
             generated_by="memo_stack_server.public_benchmark",
             suite="longmemeval",
@@ -1670,6 +1703,46 @@ def test_memory_quality_scorecard_requires_public_benchmark_dataset_fingerprint(
     assert evidence["public_benchmark"]["dataset_evidence"]["missing_reports"] == [
         "public-memory-benchmark"
     ]
+    assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_requires_public_benchmark_dataset_source() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    public_benchmark = _public_benchmark_report()
+    public_benchmark.pop("dataset_sources")
+    suite_results["public-memory-benchmark"] = public_benchmark
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["top_library_comparison_ready"] is False
+    assert evidence["public_benchmark"]["quality_ok"] is True
+    assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
+        "missing_dataset_sources"
+    ] == ["locomo", "longmemeval"]
+    assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_rejects_public_benchmark_source_hash_mismatch() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    public_benchmark = _public_benchmark_report()
+    public_benchmark["dataset_sources"]["locomo"]["sha256"] = "different-sha256"
+    suite_results["public-memory-benchmark"] = public_benchmark
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    assert result["ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
+    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
+        "missing_dataset_sources"
+    ] == ["locomo"]
     assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
 
 

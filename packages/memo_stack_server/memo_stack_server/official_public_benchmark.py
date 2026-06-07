@@ -40,6 +40,12 @@ class OfficialDataset:
     filename: str
 
 
+@dataclass(frozen=True)
+class DatasetSelection:
+    path: Path
+    source_kind: str
+
+
 OFFICIAL_DATASETS = {
     "locomo": OfficialDataset("locomo", LOCOMO_URL, "locomo10.json"),
     "longmemeval": OfficialDataset(
@@ -138,27 +144,33 @@ def run_official_public_benchmark_canary(
     with tempfile.TemporaryDirectory(prefix="memo-official-public-benchmark-") as tmp_dir:
         tmp_path = Path(tmp_dir)
         reports: list[dict[str, object]] = []
+        dataset_sources: dict[str, dict[str, object]] = {}
         for name in selected:
-            dataset = _dataset_path(
+            selection = _dataset_selection(
                 name=name,
                 tmp_dir=tmp_path,
                 locomo_dataset=locomo_dataset,
                 longmemeval_dataset=longmemeval_dataset,
                 timeout_seconds=download_timeout_seconds,
             )
-            reports.append(
-                run_public_memory_benchmark(
-                    dataset_path=dataset,
-                    api_url=api_url,
-                    auth_token=auth_token,
-                    benchmark=name,
-                    max_cases=max_cases,
-                    min_accuracy=min_accuracy,
-                )
+            report = run_public_memory_benchmark(
+                dataset_path=selection.path,
+                api_url=api_url,
+                auth_token=auth_token,
+                benchmark=name,
+                max_cases=max_cases,
+                min_accuracy=min_accuracy,
+            )
+            reports.append(report)
+            dataset_sources[name] = _dataset_source_metadata(
+                name=name,
+                selection=selection,
+                report=report,
             )
 
     result = _merge_reports(
         reports=reports,
+        dataset_sources=dataset_sources,
         benchmark=benchmark,
         max_cases=max_cases,
         min_accuracy=min_accuracy,
@@ -184,21 +196,21 @@ def _selected_benchmarks(value: str) -> tuple[str, ...]:
     raise ValueError(f"Unsupported benchmark: {value}")
 
 
-def _dataset_path(
+def _dataset_selection(
     *,
     name: str,
     tmp_dir: Path,
     locomo_dataset: Path | None,
     longmemeval_dataset: Path | None,
     timeout_seconds: float,
-) -> Path:
+) -> DatasetSelection:
     override = locomo_dataset if name == "locomo" else longmemeval_dataset
     if override is not None:
-        return override
+        return DatasetSelection(path=override, source_kind="local_override")
     dataset = OFFICIAL_DATASETS[name]
     destination = tmp_dir / dataset.filename
     _download(dataset.url, destination, timeout_seconds=timeout_seconds)
-    return destination
+    return DatasetSelection(path=destination, source_kind="official_download")
 
 
 def _download(url: str, destination: Path, *, timeout_seconds: float) -> None:
@@ -211,6 +223,7 @@ def _download(url: str, destination: Path, *, timeout_seconds: float) -> None:
 def _merge_reports(
     *,
     reports: Sequence[Mapping[str, object]],
+    dataset_sources: Mapping[str, Mapping[str, object]],
     benchmark: str,
     max_cases: int,
     min_accuracy: float,
@@ -285,6 +298,7 @@ def _merge_reports(
             name: OFFICIAL_DATASETS[name].url for name in _selected_benchmarks(benchmark)
         },
         "dataset_hashes": dataset_hashes,
+        "dataset_sources": {name: dict(source) for name, source in dataset_sources.items()},
         "api_url": api_url,
         "max_cases_per_benchmark": max_cases,
         "min_accuracy": min_accuracy,
@@ -294,6 +308,30 @@ def _merge_reports(
         "cases": cases,
         "failures": failures,
         "elapsed_ms": elapsed_ms,
+    }
+
+
+def _dataset_source_metadata(
+    *,
+    name: str,
+    selection: DatasetSelection,
+    report: Mapping[str, object],
+) -> dict[str, object]:
+    dataset = OFFICIAL_DATASETS[name]
+    dataset_hash = report.get("dataset_hash")
+    metrics = report.get("metrics")
+    case_count = (
+        metrics.get(f"{name}_case_count")
+        if isinstance(metrics, Mapping)
+        else None
+    )
+    return {
+        "source_kind": selection.source_kind,
+        "official_url": dataset.url,
+        "path_label": selection.path.name,
+        "sha256": dataset_hash if isinstance(dataset_hash, str) else None,
+        "size_bytes": selection.path.stat().st_size,
+        "case_count": case_count if isinstance(case_count, int) else None,
     }
 
 

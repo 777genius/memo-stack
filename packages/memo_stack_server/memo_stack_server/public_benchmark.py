@@ -316,6 +316,15 @@ def _execute_cases(
         "evaluation_mode": "retrieved_expected_terms",
         "dataset_path": str(dataset_path),
         "dataset_hash": dataset_hash,
+        "dataset_sources": {
+            summary["name"]: _dataset_source_metadata(
+                dataset_path=dataset_path,
+                dataset_hash=dataset_hash,
+                source_kind="local_dataset",
+            )
+            for summary in benchmarks
+            if isinstance(summary.get("name"), str)
+        },
         "checks": {
             "dataset_loaded": True,
             "case_count": len(run_results) > 0,
@@ -979,6 +988,20 @@ def _p95(values: Sequence[float]) -> float:
 
 def _dataset_hash(dataset_path: Path) -> str:
     return hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+
+
+def _dataset_source_metadata(
+    *,
+    dataset_path: Path,
+    dataset_hash: str,
+    source_kind: str,
+) -> dict[str, object]:
+    return {
+        "source_kind": source_kind,
+        "path_label": dataset_path.name,
+        "sha256": dataset_hash,
+        "size_bytes": dataset_path.stat().st_size,
+    }
 
 
 def _case_hash(raw: Mapping[str, object]) -> str:

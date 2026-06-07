@@ -202,6 +202,22 @@ def _minimal_public_benchmark_report(
             "locomo": "locomo-dataset-sha256",
             "longmemeval": "longmemeval-dataset-sha256",
         },
+        "dataset_sources": {
+            "locomo": {
+                "source_kind": "official_download",
+                "official_url": "https://example.test/locomo.json",
+                "path_label": "locomo.json",
+                "sha256": "locomo-dataset-sha256",
+                "size_bytes": 1000,
+            },
+            "longmemeval": {
+                "source_kind": "official_download",
+                "official_url": "https://example.test/longmemeval.json",
+                "path_label": "longmemeval.json",
+                "sha256": "longmemeval-dataset-sha256",
+                "size_bytes": 1000,
+            },
+        },
     }
     if include_provenance:
         report["provenance"] = _strict_provenance(
@@ -392,6 +408,22 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                     "dataset_hashes": {
                         "locomo": "locomo-dataset-sha256",
                         "longmemeval": "longmemeval-dataset-sha256",
+                    },
+                    "dataset_sources": {
+                        "locomo": {
+                            "source_kind": "official_download",
+                            "official_url": "https://example.test/locomo.json",
+                            "path_label": "locomo.json",
+                            "sha256": "locomo-dataset-sha256",
+                            "size_bytes": 1000,
+                        },
+                        "longmemeval": {
+                            "source_kind": "official_download",
+                            "official_url": "https://example.test/longmemeval.json",
+                            "path_label": "longmemeval.json",
+                            "sha256": "longmemeval-dataset-sha256",
+                            "size_bytes": 1000,
+                        },
                     },
                 },
             }
@@ -847,6 +879,22 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                 "dataset_hashes": {
                     "locomo": "locomo-dataset-sha256",
                     "longmemeval": "longmemeval-dataset-sha256",
+                },
+                "dataset_sources": {
+                    "locomo": {
+                        "source_kind": "official_download",
+                        "official_url": "https://example.test/locomo.json",
+                        "path_label": "locomo.json",
+                        "sha256": "locomo-dataset-sha256",
+                        "size_bytes": 1000,
+                    },
+                    "longmemeval": {
+                        "source_kind": "official_download",
+                        "official_url": "https://example.test/longmemeval.json",
+                        "path_label": "longmemeval.json",
+                        "sha256": "longmemeval-dataset-sha256",
+                        "size_bytes": 1000,
+                    },
                 },
             }
         ),
