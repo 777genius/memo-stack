@@ -169,6 +169,52 @@ describe("Memo Stack path safety E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
     assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
   });
+
+  it("uses the current Obsidian vault when the vault path override is blank", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO default vault path backend fact.",
+      sourceId: "wdio-default-vault-path-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", "");
+    await setSettingsInput("rootFolder", rootFolder);
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPathReady(rootFolder, spaceSlug);
+
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.vaultPath, vaultPath);
+    assert.equal(snapshot.pathError, "");
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await clickSettingsButton("Vault sync", "Sync");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, fact.id);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /default vault path backend fact/);
+
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.vaultPath, vaultPath);
+    assert.equal(snapshot.generatedFactsExists, true);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
+    assert.ok(calls.every((call) => call.status === 0));
+    assert.ok(calls.every((call) => valueAfter(call.args, "--vault") === vaultPath));
+    assert.ok(calls.every((call) => call.args.includes(rootFolder)));
+    assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
+    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+  });
 });
 
 async function resetVault(): Promise<string> {
@@ -479,6 +525,13 @@ function readCliCalls(vaultPath: string): Array<{ command: string; args: string[
 
 function posixPath(filePath: string): string {
   return filePath.split(path.sep).join("/");
+}
+
+function valueAfter(args: string[], flag: string): string {
+  const index = args.indexOf(flag);
+  assert.ok(index >= 0, `Missing argument ${flag}`);
+  assert.ok(index + 1 < args.length, `Missing value after ${flag}`);
+  return args[index + 1];
 }
 
 function pythonpath(): string {
