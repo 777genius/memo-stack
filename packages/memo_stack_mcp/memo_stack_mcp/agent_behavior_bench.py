@@ -2828,6 +2828,7 @@ def _compute_metrics(results: Sequence[ScenarioRunResult]) -> dict[str, float | 
         if _result_has_redaction_sensitive_trace(result):
             leak_counts["secret_leak_count"] += 1
     return {
+        "scenario_count": len(results),
         "tool_choice_accuracy": _rate(expected_ok, scenario_count),
         "live_session_case_count": live_session_total,
         "live_session_pass_rate": _rate(live_session_ok, live_session_total),

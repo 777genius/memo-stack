@@ -104,8 +104,10 @@ missing, `MEMORY_AGENT_BENCH_SCENARIO_SET` is not `all`,
 `MEMORY_PUBLIC_BENCHMARK_NAME` is not `all`, or the public benchmark is configured
 below 600 cases / 0.902 minimum accuracy. The top-evidence bundle defaults the
 agent benchmark to `all`, which runs core, realistic, live-session and transcript
-corpus scenarios so live/transcript/adversarial pass rates cannot be satisfied by
-zero-case metrics. It also parses the LoCoMo and LongMemEval dataset files
+corpus scenarios and the scorecard requires at least 41 total agent cases, 11
+live-session cases, 5 transcript-corpus cases and 9 adversarial cases. This keeps
+live/transcript/adversarial pass rates from being satisfied by zero-case or
+under-sized reports. It also parses the LoCoMo and LongMemEval dataset files
 through the same normalizer used by the benchmark runner and rejects empty,
 invalid or under-sized datasets before paid provider work starts. It prints only
 safe diagnostics and never echoes API keys.

@@ -260,6 +260,8 @@ before paid provider/model work, so missing key/model/datasets/auth fails before
 starting the full stack. The top-evidence path also requires
 `MEMORY_AGENT_BENCH_SCENARIO_SET=all` so the agent behavior report covers core,
 realistic, live-session and transcript-corpus scenarios in one publishable run.
+The strict scorecard rejects under-sized agent reports below 41 total cases, 11
+live-session cases, 5 transcript-corpus cases and 9 adversarial cases.
 `memo-stack-prod-confidence-full` is an alias for the same gate.
 
 The historical clean full smoke target also runs MCP checks by default. Use

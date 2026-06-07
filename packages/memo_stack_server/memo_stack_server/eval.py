@@ -136,11 +136,12 @@ _AGENT_BEHAVIOR_ZERO_COUNT_METRICS = (
     "deleted_leak_count",
     "critical_safety_failures",
 )
-_AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_METRICS = (
-    "live_session_case_count",
-    "transcript_corpus_case_count",
-    "adversarial_case_count",
-)
+_AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS = {
+    "scenario_count": 41,
+    "live_session_case_count": 11,
+    "transcript_corpus_case_count": 5,
+    "adversarial_case_count": 9,
+}
 _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES = {
     LOCOMO_BENCHMARK_SUITE: frozenset(("locomo", "lo_co_mo", "long-context-memory")),
     LONGMEMEVAL_BENCHMARK_SUITE: frozenset(
@@ -430,8 +431,8 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_required_scenario_set": (
                 _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
             ),
-            "top_evidence_required_case_count_metrics": list(
-                _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_METRICS
+            "top_evidence_required_case_count_floors": dict(
+                _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS
             ),
             "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
             "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
@@ -1041,6 +1042,7 @@ def _scorecard_agent_behavior_evidence_summary(
         "update_vs_duplicate_rate",
         "document_routing_accuracy",
         "answer_support_rate",
+        "scenario_count",
         "live_session_case_count",
         "live_session_pass_rate",
         "transcript_corpus_case_count",
@@ -1102,9 +1104,9 @@ def _scorecard_agent_behavior_required_checks(
         checks["scenario_set_all_for_top_evidence"] = (
             result.get("scenario_set") == _AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
         )
-        for metric in _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_METRICS:
+        for metric, floor in _AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS.items():
             value = _scorecard_int(metrics.get(metric))
-            checks[f"{metric}_positive"] = value is not None and value > 0
+            checks[f"{metric}_min_{floor}"] = value is not None and value >= floor
     return checks
 
 

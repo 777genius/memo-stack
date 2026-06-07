@@ -228,6 +228,9 @@ def test_scenario_sets_include_realistic_adversarial_cases() -> None:
     assert len(live) >= 6
     assert len(transcript) >= 5
     assert len(combined) == len(core) + len(realistic) + len(live) + len(transcript)
+    assert sum("live_session" in scenario.tags for scenario in combined) == 11
+    assert sum("transcript_corpus" in scenario.tags for scenario in combined) == 5
+    assert sum("adversarial" in scenario.tags for scenario in combined) == 9
     assert {
         "real_secret_in_long_notes",
         "real_thread_neighbor_isolation",
@@ -371,6 +374,7 @@ def test_live_session_and_adversarial_metrics_are_tag_based() -> None:
     metrics = _compute_metrics([passed, failed])
     gates = _compute_gates([passed, failed], metrics)
 
+    assert metrics["scenario_count"] == 2
     assert metrics["live_session_case_count"] == 2
     assert metrics["live_session_pass_rate"] == 0.5
     assert metrics["adversarial_case_count"] == 2
