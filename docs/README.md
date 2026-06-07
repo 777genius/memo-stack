@@ -101,9 +101,12 @@ make memo-stack-top-evidence-bundle
 The preflight fails before Docker/OpenAI work if the worktree is dirty, Docker
 is unavailable, the key/model is missing, representative public datasets are
 missing, `MEMORY_PUBLIC_BENCHMARK_NAME` is not `all`, or the public benchmark is
-configured below 600 cases / 0.902 minimum accuracy. It prints only safe
-diagnostics and never echoes API keys. `MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP=true`
-is accepted only for local diagnostics; publishable evidence should stay clean.
+configured below 600 cases / 0.902 minimum accuracy. It also parses the LoCoMo
+and LongMemEval dataset files through the same normalizer used by the benchmark
+runner and rejects empty, invalid or under-sized datasets before paid provider
+work starts. It prints only safe diagnostics and never echoes API keys.
+`MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP=true` is accepted only for local
+diagnostics; publishable evidence should stay clean.
 
 Local smoke variables:
 

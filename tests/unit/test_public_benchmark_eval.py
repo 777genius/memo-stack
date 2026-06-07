@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memo_stack_server.public_benchmark import run_public_memory_benchmark
+from memo_stack_server.public_benchmark import (
+    load_public_benchmark_case_count,
+    run_public_memory_benchmark,
+)
 
 
 def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
@@ -58,6 +61,43 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["ok"] is True
     assert written["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
+
+
+def test_public_memory_benchmark_counts_normalized_cases_without_running(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "public-benchmark.jsonl"
+    rows = [
+        {
+            "benchmark": "locomo",
+            "case_id": "locomo-single-hop",
+            "question": "Where does Alice keep Kubernetes manifests?",
+            "memories": [
+                "Alice keeps Kubernetes manifests in helmfile overlays for project Atlas."
+            ],
+            "expected_terms": ["helmfile overlays"],
+        },
+        {
+            "benchmark": "longmemeval",
+            "case_id": "longmem-document-deadline",
+            "query": "What is the Project Falcon migration deadline?",
+            "documents": [
+                {
+                    "title": "Falcon migration notes",
+                    "text": "Project Falcon migration deadline is 2026-08-15.",
+                }
+            ],
+            "answer": "2026-08-15",
+        },
+    ]
+    dataset.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+
+    assert load_public_benchmark_case_count(dataset_path=dataset) == 2
+    assert load_public_benchmark_case_count(dataset_path=dataset, benchmark="locomo") == 1
+    assert (
+        load_public_benchmark_case_count(dataset_path=dataset, benchmark="longmemeval")
+        == 1
+    )
 
 
 def test_public_memory_benchmark_reports_missing_expected_terms(tmp_path: Path) -> None:

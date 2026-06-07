@@ -19,11 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
-from fastapi.testclient import TestClient
 from memo_stack_core.reporting import with_report_provenance
-
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
@@ -100,7 +96,7 @@ class CaseRunResult:
 
 
 class _TestClientBenchmarkAdapter:
-    def __init__(self, client: TestClient) -> None:
+    def __init__(self, client: Any) -> None:
         self._client = client
 
     def post(
@@ -177,7 +173,7 @@ def run_public_memory_benchmark(
         _write_report(result, report_out)
         return result
 
-    token = auth_token or (Settings().service_token if api_url else "test-token")
+    token = auth_token or (_default_service_token() if api_url else "test-token")
     if not token:
         result = _setup_failure_result(reason="auth_token_required", case_count=len(cases))
         result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
@@ -196,6 +192,11 @@ def run_public_memory_benchmark(
                 started=started,
             )
     else:
+        from fastapi.testclient import TestClient
+
+        from memo_stack_server.config import DeployProfile, Settings
+        from memo_stack_server.main import create_app
+
         with tempfile.TemporaryDirectory(prefix="memo-public-benchmark-") as tmp_dir:
             app = create_app(
                 Settings(
@@ -222,6 +223,26 @@ def run_public_memory_benchmark(
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
     _write_report(result, report_out)
     return result
+
+
+def _default_service_token() -> str:
+    from memo_stack_server.config import Settings
+
+    return Settings().service_token
+
+
+def load_public_benchmark_case_count(
+    *,
+    dataset_path: Path,
+    benchmark: str | None = None,
+) -> int:
+    """Return the normalized case count without running retrieval or writing data."""
+
+    cases = _load_cases(dataset_path)
+    if benchmark:
+        canonical_benchmark = _normalize_benchmark_name(benchmark)
+        cases = tuple(case for case in cases if case.benchmark == canonical_benchmark)
+    return len(cases)
 
 
 def _with_public_benchmark_provenance(

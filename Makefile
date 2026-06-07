@@ -84,7 +84,7 @@ memo-stack-quality-evidence-bundle:
 
 .PHONY: memo-stack-top-evidence-preflight
 memo-stack-top-evidence-preflight:
-	$(PYTHON) -m memo_stack_server.top_evidence_preflight --json
+	@$(PYTHON) -m memo_stack_server.top_evidence_preflight --json
 
 .PHONY: memo-stack-top-evidence-bundle
 memo-stack-top-evidence-bundle:

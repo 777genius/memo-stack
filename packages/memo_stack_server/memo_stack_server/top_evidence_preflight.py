@@ -12,6 +12,11 @@ from pathlib import Path
 
 from memo_stack_core.reporting import git_metadata
 
+from memo_stack_server.public_benchmark import (
+    BenchmarkValidationError,
+    load_public_benchmark_case_count,
+)
+
 DEFAULT_MIN_PUBLIC_CASES = 600
 DEFAULT_MIN_PUBLIC_ACCURACY = 0.902
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -130,8 +135,23 @@ def run_top_evidence_preflight(
 
     locomo_dataset = _dataset_file(env, "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET")
     longmemeval_dataset = _dataset_file(env, "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET")
+    locomo_case_count = _dataset_case_count(locomo_dataset, benchmark="locomo")
+    longmemeval_case_count = _dataset_case_count(
+        longmemeval_dataset,
+        benchmark="longmemeval",
+    )
     checks["locomo_dataset_file"] = locomo_dataset is not None
     checks["longmemeval_dataset_file"] = longmemeval_dataset is not None
+    checks["locomo_dataset_valid"] = locomo_case_count is not None and locomo_case_count > 0
+    checks["longmemeval_dataset_valid"] = (
+        longmemeval_case_count is not None and longmemeval_case_count > 0
+    )
+    checks["locomo_dataset_case_count_representative"] = (
+        locomo_case_count is not None and locomo_case_count >= configured_cases
+    )
+    checks["longmemeval_dataset_case_count_representative"] = (
+        longmemeval_case_count is not None and longmemeval_case_count >= configured_cases
+    )
     _append_failure(
         checks,
         failures,
@@ -143,6 +163,36 @@ def run_top_evidence_preflight(
         failures,
         "longmemeval_dataset_file",
         "Set MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET to an existing JSON/JSONL file",
+    )
+    _append_failure(
+        checks,
+        failures,
+        "locomo_dataset_valid",
+        "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET must contain valid locomo cases",
+    )
+    _append_failure(
+        checks,
+        failures,
+        "longmemeval_dataset_valid",
+        "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET must contain valid longmemeval cases",
+    )
+    _append_failure(
+        checks,
+        failures,
+        "locomo_dataset_case_count_representative",
+        (
+            "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET must contain at least "
+            f"{configured_cases} locomo cases"
+        ),
+    )
+    _append_failure(
+        checks,
+        failures,
+        "longmemeval_dataset_case_count_representative",
+        (
+            "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET must contain at least "
+            f"{configured_cases} longmemeval cases"
+        ),
     )
 
     commit = git.get("commit")
@@ -187,6 +237,8 @@ def run_top_evidence_preflight(
             "longmemeval_dataset": (
                 str(longmemeval_dataset) if longmemeval_dataset is not None else None
             ),
+            "locomo_case_count": locomo_case_count,
+            "longmemeval_case_count": longmemeval_case_count,
             "openai_key_present": openai_key_present,
             "public_benchmark_max_cases": configured_cases,
             "public_benchmark_min_accuracy": configured_accuracy,
@@ -234,6 +286,18 @@ def _dataset_file(env: Mapping[str, str], name: str) -> Path | None:
         return None
     path = Path(value).expanduser()
     return path if path.is_file() else None
+
+
+def _dataset_case_count(path: Path | None, *, benchmark: str) -> int | None:
+    if path is None:
+        return None
+    try:
+        return load_public_benchmark_case_count(
+            dataset_path=path,
+            benchmark=benchmark,
+        )
+    except (BenchmarkValidationError, json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return None
 
 
 def _positive_int_env(env: Mapping[str, str], name: str, default: int) -> int:

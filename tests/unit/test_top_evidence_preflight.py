@@ -6,11 +6,22 @@ from pathlib import Path
 from memo_stack_server.top_evidence_preflight import run_top_evidence_preflight
 
 
-def _top_evidence_env(tmp_path: Path, **overrides: str) -> dict[str, str]:
+def _top_evidence_env(
+    tmp_path: Path,
+    *,
+    case_count: int = 600,
+    **overrides: str,
+) -> dict[str, str]:
     locomo = tmp_path / "locomo.json"
     longmemeval = tmp_path / "longmemeval.json"
-    locomo.write_text("[]", encoding="utf-8")
-    longmemeval.write_text("[]", encoding="utf-8")
+    locomo.write_text(
+        json.dumps(_benchmark_cases("locomo", count=case_count)),
+        encoding="utf-8",
+    )
+    longmemeval.write_text(
+        json.dumps(_benchmark_cases("longmemeval", count=case_count)),
+        encoding="utf-8",
+    )
     env = {
         "MEMORY_OPENAI_API_KEY": "sk-test-secret-value",
         "MEMORY_AGENT_BENCH_MODEL": "gpt-test",
@@ -19,6 +30,19 @@ def _top_evidence_env(tmp_path: Path, **overrides: str) -> dict[str, str]:
     }
     env.update(overrides)
     return env
+
+
+def _benchmark_cases(benchmark: str, *, count: int) -> list[dict[str, object]]:
+    return [
+        {
+            "benchmark": benchmark,
+            "case_id": f"{benchmark}-{index}",
+            "question": f"What is marker {index} for {benchmark}?",
+            "expected_terms": [f"{benchmark}-marker-{index}"],
+            "memories": [f"{benchmark}-marker-{index} is stored in memory."],
+        }
+        for index in range(count)
+    ]
 
 
 def test_top_evidence_preflight_accepts_clean_publishable_config(tmp_path: Path) -> None:
@@ -36,6 +60,10 @@ def test_top_evidence_preflight_accepts_clean_publishable_config(tmp_path: Path)
     assert result.allow_dirty_top_evidence is False
     assert result.failures == ()
     assert payload["checks"]["public_benchmark_case_count_representative"] is True
+    assert payload["checks"]["locomo_dataset_valid"] is True
+    assert payload["checks"]["longmemeval_dataset_valid"] is True
+    assert payload["sanitized_config"]["locomo_case_count"] == 600
+    assert payload["sanitized_config"]["longmemeval_case_count"] == 600
     assert "sk-test-secret-value" not in json.dumps(payload)
 
 
@@ -97,6 +125,61 @@ def test_top_evidence_preflight_rejects_missing_dataset_file(tmp_path: Path) -> 
     assert result.ok is False
     assert result.checks["longmemeval_dataset_file"] is False
     assert any("LONGMEMEVAL_DATASET" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_rejects_empty_dataset_file(tmp_path: Path) -> None:
+    env = _top_evidence_env(tmp_path)
+    Path(env["MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET"]).write_text("[]", encoding="utf-8")
+
+    result = run_top_evidence_preflight(
+        env=env,
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["locomo_dataset_valid"] is False
+    assert result.checks["locomo_dataset_case_count_representative"] is False
+    assert any("valid locomo cases" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_rejects_dataset_case_count_below_config(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(tmp_path, case_count=599),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["locomo_dataset_case_count_representative"] is False
+    assert result.checks["longmemeval_dataset_case_count_representative"] is False
+    assert result.sanitized_config["locomo_case_count"] == 599
+    assert result.sanitized_config["longmemeval_case_count"] == 599
+
+
+def test_top_evidence_preflight_rejects_dataset_with_wrong_benchmark_cases(
+    tmp_path: Path,
+) -> None:
+    env = _top_evidence_env(tmp_path)
+    Path(env["MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET"]).write_text(
+        json.dumps(_benchmark_cases("longmemeval", count=600)),
+        encoding="utf-8",
+    )
+
+    result = run_top_evidence_preflight(
+        env=env,
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["locomo_dataset_valid"] is False
+    assert result.sanitized_config["locomo_case_count"] == 0
 
 
 def test_top_evidence_preflight_requires_all_public_benchmarks(tmp_path: Path) -> None:
