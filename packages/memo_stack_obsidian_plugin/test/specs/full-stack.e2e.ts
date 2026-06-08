@@ -6,6 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { browser } from "@wdio/globals";
+import {
+  pythonpath,
+  readCliCalls,
+  readVaultFile,
+  writeVaultFile,
+} from "./full-stack-helpers";
 
 const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
@@ -705,7 +711,7 @@ uvicorn.run(app, host="127.0.0.1", port=${port}, log_level="warning")
     cwd: repoRoot,
     env: {
       ...process.env,
-      PYTHONPATH: pythonpath(),
+      PYTHONPATH: pythonpath(repoRoot),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -989,39 +995,4 @@ function replaceFrontmatterValue(filePath: string, key: string, value: string): 
   const pattern = new RegExp(`^${key}: .*$`, "m");
   assert.match(old, pattern);
   fs.writeFileSync(filePath, old.replace(pattern, `${key}: ${value}`), "utf8");
-}
-
-function readVaultFile(vaultPath: string, relativePath: string): string {
-  return fs.readFileSync(path.join(vaultPath, relativePath), "utf8");
-}
-
-function writeVaultFile(vaultPath: string, relativePath: string, content: string): void {
-  const target = path.join(vaultPath, relativePath);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, content, "utf8");
-}
-
-function readCliCalls(vaultPath: string): Array<{ command: string; args: string[]; status: number }> {
-  const logPath = path.join(vaultPath, ".memo-stack/real-plugin-cli-calls.jsonl");
-  if (!fs.existsSync(logPath)) {
-    return [];
-  }
-  return fs
-    .readFileSync(logPath, "utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
-function pythonpath(): string {
-  return [
-    "packages/memo_stack_core",
-    "packages/memo_stack_adapters",
-    "packages/memo_stack_server",
-    "packages/memo_stack_sdk",
-    "packages/memo_stack_obsidian",
-  ]
-    .map((relativePath) => path.join(repoRoot, relativePath))
-    .join(path.delimiter);
 }

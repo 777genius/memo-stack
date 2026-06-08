@@ -75,6 +75,32 @@ def test_obsidian_setup_can_install_plugin_with_local_cli_path(tmp_path: Path) -
     assert settings["vaultPathOverride"] == str(tmp_path.resolve())
 
 
+def test_obsidian_setup_supports_custom_config_dir(tmp_path: Path) -> None:
+    service = ObsidianMcpService(
+        settings=MemoryMcpSettings(
+            obsidian_enabled=True,
+            obsidian_vault_path=str(tmp_path),
+            obsidian_config_dir=".obsidian-dev",
+            default_space_slug="team",
+            default_profile_external_ref="backend",
+        )
+    )
+
+    applied = asyncio.run(
+        service.setup(apply=True, install_plugin=True, enable_plugin=True)
+    )
+    settings_path = tmp_path / ".obsidian-dev/plugins/memo-stack/data.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+
+    assert applied["ok"] is True
+    assert applied["data"]["obsidian_config_dir"] == ".obsidian-dev"
+    assert applied["data"]["settings_path"] == str(settings_path)
+    assert (tmp_path / ".obsidian-dev/community-plugins.json").exists()
+    assert not (tmp_path / ".obsidian/plugins/memo-stack").exists()
+    assert settings["spaceSlug"] == "team"
+    assert settings["profileExternalRef"] == "backend"
+
+
 def test_obsidian_sync_apply_requires_separate_sync_gate(tmp_path: Path) -> None:
     service = ObsidianMcpService(
         settings=MemoryMcpSettings(

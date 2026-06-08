@@ -128,6 +128,95 @@ def test_cli_install_plugin_can_enable_and_configure_plugin(
     assert settings["localCliPath"] == "/usr/local/bin/memo-stack"
 
 
+def test_cli_install_plugin_supports_custom_obsidian_config_dir(
+    tmp_path: Path,
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    SetupVaultUseCase(vault=FilesystemVault(tmp_path)).execute(
+        space_slug="team",
+        profile_external_ref="backend",
+    )
+    assert (
+        cli.main(
+            [
+                "install-plugin",
+                "--vault",
+                str(tmp_path),
+                "--obsidian-config-dir",
+                ".obsidian-dev",
+                "--enable",
+                "--api-url",
+                "http://127.0.0.1:17788",
+                "--space",
+                "team",
+                "--profile",
+                "backend",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = read_json(capsys)
+    plugin_dir = tmp_path / ".obsidian-dev/plugins/memo-stack"
+    enabled = json.loads(
+        (tmp_path / ".obsidian-dev/community-plugins.json").read_text(encoding="utf-8")
+    )
+
+    assert payload["target_dir"] == str(plugin_dir.resolve())
+    assert payload["obsidian_config_dir"] == ".obsidian-dev"
+    assert enabled == ["memo-stack"]
+    assert (plugin_dir / "main.js").exists()
+    assert not (tmp_path / ".obsidian/plugins/memo-stack").exists()
+
+    monkeypatch.setattr(doctor.httpx, "get", fake_health_get)
+
+    assert (
+        cli.main(
+            [
+                "doctor",
+                "--vault",
+                str(tmp_path),
+                "--obsidian-config-dir",
+                ".obsidian-dev",
+                "--api-url",
+                "http://127.0.0.1:17788",
+                "--space",
+                "team",
+                "--profile",
+                "backend",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    doctor_payload = read_json(capsys)
+
+    assert doctor_payload["ok"] is True
+    assert all(check["ok"] for check in doctor_payload["checks"])
+
+
+def test_cli_install_plugin_rejects_unsafe_obsidian_config_dir(
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    result = cli.main(
+        [
+            "install-plugin",
+            "--vault",
+            str(tmp_path),
+            "--obsidian-config-dir",
+            "../outside",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "Unsafe Obsidian config dir" in captured.err
+    assert not (tmp_path.parent / "outside").exists()
+
+
 def test_cli_doctor_reports_ready_vault_without_opening_obsidian(
     tmp_path: Path,
     monkeypatch: Any,

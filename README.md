@@ -159,6 +159,19 @@ explicit gate:
 export MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED=true
 ```
 
+Obsidian connector verification:
+
+```bash
+make memo-stack-obsidian-test
+make memo-stack-obsidian-ui-e2e
+```
+
+`memo-stack-obsidian-test` covers the Python connector, live HTTP sync smoke,
+MCP stdio setup/sync smoke, and plugin typecheck/build without opening Obsidian.
+`memo-stack-obsidian-ui-e2e` opens the real desktop Obsidian app and runs the
+full WDIO plugin suite. Vaults with a custom Obsidian config folder are supported
+through `--obsidian-config-dir` or `MEMORY_MCP_OBSIDIAN_CONFIG_DIR`.
+
 Install once:
 
 ```bash

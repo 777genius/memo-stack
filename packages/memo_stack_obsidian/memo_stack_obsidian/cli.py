@@ -22,7 +22,10 @@ from memo_stack_obsidian.layout import (
     DEFAULT_ROOT_FOLDER,
     ObsidianVaultLayout,
 )
-from memo_stack_obsidian.plugin_install import InstallObsidianPluginUseCase
+from memo_stack_obsidian.plugin_install import (
+    DEFAULT_OBSIDIAN_CONFIG_DIR,
+    InstallObsidianPluginUseCase,
+)
 from memo_stack_obsidian.setup import SetupVaultUseCase
 from memo_stack_obsidian.state import SqliteSyncStateStore
 from memo_stack_obsidian.sync import (
@@ -68,6 +71,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Install the bundled thin Obsidian plugin into a vault.",
     )
     install_plugin_parser.add_argument("--vault", type=Path, required=True)
+    install_plugin_parser.add_argument(
+        "--obsidian-config-dir",
+        default=DEFAULT_OBSIDIAN_CONFIG_DIR,
+        help="Obsidian config folder relative to the vault root.",
+    )
     install_plugin_parser.add_argument("--overwrite", action="store_true")
     install_plugin_parser.add_argument("--enable", action="store_true")
     install_plugin_parser.add_argument("--api-url", default=DEFAULT_API_URL)
@@ -147,7 +155,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_install_plugin(args: argparse.Namespace) -> int:
-    result = InstallObsidianPluginUseCase(vault_path=args.vault).execute(
+    result = InstallObsidianPluginUseCase(
+        vault_path=args.vault,
+        obsidian_config_dir=args.obsidian_config_dir,
+    ).execute(
         overwrite=args.overwrite,
         enable=args.enable,
         settings={
@@ -168,6 +179,7 @@ def _cmd_install_plugin(args: argparse.Namespace) -> int:
         {
             "ok": True,
             "target_dir": str(result.target_dir),
+            "obsidian_config_dir": args.obsidian_config_dir,
             "written": list(result.written),
             "skipped": list(result.skipped),
             "enabled": result.enabled,
@@ -185,6 +197,11 @@ def _cmd_install_plugin(args: argparse.Namespace) -> int:
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--vault", type=Path, required=True)
+    parser.add_argument(
+        "--obsidian-config-dir",
+        default=DEFAULT_OBSIDIAN_CONFIG_DIR,
+        help="Obsidian config folder relative to the vault root.",
+    )
     parser.add_argument("--space", dest="space_slug", default=DEFAULT_SPACE_SLUG)
     parser.add_argument(
         "--profile",
@@ -325,6 +342,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         profile_external_ref=args.profile_external_ref,
         root_folder=args.root_folder,
         layout_version=args.layout_version,
+        obsidian_config_dir=args.obsidian_config_dir,
         require_plugin=not args.no_plugin,
         check_health=not args.no_health,
     )

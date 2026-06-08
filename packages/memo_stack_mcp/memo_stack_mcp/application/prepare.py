@@ -24,6 +24,7 @@ class ObsidianPrepareMcpService:
         self,
         *,
         vault_path: str | None = None,
+        obsidian_config_dir: str | None = None,
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
@@ -55,6 +56,7 @@ class ObsidianPrepareMcpService:
 
         obsidian_setup = await self._obsidian.setup(
             vault_path=vault_path,
+            obsidian_config_dir=obsidian_config_dir,
             root_folder=root_folder,
             layout_version=layout_version,
             space_slug=space_slug,
@@ -113,6 +115,7 @@ class ObsidianPrepareMcpService:
 
         preview = await self._obsidian.preview(
             vault_path=vault_path,
+            obsidian_config_dir=obsidian_config_dir,
             root_folder=root_folder,
             layout_version=layout_version,
             space_slug=space_slug,

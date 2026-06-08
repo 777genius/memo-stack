@@ -131,6 +131,73 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
         assert conflict_path.exists()
 
 
+def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "vault"
+    space_slug = "obsidian-custom-config-e2e"
+    profile_ref = "default"
+
+    with run_memo_stack_server(
+        tmp_path,
+        database_name="obsidian-custom-config.db",
+    ) as server:
+        common = [
+            "--vault",
+            str(vault_path),
+            "--space",
+            space_slug,
+            "--profile",
+            profile_ref,
+            "--api-url",
+            server.base_url,
+            "--token",
+            server.token,
+            "--layout",
+            "v2",
+            "--json",
+        ]
+        config_dir = ".obsidian-dev"
+
+        connected = _run_obsidian_cli(["connect", *common])
+        installed = _run_obsidian_cli(
+            [
+                "install-plugin",
+                "--vault",
+                str(vault_path),
+                "--obsidian-config-dir",
+                config_dir,
+                "--enable",
+                "--api-url",
+                server.base_url,
+                "--space",
+                space_slug,
+                "--profile",
+                profile_ref,
+                "--json",
+            ]
+        )
+        doctor = _run_obsidian_cli(
+            [
+                "doctor",
+                *common,
+                "--obsidian-config-dir",
+                config_dir,
+            ]
+        )
+
+    plugin_dir = vault_path / config_dir / "plugins/memo-stack"
+    enabled_path = vault_path / config_dir / "community-plugins.json"
+
+    assert connected["ok"] is True
+    assert installed["ok"] is True
+    assert installed["target_dir"] == str(plugin_dir.resolve())
+    assert doctor["ok"] is True
+    assert (plugin_dir / "main.js").exists()
+    assert json.loads(enabled_path.read_text(encoding="utf-8")) == ["memo-stack"]
+    assert not (vault_path / ".obsidian/plugins/memo-stack").exists()
+
+
 def _run_obsidian_cli(
     args: list[str],
     *,

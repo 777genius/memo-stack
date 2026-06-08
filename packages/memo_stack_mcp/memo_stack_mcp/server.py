@@ -309,6 +309,10 @@ def create_mcp_server(
             str | None,
             Field(default=None, min_length=1, max_length=1000),
         ] = None,
+        obsidian_config_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
         root_folder: Annotated[
             str | None,
             Field(default=None, min_length=1, max_length=240),
@@ -362,6 +366,7 @@ def create_mcp_server(
         return _tool_response(
             await obsidian_prepare_service.prepare(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -401,6 +406,10 @@ def create_mcp_server(
             str | None,
             Field(default=None, min_length=1, max_length=1000),
         ] = None,
+        obsidian_config_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
         root_folder: Annotated[
             str | None,
             Field(default=None, min_length=1, max_length=240),
@@ -425,6 +434,7 @@ def create_mcp_server(
         return _tool_response(
             await obsidian_service.status(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -455,6 +465,10 @@ def create_mcp_server(
         vault_path: Annotated[
             str | None,
             Field(default=None, min_length=1, max_length=1000),
+        ] = None,
+        obsidian_config_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
         ] = None,
         root_folder: Annotated[
             str | None,
@@ -492,6 +506,7 @@ def create_mcp_server(
         return _tool_response(
             await obsidian_service.setup(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -525,6 +540,10 @@ def create_mcp_server(
             str | None,
             Field(default=None, min_length=1, max_length=1000),
         ] = None,
+        obsidian_config_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
         root_folder: Annotated[
             str | None,
             Field(default=None, min_length=1, max_length=240),
@@ -546,6 +565,7 @@ def create_mcp_server(
         return _tool_response(
             await obsidian_service.preview(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -577,6 +597,10 @@ def create_mcp_server(
             str | None,
             Field(default=None, min_length=1, max_length=1000),
         ] = None,
+        obsidian_config_dir: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=240),
+        ] = None,
         root_folder: Annotated[
             str | None,
             Field(default=None, min_length=1, max_length=240),
@@ -606,6 +630,7 @@ def create_mcp_server(
         return _tool_response(
             await obsidian_service.sync(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,

@@ -19,6 +19,7 @@ MEMORY_AGENT_SMOKE_SERVER_PORT ?= 17788
 MEMORY_PROD_CONFIDENCE_POSTGRES_PORT ?= 55431
 MEMORY_PROD_CONFIDENCE_SERVER_PORT ?= 17791
 MEMORA_DIRECT_SMOKE_REPORT ?= .tmp/memora-direct-smoke.json
+OBSIDIAN_PLUGIN_DIR ?= packages/memo_stack_obsidian_plugin
 
 .PHONY: memo-stack-format
 memo-stack-format:
@@ -51,6 +52,27 @@ memo-stack-test-e2e:
 .PHONY: memo-stack-scale-chaos-load-e2e
 memo-stack-scale-chaos-load-e2e:
 	$(PYTHON) -m pytest tests/e2e/test_memory_scale_chaos_load_e2e.py -q
+
+.PHONY: memo-stack-obsidian-python-test
+memo-stack-obsidian-python-test:
+	$(PYTHON) -m pytest tests/unit/test_obsidian_note_format.py tests/unit/test_obsidian_sync.py tests/unit/test_obsidian_cli.py tests/unit/test_mcp_obsidian_prepare.py tests/unit/test_mcp_obsidian_tools.py tests/unit/test_mcp_adapter.py tests/e2e/test_obsidian_cli_e2e.py -q
+
+.PHONY: memo-stack-obsidian-live-smoke
+memo-stack-obsidian-live-smoke:
+	$(PYTHON) scripts/obsidian_connector_live_smoke.py
+	$(PYTHON) scripts/obsidian_mcp_smoke.py
+
+.PHONY: memo-stack-obsidian-plugin-check
+memo-stack-obsidian-plugin-check:
+	cd $(OBSIDIAN_PLUGIN_DIR) && npm run typecheck
+	cd $(OBSIDIAN_PLUGIN_DIR) && npm run build
+
+.PHONY: memo-stack-obsidian-test
+memo-stack-obsidian-test: memo-stack-obsidian-python-test memo-stack-obsidian-live-smoke memo-stack-obsidian-plugin-check
+
+.PHONY: memo-stack-obsidian-ui-e2e
+memo-stack-obsidian-ui-e2e:
+	cd $(OBSIDIAN_PLUGIN_DIR) && MEMO_STACK_RUN_OBSIDIAN_E2E=1 npm run test:e2e:obsidian
 
 .PHONY: memo-stack-eval
 memo-stack-eval:

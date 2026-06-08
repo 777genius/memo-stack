@@ -44,6 +44,7 @@ class MemoryObsidianData(McpDataModel):
     dry_run: bool | None = None
     applied: bool | None = None
     vault_path: str | None = None
+    obsidian_config_dir: str | None = None
     root_folder: str | None = None
     layout_version: str | None = None
     space_slug: str | None = None

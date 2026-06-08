@@ -11,7 +11,13 @@ from typing import Any
 import httpx
 
 from memo_stack_obsidian.layout import ObsidianVaultLayout
-from memo_stack_obsidian.plugin_install import PLUGIN_FILES, PLUGIN_ID
+from memo_stack_obsidian.plugin_install import (
+    DEFAULT_OBSIDIAN_CONFIG_DIR,
+    PLUGIN_FILES,
+    PLUGIN_ID,
+    plugin_dir,
+    resolve_obsidian_config_dir,
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +50,7 @@ class DoctorVaultUseCase:
         profile_external_ref: str,
         root_folder: str = "Memo Stack",
         layout_version: str = "v2",
+        obsidian_config_dir: str = DEFAULT_OBSIDIAN_CONFIG_DIR,
         require_plugin: bool = True,
         check_health: bool = True,
     ) -> DoctorResult:
@@ -72,6 +79,7 @@ class DoctorVaultUseCase:
                     profile_external_ref=profile_external_ref,
                     root_folder=root_folder,
                     layout_version=layout_version,
+                    obsidian_config_dir=obsidian_config_dir,
                 )
             )
         if check_health:
@@ -185,21 +193,24 @@ def _check_plugin(
     profile_external_ref: str,
     root_folder: str,
     layout_version: str,
+    obsidian_config_dir: str,
 ) -> tuple[DoctorCheck, ...]:
-    plugin_dir = vault / ".obsidian" / "plugins" / PLUGIN_ID
+    plugin_directory = plugin_dir(vault, obsidian_config_dir)
     checks = [
         DoctorCheck(
             name="plugin_installed",
-            ok=plugin_dir.is_dir() and all((plugin_dir / name).exists() for name in PLUGIN_FILES),
-            message=f"Plugin bundle found at {plugin_dir}"
-            if plugin_dir.is_dir()
+            ok=plugin_directory.is_dir()
+            and all((plugin_directory / name).exists() for name in PLUGIN_FILES),
+            message=f"Plugin bundle found at {plugin_directory}"
+            if plugin_directory.is_dir()
             else "Plugin bundle is missing; run install-plugin --enable",
         )
     ]
-    checks.append(_check_plugin_enabled(vault))
+    checks.append(_check_plugin_enabled(vault, obsidian_config_dir))
     checks.append(
         _check_plugin_settings(
-            plugin_dir=plugin_dir,
+            vault=vault,
+            plugin_dir=plugin_directory,
             api_url=api_url,
             space_slug=space_slug,
             profile_external_ref=profile_external_ref,
@@ -210,8 +221,10 @@ def _check_plugin(
     return tuple(checks)
 
 
-def _check_plugin_enabled(vault: Path) -> DoctorCheck:
-    plugins_path = vault / ".obsidian" / "community-plugins.json"
+def _check_plugin_enabled(vault: Path, obsidian_config_dir: str) -> DoctorCheck:
+    plugins_path = resolve_obsidian_config_dir(vault, obsidian_config_dir) / (
+        "community-plugins.json"
+    )
     try:
         plugins = _read_json_array(plugins_path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -230,6 +243,7 @@ def _check_plugin_enabled(vault: Path) -> DoctorCheck:
 
 def _check_plugin_settings(
     *,
+    vault: Path,
     plugin_dir: Path,
     api_url: str,
     space_slug: str,
@@ -253,7 +267,7 @@ def _check_plugin_settings(
         "profileExternalRef": profile_external_ref,
         "rootFolder": root_folder,
         "layoutVersion": layout_version,
-        "vaultPathOverride": str(plugin_dir.parents[2]),
+        "vaultPathOverride": str(vault),
     }
     mismatches = [
         key

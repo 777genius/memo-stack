@@ -46,6 +46,7 @@ class ObsidianMcpService:
         self,
         *,
         vault_path: str | None = None,
+        obsidian_config_dir: str | None = None,
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
@@ -55,6 +56,7 @@ class ObsidianMcpService:
         async def action() -> dict[str, Any]:
             request = self._request(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -91,6 +93,7 @@ class ObsidianMcpService:
                 profile_external_ref=str(request["profile_external_ref"]),
                 root_folder=str(request["root_folder"]),
                 layout_version=str(request["layout_version"]),
+                obsidian_config_dir=str(request["obsidian_config_dir"]),
                 require_plugin=require_plugin,
                 check_health=True,
             )
@@ -113,6 +116,7 @@ class ObsidianMcpService:
         self,
         *,
         vault_path: str | None = None,
+        obsidian_config_dir: str | None = None,
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
@@ -126,6 +130,7 @@ class ObsidianMcpService:
             self._ensure_obsidian_enabled()
             request = self._request(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -149,7 +154,10 @@ class ObsidianMcpService:
             )
             plugin_result = None
             if install_plugin and apply:
-                plugin_result = InstallObsidianPluginUseCase(vault_path=vault).execute(
+                plugin_result = InstallObsidianPluginUseCase(
+                    vault_path=vault,
+                    obsidian_config_dir=str(request["obsidian_config_dir"]),
+                ).execute(
                     overwrite=overwrite,
                     enable=enable_plugin,
                     settings=self._plugin_settings(request),
@@ -185,6 +193,7 @@ class ObsidianMcpService:
         self,
         *,
         vault_path: str | None = None,
+        obsidian_config_dir: str | None = None,
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
@@ -195,6 +204,7 @@ class ObsidianMcpService:
             self._ensure_obsidian_enabled()
             request = self._request(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -226,6 +236,7 @@ class ObsidianMcpService:
         self,
         *,
         vault_path: str | None = None,
+        obsidian_config_dir: str | None = None,
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
@@ -239,6 +250,7 @@ class ObsidianMcpService:
             if not apply:
                 preview = await self.preview(
                     vault_path=vault_path,
+                    obsidian_config_dir=obsidian_config_dir,
                     root_folder=root_folder,
                     layout_version=layout_version,
                     space_slug=space_slug,
@@ -250,6 +262,7 @@ class ObsidianMcpService:
             self._ensure_sync_enabled()
             request = self._request(
                 vault_path=vault_path,
+                obsidian_config_dir=obsidian_config_dir,
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
@@ -301,6 +314,7 @@ class ObsidianMcpService:
         self,
         *,
         vault_path: str | None,
+        obsidian_config_dir: str | None,
         root_folder: str | None,
         layout_version: str | None,
         space_slug: str | None,
@@ -308,6 +322,9 @@ class ObsidianMcpService:
     ) -> dict[str, Any]:
         return {
             "vault_path": vault_path or self._settings.obsidian_vault_path,
+            "obsidian_config_dir": (
+                obsidian_config_dir or self._settings.obsidian_config_dir
+            ),
             "root_folder": root_folder or self._settings.obsidian_root_folder,
             "layout_version": layout_version or self._settings.obsidian_layout_version,
             "space_slug": space_slug or self._settings.default_space_slug,

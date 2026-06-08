@@ -43,6 +43,7 @@ class MemoryMcpSettings:
     obsidian_enabled: bool = False
     obsidian_sync_enabled: bool = False
     obsidian_vault_path: str | None = None
+    obsidian_config_dir: str = ".obsidian"
     obsidian_root_folder: str = "Memo Stack"
     obsidian_layout_version: str = "v2"
     local_runtime_enabled: bool = False
@@ -123,6 +124,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
             _get(values, "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED", "false")
         ),
         obsidian_vault_path=_empty_to_none(_get(values, "MEMORY_MCP_OBSIDIAN_VAULT")),
+        obsidian_config_dir=_get(
+            values,
+            "MEMORY_MCP_OBSIDIAN_CONFIG_DIR",
+            ".obsidian",
+        ),
         obsidian_root_folder=_get(values, "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER", "Memo Stack"),
         obsidian_layout_version=_get(values, "MEMORY_MCP_OBSIDIAN_LAYOUT", "v2"),
         local_runtime_enabled=_bool(

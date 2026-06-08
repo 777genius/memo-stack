@@ -68,6 +68,20 @@ def test_load_settings_parses_local_runtime_gates() -> None:
     assert settings.local_runtime_repo_dir == "/tmp/memo-repo"
 
 
+def test_load_settings_parses_obsidian_config_dir() -> None:
+    settings = load_settings(
+        {
+            "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
+            "MEMORY_MCP_OBSIDIAN_VAULT": "/tmp/vault",
+            "MEMORY_MCP_OBSIDIAN_CONFIG_DIR": ".obsidian-dev",
+        }
+    )
+
+    assert settings.obsidian_enabled is True
+    assert settings.obsidian_vault_path == "/tmp/vault"
+    assert settings.obsidian_config_dir == ".obsidian-dev"
+
+
 def test_load_settings_uses_safe_policy_defaults() -> None:
     settings = load_settings({})
 
