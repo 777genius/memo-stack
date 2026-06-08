@@ -14,6 +14,8 @@ const spaceSlug = "wdio-root-control";
 const profileExternalRef = "default";
 const primaryRoot = "Team Memory";
 const secondaryRoot = "Client Knowledge/Research Notes";
+const textStart = "<!-- memo-stack-managed:fact-text:start -->";
+const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
 
 describe("Memo Stack root folder control E2E", function () {
   let server: ChildProcess | undefined;
@@ -132,6 +134,111 @@ describe("Memo Stack root folder control E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
     assert.ok(calls.every((call) => call.args.includes("--profile")));
     assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.status === 0));
+  });
+
+  it("preserves unsynced old-root edits and inbox notes across root switches", async function () {
+    const initialText = "Obsidian WDIO root switch pending initial fact.";
+    const recoveredText = "Obsidian WDIO root switch pending local edit recovered.";
+    const fact = await createFact(baseUrl, {
+      text: initialText,
+      sourceId: "wdio-root-switch-pending-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", primaryRoot);
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsToggle("applyImportOnSync", true);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPluginRoot(primaryRoot);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const primaryFactFile = factFileForId(vaultPath, primaryRoot, fact.id);
+    replaceManagedText(primaryFactFile, recoveredText);
+    const primaryInboxMarker = "WDIO root switch pending inbox imports only after return";
+    writeVaultFile(
+      vaultPath,
+      path.join(scopedRootFor(primaryRoot), "inbox", "root-switch-pending-inbox.md"),
+      primaryInboxMarker,
+    );
+
+    await openMemoStackSettings();
+    await setSettingsInput("rootFolder", secondaryRoot);
+    await waitForPluginRoot(secondaryRoot);
+    await waitForSettingsFile(vaultPath, secondaryRoot);
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+
+    assert.equal((await getFact(baseUrl, fact.id)).text, initialText);
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker)).length, 0);
+    assert.match(fs.readFileSync(primaryFactFile, "utf8"), new RegExp(recoveredText));
+    assert.match(fs.readFileSync(factFileForId(vaultPath, secondaryRoot, fact.id), "utf8"), new RegExp(initialText));
+    assert.equal(conflictFiles(vaultPath, primaryRoot).length, 0);
+    assert.equal(conflictFiles(vaultPath, secondaryRoot).length, 0);
+
+    await openMemoStackSettings();
+    await setSettingsInput("rootFolder", primaryRoot);
+    await waitForPluginRoot(primaryRoot);
+    await waitForSettingsFile(vaultPath, primaryRoot);
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 6);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, fact.id, recoveredText);
+    await waitForSuggestionsContaining(baseUrl, primaryInboxMarker, 1);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 7);
+    await waitForPluginIdle();
+    await sleep(300);
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker)).length, 1);
+    assert.match(fs.readFileSync(factFileForId(vaultPath, primaryRoot, fact.id), "utf8"), /memo_stack_version: 2/);
+
+    await openMemoStackSettings();
+    await setSettingsInput("rootFolder", secondaryRoot);
+    await waitForPluginRoot(secondaryRoot);
+    await waitForSettingsFile(vaultPath, secondaryRoot);
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 8);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 9);
+    await waitForPluginIdle();
+
+    const secondaryFactFile = factFileForId(vaultPath, secondaryRoot, fact.id);
+    assert.match(fs.readFileSync(secondaryFactFile, "utf8"), new RegExp(recoveredText));
+    assert.match(fs.readFileSync(secondaryFactFile, "utf8"), /memo_stack_version: 2/);
+    assert.equal(conflictFiles(vaultPath, primaryRoot).length, 0);
+    assert.equal(conflictFiles(vaultPath, secondaryRoot).length, 0);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(
+      calls.map((call) => call.command),
+      ["connect", "sync", "connect", "sync", "connect", "sync", "sync", "connect", "sync"],
+    );
+    assertCallsUseRoot(calls.slice(0, 2), primaryRoot);
+    assertCallsUseRoot(calls.slice(2, 4), secondaryRoot);
+    assertCallsUseRoot(calls.slice(4, 7), primaryRoot);
+    assertCallsUseRoot(calls.slice(7), secondaryRoot);
     assert.ok(calls.every((call) => call.status === 0));
   });
 
@@ -295,6 +402,23 @@ async function createFact(
   });
   assert.equal(response.status, 201);
   return response.body.data;
+}
+
+async function getFact(apiUrl: string, factId: string): Promise<Record<string, any>> {
+  const response = await requestJson("GET", `${apiUrl}/v1/facts/${factId}`);
+  assert.equal(response.status, 200);
+  return response.body.data;
+}
+
+async function waitForBackendFactText(
+  apiUrl: string,
+  factId: string,
+  expectedText: string,
+): Promise<void> {
+  await waitUntil(async () => {
+    const fact = await getFact(apiUrl, factId);
+    return fact.text === expectedText;
+  }, `Backend fact did not reach expected text: ${expectedText}`);
 }
 
 async function waitForSuggestionsContaining(
@@ -624,6 +748,15 @@ function writeVaultFile(vaultPath: string, relativePath: string, content: string
   const target = path.join(vaultPath, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content, "utf8");
+}
+
+function replaceManagedText(filePath: string, text: string): void {
+  const old = fs.readFileSync(filePath, "utf8");
+  const start = old.indexOf(textStart) + textStart.length;
+  const end = old.indexOf(textEnd);
+  assert.ok(start >= textStart.length);
+  assert.ok(end > start);
+  fs.writeFileSync(filePath, `${old.slice(0, start)}\n${text}\n${old.slice(end)}`, "utf8");
 }
 
 function readCliCalls(vaultPath: string): Array<{ command: string; args: string[]; status: number }> {
