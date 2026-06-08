@@ -204,6 +204,90 @@ describe("Memo Stack packaged plugin install E2E", function () {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("configures the packaged plugin through settings UI and syncs real backend data", async function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "memo-stack-wdio-packaged-settings-"));
+    const port = await freePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const server = startMemoStackServer(path.join(tempDir, "memory.db"), port);
+
+    try {
+      await waitForHealth(baseUrl);
+      const fact = await createFact(baseUrl, {
+        text: "Obsidian WDIO packaged settings UI backend fact.",
+        sourceId: "wdio-packaged-settings-ui-seed",
+      });
+      const obsidianPage = await browser.getObsidianPage();
+      await obsidianPage.resetVault({
+        "Welcome.md": "# Welcome\n\nPackaged settings UI E2E vault.\n",
+      });
+      const vaultPath = obsidianPage.getVaultPath();
+
+      installPluginArtifacts(vaultPath);
+      assertInstalledArtifacts(vaultPath);
+      await browser.reloadObsidian();
+      await browser.waitUntil(async () => (await pluginRuntime()).loaded, {
+        timeout: 20000,
+        timeoutMsg: "Memo Stack packaged plugin did not load before settings UI configuration",
+      });
+
+      await openMemoStackSettings();
+      await setSettingsInput("apiUrl", baseUrl);
+      await setSettingsInput("token", token);
+      await setSettingsInput("cliPath", realCliPath);
+      await setSettingsInput("vaultPathOverride", vaultPath);
+      await setSettingsInput("rootFolder", rootFolder);
+      await setSettingsInput("spaceSlug", spaceSlug);
+      await setSettingsInput("profileExternalRef", profileExternalRef);
+      await setSettingsInput("commandTimeoutMs", "20000");
+      await setSettingsToggle("applyImportOnSync", true);
+      await waitForSettingsFile(vaultPath, baseUrl);
+      await waitForSettingsFile(vaultPath, "\"applyImportOnSync\": true");
+      await browser.waitUntil(async () => (await pluginRuntime()).snapshot.apiUrl === baseUrl, {
+        timeout: 20000,
+        timeoutMsg: "Memo Stack packaged plugin did not apply settings UI API URL",
+      });
+
+      const inboxMarker = "WDIO packaged settings UI inbox marker imports once";
+      writeVaultFile(
+        vaultPath,
+        path.join(rootFolder, "spaces", spaceSlug, "profiles", profileExternalRef, "inbox", "settings-ui-inbox.md"),
+        inboxMarker,
+      );
+
+      await browser.executeObsidianCommand("memo-stack:connect-vault");
+      await waitForRealCliCalls(vaultPath, 1);
+      await waitForPluginIdle();
+      await browser.executeObsidianCommand("memo-stack:sync-now");
+      await waitForRealCliCalls(vaultPath, 2);
+      await waitForPluginIdle();
+      await waitForSuggestionsContaining(baseUrl, inboxMarker, 1);
+
+      let calls = readRealCliCalls(vaultPath);
+      assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0"]);
+      assert.ok(calls.every((call) => call.args.includes(baseUrl)));
+      assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
+      assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+      assert.ok(calls.every((call) => call.args.includes(rootFolder)));
+
+      const exportedFact = onlyFactFile(vaultPath);
+      assert.match(fs.readFileSync(exportedFact, "utf8"), /packaged settings UI backend fact/);
+      assert.match(fs.readFileSync(exportedFact, "utf8"), new RegExp(`memo_stack_id: ${fact.id}`));
+
+      await browser.executeObsidianCommand("memo-stack:sync-now");
+      await waitForRealCliCalls(vaultPath, 3);
+      await waitForPluginIdle();
+      await sleep(300);
+
+      calls = readRealCliCalls(vaultPath);
+      assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0", "sync:0"]);
+      assert.equal((await suggestionsContaining(baseUrl, inboxMarker)).length, 1);
+      assert.equal(factFiles(vaultPath).length, 1);
+    } finally {
+      server.kill("SIGTERM");
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 function assertInstalledArtifacts(vaultPath: string): void {
@@ -262,6 +346,75 @@ async function waitForRealCliCalls(vaultPath: string, count: number): Promise<vo
     timeout: 20000,
     timeoutMsg: `Expected ${count} packaged real connector calls`,
   });
+}
+
+async function waitForSettingsFile(vaultPath: string, marker: string): Promise<void> {
+  const settingsPath = path.join(vaultPath, ".obsidian", "plugins", pluginId, "data.json");
+  await waitUntil(
+    async () => fs.existsSync(settingsPath) && fs.readFileSync(settingsPath, "utf8").includes(marker),
+    `Memo Stack settings UI did not persist ${marker}`,
+  );
+}
+
+async function openMemoStackSettings(): Promise<void> {
+  await browser.executeObsidian(({ app }) => {
+    const setting = (app as any).setting;
+    setting.open();
+    setting.openTabById("memo-stack");
+  });
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(() =>
+        Boolean(document.querySelector('input[data-memo-stack-setting="apiUrl"]')),
+      ),
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack settings UI did not open",
+    },
+  );
+}
+
+async function setSettingsInput(name: string, value: string): Promise<void> {
+  const changed = await browser.execute(
+    (settingName, nextValue) => {
+      const input = document.querySelector<HTMLInputElement>(
+        `input[data-memo-stack-setting="${settingName}"]`,
+      );
+      if (!input) {
+        return false;
+      }
+      input.focus();
+      input.value = nextValue;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.blur();
+      return true;
+    },
+    name,
+    value,
+  );
+  assert.equal(changed, true, `Could not change Memo Stack settings input ${name}`);
+}
+
+async function setSettingsToggle(name: string, value: boolean): Promise<void> {
+  const changed = await browser.execute(
+    (settingName, nextValue) => {
+      const toggle = document.querySelector<HTMLElement>(
+        `[data-memo-stack-setting="${settingName}"]`,
+      );
+      if (!toggle) {
+        return false;
+      }
+      const active = toggle.classList.contains("is-enabled");
+      if (active !== nextValue) {
+        toggle.click();
+      }
+      return true;
+    },
+    name,
+    value,
+  );
+  assert.equal(changed, true, `Could not change Memo Stack settings toggle ${name}`);
 }
 
 async function freePort(): Promise<number> {
@@ -342,6 +495,30 @@ async function createFact(
   return response.body.data;
 }
 
+async function waitForSuggestionsContaining(
+  baseUrl: string,
+  marker: string,
+  count: number,
+): Promise<void> {
+  await waitUntil(
+    async () => (await suggestionsContaining(baseUrl, marker)).length >= count,
+    "Suggestion was not created",
+  );
+}
+
+async function suggestionsContaining(baseUrl: string, marker: string): Promise<Record<string, any>[]> {
+  const query = new URLSearchParams({
+    space_slug: spaceSlug,
+    profile_external_ref: profileExternalRef,
+    status: "pending",
+  });
+  const response = await requestJson("GET", `${baseUrl}/v1/suggestions?${query.toString()}`);
+  assert.equal(response.status, 200);
+  return response.body.data.filter((item: Record<string, any>) =>
+    String(item.candidate_text).includes(marker),
+  );
+}
+
 async function requestJson(
   method: "GET" | "POST",
   url: string,
@@ -403,6 +580,15 @@ function writeVaultFile(vaultPath: string, relativePath: string, content: string
   const target = path.join(vaultPath, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content, "utf8");
+}
+
+function installPluginArtifacts(vaultPath: string): void {
+  const pluginDir = path.join(vaultPath, ".obsidian", "plugins", pluginId);
+  fs.mkdirSync(pluginDir, { recursive: true });
+  for (const fileName of ["manifest.json", "main.js", "styles.css"]) {
+    fs.copyFileSync(path.join(process.cwd(), fileName), path.join(pluginDir, fileName));
+  }
+  writeVaultFile(vaultPath, path.join(".obsidian", "community-plugins.json"), JSON.stringify([pluginId], null, 2));
 }
 
 function readVaultFile(vaultPath: string, relativePath: string): string {
