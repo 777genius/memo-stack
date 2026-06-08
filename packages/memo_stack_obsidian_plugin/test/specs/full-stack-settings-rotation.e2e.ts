@@ -21,6 +21,8 @@ const scopedRoot = path.join(
   "profiles",
   profileExternalRef,
 );
+const textStart = "<!-- memo-stack-managed:fact-text:start -->";
+const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
 
 describe("Memo Stack settings rotation E2E", function () {
   let server: ChildProcess | undefined;
@@ -133,6 +135,78 @@ describe("Memo Stack settings rotation E2E", function () {
     assert.equal(factFiles(vaultPath).length, 1);
     assert.match(fs.readFileSync(onlyFactFile(vaultPath), "utf8"), /settings UI token recovery fact/);
     assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO settings UI token recovery fact.");
+  });
+
+  it("preserves pending local edits and inbox notes while the user fixes an invalid token", async function () {
+    const initialText = "Obsidian WDIO token pending initial fact.";
+    const recoveredText = "Obsidian WDIO token pending local managed edit recovered.";
+    const inboxMarker = "WDIO token pending inbox marker imports once";
+    const fact = await createFact(baseUrl, {
+      text: initialText,
+      sourceId: "wdio-token-pending-recovery-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure({
+      apiUrl: baseUrl,
+      serviceToken: token,
+    });
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = onlyFactFile(vaultPath);
+    replaceManagedText(exportedFact, recoveredText);
+    writeVaultFile(vaultPath, path.join(scopedRoot, "inbox", "token-pending-inbox.md"), inboxMarker);
+
+    await openMemoStackSettings();
+    await setSettingsInput("token", wrongToken);
+    await waitForSettingsFile(vaultPath, wrongToken);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0", "sync:1"]);
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.equal((await getFact(baseUrl, fact.id)).text, initialText);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), new RegExp(recoveredText));
+    assert.equal((await suggestionsContaining(baseUrl, inboxMarker)).length, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await openMemoStackSettings();
+    await setSettingsInput("token", token);
+    await waitForSettingsFile(vaultPath, token);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await waitForBackendFactText(baseUrl, fact.id, recoveredText);
+    await waitForSuggestionsContaining(baseUrl, inboxMarker, 1);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+    await sleep(300);
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.deepEqual(
+      calls.map((call) => `${call.command}:${call.status}`),
+      ["connect:0", "sync:0", "sync:1", "sync:0", "sync:0"],
+    );
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal((await suggestionsContaining(baseUrl, inboxMarker)).length, 1);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    const updatedFact = await getFact(baseUrl, fact.id);
+    assert.equal(updatedFact.version, 2);
+    assert.equal(updatedFact.text, recoveredText);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /memo_stack_version: 2/);
   });
 
   it("recovers the same vault after the user fixes an unavailable API URL", async function () {
@@ -450,6 +524,41 @@ async function getFact(apiUrl: string, factId: string): Promise<Record<string, a
   return response.body.data;
 }
 
+async function waitForBackendFactText(
+  apiUrl: string,
+  factId: string,
+  expectedText: string,
+): Promise<void> {
+  await waitUntil(async () => {
+    const fact = await getFact(apiUrl, factId);
+    return fact.text === expectedText;
+  }, `Backend fact did not reach expected text: ${expectedText}`);
+}
+
+async function waitForSuggestionsContaining(
+  apiUrl: string,
+  marker: string,
+  count: number,
+): Promise<void> {
+  await waitUntil(
+    async () => (await suggestionsContaining(apiUrl, marker)).length >= count,
+    "Suggestion was not created",
+  );
+}
+
+async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
+  const query = new URLSearchParams({
+    space_slug: spaceSlug,
+    profile_external_ref: profileExternalRef,
+    status: "pending",
+  });
+  const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
+  assert.equal(response.status, 200);
+  return response.body.data.filter((item: Record<string, any>) =>
+    String(item.candidate_text).includes(marker),
+  );
+}
+
 async function requestJson(
   method: "GET" | "POST",
   url: string,
@@ -541,6 +650,15 @@ function conflictFiles(vaultPath: string): string[] {
     .readdirSync(conflictsDir)
     .filter((name) => name.endsWith(".md") && !name.startsWith(".") && name !== "README.md")
     .map((name) => path.join(conflictsDir, name));
+}
+
+function replaceManagedText(filePath: string, text: string): void {
+  const old = fs.readFileSync(filePath, "utf8");
+  const start = old.indexOf(textStart) + textStart.length;
+  const end = old.indexOf(textEnd);
+  assert.ok(start >= textStart.length);
+  assert.ok(end > start);
+  fs.writeFileSync(filePath, `${old.slice(0, start)}\n${text}\n${old.slice(end)}`, "utf8");
 }
 
 function writeVaultFile(vaultPath: string, relativePath: string, content: string): void {
