@@ -120,6 +120,53 @@ describe("Memo Stack generated note churn E2E", function () {
     assert.equal(factFiles(vaultPath).length, initialFacts.length + lateFacts.length);
     assert.match(fs.readFileSync(factFileForId(vaultPath, initialFacts[4].id), "utf8"), /memo_stack_version: 2/);
   });
+
+  it("recovers a clean managed note deleted through the Obsidian vault", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO vault delete recovery fact.",
+      sourceId: "wdio-vault-delete-recovery-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, fact.id);
+    const exportedRelativePath = vaultRelativePath(vaultPath, exportedFact);
+    await deleteVaultFileInObsidian(exportedRelativePath);
+    await waitForVaultFileMissing(vaultPath, exportedRelativePath);
+    assert.equal(factFiles(vaultPath).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    assert.match(fs.readFileSync(factFileForId(vaultPath, fact.id), "utf8"), /vault delete recovery fact/);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO vault delete recovery fact.");
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await sleep(300);
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
@@ -342,6 +389,26 @@ async function memoStackSnapshot(): Promise<any> {
   });
 }
 
+async function deleteVaultFileInObsidian(relativePath: string): Promise<void> {
+  await browser.executeObsidian(
+    async ({ app }, filePath) => {
+      const file = app.vault.getAbstractFileByPath(filePath);
+      if (!file || !("extension" in file)) {
+        throw new Error(`Vault file not found: ${filePath}`);
+      }
+      await app.vault.delete(file as any, true);
+    },
+    relativePath,
+  );
+}
+
+async function waitForVaultFileMissing(vaultPath: string, relativePath: string): Promise<void> {
+  await waitUntil(
+    async () => !fs.existsSync(path.join(vaultPath, relativePath)),
+    `Vault file was not deleted: ${relativePath}`,
+  );
+}
+
 async function waitUntil(check: () => Promise<boolean>, message: string): Promise<void> {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
@@ -414,6 +481,10 @@ function readCliCalls(vaultPath: string): Array<{ command: string; args: string[
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function vaultRelativePath(vaultPath: string, filePath: string): string {
+  return path.relative(vaultPath, filePath).split(path.sep).join("/");
 }
 
 function pythonpath(): string {
