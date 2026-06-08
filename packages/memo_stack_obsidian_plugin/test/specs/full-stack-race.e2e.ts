@@ -204,6 +204,71 @@ describe("Memo Stack real sync race E2E", function () {
     assert.equal(conflictFiles(vaultPath).length, 0);
   });
 
+  it("does not import backend-down inbox notes deleted before recovery", async function () {
+    const dbPath = path.join(tempDir, "memory.db");
+    const port = Number(new URL(baseUrl).port);
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO deleted pending inbox recovery seed.",
+      sourceId: "wdio-deleted-pending-inbox-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+
+    const inboxRelativePath = path.join(scopedRoot, "inbox", "deleted-pending-inbox.md");
+    const marker = "WDIO backend down inbox marker deleted before recovery";
+    writeVaultFile(vaultPath, inboxRelativePath, marker);
+
+    server?.kill("SIGTERM");
+    server = undefined;
+    await waitForUnhealthy(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:1"]);
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.match(fs.readFileSync(path.join(vaultPath, inboxRelativePath), "utf8"), new RegExp(marker));
+
+    await deleteVaultFileInObsidian(inboxRelativePath);
+    await waitForVaultFileMissing(vaultPath, inboxRelativePath);
+
+    server = startMemoStackServer(dbPath, port);
+    await waitForHealth(baseUrl);
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await sleep(300);
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:1", "sync:0"]);
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 0);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await sleep(300);
+
+    calls = readCliCalls(vaultPath);
+    assert.deepEqual(
+      calls.map((call) => `${call.command}:${call.status}`),
+      ["connect:0", "sync:1", "sync:0", "sync:0"],
+    );
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 0);
+    assert.equal(fs.existsSync(path.join(vaultPath, inboxRelativePath)), false);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+  });
+
   it("recovers dirty local edits after a real connector timeout", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO real timeout initial fact.",
@@ -690,6 +755,22 @@ function writeVaultFile(vaultPath: string, relativePath: string, content: string
   const target = path.join(vaultPath, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content, "utf8");
+}
+
+async function deleteVaultFileInObsidian(relativePath: string): Promise<void> {
+  await browser.executeObsidian(
+    async ({ app }, filePath) => {
+      await app.vault.adapter.remove(filePath);
+    },
+    relativePath,
+  );
+}
+
+async function waitForVaultFileMissing(vaultPath: string, relativePath: string): Promise<void> {
+  await waitUntil(
+    async () => !fs.existsSync(path.join(vaultPath, relativePath)),
+    `Vault file was not deleted: ${relativePath}`,
+  );
 }
 
 function readCliCalls(vaultPath: string): Array<{ command: string; args: string[]; status: number }> {
