@@ -134,6 +134,81 @@ describe("Memo Stack root folder control E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
     assert.ok(calls.every((call) => call.status === 0));
   });
+
+  it("uses the legacy flat layout when selected through settings", async function () {
+    const legacyRoot = "Legacy Flat Memory";
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO legacy flat layout backend fact.",
+      sourceId: "wdio-root-legacy-layout-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", legacyRoot);
+    await setSettingsDropdown("Layout", "v1");
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsToggle("applyImportOnSync", true);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForPluginRoot(legacyRoot);
+    await waitForPluginLayout("v1");
+    await waitForSettingsFile(vaultPath, '"layoutVersion": "v1"');
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await waitForConnectedLegacyLayout(legacyRoot);
+    let snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.layoutVersion, "v1");
+    assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(legacyRoot, "generated", "facts")));
+    assert.equal(snapshot.paths.inbox, posixPath(path.join(legacyRoot, "inbox")));
+    assert.equal(snapshot.paths.conflicts, posixPath(path.join(legacyRoot, "conflicts")));
+    assert.equal(snapshot.inboxExists, true);
+    assert.equal(fs.existsSync(path.join(vaultPath, scopedRootFor(legacyRoot))), false);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const legacyFactFile = legacyFactFileForId(vaultPath, legacyRoot, fact.id);
+    assert.match(fs.readFileSync(legacyFactFile, "utf8"), /legacy flat layout backend fact/);
+    assert.match(fs.readFileSync(legacyFactFile, "utf8"), /memo_stack_space_slug: wdio-root-control/);
+    assert.equal(factFiles(vaultPath, legacyRoot).length, 0);
+
+    const inboxMarker = "WDIO legacy flat layout inbox marker";
+    writeVaultFile(vaultPath, path.join(legacyRoot, "inbox", "legacy-flat-inbox.md"), inboxMarker);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, inboxMarker, 1);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await sleep(300);
+    assert.equal((await suggestionsContaining(baseUrl, inboxMarker)).length, 1);
+
+    await browser.executeObsidianCommand("memo-stack:open-inbox");
+    assert.equal(await activeFilePath(), posixPath(path.join(legacyRoot, "inbox", "README.md")));
+    await browser.executeObsidianCommand("memo-stack:open-conflicts");
+    assert.equal(await activeFilePath(), posixPath(path.join(legacyRoot, "conflicts", "README.md")));
+
+    snapshot = await memoStackSnapshot();
+    assert.equal(snapshot.layoutVersion, "v1");
+    assert.equal(legacyConflictFiles(vaultPath, legacyRoot).length, 0);
+
+    const calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "sync"]);
+    assertCallsUseRoot(calls, legacyRoot);
+    assert.ok(calls.every((call) => call.args.includes("--layout")));
+    assert.ok(calls.every((call) => call.args.includes("v1")));
+    assert.ok(calls.every((call) => call.status === 0));
+  });
 });
 
 async function resetVault(): Promise<string> {
@@ -319,6 +394,50 @@ async function waitForPluginRoot(rootFolder: string): Promise<void> {
   );
 }
 
+async function waitForPluginLayout(layoutVersion: "v1" | "v2"): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const snapshot = await memoStackSnapshot();
+        return snapshot.layoutVersion === layoutVersion;
+      } catch (_error) {
+        return false;
+      }
+    },
+    {
+      timeout: 20000,
+      timeoutMsg: `Memo Stack plugin did not apply layout ${layoutVersion}`,
+    },
+  );
+}
+
+async function waitForConnectedLegacyLayout(rootFolder: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const snapshot = await memoStackSnapshot();
+        return (
+          snapshot.layoutVersion === "v1" &&
+          snapshot.rootFolder === rootFolder &&
+          snapshot.paths.generatedFacts === posixPath(path.join(rootFolder, "generated", "facts")) &&
+          snapshot.paths.inbox === posixPath(path.join(rootFolder, "inbox")) &&
+          snapshot.paths.conflicts === posixPath(path.join(rootFolder, "conflicts")) &&
+          snapshot.readmeExists === true &&
+          snapshot.generatedFactsExists === true &&
+          snapshot.inboxExists === true &&
+          snapshot.conflictsExists === true
+        );
+      } catch (_error) {
+        return false;
+      }
+    },
+    {
+      timeout: 20000,
+      timeoutMsg: "Memo Stack plugin did not observe the connected legacy layout",
+    },
+  );
+}
+
 async function waitForSettingsFile(vaultPath: string, rootFolder: string): Promise<void> {
   const settingsPath = path.join(vaultPath, ".obsidian", "plugins", "memo-stack", "data.json");
   await waitUntil(
@@ -365,6 +484,32 @@ async function setSettingsInput(name: string, value: string): Promise<void> {
     value,
   );
   assert.equal(changed, true, `Could not change Memo Stack settings input ${name}`);
+}
+
+async function setSettingsDropdown(settingName: string, value: string): Promise<void> {
+  const changed = await browser.execute(
+    (nextSettingName, nextValue) => {
+      const items = Array.from(document.querySelectorAll<HTMLElement>(".setting-item"));
+      for (const item of items) {
+        const name = item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim();
+        if (name !== nextSettingName) {
+          continue;
+        }
+        const select = item.querySelector<HTMLSelectElement>("select");
+        if (!select) {
+          return false;
+        }
+        select.value = nextValue;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+      return false;
+    },
+    settingName,
+    value,
+  );
+  assert.equal(changed, true, `Could not change Memo Stack settings dropdown ${settingName}`);
 }
 
 async function setSettingsToggle(name: string, value: boolean): Promise<void> {
@@ -433,8 +578,39 @@ function factFileForId(vaultPath: string, rootFolder: string, factId: string): s
   return files[0];
 }
 
+function legacyFactFiles(vaultPath: string, rootFolder: string): string[] {
+  const factsDir = path.join(vaultPath, rootFolder, "generated", "facts");
+  if (!fs.existsSync(factsDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(factsDir)
+    .filter((name) => name.endsWith(".md") && !name.startsWith("."))
+    .map((name) => path.join(factsDir, name))
+    .sort();
+}
+
+function legacyFactFileForId(vaultPath: string, rootFolder: string, factId: string): string {
+  const files = legacyFactFiles(vaultPath, rootFolder).filter((filePath) =>
+    fs.readFileSync(filePath, "utf8").includes(`memo_stack_id: ${factId}`),
+  );
+  assert.equal(files.length, 1);
+  return files[0];
+}
+
 function conflictFiles(vaultPath: string, rootFolder: string): string[] {
   const conflictsDir = path.join(vaultPath, scopedRootFor(rootFolder), "conflicts");
+  if (!fs.existsSync(conflictsDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(conflictsDir)
+    .filter((name) => name.endsWith(".md") && !name.startsWith(".") && name !== "README.md")
+    .map((name) => path.join(conflictsDir, name));
+}
+
+function legacyConflictFiles(vaultPath: string, rootFolder: string): string[] {
+  const conflictsDir = path.join(vaultPath, rootFolder, "conflicts");
   if (!fs.existsSync(conflictsDir)) {
     return [];
   }
