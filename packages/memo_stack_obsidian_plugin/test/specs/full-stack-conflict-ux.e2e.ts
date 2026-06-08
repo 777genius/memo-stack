@@ -175,6 +175,58 @@ describe("Memo Stack conflict review UX E2E", function () {
     assert.equal((await suggestionsContaining(baseUrl, inboxMarker)).length, 1);
     assert.equal(conflictFiles(vaultPath).length, 0);
   });
+
+  it("turns Obsidian workspace renames into recoverable non-canonical path conflicts", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO workspace rename initial fact.",
+      sourceId: "wdio-workspace-rename-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    const exportedFact = await connectAndExportFact(vaultPath);
+    const exportedRelativePath = vaultRelativePath(vaultPath, exportedFact);
+    const renamedRelativePath = posixPath(
+      path.join(scopedRoot, "generated", "facts", "workspace-renamed-managed-note.md"),
+    );
+    const renamedFact = path.join(vaultPath, renamedRelativePath);
+
+    await openVaultFileInObsidian(exportedRelativePath);
+    assert.equal(await activeFilePath(), exportedRelativePath);
+    await renameVaultFileInObsidian(exportedRelativePath, renamedRelativePath);
+    assert.equal(await activeFilePath(), renamedRelativePath);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForMemoStackIdle();
+
+    let calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 1);
+    assert.equal(fs.existsSync(exportedFact), false);
+    assert.equal(fs.existsSync(renamedFact), true);
+    assert.equal(factFiles(vaultPath).length, 1);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO workspace rename initial fact.");
+
+    const conflicts = conflictFiles(vaultPath);
+    assert.equal(conflicts.length, 1);
+    const conflict = fs.readFileSync(conflicts[0], "utf8");
+    assert.match(conflict, /Memo Stack Sync Conflict/);
+    assert.match(conflict, /non-canonical path/);
+    assert.match(conflict, /workspace-renamed-managed-note\.md/);
+    assert.match(conflict, new RegExp(fact.id));
+
+    await renameVaultFileInObsidian(renamedRelativePath, exportedRelativePath);
+    assert.equal(await activeFilePath(), exportedRelativePath);
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForMemoStackIdle();
+
+    calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.equal(fs.existsSync(exportedFact), true);
+    assert.equal(fs.existsSync(renamedFact), false);
+    assert.equal(factFiles(vaultPath).length, 1);
+  });
 });
 
 async function resetVaultAndConfigure(apiUrl: string): Promise<string> {
@@ -494,6 +546,28 @@ async function createOrModifyVaultFileInObsidian(relativePath: string, content: 
       await app.workspace.getLeaf(false).openFile(file as any);
     },
     { relativePath, content },
+  );
+}
+
+async function renameVaultFileInObsidian(fromPath: string, toPath: string): Promise<void> {
+  await browser.executeObsidian(
+    async ({ app }, payload) => {
+      const file = app.vault.getAbstractFileByPath(payload.fromPath);
+      if (!file || !("extension" in file)) {
+        throw new Error(`Vault file not found: ${payload.fromPath}`);
+      }
+      if ((app as any).fileManager?.renameFile) {
+        await (app as any).fileManager.renameFile(file, payload.toPath);
+      } else {
+        await app.vault.rename(file as any, payload.toPath);
+      }
+      const renamed = app.vault.getAbstractFileByPath(payload.toPath);
+      if (!renamed || !("extension" in renamed)) {
+        throw new Error(`Renamed vault file not found: ${payload.toPath}`);
+      }
+      await app.workspace.getLeaf(false).openFile(renamed as any);
+    },
+    { fromPath, toPath },
   );
 }
 
