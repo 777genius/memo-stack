@@ -4,8 +4,14 @@ from copy import deepcopy
 from pathlib import Path
 
 from memo_stack_obsidian.conflicts import CONFLICTS_DIR, WriteConflictArtifactsUseCase
-from memo_stack_obsidian.domain import ExportStatus, ImportStatus
-from memo_stack_obsidian.note_format import FACTS_DIR, TEXT_END, TEXT_START
+from memo_stack_obsidian.domain import ExportStatus, ImportStatus, SyncMode
+from memo_stack_obsidian.layout import ObsidianVaultLayout
+from memo_stack_obsidian.note_format import (
+    FACTS_DIR,
+    TEXT_END,
+    TEXT_START,
+    render_fact_note,
+)
 from memo_stack_obsidian.setup import SETUP_README, SetupVaultUseCase
 from memo_stack_obsidian.state import SqliteSyncStateStore
 from memo_stack_obsidian.sync import (
@@ -334,6 +340,53 @@ def test_import_detects_duplicate_fact_id_and_sync_skips_export(tmp_path: Path) 
     assert "Duplicate memo_stack_id" in result.import_result.changes[-1].message
 
 
+def test_v2_scoped_layout_does_not_import_other_profile_edits(tmp_path: Path) -> None:
+    gateway = FakeMemoryGateway()
+    layout = ObsidianVaultLayout.from_values(version="v2")
+    vault = FilesystemVault(tmp_path)
+    state = SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3")
+    exporter = ExportFactsToVaultUseCase(
+        memory=gateway,
+        vault=vault,
+        state=state,
+        layout=layout,
+    )
+    importer = ImportVaultChangesUseCase(
+        memory=gateway,
+        vault=vault,
+        state=state,
+        layout=layout,
+    )
+
+    exporter.execute(space_slug="team-one", profile_external_ref="alice")
+    exporter.execute(space_slug="team-two", profile_external_ref="bob")
+    team_one_path = tmp_path / layout.fact_note_path(
+        "fact_123",
+        space_slug="team-one",
+        profile_external_ref="alice",
+    )
+    team_two_path = tmp_path / layout.fact_note_path(
+        "fact_123",
+        space_slug="team-two",
+        profile_external_ref="bob",
+    )
+    replace_managed_text_at_path(
+        team_two_path,
+        "Team two local edit must not leak into team one sync.",
+    )
+
+    imported = importer.execute(
+        apply=True,
+        space_slug="team-one",
+        profile_external_ref="alice",
+    )
+
+    assert imported.changes[0].status == ImportStatus.UNCHANGED
+    assert gateway.update_calls == []
+    assert "Team two local edit" in team_two_path.read_text(encoding="utf-8")
+    assert team_one_path.exists()
+
+
 def test_export_conflict_writes_obsidian_visible_artifact(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
@@ -348,6 +401,35 @@ def test_export_conflict_writes_obsidian_visible_artifact(tmp_path: Path) -> Non
     assert artifacts.written == 1
     assert "Memo Stack Sync Conflict" in artifact_text
     assert "unimported local edits" in artifact_text
+
+
+def test_conflict_artifact_path_is_stable_across_repeated_failures(tmp_path: Path) -> None:
+    gateway = FakeMemoryGateway()
+    exporter, _importer = use_cases(tmp_path, gateway)
+    conflict_writer = WriteConflictArtifactsUseCase(vault=FilesystemVault(tmp_path))
+    exporter.execute(space_slug="default", profile_external_ref="me")
+    replace_managed_text(tmp_path, "Repeated conflict local edit must survive.")
+
+    first_export = exporter.execute(space_slug="default", profile_external_ref="me")
+    first_artifacts = conflict_writer.execute(
+        direction="export",
+        changes=first_export.changes,
+    )
+    second_export = exporter.execute(space_slug="default", profile_external_ref="me")
+    second_artifacts = conflict_writer.execute(
+        direction="export",
+        changes=second_export.changes,
+    )
+
+    assert first_artifacts.paths == second_artifacts.paths
+    assert len(list((tmp_path / CONFLICTS_DIR).glob("*.md"))) == 1
+
+    artifact_path = tmp_path / first_artifacts.paths[0]
+    artifact_path.unlink()
+    recreated = conflict_writer.execute(direction="export", changes=second_export.changes)
+
+    assert recreated.paths == first_artifacts.paths
+    assert artifact_path.exists()
 
 
 def test_import_apply_updates_backend_and_rewrites_note_version(tmp_path: Path) -> None:
@@ -366,6 +448,29 @@ def test_import_apply_updates_backend_and_rewrites_note_version(tmp_path: Path) 
     assert gateway.fact["source_refs"][1]["source_type"] == "obsidian"
     assert "memo_stack_version: 2" in note_text
     assert imported.changes[0].status == ImportStatus.UPDATED
+
+
+def test_import_skips_readonly_managed_note_even_when_edited(tmp_path: Path) -> None:
+    gateway = FakeMemoryGateway()
+    _exporter, importer = use_cases(tmp_path, gateway)
+    fact_path = tmp_path / FACTS_DIR / "fact_123.md"
+    fact_path.parent.mkdir(parents=True, exist_ok=True)
+    fact_path.write_text(
+        render_fact_note(
+            gateway.fact,
+            space_slug="default",
+            profile_external_ref="me",
+            sync_mode=SyncMode.READONLY,
+        ),
+        encoding="utf-8",
+    )
+    replace_managed_text_at_path(fact_path, "Readonly local draft must not update backend.")
+
+    imported = importer.execute(apply=True)
+
+    assert imported.changes[0].status == ImportStatus.SKIPPED
+    assert "sync mode is readonly" in imported.changes[0].message
+    assert gateway.update_calls == []
 
 
 def test_import_detects_stale_backend_version(tmp_path: Path) -> None:
@@ -436,6 +541,53 @@ def test_inbox_import_apply_creates_suggestion_once_for_same_hash(tmp_path: Path
     assert gateway.suggestion_calls[0]["candidate_text"].startswith("Remember")
 
 
+def test_inbox_import_reimports_changed_note_text_once(tmp_path: Path) -> None:
+    gateway = FakeMemoryGateway()
+    importer = inbox_importer(tmp_path, gateway)
+    write_inbox_note(tmp_path, "Remember the first Obsidian inbox idea.")
+
+    first = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    second = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    write_inbox_note(tmp_path, "Remember the changed Obsidian inbox idea.")
+    third = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+
+    assert first.suggested == 1
+    assert second.changes[0].status == ImportStatus.UNCHANGED
+    assert third.suggested == 1
+    assert [call["candidate_text"] for call in gateway.suggestion_calls] == [
+        "Remember the first Obsidian inbox idea.",
+        "Remember the changed Obsidian inbox idea.",
+    ]
+    assert (
+        gateway.suggestion_calls[0]["candidate_fingerprint"]
+        != gateway.suggestion_calls[1]["candidate_fingerprint"]
+    )
+
+
+def test_inbox_import_uses_stable_fingerprint_after_state_loss(tmp_path: Path) -> None:
+    gateway = FakeMemoryGateway()
+    write_inbox_note(tmp_path, "Remember stable inbox fingerprint across state loss.")
+    first_importer = ImportInboxSuggestionsUseCase(
+        memory=gateway,
+        vault=FilesystemVault(tmp_path),
+        state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "first.sqlite3"),
+    )
+    second_importer = ImportInboxSuggestionsUseCase(
+        memory=gateway,
+        vault=FilesystemVault(tmp_path),
+        state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "second.sqlite3"),
+    )
+
+    first_importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    second_importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+
+    assert len(gateway.suggestion_calls) == 2
+    assert (
+        gateway.suggestion_calls[0]["candidate_fingerprint"]
+        == gateway.suggestion_calls[1]["candidate_fingerprint"]
+    )
+
+
 def test_inbox_import_rejects_oversized_note(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     importer = inbox_importer(tmp_path, gateway)
@@ -493,6 +645,10 @@ def syncer_use_case(tmp_path: Path, gateway: FakeMemoryGateway) -> SyncVaultOnce
 
 def replace_managed_text(tmp_path: Path, new_text: str) -> None:
     path = next((tmp_path / FACTS_DIR).glob("*.md"))
+    replace_managed_text_at_path(path, new_text)
+
+
+def replace_managed_text_at_path(path: Path, new_text: str) -> None:
     old = path.read_text(encoding="utf-8")
     start = old.index(TEXT_START) + len(TEXT_START)
     end = old.index(TEXT_END)

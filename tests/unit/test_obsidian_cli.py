@@ -11,6 +11,7 @@ from memo_stack_obsidian.note_format import FACTS_DIR, TEXT_END, TEXT_START
 from memo_stack_obsidian.setup import SETUP_README, SetupVaultUseCase
 from memo_stack_obsidian.state import SqliteSyncStateStore
 from memo_stack_obsidian.sync import (
+    INBOX_DIR,
     ExportFactsToVaultUseCase,
     ImportInboxSuggestionsUseCase,
     ImportVaultChangesUseCase,
@@ -219,6 +220,53 @@ def test_cli_doctor_reports_missing_plugin_without_health_call(
     assert checks["plugin_installed"]["ok"] is False
 
 
+def test_cli_watch_runs_one_loop_without_opening_obsidian(
+    tmp_path: Path,
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    gateway = FakeMemoryGateway()
+    monkeypatch.setattr(cli, "_context", context_factory(tmp_path, gateway))
+    write_inbox_note(tmp_path, "Remember that watch imports inbox without Obsidian UI.")
+    sleeps: list[float] = []
+
+    def stop_after_first_sleep(interval: float) -> None:
+        sleeps.append(interval)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.time, "sleep", stop_after_first_sleep)
+
+    result = cli.main(
+        [
+            "watch",
+            "--vault",
+            str(tmp_path),
+            "--space",
+            "default",
+            "--profile",
+            "me",
+            "--apply-import",
+            "--interval",
+            "0.5",
+            "--export-every",
+            "1",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 130
+    assert sleeps == [0.5]
+    assert "memo-stack-obsidian: watching vault." in captured.out
+    assert (
+        "import updated=0 would_update=0 suggested=1 would_suggest=0 "
+        "conflicts=0 conflict_artifacts=0"
+    ) in captured.out
+    assert "export exported=1 skipped=0 conflicts=0 conflict_artifacts=0" in captured.out
+    assert captured.err == "Interrupted.\n"
+    assert len(gateway.suggestion_calls) == 1
+    assert (tmp_path / FACTS_DIR / "fact_123.md").exists()
+
+
 def context_factory(tmp_path: Path, gateway: FakeMemoryGateway) -> Any:
     def _context(args: Any) -> dict[str, object]:
         vault = FilesystemVault(args.vault)
@@ -258,6 +306,12 @@ def replace_managed_text(path: Path, new_text: str) -> None:
     start = old.index(TEXT_START) + len(TEXT_START)
     end = old.index(TEXT_END)
     path.write_text(old[:start] + f"\n{new_text}\n" + old[end:], encoding="utf-8")
+
+
+def write_inbox_note(tmp_path: Path, text: str) -> None:
+    path = tmp_path / INBOX_DIR / "idea.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def fake_health_get(*args: Any, **kwargs: Any) -> Any:
