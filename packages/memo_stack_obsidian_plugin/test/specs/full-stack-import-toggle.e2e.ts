@@ -110,6 +110,85 @@ describe("Memo Stack import toggle E2E", function () {
     assert.equal(conflictFiles(vaultPath).length, 0);
     assert.equal(factFiles(vaultPath).length, 1);
   });
+
+  it("keeps imports paused across reload and imports the latest inbox text once", async function () {
+    const fact = await createFact(baseUrl, {
+      text: "Obsidian WDIO import toggle reload backend fact.",
+      sourceId: "wdio-import-toggle-reload-seed",
+    });
+    const vaultPath = await resetVault();
+    fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
+
+    await openMemoStackSettings();
+    await setSettingsInput("apiUrl", baseUrl);
+    await setSettingsInput("token", token);
+    await setSettingsInput("cliPath", realCliPath);
+    await setSettingsInput("vaultPathOverride", vaultPath);
+    await setSettingsInput("rootFolder", rootFolder);
+    await setSettingsInput("spaceSlug", spaceSlug);
+    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsToggle("applyImportOnSync", false);
+    await waitForApplyImport(false);
+    await setSettingsInput("commandTimeoutMs", "20000");
+    await waitForSettingsFile(vaultPath, '"applyImportOnSync": false');
+
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    const exportedFact = factFileForId(vaultPath, fact.id);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /import toggle reload backend fact/);
+    assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO import toggle reload backend fact.");
+
+    const firstMarker = "WDIO import toggle reload stale inbox text";
+    const latestMarker = "WDIO import toggle reload latest inbox text";
+    const inboxRelativePath = path.join(scopedRoot, "inbox", "reload-paused-import.md");
+    writeVaultFile(vaultPath, inboxRelativePath, firstMarker);
+
+    await browser.reloadObsidian();
+    await waitForApplyImport(false);
+    await waitForPluginIdle();
+    writeVaultFile(vaultPath, inboxRelativePath, latestMarker);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    assert.equal(calls.at(-1)?.command, "sync");
+    assert.equal(calls.at(-1)?.status, 0);
+    assert.ok(!calls.at(-1)?.args.includes("--apply-import"));
+    assert.equal((await suggestionsContaining(baseUrl, firstMarker)).length, 0);
+    assert.equal((await suggestionsContaining(baseUrl, latestMarker)).length, 0);
+
+    await openMemoStackSettings();
+    await setSettingsToggle("applyImportOnSync", true);
+    await waitForApplyImport(true);
+    await waitForSettingsFile(vaultPath, '"applyImportOnSync": true');
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, latestMarker, 1);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 5);
+    await waitForPluginIdle();
+    await sleep(300);
+
+    calls = readCliCalls(vaultPath);
+    assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "sync", "sync"]);
+    assert.equal(calls[1].status, 0);
+    assert.equal(calls[2].status, 0);
+    assert.equal(calls[3].status, 0);
+    assert.equal(calls[4].status, 0);
+    assert.equal((await suggestionsContaining(baseUrl, firstMarker)).length, 0);
+    assert.equal((await suggestionsContaining(baseUrl, latestMarker)).length, 1);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+    assert.equal(factFiles(vaultPath).length, 1);
+  });
 });
 
 async function resetVault(): Promise<string> {
