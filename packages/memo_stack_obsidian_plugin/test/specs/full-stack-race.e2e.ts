@@ -145,6 +145,65 @@ describe("Memo Stack real sync race E2E", function () {
     assert.match(markdown, /memo_stack_version: 2/);
   });
 
+  it("keeps inbox notes pending when the backend is down and imports once after recovery", async function () {
+    const dbPath = path.join(tempDir, "memory.db");
+    const port = Number(new URL(baseUrl).port);
+    await createFact(baseUrl, {
+      text: "Obsidian WDIO inbox backend recovery seed.",
+      sourceId: "wdio-inbox-backend-recovery-seed",
+    });
+    const vaultPath = await resetVaultAndConfigure(baseUrl);
+    await browser.executeObsidianCommand("memo-stack:connect-vault");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+
+    const inboxRelativePath = path.join(scopedRoot, "inbox", "backend-recovery-inbox.md");
+    const inboxPath = path.join(vaultPath, inboxRelativePath);
+    const marker = "WDIO backend down inbox marker must import once";
+    writeVaultFile(vaultPath, inboxRelativePath, marker);
+
+    server?.kill("SIGTERM");
+    server = undefined;
+    await waitForUnhealthy(baseUrl);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 2);
+    await waitForPluginIdle();
+
+    let calls = readCliCalls(vaultPath);
+    let snapshot = await memoStackSnapshot();
+    assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:1"]);
+    assert.equal(snapshot.lastCommand, "sync");
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.match(fs.readFileSync(inboxPath, "utf8"), new RegExp(marker));
+    assert.equal(conflictFiles(vaultPath).length, 0);
+
+    server = startMemoStackServer(dbPath, port);
+    await waitForHealth(baseUrl);
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 0);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 3);
+    await waitForPluginIdle();
+    await waitForSuggestionsContaining(baseUrl, marker, 1);
+
+    await browser.executeObsidianCommand("memo-stack:sync-now");
+    await waitForCliCalls(vaultPath, 4);
+    await waitForPluginIdle();
+    await sleep(300);
+
+    calls = readCliCalls(vaultPath);
+    snapshot = await memoStackSnapshot();
+    assert.deepEqual(
+      calls.map((call) => `${call.command}:${call.status}`),
+      ["connect:0", "sync:1", "sync:0", "sync:0"],
+    );
+    assert.equal(snapshot.lastResult.exitCode, 0);
+    assert.match(fs.readFileSync(inboxPath, "utf8"), new RegExp(marker));
+    assert.equal((await suggestionsContaining(baseUrl, marker)).length, 1);
+    assert.equal(conflictFiles(vaultPath).length, 0);
+  });
+
   it("recovers dirty local edits after a real connector timeout", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO real timeout initial fact.",
@@ -397,6 +456,30 @@ async function waitForBackendFactText(
     const fact = await getFact(apiUrl, factId);
     return fact.text === expectedText;
   }, `Backend fact did not reach expected text: ${expectedText}`);
+}
+
+async function waitForSuggestionsContaining(
+  apiUrl: string,
+  marker: string,
+  count: number,
+): Promise<void> {
+  await waitUntil(
+    async () => (await suggestionsContaining(apiUrl, marker)).length >= count,
+    "Suggestion was not created",
+  );
+}
+
+async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
+  const query = new URLSearchParams({
+    space_slug: spaceSlug,
+    profile_external_ref: profileExternalRef,
+    status: "pending",
+  });
+  const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
+  assert.equal(response.status, 200);
+  return response.body.data.filter((item: Record<string, any>) =>
+    String(item.candidate_text).includes(marker),
+  );
 }
 
 async function requestJson(
