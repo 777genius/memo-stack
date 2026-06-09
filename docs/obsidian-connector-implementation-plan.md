@@ -700,8 +700,8 @@ Security:
    - Add scoped README/Inbox/Conflicts open actions. Done.
    - Add panel setup checklist and busy-state disabled buttons. Done.
    - Add explicit `memo-stack init` local config action. Done.
-   - Add setup dry-run/apply flow. Pending as a richer wizard over current
-     Connect/Preview/Sync buttons.
+   - Add setup dry-run/apply flow. Done via `memory_obsidian_prepare`, plugin
+     Prepare action and real Obsidian prepare E2E.
    - Keep real Obsidian E2E opt-in.
 
 3. MCP Obsidian tools
@@ -729,6 +729,8 @@ Security:
 - MCP `memory_obsidian_status` works with temp vault and disabled-gate cases.
 - `scripts/obsidian_mcp_smoke.py` proves real stdio MCP Obsidian setup,
   plugin install/enable and sync gate behavior without opening Obsidian.
+- `scripts/obsidian_mcp_smoke.py` also proves custom Obsidian config folder
+  support through `MEMORY_MCP_OBSIDIAN_CONFIG_DIR`.
 - Plugin can connect a fresh temp vault in Obsidian runtime E2E when opt-in.
 - Non-UI live smoke covers V2 folder layout, edit import, deleted note recreate,
   stale conflict, inbox dedupe and plugin settings.

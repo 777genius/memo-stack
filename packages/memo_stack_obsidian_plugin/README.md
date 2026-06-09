@@ -24,6 +24,11 @@ memo-stack-obsidian install-plugin \
 Then open Obsidian. The plugin settings are prefilled with the vault path,
 project, profile, root folder and default local API URL.
 
+Vaults with a non-default Obsidian config folder can use
+`memo-stack-obsidian install-plugin --obsidian-config-dir <relative-dir>` or
+`MEMORY_MCP_OBSIDIAN_CONFIG_DIR=<relative-dir>` through MCP. The path must stay
+inside the vault.
+
 Open the Memo Stack sidebar panel from the ribbon or command palette:
 
 ```text

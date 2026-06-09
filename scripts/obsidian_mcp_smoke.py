@@ -52,11 +52,13 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     prepare_home = temp_dir / "prepare-home"
     prepare_vault = temp_dir / "PrepareVault"
     live_vault = temp_dir / "LiveVault"
+    custom_config_vault = temp_dir / "CustomConfigVault"
     unsafe_vault = temp_dir / "UnsafeVault"
     vault = temp_dir / "Vault"
     vault.mkdir()
     prepare_vault.mkdir()
     live_vault.mkdir()
+    custom_config_vault.mkdir()
     unsafe_vault.mkdir()
 
     disabled = await _with_session(
@@ -205,6 +207,70 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "prepare apply must not run mutating sync",
     )
 
+    custom_config_env = {
+        "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
+        "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "false",
+        "MEMORY_MCP_OBSIDIAN_VAULT": str(custom_config_vault),
+        "MEMORY_MCP_OBSIDIAN_CONFIG_DIR": ".obsidian-dev",
+        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
+        "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
+        "MEMORY_MCP_DEFAULT_SPACE_SLUG": "custom-config-smoke",
+        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+    }
+    custom_config_setup = await _with_session(
+        repo_root=repo_root,
+        env=custom_config_env,
+        callback=lambda session: _call(
+            session,
+            "memory_obsidian_setup",
+            {"apply": True, "install_plugin": True, "enable_plugin": True},
+        ),
+    )
+    custom_config_plugin = custom_config_vault / ".obsidian-dev/plugins/memo-stack"
+    _assert(custom_config_setup["ok"] is True, "custom config setup should succeed")
+    _assert(
+        custom_config_setup["data"]["obsidian_config_dir"] == ".obsidian-dev",
+        "custom config setup should echo configured Obsidian config dir",
+    )
+    _assert(
+        (custom_config_plugin / "main.js").exists(),
+        "custom config setup should install plugin under the configured dir",
+    )
+    _assert(
+        (custom_config_vault / ".obsidian-dev/community-plugins.json").exists(),
+        "custom config setup should enable plugin under the configured dir",
+    )
+    _assert(
+        not (custom_config_vault / ".obsidian/plugins/memo-stack").exists(),
+        "custom config setup must not write the default .obsidian plugin dir",
+    )
+    custom_config_status = await _with_session(
+        repo_root=repo_root,
+        env=custom_config_env,
+        callback=lambda session: _call(
+            session,
+            "memory_obsidian_status",
+            {"require_plugin": True},
+        ),
+    )
+    custom_config_checks = {
+        check["name"]: check for check in custom_config_status["data"]["checks"]
+    }
+    _assert(
+        custom_config_status["data"]["obsidian_config_dir"] == ".obsidian-dev",
+        "custom config status should echo configured Obsidian config dir",
+    )
+    for check_name in ("plugin_installed", "plugin_enabled", "plugin_settings"):
+        _assert(
+            custom_config_checks[check_name]["ok"] is True,
+            f"custom config status should pass {check_name}",
+        )
+    _assert(
+        custom_config_status["data"]["status"] == "needs_attention"
+        and custom_config_checks["backend_health"]["ok"] is False,
+        "custom config status should only be degraded because isolated smoke has no backend",
+    )
+
     common_env = {
         "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
         "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "false",
@@ -311,6 +377,12 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "local_runtime_init_status": local_init_applied["data"]["status"],
         "local_runtime_start_disabled_code": local_start_blocked["error"]["code"],
         "prepare_status": prepare_applied["data"]["status"],
+        "custom_config_status": custom_config_status["data"]["status"],
+        "custom_config_plugin_checks_ok": all(
+            custom_config_checks[name]["ok"]
+            for name in ("plugin_installed", "plugin_enabled", "plugin_settings")
+        ),
+        "custom_config_plugin_dir": str(custom_config_plugin),
         "facts_dir": str(expected_facts),
         "unsafe_layout_code": unsafe_layout["error"]["code"],
         "live_backend_sync": live_report,
