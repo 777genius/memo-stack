@@ -1,0 +1,761 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend/src/features/chat/application/services/downloaded_file_opener.dart';
+import 'package:frontend/src/features/chat/application/services/open_extraction_artifact.dart';
+import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
+import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
+import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
+import 'package:frontend/src/features/chat/domain/entities/connection_status.dart';
+import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
+import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
+import 'package:frontend/src/features/chat/presentation/screen/chat_list_overlay_screen.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/chat_list_sidebar.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/chat_messages_list.dart';
+import 'package:frontend/src/presentation/theme/app_theme.dart';
+import 'package:provider/provider.dart';
+
+void main() {
+  testWidgets('compact list can create a memory scope', (tester) async {
+    final repo = _UxFakeChatRepository();
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const ChatListOverlayScreen(),
+    );
+
+    expect(find.text('Scopes & threads'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('memory_scope_create_overlay_button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_scope_create_overlay_button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_scope_name_field')),
+      'Research',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_scope_ref_field')),
+      'research',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory_scope_save_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.scopesByRef.containsKey('research'), isTrue);
+    expect(find.text('Research'), findsOneWidget);
+  });
+
+  testWidgets('editing a memory scope ref keeps its local threads grouped', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    final scope = (await store.createMemoryScope(
+      externalRef: 'research',
+      name: 'Research',
+    ))!;
+    final originalThreadId = store.activeChatId;
+
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('memory_scope_group_research')),
+        findsOneWidget);
+    expect(
+        find.byKey(ValueKey('chat_thread_$originalThreadId')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('memory_scope_menu_research')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_scope_name_field')),
+      'Client Research',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_scope_ref_field')),
+      'client-research',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory_scope_save_button')));
+    await tester.pumpAndSettle();
+
+    expect(scope.externalRef, 'research');
+    expect(store.activeMemoryScopeExternalRef, 'client-research');
+    expect(
+      store.sessions
+          .where(
+              (session) => session.memoryScopeExternalRef == 'client-research')
+          .map((session) => session.id),
+      contains(originalThreadId),
+    );
+    expect(find.byKey(const ValueKey('memory_scope_group_client_research')),
+        findsOneWidget);
+    expect(
+        find.byKey(ValueKey('chat_thread_$originalThreadId')), findsOneWidget);
+  });
+
+  testWidgets('save progress is visible while memory linking runs', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const SizedBox(width: 420, height: 520, child: ChatMessagesList()),
+    );
+
+    repo.emitMessage(
+      ChatMessage(
+        id: 'thinking-1',
+        role: 'assistant',
+        ts: DateTime.now(),
+        kind: 'thought',
+        text: 'Saving and finding related context...',
+        meta: const {'thinking': true},
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Saving and finding related context...'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('memory_save_progress_bar')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  testWidgets('sidebar shows extraction history actions for active scope', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.extractions = [
+      _job(
+        id: 'extract-ready',
+        status: 'succeeded',
+        artifacts: [_artifact('artifact-ready', 'extract-ready')],
+      ),
+      _job(id: 'extract-failed', status: 'failed'),
+    ];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshAssetExtractions();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('asset_extraction_status_panel')),
+        findsOneWidget);
+    expect(find.textContaining('Ready'), findsOneWidget);
+    expect(find.textContaining('Failed'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('asset_extraction_retry_extract_failed')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar opens extraction artifact through file opener service', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    final opener = _FakeDownloadedFileOpener();
+    repo.extractions = [
+      _job(
+        id: 'extract-ready',
+        status: 'succeeded',
+        artifacts: [_artifact('artifact-ready', 'extract-ready')],
+      ),
+    ];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshAssetExtractions();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      opener: opener,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
+    );
+    await tester.pump();
+
+    expect(repo.downloadedArtifactIds, ['artifact-ready']);
+    expect(opener.requests, hasLength(1));
+    expect(opener.requests.single.suggestedName, 'extracted.md');
+    expect(opener.requests.single.bytes, [1, 2, 3]);
+    expect(opener.requests.single.namespace, 'artifact-ready');
+  });
+
+  testWidgets('sidebar reports artifact open failures', (tester) async {
+    final repo = _UxFakeChatRepository();
+    final opener = _FakeDownloadedFileOpener(throwOnOpen: true);
+    repo.extractions = [
+      _job(
+        id: 'extract-ready',
+        status: 'succeeded',
+        artifacts: [_artifact('artifact-ready', 'extract-ready')],
+      ),
+    ];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshAssetExtractions();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      opener: opener,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
+    );
+    await tester.pump();
+
+    expect(
+      find.textContaining('Open extraction artifact failed'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar opens saved memory detail with context links', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.captures = [_capture('capture-1')];
+    repo.contextLinks = [_link('link-1', sourceId: 'capture-1')];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshMemoryCaptures();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 360, height: 680, child: ChatListSidebar()),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('memory_history_panel')), findsOneWidget);
+    expect(find.textContaining('Alex confirmed Q3 rollout'), findsOneWidget);
+    expect(find.textContaining('1 files'), findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_capture_open_capture_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_capture_detail_dialog')),
+        findsOneWidget);
+    expect(find.text('Saved memory'), findsWidgets);
+    expect(find.textContaining('File asset'), findsOneWidget);
+    expect(
+        find.textContaining('Q3 roadmap - selected by user'), findsOneWidget);
+  });
+
+  testWidgets('store polls pending extraction until it reaches terminal status',
+      (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.extractions = [_job(id: 'extract-pending', status: 'pending')];
+    final store = ChatStore(
+      repo,
+      null,
+      assetExtractionPollInterval: const Duration(milliseconds: 20),
+    );
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshAssetExtractions();
+    expect(store.assetExtractions.single.status, 'pending');
+    expect(repo.listExtractionCalls, 1);
+
+    repo.extractions = [
+      _job(
+        id: 'extract-pending',
+        status: 'succeeded',
+        artifacts: [_artifact('artifact-ready', 'extract-pending')],
+      ),
+    ];
+    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump();
+
+    expect(store.assetExtractions.single.status, 'succeeded');
+    expect(repo.listExtractionCalls, 2);
+
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump();
+
+    expect(repo.listExtractionCalls, 2);
+  });
+}
+
+Future<void> _pumpWithStore(
+  WidgetTester tester, {
+  required ChatStore store,
+  required Widget child,
+  DownloadedFileOpener? opener,
+}) async {
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        Provider<ChatRepository>.value(value: store.repo),
+        Provider<ChatStore>.value(value: store),
+        if (opener != null) ...[
+          Provider<DownloadedFileOpener>.value(value: opener),
+          Provider<OpenExtractionArtifact>(
+            create: (_) => OpenExtractionArtifact(
+              repo: store.repo,
+              opener: opener,
+            ),
+          ),
+        ],
+      ],
+      child: MaterialApp(
+        theme: _testTheme(),
+        home: child,
+      ),
+    ),
+  );
+}
+
+ThemeData _testTheme() {
+  return ThemeData(
+    useMaterial3: true,
+    colorSchemeSeed: Colors.blue,
+    extensions: [
+      const AppThemeColors(
+        userBubbleBg: Color(0xFF1565C0),
+        userBubbleFg: Colors.white,
+        assistantBubbleBg: Color(0xFFF3F4F6),
+        assistantBubbleFg: Color(0xFF111827),
+        surfaceBorder: Color(0xFFE5E7EB),
+        usageBorder: Color(0xFFFFB74D),
+        usageFill: Color(0xFFFFF3E0),
+        actionTealBorder: Color(0xFF26A69A),
+        actionTealFill: Color(0xFFE0F2F1),
+        actionIndigoBorder: Color(0xFF5C6BC0),
+        actionIndigoFill: Color(0xFFE8EAF6),
+        actionPurpleBorder: Color(0xFF9575CD),
+        actionPurpleFill: Color(0xFFF3E5F5),
+        actionBlueGreyBorder: Color(0xFF78909C),
+        actionBlueGreyFill: Color(0xFFECEFF1),
+        actionGreenBorder: Color(0xFF66BB6A),
+        actionGreenFill: Color(0xFFE8F5E9),
+        actionOrangeBorder: Color(0xFFFFA726),
+        actionOrangeFill: Color(0xFFFFF3E0),
+      ),
+      const AppThemeStyles(
+        body: TextStyle(fontSize: 14, height: 1.35),
+        bodySmall: TextStyle(fontSize: 12, height: 1.30),
+        caption: TextStyle(fontSize: 11, height: 1.25),
+        labelSmall: TextStyle(
+          fontSize: 10,
+          height: 1.20,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
+}
+
+class _UxFakeChatRepository implements ChatRepository {
+  final _messages = StreamController<ChatMessage>.broadcast();
+  final _usage = StreamController<CostUsage>.broadcast();
+  final _running = StreamController<bool>.broadcast();
+  final _connection = StreamController<ConnectionStatus>.broadcast();
+
+  String activeMemoryScopeExternalRef = 'default';
+  List<AssetExtractionJob> extractions = const <AssetExtractionJob>[];
+  List<MemoryCapture> captures = const <MemoryCapture>[];
+  List<MemoryContextLink> contextLinks = const <MemoryContextLink>[];
+  int listExtractionCalls = 0;
+  final downloadedArtifactIds = <String>[];
+  final Map<String, MemoryScope> scopesByRef = {
+    'default': _scope('scope-default', 'default', 'Default'),
+  };
+
+  void emitMessage(ChatMessage message) {
+    _messages.add(message);
+  }
+
+  Future<void> close() async {
+    await _messages.close();
+    await _usage.close();
+    await _running.close();
+    await _connection.close();
+  }
+
+  @override
+  Stream<ChatMessage> messages() => _messages.stream;
+
+  @override
+  Stream<CostUsage> usage() => _usage.stream;
+
+  @override
+  Stream<bool> running() => _running.stream;
+
+  @override
+  Stream<ConnectionStatus> connectionStatus() => _connection.stream;
+
+  @override
+  Future<String> createSession({String? provider}) async => 'session-1';
+
+  @override
+  Future<String> runTask({required String task}) async => 'job-1';
+
+  @override
+  Future<bool> respondApproval({
+    required String jobId,
+    required String approvalId,
+    required bool approved,
+  }) async {
+    return true;
+  }
+
+  @override
+  Future<void> cancelJob(String jobId) async {}
+
+  @override
+  Future<void> cancelCurrentJob() async {}
+
+  @override
+  void setActiveChat(String chatId) {}
+
+  @override
+  void setActiveMemoryScopeExternalRef(String externalRef) {
+    activeMemoryScopeExternalRef =
+        externalRef.trim().isEmpty ? 'default' : externalRef.trim();
+  }
+
+  @override
+  String currentMemoryScopeExternalRef() => activeMemoryScopeExternalRef;
+
+  @override
+  Future<List<MemoryScope>> listMemoryScopes() async {
+    return scopesByRef.values.toList(growable: false);
+  }
+
+  @override
+  Future<MemoryScope> createMemoryScope({
+    required String externalRef,
+    required String name,
+  }) async {
+    final scope = _scope('scope-$externalRef', externalRef, name);
+    scopesByRef[scope.externalRef] = scope;
+    return scope;
+  }
+
+  @override
+  Future<MemoryScope> updateMemoryScope({
+    required String memoryScopeId,
+    String? externalRef,
+    String? name,
+  }) async {
+    final current = scopesByRef.values.firstWhere(
+      (item) => item.id == memoryScopeId,
+    );
+    scopesByRef.remove(current.externalRef);
+    final updated = current.copyWith(
+      externalRef: externalRef ?? current.externalRef,
+      name: name ?? current.name,
+      updatedAt: DateTime.now(),
+    );
+    scopesByRef[updated.externalRef] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> deleteMemoryScope(String memoryScopeId) async {
+    scopesByRef.removeWhere((_, item) => item.id == memoryScopeId);
+  }
+
+  @override
+  Future<void> createContextLink({
+    required String sourceType,
+    required String sourceId,
+    required String targetType,
+    required String targetId,
+    required String relationType,
+    required String confidence,
+    required String reason,
+  }) async {}
+
+  @override
+  Future<String> uploadFile(
+    String name,
+    List<int> bytes, {
+    String? mime,
+    void Function(int sent, int total)? onProgress,
+    void Function(void Function())? onCreateCancel,
+    String? previewBase64,
+    String? batchId,
+    int? batchSize,
+    int? batchIndex,
+  }) async {
+    return 'file-1';
+  }
+
+  @override
+  Future<List<int>> downloadFile(String id) async => <int>[];
+
+  @override
+  Future<List<AssetExtractionJob>> listAssetExtractions({
+    String? status,
+    int limit = 50,
+  }) async {
+    listExtractionCalls += 1;
+    return extractions
+        .where((job) => status == null || job.status == status)
+        .take(limit)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<AssetExtractionJob> getAssetExtraction(String jobId) async {
+    return extractions.firstWhere((job) => job.id == jobId);
+  }
+
+  @override
+  Future<AssetExtractionJob> retryAssetExtraction(String jobId) async {
+    final idx = extractions.indexWhere((job) => job.id == jobId);
+    final updated = _job(id: jobId, status: 'pending');
+    if (idx >= 0) {
+      extractions = [
+        ...extractions.take(idx),
+        updated,
+        ...extractions.skip(idx + 1),
+      ];
+    }
+    return updated;
+  }
+
+  @override
+  Future<List<int>> downloadExtractionArtifact(String artifactId) async {
+    downloadedArtifactIds.add(artifactId);
+    return <int>[1, 2, 3];
+  }
+
+  @override
+  Future<List<DocumentChunk>> listDocumentChunks(String documentId) async {
+    return const <DocumentChunk>[];
+  }
+
+  @override
+  Future<List<MemoryCapture>> listMemoryCaptures({int limit = 50}) async {
+    return captures.take(limit).toList(growable: false);
+  }
+
+  @override
+  Future<List<MemoryContextLink>> listContextLinks({
+    required String sourceType,
+    required String sourceId,
+    int limit = 50,
+  }) async {
+    return contextLinks
+        .where(
+          (link) => link.sourceType == sourceType && link.sourceId == sourceId,
+        )
+        .take(limit)
+        .toList(growable: false);
+  }
+}
+
+class _OpenRequest {
+  final String suggestedName;
+  final List<int> bytes;
+  final String? namespace;
+
+  const _OpenRequest({
+    required this.suggestedName,
+    required this.bytes,
+    required this.namespace,
+  });
+}
+
+class _FakeDownloadedFileOpener implements DownloadedFileOpener {
+  final bool throwOnOpen;
+  final requests = <_OpenRequest>[];
+
+  _FakeDownloadedFileOpener({this.throwOnOpen = false});
+
+  @override
+  Future<OpenedDownloadedFile> openBytes({
+    required String suggestedName,
+    required List<int> bytes,
+    String? namespace,
+  }) async {
+    requests.add(
+      _OpenRequest(
+        suggestedName: suggestedName,
+        bytes: List<int>.of(bytes),
+        namespace: namespace,
+      ),
+    );
+    if (throwOnOpen) {
+      throw StateError('open failed');
+    }
+    return const OpenedDownloadedFile(path: '/tmp/opened');
+  }
+}
+
+MemoryScope _scope(String id, String externalRef, String name) {
+  final now = DateTime.now();
+  return MemoryScope(
+    id: id,
+    spaceId: 'space-1',
+    externalRef: externalRef,
+    name: name,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+MemoryCapture _capture(String id) {
+  final now = DateTime.now();
+  return MemoryCapture.fromMap({
+    'id': id,
+    'space_id': 'space-1',
+    'memory_scope_id': 'scope-default',
+    'thread_id': 'thread-1',
+    'source_agent': 'memo-stack-frontend',
+    'source_kind': 'manual',
+    'event_type': 'QuickCapture',
+    'actor_role': 'user',
+    'text_preview': 'Alex confirmed Q3 rollout after the product review.',
+    'status': 'accepted',
+    'consolidation_status': 'pending',
+    'trust_level': 'medium',
+    'source_authority': 'user_statement',
+    'sensitivity': 'medium',
+    'data_classification': 'internal',
+    'evidence_refs': [
+      {'source_type': 'asset', 'source_id': 'asset-1'},
+    ],
+    'metadata': {
+      'asset_ids': ['asset-1'],
+    },
+    'created_at': now.toIso8601String(),
+    'updated_at': now.toIso8601String(),
+    'occurred_at': now.toIso8601String(),
+  });
+}
+
+MemoryContextLink _link(String id, {required String sourceId}) {
+  final now = DateTime.now();
+  return MemoryContextLink.fromMap({
+    'id': id,
+    'space_id': 'space-1',
+    'memory_scope_id': 'scope-default',
+    'source_type': 'capture',
+    'source_id': sourceId,
+    'target_type': 'thread',
+    'target_id': 'thread-1',
+    'relation_type': 'related_to',
+    'confidence': 'high',
+    'reason': 'selected by user',
+    'status': 'active',
+    'metadata': {'target_label': 'Q3 roadmap'},
+    'created_at': now.toIso8601String(),
+    'updated_at': now.toIso8601String(),
+  });
+}
+
+AssetExtractionJob _job({
+  required String id,
+  required String status,
+  List<ExtractionArtifact> artifacts = const <ExtractionArtifact>[],
+}) {
+  final now = DateTime.now();
+  return AssetExtractionJob(
+    id: id,
+    assetId: 'asset-$id',
+    spaceId: 'space-1',
+    memoryScopeId: 'scope-default',
+    threadId: null,
+    parserProfile: 'standard_local',
+    parserConfigHash: 'hash',
+    sourceSha256Hex: 'sha',
+    status: status,
+    attemptCount: 1,
+    safeErrorCode: status == 'failed' ? 'asset_extraction.failed' : null,
+    safeErrorMessage: status == 'failed' ? 'Parser failed' : null,
+    parserName: 'simple_text',
+    parserVersion: '1',
+    modelVersion: null,
+    resultDocumentIds: status == 'succeeded' ? const ['doc-1'] : const [],
+    artifacts: artifacts,
+    metadata: const <String, dynamic>{},
+    progress: ExtractionProgress.fromMap(
+      const <String, dynamic>{},
+      status: status,
+    ),
+    usage: ExtractionUsage.fromMap(const <String, dynamic>{}),
+    createdAt: now,
+    updatedAt: now,
+    startedAt: null,
+    finishedAt: status == 'pending' ? null : now,
+  );
+}
+
+ExtractionArtifact _artifact(String id, String jobId) {
+  return ExtractionArtifact(
+    id: id,
+    jobId: jobId,
+    assetId: 'asset-$jobId',
+    artifactType: 'markdown',
+    storageBackend: 'local',
+    storageKey: 'artifact.md',
+    sha256Hex: 'sha',
+    byteSize: 12,
+    metadata: const {'filename': 'extracted.md'},
+    createdAt: DateTime.now(),
+  );
+}
