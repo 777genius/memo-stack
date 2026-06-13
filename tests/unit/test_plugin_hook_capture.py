@@ -65,7 +65,7 @@ def settings(**overrides: Any) -> HookSettings:
         "MEMORY_PLUGIN_HOOK_INGEST_EVENTS": "UserPromptSubmit",
         "MEMORY_PLUGIN_HOOK_CAPTURE_MODE": "captures",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "plugin-hook",
-        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+        "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
         "MEMORY_MCP_AGENT_NAME": "codex-test",
         **{key: str(value) for key, value in overrides.items()},
     }

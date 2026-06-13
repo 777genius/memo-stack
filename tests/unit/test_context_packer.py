@@ -5,7 +5,7 @@ from memo_stack_core.application.dto import ContextItem
 from memo_stack_core.domain.entities import SourceRef
 
 
-def test_context_packer_keeps_profile_sections_and_caps_chunks_per_source() -> None:
+def test_context_packer_keeps_memory_scope_sections_and_caps_chunks_per_source() -> None:
     items = tuple(
         ContextItem(
             item_id=f"chunk_same_{index}",
@@ -19,7 +19,7 @@ def test_context_packer_keeps_profile_sections_and_caps_chunks_per_source() -> N
                     chunk_id=f"chunk_same_{index}",
                 ),
             ),
-            diagnostics={"profile_id": "profile_default"},
+            diagnostics={"memory_scope_id": "memory_scope_default"},
         )
         for index in range(6)
     ) + (
@@ -35,7 +35,7 @@ def test_context_packer_keeps_profile_sections_and_caps_chunks_per_source() -> N
                     chunk_id="chunk_other",
                 ),
             ),
-            diagnostics={"profile_id": "profile_secondary"},
+            diagnostics={"memory_scope_id": "memory_scope_secondary"},
         ),
     )
 
@@ -46,8 +46,8 @@ def test_context_packer_keeps_profile_sections_and_caps_chunks_per_source() -> N
     )
 
     rendered = result.bundle.rendered_text
-    assert "Profile profile_default:" in rendered
-    assert "Profile profile_secondary:" in rendered
+    assert "MemoryScope memory_scope_default:" in rendered
+    assert "MemoryScope memory_scope_secondary:" in rendered
     assert "source=document:same-doc#chunk_same_0" in rendered
     assert 'text="SAME_DOC_MARKER chunk 0"' in rendered
     assert rendered.count("SAME_DOC_MARKER") == 4
@@ -85,7 +85,7 @@ def test_memory_items_have_source_labels() -> None:
                         chunk_id="chunk_1",
                     ),
                 ),
-                diagnostics={"profile_id": "profile_default"},
+                diagnostics={"memory_scope_id": "memory_scope_default"},
             ),
         ),
         token_budget=512,
@@ -105,7 +105,7 @@ def test_memory_block_drops_instruction_marked_items() -> None:
                 score=1.0,
                 source_refs=(SourceRef(source_type="manual", source_id="fact-source"),),
                 is_instruction=True,
-                diagnostics={"profile_id": "profile_default"},
+                diagnostics={"memory_scope_id": "memory_scope_default"},
             ),
         ),
         token_budget=512,
@@ -134,7 +134,7 @@ def test_prompt_injection_text_is_quoted_evidence() -> None:
                         chunk_id="chunk_injection",
                     ),
                 ),
-                diagnostics={"profile_id": "profile_default"},
+                diagnostics={"memory_scope_id": "memory_scope_default"},
             ),
         ),
         token_budget=512,
@@ -167,7 +167,7 @@ def test_context_packer_enforces_rendered_char_cap() -> None:
             text=f"CHAR_CAP_MARKER fact {index} " + ("details " * 25),
             score=1.0 - index * 0.01,
             source_refs=(SourceRef(source_type="manual", source_id=f"char-cap-{index}"),),
-            diagnostics={"profile_id": "profile_default"},
+            diagnostics={"memory_scope_id": "memory_scope_default"},
         )
         for index in range(8)
     )
@@ -208,40 +208,40 @@ def test_context_ranking_keeps_highest_score_per_item() -> None:
     assert result[0].score == 0.9
 
 
-def test_multi_profile_dedupe_preserves_source_refs() -> None:
+def test_multi_memory_scope_dedupe_preserves_source_refs() -> None:
     shared_ref = SourceRef(source_type="document", source_id="shared-doc", chunk_id="chunk_1")
     lower_score = ContextItem(
         item_id="chunk_1",
         item_type="chunk",
-        text="lower profile duplicate",
+        text="lower memory_scope duplicate",
         score=0.5,
         source_refs=(
-            SourceRef(source_type="document", source_id="profile-a-doc", chunk_id="chunk_1"),
+            SourceRef(source_type="document", source_id="memory_scope-a-doc", chunk_id="chunk_1"),
             shared_ref,
         ),
-        diagnostics={"profile_id": "profile_a"},
+        diagnostics={"memory_scope_id": "memory_scope_a"},
     )
     higher_score = ContextItem(
         item_id="chunk_1",
         item_type="chunk",
-        text="higher profile duplicate",
+        text="higher memory_scope duplicate",
         score=0.9,
         source_refs=(
-            SourceRef(source_type="document", source_id="profile-b-doc", chunk_id="chunk_1"),
+            SourceRef(source_type="document", source_id="memory_scope-b-doc", chunk_id="chunk_1"),
             shared_ref,
         ),
-        diagnostics={"profile_id": "profile_b"},
+        diagnostics={"memory_scope_id": "memory_scope_b"},
     )
 
     result = dedupe_rank_items((lower_score, higher_score))
 
     assert len(result) == 1
-    assert result[0].text == "higher profile duplicate"
-    assert result[0].diagnostics == {"profile_id": "profile_b"}
+    assert result[0].text == "higher memory_scope duplicate"
+    assert result[0].diagnostics == {"memory_scope_id": "memory_scope_b"}
     assert result[0].source_refs == (
-        SourceRef(source_type="document", source_id="profile-b-doc", chunk_id="chunk_1"),
+        SourceRef(source_type="document", source_id="memory_scope-b-doc", chunk_id="chunk_1"),
         shared_ref,
-        SourceRef(source_type="document", source_id="profile-a-doc", chunk_id="chunk_1"),
+        SourceRef(source_type="document", source_id="memory_scope-a-doc", chunk_id="chunk_1"),
     )
 
 

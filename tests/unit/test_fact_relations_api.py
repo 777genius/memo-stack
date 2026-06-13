@@ -25,20 +25,22 @@ def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
 
 
-def fact_payload(text: str, *, profile_id: str = "profile_default") -> dict[str, Any]:
+def fact_payload(text: str, *, memory_scope_id: str = "memory_scope_default") -> dict[str, Any]:
     return {
         "space_id": "space_client_app",
-        "profile_id": profile_id,
+        "memory_scope_id": memory_scope_id,
         "text": text,
         "kind": "architecture_decision",
         "source_refs": [{"source_type": "manual", "source_id": text[:40]}],
     }
 
 
-def create_fact(client: TestClient, text: str, *, profile_id: str = "profile_default") -> str:
+def create_fact(
+    client: TestClient, text: str, *, memory_scope_id: str = "memory_scope_default"
+) -> str:
     response = client.post(
         "/v1/facts",
-        json=fact_payload(text, profile_id=profile_id),
+        json=fact_payload(text, memory_scope_id=memory_scope_id),
         headers=auth_headers(),
     )
     assert response.status_code == 201
@@ -102,13 +104,13 @@ def test_fact_relations_link_list_unlink_and_relink(tmp_path: Path) -> None:
     assert relinked.json()["data"]["id"] != linked.json()["data"]["id"]
 
 
-def test_fact_relations_reject_cross_profile_and_restricted_links(tmp_path: Path) -> None:
+def test_fact_relations_reject_cross_memory_scope_and_restricted_links(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         source_id = create_fact(client, "RELATION_SCOPE: source fact.")
-        other_profile_id = create_fact(
+        other_memory_scope_id = create_fact(
             client,
-            "RELATION_SCOPE: other profile fact.",
-            profile_id="profile_other",
+            "RELATION_SCOPE: other memory_scope fact.",
+            memory_scope_id="memory_scope_other",
         )
         restricted = client.post(
             "/v1/facts",
@@ -120,12 +122,12 @@ def test_fact_relations_reject_cross_profile_and_restricted_links(tmp_path: Path
         )
         assert restricted.status_code == 201
 
-        cross_profile = client.post(
+        cross_memory_scope = client.post(
             f"/v1/facts/{source_id}/relations",
             json={
-                "target_fact_id": other_profile_id,
+                "target_fact_id": other_memory_scope_id,
                 "relation_type": "related_to",
-                "reason": "Cross profile should be rejected.",
+                "reason": "Cross memory_scope should be rejected.",
             },
             headers=auth_headers(),
         )
@@ -139,5 +141,5 @@ def test_fact_relations_reject_cross_profile_and_restricted_links(tmp_path: Path
             headers=auth_headers(),
         )
 
-    assert cross_profile.status_code == 409
+    assert cross_memory_scope.status_code == 409
     assert restricted_link.status_code == 409

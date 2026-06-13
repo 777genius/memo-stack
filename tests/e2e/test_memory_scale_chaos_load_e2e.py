@@ -94,9 +94,9 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
         probe = ReliabilityProbe(client)
         marker = f"SCALE_LOAD_{time.time_ns()}"
         space_slug = "scale-load-e2e"
-        profiles = ("project-alpha", "project-beta", "project-gamma", "project-delta")
-        alpha = profiles[0]
-        beta = profiles[1]
+        memory_scopes = ("project-alpha", "project-beta", "project-gamma", "project-delta")
+        alpha = memory_scopes[0]
+        beta = memory_scopes[1]
         alpha_old = f"{marker}: ALPHA_CRITICAL_GATE uses old candidate cache invalidation."
         alpha_new = f"{marker}: ALPHA_CRITICAL_GATE uses append-only evidence snapshots."
         beta_only = f"{marker}: BETA_LEAK_SENTINEL must stay isolated in project beta."
@@ -104,22 +104,22 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
         title_only_marker = f"{marker}_TITLE_ONLY_RUNBOOK"
 
         alpha_fact = None
-        for profile in profiles:
+        for memory_scope in memory_scopes:
             for index in range(14):
                 text = (
-                    f"{marker}: {profile} load fact {index} stores routine interview memory "
+                    f"{marker}: {memory_scope} load fact {index} stores routine interview memory "
                     "with scoped retrieval and safe evidence rendering."
                 )
-                if profile == alpha and index == 3:
+                if memory_scope == alpha and index == 3:
                     text = alpha_old
-                if profile == beta and index == 5:
+                if memory_scope == beta and index == 5:
                     text = beta_only
                 created = probe.request(
                     "POST",
                     "/v1/facts",
                     expected_status=201,
-                    json_body=_fact_body(space_slug, profile, text),
-                    headers={"Idempotency-Key": f"{marker}:fact:{profile}:{index}"},
+                    json_body=_fact_body(space_slug, memory_scope, text),
+                    headers={"Idempotency-Key": f"{marker}:fact:{memory_scope}:{index}"},
                 ).json()["data"]
                 if text == alpha_old:
                     alpha_fact = created
@@ -173,7 +173,7 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
         alpha_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=alpha,
+            memory_scope_ref=alpha,
             query=f"{marker} ALPHA_CRITICAL_GATE {title_only_marker}",
             token_budget=1400,
             max_facts=8,
@@ -192,8 +192,10 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
             "scale_recall_keeps_source_citation",
             f"{marker}:alpha-title-runbook" in chunk_source_ids,
         )
-        probe.check("scale_profile_isolation_hides_beta_fact", beta_only not in dumped_alpha)
-        probe.check("scale_profile_isolation_hides_beta_doc", beta_doc_text not in dumped_alpha)
+        probe.check("scale_memory_scope_isolation_hides_beta_fact", beta_only not in dumped_alpha)
+        probe.check(
+            "scale_memory_scope_isolation_hides_beta_doc", beta_doc_text not in dumped_alpha
+        )
         probe.check("scale_restricted_doc_hidden", restricted_secret not in dumped_alpha)
 
         updated = probe.request(
@@ -221,7 +223,7 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
         after_update = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=alpha,
+            memory_scope_ref=alpha,
             query=f"{marker} ALPHA_CRITICAL_GATE append-only evidence snapshots",
             token_budget=1400,
             max_facts=8,
@@ -242,7 +244,7 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
         after_delete = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=alpha,
+            memory_scope_ref=alpha,
             query=f"{title_only_marker} architecture runbook",
             token_budget=1400,
             max_facts=2,
@@ -254,7 +256,7 @@ def test_scale_corpus_recall_isolation_update_delete_and_latency_e2e(
         packed_small = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=alpha,
+            memory_scope_ref=alpha,
             query=f"{marker} load fact scoped retrieval safe evidence",
             token_budget=64,
             max_facts=100,
@@ -286,7 +288,7 @@ def test_load_concurrent_idempotent_writes_and_optimistic_locking_e2e(
     with run_memo_stack_server(tmp_path, database_name="concurrent-load.db") as server:
         marker = f"CONCURRENT_LOAD_{time.time_ns()}"
         space_slug = "concurrent-load-e2e"
-        profile_ref = "project-concurrency"
+        memory_scope_ref = "project-concurrency"
         text = f"{marker}: duplicate writers must converge to one current fact."
         idempotency_key = f"{marker}:shared-idempotency"
 
@@ -298,7 +300,7 @@ def test_load_concurrent_idempotent_writes_and_optimistic_locking_e2e(
             ) as client:
                 response = client.post(
                     "/v1/facts",
-                    json=_fact_body(space_slug, profile_ref, text),
+                    json=_fact_body(space_slug, memory_scope_ref, text),
                     headers={"Idempotency-Key": idempotency_key},
                 )
                 return response.status_code, response.json()
@@ -378,7 +380,7 @@ def test_load_concurrent_idempotent_writes_and_optimistic_locking_e2e(
             context = _context(
                 probe,
                 space_slug=space_slug,
-                profile_ref=profile_ref,
+                memory_scope_ref=memory_scope_ref,
                 query=f"{marker} optimistic lock",
                 token_budget=800,
                 max_facts=5,
@@ -398,7 +400,7 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
     database_name = "server-restart-continuity.db"
     marker = f"SERVER_RESTART_E2E_{time.time_ns()}"
     space_slug = "server-restart-e2e"
-    profile_ref = "project-server-restart"
+    memory_scope_ref = "project-server-restart"
     stable_text = f"{marker}: RESTART_STABLE_FACT remains durable across process restart."
     old_text = f"{marker}: RESTART_UPDATE_TARGET uses stale pre-restart routing."
     new_text = f"{marker}: RESTART_UPDATE_TARGET uses current post-restart routing."
@@ -420,14 +422,14 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, stable_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, stable_text),
             headers={"Idempotency-Key": idempotency_key},
         ).json()["data"]
         update_fact = setup_probe.request(
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, old_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, old_text),
             headers={"Idempotency-Key": f"{marker}:update-target"},
         ).json()["data"]
         updated_fact = setup_probe.request(
@@ -445,7 +447,7 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, deleted_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, deleted_text),
             headers={"Idempotency-Key": f"{marker}:delete-target"},
         ).json()["data"]
         setup_probe.request(
@@ -459,7 +461,7 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
             expected_status=201,
             json_body=_fact_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 restricted_text,
                 classification="restricted",
             ),
@@ -471,7 +473,7 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
             expected_status=201,
             json_body=_document_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 title=f"{marker} restart continuity runbook",
                 text=doc_text,
                 source_external_id=f"{marker}:restart-doc",
@@ -481,7 +483,7 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
         before_restart = _context(
             setup_probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query=f"{marker} RESTART_STABLE_FACT RESTART_UPDATE_TARGET",
             token_budget=1200,
             max_facts=8,
@@ -507,13 +509,13 @@ def test_server_restart_preserves_memory_and_idempotency_filters_e2e(
             "POST",
             "/v1/facts",
             expected_status=200,
-            json_body=_fact_body(space_slug, profile_ref, stable_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, stable_text),
             headers={"Idempotency-Key": idempotency_key},
         ).json()["data"]
         restarted_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query=(
                 f"{marker} RESTART_STABLE_FACT RESTART_UPDATE_TARGET "
                 "RESTART_DOCUMENT_SENTINEL RESTART_DELETE_TARGET RESTART_RESTRICTED_SECRET"
@@ -562,7 +564,7 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
         probe = ReliabilityProbe(client)
         marker = f"CHAOS_RECOVERY_{time.time_ns()}"
         space_slug = "chaos-recovery-e2e"
-        profile_ref = "project-chaos"
+        memory_scope_ref = "project-chaos"
         secret_text = f"{marker}: CHAOS_SECRET_PAYLOAD should stay out of context."
         public_text = f"{marker}: RECOVERY_PUBLIC_FACT survives invalid request flood."
 
@@ -575,7 +577,9 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
             for index in range(12):
                 unauthorized = wrong_token.post(
                     "/v1/facts",
-                    json=_fact_body(space_slug, profile_ref, f"{marker}: unauthorized {index}"),
+                    json=_fact_body(
+                        space_slug, memory_scope_ref, f"{marker}: unauthorized {index}"
+                    ),
                 )
                 assert unauthorized.status_code == 401, unauthorized.text
                 invalid_fact = probe.request(
@@ -584,7 +588,7 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
                     expected_status=400,
                     json_body={
                         "space_slug": space_slug,
-                        "profile_external_ref": profile_ref,
+                        "memory_scope_external_ref": memory_scope_ref,
                         "text": "",
                         "kind": "note",
                         "source_refs": [],
@@ -608,7 +612,7 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
                     expected_status=400,
                     json_body={
                         "space_slug": space_slug,
-                        "profile_external_ref": profile_ref,
+                        "memory_scope_external_ref": memory_scope_ref,
                         "query": "",
                     },
                 )
@@ -621,7 +625,7 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
             expected_status=201,
             json_body=_fact_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 secret_text,
                 classification="restricted",
             ),
@@ -631,23 +635,23 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, public_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, public_text),
             headers={"Idempotency-Key": f"{marker}:public-fact"},
         ).json()["data"]
         health = probe.request("GET", "/v1/health", expected_status=200).json()
         context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query=f"{marker} RECOVERY_PUBLIC_FACT CHAOS_SECRET_PAYLOAD",
             token_budget=900,
             max_facts=8,
             max_chunks=4,
         )
         dumped = _dump(context)
-        profile_metrics = probe.request(
+        memory_scope_metrics = probe.request(
             "GET",
-            f"/v1/diagnostics/profile/{public_fact['profile_id']}",
+            f"/v1/diagnostics/memory-scope/{public_fact['memory_scope_id']}",
             expected_status=200,
         ).json()["data"]
         operational_metrics = probe.request(
@@ -655,21 +659,24 @@ def test_chaos_invalid_requests_restricted_data_and_recovery_e2e(tmp_path: Path)
             "/v1/diagnostics/metrics",
             expected_status=200,
         ).json()["data"]
-        safe_diagnostics_dump = _dump({"profile": profile_metrics, "metrics": operational_metrics})
+        safe_diagnostics_dump = _dump(
+            {"memory_scope": memory_scope_metrics, "metrics": operational_metrics}
+        )
 
         probe.check("chaos_health_recovers_after_invalid_flood", health["status"] == "ok")
         probe.check("chaos_public_fact_visible_after_flood", public_text in dumped)
         probe.check("chaos_restricted_fact_hidden", secret_text not in dumped)
         probe.check(
-            "chaos_restricted_profile_preview_redacted", secret_text not in safe_diagnostics_dump
+            "chaos_restricted_memory_scope_preview_redacted",
+            secret_text not in safe_diagnostics_dump,
         )
         probe.check(
             "chaos_metrics_do_not_leak_raw_secret",
             "CHAOS_SECRET_PAYLOAD" not in safe_diagnostics_dump,
         )
         probe.check(
-            "chaos_profile_counts_include_active_public_and_restricted",
-            profile_metrics["facts"]["active"] >= 2,
+            "chaos_memory_scope_counts_include_active_public_and_restricted",
+            memory_scope_metrics["facts"]["active"] >= 2,
         )
         probe.check(
             "chaos_restricted_fact_created_for_audit", restricted_fact["status"] == "active"
@@ -693,7 +700,7 @@ def test_backpressure_keeps_reads_and_cleanup_available_e2e(tmp_path: Path) -> N
         probe = ReliabilityProbe(client)
         marker = f"BACKPRESSURE_E2E_{time.time_ns()}"
         space_slug = "backpressure-e2e"
-        profile_ref = "project-backpressure"
+        memory_scope_ref = "project-backpressure"
         fact_text = f"{marker}: BACKPRESSURE_READ_SENTINEL remains readable during ingest pressure."
         doc_text = f"{marker}: BACKPRESSURE_DELETE_DOC can be deleted while ingest is throttled."
         blocked_doc_text = f"{marker}: BACKPRESSURE_BLOCKED_DOC must not be accepted."
@@ -702,7 +709,7 @@ def test_backpressure_keeps_reads_and_cleanup_available_e2e(tmp_path: Path) -> N
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, fact_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, fact_text),
             headers={"Idempotency-Key": f"{marker}:fact"},
         ).json()["data"]
         document = probe.request(
@@ -711,7 +718,7 @@ def test_backpressure_keeps_reads_and_cleanup_available_e2e(tmp_path: Path) -> N
             expected_status=201,
             json_body=_document_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 title=f"{marker} cleanup document",
                 text=doc_text,
                 source_external_id=f"{marker}:cleanup-doc",
@@ -731,7 +738,7 @@ def test_backpressure_keeps_reads_and_cleanup_available_e2e(tmp_path: Path) -> N
             expected_status=429,
             json_body=_document_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 title=f"{marker} blocked document",
                 text=blocked_doc_text,
                 source_external_id=f"{marker}:blocked-doc",
@@ -741,7 +748,7 @@ def test_backpressure_keeps_reads_and_cleanup_available_e2e(tmp_path: Path) -> N
         context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query=f"{marker} BACKPRESSURE_READ_SENTINEL BACKPRESSURE_BLOCKED_DOC",
             token_budget=1000,
             max_facts=6,
@@ -831,7 +838,7 @@ def test_outbox_lag_alert_and_worker_drain_recovery_e2e(tmp_path: Path) -> None:
         context_during_lag = _context(
             probe,
             space_slug="outbox-lag-e2e",
-            profile_ref="project-outbox-lag",
+            memory_scope_ref="project-outbox-lag",
             query=f"{marker} OUTBOX_LAG_RECOVERY_SENTINEL",
             token_budget=900,
             max_facts=4,
@@ -866,7 +873,7 @@ def test_outbox_lag_alert_and_worker_drain_recovery_e2e(tmp_path: Path) -> None:
         context_after_drain = _context(
             probe,
             space_slug="outbox-lag-e2e",
-            profile_ref="project-outbox-lag",
+            memory_scope_ref="project-outbox-lag",
             query=f"{marker} OUTBOX_LAG_RECOVERY_SENTINEL",
             token_budget=900,
             max_facts=4,
@@ -894,8 +901,7 @@ def test_outbox_lag_alert_and_worker_drain_recovery_e2e(tmp_path: Path) -> None:
         probe.check(
             "outbox_lag_alert_fires",
             any(
-                alert["name"] == "outbox_pending_lag_seconds"
-                for alert in lagged_metrics["alerts"]
+                alert["name"] == "outbox_pending_lag_seconds" for alert in lagged_metrics["alerts"]
             ),
         )
         probe.check(
@@ -919,8 +925,7 @@ def test_outbox_lag_alert_and_worker_drain_recovery_e2e(tmp_path: Path) -> None:
         probe.check(
             "outbox_lag_alert_clears_after_drain",
             not any(
-                alert["name"] == "outbox_pending_lag_seconds"
-                for alert in drained_metrics["alerts"]
+                alert["name"] == "outbox_pending_lag_seconds" for alert in drained_metrics["alerts"]
             ),
         )
         probe.check(
@@ -1070,7 +1075,7 @@ def test_worker_cli_dead_poison_job_keeps_service_safe_e2e(tmp_path: Path) -> No
         context = _context(
             probe,
             space_slug="worker-poison-e2e",
-            profile_ref="project-worker-poison",
+            memory_scope_ref="project-worker-poison",
             query=f"{marker} POISON_RECOVERY_SENTINEL",
             token_budget=900,
             max_facts=4,
@@ -1216,7 +1221,7 @@ def test_admin_cli_replays_dead_outbox_and_recovers_doctor_e2e(tmp_path: Path) -
         context = _context(
             probe,
             space_slug="outbox-replay-e2e",
-            profile_ref="project-outbox-replay",
+            memory_scope_ref="project-outbox-replay",
             query=f"{marker} REPLAY_RECOVERY_SENTINEL",
             token_budget=900,
             max_facts=4,
@@ -1281,7 +1286,7 @@ def test_admin_cli_compacts_done_outbox_without_breaking_memory_e2e(tmp_path: Pa
         probe = ReliabilityProbe(client)
         marker = f"OUTBOX_COMPACT_E2E_{time.time_ns()}"
         space_slug = "outbox-compaction-e2e"
-        profile_ref = "project-outbox-compaction"
+        memory_scope_ref = "project-outbox-compaction"
         aggregate_id = f"{marker}:done-compaction-row"
         raw_payload_marker = f"RAW_COMPACT_E2E_PAYLOAD_{time.time_ns()}"
         fact_text = f"{marker}: COMPACTION_FACT_SENTINEL remains readable after maintenance."
@@ -1291,7 +1296,7 @@ def test_admin_cli_compacts_done_outbox_without_breaking_memory_e2e(tmp_path: Pa
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, fact_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, fact_text),
             headers={"Idempotency-Key": f"{marker}:fact"},
         )
         probe.request(
@@ -1300,7 +1305,7 @@ def test_admin_cli_compacts_done_outbox_without_breaking_memory_e2e(tmp_path: Pa
             expected_status=201,
             json_body=_document_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 title=f"{marker} compaction runbook",
                 text=doc_text,
                 source_external_id=f"{marker}:compaction-doc",
@@ -1402,7 +1407,7 @@ def test_admin_cli_compacts_done_outbox_without_breaking_memory_e2e(tmp_path: Pa
         context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query=f"{marker} COMPACTION_FACT_SENTINEL COMPACTION_DOCUMENT_SENTINEL",
             token_budget=1200,
             max_facts=4,
@@ -1465,7 +1470,7 @@ def test_load_concurrent_document_idempotency_and_cleanup_e2e(tmp_path: Path) ->
     with run_memo_stack_server(tmp_path, database_name="concurrent-docs.db") as server:
         marker = f"CONCURRENT_DOC_{time.time_ns()}"
         space_slug = "concurrent-document-e2e"
-        profile_ref = "project-concurrent-docs"
+        memory_scope_ref = "project-concurrent-docs"
         doc_text = (
             f"{marker}: CONCURRENT_DOCUMENT_SENTINEL should be stored once even when "
             "several agents upload the same runbook at the same time."
@@ -1482,7 +1487,7 @@ def test_load_concurrent_document_idempotency_and_cleanup_e2e(tmp_path: Path) ->
                     "/v1/documents",
                     json=_document_body(
                         space_slug,
-                        profile_ref,
+                        memory_scope_ref,
                         title=f"{marker} shared runbook",
                         text=doc_text,
                         source_external_id=f"{marker}:shared-runbook",
@@ -1518,7 +1523,7 @@ def test_load_concurrent_document_idempotency_and_cleanup_e2e(tmp_path: Path) ->
             context = _context(
                 probe,
                 space_slug=space_slug,
-                profile_ref=profile_ref,
+                memory_scope_ref=memory_scope_ref,
                 query=f"{marker} CONCURRENT_DOCUMENT_SENTINEL shared runbook",
                 token_budget=1000,
                 max_facts=0,
@@ -1532,7 +1537,7 @@ def test_load_concurrent_document_idempotency_and_cleanup_e2e(tmp_path: Path) ->
             after_delete = _context(
                 probe,
                 space_slug=space_slug,
-                profile_ref=profile_ref,
+                memory_scope_ref=memory_scope_ref,
                 query=f"{marker} CONCURRENT_DOCUMENT_SENTINEL shared runbook",
                 token_budget=1000,
                 max_facts=0,
@@ -1545,7 +1550,7 @@ def test_load_concurrent_document_idempotency_and_cleanup_e2e(tmp_path: Path) ->
             probe.assert_effective(max_p95_ms=3_500.0)
 
 
-def test_context_scale_pagination_and_multi_profile_query_limits_e2e(tmp_path: Path) -> None:
+def test_context_scale_pagination_and_multi_memory_scope_query_limits_e2e(tmp_path: Path) -> None:
     with (
         run_memo_stack_server(tmp_path, database_name="pagination-scale.db") as server,
         httpx.Client(
@@ -1557,22 +1562,31 @@ def test_context_scale_pagination_and_multi_profile_query_limits_e2e(tmp_path: P
         probe = ReliabilityProbe(client)
         marker = f"PAGINATION_SCALE_{time.time_ns()}"
         space_slug = "pagination-scale-e2e"
-        profiles = ("multi-a", "multi-b")
-        facts_by_profile: dict[str, list[str]] = {profile: [] for profile in profiles}
-        for profile in profiles:
+        memory_scopes = ("multi-a", "multi-b")
+        facts_by_memory_scope: dict[str, list[str]] = {
+            memory_scope: [] for memory_scope in memory_scopes
+        }
+        for memory_scope in memory_scopes:
             for index in range(18):
-                text = f"{marker}: {profile} paginated fact {index:02d} for multi profile recall."
-                if profile == profiles[0] and index == 0:
-                    text = f"{marker}: MULTI_ALPHA_SENTINEL paginated fact for profile A recall."
-                if profile == profiles[1] and index == 0:
-                    text = f"{marker}: MULTI_BETA_SENTINEL paginated fact for profile B recall."
-                facts_by_profile[profile].append(text)
+                text = (
+                    f"{marker}: {memory_scope} paginated fact {index:02d} "
+                    "for multi memory_scope recall."
+                )
+                if memory_scope == memory_scopes[0] and index == 0:
+                    text = (
+                        f"{marker}: MULTI_ALPHA_SENTINEL paginated fact for memory_scope A recall."
+                    )
+                if memory_scope == memory_scopes[1] and index == 0:
+                    text = (
+                        f"{marker}: MULTI_BETA_SENTINEL paginated fact for memory_scope B recall."
+                    )
+                facts_by_memory_scope[memory_scope].append(text)
                 probe.request(
                     "POST",
                     "/v1/facts",
                     expected_status=201,
-                    json_body=_fact_body(space_slug, profile, text),
-                    headers={"Idempotency-Key": f"{marker}:{profile}:{index}"},
+                    json_body=_fact_body(space_slug, memory_scope, text),
+                    headers={"Idempotency-Key": f"{marker}:{memory_scope}:{index}"},
                 )
 
         first_page = probe.request(
@@ -1581,7 +1595,7 @@ def test_context_scale_pagination_and_multi_profile_query_limits_e2e(tmp_path: P
             expected_status=200,
             params={
                 "space_slug": space_slug,
-                "profile_external_ref": profiles[0],
+                "memory_scope_external_ref": memory_scopes[0],
                 "limit": 7,
             },
         ).json()
@@ -1591,25 +1605,25 @@ def test_context_scale_pagination_and_multi_profile_query_limits_e2e(tmp_path: P
             expected_status=200,
             params={
                 "space_slug": space_slug,
-                "profile_external_ref": profiles[0],
+                "memory_scope_external_ref": memory_scopes[0],
                 "limit": 7,
                 "cursor": first_page["next_cursor"],
             },
         ).json()
-        multi_profile_context = probe.request(
+        multi_memory_scope_context = probe.request(
             "POST",
             "/v1/context",
             expected_status=200,
             json_body={
                 "space_slug": space_slug,
-                "profile_external_refs": list(profiles),
+                "memory_scope_external_refs": list(memory_scopes),
                 "query": f"{marker} MULTI_ALPHA_SENTINEL MULTI_BETA_SENTINEL",
                 "token_budget": 1100,
                 "max_facts": 12,
                 "max_chunks": 0,
             },
         ).json()["data"]
-        dumped = _dump(multi_profile_context)
+        dumped = _dump(multi_memory_scope_context)
         first_page_ids = {item["id"] for item in first_page["data"]}
         second_page_ids = {item["id"] for item in second_page["data"]}
 
@@ -1618,21 +1632,21 @@ def test_context_scale_pagination_and_multi_profile_query_limits_e2e(tmp_path: P
         probe.check("pagination_pages_do_not_overlap", not (first_page_ids & second_page_ids))
         probe.check("pagination_has_next_cursor", first_page["next_cursor"] is not None)
         probe.check(
-            "multi_profile_context_contains_profile_a",
-            any(text in dumped for text in facts_by_profile[profiles[0]]),
+            "multi_memory_scope_context_contains_memory_scope_a",
+            any(text in dumped for text in facts_by_memory_scope[memory_scopes[0]]),
         )
         probe.check(
-            "multi_profile_context_contains_profile_b",
-            any(text in dumped for text in facts_by_profile[profiles[1]]),
+            "multi_memory_scope_context_contains_memory_scope_b",
+            any(text in dumped for text in facts_by_memory_scope[memory_scopes[1]]),
         )
         probe.check(
-            "multi_profile_context_respects_requested_limit",
-            len(multi_profile_context["items"]) <= 12,
+            "multi_memory_scope_context_respects_requested_limit",
+            len(multi_memory_scope_context["items"]) <= 12,
         )
         probe.check(
-            "multi_profile_context_reports_used_items",
-            multi_profile_context["diagnostics"]["items_used"]
-            == len(multi_profile_context["items"]),
+            "multi_memory_scope_context_reports_used_items",
+            multi_memory_scope_context["diagnostics"]["items_used"]
+            == len(multi_memory_scope_context["items"]),
         )
         probe.assert_effective()
 
@@ -1649,7 +1663,7 @@ def test_load_parallel_context_reads_during_mutation_storm_e2e(tmp_path: Path) -
         probe = ReliabilityProbe(client)
         marker = f"MUTATION_STORM_{time.time_ns()}"
         space_slug = "mutation-storm-e2e"
-        profile_ref = "project-mutation-storm"
+        memory_scope_ref = "project-mutation-storm"
         update_text = f"{marker}: MUTATION_TARGET starts with the initial architecture decision."
         delete_text = f"{marker}: DELETE_TARGET must disappear after concurrent readers finish."
         restricted_text = f"{marker}: MUTATION_RESTRICTED_SECRET must stay hidden under read load."
@@ -1658,14 +1672,14 @@ def test_load_parallel_context_reads_during_mutation_storm_e2e(tmp_path: Path) -
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, update_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, update_text),
             headers={"Idempotency-Key": f"{marker}:update-target"},
         ).json()["data"]
         delete_fact = probe.request(
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_ref, delete_text),
+            json_body=_fact_body(space_slug, memory_scope_ref, delete_text),
             headers={"Idempotency-Key": f"{marker}:delete-target"},
         ).json()["data"]
         probe.request(
@@ -1674,7 +1688,7 @@ def test_load_parallel_context_reads_during_mutation_storm_e2e(tmp_path: Path) -
             expected_status=201,
             json_body=_fact_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 restricted_text,
                 classification="restricted",
             ),
@@ -1687,7 +1701,7 @@ def test_load_parallel_context_reads_during_mutation_storm_e2e(tmp_path: Path) -
                 expected_status=201,
                 json_body=_fact_body(
                     space_slug,
-                    profile_ref,
+                    memory_scope_ref,
                     f"{marker}: background memory fact {index:02d} remains searchable.",
                 ),
                 headers={"Idempotency-Key": f"{marker}:background:{index}"},
@@ -1708,7 +1722,7 @@ def test_load_parallel_context_reads_during_mutation_storm_e2e(tmp_path: Path) -
                         "/v1/context",
                         json={
                             "space_slug": space_slug,
-                            "profile_external_ref": profile_ref,
+                            "memory_scope_external_ref": memory_scope_ref,
                             "query": (
                                 f"{marker} MUTATION_TARGET DELETE_TARGET "
                                 f"background worker {worker_index}"
@@ -1765,7 +1779,7 @@ def test_load_parallel_context_reads_during_mutation_storm_e2e(tmp_path: Path) -
         final_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query=f"{marker} MUTATION_TARGET DELETE_TARGET MUTATION_RESTRICTED_SECRET",
             token_budget=1400,
             max_facts=12,
@@ -1788,7 +1802,7 @@ def _context(
     probe: ReliabilityProbe,
     *,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     query: str,
     token_budget: int,
     max_facts: int,
@@ -1800,7 +1814,7 @@ def _context(
         expected_status=200,
         json_body={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "query": query,
             "token_budget": token_budget,
             "max_facts": max_facts,
@@ -1811,24 +1825,24 @@ def _context(
 
 def _fact_body(
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     text: str,
     *,
     classification: str = "internal",
 ) -> dict[str, Any]:
     return {
         "space_slug": space_slug,
-        "profile_external_ref": profile_ref,
+        "memory_scope_external_ref": memory_scope_ref,
         "text": text,
         "kind": "architecture_decision",
-        "source_refs": [_source_ref(f"{profile_ref}:{text[:60]}")],
+        "source_refs": [_source_ref(f"{memory_scope_ref}:{text[:60]}")],
         "classification": classification,
     }
 
 
 def _document_body(
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     *,
     title: str,
     text: str,
@@ -1837,7 +1851,7 @@ def _document_body(
 ) -> dict[str, Any]:
     return {
         "space_slug": space_slug,
-        "profile_external_ref": profile_ref,
+        "memory_scope_external_ref": memory_scope_ref,
         "title": title,
         "text": text,
         "source_type": "document",
@@ -1956,7 +1970,7 @@ async def _insert_done_outbox_with_raw_payload(
         aggregate_type="chunk",
         payload_json={
             "space_id": "space_client_app",
-            "profile_id": "profile_default",
+            "memory_scope_id": "memory_scope_default",
             "chunk_id": aggregate_id,
             "raw": raw_payload_marker,
         },

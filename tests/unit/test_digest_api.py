@@ -31,7 +31,7 @@ def test_digest_api_returns_evidence_only_sections(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         fact_payload: dict[str, Any] = {
             "space_slug": "default",
-            "profile_external_ref": "engineering",
+            "memory_scope_external_ref": "engineering",
             "text": "Graphiti is the temporal graph projection engine.",
             "kind": "architecture_decision",
             "source_refs": [{"source_type": "manual", "source_id": "src_fact"}],
@@ -41,7 +41,7 @@ def test_digest_api_returns_evidence_only_sections(tmp_path: Path) -> None:
 
         suggestion_payload = {
             "space_slug": "default",
-            "profile_external_ref": "engineering",
+            "memory_scope_external_ref": "engineering",
             "candidate_text": "Add memory_digest as a read-only MCP tool.",
             "kind": "architecture_decision",
             "safe_reason": "review before canonical memory",
@@ -58,7 +58,7 @@ def test_digest_api_returns_evidence_only_sections(tmp_path: Path) -> None:
             "/v1/digest",
             json={
                 "space_slug": "default",
-                "profile_external_ref": "engineering",
+                "memory_scope_external_ref": "engineering",
                 "topic": "Graphiti memory digest",
                 "include_pending_suggestions": True,
             },

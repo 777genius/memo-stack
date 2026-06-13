@@ -12,8 +12,8 @@ class PreviewGateway:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def preview_profile_snapshot_import(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("preview_profile_snapshot_import", kwargs))
+    async def preview_memory_scope_snapshot_import(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("preview_memory_scope_snapshot_import", kwargs))
         return {
             "data": {
                 "status": "ok",
@@ -32,20 +32,20 @@ class PreviewGateway:
         }
 
 
-def test_service_preview_profile_snapshot_import_is_read_only_and_scoped() -> None:
+def test_service_preview_memory_scope_snapshot_import_is_read_only_and_scoped() -> None:
     async def run() -> None:
         gateway = PreviewGateway()
         service = MemoryToolService(
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
         snapshot = {"schema_version": 1, "facts": [{"id": "fact_1"}]}
-        manifest = {"schema_version": "memo_stack.profile_snapshot_manifest.v1"}
+        manifest = {"schema_version": "memo_stack.memory_scope_snapshot_manifest.v1"}
 
-        result = await service.preview_profile_snapshot_import(
+        result = await service.preview_memory_scope_snapshot_import(
             snapshot=snapshot,
             manifest=manifest,
             merge_strategy="skip_existing",
@@ -58,7 +58,7 @@ def test_service_preview_profile_snapshot_import_is_read_only_and_scoped() -> No
         assert result["diagnostics"]["side_effects"] == []
         assert gateway.calls == [
             (
-                "preview_profile_snapshot_import",
+                "preview_memory_scope_snapshot_import",
                 {
                     "scope": MemoryScope("project-a", "backend", None),
                     "snapshot": snapshot,

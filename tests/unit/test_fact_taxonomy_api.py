@@ -48,7 +48,7 @@ def test_remember_fact_persists_normalized_taxonomy_and_filters_by_tag(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Fact taxonomy belongs to canonical facts.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "taxonomy"}],
@@ -62,7 +62,7 @@ def test_remember_fact_persists_normalized_taxonomy_and_filters_by_tag(
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "category": "architecture",
                 "tag": "memory",
             },
@@ -84,7 +84,7 @@ def test_approved_suggestion_preserves_taxonomy_on_created_fact(tmp_path: Path) 
             "/v1/suggestions",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "candidate_text": "Task memory should expire from active context.",
                 "kind": "note",
                 "safe_reason": "manual_review",
@@ -117,7 +117,7 @@ def test_expired_active_fact_is_hidden_from_active_memory_surfaces(tmp_path: Pat
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": f"{marker} should be auditable but absent from active context.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "ttl"}],
@@ -133,7 +133,7 @@ def test_expired_active_fact_is_hidden_from_active_memory_surfaces(tmp_path: Pat
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "active",
             },
             headers=auth_headers(),
@@ -142,7 +142,7 @@ def test_expired_active_fact_is_hidden_from_active_memory_surfaces(tmp_path: Pat
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": marker,
                 "max_facts": 5,
                 "max_chunks": 0,
@@ -154,7 +154,7 @@ def test_expired_active_fact_is_hidden_from_active_memory_surfaces(tmp_path: Pat
             "/v1/export/graph.json",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "max_documents": 0,
                 "max_chunks": 0,
             },
@@ -191,7 +191,7 @@ def test_search_filters_active_facts_by_category_and_tags(tmp_path: Path) -> Non
                 "/v1/facts",
                 json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "text": text,
                     "kind": "note",
                     "source_refs": [{"source_type": "manual", "source_id": text[:16]}],
@@ -204,7 +204,7 @@ def test_search_filters_active_facts_by_category_and_tags(tmp_path: Path) -> Non
             "/v1/search",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "FILTERED_TAXONOMY_MARKER memory",
                 "max_facts": 10,
                 "max_chunks": 0,

@@ -21,7 +21,7 @@ def test_sdk_sends_auth_and_params() -> None:
 
     response = client.list_suggestions(
         space_id="space_client_app",
-        profile_id="profile_default",
+        memory_scope_id="memory_scope_default",
         status="pending",
     )
 
@@ -29,7 +29,7 @@ def test_sdk_sends_auth_and_params() -> None:
     assert seen["authorization"] == "Bearer test-token"
     assert (
         seen["url"]
-        == "http://memory.test/v1/suggestions?space_id=space_client_app&profile_id=profile_default&limit=100&status=pending"
+        == "http://memory.test/v1/suggestions?space_id=space_client_app&memory_scope_id=memory_scope_default&limit=100&status=pending"
     )
 
 
@@ -48,7 +48,7 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
 
     client.list_facts(
         space_id="space_client_app",
-        profile_id="profile_default",
+        memory_scope_id="memory_scope_default",
         limit=10,
         cursor="fact_cursor",
     )
@@ -66,10 +66,10 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
     client.list_document_chunks("doc_1", limit=5, cursor="chunk_cursor")
     client.process_document("doc_1")
     client.diagnostics_outbox(limit=10, cursor="outbox_cursor")
-    client.diagnostics_profile("profile_1")
+    client.diagnostics_memory_scope("memory_scope_1")
 
     assert seen == [
-        "GET http://memory.test/v1/facts?space_id=space_client_app&profile_id=profile_default&limit=10&status=active&cursor=fact_cursor",
+        "GET http://memory.test/v1/facts?space_id=space_client_app&memory_scope_id=memory_scope_default&limit=10&status=active&cursor=fact_cursor",
         "GET http://memory.test/v1/facts/fact_1",
         "GET http://memory.test/v1/facts/fact_1/related?limit=7&include_other_threads=true",
         "POST http://memory.test/v1/facts/fact_1/relations",
@@ -79,7 +79,7 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
         "GET http://memory.test/v1/documents/doc_1/chunks?limit=5&cursor=chunk_cursor",
         "POST http://memory.test/v1/documents/doc_1/process",
         "GET http://memory.test/v1/diagnostics/outbox?limit=10&cursor=outbox_cursor",
-        "GET http://memory.test/v1/diagnostics/profile/profile_1",
+        "GET http://memory.test/v1/diagnostics/memory-scope/memory_scope_1",
     ]
 
 
@@ -99,7 +99,7 @@ def test_sdk_sends_fact_taxonomy_fields_and_filters() -> None:
 
     client.remember_fact(
         space_id="space_client_app",
-        profile_id="profile_default",
+        memory_scope_id="memory_scope_default",
         text="Use taxonomy for canonical facts.",
         kind="architecture_decision",
         source_refs=[{"source_type": "manual", "source_id": "taxonomy"}],
@@ -109,7 +109,7 @@ def test_sdk_sends_fact_taxonomy_fields_and_filters() -> None:
     )
     client.list_facts(
         space_id="space_client_app",
-        profile_id="profile_default",
+        memory_scope_id="memory_scope_default",
         category="architecture",
         tag="memory",
     )
@@ -119,7 +119,7 @@ def test_sdk_sends_fact_taxonomy_fields_and_filters() -> None:
         "http://memory.test/v1/facts",
         {
             "space_id": "space_client_app",
-            "profile_id": "profile_default",
+            "memory_scope_id": "memory_scope_default",
             "text": "Use taxonomy for canonical facts.",
             "kind": "architecture_decision",
             "source_refs": [{"source_type": "manual", "source_id": "taxonomy"}],
@@ -131,7 +131,7 @@ def test_sdk_sends_fact_taxonomy_fields_and_filters() -> None:
     )
     assert seen[1] == (
         "GET",
-        "http://memory.test/v1/facts?space_id=space_client_app&profile_id=profile_default&category=architecture&tag=memory&limit=100&status=active",
+        "http://memory.test/v1/facts?space_id=space_client_app&memory_scope_id=memory_scope_default&category=architecture&tag=memory&limit=100&status=active",
         None,
     )
 
@@ -195,7 +195,7 @@ def test_sdk_sends_memory_insights_scope_and_limits() -> None:
 
     response = client.build_insights(
         space_slug="atlas",
-        profile_external_refs=["engineering", "product"],
+        memory_scope_external_refs=["engineering", "product"],
         max_facts=50,
         max_suggestions=25,
         max_activity=12,
@@ -207,7 +207,7 @@ def test_sdk_sends_memory_insights_scope_and_limits() -> None:
         "url": "http://memory.test/v1/insights",
         "body": {
             "space_slug": "atlas",
-            "profile_external_refs": ["engineering", "product"],
+            "memory_scope_external_refs": ["engineering", "product"],
             "max_facts": 50,
             "max_documents": 100,
             "max_suggestions": 25,
@@ -242,7 +242,7 @@ def test_sdk_facade_accepts_additive_response_fields() -> None:
 
     response = client.build_context(
         space_id="space_client_app",
-        profile_ids=["profile_default"],
+        memory_scope_ids=["memory_scope_default"],
         query="additive fields",
     )
 
@@ -269,7 +269,7 @@ def test_sdk_build_digest_posts_stable_contract() -> None:
         topic="Graphiti decisions",
         read_scope=ReadScope(
             space_slug="default",
-            profile_external_refs=("engineering", "product"),
+            memory_scope_external_refs=("engineering", "product"),
         ),
         include_superseded=True,
         include_related=False,
@@ -280,7 +280,7 @@ def test_sdk_build_digest_posts_stable_contract() -> None:
     assert seen["url"] == "http://memory.test/v1/digest"
     assert seen["body"] == {
         "space_slug": "default",
-        "profile_external_refs": ["engineering", "product"],
+        "memory_scope_external_refs": ["engineering", "product"],
         "topic": "Graphiti decisions",
         "token_budget": 2400,
         "max_facts": 20,
@@ -327,7 +327,7 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
 
     client.ingest_episode(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="session-1",
         source_type="system_audio",
         source_external_id="event-1",
@@ -340,12 +340,12 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
     )
     client.thread_memory_status(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="session-1",
     )
     client.delete_thread_memory(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="session-1",
     )
 
@@ -355,13 +355,13 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
         "DELETE /v1/thread-memory",
     ]
     assert seen[0][2]["space_slug"] == "client-app"
-    assert seen[0][2]["profile_external_ref"] == "default"
+    assert seen[0][2]["memory_scope_external_ref"] == "default"
     assert seen[0][2]["thread_external_ref"] == "session-1"
     assert seen[0][2]["idempotency_key"] == "event-1"
     assert "space_id" not in seen[0][2]
     assert seen[2][2] == {
         "space_slug": "client-app",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "session-1",
     }
 
@@ -382,7 +382,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
 
     client.create_capture(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="session-1",
         source_agent="codex",
         source_kind="hook",
@@ -410,7 +410,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
     client.get_capture("cap_1")
     client.list_captures(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         status="accepted",
         consolidation_status="pending",
         limit=25,
@@ -419,7 +419,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
     client.purge_capture("cap_1", reason="sdk privacy purge")
     client.capture_diagnostics(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         consolidation_status="dead",
         limit=10,
     )
@@ -434,7 +434,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
     ]
     create_body = seen[0][2]
     assert create_body["space_slug"] == "client-app"
-    assert create_body["profile_external_ref"] == "default"
+    assert create_body["memory_scope_external_ref"] == "default"
     assert create_body["thread_external_ref"] == "session-1"
     assert create_body["source_actor_external_ref"] == "user-1"
     assert create_body["agent_session_external_ref"] == "session-ext-1"
@@ -451,7 +451,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
     assert seen[1][1] == "http://memory.test/v1/captures/cap_1"
     assert (
         seen[2][1]
-        == "http://memory.test/v1/captures?space_slug=client-app&profile_external_ref=default&status=accepted&consolidation_status=pending&limit=25"
+        == "http://memory.test/v1/captures?space_slug=client-app&memory_scope_external_ref=default&status=accepted&consolidation_status=pending&limit=25"
     )
     assert seen[3] == (
         "POST",
@@ -465,7 +465,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
     )
     assert (
         seen[5][1]
-        == "http://memory.test/v1/diagnostics/captures?space_slug=client-app&profile_external_ref=default&consolidation_status=dead&limit=10"
+        == "http://memory.test/v1/diagnostics/captures?space_slug=client-app&memory_scope_external_ref=default&consolidation_status=dead&limit=10"
     )
 
 
@@ -485,7 +485,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
 
     client.create_suggestion(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         candidate_text="Pending external scope suggestion.",
         kind="note",
         safe_reason="sdk_test",
@@ -498,7 +498,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
     )
     client.list_suggestions(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         status="pending",
         operation="review",
         category="review",
@@ -509,7 +509,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
     assert seen[0][0] == "POST"
     assert seen[0][1] == "http://memory.test/v1/suggestions"
     assert seen[0][2]["space_slug"] == "client-app"
-    assert seen[0][2]["profile_external_ref"] == "default"
+    assert seen[0][2]["memory_scope_external_ref"] == "default"
     assert seen[0][2]["operation"] == "review"
     assert seen[0][2]["category"] == "review"
     assert seen[0][2]["tags"] == ["queue"]
@@ -518,7 +518,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
     assert "space_id" not in seen[0][2]
     assert (
         seen[1][1]
-        == "http://memory.test/v1/suggestions?space_slug=client-app&profile_external_ref=default&operation=review&category=review&tag=queue&limit=25&status=pending"
+        == "http://memory.test/v1/suggestions?space_slug=client-app&memory_scope_external_ref=default&operation=review&category=review&tag=queue&limit=25&status=pending"
     )
 
 
@@ -538,7 +538,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
 
     client.ingest_document(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="session-docs",
         title="Architecture notes",
         text="Postgres is canonical truth.",
@@ -546,7 +546,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     )
     client.build_context(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="session-docs",
         query="canonical truth",
         token_budget=512,
@@ -555,7 +555,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     )
     client.search(
         space_slug="client-app",
-        profile_external_refs=["default", "candidate"],
+        memory_scope_external_refs=["default", "candidate"],
         query="memo stack",
         token_budget=1024,
         max_facts=8,
@@ -572,8 +572,79 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     assert "space_id" not in seen[0][2]
     assert seen[1][2]["max_facts"] == 4
     assert seen[1][2]["max_chunks"] == 6
-    assert seen[2][2]["profile_external_refs"] == ["default", "candidate"]
-    assert "profile_ids" not in seen[2][2]
+    assert seen[2][2]["memory_scope_external_refs"] == ["default", "candidate"]
+    assert "memory_scope_ids" not in seen[2][2]
+
+
+def test_sdk_supports_assets_and_extraction_contract() -> None:
+    seen: list[tuple[str, str, dict[str, str], bytes, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                request.method,
+                request.url.path,
+                dict(request.url.params),
+                request.content,
+                request.headers.get("content-type"),
+            )
+        )
+        if request.url.path.endswith("/download"):
+            return httpx.Response(200, content=b"downloaded-bytes")
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.upload_asset(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        thread_external_ref="session-assets",
+        filename="note.txt",
+        content=b"asset bytes",
+        content_type="text/plain",
+        extract=True,
+    )
+    client.list_assets(space_slug="client-app", memory_scope_external_ref="default")
+    client.delete_asset("asset_1")
+    assert client.download_asset("asset_1") == b"downloaded-bytes"
+    client.request_asset_extraction("asset_1", parser_profile="standard_local")
+    client.list_asset_extractions("asset_1", status="succeeded", limit=5)
+    client.list_scope_asset_extractions(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        thread_external_ref="session-assets",
+        limit=10,
+    )
+    client.get_asset_extraction("extract_1")
+    client.retry_asset_extraction("extract_1")
+    assert client.download_extraction_artifact("artifact_1") == b"downloaded-bytes"
+
+    assert [f"{method} {path}" for method, path, _params, _body, _content_type in seen] == [
+        "POST /v1/assets",
+        "GET /v1/assets",
+        "DELETE /v1/assets/asset_1",
+        "GET /v1/assets/asset_1/download",
+        "POST /v1/assets/asset_1/extractions",
+        "GET /v1/assets/asset_1/extractions",
+        "GET /v1/asset-extractions",
+        "GET /v1/asset-extractions/extract_1",
+        "POST /v1/asset-extractions/extract_1/retry",
+        "GET /v1/extraction-artifacts/artifact_1/download",
+    ]
+    assert seen[0][2]["space_slug"] == "client-app"
+    assert seen[0][2]["memory_scope_external_ref"] == "default"
+    assert seen[0][2]["thread_external_ref"] == "session-assets"
+    assert seen[0][2]["filename"] == "note.txt"
+    assert seen[0][2]["content_type"] == "text/plain"
+    assert seen[0][2]["extract"] == "true"
+    assert seen[0][3] == b"asset bytes"
+    assert seen[0][4] == "text/plain"
+    assert seen[5][2] == {"status": "succeeded", "limit": "5"}
+    assert seen[6][2]["limit"] == "10"
 
 
 def test_sdk_supports_typed_scope_dtos() -> None:
@@ -593,7 +664,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
     client.remember_fact(
         scope=MemoryScope(
             space_slug="client-app",
-            profile_external_ref="default",
+            memory_scope_external_ref="default",
             thread_external_ref="session-1",
         ),
         text="Typed scope fact.",
@@ -603,7 +674,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
     client.search(
         read_scope=ReadScope(
             space_slug="client-app",
-            profile_external_refs=("default", "candidate"),
+            memory_scope_external_refs=("default", "candidate"),
         ),
         query="typed read scope",
     )
@@ -612,7 +683,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
         "/v1/facts",
         {
             "space_slug": "client-app",
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "thread_external_ref": "session-1",
             "text": "Typed scope fact.",
             "kind": "note",
@@ -621,15 +692,15 @@ def test_sdk_supports_typed_scope_dtos() -> None:
         },
     )
     assert seen[1][0] == "/v1/search"
-    assert seen[1][1]["profile_external_refs"] == ["default", "candidate"]
-    assert "profile_external_ref" not in seen[1][1]
+    assert seen[1][1]["memory_scope_external_refs"] == ["default", "candidate"]
+    assert "memory_scope_external_ref" not in seen[1][1]
 
 
-def test_sdk_read_scope_rejects_ambiguous_thread_multi_profile() -> None:
-    with pytest.raises(ValueError, match="single profile"):
+def test_sdk_read_scope_rejects_ambiguous_thread_multi_memory_scope() -> None:
+    with pytest.raises(ValueError, match="single memory_scope"):
         ReadScope(
             space_slug="client-app",
-            profile_external_refs=("default", "candidate"),
+            memory_scope_external_refs=("default", "candidate"),
             thread_external_ref="session-1",
         ).to_payload()
 
@@ -649,7 +720,7 @@ def test_sdk_remember_fact_sends_classification() -> None:
 
     client.remember_fact(
         space_id="space_client_app",
-        profile_id="profile_default",
+        memory_scope_id="memory_scope_default",
         text="Restricted fact",
         kind="note",
         source_refs=[{"source_type": "manual", "source_id": "sdk-test"}],
@@ -709,7 +780,7 @@ def test_sdk_supports_create_suggestions_batch() -> None:
 
     client.create_suggestions_batch(
         space_slug="client-app",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         items=[
             {"candidate_text": "Batch SDK fact A.", "safe_reason": "review"},
             {"candidate_text": "Batch SDK fact B.", "safe_reason": "review"},
@@ -721,7 +792,7 @@ def test_sdk_supports_create_suggestions_batch() -> None:
         "path": "/v1/suggestions/batch",
         "body": {
             "space_slug": "client-app",
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "items": [
                 {"candidate_text": "Batch SDK fact A.", "safe_reason": "review"},
                 {"candidate_text": "Batch SDK fact B.", "safe_reason": "review"},
@@ -731,7 +802,7 @@ def test_sdk_supports_create_suggestions_batch() -> None:
     }
 
 
-def test_sdk_supports_profile_snapshot_export_import() -> None:
+def test_sdk_supports_memory_scope_snapshot_export_import() -> None:
     seen: list[tuple[str, dict[str, object], dict[str, object]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -746,62 +817,62 @@ def test_sdk_supports_profile_snapshot_export_import() -> None:
     )
     snapshot = {"schema_version": 1, "facts": [], "documents": [], "chunks": []}
     manifest = {
-        "schema_version": "memo_stack.profile_snapshot_manifest.v1",
+        "schema_version": "memo_stack.memory_scope_snapshot_manifest.v1",
         "snapshot_sha256": "abc",
     }
 
-    client.export_profile_snapshot(
+    client.export_memory_scope_snapshot(
         space_slug="agents",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         redacted=True,
     )
-    client.import_profile_snapshot(
+    client.import_memory_scope_snapshot(
         space_slug="agents",
-        profile_external_ref="restore",
+        memory_scope_external_ref="restore",
         snapshot=snapshot,
         manifest=manifest,
         dry_run=False,
-        merge_strategy="create_new_profile",
+        merge_strategy="create_new_memory_scope",
         confirmed=True,
         source_name="sdk-test",
     )
-    client.preview_profile_snapshot_import(
+    client.preview_memory_scope_snapshot_import(
         space_slug="agents",
-        profile_external_ref="restore",
+        memory_scope_external_ref="restore",
         snapshot=snapshot,
         manifest=manifest,
         merge_strategy="skip_existing",
     )
 
     assert seen[0] == (
-        "/v1/export/profile-snapshot",
+        "/v1/export/memory_scope-snapshot",
         {
             "space_slug": "agents",
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "redacted": "true",
         },
         {},
     )
     assert seen[1] == (
-        "/v1/export/profile-snapshot/import",
+        "/v1/export/memory_scope-snapshot/import",
         {},
         {
             "space_slug": "agents",
-            "profile_external_ref": "restore",
+            "memory_scope_external_ref": "restore",
             "snapshot": snapshot,
             "manifest": manifest,
             "dry_run": False,
-            "merge_strategy": "create_new_profile",
+            "merge_strategy": "create_new_memory_scope",
             "confirmed": True,
             "source_name": "sdk-test",
         },
     )
     assert seen[2] == (
-        "/v1/export/profile-snapshot/preview",
+        "/v1/export/memory_scope-snapshot/preview",
         {},
         {
             "space_slug": "agents",
-            "profile_external_ref": "restore",
+            "memory_scope_external_ref": "restore",
             "snapshot": snapshot,
             "manifest": manifest,
             "merge_strategy": "skip_existing",
@@ -825,7 +896,7 @@ def test_sdk_sends_search_taxonomy_filters() -> None:
 
     client.search(
         space_id="space_client_app",
-        profile_ids=["profile_default"],
+        memory_scope_ids=["memory_scope_default"],
         query="Graphiti memory",
         category="architecture",
         tags_any=["graphiti"],
@@ -880,7 +951,7 @@ def test_sdk_maps_transport_error_to_retryable_memory_error() -> None:
     with pytest.raises(MemoStackError) as raised:
         client.build_context(
             space_id="space_client_app",
-            profile_ids=["profile_default"],
+            memory_scope_ids=["memory_scope_default"],
             query="safe fallback",
         )
 

@@ -25,7 +25,7 @@ class InsightsGateway:
                         "action": "review_pending_suggestions",
                         "target_type": "suggestion_queue",
                         "target_id": None,
-                        "profile_id": "profile_default",
+                        "memory_scope_id": "memory_scope_default",
                         "reason": "1 pending suggestions need review.",
                     }
                 ],
@@ -36,7 +36,7 @@ class InsightsGateway:
                         "event_type": "suggestion_created",
                         "entity_type": "suggestion",
                         "entity_id": "sug_1",
-                        "profile_id": "profile_default",
+                        "memory_scope_id": "memory_scope_default",
                         "status": "pending",
                         "preview": "Review pending memory.",
                     }
@@ -45,7 +45,7 @@ class InsightsGateway:
                     {
                         "id": "mplan_1",
                         "plan_type": "similar_fact_review",
-                        "profile_id": "profile_default",
+                        "memory_scope_id": "memory_scope_default",
                         "confidence": "medium",
                         "canonical_candidate_id": "fact_1",
                         "candidate_fact_ids": ["fact_2"],
@@ -68,7 +68,7 @@ def test_mcp_insights_structured_output_and_scope() -> None:
         result = await server.call_tool(
             "memory_insights",
             {
-                "profile_external_refs": ["engineering", "product"],
+                "memory_scope_external_refs": ["engineering", "product"],
                 "max_suggestions": 25,
                 "max_activity": 7,
             },
@@ -89,7 +89,7 @@ def test_mcp_insights_structured_output_and_scope() -> None:
         assert gateway.calls[0][0] == "build_insights"
         assert gateway.calls[0][1]["max_suggestions"] == 25
         assert gateway.calls[0][1]["max_activity"] == 7
-        assert gateway.calls[0][1]["scope"].profile_external_refs == (
+        assert gateway.calls[0][1]["scope"].memory_scope_external_refs == (
             "engineering",
             "product",
         )

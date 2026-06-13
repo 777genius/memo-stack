@@ -33,7 +33,7 @@ def test_document_ingest_returns_fragment_summary_and_typed_chunks(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "ADR-0007 Memory architecture",
                 "text": "\n".join(
                     [

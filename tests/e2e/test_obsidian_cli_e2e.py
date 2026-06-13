@@ -16,7 +16,7 @@ from memo_stack_server_harness import PROJECT_ROOT, python_env, run_memo_stack_s
 def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path) -> None:
     vault_path = tmp_path / "vault"
     space_slug = "obsidian-cli-e2e"
-    profile_ref = "default"
+    memory_scope_ref = "default"
     marker = f"OBSIDIAN_CLI_E2E_{time.time_ns()}"
     initial_text = f"{marker}: Obsidian CLI exports backend facts without UI."
     local_update_text = f"{marker}: Obsidian CLI imports managed note edits."
@@ -35,7 +35,7 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
         fact = _remember_fact(
             client,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             text=initial_text,
             idempotency_key=f"{marker}:fact",
         )
@@ -44,8 +44,8 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
             str(vault_path),
             "--space",
             space_slug,
-            "--profile",
-            profile_ref,
+            "--memory_scope",
+            memory_scope_ref,
             "--api-url",
             server.base_url,
             "--token",
@@ -62,7 +62,7 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
         fact_path = vault_path / ObsidianVaultLayout.from_values(version="v2").fact_note_path(
             fact["id"],
             space_slug=space_slug,
-            profile_external_ref=profile_ref,
+            memory_scope_external_ref=memory_scope_ref,
         )
         assert exported["ok"] is True
         assert exported["export"]["exported"] == 1
@@ -83,22 +83,27 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
         assert "memo_stack_version: 2" in fact_path.read_text(encoding="utf-8")
 
         inbox_path = (
-            vault_path
-            / "Memo Stack/spaces/obsidian-cli-e2e/profiles/default/inbox/idea.md"
+            vault_path / "Memo Stack/spaces/obsidian-cli-e2e/memory_scopes/default/inbox/idea.md"
         )
         inbox_path.parent.mkdir(parents=True, exist_ok=True)
         inbox_path.write_text(inbox_text, encoding="utf-8")
         suggested = _run_obsidian_cli(["sync", *common, "--apply-import"])
         assert suggested["import"]["suggested"] == 1
-        assert _suggestion_texts(client, space_slug=space_slug, profile_ref=profile_ref).count(
-            inbox_text
-        ) == 1
+        assert (
+            _suggestion_texts(
+                client, space_slug=space_slug, memory_scope_ref=memory_scope_ref
+            ).count(inbox_text)
+            == 1
+        )
 
         repeated_suggestion = _run_obsidian_cli(["sync", *common, "--apply-import"])
         assert repeated_suggestion["import"]["suggested"] == 0
-        assert _suggestion_texts(client, space_slug=space_slug, profile_ref=profile_ref).count(
-            inbox_text
-        ) == 1
+        assert (
+            _suggestion_texts(
+                client, space_slug=space_slug, memory_scope_ref=memory_scope_ref
+            ).count(inbox_text)
+            == 1
+        )
 
         _replace_managed_text(fact_path, stale_local_text)
         backend_updated = _update_fact(
@@ -125,9 +130,7 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
             ["sync", *common, "--apply-import"],
             expected_returncode=1,
         )
-        assert recreated["import"]["conflict_artifacts"] == stale["import"][
-            "conflict_artifacts"
-        ]
+        assert recreated["import"]["conflict_artifacts"] == stale["import"]["conflict_artifacts"]
         assert conflict_path.exists()
 
 
@@ -136,7 +139,7 @@ def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
 ) -> None:
     vault_path = tmp_path / "vault"
     space_slug = "obsidian-custom-config-e2e"
-    profile_ref = "default"
+    memory_scope_ref = "default"
 
     with run_memo_stack_server(
         tmp_path,
@@ -147,8 +150,8 @@ def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
             str(vault_path),
             "--space",
             space_slug,
-            "--profile",
-            profile_ref,
+            "--memory_scope",
+            memory_scope_ref,
             "--api-url",
             server.base_url,
             "--token",
@@ -172,8 +175,8 @@ def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
                 server.base_url,
                 "--space",
                 space_slug,
-                "--profile",
-                profile_ref,
+                "--memory_scope",
+                memory_scope_ref,
                 "--json",
             ]
         )
@@ -224,7 +227,7 @@ def _remember_fact(
     client: httpx.Client,
     *,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     text: str,
     idempotency_key: str,
 ) -> dict[str, Any]:
@@ -232,7 +235,7 @@ def _remember_fact(
         "/v1/facts",
         json={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "text": text,
             "kind": "architecture_decision",
             "source_refs": [{"source_type": "manual", "source_id": idempotency_key}],
@@ -274,13 +277,13 @@ def _suggestion_texts(
     client: httpx.Client,
     *,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
 ) -> list[str]:
     response = client.get(
         "/v1/suggestions",
         params={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "status": "pending",
             "limit": 100,
         },

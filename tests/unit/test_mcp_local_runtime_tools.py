@@ -68,7 +68,7 @@ def test_local_runtime_start_dry_run_is_plan_only(tmp_path: Path) -> None:
         )
     )
 
-    payload = asyncio.run(service.start(profile="lite", apply=False))
+    payload = asyncio.run(service.start(compose_profile="lite", apply=False))
 
     assert payload["ok"] is True
     assert payload["data"]["dry_run"] is True
@@ -82,6 +82,7 @@ def test_local_runtime_start_dry_run_is_plan_only(tmp_path: Path) -> None:
         "-d",
         "memo_stack_server",
         "memo_stack_worker",
+        "memo_stack_extraction_worker",
     ]
     assert not (tmp_path / "home").exists()
 
@@ -95,7 +96,7 @@ def test_local_runtime_start_apply_requires_separate_start_gate(tmp_path: Path) 
         )
     )
 
-    payload = asyncio.run(service.start(profile="lite", apply=True))
+    payload = asyncio.run(service.start(compose_profile="lite", apply=True))
 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "memo_stack_mcp.local_runtime.start_disabled"

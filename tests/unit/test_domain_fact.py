@@ -5,7 +5,7 @@ from memo_stack_core.domain.entities import (
     MemoryFact,
     MemoryFactId,
     MemoryKind,
-    ProfileId,
+    MemoryScopeId,
     SourceRef,
     SpaceId,
 )
@@ -17,7 +17,7 @@ def test_active_fact_requires_source_refs() -> None:
         MemoryFact.create(
             fact_id=MemoryFactId("fact_1"),
             space_id=SpaceId("space_1"),
-            profile_id=ProfileId("profile_1"),
+            memory_scope_id=MemoryScopeId("memory_scope_1"),
             text="Postgres is canonical truth.",
             kind=MemoryKind.ARCHITECTURE_DECISION,
             source_refs=(),
@@ -29,7 +29,7 @@ def test_update_requires_expected_version() -> None:
     fact = MemoryFact.create(
         fact_id=MemoryFactId("fact_1"),
         space_id=SpaceId("space_1"),
-        profile_id=ProfileId("profile_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
         text="Postgres is canonical truth.",
         kind=MemoryKind.ARCHITECTURE_DECISION,
         source_refs=(SourceRef(source_type="manual", source_id="manual_1"),),
@@ -50,7 +50,7 @@ def test_forget_is_idempotent() -> None:
     fact = MemoryFact.create(
         fact_id=MemoryFactId("fact_1"),
         space_id=SpaceId("space_1"),
-        profile_id=ProfileId("profile_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
         text="Postgres is canonical truth.",
         kind=MemoryKind.ARCHITECTURE_DECISION,
         source_refs=(SourceRef(source_type="manual", source_id="manual_1"),),
@@ -69,7 +69,7 @@ def test_fact_rejects_unknown_classification_value() -> None:
         MemoryFact.create(
             fact_id=MemoryFactId("fact_bad_classification"),
             space_id=SpaceId("space_1"),
-            profile_id=ProfileId("profile_1"),
+            memory_scope_id=MemoryScopeId("memory_scope_1"),
             text="Invalid classification should be rejected.",
             kind=MemoryKind.NOTE,
             source_refs=(SourceRef(source_type="manual", source_id="manual_1"),),

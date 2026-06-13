@@ -25,7 +25,7 @@ def test_memory_digest_http_and_cli_e2e(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_slug": "digest-e2e",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "text": fact_text,
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": f"{marker}:fact"}],
@@ -37,7 +37,7 @@ def test_memory_digest_http_and_cli_e2e(tmp_path: Path) -> None:
             "/v1/suggestions",
             json={
                 "space_slug": "digest-e2e",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "candidate_text": suggestion_text,
                 "kind": "architecture_decision",
                 "safe_reason": "pending review",
@@ -52,7 +52,7 @@ def test_memory_digest_http_and_cli_e2e(tmp_path: Path) -> None:
             "/v1/digest",
             json={
                 "space_slug": "digest-e2e",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "topic": marker,
                 "max_chunks": 0,
                 "include_related": False,
@@ -81,7 +81,7 @@ def test_memory_digest_http_and_cli_e2e(tmp_path: Path) -> None:
                 marker,
                 "--space",
                 "digest-e2e",
-                "--profile",
+                "--memory_scope",
                 "default",
                 "--max-chunks",
                 "0",

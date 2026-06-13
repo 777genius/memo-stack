@@ -8,9 +8,9 @@ from memo_stack_core.application.use_cases.build_memory_digest import BuildMemor
 from memo_stack_core.domain.entities import (
     Confidence,
     MemoryKind,
+    MemoryScopeId,
     MemorySuggestion,
     MemorySuggestionId,
-    ProfileId,
     SourceRef,
     SpaceId,
     SuggestionOperation,
@@ -39,7 +39,7 @@ class FakeContextBuilder:
                     text="Graphiti is the temporal graph projection.",
                     score=0.95,
                     source_refs=(SourceRef(source_type="manual", source_id="src_1"),),
-                    diagnostics={"profile_id": "profile_1"},
+                    diagnostics={"memory_scope_id": "memory_scope_1"},
                 ),
                 ContextItem(
                     item_id="chunk_1",
@@ -53,7 +53,7 @@ class FakeContextBuilder:
                             chunk_id="chunk_1",
                         ),
                     ),
-                    diagnostics={"profile_id": "profile_1"},
+                    diagnostics={"memory_scope_id": "memory_scope_1"},
                 ),
             ),
             token_estimate=32,
@@ -74,7 +74,7 @@ class FakeSuggestionRepo:
             MemorySuggestion.create(
                 suggestion_id=MemorySuggestionId("sug_1"),
                 space_id=SpaceId(kwargs["space_id"]),
-                profile_id=ProfileId(kwargs["profile_id"]),
+                memory_scope_id=MemoryScopeId(kwargs["memory_scope_id"]),
                 candidate_text="Add memory_digest as a read-only MCP tool.",
                 kind=MemoryKind.ARCHITECTURE_DECISION,
                 operation=SuggestionOperation.ADD,
@@ -122,7 +122,7 @@ def test_memory_digest_builds_source_bound_sections() -> None:
         digest = await use_case.execute(
             BuildMemoryDigestQuery(
                 space_id=SpaceId("space_1"),
-                profile_ids=(ProfileId("profile_1"),),
+                memory_scope_ids=(MemoryScopeId("memory_scope_1"),),
                 topic="Graphiti and Qdrant decisions",
                 consistency_mode=ConsistencyMode.BEST_EFFORT,
                 include_related=False,

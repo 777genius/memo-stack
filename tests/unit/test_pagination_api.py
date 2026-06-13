@@ -31,7 +31,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
                 "/v1/facts",
                 json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "text": text,
                     "kind": "note",
                     "source_refs": [{"source_type": "manual", "source_id": text}],
@@ -42,8 +42,8 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_other",
-                "text": "FACT_CURSOR_OTHER_PROFILE",
+                "memory_scope_id": "memory_scope_other",
+                "text": "FACT_CURSOR_OTHER_MEMORY_SCOPE",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "other"}],
             },
@@ -53,7 +53,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "limit": 1,
             },
             headers=auth_headers(),
@@ -63,7 +63,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "limit": 1,
                 "cursor": cursor,
             },
@@ -73,7 +73,7 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "cursor": "not-a-valid-cursor",
             },
             headers=auth_headers(),
@@ -85,8 +85,8 @@ def test_facts_cursor_is_opaque_stable_and_scope_safe(tmp_path: Path) -> None:
     assert "FACT_CURSOR_SECRET" not in cursor
     texts = {page_1.json()["data"][0]["text"], page_2.json()["data"][0]["text"]}
     assert texts == {"FACT_CURSOR_SECRET_A", "FACT_CURSOR_SECRET_B"}
-    assert "FACT_CURSOR_OTHER_PROFILE" not in str(page_1.json())
-    assert "FACT_CURSOR_OTHER_PROFILE" not in str(page_2.json())
+    assert "FACT_CURSOR_OTHER_MEMORY_SCOPE" not in str(page_1.json())
+    assert "FACT_CURSOR_OTHER_MEMORY_SCOPE" not in str(page_2.json())
     assert invalid.status_code == 400
     assert invalid.json()["error"]["code"] == "memory.validation"
 
@@ -98,7 +98,7 @@ def test_document_chunks_cursor_is_opaque_and_ordered(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Cursor document",
                 "text": text,
                 "source_type": "document",
@@ -140,7 +140,7 @@ def test_diagnostics_outbox_cursor_is_opaque(tmp_path: Path) -> None:
                 "/v1/documents",
                 json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "title": f"Outbox cursor {idx}",
                     "text": f"OUTBOX_CURSOR_SECRET_{idx}",
                     "source_type": "document",

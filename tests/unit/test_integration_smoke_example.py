@@ -29,9 +29,9 @@ class FakeSmokeClient:
         self.calls.append("create_space")
         return {"data": {"id": "space_smoke"}}
 
-    def create_profile(self, **_kwargs: Any) -> dict[str, Any]:
-        self.calls.append("create_profile")
-        return {"data": {"id": "profile_default"}}
+    def create_memory_scope(self, **_kwargs: Any) -> dict[str, Any]:
+        self.calls.append("create_memory_scope")
+        return {"data": {"id": "memory_scope_default"}}
 
     def remember_fact(self, **_kwargs: Any) -> dict[str, Any]:
         self.calls.append("remember_fact")
@@ -73,7 +73,7 @@ def test_integration_smoke_uses_sdk_happy_path() -> None:
         api_url="http://memory.test",
         auth_token="test-token",
         space_slug="memo-stack-smoke",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="smoke-test",
         run_id="unit",
         timeout=1,
@@ -87,7 +87,7 @@ def test_integration_smoke_uses_sdk_happy_path() -> None:
     assert client.calls == [
         "health",
         "create_space",
-        "create_profile",
+        "create_memory_scope",
         "remember_fact",
         "update_fact",
         "ingest_document",
@@ -105,7 +105,7 @@ def test_integration_smoke_fails_when_forgotten_fact_leaks() -> None:
         api_url="http://memory.test",
         auth_token="test-token",
         space_slug="memo-stack-smoke",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         thread_external_ref="smoke-test",
         run_id="unit",
         timeout=1,

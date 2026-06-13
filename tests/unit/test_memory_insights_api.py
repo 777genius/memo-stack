@@ -46,7 +46,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Insights should count categorized memory facts.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "insights-active"}],
@@ -60,7 +60,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": (
                     "Memo Stack should use Graphiti as the temporal graph adapter "
                     "for coding agent memory."
@@ -76,7 +76,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": (
                     "Memo Stack should use Graphiti as temporal graph engine adapter "
                     "for coding-agent memory."
@@ -92,7 +92,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "INSIGHTS_EXPIRED_MARKER should become an action item.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "insights-expired"}],
@@ -106,7 +106,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             "/v1/suggestions",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "candidate_text": "Insights should expose pending review workload.",
                 "kind": "note",
                 "safe_reason": "manual_review",
@@ -122,7 +122,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
             "/v1/insights",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "max_facts": 20,
                 "max_suggestions": 20,
                 "max_activity": 10,

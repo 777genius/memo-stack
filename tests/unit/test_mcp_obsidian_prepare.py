@@ -26,7 +26,7 @@ def test_obsidian_prepare_dry_run_does_not_write(tmp_path: Path) -> None:
             obsidian_enabled=True,
             obsidian_vault_path=str(vault),
             default_space_slug="memo-stack",
-            default_profile_external_ref="belief",
+            default_memory_scope_external_ref="belief",
         )
     )
 
@@ -60,7 +60,7 @@ def test_obsidian_prepare_apply_stops_before_preview_when_backend_not_ready(
             obsidian_enabled=True,
             obsidian_vault_path=str(vault),
             default_space_slug="memo-stack",
-            default_profile_external_ref="belief",
+            default_memory_scope_external_ref="belief",
         )
     )
 
@@ -74,7 +74,7 @@ def test_obsidian_prepare_apply_stops_before_preview_when_backend_not_ready(
     assert (home / "config.toml").exists()
     assert (home / ".env").exists()
     assert (
-        vault / "Memo Stack/spaces/memo-stack/profiles/belief/generated/facts"
+        vault / "Memo Stack/spaces/memo-stack/memory_scopes/belief/generated/facts"
     ).exists()
     assert (vault / ".obsidian/plugins/memo-stack/main.js").exists()
     assert "local_runtime_started" not in payload["diagnostics"]["side_effects"]

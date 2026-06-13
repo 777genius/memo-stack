@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from memo_stack_core.profile_snapshot_preview import build_profile_snapshot_import_preview
+from memo_stack_core.memory_scope_snapshot_preview import build_memory_scope_snapshot_import_preview
 
 
-def test_profile_snapshot_import_preview_reports_skip_and_supersede() -> None:
+def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> None:
     payload = {
         "schema_version": 1,
         "facts": [{"id": "fact_keep"}, {"id": "fact_conflict"}],
@@ -26,12 +26,12 @@ def test_profile_snapshot_import_preview_reports_skip_and_supersede() -> None:
         ],
     }
 
-    skip_preview = build_profile_snapshot_import_preview(
+    skip_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
         merge_strategy="skip_existing",
         conflict_ids={"fact_conflict", "doc_conflict"},
     )
-    supersede_preview = build_profile_snapshot_import_preview(
+    supersede_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
         merge_strategy="supersede_matching_facts",
         conflict_ids={"fact_conflict"},
@@ -69,8 +69,8 @@ def test_profile_snapshot_import_preview_reports_skip_and_supersede() -> None:
     assert supersede_preview["would_import"]["relations"] == 1
 
 
-def test_profile_snapshot_import_preview_warns_on_redacted_blocking_conflict() -> None:
-    preview = build_profile_snapshot_import_preview(
+def test_memory_scope_snapshot_import_preview_warns_on_redacted_blocking_conflict() -> None:
+    preview = build_memory_scope_snapshot_import_preview(
         payload={"redacted": True, "facts": [{"id": "fact_1"}]},
         merge_strategy="fail_on_conflict",
         conflict_ids={"fact_1"},

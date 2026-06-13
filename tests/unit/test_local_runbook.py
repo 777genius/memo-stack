@@ -23,7 +23,10 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
     assert ".PHONY: memo-stack-smoke" in makefile
-    assert "$(COMPOSE) --profile lite up -d memo_stack_server memo_stack_worker" in makefile
+    assert (
+        "$(COMPOSE) --profile lite up -d memo_stack_server memo_stack_worker "
+        "memo_stack_extraction_worker"
+    ) in makefile
     assert (
         "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
         in makefile
@@ -33,6 +36,39 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
     assert "$(PYTHON) -m pytest tests/e2e" in makefile
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
     assert "$(MAKE) memo-stack-api-smoke" in makefile
+
+
+def test_selfhost_compose_has_team_deployment_contract() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    compose = (ROOT / "docker-compose.selfhost.yml").read_text(encoding="utf-8")
+    env = (ROOT / ".env.selfhost.example").read_text(encoding="utf-8")
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    runbook = (ROOT / "docs" / "self-hosted-team-deployment.md").read_text(
+        encoding="utf-8"
+    )
+    smoke = (ROOT / "scripts" / "selfhost_smoke.py").read_text(encoding="utf-8")
+
+    assert "FROM python:3.12-slim" in dockerfile
+    assert 'CMD ["python", "-m", "memo_stack_server.main"]' in dockerfile
+    assert "USER memo" in dockerfile
+    assert "MEMORY_DEPLOY_PROFILE: server" in compose
+    assert 'MEMORY_AUTO_CREATE_SCHEMA: "false"' in compose
+    assert "memo_stack_migrate:" in compose
+    assert "memo_stack_projection_worker:" in compose
+    assert "memo_stack_extraction_worker:" in compose
+    assert "--role projection" in compose
+    assert "--role extraction" in compose
+    assert "memo_stack_assets:/var/lib/memo-stack/assets" in compose
+    assert "MEMORY_SERVICE_TOKEN=change-me" in env
+    assert "MEMORY_POSTGRES_PASSWORD=change-me" in env
+    assert ".PHONY: memo-stack-selfhost-smoke" in makefile
+    assert "$(PYTHON) scripts/selfhost_smoke.py" in makefile
+    assert '"postgres/migrations/*.sql"' in pyproject
+    assert "Back up Postgres and assets first" in runbook
+    assert 'f"{base_url}/v1/assets?{query}"' in smoke
+    assert 'f"{base_url}/v1/asset-extractions/{extraction_id}"' in smoke
+    assert 'f"{base_url}/v1/documents/{document_ids[0]}/chunks"' in smoke
 
 
 def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
@@ -776,11 +812,11 @@ def test_clean_full_smoke_queries_graphiti_with_semantic_fact_text() -> None:
     )
     assert 'updated_graph_query = "Graphiti Qdrant recall updated memory"' in source
     assert (
-        "initial_context = _context(base_url, headers, space_slug, profile_ref, marker)"
+        "initial_context = _context(base_url, headers, space_slug, memory_scope_ref, marker)"
         not in source
     )
     assert (
-        "updated_context = _context(base_url, headers, space_slug, profile_ref, marker)"
+        "updated_context = _context(base_url, headers, space_slug, memory_scope_ref, marker)"
         not in source
     )
 
@@ -915,7 +951,7 @@ def test_clean_full_smoke_mcp_env_does_not_inherit_provider_secrets(monkeypatch)
         base_url="http://127.0.0.1:7788",
         token="unit-mcp-token",
         space_slug="unit-space",
-        profile_ref="unit-profile",
+        memory_scope_ref="unit-memory_scope",
     )
 
     assert env["MEMORY_MCP_API_URL"] == "http://127.0.0.1:7788"
@@ -1053,8 +1089,8 @@ def test_clean_full_smoke_openai_preflight_reports_safe_invalid_key(monkeypatch)
 
 def test_clean_full_smoke_prod_load_settings_are_bounded(monkeypatch) -> None:
     module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
-    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_PROFILES", "4")
-    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE", "9")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_MEMORY_SCOPES", "4")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_MEMORY_SCOPE", "9")
     monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_DOCUMENTS", "2")
     monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_LARGE_DOC_SECTIONS", "11")
     monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_CONCURRENCY", "5")
@@ -1067,8 +1103,8 @@ def test_clean_full_smoke_prod_load_settings_are_bounded(monkeypatch) -> None:
     monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_PROVIDER_OUTAGE", "false")
 
     assert module._prod_load_settings() == {
-        "profiles": 4,
-        "facts_per_profile": 9,
+        "memory_scopes": 4,
+        "facts_per_memory_scope": 9,
         "documents": 2,
         "large_doc_sections": 11,
         "concurrency": 5,
@@ -1081,11 +1117,11 @@ def test_clean_full_smoke_prod_load_settings_are_bounded(monkeypatch) -> None:
         "provider_outage": False,
     }
 
-    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE", "1000")
+    monkeypatch.setenv("MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_MEMORY_SCOPE", "1000")
     try:
         module._prod_load_settings()
     except module.CleanSmokeFailure as exc:
-        assert "MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE" in str(exc)
+        assert "MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_MEMORY_SCOPE" in str(exc)
     else:
         raise AssertionError("expected bounded prod load setting failure")
 

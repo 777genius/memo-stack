@@ -32,7 +32,7 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
                         CREATE TABLE memory_facts (
                             id VARCHAR(80) PRIMARY KEY,
                             space_id VARCHAR(80) NOT NULL,
-                            profile_id VARCHAR(80) NOT NULL,
+                            memory_scope_id VARCHAR(80) NOT NULL,
                             thread_id VARCHAR(80),
                             kind VARCHAR(80) NOT NULL,
                             text TEXT NOT NULL,
@@ -52,7 +52,7 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
                         CREATE TABLE memory_documents (
                             id VARCHAR(80) PRIMARY KEY,
                             space_id VARCHAR(80) NOT NULL,
-                            profile_id VARCHAR(80) NOT NULL,
+                            memory_scope_id VARCHAR(80) NOT NULL,
                             thread_id VARCHAR(80),
                             title VARCHAR(300) NOT NULL,
                             source_type VARCHAR(80) NOT NULL,
@@ -71,7 +71,7 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
                         CREATE TABLE memory_chunks (
                             id VARCHAR(80) PRIMARY KEY,
                             space_id VARCHAR(80) NOT NULL,
-                            profile_id VARCHAR(80) NOT NULL,
+                            memory_scope_id VARCHAR(80) NOT NULL,
                             thread_id VARCHAR(80),
                             document_id VARCHAR(80),
                             episode_id VARCHAR(80),
@@ -110,7 +110,7 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
                     column["name"]: column
                     for column in inspector.get_columns("memory_service_tokens")
                     if column["name"]
-                    in {"profile_ids_json", "permissions_json", "last_used_at", "expires_at"}
+                    in {"memory_scope_ids_json", "permissions_json", "last_used_at", "expires_at"}
                 }
                 fact_taxonomy_columns = {
                     column["name"]: column
@@ -144,12 +144,12 @@ def test_create_schema_adds_classification_to_existing_memory_tables(tmp_path: P
         "expires_at",
     }
     assert set(columns["memory_service_tokens"]) == {
-        "profile_ids_json",
+        "memory_scope_ids_json",
         "permissions_json",
         "last_used_at",
         "expires_at",
     }
-    assert "uq_document_content_hash_profile_wide" in columns["memory_document_indexes"]
+    assert "uq_document_content_hash_memory_scope_wide" in columns["memory_document_indexes"]
     assert "uq_document_content_hash_thread" in columns["memory_document_indexes"]
 
 
@@ -164,7 +164,7 @@ def test_create_schema_adds_capture_tables_and_suggestion_metadata(tmp_path: Pat
                         CREATE TABLE memory_suggestions (
                             id VARCHAR(80) PRIMARY KEY,
                             space_id VARCHAR(80) NOT NULL,
-                            profile_id VARCHAR(80) NOT NULL,
+                            memory_scope_id VARCHAR(80) NOT NULL,
                             candidate_text TEXT NOT NULL,
                             kind VARCHAR(80) NOT NULL,
                             status VARCHAR(40) NOT NULL,
@@ -224,6 +224,60 @@ def test_create_schema_adds_capture_tables_and_suggestion_metadata(tmp_path: Pat
     assert "uq_pending_suggestion_fingerprint_target" in result["suggestion_indexes"]
 
 
+def test_create_schema_adds_asset_and_context_link_tables(tmp_path: Path) -> None:
+    async def run() -> dict[str, object]:
+        engine = build_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'asset-schema.db'}")
+        try:
+            await create_schema(engine)
+
+            def inspect_schema(connection) -> dict[str, object]:
+                inspector = inspect(connection)
+                return {
+                    "tables": set(inspector.get_table_names()),
+                    "asset_indexes": {
+                        index["name"] for index in inspector.get_indexes("memory_assets")
+                    },
+                    "asset_extraction_job_indexes": {
+                        index["name"]
+                        for index in inspector.get_indexes("memory_asset_extraction_jobs")
+                    },
+                    "asset_extraction_artifact_indexes": {
+                        index["name"]
+                        for index in inspector.get_indexes("memory_asset_extraction_artifacts")
+                    },
+                    "context_link_indexes": {
+                        index["name"] for index in inspector.get_indexes("memory_context_links")
+                    },
+                    "usage_indexes": {
+                        index["name"] for index in inspector.get_indexes("memory_usage_records")
+                    },
+                }
+
+            async with engine.connect() as connection:
+                return await connection.run_sync(inspect_schema)
+        finally:
+            await engine.dispose()
+
+    result = asyncio.run(run())
+
+    assert "memory_assets" in result["tables"]
+    assert "memory_asset_extraction_jobs" in result["tables"]
+    assert "memory_asset_extraction_artifacts" in result["tables"]
+    assert "memory_context_links" in result["tables"]
+    assert "memory_usage_records" in result["tables"]
+    assert "ix_memory_assets_scope_status" in result["asset_indexes"]
+    assert "ix_memory_assets_hash_scope" in result["asset_indexes"]
+    assert "ix_asset_extraction_jobs_asset_status" in result["asset_extraction_job_indexes"]
+    assert "ix_asset_extraction_jobs_scope_status" in result["asset_extraction_job_indexes"]
+    assert "uq_asset_extraction_jobs_active_profile" in result["asset_extraction_job_indexes"]
+    assert "ix_asset_extraction_artifacts_job" in result["asset_extraction_artifact_indexes"]
+    assert "ix_asset_extraction_artifacts_asset" in result["asset_extraction_artifact_indexes"]
+    assert "uq_memory_context_link_active" in result["context_link_indexes"]
+    assert "ix_memory_context_links_source" in result["context_link_indexes"]
+    assert "uq_memory_usage_idempotency" in result["usage_indexes"]
+    assert "ix_memory_usage_subject_window" in result["usage_indexes"]
+
+
 def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
     tmp_path: Path,
 ) -> None:
@@ -237,7 +291,7 @@ def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
                         CREATE TABLE memory_suggestions (
                             id VARCHAR(80) PRIMARY KEY,
                             space_id VARCHAR(80) NOT NULL,
-                            profile_id VARCHAR(80) NOT NULL,
+                            memory_scope_id VARCHAR(80) NOT NULL,
                             candidate_text TEXT NOT NULL,
                             kind VARCHAR(80) NOT NULL,
                             operation VARCHAR(40) NOT NULL DEFAULT 'add',
@@ -263,7 +317,7 @@ def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
                         INSERT INTO memory_suggestions (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             candidate_text,
                             kind,
                             operation,
@@ -281,7 +335,7 @@ def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
                             (
                                 'sug_old',
                                 'space_1',
-                                'profile_1',
+                                'memory_scope_1',
                                 'old duplicate',
                                 'note',
                                 'add',
@@ -298,7 +352,7 @@ def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
                             (
                                 'sug_new',
                                 'space_1',
-                                'profile_1',
+                                'memory_scope_1',
                                 'new duplicate',
                                 'note',
                                 'add',
@@ -349,7 +403,7 @@ def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
                             INSERT INTO memory_suggestions (
                                 id,
                                 space_id,
-                                profile_id,
+                                memory_scope_id,
                                 candidate_text,
                                 kind,
                                 operation,
@@ -366,7 +420,7 @@ def test_create_schema_dedupes_pending_suggestions_before_unique_indexes(
                             VALUES (
                                 'sug_duplicate',
                                 'space_1',
-                                'profile_1',
+                                'memory_scope_1',
                                 'duplicate blocked',
                                 'note',
                                 'add',
@@ -413,7 +467,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                         CREATE TABLE memory_documents (
                             id VARCHAR(80) PRIMARY KEY,
                             space_id VARCHAR(80) NOT NULL,
-                            profile_id VARCHAR(80) NOT NULL,
+                            memory_scope_id VARCHAR(80) NOT NULL,
                             thread_id VARCHAR(80),
                             title VARCHAR(300) NOT NULL,
                             source_type VARCHAR(80) NOT NULL,
@@ -424,7 +478,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                             updated_at DATETIME NOT NULL,
                             CONSTRAINT uq_document_source_hash UNIQUE (
                                 space_id,
-                                profile_id,
+                                memory_scope_id,
                                 source_type,
                                 source_external_id,
                                 content_hash
@@ -439,7 +493,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                         INSERT INTO memory_documents (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             thread_id,
                             title,
                             source_type,
@@ -452,7 +506,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                         VALUES (
                             'doc_thread_a',
                             'space_1',
-                            'profile_1',
+                            'memory_scope_1',
                             'thread_a',
                             'Doc A',
                             'document',
@@ -475,7 +529,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                         INSERT INTO memory_documents (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             thread_id,
                             title,
                             source_type,
@@ -489,7 +543,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                         VALUES (
                             'doc_thread_b',
                             'space_1',
-                            'profile_1',
+                            'memory_scope_1',
                             'thread_b',
                             'Doc B',
                             'document',
@@ -518,7 +572,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
                         tuple(constraint.get("column_names") or ())
                         == (
                             "space_id",
-                            "profile_id",
+                            "memory_scope_id",
                             "source_type",
                             "source_external_id",
                             "content_hash",
@@ -536,7 +590,7 @@ def test_create_schema_rebuilds_sqlite_legacy_document_unique_constraint(
 
     assert result["document_count"] == 2
     assert result["legacy_unique_exists"] is False
-    assert "uq_document_content_hash_profile_wide" in result["index_names"]
+    assert "uq_document_content_hash_memory_scope_wide" in result["index_names"]
     assert "uq_document_content_hash_thread" in result["index_names"]
 
 
@@ -554,7 +608,7 @@ def test_document_unique_indexes_prevent_same_hash_duplicate_rows_per_scope(
                         INSERT INTO memory_documents (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             thread_id,
                             title,
                             source_type,
@@ -568,7 +622,7 @@ def test_document_unique_indexes_prevent_same_hash_duplicate_rows_per_scope(
                         VALUES (
                             'doc_a',
                             'space_1',
-                            'profile_1',
+                            'memory_scope_1',
                             'thread_a',
                             'Doc A',
                             'document',
@@ -588,7 +642,7 @@ def test_document_unique_indexes_prevent_same_hash_duplicate_rows_per_scope(
                         INSERT INTO memory_documents (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             thread_id,
                             title,
                             source_type,
@@ -602,7 +656,7 @@ def test_document_unique_indexes_prevent_same_hash_duplicate_rows_per_scope(
                         VALUES (
                             'doc_b',
                             'space_1',
-                            'profile_1',
+                            'memory_scope_1',
                             'thread_b',
                             'Doc B',
                             'document',
@@ -624,7 +678,7 @@ def test_document_unique_indexes_prevent_same_hash_duplicate_rows_per_scope(
                             INSERT INTO memory_documents (
                                 id,
                                 space_id,
-                                profile_id,
+                                memory_scope_id,
                                 thread_id,
                                 title,
                                 source_type,
@@ -638,7 +692,7 @@ def test_document_unique_indexes_prevent_same_hash_duplicate_rows_per_scope(
                             VALUES (
                                 'doc_duplicate_thread_a',
                                 'space_1',
-                                'profile_1',
+                                'memory_scope_1',
                                 'thread_a',
                                 'Doc duplicate',
                                 'document',
@@ -677,7 +731,7 @@ def test_document_unique_indexes_allow_reimport_after_deleted_tombstone(
                         INSERT INTO memory_documents (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             thread_id,
                             title,
                             source_type,
@@ -691,7 +745,7 @@ def test_document_unique_indexes_allow_reimport_after_deleted_tombstone(
                         VALUES (
                             'doc_deleted',
                             'space_1',
-                            'profile_1',
+                            'memory_scope_1',
                             'thread_a',
                             'Deleted doc',
                             'document',
@@ -711,7 +765,7 @@ def test_document_unique_indexes_allow_reimport_after_deleted_tombstone(
                         INSERT INTO memory_documents (
                             id,
                             space_id,
-                            profile_id,
+                            memory_scope_id,
                             thread_id,
                             title,
                             source_type,
@@ -725,7 +779,7 @@ def test_document_unique_indexes_allow_reimport_after_deleted_tombstone(
                         VALUES (
                             'doc_reimported',
                             'space_1',
-                            'profile_1',
+                            'memory_scope_1',
                             'thread_a',
                             'Reimported doc',
                             'document',

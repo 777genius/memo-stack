@@ -5,9 +5,9 @@ from memo_stack_core.application import CreateSuggestionCommand, CreateSuggestio
 from memo_stack_core.domain.entities import (
     Confidence,
     MemoryKind,
+    MemoryScopeId,
     MemorySuggestion,
     MemorySuggestionId,
-    ProfileId,
     SourceRef,
     SpaceId,
     TrustLevel,
@@ -23,7 +23,7 @@ async def _run_commit_conflict_recovery() -> None:
     duplicate = MemorySuggestion.create(
         suggestion_id=MemorySuggestionId("sug_existing"),
         space_id=SpaceId("space_1"),
-        profile_id=ProfileId("profile_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
         candidate_text="Race-safe suggestion dedupe marker.",
         kind=MemoryKind.NOTE,
         source_refs=(SourceRef(source_type="manual", source_id="existing"),),
@@ -43,7 +43,7 @@ async def _run_commit_conflict_recovery() -> None:
     result = await use_case.execute(
         CreateSuggestionCommand(
             space_id=SpaceId("space_1"),
-            profile_id=ProfileId("profile_1"),
+            memory_scope_id=MemoryScopeId("memory_scope_1"),
             candidate_text="Race-safe suggestion dedupe marker.",
             kind=MemoryKind.NOTE,
             source_refs=(SourceRef(source_type="manual", source_id="new"),),

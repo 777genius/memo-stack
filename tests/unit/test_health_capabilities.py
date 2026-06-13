@@ -54,6 +54,13 @@ def test_root_health_alias_supports_client_canary() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_root_healthz_alias_supports_frontend_liveness() -> None:
+    response = build_test_client().get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
 def test_capabilities_return_noop_adapters() -> None:
     response = build_test_client().get("/v1/capabilities")
 
@@ -85,9 +92,31 @@ def test_capabilities_return_noop_adapters() -> None:
     assert "secret" not in response.text.lower()
     assert body["limits"]["max_context_tokens"] == 1800
     assert body["limits"]["max_capture_text_chars"] == 20_000
-    assert body["limits"]["max_pending_captures_per_profile"] == 5_000
-    assert body["limits"]["max_pending_suggestions_per_profile"] == 500
-    assert body["captures"]["max_pending_per_profile"] == 5_000
+    assert body["limits"]["max_pending_captures_per_memory_scope"] == 5_000
+    assert body["limits"]["max_pending_suggestions_per_memory_scope"] == 500
+    assert body["limits"]["media_analysis_seconds_per_month"] == 10 * 60 * 60
+    assert body["plans"]["current"] == "free"
+    assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == (
+        10 * 60 * 60
+    )
+    assert body["extraction"]["enabled"] is True
+    assert body["extraction"]["default_profile"] == "standard_local"
+    assert body["extraction"]["profiles"] == [
+        "standard_local",
+        "standard_docling",
+        "standard_vision",
+        "standard_asr",
+        "standard_full",
+    ]
+    assert isinstance(body["extraction"]["optional_extras"]["docling"]["installed"], bool)
+    assert isinstance(body["extraction"]["optional_extras"]["vision"]["installed"], bool)
+    assert body["extraction"]["optional_extras"]["vision"]["configured"] is False
+    assert body["extraction"]["optional_extras"]["vision"]["model"] == "gpt-4.1-mini"
+    assert body["extraction"]["optional_extras"]["vision"]["detail"] == "high"
+    assert isinstance(body["extraction"]["optional_extras"]["asr"]["installed"], bool)
+    assert body["extraction"]["optional_extras"]["asr"]["model"] == "base"
+    assert body["extraction"]["limits"]["max_media_seconds"] == 600
+    assert body["captures"]["max_pending_per_memory_scope"] == 5_000
     assert body["captures"]["ingress_limit_code"] == "memory.capture.ingress_limited"
     assert body["supports_legacy_client_routes"] is False
 
@@ -214,7 +243,7 @@ def test_capability_descriptor_contract_defaults_are_safe() -> None:
 
 
 def test_capability_recall_contract_validates_scope_and_score() -> None:
-    scope = MemoryScopeFilter(space_id="space-1", profile_ids=("profile-1",))
+    scope = MemoryScopeFilter(space_id="space-1", memory_scope_ids=("memory_scope-1",))
     query = CapabilityRecallQuery(
         scope=scope,
         query="architecture decision",

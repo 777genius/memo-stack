@@ -28,7 +28,7 @@ def test_cli_connect_preview_export_import_dry_run_smoke(
 ) -> None:
     gateway = FakeMemoryGateway()
     monkeypatch.setattr(cli, "_context", context_factory(tmp_path, gateway))
-    common = ["--vault", str(tmp_path), "--space", "default", "--profile", "me", "--json"]
+    common = ["--vault", str(tmp_path), "--space", "default", "--memory_scope", "me", "--json"]
 
     assert cli.main(["connect", *common]) == 0
     connect_payload = read_json(capsys)
@@ -102,7 +102,7 @@ def test_cli_install_plugin_can_enable_and_configure_plugin(
                 "http://127.0.0.1:17788",
                 "--space",
                 "team",
-                "--profile",
+                "--memory_scope",
                 "backend",
                 "--apply-import",
                 "--local-cli-path",
@@ -123,7 +123,7 @@ def test_cli_install_plugin_can_enable_and_configure_plugin(
     assert enabled == ["memo-stack"]
     assert settings["apiUrl"] == "http://127.0.0.1:17788"
     assert settings["spaceSlug"] == "team"
-    assert settings["profileExternalRef"] == "backend"
+    assert settings["memoryScopeExternalRef"] == "backend"
     assert settings["applyImportOnSync"] is True
     assert settings["localCliPath"] == "/usr/local/bin/memo-stack"
 
@@ -135,7 +135,7 @@ def test_cli_install_plugin_supports_custom_obsidian_config_dir(
 ) -> None:
     SetupVaultUseCase(vault=FilesystemVault(tmp_path)).execute(
         space_slug="team",
-        profile_external_ref="backend",
+        memory_scope_external_ref="backend",
     )
     assert (
         cli.main(
@@ -150,7 +150,7 @@ def test_cli_install_plugin_supports_custom_obsidian_config_dir(
                 "http://127.0.0.1:17788",
                 "--space",
                 "team",
-                "--profile",
+                "--memory_scope",
                 "backend",
                 "--json",
             ]
@@ -183,7 +183,7 @@ def test_cli_install_plugin_supports_custom_obsidian_config_dir(
                 "http://127.0.0.1:17788",
                 "--space",
                 "team",
-                "--profile",
+                "--memory_scope",
                 "backend",
                 "--json",
             ]
@@ -224,7 +224,7 @@ def test_cli_doctor_reports_ready_vault_without_opening_obsidian(
 ) -> None:
     SetupVaultUseCase(vault=FilesystemVault(tmp_path)).execute(
         space_slug="team",
-        profile_external_ref="backend",
+        memory_scope_external_ref="backend",
     )
     assert (
         cli.main(
@@ -237,7 +237,7 @@ def test_cli_doctor_reports_ready_vault_without_opening_obsidian(
                 "http://127.0.0.1:17788",
                 "--space",
                 "team",
-                "--profile",
+                "--memory_scope",
                 "backend",
                 "--json",
             ]
@@ -257,7 +257,7 @@ def test_cli_doctor_reports_ready_vault_without_opening_obsidian(
                 "http://127.0.0.1:17788",
                 "--space",
                 "team",
-                "--profile",
+                "--memory_scope",
                 "backend",
                 "--json",
             ]
@@ -283,7 +283,7 @@ def test_cli_doctor_reports_missing_plugin_without_health_call(
 ) -> None:
     SetupVaultUseCase(vault=FilesystemVault(tmp_path)).execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
     )
 
     assert (
@@ -294,7 +294,7 @@ def test_cli_doctor_reports_missing_plugin_without_health_call(
                 str(tmp_path),
                 "--space",
                 "default",
-                "--profile",
+                "--memory_scope",
                 "me",
                 "--no-health",
                 "--json",
@@ -332,7 +332,7 @@ def test_cli_watch_runs_one_loop_without_opening_obsidian(
             str(tmp_path),
             "--space",
             "default",
-            "--profile",
+            "--memory_scope",
             "me",
             "--apply-import",
             "--interval",
@@ -418,7 +418,7 @@ class FakeMemoryGateway:
         self.fact = {
             "id": "fact_123",
             "space_id": "space_1",
-            "profile_id": "profile_1",
+            "memory_scope_id": "memory_scope_1",
             "thread_id": None,
             "text": "Use Qdrant for document recall.",
             "kind": "architecture_decision",
@@ -442,7 +442,7 @@ class FakeMemoryGateway:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, object]:
@@ -481,7 +481,7 @@ class FakeMemoryGateway:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         candidate_text: str,
         safe_reason: str,
         source_refs: list[dict[str, object]],
@@ -489,7 +489,7 @@ class FakeMemoryGateway:
     ) -> dict[str, object]:
         call = {
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
+            "memory_scope_external_ref": memory_scope_external_ref,
             "candidate_text": candidate_text,
             "safe_reason": safe_reason,
             "source_refs": source_refs,

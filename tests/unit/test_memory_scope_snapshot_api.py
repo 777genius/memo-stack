@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_core.profile_snapshots import verify_snapshot_manifest_payload
+from memo_stack_core.memory_scope_snapshots import verify_snapshot_manifest_payload
 from memo_stack_server.config import DeployProfile, Settings
 from memo_stack_server.main import create_app
 
@@ -25,14 +25,14 @@ def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
 
 
-def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) -> None:
+def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         created = client.post(
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
-                "text": "SNAPSHOT_API_MARKER: profile snapshots are portable.",
+                "memory_scope_external_ref": "source-memory_scope",
+                "text": "SNAPSHOT_API_MARKER: memory_scope snapshots are portable.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "snapshot-api"}],
                 "category": "architecture",
@@ -45,8 +45,8 @@ def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) ->
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
-                "text": "SNAPSHOT_RELATION_TARGET: relations survive profile snapshots.",
+                "memory_scope_external_ref": "source-memory_scope",
+                "text": "SNAPSHOT_RELATION_TARGET: relations survive memory_scope snapshots.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "snapshot-link"}],
                 "category": "architecture",
@@ -65,10 +65,10 @@ def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) ->
             headers=auth_headers(),
         )
         exported = client.get(
-            "/v1/export/profile-snapshot",
+            "/v1/export/memory_scope-snapshot",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "redacted": False,
             },
             headers=auth_headers(),
@@ -76,56 +76,56 @@ def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) ->
         snapshot = exported.json()["data"]
         manifest = exported.json()["manifest"]
         dry_run = client.post(
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "restore-base",
+                "memory_scope_external_ref": "restore-base",
                 "snapshot": snapshot,
                 "manifest": manifest,
                 "dry_run": True,
-                "merge_strategy": "create_new_profile",
+                "merge_strategy": "create_new_memory_scope",
             },
             headers=auth_headers(),
         )
         refused = client.post(
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "restore-base",
+                "memory_scope_external_ref": "restore-base",
                 "snapshot": snapshot,
                 "dry_run": False,
-                "merge_strategy": "create_new_profile",
+                "merge_strategy": "create_new_memory_scope",
                 "confirmed": False,
             },
             headers=auth_headers(),
         )
         imported = client.post(
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "restore-base",
+                "memory_scope_external_ref": "restore-base",
                 "snapshot": snapshot,
                 "manifest": manifest,
                 "dry_run": False,
-                "merge_strategy": "create_new_profile",
+                "merge_strategy": "create_new_memory_scope",
                 "confirmed": True,
-                "source_name": "unit-profile-snapshot",
+                "source_name": "unit-memory_scope-snapshot",
             },
             headers=auth_headers(),
         )
-        created_profile = imported.json()["data"]["created_profile"]
+        created_memory_scope = imported.json()["data"]["created_memory_scope"]
         restored = client.get(
             "/v1/facts",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": created_profile["external_ref"],
+                "memory_scope_external_ref": created_memory_scope["external_ref"],
             },
             headers=auth_headers(),
         )
         restored_source = next(
             item
             for item in restored.json()["data"]
-            if item["text"] == "SNAPSHOT_API_MARKER: profile snapshots are portable."
+            if item["text"] == "SNAPSHOT_API_MARKER: memory_scope snapshots are portable."
         )
         restored_relations = client.get(
             f"/v1/facts/{restored_source['id']}/relations",
@@ -139,25 +139,27 @@ def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) ->
     assert exported.json()["counts"]["facts"] == 2
     assert exported.json()["counts"]["relations"] == 1
     assert snapshot["schema_version"] == 2
-    assert manifest["schema_version"] == "memo_stack.profile_snapshot_manifest.v1"
+    assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
     assert manifest["counts"]["relations"] == 1
     assert manifest["snapshot_sha256"]
     assert verify_snapshot_manifest_payload(snapshot=snapshot, manifest=manifest)["ok"] is True
-    assert snapshot["facts"][0]["text"] == "SNAPSHOT_API_MARKER: profile snapshots are portable."
+    assert (
+        snapshot["facts"][0]["text"] == "SNAPSHOT_API_MARKER: memory_scope snapshots are portable."
+    )
     assert snapshot["facts"][0]["category"] == "architecture"
     assert snapshot["facts"][0]["tags"] == ["snapshot"]
     assert snapshot["relations"][0]["relation_type"] == "supports"
     assert dry_run.status_code == 200
     assert dry_run.json()["data"]["dry_run"] is True
-    assert dry_run.json()["data"]["would_create_profile"] is True
+    assert dry_run.json()["data"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["would_import"]["relations"] == 1
-    assert dry_run.json()["data"]["preview"]["would_create_profile"] is True
+    assert dry_run.json()["data"]["preview"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["preview"]["would_import"]["relations"] == 1
     assert refused.status_code == 400
     assert imported.status_code == 200
-    assert imported.json()["data"]["merge_strategy"] == "create_new_profile"
+    assert imported.json()["data"]["merge_strategy"] == "create_new_memory_scope"
     assert imported.json()["data"]["imported"]["relations"] == 1
     assert restored.status_code == 200
     assert restored_source["id"] != created.json()["data"]["id"]
@@ -168,17 +170,17 @@ def test_profile_snapshot_export_dry_run_and_confirmed_import(tmp_path: Path) ->
     assert restored_relation["relation"]["target_fact_id"] != target.json()["data"]["id"]
     assert (
         restored_relation["related_fact"]["text"]
-        == "SNAPSHOT_RELATION_TARGET: relations survive profile snapshots."
+        == "SNAPSHOT_RELATION_TARGET: relations survive memory_scope snapshots."
     )
 
 
-def test_profile_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path) -> None:
+def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "text": "SNAPSHOT_API_CONFLICT_MARKER: conflict preview is explicit.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "snapshot-conflict"}],
@@ -186,19 +188,19 @@ def test_profile_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path
             headers=auth_headers(),
         )
         exported = client.get(
-            "/v1/export/profile-snapshot",
+            "/v1/export/memory_scope-snapshot",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "redacted": False,
             },
             headers=auth_headers(),
         )
         imported = client.post(
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "snapshot": exported.json()["data"],
                 "manifest": exported.json()["manifest"],
                 "dry_run": True,
@@ -207,10 +209,10 @@ def test_profile_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path
             headers=auth_headers(),
         )
         preview_response = client.post(
-            "/v1/export/profile-snapshot/preview",
+            "/v1/export/memory_scope-snapshot/preview",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "snapshot": exported.json()["data"],
                 "manifest": exported.json()["manifest"],
                 "merge_strategy": "fail_on_conflict",
@@ -233,13 +235,13 @@ def test_profile_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path
     assert "conflicts_block_import" in preview["warnings"]
 
 
-def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> None:
+def test_memory_scope_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "text": "SNAPSHOT_API_TAMPER_MARKER: manifest catches edits.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "snapshot-tamper"}],
@@ -247,10 +249,10 @@ def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> No
             headers=auth_headers(),
         )
         exported = client.get(
-            "/v1/export/profile-snapshot",
+            "/v1/export/memory_scope-snapshot",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "redacted": False,
             },
             headers=auth_headers(),
@@ -258,10 +260,10 @@ def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> No
         snapshot = exported.json()["data"]
         snapshot["facts"][0]["text"] = "tampered"
         imported = client.post(
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "restore-base",
+                "memory_scope_external_ref": "restore-base",
                 "snapshot": snapshot,
                 "manifest": exported.json()["manifest"],
                 "dry_run": True,
@@ -269,10 +271,10 @@ def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> No
             headers=auth_headers(),
         )
         previewed = client.post(
-            "/v1/export/profile-snapshot/preview",
+            "/v1/export/memory_scope-snapshot/preview",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "restore-base",
+                "memory_scope_external_ref": "restore-base",
                 "snapshot": snapshot,
                 "manifest": exported.json()["manifest"],
             },
@@ -286,13 +288,13 @@ def test_profile_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> No
     assert "snapshot_sha256_mismatch" in imported.text
 
 
-def test_profile_snapshot_import_refuses_redacted_memory(tmp_path: Path) -> None:
+def test_memory_scope_snapshot_import_refuses_redacted_memory(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "text": "Redacted snapshots are export-only.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "snapshot-redacted"}],
@@ -300,22 +302,22 @@ def test_profile_snapshot_import_refuses_redacted_memory(tmp_path: Path) -> None
             headers=auth_headers(),
         )
         exported = client.get(
-            "/v1/export/profile-snapshot",
+            "/v1/export/memory_scope-snapshot",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": "source-profile",
+                "memory_scope_external_ref": "source-memory_scope",
                 "redacted": True,
             },
             headers=auth_headers(),
         )
         imported = client.post(
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "restore-base",
+                "memory_scope_external_ref": "restore-base",
                 "snapshot": exported.json()["data"],
                 "dry_run": False,
-                "merge_strategy": "create_new_profile",
+                "merge_strategy": "create_new_memory_scope",
                 "confirmed": True,
             },
             headers=auth_headers(),
@@ -326,4 +328,4 @@ def test_profile_snapshot_import_refuses_redacted_memory(tmp_path: Path) -> None
     assert exported.json()["data"]["facts"][0]["text"] is None
     assert imported.status_code == 200
     assert imported.json()["data"]["status"] == "refused"
-    assert imported.json()["data"]["reason"] == "redacted_profile_export_cannot_be_imported"
+    assert imported.json()["data"]["reason"] == "redacted_memory_scope_export_cannot_be_imported"

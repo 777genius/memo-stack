@@ -39,7 +39,7 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
             "MEMORY_MCP_API_URL": base_url,
             "MEMORY_MCP_AUTH_TOKEN": token,
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-e2e",
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_AGENT_NAME": "e2e-agent",
             "MEMORY_MCP_TRANSPORT": "stdio",
             "MEMORY_MCP_WRITE_MODE": "direct",
@@ -119,8 +119,7 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         _assert_text_fallback_matches_structured(rejected)
         assert rejected.structuredContent["ok"] is False
         assert (
-            rejected.structuredContent["error"]["code"]
-            == "memo_stack_mcp.policy.secret_detected"
+            rejected.structuredContent["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
         )
         assert "sk-test" not in rejected.content[0].text
 
@@ -131,11 +130,11 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
                 "kind": "note",
                 "source_type": "manual",
                 "source_id": f"{marker}:unknown-field-source",
-                "profile_external_refs": ["not-accepted-on-write"],
+                "memory_scope_external_refs": ["not-accepted-on-write"],
             },
         )
         assert unknown_field.isError is True
-        assert "profile_external_refs" in unknown_field.content[0].text
+        assert "memory_scope_external_refs" in unknown_field.content[0].text
 
         partial_proposal = await session.call_tool(
             "memory_propose_updates",
@@ -376,7 +375,8 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         assert resource_payload["fact"]["version"] == 2
 
         secondary_fact = (
-            f"{marker}: Secondary profile fact should require explicit multi-profile read."
+            f"{marker}: Secondary memory_scope fact should require explicit "
+            "multi-memory_scope read."
         )
         secondary = await _call(
             session,
@@ -384,7 +384,7 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
             {
                 "text": secondary_fact,
                 "kind": "constraint",
-                "profile_external_ref": "secondary",
+                "memory_scope_external_ref": "secondary",
                 "source_type": "manual",
                 "source_id": f"{marker}:secondary-source",
                 "idempotency_key": f"{marker}:secondary",
@@ -394,20 +394,20 @@ async def _run_mcp_lifecycle(base_url: str, token: str) -> None:
         default_only_search = await _call(
             session,
             "memory_search",
-            {"query": "Secondary profile fact", "max_facts": 5, "max_chunks": 0},
+            {"query": "Secondary memory_scope fact", "max_facts": 5, "max_chunks": 0},
         )
         assert secondary_fact not in _dump(default_only_search)
-        multi_profile_search = await _call(
+        multi_memory_scope_search = await _call(
             session,
             "memory_search",
             {
-                "query": "Secondary profile fact",
-                "profile_external_refs": ["default", "secondary"],
+                "query": "Secondary memory_scope fact",
+                "memory_scope_external_refs": ["default", "secondary"],
                 "max_facts": 5,
                 "max_chunks": 0,
             },
         )
-        assert secondary_fact in _dump(multi_profile_search)
+        assert secondary_fact in _dump(multi_memory_scope_search)
 
         ingested = await _call(
             session,
@@ -543,7 +543,7 @@ async def _run_mcp_policy_modes(base_url: str, token: str) -> None:
         token,
         {
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-policy-e2e",
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_WRITE_MODE": "direct_explicit",
             "MEMORY_MCP_DELETE_MODE": "off",
             "MEMORY_MCP_INGEST_MODE": "small_docs",
@@ -625,7 +625,7 @@ async def _run_mcp_policy_modes(base_url: str, token: str) -> None:
         token,
         {
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-policy-e2e",
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_WRITE_MODE": "off",
             "MEMORY_MCP_DELETE_MODE": "off",
             "MEMORY_MCP_INGEST_MODE": "off",
@@ -649,7 +649,7 @@ async def _run_mcp_policy_modes(base_url: str, token: str) -> None:
         token,
         {
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-policy-e2e",
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_WRITE_MODE": "off",
             "MEMORY_MCP_DELETE_MODE": "off",
             "MEMORY_MCP_INGEST_MODE": "off",
@@ -684,7 +684,7 @@ async def _run_mcp_auth_failure(base_url: str) -> None:
         "wrong-e2e-token",
         {
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-auth-e2e",
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_WRITE_MODE": "direct",
             "MEMORY_MCP_DELETE_MODE": "explicit",
             "MEMORY_MCP_INGEST_MODE": "allowed",

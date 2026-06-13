@@ -84,46 +84,48 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
         probe = QualityProbe(client)
         marker = f"QUALITY_FACT_{time.time_ns()}"
         space_slug = "quality-e2e"
-        profile_a = "candidate-a"
-        profile_b = "candidate-b"
-        old_fact = f"{marker}: PROFILE_A must use CQRS read models for audit trail recall."
-        new_fact = f"{marker}: PROFILE_A must use append-only outbox for audit trail recall."
-        other_profile_fact = f"{marker}: PROFILE_B must use nightly attachment cleanup jobs only."
+        memory_scope_a = "candidate-a"
+        memory_scope_b = "candidate-b"
+        old_fact = f"{marker}: MEMORY_SCOPE_A must use CQRS read models for audit trail recall."
+        new_fact = f"{marker}: MEMORY_SCOPE_A must use append-only outbox for audit trail recall."
+        other_memory_scope_fact = (
+            f"{marker}: MEMORY_SCOPE_B must use nightly attachment cleanup jobs only."
+        )
 
         created_a = probe.request(
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_a, old_fact),
+            json_body=_fact_body(space_slug, memory_scope_a, old_fact),
             headers={"Idempotency-Key": f"{marker}:fact-a"},
         ).json()["data"]
         duplicate_a = probe.request(
             "POST",
             "/v1/facts",
             expected_status=200,
-            json_body=_fact_body(space_slug, profile_a, old_fact),
+            json_body=_fact_body(space_slug, memory_scope_a, old_fact),
             headers={"Idempotency-Key": f"{marker}:fact-a"},
         ).json()["data"]
         probe.request(
             "POST",
             "/v1/facts",
             expected_status=201,
-            json_body=_fact_body(space_slug, profile_b, other_profile_fact),
+            json_body=_fact_body(space_slug, memory_scope_b, other_memory_scope_fact),
             headers={"Idempotency-Key": f"{marker}:fact-b"},
         )
 
-        profile_a_context = _context(
+        memory_scope_a_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_a,
+            memory_scope_ref=memory_scope_a,
             query=f"{marker} CQRS audit trail",
             max_facts=5,
             max_chunks=0,
         )
-        profile_b_context = _context(
+        memory_scope_b_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_b,
+            memory_scope_ref=memory_scope_b,
             query=f"{marker} nightly attachment cleanup",
             max_facts=5,
             max_chunks=0,
@@ -132,18 +134,20 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
             "idempotent_fact_retry_returns_same_fact",
             duplicate_a["id"] == created_a["id"],
         )
-        probe.check("profile_a_recall_hits_own_fact", old_fact in _dump(profile_a_context))
         probe.check(
-            "profile_a_recall_does_not_leak_profile_b",
-            other_profile_fact not in _dump(profile_a_context),
+            "memory_scope_a_recall_hits_own_fact", old_fact in _dump(memory_scope_a_context)
         )
         probe.check(
-            "profile_b_recall_hits_own_fact",
-            other_profile_fact in _dump(profile_b_context),
+            "memory_scope_a_recall_does_not_leak_memory_scope_b",
+            other_memory_scope_fact not in _dump(memory_scope_a_context),
         )
         probe.check(
-            "profile_b_recall_does_not_leak_profile_a",
-            old_fact not in _dump(profile_b_context),
+            "memory_scope_b_recall_hits_own_fact",
+            other_memory_scope_fact in _dump(memory_scope_b_context),
+        )
+        probe.check(
+            "memory_scope_b_recall_does_not_leak_memory_scope_a",
+            old_fact not in _dump(memory_scope_b_context),
         )
 
         updated = probe.request(
@@ -171,7 +175,7 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
         updated_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_a,
+            memory_scope_ref=memory_scope_a,
             query=f"{marker} append-only outbox audit trail",
             max_facts=5,
             max_chunks=0,
@@ -202,7 +206,7 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
         after_forget_context = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_a,
+            memory_scope_ref=memory_scope_a,
             query=f"{marker} append-only outbox audit trail",
             max_facts=5,
             max_chunks=0,
@@ -213,7 +217,7 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
             expected_status=200,
             params={
                 "space_slug": space_slug,
-                "profile_external_ref": profile_a,
+                "memory_scope_external_ref": memory_scope_a,
                 "status": "deleted",
             },
         ).json()["data"]
@@ -242,7 +246,7 @@ def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Pat
         probe = QualityProbe(client)
         marker = f"QUALITY_DOC_{time.time_ns()}"
         space_slug = "quality-docs-e2e"
-        profile_ref = "project-memory"
+        memory_scope_ref = "project-memory"
         relevant_doc = (
             f"{marker}: SHARDED_INDEX memory design requires tenant scoped retrieval, "
             "source citations, and document chunk recall."
@@ -251,7 +255,7 @@ def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Pat
         restricted_doc = f"{marker}: SHARDED_INDEX restricted secret should never enter context."
         relevant_body = _document_body(
             space_slug,
-            profile_ref,
+            memory_scope_ref,
             title=f"{marker} relevant architecture note",
             text=relevant_doc,
             source_external_id=f"{marker}:relevant-doc",
@@ -277,7 +281,7 @@ def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Pat
             expected_status=201,
             json_body=_document_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 title=f"{marker} irrelevant note",
                 text=irrelevant_doc,
                 source_external_id=f"{marker}:irrelevant-doc",
@@ -290,7 +294,7 @@ def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Pat
             expected_status=201,
             json_body=_document_body(
                 space_slug,
-                profile_ref,
+                memory_scope_ref,
                 title=f"{marker} restricted note",
                 text=restricted_doc,
                 source_external_id=f"{marker}:restricted-doc",
@@ -302,7 +306,7 @@ def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Pat
         recalled = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query="SHARDED_INDEX tenant scoped retrieval citations chunk recall",
             max_facts=0,
             max_chunks=5,
@@ -347,7 +351,7 @@ def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Pat
         after_delete = _context(
             probe,
             space_slug=space_slug,
-            profile_ref=profile_ref,
+            memory_scope_ref=memory_scope_ref,
             query="SHARDED_INDEX tenant scoped retrieval citations chunk recall",
             max_facts=0,
             max_chunks=5,
@@ -364,7 +368,7 @@ def _context(
     probe: QualityProbe,
     *,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     query: str,
     max_facts: int,
     max_chunks: int,
@@ -375,7 +379,7 @@ def _context(
         expected_status=200,
         json_body={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "query": query,
             "token_budget": 1024,
             "max_facts": max_facts,
@@ -384,20 +388,20 @@ def _context(
     ).json()["data"]
 
 
-def _fact_body(space_slug: str, profile_ref: str, text: str) -> dict[str, Any]:
+def _fact_body(space_slug: str, memory_scope_ref: str, text: str) -> dict[str, Any]:
     return {
         "space_slug": space_slug,
-        "profile_external_ref": profile_ref,
+        "memory_scope_external_ref": memory_scope_ref,
         "text": text,
         "kind": "architecture_decision",
-        "source_refs": [_source_ref(f"{profile_ref}:{text[:60]}")],
+        "source_refs": [_source_ref(f"{memory_scope_ref}:{text[:60]}")],
         "classification": "internal",
     }
 
 
 def _document_body(
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     *,
     title: str,
     text: str,
@@ -406,7 +410,7 @@ def _document_body(
 ) -> dict[str, Any]:
     return {
         "space_slug": space_slug,
-        "profile_external_ref": profile_ref,
+        "memory_scope_external_ref": memory_scope_ref,
         "title": title,
         "text": text,
         "source_type": "document",

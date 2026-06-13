@@ -661,7 +661,7 @@ def test_live_smoke_strict_agent_cli_failures_make_result_not_ok(monkeypatch) ->
             "ok": True,
             "tool_count": 16,
             "space_slug": kwargs["space_slug"],
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
         }
 
     monkeypatch.setattr(module, "run_generated_mcp_status", fake_generated_status)
@@ -701,7 +701,7 @@ def test_live_smoke_non_strict_agent_cli_failures_are_advisory(monkeypatch) -> N
             "ok": True,
             "tool_count": 16,
             "space_slug": kwargs["space_slug"],
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
         }
 
     monkeypatch.setattr(module, "run_generated_mcp_status", fake_generated_status)

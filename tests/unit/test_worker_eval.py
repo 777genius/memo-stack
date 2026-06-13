@@ -36,7 +36,12 @@ from memo_stack_server.eval import (
     run_small_golden,
 )
 from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker, _safe_diagnostic_code, _safe_error
+from memo_stack_server.worker import (
+    OutboxWorker,
+    OutboxWorkerFilter,
+    _safe_diagnostic_code,
+    _safe_error,
+)
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,7 +98,7 @@ def test_eval_cli_uses_env_token_not_cli_auth_token() -> None:
 def fact_payload(text: str = "Graph jobs stay safe when Graphiti is disabled.") -> dict[str, Any]:
     return {
         "space_id": "space_client_app",
-        "profile_id": "profile_default",
+        "memory_scope_id": "memory_scope_default",
         "text": text,
         "kind": "architecture_decision",
         "source_refs": [{"source_type": "manual", "source_id": "worker-test"}],
@@ -122,6 +127,24 @@ async def outbox_event_types(client: TestClient) -> list[str]:
         )
 
 
+async def outbox_summary(client: TestClient) -> list[tuple[str, str, str]]:
+    engine = client.app.state.container.engine
+    async with AsyncSession(engine) as session:
+        rows = (
+            await session.execute(
+                select(
+                    MemoryOutboxRow.event_type,
+                    MemoryOutboxRow.workload_class,
+                    MemoryOutboxRow.status,
+                ).order_by(MemoryOutboxRow.id)
+            )
+        ).all()
+    return [
+        (str(event_type), str(workload_class), str(status))
+        for event_type, workload_class, status in rows
+    ]
+
+
 def test_outbox_worker_no_pending_jobs_is_stable(tmp_path: Path) -> None:
     async def run() -> int:
         container = build_container(
@@ -135,6 +158,68 @@ def test_outbox_worker_no_pending_jobs_is_stable(tmp_path: Path) -> None:
         return await OutboxWorker(container).run_once(limit=10)
 
     assert asyncio.run(run()) == 0
+
+
+def test_extraction_worker_filter_skips_suggestion_maintenance(tmp_path: Path) -> None:
+    class RecordingExpirePendingSuggestions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def execute(self, *, limit: int):
+            self.calls += 1
+
+    async def run() -> tuple[int, int]:
+        container = build_container(
+            Settings(
+                deploy_profile=DeployProfile.TEST,
+                database_url=f"sqlite+aiosqlite:///{tmp_path / 'worker-filter.db'}",
+                service_token="test-token",
+            )
+        )
+        await create_schema(container.engine)
+        recorder = RecordingExpirePendingSuggestions()
+        object.__setattr__(container, "expire_pending_suggestions", recorder)
+        processed = await OutboxWorker(
+            container,
+            worker_filter=OutboxWorkerFilter.from_values(workload_classes=("extraction",)),
+        ).run_once(limit=10)
+        return processed, recorder.calls
+
+    processed, calls = asyncio.run(run())
+
+    assert processed == 0
+    assert calls == 0
+
+
+def test_projection_worker_filter_runs_suggestion_maintenance(tmp_path: Path) -> None:
+    class RecordingExpirePendingSuggestions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def execute(self, *, limit: int):
+            self.calls += 1
+
+    async def run() -> tuple[int, int]:
+        container = build_container(
+            Settings(
+                deploy_profile=DeployProfile.TEST,
+                database_url=f"sqlite+aiosqlite:///{tmp_path / 'projection-filter.db'}",
+                service_token="test-token",
+            )
+        )
+        await create_schema(container.engine)
+        recorder = RecordingExpirePendingSuggestions()
+        object.__setattr__(container, "expire_pending_suggestions", recorder)
+        processed = await OutboxWorker(
+            container,
+            worker_filter=OutboxWorkerFilter.from_values(workload_classes=("projection",)),
+        ).run_once(limit=10)
+        return processed, recorder.calls
+
+    processed, calls = asyncio.run(run())
+
+    assert processed == 0
+    assert calls == 1
 
 
 def test_outbox_worker_marks_disabled_projection_jobs_done(tmp_path: Path) -> None:
@@ -154,7 +239,7 @@ def test_safe_document_ingest_enqueues_cognee_projection(tmp_path: Path) -> None
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Cognee projection",
                 "text": "COGNEE_PUBLIC_DOC_MARKER can be projected to document memory.",
                 "source_type": "document",
@@ -175,7 +260,7 @@ def test_restricted_document_ingest_does_not_enqueue_cognee_projection(tmp_path:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Restricted projection",
                 "text": "COGNEE_RESTRICTED_DOC_MARKER must stay out of external memory.",
                 "source_type": "document",
@@ -219,7 +304,7 @@ def test_cognee_document_projection_worker_sends_only_safe_canonical_chunks(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Safe Cognee worker",
                 "text": "COGNEE_WORKER_SAFE_MARKER should be sent from canonical chunks.",
                 "source_type": "document",
@@ -260,6 +345,41 @@ def test_outbox_jobs_store_lifecycle_metadata_by_default(tmp_path: Path) -> None
     assert workload_class == "projection"
     assert fairness_key == f"fact:{created.json()['data']['id']}"
     assert diagnostic_code is None
+
+
+def test_extraction_worker_filter_processes_only_extraction_jobs(tmp_path: Path) -> None:
+    with make_client_with_settings(tmp_path, asset_storage_dir=str(tmp_path / "assets")) as client:
+        fact = client.post("/v1/facts", json=fact_payload(), headers=auth_headers())
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "filename": "worker-contract.txt",
+                "extract": "true",
+            },
+            content=b"Extraction worker contract should not drain projection jobs.",
+            headers={**auth_headers(), "Content-Type": "text/plain"},
+        )
+        processed = asyncio.run(
+            OutboxWorker(
+                client.app.state.container,
+                worker_filter=OutboxWorkerFilter.from_values(workload_classes=("extraction",)),
+            ).run_once(limit=10)
+        )
+        summary = asyncio.run(outbox_summary(client))
+
+    assert fact.status_code == 201
+    assert upload.status_code == 201
+    assert processed == 1
+    assert ("graph.upsert_fact", "projection", "pending") in summary
+    assert ("asset.extract", "extraction", "done") in summary
+    assert any(
+        event_type == "vector.upsert_chunk"
+        and workload_class == "projection"
+        and status == "pending"
+        for event_type, workload_class, status in summary
+    )
 
 
 def test_expired_running_outbox_job_is_recovered_and_processed(tmp_path: Path) -> None:
@@ -429,7 +549,7 @@ def test_unknown_document_is_not_embedded_but_job_completes(tmp_path: Path) -> N
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Unknown document",
                 "text": "UNKNOWN_CLASSIFICATION_MARKER should be stored only.",
                 "source_type": "document",
@@ -464,7 +584,7 @@ def test_vector_disabled_internal_document_job_skips_embedding_and_completes(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Internal document",
                 "text": "VECTOR_DISABLED_INTERNAL_DOC_MARKER should stay canonical only.",
                 "source_type": "document",
@@ -527,7 +647,7 @@ def test_vector_document_projection_indexes_document_title_with_chunk_text(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": f"{marker}: Architecture notes",
                 "text": "Body mentions Postgres, Qdrant and Graphiti without the title marker.",
                 "source_type": "document",
@@ -594,7 +714,7 @@ def test_unhealthy_vector_projection_retries_without_embedding_cost(tmp_path: Pa
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Internal document",
                 "text": "VECTOR_UNHEALTHY_RETRY_MARKER should leave projection pending.",
                 "source_type": "document",
@@ -663,7 +783,7 @@ def test_embedding_budget_exceeded_keeps_document_canonical(tmp_path: Path) -> N
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Budget exceeded",
                 "text": (
                     "EMBEDDING_BUDGET_SECRET_MARKER is a canonical document that should "
@@ -737,7 +857,7 @@ def test_budget_diagnostics_omit_raw_text(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Budget diagnostics",
                 "text": "BUDGET_DIAGNOSTIC_RAW_TEXT must not appear in worker diagnostics.",
                 "source_type": "document",
@@ -909,7 +1029,7 @@ def test_small_golden_eval_passes() -> None:
     assert result["metrics"]["recall_at_5"] >= 0.85
     assert result["metrics"]["precision_at_5"] >= 0.70
     assert result["metrics"]["deleted_memory_leak_count"] == 0
-    assert result["metrics"]["cross_profile_leak_count"] == 0
+    assert result["metrics"]["cross_memory_scope_leak_count"] == 0
     assert result["metrics"]["prompt_injection_promoted_count"] == 0
     assert result["metrics"]["fallback_success_rate"] == 1.0
     assert result["failures"] == []
@@ -943,11 +1063,11 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["precision_at_5"] >= 0.90
     assert result["metrics"]["answer_support_rate"] == 1.0
     assert result["metrics"]["document_recall_at_5"] >= 0.95
-    assert result["metrics"]["multi_profile_recall_at_5"] == 1.0
+    assert result["metrics"]["multi_memory_scope_recall_at_5"] == 1.0
     assert result["metrics"]["thread_recall_at_5"] == 1.0
     assert result["metrics"]["stale_memory_rate"] == 0.0
     assert result["metrics"]["deleted_memory_leak_count"] == 0
-    assert result["metrics"]["cross_profile_leak_count"] == 0
+    assert result["metrics"]["cross_memory_scope_leak_count"] == 0
     assert result["metrics"]["cross_thread_leak_count"] == 0
     assert result["metrics"]["restricted_memory_leak_count"] == 0
     assert result["metrics"]["prompt_injection_promoted_count"] == 0
@@ -990,7 +1110,7 @@ def test_long_memory_golden_eval_passes() -> None:
     assert result["metrics"]["preference_synthesis_recall"] == 1.0
     assert result["metrics"]["long_document_recall_at_5"] >= 0.95
     assert result["metrics"]["thread_recall_at_5"] == 1.0
-    assert result["metrics"]["multi_profile_recall_at_5"] == 1.0
+    assert result["metrics"]["multi_memory_scope_recall_at_5"] == 1.0
     assert result["metrics"]["stale_memory_rate"] == 0.0
     assert result["metrics"]["long_safety_leak_count"] == 0
     assert result["metrics"]["critical_failure_count"] == 0
@@ -1145,7 +1265,7 @@ def test_small_golden_eval_seed_preserves_scope_invariants(
 
     assert result["ok"] is True
     assert invariants["status"] == "ok"
-    assert "profile_scoped_rows_match_profile" not in str(invariants.get("failed", []))
+    assert "memory_scope_scoped_rows_match_memory_scope" not in str(invariants.get("failed", []))
 
 
 def test_small_golden_eval_seed_is_repeatable_without_active_duplicates(
@@ -1217,7 +1337,7 @@ def test_db_upgrade_and_seed_defaults_cli_functions(tmp_path: Path, monkeypatch)
     assert upgraded == {"operation": "upgrade", "status": "ok"}
     assert seeded["status"] == "ok"
     assert str(seeded["space_id"]).startswith("space_")
-    assert str(seeded["profile_id"]).startswith("profile_")
+    assert str(seeded["memory_scope_id"]).startswith("memory_scope_")
 
 
 def test_readiness_doctor_entrypoint_is_safe(

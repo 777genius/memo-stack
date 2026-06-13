@@ -32,7 +32,7 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "ADR graph export",
                 "text": "\n".join(
                     [
@@ -58,7 +58,7 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Canonical graph export must use Postgres as source of truth.",
                 "kind": "architecture_decision",
                 "source_refs": [
@@ -77,7 +77,7 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Graphiti remains a derived temporal graph adapter.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "graphiti-derived"}],
@@ -98,7 +98,7 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
             "/v1/export/graph.json",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
             },
             headers=auth_headers(),
         )
@@ -135,7 +135,7 @@ def test_export_graph_excludes_restricted_memory_by_default(tmp_path: Path) -> N
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Restricted graph export marker must be hidden by default.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "restricted"}],
@@ -145,14 +145,14 @@ def test_export_graph_excludes_restricted_memory_by_default(tmp_path: Path) -> N
         )
         default_graph = client.get(
             "/v1/export/graph.json",
-            params={"space_id": "space_client_app", "profile_id": "profile_default"},
+            params={"space_id": "space_client_app", "memory_scope_id": "memory_scope_default"},
             headers=auth_headers(),
         )
         unrestricted_graph = client.get(
             "/v1/export/graph.json",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "include_restricted": True,
             },
             headers=auth_headers(),

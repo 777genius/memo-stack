@@ -108,14 +108,16 @@ def test_invariant_checker_is_scoped_and_omits_raw_text(
             json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=auth_headers(),
         ).json()["data"]
-        asyncio.run(_insert_broken_rows(client, space_id=space["id"], profile_id=profile["id"]))
+        asyncio.run(
+            _insert_broken_rows(client, space_id=space["id"], memory_scope_id=memory_scope["id"])
+        )
 
-    scoped = asyncio.run(invariant_check(space="client-app", profile="default"))
+    scoped = asyncio.run(invariant_check(space="client-app", memory_scope="default"))
     global_check = asyncio.run(invariant_check())
 
     assert scoped["status"] == "failed"
@@ -123,7 +125,7 @@ def test_invariant_checker_is_scoped_and_omits_raw_text(
     assert _check_by_name(scoped, "idempotency_results_exist")["count"] == 1
     assert "RAW_INVARIANT_SECRET" not in str(scoped)
     assert global_check["status"] == "failed"
-    assert _check_by_name(global_check, "profile_scoped_rows_match_profile")["count"] >= 1
+    assert _check_by_name(global_check, "memory_scope_scoped_rows_match_memory_scope")["count"] >= 1
     assert _check_by_name(global_check, "active_chunk_parent_exists")["count"] >= 1
     assert "RAW_CHUNK_SECRET" not in str(global_check)
 
@@ -141,8 +143,8 @@ def test_invariant_checker_projection_mode_detects_orphan_projection_outbox(
             json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=auth_headers(),
         ).json()["data"]
@@ -150,15 +152,15 @@ def test_invariant_checker_projection_mode_detects_orphan_projection_outbox(
             _insert_orphan_projection_outbox(
                 client,
                 space_id=space["id"],
-                profile_id=profile["id"],
+                memory_scope_id=memory_scope["id"],
             )
         )
 
-    default_check = asyncio.run(invariant_check(space="client-app", profile="default"))
+    default_check = asyncio.run(invariant_check(space="client-app", memory_scope="default"))
     projection_check = asyncio.run(
         invariant_check(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             include_projections=True,
         )
     )
@@ -183,9 +185,9 @@ def test_repair_projections_requires_scope_and_dry_run(
             headers=auth_headers(),
         )
 
-    missing_scope = asyncio.run(repair_projections(space=None, profile=None, dry_run=True))
+    missing_scope = asyncio.run(repair_projections(space=None, memory_scope=None, dry_run=True))
     missing_dry_run = asyncio.run(
-        repair_projections(space="client-app", profile="default", dry_run=False)
+        repair_projections(space="client-app", memory_scope="default", dry_run=False)
     )
 
     assert missing_scope["status"] == "refused"
@@ -205,8 +207,8 @@ def test_repair_dry_run_reports_counts_without_side_effects(
             json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=auth_headers(),
         ).json()["data"]
@@ -214,7 +216,7 @@ def test_repair_dry_run_reports_counts_without_side_effects(
             "/v1/documents",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "title": "Repair notes",
                 "text": "RAW_REPAIR_SECRET should not appear in repair output.",
                 "source_type": "document",
@@ -226,7 +228,7 @@ def test_repair_dry_run_reports_counts_without_side_effects(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "RAW_REPAIR_FACT should not appear in repair output.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "repair-fact"}],
@@ -235,7 +237,9 @@ def test_repair_dry_run_reports_counts_without_side_effects(
         )
         asyncio.run(_clear_outbox(client))
 
-    result = asyncio.run(repair_projections(space="client-app", profile="default", dry_run=True))
+    result = asyncio.run(
+        repair_projections(space="client-app", memory_scope="default", dry_run=True)
+    )
 
     with make_client(tmp_path) as client:
         rows = asyncio.run(_outbox_items(client))
@@ -260,8 +264,8 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
             json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=auth_headers(),
         ).json()["data"]
@@ -269,7 +273,7 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
             "/v1/documents",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "title": "Reindex notes",
                 "text": "RAW_QDRANT_REINDEX_SECRET should not appear in reindex output.",
                 "source_type": "document",
@@ -279,12 +283,12 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
         )
         asyncio.run(_clear_outbox(client))
 
-    dry_run = asyncio.run(reindex_qdrant(space="client-app", profile="default", dry_run=True))
-    refused = asyncio.run(reindex_qdrant(space="client-app", profile="default", dry_run=False))
+    dry_run = asyncio.run(reindex_qdrant(space="client-app", memory_scope="default", dry_run=True))
+    refused = asyncio.run(reindex_qdrant(space="client-app", memory_scope="default", dry_run=False))
     first = asyncio.run(
         reindex_qdrant(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             dry_run=False,
             confirmed=True,
         )
@@ -292,7 +296,7 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
     second = asyncio.run(
         reindex_qdrant(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             dry_run=False,
             confirmed=True,
         )
@@ -312,7 +316,7 @@ def test_reindex_qdrant_enqueues_active_chunk_projection_jobs(
     assert rows[0]["aggregate_type"] == "chunk"
     assert rows[0]["fairness_key"].startswith("chunk:")
     assert rows[0]["payload_json"]["space_id"] == space["id"]
-    assert rows[0]["payload_json"]["profile_id"] == profile["id"]
+    assert rows[0]["payload_json"]["memory_scope_id"] == memory_scope["id"]
     assert "RAW_QDRANT_REINDEX_SECRET" not in str(first)
 
 
@@ -329,8 +333,8 @@ def test_reindex_graphiti_skips_deleted_facts(
             json={"slug": "client-app", "name": "Client App"},
             headers=auth_headers(),
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=auth_headers(),
         ).json()["data"]
@@ -338,7 +342,7 @@ def test_reindex_graphiti_skips_deleted_facts(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Active fact should be reindexed.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "active-fact"}],
@@ -349,7 +353,7 @@ def test_reindex_graphiti_skips_deleted_facts(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "RAW_DELETED_GRAPHITI_SECRET should not be reindexed.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "deleted-fact"}],
@@ -362,7 +366,7 @@ def test_reindex_graphiti_skips_deleted_facts(
     result = asyncio.run(
         reindex_graphiti(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             dry_run=False,
             confirmed=True,
         )
@@ -434,21 +438,21 @@ def test_compact_done_outbox_redacts_payload_but_keeps_audit_columns(
     assert rows[0]["payload_json"]["compacted"] is True
     assert rows[0]["payload_json"]["preserved"] == {
         "space_id": "space_client_app",
-        "profile_id": "profile_default",
+        "memory_scope_id": "memory_scope_default",
         "chunk_id": "chunk_done_compact",
     }
     assert "RAW_DONE_PAYLOAD_SECRET" not in str(rows)
     assert "RAW_DONE_PAYLOAD_SECRET" not in str(compacted)
 
 
-async def _insert_broken_rows(client: TestClient, *, space_id: str, profile_id: str) -> None:
+async def _insert_broken_rows(client: TestClient, *, space_id: str, memory_scope_id: str) -> None:
     now = datetime.now(UTC)
     async with AsyncSession(client.app.state.container.engine) as session:
         session.add(
             MemoryFactRow(
                 id="fact_broken_no_refs",
                 space_id=space_id,
-                profile_id=profile_id,
+                memory_scope_id=memory_scope_id,
                 thread_id=None,
                 kind="note",
                 text="RAW_INVARIANT_SECRET should never appear in invariant output.",
@@ -465,7 +469,7 @@ async def _insert_broken_rows(client: TestClient, *, space_id: str, profile_id: 
             MemoryChunkRow(
                 id="chunk_broken_parent",
                 space_id=space_id,
-                profile_id="profile_missing",
+                memory_scope_id="memory_scope_missing",
                 thread_id=None,
                 document_id=None,
                 episode_id=None,
@@ -502,7 +506,7 @@ async def _insert_orphan_projection_outbox(
     client: TestClient,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
 ) -> None:
     now = datetime.now(UTC)
     async with AsyncSession(client.app.state.container.engine) as session:
@@ -514,7 +518,7 @@ async def _insert_orphan_projection_outbox(
                 aggregate_version=None,
                 payload_json={
                     "space_id": space_id,
-                    "profile_id": profile_id,
+                    "memory_scope_id": memory_scope_id,
                     "raw": "RAW_PROJECTION_SECRET should never appear in invariant output.",
                 },
                 status="pending",
@@ -564,7 +568,7 @@ async def _insert_done_outbox_with_raw_payload(client: TestClient) -> None:
                 aggregate_version=None,
                 payload_json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "chunk_id": "chunk_done_compact",
                     "raw": "RAW_DONE_PAYLOAD_SECRET should be compacted away",
                 },

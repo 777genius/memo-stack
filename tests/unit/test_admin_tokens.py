@@ -8,14 +8,14 @@ from memo_stack_adapters.postgres.models import (
     MemoryDocumentRow,
     MemoryFactRow,
     MemoryOutboxRow,
-    MemoryProfileRow,
+    MemoryScopeRow,
     MemoryServiceTokenRow,
     MemorySourceRefRow,
     MemorySpaceRow,
 )
 from memo_stack_server.admin import (
-    export_profile_command,
-    import_profile_command,
+    export_memory_scope_command,
+    import_memory_scope_command,
     reset_local,
     token_create,
     token_list,
@@ -71,17 +71,17 @@ async def _mark_scope_deleted(
     app,
     *,
     space_id: str | None = None,
-    profile_id: str | None = None,
+    memory_scope_id: str | None = None,
 ) -> None:
     async with AsyncSession(app.state.container.engine) as session:
         if space_id:
             space = await session.get(MemorySpaceRow, space_id)
             assert space is not None
             space.status = "deleted"
-        if profile_id:
-            profile = await session.get(MemoryProfileRow, profile_id)
-            assert profile is not None
-            profile.status = "deleted"
+        if memory_scope_id:
+            memory_scope = await session.get(MemoryScopeRow, memory_scope_id)
+            assert memory_scope is not None
+            memory_scope.status = "deleted"
         await session.commit()
 
 
@@ -123,7 +123,7 @@ def test_admin_token_lifecycle_and_auth_without_raw_token_in_list(
 
     assert created["status"] == "created"
     assert str(created["token"]).startswith("mp_")
-    assert created["profile_ids"] is None
+    assert created["memory_scope_ids"] is None
     assert set(created["permissions"]) == {
         "memory:admin",
         "memory:delete",
@@ -134,7 +134,7 @@ def test_admin_token_lifecycle_and_auth_without_raw_token_in_list(
     listed_ids = {item["id"] for item in listed["tokens"]}
     assert {created["token_id"], rotated["token_id"]}.issubset(listed_ids)
     assert all("token" not in item for item in listed["tokens"])
-    assert all("profile_ids" in item for item in listed["tokens"])
+    assert all("memory_scope_ids" in item for item in listed["tokens"])
     assert all("permissions" in item for item in listed["tokens"])
     assert authorized.status_code == 200
     assert rotated_authorized.status_code == 200
@@ -228,8 +228,8 @@ def test_scoped_service_token_cannot_cross_space_or_use_unscoped_routes(
             json={"slug": "scope-a", "name": "Scope A"},
             headers=root_headers,
         ).json()["data"]
-        profile_a = client.post(
-            "/v1/profiles",
+        memory_scope_a = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_a["id"], "external_ref": "default", "name": "Default"},
             headers=root_headers,
         ).json()["data"]
@@ -238,8 +238,8 @@ def test_scoped_service_token_cannot_cross_space_or_use_unscoped_routes(
             json={"slug": "scope-b", "name": "Scope B"},
             headers=root_headers,
         ).json()["data"]
-        profile_b = client.post(
-            "/v1/profiles",
+        memory_scope_b = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_b["id"], "external_ref": "default", "name": "Default"},
             headers=root_headers,
         ).json()["data"]
@@ -247,7 +247,7 @@ def test_scoped_service_token_cannot_cross_space_or_use_unscoped_routes(
             "/v1/facts",
             json={
                 "space_id": space_b["id"],
-                "profile_id": profile_b["id"],
+                "memory_scope_id": memory_scope_b["id"],
                 "text": "SCOPED_TOKEN_LEAK_MARKER must not be readable by scope-a token.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "scope-b"}],
@@ -260,12 +260,12 @@ def test_scoped_service_token_cannot_cross_space_or_use_unscoped_routes(
     with TestClient(app) as client:
         same_space = client.get(
             "/v1/facts",
-            params={"space_id": space_a["id"], "profile_id": profile_a["id"]},
+            params={"space_id": space_a["id"], "memory_scope_id": memory_scope_a["id"]},
             headers=scoped_headers,
         )
         cross_space = client.get(
             "/v1/facts",
-            params={"space_id": space_b["id"], "profile_id": profile_b["id"]},
+            params={"space_id": space_b["id"], "memory_scope_id": memory_scope_b["id"]},
             headers=scoped_headers,
         )
         cross_space_by_id = client.get(f"/v1/facts/{fact_b['id']}", headers=scoped_headers)
@@ -309,8 +309,8 @@ def test_service_token_permissions_are_enforced(
             json={"slug": "perm-space", "name": "Permission Space"},
             headers=root_headers,
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=root_headers,
         ).json()["data"]
@@ -318,7 +318,7 @@ def test_service_token_permissions_are_enforced(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Permission matrix fact.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "permissions"}],
@@ -362,12 +362,12 @@ def test_service_token_permissions_are_enforced(
     with TestClient(app) as client:
         read_allowed = client.get(
             "/v1/facts",
-            params={"space_id": space["id"], "profile_id": profile["id"]},
+            params={"space_id": space["id"], "memory_scope_id": memory_scope["id"]},
             headers=read_headers,
         )
         read_can_get_capabilities = client.get("/v1/capabilities", headers=read_headers)
-        read_can_list_profiles = client.get(
-            "/v1/profiles",
+        read_can_list_memory_scopes = client.get(
+            "/v1/memory-scopes",
             params={"space_id": space["id"]},
             headers=read_headers,
         )
@@ -375,7 +375,7 @@ def test_service_token_permissions_are_enforced(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Read token must not create this.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "permissions"}],
@@ -383,13 +383,22 @@ def test_service_token_permissions_are_enforced(
             headers=read_headers,
         )
         read_cannot_delete = client.delete(f"/v1/facts/{fact['id']}", headers=read_headers)
+        read_cannot_update_memory_scope = client.patch(
+            f"/v1/memory-scopes/{memory_scope['id']}",
+            json={"name": "Read token renamed scope"},
+            headers=read_headers,
+        )
+        read_cannot_delete_memory_scope = client.delete(
+            f"/v1/memory-scopes/{memory_scope['id']}",
+            headers=read_headers,
+        )
         read_cannot_diagnose = client.get("/v1/diagnostics/outbox", headers=read_headers)
 
         write_allowed = client.post(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Write token may create this.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "permissions"}],
@@ -400,7 +409,7 @@ def test_service_token_permissions_are_enforced(
             "/v1/captures",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "source_agent": "codex",
                 "source_kind": "hook",
                 "event_type": "UserPromptSubmit",
@@ -427,12 +436,21 @@ def test_service_token_permissions_are_enforced(
         )
         write_cannot_read = client.get(
             "/v1/facts",
-            params={"space_id": space["id"], "profile_id": profile["id"]},
+            params={"space_id": space["id"], "memory_scope_id": memory_scope["id"]},
             headers=write_headers,
         )
-        write_cannot_list_profiles = client.get(
-            "/v1/profiles",
+        write_cannot_list_memory_scopes = client.get(
+            "/v1/memory-scopes",
             params={"space_id": space["id"]},
+            headers=write_headers,
+        )
+        write_can_update_memory_scope = client.patch(
+            f"/v1/memory-scopes/{memory_scope['id']}",
+            json={"name": "Permission Scope"},
+            headers=write_headers,
+        )
+        write_cannot_delete_memory_scope = client.delete(
+            f"/v1/memory-scopes/{memory_scope['id']}",
             headers=write_headers,
         )
         write_cannot_delete = client.delete(f"/v1/facts/{fact['id']}", headers=write_headers)
@@ -443,19 +461,19 @@ def test_service_token_permissions_are_enforced(
         )
         diagnostics_cannot_read = client.get(
             "/v1/facts",
-            params={"space_id": space["id"], "profile_id": profile["id"]},
+            params={"space_id": space["id"], "memory_scope_id": memory_scope["id"]},
             headers=diagnostics_headers,
         )
         admin_can_read = client.get(
             "/v1/facts",
-            params={"space_id": space["id"], "profile_id": profile["id"]},
+            params={"space_id": space["id"], "memory_scope_id": memory_scope["id"]},
             headers=admin_headers,
         )
         admin_can_write = client.post(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Admin token may create this.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "admin-permission"}],
@@ -466,16 +484,20 @@ def test_service_token_permissions_are_enforced(
 
     assert read_allowed.status_code == 200
     assert read_can_get_capabilities.status_code == 200
-    assert read_can_list_profiles.status_code == 200
+    assert read_can_list_memory_scopes.status_code == 200
     assert read_cannot_write.status_code == 403
     assert read_cannot_delete.status_code == 403
+    assert read_cannot_update_memory_scope.status_code == 403
+    assert read_cannot_delete_memory_scope.status_code == 403
     assert read_cannot_diagnose.status_code == 403
     assert write_allowed.status_code == 201
     assert write_capture_allowed.status_code == 201
     assert write_cannot_read_capture.status_code == 403
     assert write_cannot_purge_capture.status_code == 403
     assert write_cannot_read.status_code == 403
-    assert write_cannot_list_profiles.status_code == 403
+    assert write_cannot_list_memory_scopes.status_code == 403
+    assert write_can_update_memory_scope.status_code == 200
+    assert write_cannot_delete_memory_scope.status_code == 403
     assert write_cannot_delete.status_code == 403
     assert diagnostics_allowed.status_code == 200
     assert diagnostics_cannot_read.status_code == 403
@@ -485,19 +507,21 @@ def test_service_token_permissions_are_enforced(
     assert read_cannot_write.json()["error"]["code"] == "memory.forbidden"
 
 
-def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
+def test_memory_scope_scoped_service_token_cannot_cross_memory_scope_in_same_space(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
-    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'profiles.db'}")
+    monkeypatch.setenv(
+        "MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'memory_scopes.db'}"
+    )
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
     asyncio.run(upgrade())
 
     app = create_app(
         Settings(
             deploy_profile=DeployProfile.TEST,
-            database_url=f"sqlite+aiosqlite:///{tmp_path / 'profiles.db'}",
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'memory_scopes.db'}",
             auto_create_schema=True,
             service_token="root-token",
             qdrant_enabled=False,
@@ -509,16 +533,16 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
     with TestClient(app) as client:
         space = client.post(
             "/v1/spaces",
-            json={"slug": "profile-scope", "name": "Profile Scope"},
+            json={"slug": "memory_scope-scope", "name": "MemoryScope Scope"},
             headers=root_headers,
         ).json()["data"]
-        profile_a = client.post(
-            "/v1/profiles",
+        memory_scope_a = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
             headers=root_headers,
         ).json()["data"]
-        profile_b = client.post(
-            "/v1/profiles",
+        memory_scope_b = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "beta", "name": "Beta"},
             headers=root_headers,
         ).json()["data"]
@@ -526,10 +550,10 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile_b["id"],
-                "text": "PROFILE_SCOPE_LEAK_MARKER must not be visible.",
+                "memory_scope_id": memory_scope_b["id"],
+                "text": "MEMORY_SCOPE_LEAK_MARKER must not be visible.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-b"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-b"}],
             },
             headers=root_headers,
         ).json()["data"]
@@ -537,11 +561,13 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
             "/v1/suggestions",
             json={
                 "space_id": space["id"],
-                "profile_id": profile_b["id"],
-                "candidate_text": "PROFILE_SCOPE_SUGGESTION_LEAK must not be visible.",
+                "memory_scope_id": memory_scope_b["id"],
+                "candidate_text": "MEMORY_SCOPE_SUGGESTION_LEAK must not be visible.",
                 "kind": "note",
                 "safe_reason": "scope_test",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-b-suggestion"}],
+                "source_refs": [
+                    {"source_type": "manual", "source_id": "memory_scope-b-suggestion"}
+                ],
             },
             headers=root_headers,
         ).json()["data"]
@@ -549,7 +575,7 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
     scoped = asyncio.run(
         token_create(
             space_id=space["id"],
-            profile_ids=(profile_a["id"],),
+            memory_scope_ids=(memory_scope_a["id"],),
             description="alpha only",
             permissions=("memory:read",),
         )
@@ -557,7 +583,7 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
     diagnostics_scoped = asyncio.run(
         token_create(
             space_id=space["id"],
-            profile_ids=(profile_a["id"],),
+            memory_scope_ids=(memory_scope_a["id"],),
             description="alpha diagnostics",
             permissions=("memory:diagnostics",),
         )
@@ -566,77 +592,77 @@ def test_profile_scoped_service_token_cannot_cross_profile_in_same_space(
     diagnostics_headers = {"Authorization": f"Bearer {diagnostics_scoped['token']}"}
 
     with TestClient(app) as client:
-        same_profile = client.get(
+        same_memory_scope = client.get(
             "/v1/facts",
-            params={"space_id": space["id"], "profile_id": profile_a["id"]},
+            params={"space_id": space["id"], "memory_scope_id": memory_scope_a["id"]},
             headers=scoped_headers,
         )
-        cross_profile = client.get(
+        cross_memory_scope = client.get(
             "/v1/facts",
-            params={"space_id": space["id"], "profile_id": profile_b["id"]},
+            params={"space_id": space["id"], "memory_scope_id": memory_scope_b["id"]},
             headers=scoped_headers,
         )
-        cross_profile_by_id = client.get(f"/v1/facts/{fact_b['id']}", headers=scoped_headers)
-        same_profile_suggestions = client.get(
+        cross_memory_scope_by_id = client.get(f"/v1/facts/{fact_b['id']}", headers=scoped_headers)
+        same_memory_scope_suggestions = client.get(
             "/v1/suggestions",
             params={
                 "space_id": space["id"],
-                "profile_id": profile_a["id"],
+                "memory_scope_id": memory_scope_a["id"],
                 "status": "pending",
             },
             headers=scoped_headers,
         )
-        cross_profile_suggestions = client.get(
+        cross_memory_scope_suggestions = client.get(
             "/v1/suggestions",
             params={
                 "space_id": space["id"],
-                "profile_id": profile_b["id"],
+                "memory_scope_id": memory_scope_b["id"],
                 "status": "pending",
             },
             headers=scoped_headers,
         )
-        cross_profile_suggestion_by_id = client.post(
+        cross_memory_scope_suggestion_by_id = client.post(
             f"/v1/suggestions/{suggestion_b['id']}/reject",
             json={"reason": "must not access"},
             headers=scoped_headers,
         )
-        same_profile_diagnostics = client.get(
-            f"/v1/diagnostics/profile/{profile_a['id']}",
+        same_memory_scope_diagnostics = client.get(
+            f"/v1/diagnostics/memory-scope/{memory_scope_a['id']}",
             headers=scoped_headers,
         )
-        scoped_same_profile_diagnostics = client.get(
-            f"/v1/diagnostics/profile/{profile_a['id']}",
+        scoped_same_memory_scope_diagnostics = client.get(
+            f"/v1/diagnostics/memory-scope/{memory_scope_a['id']}",
             headers=diagnostics_headers,
         )
-        cross_profile_diagnostics = client.get(
-            f"/v1/diagnostics/profile/{profile_b['id']}",
+        cross_memory_scope_diagnostics = client.get(
+            f"/v1/diagnostics/memory-scope/{memory_scope_b['id']}",
             headers=diagnostics_headers,
         )
-        multi_profile_context = client.post(
+        multi_memory_scope_context = client.post(
             "/v1/context",
             json={
                 "space_id": space["id"],
-                "profile_ids": [profile_a["id"], profile_b["id"]],
-                "query": "PROFILE_SCOPE_LEAK_MARKER",
+                "memory_scope_ids": [memory_scope_a["id"], memory_scope_b["id"]],
+                "query": "MEMORY_SCOPE_LEAK_MARKER",
             },
             headers=scoped_headers,
         )
-        profile_capabilities = client.get("/v1/capabilities", headers=scoped_headers)
+        memory_scope_capabilities = client.get("/v1/capabilities", headers=scoped_headers)
 
-    assert scoped["profile_ids"] == [profile_a["id"]]
-    assert same_profile.status_code == 200
-    assert cross_profile.status_code == 403
-    assert cross_profile_by_id.status_code == 403
-    assert same_profile_suggestions.status_code == 200
-    assert cross_profile_suggestions.status_code == 403
-    assert cross_profile_suggestion_by_id.status_code == 403
-    assert same_profile_diagnostics.status_code == 403
-    assert scoped_same_profile_diagnostics.status_code == 200
-    assert cross_profile_diagnostics.status_code == 403
-    assert multi_profile_context.status_code == 403
-    assert profile_capabilities.status_code == 200
-    assert "PROFILE_SCOPE_LEAK_MARKER" not in cross_profile_by_id.text
-    assert "PROFILE_SCOPE_SUGGESTION_LEAK" not in cross_profile_suggestions.text
+    assert scoped["memory_scope_ids"] == [memory_scope_a["id"]]
+    assert same_memory_scope.status_code == 200
+    assert cross_memory_scope.status_code == 403
+    assert cross_memory_scope_by_id.status_code == 403
+    assert same_memory_scope_suggestions.status_code == 200
+    assert cross_memory_scope_suggestions.status_code == 403
+    assert cross_memory_scope_suggestion_by_id.status_code == 403
+    assert same_memory_scope_diagnostics.status_code == 403
+    assert scoped_same_memory_scope_diagnostics.status_code == 200
+    assert cross_memory_scope_diagnostics.status_code == 403
+    assert multi_memory_scope_context.status_code == 403
+    assert memory_scope_capabilities.status_code == 200
+    assert "MEMORY_SCOPE_LEAK_MARKER" not in cross_memory_scope_by_id.text
+    assert "MEMORY_SCOPE_SUGGESTION_LEAK" not in cross_memory_scope_suggestions.text
 
 
 def test_scoped_service_tokens_reject_inactive_path_resource_scope(
@@ -666,8 +692,8 @@ def test_scoped_service_tokens_reject_inactive_path_resource_scope(
             json={"slug": "inactive-scope", "name": "Inactive Scope"},
             headers=root_headers,
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
             headers=root_headers,
         ).json()["data"]
@@ -675,7 +701,7 @@ def test_scoped_service_tokens_reject_inactive_path_resource_scope(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "INACTIVE_SCOPE_PATH_MARKER must not leak after scope deletion.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "inactive-scope"}],
@@ -683,11 +709,11 @@ def test_scoped_service_tokens_reject_inactive_path_resource_scope(
             headers=root_headers,
         ).json()["data"]
 
-    profile_scoped = asyncio.run(
+    memory_scope_scoped = asyncio.run(
         token_create(
             space_id=space["id"],
-            profile_ids=(profile["id"],),
-            description="inactive profile token",
+            memory_scope_ids=(memory_scope["id"],),
+            description="inactive memory_scope token",
             permissions=("memory:read",),
         )
     )
@@ -698,30 +724,30 @@ def test_scoped_service_tokens_reject_inactive_path_resource_scope(
             permissions=("memory:read",),
         )
     )
-    profile_headers = {"Authorization": f"Bearer {profile_scoped['token']}"}
+    memory_scope_headers = {"Authorization": f"Bearer {memory_scope_scoped['token']}"}
     space_headers = {"Authorization": f"Bearer {space_scoped['token']}"}
 
     with TestClient(app) as client:
-        profile_before = client.get(f"/v1/facts/{fact['id']}", headers=profile_headers)
+        memory_scope_before = client.get(f"/v1/facts/{fact['id']}", headers=memory_scope_headers)
         space_before = client.get(f"/v1/facts/{fact['id']}", headers=space_headers)
 
-    asyncio.run(_mark_scope_deleted(app, profile_id=profile["id"]))
+    asyncio.run(_mark_scope_deleted(app, memory_scope_id=memory_scope["id"]))
     with TestClient(app) as client:
-        inactive_profile = client.get(f"/v1/facts/{fact['id']}", headers=profile_headers)
+        inactive_memory_scope = client.get(f"/v1/facts/{fact['id']}", headers=memory_scope_headers)
 
     asyncio.run(_mark_scope_deleted(app, space_id=space["id"]))
     with TestClient(app) as client:
         inactive_space = client.get(f"/v1/facts/{fact['id']}", headers=space_headers)
 
-    assert profile_before.status_code == 200
+    assert memory_scope_before.status_code == 200
     assert space_before.status_code == 200
-    assert inactive_profile.status_code == 403
+    assert inactive_memory_scope.status_code == 403
     assert inactive_space.status_code == 403
-    assert "INACTIVE_SCOPE_PATH_MARKER" not in inactive_profile.text
+    assert "INACTIVE_SCOPE_PATH_MARKER" not in inactive_memory_scope.text
     assert "INACTIVE_SCOPE_PATH_MARKER" not in inactive_space.text
 
 
-def test_profile_scoped_external_ref_match_is_bound_to_token_space(
+def test_memory_scope_scoped_external_ref_match_is_bound_to_token_space(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -748,8 +774,8 @@ def test_profile_scoped_external_ref_match_is_bound_to_token_space(
             json={"slug": "ref-space-a", "name": "Ref Space A"},
             headers=root_headers,
         ).json()["data"]
-        profile_a = client.post(
-            "/v1/profiles",
+        memory_scope_a = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_a["id"], "external_ref": "default", "name": "Default"},
             headers=root_headers,
         ).json()["data"]
@@ -758,8 +784,8 @@ def test_profile_scoped_external_ref_match_is_bound_to_token_space(
             json={"slug": "ref-space-b", "name": "Ref Space B"},
             headers=root_headers,
         ).json()["data"]
-        profile_b = client.post(
-            "/v1/profiles",
+        memory_scope_b = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_b["id"], "external_ref": "default", "name": "Default"},
             headers=root_headers,
         ).json()["data"]
@@ -767,8 +793,8 @@ def test_profile_scoped_external_ref_match_is_bound_to_token_space(
             "/v1/facts",
             json={
                 "space_id": space_b["id"],
-                "profile_id": profile_b["id"],
-                "text": "PROFILE_REF_SPACE_MARKER must not leak to space-a token.",
+                "memory_scope_id": memory_scope_b["id"],
+                "text": "MEMORY_SCOPE_REF_SPACE_MARKER must not leak to space-a token.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "ref-space-b"}],
             },
@@ -778,28 +804,28 @@ def test_profile_scoped_external_ref_match_is_bound_to_token_space(
     scoped = asyncio.run(
         token_create(
             space_id=space_a["id"],
-            profile_ids=("default",),
+            memory_scope_ids=("default",),
             description="space-a default by external ref",
             permissions=("memory:read",),
         )
     )
     scoped_headers = {"Authorization": f"Bearer {scoped['token']}"}
 
-    asyncio.run(_mark_scope_deleted(app, profile_id=profile_a["id"]))
+    asyncio.run(_mark_scope_deleted(app, memory_scope_id=memory_scope_a["id"]))
     with TestClient(app) as client:
         same_space_deleted = client.get(
             "/v1/facts",
-            params={"space_id": space_a["id"], "profile_id": "default"},
+            params={"space_id": space_a["id"], "memory_scope_id": "default"},
             headers=scoped_headers,
         )
         cross_space_path = client.get(f"/v1/facts/{fact_b['id']}", headers=scoped_headers)
 
     assert same_space_deleted.status_code == 403
     assert cross_space_path.status_code == 403
-    assert "PROFILE_REF_SPACE_MARKER" not in cross_space_path.text
+    assert "MEMORY_SCOPE_REF_SPACE_MARKER" not in cross_space_path.text
 
 
-def test_profile_scoped_service_token_requires_space_scope(
+def test_memory_scope_scoped_service_token_requires_space_scope(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -812,14 +838,14 @@ def test_profile_scoped_service_token_requires_space_scope(
         asyncio.run(
             token_create(
                 space_id=None,
-                profile_ids=("default",),
-                description="ambiguous profile token",
+                memory_scope_ids=("default",),
+                description="ambiguous memory_scope token",
             )
         )
     except ValueError as exc:
         assert "requires a space scope" in str(exc)
     else:
-        raise AssertionError("Expected profile-scoped token without space to fail")
+        raise AssertionError("Expected memory_scope-scoped token without space to fail")
 
 
 def test_scoped_service_token_create_requires_existing_active_scope(
@@ -849,8 +875,8 @@ def test_scoped_service_token_create_requires_existing_active_scope(
             json={"slug": "token-scope-create", "name": "Token Scope Create"},
             headers=root_headers,
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
             headers=root_headers,
         ).json()["data"]
@@ -858,7 +884,7 @@ def test_scoped_service_token_create_requires_existing_active_scope(
     slug_scoped = asyncio.run(
         token_create(
             space_id="token-scope-create",
-            profile_ids=("alpha",),
+            memory_scope_ids=("alpha",),
             description="slug scoped",
         )
     )
@@ -869,30 +895,30 @@ def test_scoped_service_token_create_requires_existing_active_scope(
     except ValueError as exc:
         missing_space_error = str(exc)
 
-    missing_profile_error = None
+    missing_memory_scope_error = None
     try:
         asyncio.run(
             token_create(
                 space_id=space["id"],
-                profile_ids=("profile_missing",),
-                description="missing profile",
+                memory_scope_ids=("memory_scope_missing",),
+                description="missing memory_scope",
             )
         )
     except ValueError as exc:
-        missing_profile_error = str(exc)
+        missing_memory_scope_error = str(exc)
 
-    asyncio.run(_mark_scope_deleted(app, profile_id=profile["id"]))
-    deleted_profile_error = None
+    asyncio.run(_mark_scope_deleted(app, memory_scope_id=memory_scope["id"]))
+    deleted_memory_scope_error = None
     try:
         asyncio.run(
             token_create(
                 space_id=space["id"],
-                profile_ids=(profile["id"],),
-                description="deleted profile",
+                memory_scope_ids=(memory_scope["id"],),
+                description="deleted memory_scope",
             )
         )
     except ValueError as exc:
-        deleted_profile_error = str(exc)
+        deleted_memory_scope_error = str(exc)
 
     asyncio.run(_mark_scope_deleted(app, space_id=space["id"]))
     deleted_space_error = None
@@ -902,18 +928,18 @@ def test_scoped_service_token_create_requires_existing_active_scope(
         deleted_space_error = str(exc)
 
     assert slug_scoped["space_id"] == "token-scope-create"
-    assert slug_scoped["profile_ids"] == ["alpha"]
+    assert slug_scoped["memory_scope_ids"] == ["alpha"]
     assert missing_space_error == "Scoped service token space must exist and be active"
-    assert missing_profile_error == (
-        "Profile scoped service token profiles must exist and be active"
+    assert missing_memory_scope_error == (
+        "MemoryScope scoped service token memory_scopes must exist and be active"
     )
-    assert deleted_profile_error == (
-        "Profile scoped service token profiles must exist and be active"
+    assert deleted_memory_scope_error == (
+        "MemoryScope scoped service token memory_scopes must exist and be active"
     )
     assert deleted_space_error == "Scoped service token space must exist and be active"
 
 
-def test_profile_scoped_write_token_can_create_suggestion_only_in_scope(
+def test_memory_scope_scoped_write_token_can_create_suggestion_only_in_scope(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -940,13 +966,13 @@ def test_profile_scoped_write_token_can_create_suggestion_only_in_scope(
             json={"slug": "suggest-scope", "name": "Suggest Scope"},
             headers=root_headers,
         ).json()["data"]
-        profile_a = client.post(
-            "/v1/profiles",
+        memory_scope_a = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
             headers=root_headers,
         ).json()["data"]
         client.post(
-            "/v1/profiles",
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "beta", "name": "Beta"},
             headers=root_headers,
         )
@@ -954,7 +980,7 @@ def test_profile_scoped_write_token_can_create_suggestion_only_in_scope(
     scoped = asyncio.run(
         token_create(
             space_id=space["id"],
-            profile_ids=(profile_a["id"],),
+            memory_scope_ids=(memory_scope_a["id"],),
             description="alpha write",
             permissions=("memory:write",),
         )
@@ -962,30 +988,30 @@ def test_profile_scoped_write_token_can_create_suggestion_only_in_scope(
     scoped_headers = {"Authorization": f"Bearer {scoped['token']}"}
     payload = {
         "space_slug": "suggest-scope",
-        "profile_external_ref": "alpha",
+        "memory_scope_external_ref": "alpha",
         "candidate_text": "Scoped suggestion can be written.",
         "kind": "note",
         "safe_reason": "scope_test",
         "source_refs": [{"source_type": "manual", "source_id": "scope-write"}],
     }
     with TestClient(app) as client:
-        same_profile = client.post(
+        same_memory_scope = client.post(
             "/v1/suggestions",
             json=payload,
             headers=scoped_headers,
         )
-        cross_profile = client.post(
+        cross_memory_scope = client.post(
             "/v1/suggestions",
-            json={**payload, "profile_external_ref": "beta"},
+            json={**payload, "memory_scope_external_ref": "beta"},
             headers=scoped_headers,
         )
 
-    assert same_profile.status_code == 201
-    assert cross_profile.status_code == 403
-    assert "Scoped suggestion can be written" not in cross_profile.text
+    assert same_memory_scope.status_code == 201
+    assert cross_memory_scope.status_code == 403
+    assert "Scoped suggestion can be written" not in cross_memory_scope.text
 
 
-def test_profile_scoped_service_token_accepts_external_refs_without_cross_profile_leak(
+def test_memory_scope_scoped_service_token_accepts_external_refs_without_cross_memory_scope_leak(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1012,13 +1038,13 @@ def test_profile_scoped_service_token_accepts_external_refs_without_cross_profil
             json={"slug": "external-scope", "name": "External Scope"},
             headers=root_headers,
         ).json()["data"]
-        profile_alpha = client.post(
-            "/v1/profiles",
+        memory_scope_alpha = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "alpha", "name": "Alpha"},
             headers=root_headers,
         ).json()["data"]
         client.post(
-            "/v1/profiles",
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "beta", "name": "Beta"},
             headers=root_headers,
         )
@@ -1026,19 +1052,19 @@ def test_profile_scoped_service_token_accepts_external_refs_without_cross_profil
     scoped = asyncio.run(
         token_create(
             space_id=space["id"],
-            profile_ids=(profile_alpha["id"],),
+            memory_scope_ids=(memory_scope_alpha["id"],),
             description="alpha external refs",
         )
     )
     scoped_headers = {"Authorization": f"Bearer {scoped['token']}"}
     allowed_scope = {
         "space_slug": "external-scope",
-        "profile_external_ref": "alpha",
+        "memory_scope_external_ref": "alpha",
         "thread_external_ref": "external-session-alpha",
     }
     denied_scope = {
         "space_slug": "external-scope",
-        "profile_external_ref": "beta",
+        "memory_scope_external_ref": "beta",
         "thread_external_ref": "external-session-beta",
     }
 
@@ -1112,7 +1138,7 @@ def test_profile_scoped_service_token_accepts_external_refs_without_cross_profil
     assert "EXTERNAL_SCOPE_FACT_BETA_MARKER" not in denied_fact.text
 
 
-def test_reset_local_refuses_without_confirmation_and_server_profile(monkeypatch) -> None:
+def test_reset_local_refuses_without_confirmation_and_server_memory_scope(monkeypatch) -> None:
     monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "local")
     refused = asyncio.run(reset_local(confirmed=False))
     monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "server")
@@ -1122,7 +1148,7 @@ def test_reset_local_refuses_without_confirmation_and_server_profile(monkeypatch
     assert refused["status"] == "refused"
     assert server_refused == {
         "status": "refused",
-        "reason": "reset-local is forbidden in server profile",
+        "reason": "reset-local is forbidden in server deploy profile",
     }
 
 
@@ -1153,8 +1179,8 @@ def test_export_redacted_mode_omits_restricted_text(
             json={"slug": "client-app", "name": "Client App"},
             headers={"Authorization": "Bearer root-token"},
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers={"Authorization": "Bearer root-token"},
         ).json()["data"]
@@ -1162,7 +1188,7 @@ def test_export_redacted_mode_omits_restricted_text(
             "/v1/documents",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "title": "Transfer notes",
                 "text": "TRANSFER_SECRET_MARKER must be redacted from chunk export.",
                 "source_type": "document",
@@ -1174,7 +1200,7 @@ def test_export_redacted_mode_omits_restricted_text(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Transfer fact text should be redacted.",
                 "kind": "note",
                 "classification": "restricted",
@@ -1189,38 +1215,38 @@ def test_export_redacted_mode_omits_restricted_text(
             headers={"Authorization": "Bearer root-token"},
         )
 
-    out = tmp_path / "profile-export.json"
+    out = tmp_path / "memory_scope-export.json"
     exported = asyncio.run(
-        export_profile_command(
+        export_memory_scope_command(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             out=str(out),
             redacted=True,
         )
     )
     payload = json.loads(out.read_text(encoding="utf-8"))
     imported = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="dry-run-space",
-            profile="dry-run-profile",
+            memory_scope="dry-run-memory_scope",
             file=str(out),
             dry_run=True,
             merge_strategy="fail_on_conflict",
         )
     )
     refused_import = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="write-space",
-            profile="write-profile",
+            memory_scope="write-memory_scope",
             file=str(out),
             dry_run=False,
             merge_strategy="skip_existing",
         )
     )
     refused_redacted_import = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="write-space",
-            profile="write-profile",
+            memory_scope="write-memory_scope",
             file=str(out),
             dry_run=False,
             merge_strategy="skip_existing",
@@ -1228,9 +1254,9 @@ def test_export_redacted_mode_omits_restricted_text(
         )
     )
     dry_run_scope = asyncio.run(
-        export_profile_command(
+        export_memory_scope_command(
             space="dry-run-space",
-            profile="dry-run-profile",
+            memory_scope="dry-run-memory_scope",
             out=str(tmp_path / "dry-run-export.json"),
             redacted=True,
         )
@@ -1248,16 +1274,16 @@ def test_export_redacted_mode_omits_restricted_text(
     assert imported["dry_run"] is True
     assert refused_import == {
         "status": "refused",
-        "reason": "import-profile requires --i-understand-this-writes-canonical-memory",
+        "reason": "import-memory_scope requires --i-understand-this-writes-canonical-memory",
     }
     assert refused_redacted_import == {
         "status": "refused",
-        "reason": "redacted_profile_export_cannot_be_imported",
+        "reason": "redacted_memory_scope_export_cannot_be_imported",
     }
     assert dry_run_scope["status"] == "not_found"
 
 
-def test_export_profile_refuses_deleted_scope(
+def test_export_memory_scope_refuses_deleted_scope(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1285,8 +1311,8 @@ def test_export_profile_refuses_deleted_scope(
             json={"slug": "deleted-export", "name": "Deleted Export"},
             headers=headers,
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=headers,
         ).json()["data"]
@@ -1295,8 +1321,8 @@ def test_export_profile_refuses_deleted_scope(
             json={"slug": "deleted-export-space", "name": "Deleted Export Space"},
             headers=headers,
         ).json()["data"]
-        deleted_space_profile = client.post(
-            "/v1/profiles",
+        deleted_space_memory_scope = client.post(
+            "/v1/memory-scopes",
             json={
                 "space_id": deleted_space["id"],
                 "external_ref": "default",
@@ -1304,15 +1330,15 @@ def test_export_profile_refuses_deleted_scope(
             },
             headers=headers,
         ).json()["data"]
-        for scope_space, scope_profile, marker in (
-            (space, profile, "DELETED_PROFILE_EXPORT_SECRET"),
-            (deleted_space, deleted_space_profile, "DELETED_SPACE_EXPORT_SECRET"),
+        for scope_space, scope_memory_scope, marker in (
+            (space, memory_scope, "DELETED_MEMORY_SCOPE_EXPORT_SECRET"),
+            (deleted_space, deleted_space_memory_scope, "DELETED_SPACE_EXPORT_SECRET"),
         ):
             client.post(
                 "/v1/facts",
                 json={
                     "space_id": scope_space["id"],
-                    "profile_id": scope_profile["id"],
+                    "memory_scope_id": scope_memory_scope["id"],
                     "text": f"{marker} must not be exported after scope deletion.",
                     "kind": "note",
                     "source_refs": [{"source_type": "manual", "source_id": marker.lower()}],
@@ -1320,35 +1346,38 @@ def test_export_profile_refuses_deleted_scope(
                 headers=headers,
             )
 
-    asyncio.run(_mark_scope_deleted(app, profile_id=profile["id"]))
+    asyncio.run(_mark_scope_deleted(app, memory_scope_id=memory_scope["id"]))
     asyncio.run(_mark_scope_deleted(app, space_id=deleted_space["id"]))
-    deleted_profile_out = tmp_path / "deleted-profile-export.json"
+    deleted_memory_scope_out = tmp_path / "deleted-memory_scope-export.json"
     deleted_space_out = tmp_path / "deleted-space-export.json"
 
-    deleted_profile_export = asyncio.run(
-        export_profile_command(
+    deleted_memory_scope_export = asyncio.run(
+        export_memory_scope_command(
             space="deleted-export",
-            profile="default",
-            out=str(deleted_profile_out),
+            memory_scope="default",
+            out=str(deleted_memory_scope_out),
             redacted=False,
         )
     )
     deleted_space_export = asyncio.run(
-        export_profile_command(
+        export_memory_scope_command(
             space="deleted-export-space",
-            profile="default",
+            memory_scope="default",
             out=str(deleted_space_out),
             redacted=False,
         )
     )
 
-    assert deleted_profile_export == {"status": "not_found", "out": str(deleted_profile_out)}
+    assert deleted_memory_scope_export == {
+        "status": "not_found",
+        "out": str(deleted_memory_scope_out),
+    }
     assert deleted_space_export == {"status": "not_found", "out": str(deleted_space_out)}
-    assert not deleted_profile_out.exists()
+    assert not deleted_memory_scope_out.exists()
     assert not deleted_space_out.exists()
 
 
-def test_import_profile_enqueues_projection_reindex_events(
+def test_import_memory_scope_enqueues_projection_reindex_events(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1358,13 +1387,13 @@ def test_import_profile_enqueues_projection_reindex_events(
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
     asyncio.run(upgrade())
 
-    fixture = tmp_path / "profile-import.json"
+    fixture = tmp_path / "memory_scope-import.json"
     fixture.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "space": {"slug": "source-space"},
-                "profile": {"external_ref": "source-profile"},
+                "memory_scope": {"external_ref": "source-memory_scope"},
                 "facts": [
                     {
                         "id": "fact_imported_reindex",
@@ -1429,9 +1458,9 @@ def test_import_profile_enqueues_projection_reindex_events(
     )
 
     imported = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="import-space",
-            profile="default",
+            memory_scope="default",
             file=str(fixture),
             dry_run=False,
             merge_strategy="fail_on_conflict",
@@ -1472,7 +1501,7 @@ def test_import_profile_enqueues_projection_reindex_events(
     assert all(item["workload_class"] == "projection" for item in items)
 
 
-def test_import_profile_drops_thread_ids_without_thread_transfer(
+def test_import_memory_scope_drops_thread_ids_without_thread_transfer(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1482,13 +1511,13 @@ def test_import_profile_drops_thread_ids_without_thread_transfer(
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
     asyncio.run(upgrade())
 
-    fixture = tmp_path / "thread-profile-import.json"
+    fixture = tmp_path / "thread-memory_scope-import.json"
     fixture.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "space": {"slug": "source-space"},
-                "profile": {"external_ref": "source-profile"},
+                "memory_scope": {"external_ref": "source-memory_scope"},
                 "facts": [
                     {
                         "id": "fact_imported_thread",
@@ -1558,9 +1587,9 @@ def test_import_profile_drops_thread_ids_without_thread_transfer(
     )
 
     imported = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="thread-import-space",
-            profile="default",
+            memory_scope="default",
             file=str(fixture),
             dry_run=False,
             merge_strategy="fail_on_conflict",
@@ -1605,7 +1634,7 @@ def test_import_profile_drops_thread_ids_without_thread_transfer(
     assert chunk_thread_id is None
 
 
-def test_import_profile_skips_episode_chunks_without_episode_transfer(
+def test_import_memory_scope_skips_episode_chunks_without_episode_transfer(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1615,13 +1644,13 @@ def test_import_profile_skips_episode_chunks_without_episode_transfer(
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
     asyncio.run(upgrade())
 
-    fixture = tmp_path / "episode-chunk-profile-import.json"
+    fixture = tmp_path / "episode-chunk-memory_scope-import.json"
     fixture.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "space": {"slug": "source-space"},
-                "profile": {"external_ref": "source-profile"},
+                "memory_scope": {"external_ref": "source-memory_scope"},
                 "facts": [
                     {
                         "id": "fact_imported_episode_chunk",
@@ -1700,9 +1729,9 @@ def test_import_profile_skips_episode_chunks_without_episode_transfer(
     )
 
     imported = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="episode-chunk-import-space",
-            profile="default",
+            memory_scope="default",
             file=str(fixture),
             dry_run=False,
             merge_strategy="fail_on_conflict",
@@ -1759,11 +1788,11 @@ def test_import_profile_skips_episode_chunks_without_episode_transfer(
     assert refs[0].source_type == "import"
 
 
-def test_import_profile_create_new_profile_rewrites_canonical_ids(
+def test_import_memory_scope_create_new_memory_scope_rewrites_canonical_ids(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    db_path = tmp_path / "create-new-profile.db"
+    db_path = tmp_path / "create-new-memory_scope.db"
     monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
     monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
@@ -1787,8 +1816,8 @@ def test_import_profile_create_new_profile_rewrites_canonical_ids(
             json={"slug": "client-app", "name": "Client App"},
             headers=headers,
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=headers,
         ).json()["data"]
@@ -1796,30 +1825,30 @@ def test_import_profile_create_new_profile_rewrites_canonical_ids(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
-                "text": "Portable import should not overwrite the original profile.",
+                "memory_scope_id": memory_scope["id"],
+                "text": "Portable import should not overwrite the original memory_scope.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "portable-fact"}],
             },
             headers=headers,
         ).json()["data"]
 
-    export_path = tmp_path / "profile-export.json"
+    export_path = tmp_path / "memory_scope-export.json"
     exported = asyncio.run(
-        export_profile_command(
+        export_memory_scope_command(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             out=str(export_path),
             redacted=False,
         )
     )
     imported = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             file=str(export_path),
             dry_run=False,
-            merge_strategy="create_new_profile",
+            merge_strategy="create_new_memory_scope",
             confirmed=True,
         )
     )
@@ -1830,40 +1859,44 @@ def test_import_profile_create_new_profile_rewrites_canonical_ids(
                 (
                     await session.execute(
                         select(MemoryFactRow).order_by(
-                            MemoryFactRow.profile_id,
+                            MemoryFactRow.memory_scope_id,
                             MemoryFactRow.id,
                         )
                     )
                 ).scalars()
             )
         with TestClient(app) as client:
-            profiles = client.get(
-                "/v1/profiles",
+            memory_scopes = client.get(
+                "/v1/memory-scopes",
                 params={"space_id": space["id"]},
                 headers=headers,
             ).json()["data"]
-        return facts, profiles
+        return facts, memory_scopes
 
-    facts, profiles = asyncio.run(load_rows())
-    created_profile = imported["created_profile"]
-    new_profile_facts = [row for row in facts if row.profile_id == created_profile["id"]]
-    original_profile_facts = [row for row in facts if row.profile_id == profile["id"]]
+    facts, memory_scopes = asyncio.run(load_rows())
+    created_memory_scope = imported["created_memory_scope"]
+    new_memory_scope_facts = [
+        row for row in facts if row.memory_scope_id == created_memory_scope["id"]
+    ]
+    original_memory_scope_facts = [
+        row for row in facts if row.memory_scope_id == memory_scope["id"]
+    ]
 
     assert exported["status"] == "ok"
     assert imported["status"] == "ok"
-    assert imported["merge_strategy"] == "create_new_profile"
-    assert created_profile["external_ref"].startswith("default-import-")
-    assert {item["external_ref"] for item in profiles} == {
+    assert imported["merge_strategy"] == "create_new_memory_scope"
+    assert created_memory_scope["external_ref"].startswith("default-import-")
+    assert {item["external_ref"] for item in memory_scopes} == {
         "default",
-        created_profile["external_ref"],
+        created_memory_scope["external_ref"],
     }
-    assert [row.id for row in original_profile_facts] == [fact["id"]]
-    assert len(new_profile_facts) == 1
-    assert new_profile_facts[0].id != fact["id"]
-    assert new_profile_facts[0].text == fact["text"]
+    assert [row.id for row in original_memory_scope_facts] == [fact["id"]]
+    assert len(new_memory_scope_facts) == 1
+    assert new_memory_scope_facts[0].id != fact["id"]
+    assert new_memory_scope_facts[0].text == fact["text"]
 
 
-def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
+def test_import_memory_scope_supersede_matching_facts_keeps_history_and_reindexes(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1891,8 +1924,8 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
             json={"slug": "client-app", "name": "Client App"},
             headers=headers,
         ).json()["data"]
-        profile = client.post(
-            "/v1/profiles",
+        memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space["id"], "external_ref": "default", "name": "Default"},
             headers=headers,
         ).json()["data"]
@@ -1900,7 +1933,7 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
             "/v1/facts",
             json={
                 "space_id": space["id"],
-                "profile_id": profile["id"],
+                "memory_scope_id": memory_scope["id"],
                 "text": "Old imported fact value.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "original"}],
@@ -1908,13 +1941,13 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
             headers=headers,
         ).json()["data"]
 
-    fixture = tmp_path / "supersede-profile.json"
+    fixture = tmp_path / "supersede-memory_scope.json"
     fixture.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "space": {"slug": "source-space"},
-                "profile": {"external_ref": "source-profile"},
+                "memory_scope": {"external_ref": "source-memory_scope"},
                 "facts": [
                     {
                         "id": original["id"],
@@ -1946,9 +1979,9 @@ def test_import_profile_supersede_matching_facts_keeps_history_and_reindexes(
     )
 
     imported = asyncio.run(
-        import_profile_command(
+        import_memory_scope_command(
             space="client-app",
-            profile="default",
+            memory_scope="default",
             file=str(fixture),
             dry_run=False,
             merge_strategy="supersede_matching_facts",

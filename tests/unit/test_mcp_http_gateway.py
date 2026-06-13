@@ -58,11 +58,11 @@ def test_http_gateway_sends_auth_idempotency_and_external_scope() -> None:
     assert seen["idempotency_key"] == "fact-key-1"
     assert seen["url"] == "http://memory.test/v1/facts"
     assert seen["body"]["space_slug"] == "client-app"
-    assert seen["body"]["profile_external_ref"] == "default"
+    assert seen["body"]["memory_scope_external_ref"] == "default"
     assert seen["body"]["thread_external_ref"] == "session-1"
 
 
-def test_http_gateway_sends_read_scope_profile_external_refs() -> None:
+def test_http_gateway_sends_read_scope_memory_scope_external_refs() -> None:
     seen: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -80,7 +80,7 @@ def test_http_gateway_sends_read_scope_profile_external_refs() -> None:
         await gateway.build_context(
             scope=MemoryReadScope(
                 space_slug="client-app",
-                profile_external_refs=("default", "candidate"),
+                memory_scope_external_refs=("default", "candidate"),
             ),
             query="memo stack",
             token_budget=512,
@@ -91,8 +91,8 @@ def test_http_gateway_sends_read_scope_profile_external_refs() -> None:
     asyncio.run(run())
 
     assert seen["body"]["space_slug"] == "client-app"
-    assert seen["body"]["profile_external_refs"] == ["default", "candidate"]
-    assert "profile_external_ref" not in seen["body"]
+    assert seen["body"]["memory_scope_external_refs"] == ["default", "candidate"]
+    assert "memory_scope_external_ref" not in seen["body"]
 
 
 def test_http_gateway_redacts_backend_error_messages() -> None:

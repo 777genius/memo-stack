@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import MemoryOutboxRow, MemoryProfileRow, MemoryThreadRow
+from memo_stack_adapters.postgres.models import MemoryOutboxRow, MemoryScopeRow, MemoryThreadRow
 from memo_stack_core.domain.errors import MemoryConflictError
 from memo_stack_core.domain.idempotency import IdempotencyRecord
 from memo_stack_server.config import DeployProfile, MemoryPolicyMode, Settings
@@ -53,7 +53,7 @@ def auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
 def fact_payload(text: str = "Postgres is canonical truth.") -> dict[str, Any]:
     return {
         "space_id": "space_client_app",
-        "profile_id": "profile_default",
+        "memory_scope_id": "memory_scope_default",
         "text": text,
         "kind": "architecture_decision",
         "source_refs": [
@@ -75,15 +75,15 @@ async def outbox_count(client: TestClient) -> int:
 async def mark_scope_rows_deleted(
     client: TestClient,
     *,
-    profile_id: str | None = None,
+    memory_scope_id: str | None = None,
     thread_id: str | None = None,
 ) -> None:
     engine = client.app.state.container.engine
     async with AsyncSession(engine) as session:
-        if profile_id:
-            profile = await session.get(MemoryProfileRow, profile_id)
-            assert profile is not None
-            profile.status = "deleted"
+        if memory_scope_id:
+            memory_scope = await session.get(MemoryScopeRow, memory_scope_id)
+            assert memory_scope is not None
+            memory_scope.status = "deleted"
         if thread_id:
             thread = await session.get(MemoryThreadRow, thread_id)
             assert thread is not None
@@ -129,7 +129,7 @@ def test_remember_and_list_fact_support_external_scope_refs(tmp_path: Path) -> N
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "backend-team",
+                "memory_scope_external_ref": "backend-team",
                 "thread_external_ref": "session-1",
                 "text": "MCP facts can be written through external scope refs.",
                 "kind": "architecture_decision",
@@ -146,7 +146,7 @@ def test_remember_and_list_fact_support_external_scope_refs(tmp_path: Path) -> N
             "/v1/facts",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": "backend-team",
+                "memory_scope_external_ref": "backend-team",
                 "status": "active",
             },
             headers=auth_headers(),
@@ -165,7 +165,7 @@ def test_read_routes_do_not_create_missing_external_scope(tmp_path: Path) -> Non
             "/v1/facts",
             params={
                 "space_slug": "missing-read-space",
-                "profile_external_ref": "missing-profile",
+                "memory_scope_external_ref": "missing-memory_scope",
             },
             headers=auth_headers(),
         )
@@ -173,7 +173,7 @@ def test_read_routes_do_not_create_missing_external_scope(tmp_path: Path) -> Non
             "/v1/suggestions",
             params={
                 "space_slug": "missing-read-space",
-                "profile_external_ref": "missing-profile",
+                "memory_scope_external_ref": "missing-memory_scope",
             },
             headers=auth_headers(),
         )
@@ -181,7 +181,7 @@ def test_read_routes_do_not_create_missing_external_scope(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_slug": "missing-read-space",
-                "profile_external_ref": "missing-profile",
+                "memory_scope_external_ref": "missing-memory_scope",
                 "query": "nothing should be created",
                 "token_budget": 512,
             },
@@ -191,7 +191,7 @@ def test_read_routes_do_not_create_missing_external_scope(tmp_path: Path) -> Non
             "/v1/search",
             json={
                 "space_slug": "missing-read-space",
-                "profile_external_ref": "missing-profile",
+                "memory_scope_external_ref": "missing-memory_scope",
                 "query": "nothing should be created",
                 "token_budget": 512,
             },
@@ -230,19 +230,19 @@ def test_same_idempotency_key_different_body_conflicts(tmp_path: Path) -> None:
     assert conflict.json()["error"]["code"] == "memory.conflict"
 
 
-def test_same_idempotency_key_is_profile_scoped(tmp_path: Path) -> None:
+def test_same_idempotency_key_is_memory_scope_scoped(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
-        headers = auth_headers({"Idempotency-Key": "profile-scoped-fact-key"})
+        headers = auth_headers({"Idempotency-Key": "memory_scope-scoped-fact-key"})
         default = client.post(
             "/v1/facts",
-            json=fact_payload("PROFILE_IDEMPOTENCY_MARKER belongs to default."),
+            json=fact_payload("MEMORY_SCOPE_IDEMPOTENCY_MARKER belongs to default."),
             headers=headers,
         )
         secondary = client.post(
             "/v1/facts",
             json={
-                **fact_payload("PROFILE_IDEMPOTENCY_MARKER belongs to default."),
-                "profile_id": "profile_secondary",
+                **fact_payload("MEMORY_SCOPE_IDEMPOTENCY_MARKER belongs to default."),
+                "memory_scope_id": "memory_scope_secondary",
             },
             headers=headers,
         )
@@ -250,8 +250,8 @@ def test_same_idempotency_key_is_profile_scoped(tmp_path: Path) -> None:
     assert default.status_code == 201
     assert secondary.status_code == 201
     assert default.json()["data"]["id"] != secondary.json()["data"]["id"]
-    assert default.json()["data"]["profile_id"] == "profile_default"
-    assert secondary.json()["data"]["profile_id"] == "profile_secondary"
+    assert default.json()["data"]["memory_scope_id"] == "memory_scope_default"
+    assert secondary.json()["data"]["memory_scope_id"] == "memory_scope_secondary"
 
 
 def test_idempotency_unique_violation_maps_to_domain_conflict(tmp_path: Path) -> None:
@@ -357,7 +357,7 @@ def test_fact_update_context_only_renders_current_version(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "memory retrieval",
                 "max_facts": 5,
                 "max_chunks": 0,
@@ -379,7 +379,7 @@ def test_fact_update_context_only_renders_current_version(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "memory retrieval pgvector Qdrant",
                 "max_facts": 5,
                 "max_chunks": 0,
@@ -409,7 +409,7 @@ def test_related_facts_returns_explainable_same_scope_neighbors(tmp_path: Path) 
             "/v1/facts",
             json={
                 "space_slug": "related-space",
-                "profile_external_ref": "backend",
+                "memory_scope_external_ref": "backend",
                 "thread_external_ref": "thread-a",
                 "text": "RELATED_TARGET: Graphiti stores temporal memory edges.",
                 "kind": "architecture_decision",
@@ -429,7 +429,7 @@ def test_related_facts_returns_explainable_same_scope_neighbors(tmp_path: Path) 
             "/v1/facts",
             json={
                 "space_slug": "related-space",
-                "profile_external_ref": "backend",
+                "memory_scope_external_ref": "backend",
                 "thread_external_ref": "thread-a",
                 "text": "RELATED_SAME_THREAD: Qdrant handles memory vector recall.",
                 "kind": "architecture_decision",
@@ -445,16 +445,16 @@ def test_related_facts_returns_explainable_same_scope_neighbors(tmp_path: Path) 
             },
             headers=auth_headers(),
         )
-        profile_wide = client.post(
+        memory_scope_wide = client.post(
             "/v1/facts",
             json={
                 "space_slug": "related-space",
-                "profile_external_ref": "backend",
-                "text": "RELATED_PROFILE_WIDE: Postgres remains canonical memory truth.",
+                "memory_scope_external_ref": "backend",
+                "text": "RELATED_MEMORY_SCOPE_WIDE: Postgres remains canonical memory truth.",
                 "kind": "architecture_decision",
                 "category": "architecture",
                 "tags": ["memory"],
-                "source_refs": [{"source_type": "manual", "source_id": "profile-wide"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-wide"}],
             },
             headers=auth_headers(),
         )
@@ -462,7 +462,7 @@ def test_related_facts_returns_explainable_same_scope_neighbors(tmp_path: Path) 
             "/v1/facts",
             json={
                 "space_slug": "related-space",
-                "profile_external_ref": "backend",
+                "memory_scope_external_ref": "backend",
                 "thread_external_ref": "thread-b",
                 "text": "RELATED_OTHER_THREAD: should require explicit opt-in.",
                 "kind": "architecture_decision",
@@ -476,7 +476,7 @@ def test_related_facts_returns_explainable_same_scope_neighbors(tmp_path: Path) 
             "/v1/facts",
             json={
                 "space_slug": "related-space",
-                "profile_external_ref": "backend",
+                "memory_scope_external_ref": "backend",
                 "text": "RELATED_RESTRICTED: should not appear in related facts.",
                 "kind": "architecture_decision",
                 "classification": "restricted",
@@ -502,7 +502,7 @@ def test_related_facts_returns_explainable_same_scope_neighbors(tmp_path: Path) 
     default_items = default.json()["data"]["items"]
     default_ids = {item["id"] for item in default_items}
     assert same_thread.json()["data"]["id"] in default_ids
-    assert profile_wide.json()["data"]["id"] in default_ids
+    assert memory_scope_wide.json()["data"]["id"] in default_ids
     assert other_thread.json()["data"]["id"] not in default_ids
     assert default_items[0]["relation_reasons"][0] == "shared_source_chunk"
     assert default.json()["data"]["diagnostics"]["include_other_threads"] is False
@@ -523,7 +523,7 @@ def test_forget_fact_context_and_search_hide_deleted_fact(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "FACT_FORGET_E2E_MARKER",
                 "max_facts": 5,
                 "max_chunks": 0,
@@ -536,7 +536,7 @@ def test_forget_fact_context_and_search_hide_deleted_fact(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "FACT_FORGET_E2E_MARKER",
                 "max_facts": 5,
                 "max_chunks": 0,
@@ -548,7 +548,7 @@ def test_forget_fact_context_and_search_hide_deleted_fact(tmp_path: Path) -> Non
             "/v1/search",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "FACT_FORGET_E2E_MARKER",
                 "max_facts": 5,
                 "max_chunks": 0,
@@ -579,7 +579,7 @@ def test_list_facts_is_scoped_and_validates_status(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 **fact_payload("Scoped fact B."),
-                "profile_id": "profile_other",
+                "memory_scope_id": "memory_scope_other",
             },
             headers=auth_headers(),
         )
@@ -587,7 +587,7 @@ def test_list_facts_is_scoped_and_validates_status(tmp_path: Path) -> None:
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "active",
             },
             headers=auth_headers(),
@@ -596,7 +596,7 @@ def test_list_facts_is_scoped_and_validates_status(tmp_path: Path) -> None:
             "/v1/facts",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "typo",
             },
             headers=auth_headers(),
@@ -616,7 +616,7 @@ def test_list_facts_filters_current_thread_without_leaking_other_threads(tmp_pat
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "backend-team",
+                "memory_scope_external_ref": "backend-team",
                 "thread_external_ref": "thread-current",
                 "text": "THREAD_LIST_CURRENT_MARKER belongs to current thread.",
                 "kind": "architecture_decision",
@@ -628,7 +628,7 @@ def test_list_facts_filters_current_thread_without_leaking_other_threads(tmp_pat
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "backend-team",
+                "memory_scope_external_ref": "backend-team",
                 "thread_external_ref": "thread-other",
                 "text": "THREAD_LIST_OTHER_MARKER belongs to another thread.",
                 "kind": "architecture_decision",
@@ -636,14 +636,14 @@ def test_list_facts_filters_current_thread_without_leaking_other_threads(tmp_pat
             },
             headers=auth_headers(),
         )
-        profile_wide = client.post(
+        memory_scope_wide = client.post(
             "/v1/facts",
             json={
                 "space_slug": "agents",
-                "profile_external_ref": "backend-team",
-                "text": "THREAD_LIST_GLOBAL_MARKER is profile-wide.",
+                "memory_scope_external_ref": "backend-team",
+                "text": "THREAD_LIST_GLOBAL_MARKER is memory_scope-wide.",
                 "kind": "architecture_decision",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-wide"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-wide"}],
             },
             headers=auth_headers(),
         )
@@ -651,7 +651,7 @@ def test_list_facts_filters_current_thread_without_leaking_other_threads(tmp_pat
             "/v1/facts",
             params={
                 "space_slug": "agents",
-                "profile_external_ref": "backend-team",
+                "memory_scope_external_ref": "backend-team",
                 "thread_external_ref": "thread-current",
                 "status": "active",
             },
@@ -660,11 +660,11 @@ def test_list_facts_filters_current_thread_without_leaking_other_threads(tmp_pat
 
     assert current.status_code == 201
     assert other.status_code == 201
-    assert profile_wide.status_code == 201
+    assert memory_scope_wide.status_code == 201
     assert listed.status_code == 200
     texts = {item["text"] for item in listed.json()["data"]}
     assert "THREAD_LIST_CURRENT_MARKER belongs to current thread." in texts
-    assert "THREAD_LIST_GLOBAL_MARKER is profile-wide." in texts
+    assert "THREAD_LIST_GLOBAL_MARKER is memory_scope-wide." in texts
     assert "THREAD_LIST_OTHER_MARKER belongs to another thread." not in texts
 
 
@@ -675,8 +675,8 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             json={"slug": "canonical-a", "name": "Canonical A"},
             headers=auth_headers(),
         ).json()["data"]
-        profile_a = client.post(
-            "/v1/profiles",
+        memory_scope_a = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_a["id"], "external_ref": "alpha", "name": "Alpha"},
             headers=auth_headers(),
         ).json()["data"]
@@ -685,13 +685,13 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             json={"slug": "canonical-b", "name": "Canonical B"},
             headers=auth_headers(),
         ).json()["data"]
-        profile_b = client.post(
-            "/v1/profiles",
+        memory_scope_b = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_b["id"], "external_ref": "beta", "name": "Beta"},
             headers=auth_headers(),
         ).json()["data"]
-        deleted_profile = client.post(
-            "/v1/profiles",
+        deleted_memory_scope = client.post(
+            "/v1/memory-scopes",
             json={"space_id": space_a["id"], "external_ref": "deleted", "name": "Deleted"},
             headers=auth_headers(),
         ).json()["data"]
@@ -699,7 +699,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_slug": "canonical-b",
-                "profile_external_ref": "beta",
+                "memory_scope_external_ref": "beta",
                 "thread_external_ref": "thread-b",
                 "text": "CANONICAL_SCOPE_THREAD_SEED belongs to canonical-b.",
                 "kind": "note",
@@ -711,7 +711,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_slug": "canonical-a",
-                "profile_external_ref": "alpha",
+                "memory_scope_external_ref": "alpha",
                 "thread_external_ref": "thread-deleted",
                 "text": "CANONICAL_SCOPE_DELETED_THREAD_SEED belongs to a deleted thread.",
                 "kind": "note",
@@ -722,19 +722,19 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
         asyncio.run(
             mark_scope_rows_deleted(
                 client,
-                profile_id=deleted_profile["id"],
+                memory_scope_id=deleted_memory_scope["id"],
                 thread_id=deleted_thread["thread_id"],
             )
         )
 
-        cross_profile_fact = client.post(
+        cross_memory_scope_fact = client.post(
             "/v1/facts",
             json={
                 "space_id": space_a["id"],
-                "profile_id": profile_b["id"],
-                "text": "CANONICAL_SCOPE_CROSS_PROFILE must not be written.",
+                "memory_scope_id": memory_scope_b["id"],
+                "text": "CANONICAL_SCOPE_CROSS_MEMORY_SCOPE must not be written.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "cross-profile"}],
+                "source_refs": [{"source_type": "manual", "source_id": "cross-memory_scope"}],
             },
             headers=auth_headers(),
         )
@@ -742,7 +742,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": space_a["id"],
-                "profile_id": profile_a["id"],
+                "memory_scope_id": memory_scope_a["id"],
                 "thread_id": seeded_thread["thread_id"],
                 "text": "CANONICAL_SCOPE_CROSS_THREAD must not be written.",
                 "kind": "note",
@@ -750,12 +750,12 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             },
             headers=auth_headers(),
         )
-        cross_profile_context = client.post(
+        cross_memory_scope_context = client.post(
             "/v1/context",
             json={
                 "space_id": space_a["id"],
-                "profile_ids": [profile_b["id"]],
-                "query": "CANONICAL_SCOPE_CROSS_PROFILE",
+                "memory_scope_ids": [memory_scope_b["id"]],
+                "query": "CANONICAL_SCOPE_CROSS_MEMORY_SCOPE",
             },
             headers=auth_headers(),
         )
@@ -763,49 +763,49 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": space_a["id"],
-                "profile_ids": [profile_a["id"]],
+                "memory_scope_ids": [memory_scope_a["id"]],
                 "thread_id": seeded_thread["thread_id"],
                 "query": "CANONICAL_SCOPE_CROSS_THREAD",
             },
             headers=auth_headers(),
         )
-        orphan_profile_fact = client.post(
+        orphan_memory_scope_fact = client.post(
             "/v1/facts",
             json={
                 "space_id": space_a["id"],
-                "profile_id": "profile_missing_canonical",
-                "text": "CANONICAL_SCOPE_ORPHAN_PROFILE must not be written.",
+                "memory_scope_id": "memory_scope_missing_canonical",
+                "text": "CANONICAL_SCOPE_ORPHAN_MEMORY_SCOPE must not be written.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "orphan-profile"}],
+                "source_refs": [{"source_type": "manual", "source_id": "orphan-memory_scope"}],
             },
             headers=auth_headers(),
         )
-        orphan_profile_context = client.post(
+        orphan_memory_scope_context = client.post(
             "/v1/context",
             json={
                 "space_id": space_a["id"],
-                "profile_ids": [profile_a["id"], "profile_missing_canonical"],
-                "query": "CANONICAL_SCOPE_ORPHAN_PROFILE",
+                "memory_scope_ids": [memory_scope_a["id"], "memory_scope_missing_canonical"],
+                "query": "CANONICAL_SCOPE_ORPHAN_MEMORY_SCOPE",
             },
             headers=auth_headers(),
         )
-        deleted_profile_fact = client.post(
+        deleted_memory_scope_fact = client.post(
             "/v1/facts",
             json={
                 "space_id": space_a["id"],
-                "profile_id": deleted_profile["id"],
-                "text": "CANONICAL_SCOPE_DELETED_PROFILE must not be written.",
+                "memory_scope_id": deleted_memory_scope["id"],
+                "text": "CANONICAL_SCOPE_DELETED_MEMORY_SCOPE must not be written.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "deleted-profile"}],
+                "source_refs": [{"source_type": "manual", "source_id": "deleted-memory_scope"}],
             },
             headers=auth_headers(),
         )
-        deleted_profile_context = client.post(
+        deleted_memory_scope_context = client.post(
             "/v1/context",
             json={
                 "space_id": space_a["id"],
-                "profile_ids": [deleted_profile["id"]],
-                "query": "CANONICAL_SCOPE_DELETED_PROFILE",
+                "memory_scope_ids": [deleted_memory_scope["id"]],
+                "query": "CANONICAL_SCOPE_DELETED_MEMORY_SCOPE",
             },
             headers=auth_headers(),
         )
@@ -813,7 +813,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": space_a["id"],
-                "profile_id": profile_a["id"],
+                "memory_scope_id": memory_scope_a["id"],
                 "thread_id": "thread_missing_canonical",
                 "text": "CANONICAL_SCOPE_ORPHAN_THREAD must not be written.",
                 "kind": "note",
@@ -825,7 +825,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": space_a["id"],
-                "profile_ids": [profile_a["id"]],
+                "memory_scope_ids": [memory_scope_a["id"]],
                 "thread_id": "thread_missing_canonical",
                 "query": "CANONICAL_SCOPE_ORPHAN_THREAD",
             },
@@ -835,7 +835,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": space_a["id"],
-                "profile_id": profile_a["id"],
+                "memory_scope_id": memory_scope_a["id"],
                 "thread_id": deleted_thread["thread_id"],
                 "text": "CANONICAL_SCOPE_DELETED_THREAD must not be written.",
                 "kind": "note",
@@ -847,7 +847,7 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": space_a["id"],
-                "profile_ids": [profile_a["id"]],
+                "memory_scope_ids": [memory_scope_a["id"]],
                 "thread_id": deleted_thread["thread_id"],
                 "query": "CANONICAL_SCOPE_DELETED_THREAD",
             },
@@ -856,14 +856,14 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
 
     assert seeded_thread["thread_id"] is not None
     for response in (
-        cross_profile_fact,
+        cross_memory_scope_fact,
         cross_thread_fact,
-        cross_profile_context,
+        cross_memory_scope_context,
         cross_thread_context,
-        deleted_profile_fact,
-        deleted_profile_context,
-        orphan_profile_fact,
-        orphan_profile_context,
+        deleted_memory_scope_fact,
+        deleted_memory_scope_context,
+        orphan_memory_scope_fact,
+        orphan_memory_scope_context,
         orphan_thread_fact,
         orphan_thread_context,
         deleted_thread_fact,
@@ -872,8 +872,8 @@ def test_canonical_scope_ids_must_belong_together(tmp_path: Path) -> None:
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "memory.validation"
         assert "CANONICAL_SCOPE_CROSS" not in response.text
-        assert "CANONICAL_SCOPE_DELETED_PROFILE" not in response.text
-        assert "CANONICAL_SCOPE_ORPHAN_PROFILE" not in response.text
+        assert "CANONICAL_SCOPE_DELETED_MEMORY_SCOPE" not in response.text
+        assert "CANONICAL_SCOPE_ORPHAN_MEMORY_SCOPE" not in response.text
         assert "CANONICAL_SCOPE_ORPHAN_THREAD" not in response.text
         assert "CANONICAL_SCOPE_DELETED_THREAD" not in response.text
 

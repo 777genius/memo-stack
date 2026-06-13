@@ -122,7 +122,7 @@ def test_generated_plugin_hook_retrieves_memory_context_e2e(tmp_path: Path) -> N
             base_url=server.base_url,
             token=server.token,
             space_slug="plugin-hook-e2e",
-            profile_ref="default",
+            memory_scope_ref="default",
             text="The Memo Stack hook e2e marker color is teal.",
         )
         env = os.environ.copy()
@@ -131,7 +131,7 @@ def test_generated_plugin_hook_retrieves_memory_context_e2e(tmp_path: Path) -> N
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
                 "MEMORY_MCP_DEFAULT_SPACE_SLUG": "plugin-hook-e2e",
-                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
                 "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
                 "MEMORY_PLUGIN_HOOK_CONTEXT_EVENTS": "UserPromptSubmit",
             }
@@ -160,7 +160,7 @@ def test_generated_gemini_hook_plugin_before_agent_context_e2e(tmp_path: Path) -
             base_url=server.base_url,
             token=server.token,
             space_slug="plugin-gemini-hook-e2e",
-            profile_ref="default",
+            memory_scope_ref="default",
             text="The Gemini hook e2e marker database is Neo4j.",
         )
         env = os.environ.copy()
@@ -169,7 +169,7 @@ def test_generated_gemini_hook_plugin_before_agent_context_e2e(tmp_path: Path) -
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
                 "MEMORY_MCP_DEFAULT_SPACE_SLUG": "plugin-gemini-hook-e2e",
-                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
                 "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
                 "MEMORY_PLUGIN_HOOK_CONTEXT_EVENTS": "BeforeAgent",
             }
@@ -219,7 +219,7 @@ def test_generated_plugin_hook_writes_capture_to_memory_server_e2e(tmp_path: Pat
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
                 "MEMORY_MCP_DEFAULT_SPACE_SLUG": "plugin-hook-capture-e2e",
-                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
                 "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
                 "MEMORY_MCP_AGENT_NAME": "plugin-hook-capture-e2e-agent",
                 "MEMORY_PLUGIN_HOOK_CONTEXT_EVENTS": "",
@@ -245,7 +245,7 @@ def test_generated_plugin_hook_writes_capture_to_memory_server_e2e(tmp_path: Pat
             f"{server.base_url}/v1/captures",
             params={
                 "space_slug": "plugin-hook-capture-e2e",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "accepted",
             },
             headers=headers,
@@ -264,7 +264,7 @@ def test_generated_plugin_hook_writes_capture_to_memory_server_e2e(tmp_path: Pat
             f"{server.base_url}/v1/suggestions",
             params={
                 "space_slug": "plugin-hook-capture-e2e",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=headers,
@@ -617,7 +617,7 @@ async def _run_generated_plugin_status(
             "MEMORY_MCP_API_URL": base_url,
             "MEMORY_MCP_AUTH_TOKEN": token,
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": space_slug,
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_AGENT_NAME": agent_name,
             "MEMORY_MCP_TRANSPORT": "stdio",
         }
@@ -641,7 +641,7 @@ async def _run_generated_plugin_status(
         payload = _structured(result)
         assert payload["ok"] is True
         assert payload["data"]["default_scope"]["space_slug"] == space_slug
-        assert payload["data"]["default_scope"]["profile_external_ref"] == "default"
+        assert payload["data"]["default_scope"]["memory_scope_external_ref"] == "default"
         assert payload["data"]["default_scope"].get("thread_external_ref") is None
         dumped = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         assert token not in dumped
@@ -683,7 +683,7 @@ def _remember_fact(
     base_url: str,
     token: str,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     text: str,
 ) -> None:
     response = httpx.post(
@@ -694,7 +694,7 @@ def _remember_fact(
         },
         json={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "text": text,
             "kind": "note",
             "classification": "internal",

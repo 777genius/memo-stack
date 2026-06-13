@@ -28,12 +28,12 @@ from memo_stack_obsidian.vault import FilesystemVault
 def test_setup_vault_writes_onboarding_notes(tmp_path: Path) -> None:
     setup = SetupVaultUseCase(vault=FilesystemVault(tmp_path))
 
-    result = setup.execute(space_slug="default", profile_external_ref="me")
+    result = setup.execute(space_slug="default", memory_scope_external_ref="me")
     readme = (tmp_path / SETUP_README).read_text(encoding="utf-8")
 
     assert str(SETUP_README) in result.written
     assert "- Space: `default`" in readme
-    assert "- Profile: `me`" in readme
+    assert "- MemoryScope: `me`" in readme
     assert (tmp_path / INBOX_DIR / "README.md").exists()
     assert (tmp_path / CONFLICTS_DIR / "README.md").exists()
     assert (tmp_path / FACTS_DIR / ".gitkeep.md").exists()
@@ -41,11 +41,11 @@ def test_setup_vault_writes_onboarding_notes(tmp_path: Path) -> None:
 
 def test_setup_vault_does_not_overwrite_existing_notes_by_default(tmp_path: Path) -> None:
     setup = SetupVaultUseCase(vault=FilesystemVault(tmp_path))
-    setup.execute(space_slug="default", profile_external_ref="me")
+    setup.execute(space_slug="default", memory_scope_external_ref="me")
     readme_path = tmp_path / SETUP_README
     readme_path.write_text("Custom local readme", encoding="utf-8")
 
-    result = setup.execute(space_slug="default", profile_external_ref="me")
+    result = setup.execute(space_slug="default", memory_scope_external_ref="me")
 
     assert str(SETUP_README) in result.skipped
     assert readme_path.read_text(encoding="utf-8") == "Custom local readme"
@@ -55,7 +55,7 @@ def test_import_skips_setup_helper_note_in_generated_facts(tmp_path: Path) -> No
     gateway = FakeMemoryGateway()
     setup = SetupVaultUseCase(vault=FilesystemVault(tmp_path))
     _exporter, importer = use_cases(tmp_path, gateway)
-    setup.execute(space_slug="default", profile_external_ref="me")
+    setup.execute(space_slug="default", memory_scope_external_ref="me")
 
     imported = importer.execute(apply=False)
 
@@ -66,9 +66,9 @@ def test_inbox_import_skips_setup_readme(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     setup = SetupVaultUseCase(vault=FilesystemVault(tmp_path))
     importer = inbox_importer(tmp_path, gateway)
-    setup.execute(space_slug="default", profile_external_ref="me")
+    setup.execute(space_slug="default", memory_scope_external_ref="me")
 
-    imported = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    imported = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
 
     assert imported.changes == ()
     assert gateway.suggestion_calls == []
@@ -78,7 +78,7 @@ def test_export_then_import_unchanged_fact(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, importer = use_cases(tmp_path, gateway)
 
-    exported = exporter.execute(space_slug="default", profile_external_ref="me")
+    exported = exporter.execute(space_slug="default", memory_scope_external_ref="me")
     imported = importer.execute(apply=False)
 
     assert exported.exported == 1
@@ -89,7 +89,7 @@ def test_preview_empty_vault_reports_would_export_without_writing(tmp_path: Path
     gateway = FakeMemoryGateway()
     previewer = previewer_use_case(tmp_path, gateway)
 
-    result = previewer.execute(space_slug="default", profile_external_ref="me")
+    result = previewer.execute(space_slug="default", memory_scope_external_ref="me")
 
     assert result.ok is True
     assert result.export_plan.would_export == 1
@@ -101,9 +101,9 @@ def test_preview_clean_exported_fact_is_skipped(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     previewer = previewer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
 
-    result = previewer.execute(space_slug="default", profile_external_ref="me")
+    result = previewer.execute(space_slug="default", memory_scope_external_ref="me")
 
     assert result.export_plan.skipped == 1
     assert result.export_plan.changes[0].status == ExportStatus.SKIPPED
@@ -112,7 +112,7 @@ def test_preview_clean_exported_fact_is_skipped(tmp_path: Path) -> None:
 def test_import_dry_run_reports_direct_update(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, importer = use_cases(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Use Graphiti for temporal graph recall.")
 
     imported = importer.execute(apply=False)
@@ -125,12 +125,12 @@ def test_import_dry_run_reports_direct_update(tmp_path: Path) -> None:
 def test_export_does_not_overwrite_unimported_local_edit(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Local edit that should survive.")
     gateway.fact["text"] = "Backend changed while local edit is pending."
     gateway.fact["version"] = 2
 
-    exported = exporter.execute(space_slug="default", profile_external_ref="me")
+    exported = exporter.execute(space_slug="default", memory_scope_external_ref="me")
     note_text = next((tmp_path / FACTS_DIR).glob("*.md")).read_text(encoding="utf-8")
 
     assert exported.conflicts == 1
@@ -144,10 +144,10 @@ def test_preview_reports_dirty_managed_note_conflict(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     previewer = previewer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Local edit that should survive.")
 
-    result = previewer.execute(space_slug="default", profile_external_ref="me")
+    result = previewer.execute(space_slug="default", memory_scope_external_ref="me")
 
     assert result.ok is False
     assert result.export_plan.conflicts == 1
@@ -160,13 +160,13 @@ def test_sync_once_skips_export_when_dry_run_direct_update_is_pending(
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Local edit that should not be overwritten.")
     gateway.fact["text"] = "Backend refresh that must wait."
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=False,
     )
     note_text = next((tmp_path / FACTS_DIR).glob("*.md")).read_text(encoding="utf-8")
@@ -186,12 +186,12 @@ def test_sync_once_apply_import_then_exports_clean_backend_projection(
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Use Graphiti for temporal graph recall.")
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=True,
     )
     note_text = next((tmp_path / FACTS_DIR).glob("*.md")).read_text(encoding="utf-8")
@@ -206,11 +206,11 @@ def test_sync_once_apply_import_then_exports_clean_backend_projection(
 def test_deleted_generated_fact_is_recreated_on_next_export(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     fact_path = tmp_path / FACTS_DIR / "fact_123.md"
     fact_path.unlink()
 
-    exported = exporter.execute(space_slug="default", profile_external_ref="me")
+    exported = exporter.execute(space_slug="default", memory_scope_external_ref="me")
 
     assert exported.exported == 1
     assert fact_path.exists()
@@ -223,14 +223,14 @@ def test_sync_once_conflicts_on_renamed_generated_note_without_creating_duplicat
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     fact_path = tmp_path / FACTS_DIR / "fact_123.md"
     renamed_path = tmp_path / FACTS_DIR / "renamed-fact.md"
     fact_path.rename(renamed_path)
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=True,
     )
 
@@ -249,14 +249,14 @@ def test_sync_once_removes_clean_generated_note_when_backend_fact_is_deleted(
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     fact_path = tmp_path / FACTS_DIR / "fact_123.md"
     gateway.fact["status"] = "deleted"
     gateway.fact["version"] = 2
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=True,
     )
 
@@ -273,7 +273,7 @@ def test_sync_once_keeps_dirty_generated_note_when_backend_fact_is_deleted(
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     fact_path = tmp_path / FACTS_DIR / "fact_123.md"
     replace_managed_text(tmp_path, "Local delete-race edit must survive.")
     gateway.fact["status"] = "deleted"
@@ -281,7 +281,7 @@ def test_sync_once_keeps_dirty_generated_note_when_backend_fact_is_deleted(
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=True,
     )
 
@@ -299,7 +299,7 @@ def test_sync_once_skips_export_when_managed_note_is_corrupt(
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     fact_path = tmp_path / FACTS_DIR / "fact_123.md"
     fact_path.write_text("not a memo stack fact note", encoding="utf-8")
     gateway.fact["text"] = "Backend text that must not overwrite corrupt note."
@@ -307,7 +307,7 @@ def test_sync_once_skips_export_when_managed_note_is_corrupt(
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=True,
     )
 
@@ -322,14 +322,14 @@ def test_import_detects_duplicate_fact_id_and_sync_skips_export(tmp_path: Path) 
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     syncer = syncer_use_case(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     original = tmp_path / FACTS_DIR / "fact_123.md"
     duplicate = tmp_path / FACTS_DIR / "zzz-duplicate.md"
     duplicate.write_text(original.read_text(encoding="utf-8"), encoding="utf-8")
 
     result = syncer.execute(
         space_slug="default",
-        profile_external_ref="me",
+        memory_scope_external_ref="me",
         apply_import=True,
     )
 
@@ -340,7 +340,7 @@ def test_import_detects_duplicate_fact_id_and_sync_skips_export(tmp_path: Path) 
     assert "Duplicate memo_stack_id" in result.import_result.changes[-1].message
 
 
-def test_v2_scoped_layout_does_not_import_other_profile_edits(tmp_path: Path) -> None:
+def test_v2_scoped_layout_does_not_import_other_memory_scope_edits(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     layout = ObsidianVaultLayout.from_values(version="v2")
     vault = FilesystemVault(tmp_path)
@@ -358,17 +358,17 @@ def test_v2_scoped_layout_does_not_import_other_profile_edits(tmp_path: Path) ->
         layout=layout,
     )
 
-    exporter.execute(space_slug="team-one", profile_external_ref="alice")
-    exporter.execute(space_slug="team-two", profile_external_ref="bob")
+    exporter.execute(space_slug="team-one", memory_scope_external_ref="alice")
+    exporter.execute(space_slug="team-two", memory_scope_external_ref="bob")
     team_one_path = tmp_path / layout.fact_note_path(
         "fact_123",
         space_slug="team-one",
-        profile_external_ref="alice",
+        memory_scope_external_ref="alice",
     )
     team_two_path = tmp_path / layout.fact_note_path(
         "fact_123",
         space_slug="team-two",
-        profile_external_ref="bob",
+        memory_scope_external_ref="bob",
     )
     replace_managed_text_at_path(
         team_two_path,
@@ -378,7 +378,7 @@ def test_v2_scoped_layout_does_not_import_other_profile_edits(tmp_path: Path) ->
     imported = importer.execute(
         apply=True,
         space_slug="team-one",
-        profile_external_ref="alice",
+        memory_scope_external_ref="alice",
     )
 
     assert imported.changes[0].status == ImportStatus.UNCHANGED
@@ -391,10 +391,10 @@ def test_export_conflict_writes_obsidian_visible_artifact(tmp_path: Path) -> Non
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     conflict_writer = WriteConflictArtifactsUseCase(vault=FilesystemVault(tmp_path))
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Local edit that should survive.")
 
-    exported = exporter.execute(space_slug="default", profile_external_ref="me")
+    exported = exporter.execute(space_slug="default", memory_scope_external_ref="me")
     artifacts = conflict_writer.execute(direction="export", changes=exported.changes)
     artifact_text = next((tmp_path / CONFLICTS_DIR).glob("*.md")).read_text(encoding="utf-8")
 
@@ -407,15 +407,15 @@ def test_conflict_artifact_path_is_stable_across_repeated_failures(tmp_path: Pat
     gateway = FakeMemoryGateway()
     exporter, _importer = use_cases(tmp_path, gateway)
     conflict_writer = WriteConflictArtifactsUseCase(vault=FilesystemVault(tmp_path))
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Repeated conflict local edit must survive.")
 
-    first_export = exporter.execute(space_slug="default", profile_external_ref="me")
+    first_export = exporter.execute(space_slug="default", memory_scope_external_ref="me")
     first_artifacts = conflict_writer.execute(
         direction="export",
         changes=first_export.changes,
     )
-    second_export = exporter.execute(space_slug="default", profile_external_ref="me")
+    second_export = exporter.execute(space_slug="default", memory_scope_external_ref="me")
     second_artifacts = conflict_writer.execute(
         direction="export",
         changes=second_export.changes,
@@ -435,7 +435,7 @@ def test_conflict_artifact_path_is_stable_across_repeated_failures(tmp_path: Pat
 def test_import_apply_updates_backend_and_rewrites_note_version(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, importer = use_cases(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     replace_managed_text(tmp_path, "Use Graphiti for temporal graph recall.")
 
     imported = importer.execute(apply=True)
@@ -459,7 +459,7 @@ def test_import_skips_readonly_managed_note_even_when_edited(tmp_path: Path) -> 
         render_fact_note(
             gateway.fact,
             space_slug="default",
-            profile_external_ref="me",
+            memory_scope_external_ref="me",
             sync_mode=SyncMode.READONLY,
         ),
         encoding="utf-8",
@@ -476,7 +476,7 @@ def test_import_skips_readonly_managed_note_even_when_edited(tmp_path: Path) -> 
 def test_import_detects_stale_backend_version(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     exporter, importer = use_cases(tmp_path, gateway)
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     gateway.fact["version"] = 2
     replace_managed_text(tmp_path, "Stale local edit.")
 
@@ -491,7 +491,7 @@ def test_import_conflict_writes_obsidian_visible_artifact(tmp_path: Path) -> Non
     gateway = FakeMemoryGateway()
     exporter, importer = use_cases(tmp_path, gateway)
     conflict_writer = WriteConflictArtifactsUseCase(vault=FilesystemVault(tmp_path))
-    exporter.execute(space_slug="default", profile_external_ref="me")
+    exporter.execute(space_slug="default", memory_scope_external_ref="me")
     gateway.fact["version"] = 2
     replace_managed_text(tmp_path, "Stale local edit.")
 
@@ -509,7 +509,7 @@ def test_inbox_import_dry_run_reports_pending_suggestion(tmp_path: Path) -> None
     importer = inbox_importer(tmp_path, gateway)
     write_inbox_note(tmp_path, "Remember that Obsidian inbox notes become suggestions.")
 
-    imported = importer.execute(space_slug="default", profile_external_ref="me", apply=False)
+    imported = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=False)
 
     assert imported.would_suggest == 1
     assert imported.changes[0].status == ImportStatus.WOULD_SUGGEST
@@ -521,7 +521,7 @@ def test_preview_reports_inbox_would_suggest_without_api_side_effect(tmp_path: P
     previewer = previewer_use_case(tmp_path, gateway)
     write_inbox_note(tmp_path, "Remember that preview should not create suggestions.")
 
-    result = previewer.execute(space_slug="default", profile_external_ref="me")
+    result = previewer.execute(space_slug="default", memory_scope_external_ref="me")
 
     assert result.import_plan.would_suggest == 1
     assert gateway.suggestion_calls == []
@@ -532,8 +532,8 @@ def test_inbox_import_apply_creates_suggestion_once_for_same_hash(tmp_path: Path
     importer = inbox_importer(tmp_path, gateway)
     write_inbox_note(tmp_path, "Remember that Obsidian inbox notes become suggestions.")
 
-    first = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
-    second = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    first = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
+    second = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
 
     assert first.suggested == 1
     assert second.changes[0].status == ImportStatus.UNCHANGED
@@ -546,10 +546,10 @@ def test_inbox_import_reimports_changed_note_text_once(tmp_path: Path) -> None:
     importer = inbox_importer(tmp_path, gateway)
     write_inbox_note(tmp_path, "Remember the first Obsidian inbox idea.")
 
-    first = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
-    second = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    first = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
+    second = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
     write_inbox_note(tmp_path, "Remember the changed Obsidian inbox idea.")
-    third = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    third = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
 
     assert first.suggested == 1
     assert second.changes[0].status == ImportStatus.UNCHANGED
@@ -578,8 +578,8 @@ def test_inbox_import_uses_stable_fingerprint_after_state_loss(tmp_path: Path) -
         state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "second.sqlite3"),
     )
 
-    first_importer.execute(space_slug="default", profile_external_ref="me", apply=True)
-    second_importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    first_importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
+    second_importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
 
     assert len(gateway.suggestion_calls) == 2
     assert (
@@ -593,7 +593,7 @@ def test_inbox_import_rejects_oversized_note(tmp_path: Path) -> None:
     importer = inbox_importer(tmp_path, gateway)
     write_inbox_note(tmp_path, "x" * 4001)
 
-    imported = importer.execute(space_slug="default", profile_external_ref="me", apply=True)
+    imported = importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
 
     assert imported.conflicts == 1
     assert imported.changes[0].status == ImportStatus.CONFLICT
@@ -666,7 +666,7 @@ class FakeMemoryGateway:
         self.fact = {
             "id": "fact_123",
             "space_id": "space_1",
-            "profile_id": "profile_1",
+            "memory_scope_id": "memory_scope_1",
             "thread_id": None,
             "text": "Use Qdrant for document recall.",
             "kind": "architecture_decision",
@@ -690,7 +690,7 @@ class FakeMemoryGateway:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, object]:
@@ -731,7 +731,7 @@ class FakeMemoryGateway:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         candidate_text: str,
         safe_reason: str,
         source_refs: list[dict[str, object]],
@@ -739,7 +739,7 @@ class FakeMemoryGateway:
     ) -> dict[str, object]:
         call = {
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
+            "memory_scope_external_ref": memory_scope_external_ref,
             "candidate_text": candidate_text,
             "safe_reason": safe_reason,
             "source_refs": source_refs,

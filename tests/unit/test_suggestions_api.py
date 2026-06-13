@@ -46,7 +46,7 @@ def auth_headers() -> dict[str, str]:
 def suggestion_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "space_id": "space_client_app",
-        "profile_id": "profile_default",
+        "memory_scope_id": "memory_scope_default",
         "candidate_text": "Use Postgres as canonical truth.",
         "kind": "architecture_decision",
         "safe_reason": "manual_review",
@@ -70,7 +70,7 @@ def test_pending_suggestion_not_in_context_and_approve_creates_fact(tmp_path: Pa
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "canonical truth",
                 "token_budget": 512,
             },
@@ -85,7 +85,7 @@ def test_pending_suggestion_not_in_context_and_approve_creates_fact(tmp_path: Pa
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "canonical truth",
                 "token_budget": 512,
             },
@@ -139,7 +139,7 @@ def test_create_suggestions_batch_creates_review_queue_items(tmp_path: Path) -> 
             "/v1/suggestions/batch",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "items": [
                     {
                         "candidate_text": "Batch suggest keeps Postgres canonical.",
@@ -163,7 +163,7 @@ def test_create_suggestions_batch_creates_review_queue_items(tmp_path: Path) -> 
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "pending",
                 "limit": 10,
             },
@@ -190,7 +190,7 @@ def test_create_suggestions_batch_reports_duplicate_item_failures(tmp_path: Path
             "/v1/suggestions/batch",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "continue_on_error": True,
                 "items": [
                     {
@@ -244,7 +244,7 @@ def test_create_suggestion_reuses_existing_pending_duplicate(tmp_path: Path) -> 
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "pending",
                 "limit": 10,
             },
@@ -288,7 +288,7 @@ def test_create_suggestion_concurrent_duplicate_requests_reuse_single_pending(
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "pending",
                 "limit": 10,
             },
@@ -312,7 +312,7 @@ def test_create_suggestions_batch_marks_existing_pending_duplicates(tmp_path: Pa
             "/v1/suggestions/batch",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "items": [
                     {
                         "candidate_text": "batch existing suggestion should be reused.",
@@ -333,7 +333,7 @@ def test_create_suggestions_batch_marks_existing_pending_duplicates(tmp_path: Pa
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "pending",
                 "limit": 10,
             },
@@ -404,7 +404,7 @@ def test_review_suggestions_batch_applies_mixed_review_actions(tmp_path: Path) -
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "Batch memory marker",
                 "token_budget": 512,
             },
@@ -454,7 +454,7 @@ def test_review_suggestions_batch_stops_on_first_item_failure(tmp_path: Path) ->
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -489,7 +489,7 @@ def test_rejected_suggestion_never_appears_in_context(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "Rejected memory marker",
                 "token_budget": 512,
             },
@@ -529,7 +529,7 @@ def test_list_suggestions_filters_review_queue_by_operation_category_and_tag(
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "pending",
                 "operation": "review",
                 "category": "review",
@@ -594,7 +594,7 @@ def test_assistant_only_suggestion_cannot_confirm_itself(tmp_path: Path) -> None
 def test_rule_based_auto_memory_creates_suggestion_only(tmp_path: Path) -> None:
     scope = {
         "space_slug": "auto-memory",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "session-1",
     }
     marker = "AUTO_MEMORY_SUGGESTION_MARKER"
@@ -626,7 +626,7 @@ def test_rule_based_auto_memory_creates_suggestion_only(tmp_path: Path) -> None:
             "/v1/suggestions",
             params={
                 "space_slug": scope["space_slug"],
-                "profile_external_ref": scope["profile_external_ref"],
+                "memory_scope_external_ref": scope["memory_scope_external_ref"],
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -662,7 +662,7 @@ def test_rule_based_auto_memory_creates_suggestion_only(tmp_path: Path) -> None:
 def test_prompt_injection_marker_stays_source_only(tmp_path: Path) -> None:
     scope = {
         "space_slug": "auto-memory",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "session-2",
     }
     with make_client_with_settings(tmp_path, policy_mode=MemoryPolicyMode.SUGGESTIONS) as client:
@@ -682,7 +682,7 @@ def test_prompt_injection_marker_stays_source_only(tmp_path: Path) -> None:
             "/v1/suggestions",
             params={
                 "space_slug": scope["space_slug"],
-                "profile_external_ref": scope["profile_external_ref"],
+                "memory_scope_external_ref": scope["memory_scope_external_ref"],
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -700,7 +700,7 @@ def test_list_suggestions_rejects_unknown_status(tmp_path: Path) -> None:
             "/v1/suggestions",
             params={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "status": "mispelled",
             },
             headers=auth_headers(),
@@ -759,16 +759,16 @@ def test_weak_source_cannot_supersede_strong_fact_without_force(tmp_path: Path) 
     assert forced.json()["data"]["fact"]["version"] == 2
 
 
-def test_suggestion_cannot_update_target_fact_from_another_profile(tmp_path: Path) -> None:
+def test_suggestion_cannot_update_target_fact_from_another_memory_scope(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         other_fact = client.post(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_secondary",
-                "text": "CROSS_PROFILE_TARGET_FACT must stay unchanged.",
+                "memory_scope_id": "memory_scope_secondary",
+                "text": "CROSS_MEMORY_SCOPE_TARGET_FACT must stay unchanged.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "other-profile"}],
+                "source_refs": [{"source_type": "manual", "source_id": "other-memory_scope"}],
             },
             headers=auth_headers(),
         )
@@ -776,17 +776,17 @@ def test_suggestion_cannot_update_target_fact_from_another_profile(tmp_path: Pat
         suggestion = client.post(
             "/v1/suggestions",
             json=suggestion_payload(
-                candidate_text="CROSS_PROFILE_TARGET_FACT overwritten by wrong profile.",
+                candidate_text="CROSS_MEMORY_SCOPE_TARGET_FACT overwritten by wrong memory_scope.",
                 target_fact_id=fact["id"],
                 target_fact_version=fact["version"],
-                source_refs=[{"source_type": "manual", "source_id": "wrong-profile"}],
+                source_refs=[{"source_type": "manual", "source_id": "wrong-memory_scope"}],
             ),
             headers=auth_headers(),
         )
         suggestion_id = suggestion.json()["data"]["id"]
         approved = client.post(
             f"/v1/suggestions/{suggestion_id}/approve",
-            json={"reason": "should not cross profile"},
+            json={"reason": "should not cross memory_scope"},
             headers=auth_headers(),
         )
         unchanged = client.get(f"/v1/facts/{fact['id']}", headers=auth_headers())
@@ -795,4 +795,4 @@ def test_suggestion_cannot_update_target_fact_from_another_profile(tmp_path: Pat
     assert suggestion.status_code == 201
     assert approved.status_code == 404
     assert approved.json()["error"]["code"] == "memory.not_found"
-    assert unchanged.json()["data"]["text"] == "CROSS_PROFILE_TARGET_FACT must stay unchanged."
+    assert unchanged.json()["data"]["text"] == "CROSS_MEMORY_SCOPE_TARGET_FACT must stay unchanged."

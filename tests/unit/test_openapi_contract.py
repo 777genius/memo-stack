@@ -30,7 +30,7 @@ def test_openapi_contains_stable_v1_fields() -> None:
     assert "/v1/search" in paths
     assert "/v1/digest" in paths
     assert "/v1/export/graph.json" in paths
-    assert "/v1/export/profile-snapshot/preview" in paths
+    assert "/v1/export/memory_scope-snapshot/preview" in paths
 
     schemas = body["components"]["schemas"]
     assert set(schemas["RememberFactRequest"]["required"]) == {"text", "source_refs"}
@@ -47,8 +47,8 @@ def test_openapi_contains_stable_v1_fields() -> None:
     }
     assert set(schemas["ContextRequest"]["required"]) == {"query"}
     assert set(schemas["DigestRequest"]["required"]) == {"topic"}
-    assert "profile_external_refs" in schemas["ContextRequest"]["properties"]
-    assert "profile_external_refs" in schemas["DigestRequest"]["properties"]
+    assert "memory_scope_external_refs" in schemas["ContextRequest"]["properties"]
+    assert "memory_scope_external_refs" in schemas["DigestRequest"]["properties"]
     assert "consistency_mode" in schemas["ContextRequest"]["properties"]
     assert "classification" in schemas["RememberFactRequest"]["properties"]
     assert "classification" in schemas["IngestDocumentRequest"]["properties"]
@@ -61,12 +61,12 @@ def test_openapi_contains_stable_v1_fields() -> None:
         "UpdateFactRequest",
         "LinkFactRequest",
         "CreateSpaceRequest",
-        "CreateProfileRequest",
+        "CreateMemoryScopeRequest",
         "ThreadMemoryScopeRequest",
         "CreateCaptureRequest",
         "CreateSuggestionRequest",
-        "ImportProfileSnapshotRequest",
-        "PreviewProfileSnapshotRequest",
+        "ImportMemoryScopeSnapshotRequest",
+        "PreviewMemoryScopeSnapshotRequest",
     ):
         assert schemas[schema_name]["additionalProperties"] is False
 
@@ -95,7 +95,7 @@ def test_v1_request_models_reject_unknown_fields() -> None:
             "/v1/episodes",
             {
                 "space_id": "space",
-                "profile_id": "profile",
+                "memory_scope_id": "memory_scope",
                 "thread_id": "thread",
                 "source_external_id": "episode-1",
                 "text": "hello",
@@ -106,7 +106,7 @@ def test_v1_request_models_reject_unknown_fields() -> None:
             "/v1/facts",
             {
                 "space_id": "space",
-                "profile_id": "profile",
+                "memory_scope_id": "memory_scope",
                 "text": "Fact",
                 "source_refs": [{"source_type": "manual", "source_id": "ref-1"}],
                 "unexpected": "raw",
@@ -129,16 +129,16 @@ def test_v1_request_models_reject_unknown_fields() -> None:
             "/v1/thread-memory/status",
             {
                 "space_id": "space",
-                "profile_id": "profile",
+                "memory_scope_id": "memory_scope",
                 "thread_id": "thread",
                 "unexpected": "raw",
             },
         ),
         (
-            "/v1/export/profile-snapshot/preview",
+            "/v1/export/memory_scope-snapshot/preview",
             {
                 "space_slug": "space",
-                "profile_external_ref": "profile",
+                "memory_scope_external_ref": "memory_scope",
                 "snapshot": {"schema_version": 1},
                 "unexpected": "raw",
             },

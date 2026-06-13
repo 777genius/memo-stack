@@ -76,7 +76,7 @@ def test_capture_outbox_worker_creates_suggestion(tmp_path: Path) -> None:
             "/v1/captures",
             json={
                 "space_slug": "capture-worker",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "source_agent": "codex",
                 "source_kind": "hook",
                 "event_type": "UserPromptSubmit",
@@ -93,7 +93,7 @@ def test_capture_outbox_worker_creates_suggestion(tmp_path: Path) -> None:
             "/v1/suggestions",
             params={
                 "space_slug": "capture-worker",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=headers,
@@ -123,7 +123,7 @@ def test_capture_outbox_retry_recovers_stuck_running_capture(tmp_path: Path) -> 
             "/v1/captures",
             json={
                 "space_slug": "capture-worker-retry",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "source_agent": "codex",
                 "source_kind": "hook",
                 "event_type": "UserPromptSubmit",
@@ -161,7 +161,7 @@ def test_capture_outbox_retry_recovers_stuck_running_capture(tmp_path: Path) -> 
             "/v1/suggestions",
             params={
                 "space_slug": "capture-worker-retry",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=headers,
@@ -181,7 +181,7 @@ def test_worker_expires_pending_suggestions_even_without_outbox_jobs(tmp_path: P
             "/v1/suggestions",
             json={
                 "space_slug": "worker-expiry",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "candidate_text": "WORKER_EXPIRED_SUGGESTION_MARKER should expire.",
                 "kind": "note",
                 "source_refs": [
@@ -205,7 +205,7 @@ def test_worker_expires_pending_suggestions_even_without_outbox_jobs(tmp_path: P
             "/v1/suggestions",
             params={
                 "space_slug": "worker-expiry",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=headers,
@@ -214,7 +214,7 @@ def test_worker_expires_pending_suggestions_even_without_outbox_jobs(tmp_path: P
             "/v1/suggestions",
             params={
                 "space_slug": "worker-expiry",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "expired",
             },
             headers=headers,
@@ -529,7 +529,7 @@ def test_resolver_coalesces_conflicting_update_delete_candidates(tmp_path: Path)
             "/v1/facts",
             json={
                 "space_slug": "capture-resolver",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "text": "TARGET_FACT_MARKER old canonical decision.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "resolver-fact"}],
@@ -594,7 +594,7 @@ def test_resolver_finds_update_target_from_hint(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_slug": "capture-target-hint",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "text": "TARGET_HINT_MARKER provider is REST.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "target-hint-fact"}],
@@ -644,7 +644,7 @@ def test_resolver_finds_delete_target_from_hint(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_slug": "capture-delete-hint",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "text": "DELETE_HINT_MARKER legacy Angular frontend.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "delete-hint-fact"}],
@@ -693,7 +693,7 @@ def test_resolver_rejects_ambiguous_target_hint(tmp_path: Path) -> None:
                 "/v1/facts",
                 json={
                     "space_slug": "capture-ambiguous-hint",
-                    "profile_external_ref": "default",
+                    "memory_scope_external_ref": "default",
                     "text": f"AMBIGUOUS_HINT_MARKER provider option {index}.",
                     "kind": "note",
                     "source_refs": [
@@ -867,7 +867,7 @@ def test_auto_apply_safe_active_duplicate_creates_no_fact_or_suggestion(tmp_path
             "/v1/facts",
             json={
                 "space_slug": "capture-auto-apply-duplicate",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "text": marker,
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "duplicate-fact"}],
@@ -922,7 +922,7 @@ def test_delete_candidate_is_not_suppressed_by_active_duplicate_check(tmp_path: 
             "/v1/facts",
             json={
                 "space_slug": "capture-delete-duplicate-check",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "text": marker,
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "delete-target"}],
@@ -1013,7 +1013,7 @@ def _create_capture(
         "/v1/captures",
         json={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "source_agent": "codex",
             "source_kind": "hook",
             "event_type": "UserPromptSubmit",
@@ -1039,7 +1039,7 @@ def _list_suggestions(
         "/v1/suggestions",
         params={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "status": "pending",
         },
         headers=headers,
@@ -1056,7 +1056,7 @@ def _list_facts(
         "/v1/facts",
         params={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "status": "active",
         },
         headers=headers,

@@ -29,7 +29,7 @@ def test_agent_behavior_benchmark_uses_real_mcp_and_fails_hard_gates(tmp_path: P
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
                 "MEMORY_MCP_DEFAULT_SPACE_SLUG": "agent-bench-e2e",
-                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
                 "MEMORY_MCP_AGENT_NAME": "agent-behavior-e2e",
                 "MEMORY_MCP_TRANSPORT": "stdio",
                 "MEMORY_MCP_WRITE_MODE": "direct",
@@ -47,7 +47,7 @@ def test_agent_behavior_benchmark_uses_real_mcp_and_fails_hard_gates(tmp_path: P
                 scenarios=_e2e_scenarios(),
                 llm_client=_fake_llm(),
                 space_slug_prefix="agent-bench-e2e",
-                profile_external_ref="default",
+                memory_scope_external_ref="default",
                 max_tool_rounds=4,
             )
         )
@@ -75,7 +75,7 @@ def test_agent_behavior_benchmark_reports_live_session_metrics_over_real_mcp(
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
                 "MEMORY_MCP_DEFAULT_SPACE_SLUG": "agent-bench-live-e2e",
-                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
                 "MEMORY_MCP_AGENT_NAME": "agent-behavior-live-e2e",
                 "MEMORY_MCP_TRANSPORT": "stdio",
                 "MEMORY_MCP_WRITE_MODE": "direct",
@@ -93,7 +93,7 @@ def test_agent_behavior_benchmark_reports_live_session_metrics_over_real_mcp(
                 scenarios=_live_e2e_scenarios(),
                 llm_client=_live_fake_llm(),
                 space_slug_prefix="agent-bench-live-e2e",
-                profile_external_ref="default",
+                memory_scope_external_ref="default",
                 max_tool_rounds=3,
             )
         )
@@ -118,7 +118,7 @@ def test_agent_behavior_benchmark_reports_transcript_corpus_metrics_over_real_mc
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
                 "MEMORY_MCP_DEFAULT_SPACE_SLUG": "agent-bench-transcript-e2e",
-                "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+                "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
                 "MEMORY_MCP_AGENT_NAME": "agent-behavior-transcript-e2e",
                 "MEMORY_MCP_TRANSPORT": "stdio",
                 "MEMORY_MCP_WRITE_MODE": "direct",
@@ -136,7 +136,7 @@ def test_agent_behavior_benchmark_reports_transcript_corpus_metrics_over_real_mc
                 scenarios=_transcript_e2e_scenarios(),
                 llm_client=_transcript_fake_llm(),
                 space_slug_prefix="agent-bench-transcript-e2e",
-                profile_external_ref="default",
+                memory_scope_external_ref="default",
                 max_tool_rounds=3,
             )
         )
@@ -202,7 +202,7 @@ def _e2e_scenarios() -> tuple[AgentBenchScenario, ...]:
                 {
                     "action": "remember_fact",
                     "space_slug": "{space_slug}-other",
-                    "profile_external_ref": "{profile_ref}",
+                    "memory_scope_external_ref": "{memory_scope_ref}",
                     "text": "E2E_CROSS_SCOPE: Project B hidden beta branch.",
                     "kind": "note",
                 },

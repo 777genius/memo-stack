@@ -34,7 +34,7 @@ def test_diagnostics_adapters_and_outbox_are_safe(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Diagnostics notes",
                 "text": "Do not leak this raw diagnostic text through outbox diagnostics.",
                 "source_type": "document",
@@ -67,17 +67,17 @@ def test_diagnostics_adapters_and_outbox_are_safe(tmp_path: Path) -> None:
     assert "raw diagnostic text" not in str(item)
 
 
-def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -> None:
+def test_diagnostics_memory_scope_counts_are_scoped_and_non_content(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
-                "title": "Profile diagnostics notes",
-                "text": "PROFILE_DIAGNOSTIC_MARKER should not appear in diagnostics.",
+                "memory_scope_id": "memory_scope_default",
+                "title": "MemoryScope diagnostics notes",
+                "text": "MEMORY_SCOPE_DIAGNOSTIC_MARKER should not appear in diagnostics.",
                 "source_type": "document",
-                "source_external_id": "doc-profile-diagnostics",
+                "source_external_id": "doc-memory_scope-diagnostics",
             },
             headers=auth_headers(),
         )
@@ -85,8 +85,8 @@ def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
-                "text": "PROFILE_DIAGNOSTIC_FACT should not appear in diagnostics.",
+                "memory_scope_id": "memory_scope_default",
+                "text": "MEMORY_SCOPE_DIAGNOSTIC_FACT should not appear in diagnostics.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "diag-fact"}],
             },
@@ -96,15 +96,15 @@ def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -
             "/v1/suggestions",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
-                "candidate_text": "PROFILE_DIAGNOSTIC_SUGGESTION",
+                "memory_scope_id": "memory_scope_default",
+                "candidate_text": "MEMORY_SCOPE_DIAGNOSTIC_SUGGESTION",
                 "safe_reason": "diagnostic count",
                 "source_refs": [{"source_type": "manual", "source_id": "diag-suggestion"}],
             },
             headers=auth_headers(),
         )
         diagnostics = client.get(
-            "/v1/diagnostics/profile/profile_default",
+            "/v1/diagnostics/memory-scope/memory_scope_default",
             headers=auth_headers(),
         )
 
@@ -114,7 +114,7 @@ def test_diagnostics_profile_counts_are_scoped_and_non_content(tmp_path: Path) -
     assert data["documents"]["active"] == 1
     assert data["chunks"]["active"] == 1
     assert data["suggestions"]["pending"] == 1
-    assert "PROFILE_DIAGNOSTIC" not in str(data)
+    assert "MEMORY_SCOPE_DIAGNOSTIC" not in str(data)
 
 
 def test_diagnostics_redacts_restricted_preview(tmp_path: Path) -> None:
@@ -123,7 +123,7 @@ def test_diagnostics_redacts_restricted_preview(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Restricted diagnostics",
                 "text": "RESTRICTED_DIAGNOSTIC_DOC_SECRET must never appear in diagnostics.",
                 "source_type": "document",
@@ -136,7 +136,7 @@ def test_diagnostics_redacts_restricted_preview(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "RESTRICTED_DIAGNOSTIC_FACT_SECRET must never appear in diagnostics.",
                 "kind": "note",
                 "classification": "restricted",
@@ -150,14 +150,14 @@ def test_diagnostics_redacts_restricted_preview(tmp_path: Path) -> None:
             },
             headers=auth_headers(),
         )
-        profile = client.get(
-            "/v1/diagnostics/profile/profile_default",
+        memory_scope = client.get(
+            "/v1/diagnostics/memory-scope/memory_scope_default",
             headers=auth_headers(),
         )
         metrics = client.get("/v1/diagnostics/metrics", headers=auth_headers())
 
-    combined = f"{profile.json()} {metrics.json()}"
-    assert profile.status_code == 200
+    combined = f"{memory_scope.json()} {metrics.json()}"
+    assert memory_scope.status_code == 200
     assert metrics.status_code == 200
     assert "RESTRICTED_DIAGNOSTIC_DOC_SECRET" not in combined
     assert "RESTRICTED_DIAGNOSTIC_FACT_SECRET" not in combined
@@ -170,7 +170,7 @@ def test_diagnostics_metrics_are_counts_only_and_alert_on_dead_outbox(tmp_path: 
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Metrics diagnostics notes",
                 "text": "RAW_METRICS_SECRET should not appear in metrics.",
                 "source_type": "document",
@@ -202,7 +202,7 @@ def test_diagnostics_metrics_include_context_runtime_counters(tmp_path: Path) ->
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "RUNTIME_METRIC_FACT should not leak through metrics.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "runtime-metric"}],
@@ -213,7 +213,7 @@ def test_diagnostics_metrics_include_context_runtime_counters(tmp_path: Path) ->
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "runtime metric",
                 "token_budget": 512,
             },
@@ -261,7 +261,7 @@ def test_context_response_request_id_matches_log_record(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "TRACE_REQUEST_ID_MARKER renders from canonical facts.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "trace-request"}],
@@ -272,7 +272,7 @@ def test_context_response_request_id_matches_log_record(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "TRACE_REQUEST_ID_MARKER",
                 "token_budget": 512,
             },
@@ -289,7 +289,7 @@ def test_context_response_request_id_matches_log_record(tmp_path: Path) -> None:
     assert trace["span"] == "memory.context.request"
     assert trace["use_case"] == "build_context"
     assert trace["space_id"] == "space_client_app"
-    assert trace["profile_ids"] == ["profile_default"]
+    assert trace["memory_scope_ids"] == ["memory_scope_default"]
 
 
 def test_trace_attributes_do_not_include_raw_text(tmp_path: Path) -> None:
@@ -298,7 +298,7 @@ def test_trace_attributes_do_not_include_raw_text(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "TRACE_RAW_TEXT_SECRET must not appear in trace attributes.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "trace-secret"}],
@@ -309,7 +309,7 @@ def test_trace_attributes_do_not_include_raw_text(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "TRACE_RAW_TEXT_SECRET",
                 "token_budget": 512,
             },

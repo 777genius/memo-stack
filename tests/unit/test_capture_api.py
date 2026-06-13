@@ -32,7 +32,7 @@ def auth_headers() -> dict[str, str]:
 def capture_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "space_slug": "capture-api",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "thread-1",
         "source_agent": "codex",
         "source_kind": "hook",
@@ -53,7 +53,7 @@ def test_capture_create_is_idempotent_and_safe_to_list(tmp_path: Path) -> None:
         second = client.post("/v1/captures", json=capture_payload(), headers=auth_headers())
         listed = client.get(
             "/v1/captures",
-            params={"space_slug": "capture-api", "profile_external_ref": "default"},
+            params={"space_slug": "capture-api", "memory_scope_external_ref": "default"},
             headers=auth_headers(),
         )
 
@@ -81,7 +81,7 @@ def test_capture_consolidates_into_pending_suggestion_only(tmp_path: Path) -> No
             "/v1/suggestions",
             params={
                 "space_slug": "capture-api",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -90,7 +90,7 @@ def test_capture_consolidates_into_pending_suggestion_only(tmp_path: Path) -> No
             "/v1/context",
             json={
                 "space_slug": "capture-api",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "query": "CAPTURE_API_MARKER",
                 "max_chunks": 0,
                 "token_budget": 512,
@@ -155,7 +155,7 @@ def test_capture_secret_is_redacted_or_rejected_before_storage(tmp_path: Path) -
         )
         listed = client.get(
             "/v1/captures",
-            params={"space_slug": "capture-api", "profile_external_ref": "default"},
+            params={"space_slug": "capture-api", "memory_scope_external_ref": "default"},
             headers=auth_headers(),
         )
 
@@ -181,7 +181,7 @@ def test_capture_text_ingress_limit_uses_stable_public_error(tmp_path: Path) -> 
 
 
 def test_capture_pending_ingress_limit_allows_idempotent_retry(tmp_path: Path) -> None:
-    with make_client(tmp_path, max_pending_captures_per_profile=1) as client:
+    with make_client(tmp_path, max_pending_captures_per_memory_scope=1) as client:
         first = client.post(
             "/v1/captures",
             json=capture_payload(source_event_id="pending-limit-first"),
@@ -244,7 +244,7 @@ def test_capture_metadata_is_sanitized_before_canonical_storage(tmp_path: Path) 
 
 
 def test_capture_consolidation_respects_pending_suggestion_limit(tmp_path: Path) -> None:
-    with make_client(tmp_path, max_pending_suggestions_per_profile=1) as client:
+    with make_client(tmp_path, max_pending_suggestions_per_memory_scope=1) as client:
         first = client.post(
             "/v1/captures",
             json=capture_payload(source_event_id="suggestion-limit-first"),
@@ -272,7 +272,7 @@ def test_capture_consolidation_respects_pending_suggestion_limit(tmp_path: Path)
             "/v1/suggestions",
             params={
                 "space_slug": "capture-api",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -359,7 +359,7 @@ def test_capture_privacy_purge_expires_pending_suggestions(tmp_path: Path) -> No
             "/v1/suggestions",
             params={
                 "space_slug": "capture-api",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -375,7 +375,7 @@ def test_capture_privacy_purge_expires_pending_suggestions(tmp_path: Path) -> No
             "/v1/suggestions",
             params={
                 "space_slug": "capture-api",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "pending",
             },
             headers=auth_headers(),
@@ -384,7 +384,7 @@ def test_capture_privacy_purge_expires_pending_suggestions(tmp_path: Path) -> No
             "/v1/suggestions",
             params={
                 "space_slug": "capture-api",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "status": "expired",
             },
             headers=auth_headers(),

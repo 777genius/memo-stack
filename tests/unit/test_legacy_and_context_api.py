@@ -19,7 +19,7 @@ from memo_stack_core.application.context_collectors import (
     CanonicalCollectionResult,
     CanonicalContextCollector,
 )
-from memo_stack_core.domain.entities import ProfileId, SpaceId, TrustLevel
+from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, TrustLevel
 from memo_stack_server.api.legacy_client import _legacy_trust
 from memo_stack_server.config import DeployProfile, MemoryPolicyMode, Settings
 from memo_stack_server.main import create_app
@@ -95,7 +95,7 @@ def test_future_occurred_at_is_clamped_to_ingest_time(tmp_path: Path) -> None:
             "/v1/episodes",
             json={
                 "space_slug": "client-app",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "thread_external_ref": "future-occurred-at",
                 "source_type": "system_audio",
                 "source_external_id": "future-event",
@@ -238,7 +238,7 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
 ) -> None:
     scope = {
         "space_slug": "client-app",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "v1-session-1",
     }
     episode = {
@@ -267,7 +267,7 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
             "/v1/episodes",
             json={
                 **episode,
-                "profile_external_ref": "secondary",
+                "memory_scope_external_ref": "secondary",
                 "thread_external_ref": "v1-session-1-secondary",
             },
             headers=auth_headers(),
@@ -276,7 +276,7 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
             client.app.state.container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug=scope["space_slug"],
-                    profile_external_ref=scope["profile_external_ref"],
+                    memory_scope_external_ref=scope["memory_scope_external_ref"],
                     thread_external_ref=scope["thread_external_ref"],
                 )
             )
@@ -285,7 +285,7 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
             "/v1/facts",
             json={
                 "space_id": str(resolved.space_id),
-                "profile_id": str(resolved.profile_id),
+                "memory_scope_id": str(resolved.memory_scope_id),
                 "thread_id": str(resolved.thread_id),
                 "text": "V1_THREAD_DELETE_FACT_MARKER should enqueue graph cleanup.",
                 "kind": "note",
@@ -353,7 +353,7 @@ def test_v1_episode_context_status_duplicate_and_delete_thread_memory(
 def test_v1_thread_memory_read_routes_do_not_create_missing_scope(tmp_path: Path) -> None:
     scope = {
         "space_slug": "missing-thread-space",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "missing-thread",
     }
     with make_client(tmp_path) as client:
@@ -422,7 +422,7 @@ def test_legacy_scope_creation_is_safe_under_parallel_sessions(tmp_path: Path) -
                     container.ensure_scope.execute(
                         EnsureScopeCommand(
                             space_slug="client-app",
-                            profile_external_ref="default",
+                            memory_scope_external_ref="default",
                             thread_external_ref=f"parallel-session-{index}",
                         )
                     )
@@ -433,17 +433,17 @@ def test_legacy_scope_creation_is_safe_under_parallel_sessions(tmp_path: Path) -
         results = asyncio.run(create_scopes())
 
     assert len({result.space_id for result in results}) == 1
-    assert len({result.profile_id for result in results}) == 1
+    assert len({result.memory_scope_id for result in results}) == 1
     assert len({result.thread_id for result in results}) == 8
 
 
-def test_context_rejects_duplicate_canonical_profile_ids(tmp_path: Path) -> None:
+def test_context_rejects_duplicate_canonical_memory_scope_ids(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         response = client.post(
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default", "profile_default"],
+                "memory_scope_ids": ["memory_scope_default", "memory_scope_default"],
                 "query": "scope validation",
             },
             headers=auth_headers(),
@@ -551,7 +551,7 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Architecture notes",
                 "text": "Memo Stack uses Postgres as canonical truth. Qdrant is derived.",
                 "source_type": "document",
@@ -565,7 +565,7 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "What is canonical truth?",
                 "token_budget": 512,
                 "max_chunks": 4,
@@ -588,7 +588,7 @@ def test_document_title_is_indexed_and_rendered_for_context_recall(tmp_path: Pat
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": f"{marker}: Architecture notes",
                 "text": "Postgres remains canonical while Qdrant and Graphiti are projections.",
                 "source_type": "document",
@@ -600,7 +600,7 @@ def test_document_title_is_indexed_and_rendered_for_context_recall(tmp_path: Pat
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": f"{marker} Architecture notes",
                 "token_budget": 512,
                 "max_chunks": 4,
@@ -625,7 +625,7 @@ def test_document_ingest_returns_backpressure_when_outbox_high(tmp_path: Path) -
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Backpressure document",
                 "text": "BACKPRESSURE_DOC_MARKER should not be ingested while outbox is high.",
                 "source_type": "document",
@@ -656,7 +656,7 @@ def test_document_delete_bypasses_backpressure(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Backpressure delete",
                 "text": "BACKPRESSURE_DELETE_MARKER delete must bypass backpressure.",
                 "source_type": "document",
@@ -683,7 +683,7 @@ def test_forget_bypasses_backpressure(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "BACKPRESSURE_FORGET_MARKER forget must bypass backpressure.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "backpressure-forget"}],
@@ -707,7 +707,7 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "CANONICAL_COLLECTOR_FACT_MARKER belongs to canonical facts.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "collector-fact"}],
@@ -718,7 +718,7 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Collector document",
                 "text": "CANONICAL_COLLECTOR_CHUNK_MARKER belongs to keyword chunks.",
                 "source_type": "document",
@@ -731,10 +731,10 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
             CanonicalContextCollector(uow_factory=container.uow_factory).collect(
                 query=BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="CANONICAL_COLLECTOR",
                 ),
-                profile_ids=("profile_default",),
+                memory_scope_ids=("memory_scope_default",),
             )
         )
 
@@ -747,7 +747,7 @@ def test_v1_document_ingest_accepts_external_scope_and_thread_context(
 ) -> None:
     scope = {
         "space_slug": "client-app",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "document-session-1",
     }
     with make_client(tmp_path) as client:
@@ -755,7 +755,7 @@ def test_v1_document_ingest_accepts_external_scope_and_thread_context(
             "/v1/documents",
             json={
                 **scope,
-                "title": "Profile notes",
+                "title": "MemoryScope notes",
                 "text": (
                     "V1_DOCUMENT_SCOPE_MARKER: импорт документа должен читаться из thread context."
                 ),
@@ -777,7 +777,7 @@ def test_v1_document_ingest_accepts_external_scope_and_thread_context(
 
     assert document.status_code == 201
     assert document.json()["data"]["space_id"].startswith("space_")
-    assert document.json()["data"]["profile_id"].startswith("profile_")
+    assert document.json()["data"]["memory_scope_id"].startswith("memory_scope_")
     assert document.json()["data"]["thread_id"] is not None
     assert context.status_code == 200
     assert "V1_DOCUMENT_SCOPE_MARKER" in context.json()["data"]["rendered_text"]
@@ -788,12 +788,12 @@ def test_thread_scoped_document_reimport_same_hash_stays_visible_per_thread(
 ) -> None:
     first_scope = {
         "space_slug": "client-app",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "document-thread-a",
     }
     second_scope = {
         "space_slug": "client-app",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "document-thread-b",
     }
     document_text = "THREAD_DOC_DEDUPE_MARKER must be independently visible in every thread import."
@@ -845,7 +845,7 @@ def test_document_reimport_same_hash_is_noop_even_with_new_idempotency_key(
 ) -> None:
     payload = {
         "space_id": "space_client_app",
-        "profile_id": "profile_default",
+        "memory_scope_id": "memory_scope_default",
         "title": "Reimport notes",
         "text": "DOC_REIMPORT_MARKER should only create one canonical document.",
         "source_type": "document",
@@ -873,7 +873,7 @@ def test_document_reimport_same_hash_is_noop_even_with_new_idempotency_key(
 def test_document_reimport_same_hash_different_source_id_is_noop(tmp_path: Path) -> None:
     base_payload = {
         "space_id": "space_client_app",
-        "profile_id": "profile_default",
+        "memory_scope_id": "memory_scope_default",
         "title": "Same content notes",
         "text": "DOC_REIMPORT_SOURCE_MARKER should not duplicate chunks.",
         "source_type": "document",
@@ -897,33 +897,33 @@ def test_document_reimport_same_hash_different_source_id_is_noop(tmp_path: Path)
     assert second.json()["data"]["indexing_status"] == "already_indexed_or_pending"
 
 
-def test_document_reimport_same_hash_different_profile_stays_isolated(
+def test_document_reimport_same_hash_different_memory_scope_stays_isolated(
     tmp_path: Path,
 ) -> None:
     base_payload = {
         "space_id": "space_client_app",
         "title": "Shared source notes",
-        "text": "DOC_REIMPORT_PROFILE_MARKER should stay scoped per profile.",
+        "text": "DOC_REIMPORT_MEMORY_SCOPE_MARKER should stay scoped per memory_scope.",
         "source_type": "document",
-        "source_external_id": "doc-reimport-profile",
+        "source_external_id": "doc-reimport-memory_scope",
     }
     with make_client(tmp_path) as client:
         first = client.post(
             "/v1/documents",
-            json={**base_payload, "profile_id": "profile_default"},
-            headers={**auth_headers(), "Idempotency-Key": "profile-scoped-doc-key"},
+            json={**base_payload, "memory_scope_id": "memory_scope_default"},
+            headers={**auth_headers(), "Idempotency-Key": "memory_scope-scoped-doc-key"},
         )
         second = client.post(
             "/v1/documents",
-            json={**base_payload, "profile_id": "profile_secondary"},
-            headers={**auth_headers(), "Idempotency-Key": "profile-scoped-doc-key"},
+            json={**base_payload, "memory_scope_id": "memory_scope_secondary"},
+            headers={**auth_headers(), "Idempotency-Key": "memory_scope-scoped-doc-key"},
         )
         default_context = client.post(
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
-                "query": "DOC_REIMPORT_PROFILE_MARKER",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "DOC_REIMPORT_MEMORY_SCOPE_MARKER",
                 "token_budget": 512,
             },
             headers=auth_headers(),
@@ -932,8 +932,8 @@ def test_document_reimport_same_hash_different_profile_stays_isolated(
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_secondary"],
-                "query": "DOC_REIMPORT_PROFILE_MARKER",
+                "memory_scope_ids": ["memory_scope_secondary"],
+                "query": "DOC_REIMPORT_MEMORY_SCOPE_MARKER",
                 "token_budget": 512,
             },
             headers=auth_headers(),
@@ -944,8 +944,10 @@ def test_document_reimport_same_hash_different_profile_stays_isolated(
     assert first.json()["data"]["id"] != second.json()["data"]["id"]
     assert default_context.status_code == 200
     assert secondary_context.status_code == 200
-    assert "Profile profile_default:" in default_context.json()["data"]["rendered_text"]
-    assert "Profile profile_secondary:" in secondary_context.json()["data"]["rendered_text"]
+    assert "MemoryScope memory_scope_default:" in default_context.json()["data"]["rendered_text"]
+    assert (
+        "MemoryScope memory_scope_secondary:" in secondary_context.json()["data"]["rendered_text"]
+    )
 
 
 def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
@@ -954,7 +956,7 @@ def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Restricted notes",
                 "text": "RESTRICTED_DOC_MARKER must stay out of prompt context.",
                 "source_type": "document",
@@ -967,7 +969,7 @@ def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "RESTRICTED_FACT_MARKER must stay out of prompt context.",
                 "kind": "note",
                 "classification": "restricted",
@@ -979,7 +981,7 @@ def test_restricted_chunk_not_in_context_by_default(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "RESTRICTED_DOC_MARKER RESTRICTED_FACT_MARKER",
                 "token_budget": 512,
             },
@@ -1001,7 +1003,7 @@ def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> Non
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "IMPLICIT_RESTRICTED_MARKER is stored as internal without explicit flag.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "implicit-fact"}],
@@ -1012,7 +1014,7 @@ def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> Non
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "EXPLICIT_RESTRICTED_MARKER must stay out of prompt context.",
                 "kind": "note",
                 "classification": "restricted",
@@ -1024,7 +1026,7 @@ def test_restricted_fact_requires_explicit_classification(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "IMPLICIT_RESTRICTED_MARKER EXPLICIT_RESTRICTED_MARKER",
                 "token_budget": 512,
             },
@@ -1046,7 +1048,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Delete notes",
                 "text": "DELETE_DOC_MARKER should disappear after document delete.",
                 "source_type": "document",
@@ -1062,7 +1064,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "DELETE_DOC_FACT_MARKER should disappear with its source document.",
                 "kind": "note",
                 "source_refs": [
@@ -1079,7 +1081,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "DELETE_DOC_WIDE_FACT_MARKER should disappear with document id source.",
                 "kind": "note",
                 "source_refs": [
@@ -1095,7 +1097,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "DELETE_DOC_MARKER DELETE_DOC_FACT_MARKER DELETE_DOC_WIDE_FACT_MARKER",
                 "token_budget": 512,
             },
@@ -1107,7 +1109,7 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "DELETE_DOC_MARKER DELETE_DOC_FACT_MARKER DELETE_DOC_WIDE_FACT_MARKER",
                 "token_budget": 512,
             },
@@ -1131,17 +1133,17 @@ def test_delete_document_hides_chunks_and_enqueues_vector_delete(tmp_path: Path)
     assert "DELETE_DOC_WIDE_FACT_MARKER" not in after.json()["data"]["rendered_text"]
 
 
-def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path) -> None:
+def test_delete_document_does_not_delete_cross_memory_scope_fact_refs(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         document = client.post(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Scoped delete notes",
-                "text": "CROSS_PROFILE_DELETE_DOC_MARKER belongs to default profile.",
+                "text": "CROSS_MEMORY_SCOPE_DELETE_DOC_MARKER belongs to default memory_scope.",
                 "source_type": "document",
-                "source_external_id": "doc-cross-profile-delete",
+                "source_external_id": "doc-cross-memory_scope-delete",
             },
             headers=auth_headers(),
         )
@@ -1149,13 +1151,14 @@ def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path)
         chunk = client.get(f"/v1/documents/{document_id}/chunks", headers=auth_headers()).json()[
             "data"
         ][0]
-        cross_profile_fact = client.post(
+        cross_memory_scope_fact = client.post(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_secondary",
+                "memory_scope_id": "memory_scope_secondary",
                 "text": (
-                    "CROSS_PROFILE_FACT_REF_MARKER must survive another profile document delete."
+                    "CROSS_MEMORY_SCOPE_FACT_REF_MARKER must survive another "
+                    "memory_scope document delete."
                 ),
                 "kind": "note",
                 "source_refs": [
@@ -1173,18 +1176,18 @@ def test_delete_document_does_not_delete_cross_profile_fact_refs(tmp_path: Path)
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_secondary"],
-                "query": "CROSS_PROFILE_FACT_REF_MARKER",
+                "memory_scope_ids": ["memory_scope_secondary"],
+                "query": "CROSS_MEMORY_SCOPE_FACT_REF_MARKER",
                 "token_budget": 512,
             },
             headers=auth_headers(),
         )
 
     assert document.status_code == 201
-    assert cross_profile_fact.status_code == 201
+    assert cross_memory_scope_fact.status_code == 201
     assert deleted.status_code == 200
     assert deleted.json()["data"]["deleted_facts"] == 0
-    assert "CROSS_PROFILE_FACT_REF_MARKER" in secondary_context.json()["data"]["rendered_text"]
+    assert "CROSS_MEMORY_SCOPE_FACT_REF_MARKER" in secondary_context.json()["data"]["rendered_text"]
 
 
 def test_document_reimport_same_hash_after_delete_creates_new_active_document(
@@ -1192,7 +1195,7 @@ def test_document_reimport_same_hash_after_delete_creates_new_active_document(
 ) -> None:
     payload = {
         "space_slug": "client-app",
-        "profile_external_ref": "default",
+        "memory_scope_external_ref": "default",
         "thread_external_ref": "doc-delete-reimport-thread",
         "title": "Reimport after delete",
         "text": "DELETE_REIMPORT_DOC_MARKER should be visible only from the new document.",
@@ -1212,7 +1215,7 @@ def test_document_reimport_same_hash_after_delete_creates_new_active_document(
             "/v1/context",
             json={
                 "space_slug": "client-app",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "thread_external_ref": "doc-delete-reimport-thread",
                 "query": "DELETE_REIMPORT_DOC_MARKER",
                 "token_budget": 512,
@@ -1234,7 +1237,7 @@ def test_process_document_reenqueues_active_chunks(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Process notes",
                 "text": "PROCESS_DOC_MARKER should be reindexed on demand.",
                 "source_type": "document",
@@ -1273,7 +1276,7 @@ def test_process_document_idempotency_key_conflicts_on_different_document(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "First process notes",
                 "text": "First document process idempotency marker.",
                 "source_type": "document",
@@ -1285,7 +1288,7 @@ def test_process_document_idempotency_key_conflicts_on_different_document(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Second process notes",
                 "text": "Second document process idempotency marker.",
                 "source_type": "document",
@@ -1368,7 +1371,7 @@ def test_fact_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> Non
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "DEEP_FACT_RECALL_MARKER: use a temporal graph only as derived evidence.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "deep-fact"}],
@@ -1380,7 +1383,7 @@ def test_fact_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> Non
                 "/v1/facts",
                 json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "text": f"Recent irrelevant memory filler {index}.",
                     "kind": "note",
                     "source_refs": [
@@ -1395,7 +1398,7 @@ def test_fact_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "DEEP_FACT_RECALL_MARKER temporal graph evidence",
                 "token_budget": 512,
                 "max_facts": 1,
@@ -1417,7 +1420,7 @@ def test_chunk_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> No
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Deep chunk recall",
                 "text": "DEEP_CHUNK_RECALL_MARKER: Graphiti is derived, Postgres stays canonical.",
                 "source_type": "document",
@@ -1430,7 +1433,7 @@ def test_chunk_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> No
                 "/v1/documents",
                 json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "title": f"Recent filler {index}",
                     "text": f"Recent irrelevant document filler {index}.",
                     "source_type": "document",
@@ -1444,7 +1447,7 @@ def test_chunk_keyword_recall_searches_beyond_recent_limit(tmp_path: Path) -> No
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "DEEP_CHUNK_RECALL_MARKER Graphiti canonical",
                 "token_budget": 512,
                 "max_facts": 0,
@@ -1467,7 +1470,7 @@ def test_public_context_respects_server_rendered_char_cap(tmp_path: Path) -> Non
                 "/v1/facts",
                 json={
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "text": f"PUBLIC_CHAR_CAP_MARKER fact {index}. " + ("important details " * 20),
                     "kind": "note",
                     "source_refs": [
@@ -1482,7 +1485,7 @@ def test_public_context_respects_server_rendered_char_cap(tmp_path: Path) -> Non
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "PUBLIC_CHAR_CAP_MARKER",
                 "token_budget": 16000,
                 "max_facts": 8,
@@ -1506,7 +1509,7 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Never render deleted fact marker.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "manual-delete"}],
@@ -1518,7 +1521,7 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "deleted fact marker",
                 "token_budget": 512,
             },
@@ -1529,7 +1532,7 @@ def test_context_filters_deleted_facts(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "deleted fact marker",
                 "token_budget": 512,
             },
@@ -1550,7 +1553,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
             self,
             *,
             query: BuildContextQuery,
-            profile_ids: tuple[str, ...],
+            memory_scope_ids: tuple[str, ...],
         ) -> CanonicalCollectionResult:
             return CanonicalCollectionResult(facts=(stale_fact,), keyword_chunks=())
 
@@ -1559,7 +1562,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "RACE_DELETE_MARKER must not survive late hydration.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "race-delete"}],
@@ -1588,7 +1591,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="RACE_DELETE_MARKER",
                     token_budget=512,
                 )
@@ -1605,7 +1608,7 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
 def test_context_cache_disabled_for_core_lite_prompt_path(tmp_path: Path) -> None:
     context_request = {
         "space_id": "space_client_app",
-        "profile_ids": ["profile_default"],
+        "memory_scope_ids": ["memory_scope_default"],
         "query": "CACHE_DISABLED_MARKER",
         "token_budget": 512,
     }
@@ -1614,7 +1617,7 @@ def test_context_cache_disabled_for_core_lite_prompt_path(tmp_path: Path) -> Non
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "CACHE_DISABLED_MARKER should disappear after forget.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "cache-disabled"}],
@@ -1637,16 +1640,16 @@ def test_context_cache_disabled_for_core_lite_prompt_path(tmp_path: Path) -> Non
     assert "CACHE_DISABLED_MARKER" not in after_data["rendered_text"]
 
 
-def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
+def test_multi_memory_scope_context_keeps_memory_scope_sections(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         first = client.post(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
-                "text": "PROFILE_DEFAULT_MARKER owns fifo choice.",
+                "memory_scope_id": "memory_scope_default",
+                "text": "MEMORY_SCOPE_DEFAULT_MARKER owns fifo choice.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-default"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-default"}],
             },
             headers=auth_headers(),
         )
@@ -1654,10 +1657,10 @@ def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_secondary",
-                "text": "PROFILE_SECONDARY_MARKER owns queue constraint.",
+                "memory_scope_id": "memory_scope_secondary",
+                "text": "MEMORY_SCOPE_SECONDARY_MARKER owns queue constraint.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-secondary"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-secondary"}],
             },
             headers=auth_headers(),
         )
@@ -1665,8 +1668,8 @@ def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default", "profile_secondary"],
-                "query": "PROFILE_DEFAULT_MARKER PROFILE_SECONDARY_MARKER",
+                "memory_scope_ids": ["memory_scope_default", "memory_scope_secondary"],
+                "query": "MEMORY_SCOPE_DEFAULT_MARKER MEMORY_SCOPE_SECONDARY_MARKER",
                 "token_budget": 512,
             },
             headers=auth_headers(),
@@ -1676,17 +1679,19 @@ def test_multi_profile_context_keeps_profile_sections(tmp_path: Path) -> None:
     assert second.status_code == 201
     assert context.status_code == 200
     rendered = context.json()["data"]["rendered_text"]
-    assert "Profile profile_default:" in rendered
-    assert "Profile profile_secondary:" in rendered
-    assert "PROFILE_DEFAULT_MARKER" in rendered
-    assert "PROFILE_SECONDARY_MARKER" in rendered
-    item_profiles = {item["diagnostics"]["profile_id"] for item in context.json()["data"]["items"]}
-    item_profile_fields = {item["profile_id"] for item in context.json()["data"]["items"]}
-    assert item_profiles == {"profile_default", "profile_secondary"}
-    assert item_profile_fields == {"profile_default", "profile_secondary"}
+    assert "MemoryScope memory_scope_default:" in rendered
+    assert "MemoryScope memory_scope_secondary:" in rendered
+    assert "MEMORY_SCOPE_DEFAULT_MARKER" in rendered
+    assert "MEMORY_SCOPE_SECONDARY_MARKER" in rendered
+    item_memory_scopes = {
+        item["diagnostics"]["memory_scope_id"] for item in context.json()["data"]["items"]
+    }
+    item_memory_scope_fields = {item["memory_scope_id"] for item in context.json()["data"]["items"]}
+    assert item_memory_scopes == {"memory_scope_default", "memory_scope_secondary"}
+    assert item_memory_scope_fields == {"memory_scope_default", "memory_scope_secondary"}
 
 
-def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
+def test_thread_context_includes_current_thread_and_memory_scope_wide_facts_only(
     tmp_path: Path,
 ) -> None:
     with make_client(tmp_path) as client:
@@ -1695,7 +1700,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug="client-app",
-                    profile_external_ref="default",
+                    memory_scope_external_ref="default",
                     thread_external_ref="fact-thread-current",
                 )
             )
@@ -1704,7 +1709,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug="client-app",
-                    profile_external_ref="default",
+                    memory_scope_external_ref="default",
                     thread_external_ref="fact-thread-other",
                 )
             )
@@ -1713,7 +1718,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
             "/v1/facts",
             json={
                 "space_id": str(current_scope.space_id),
-                "profile_id": str(current_scope.profile_id),
+                "memory_scope_id": str(current_scope.memory_scope_id),
                 "thread_id": str(current_scope.thread_id),
                 "text": "THREAD_SCOPE_MARKER current thread fact.",
                 "kind": "note",
@@ -1725,7 +1730,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
             "/v1/facts",
             json={
                 "space_id": str(other_scope.space_id),
-                "profile_id": str(other_scope.profile_id),
+                "memory_scope_id": str(other_scope.memory_scope_id),
                 "thread_id": str(other_scope.thread_id),
                 "text": "THREAD_SCOPE_MARKER wrong other thread fact.",
                 "kind": "note",
@@ -1733,14 +1738,14 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
             },
             headers=auth_headers(),
         )
-        profile_fact = client.post(
+        memory_scope_fact = client.post(
             "/v1/facts",
             json={
                 "space_id": str(current_scope.space_id),
-                "profile_id": str(current_scope.profile_id),
-                "text": "THREAD_SCOPE_MARKER profile-wide fact.",
+                "memory_scope_id": str(current_scope.memory_scope_id),
+                "text": "THREAD_SCOPE_MARKER memory_scope-wide fact.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-wide"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-wide"}],
             },
             headers=auth_headers(),
         )
@@ -1748,7 +1753,7 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
             "/v1/context",
             json={
                 "space_id": str(current_scope.space_id),
-                "profile_ids": [str(current_scope.profile_id)],
+                "memory_scope_ids": [str(current_scope.memory_scope_id)],
                 "thread_id": str(current_scope.thread_id),
                 "query": "THREAD_SCOPE_MARKER",
                 "token_budget": 512,
@@ -1759,15 +1764,15 @@ def test_thread_context_includes_current_thread_and_profile_wide_facts_only(
 
     assert current_fact.status_code == 201
     assert other_fact.status_code == 201
-    assert profile_fact.status_code == 201
+    assert memory_scope_fact.status_code == 201
     assert context.status_code == 200
     rendered = context.json()["data"]["rendered_text"]
     assert "THREAD_SCOPE_MARKER current thread fact." in rendered
-    assert "THREAD_SCOPE_MARKER profile-wide fact." in rendered
+    assert "THREAD_SCOPE_MARKER memory_scope-wide fact." in rendered
     assert "THREAD_SCOPE_MARKER wrong other thread fact." not in rendered
 
 
-def test_context_with_missing_thread_ref_reads_profile_wide_memory_without_creating_thread(
+def test_context_with_missing_thread_ref_reads_memory_scope_wide_memory_without_creating_thread(
     tmp_path: Path,
 ) -> None:
     with make_client(tmp_path) as client:
@@ -1775,10 +1780,10 @@ def test_context_with_missing_thread_ref_reads_profile_wide_memory_without_creat
             "/v1/facts",
             json={
                 "space_slug": "client-app",
-                "profile_external_ref": "default",
-                "text": "MISSING_THREAD_PROFILE_WIDE_MARKER profile prep fact.",
+                "memory_scope_external_ref": "default",
+                "text": "MISSING_THREAD_MEMORY_SCOPE_WIDE_MARKER memory_scope prep fact.",
                 "kind": "note",
-                "source_refs": [{"source_type": "manual", "source_id": "profile-wide"}],
+                "source_refs": [{"source_type": "manual", "source_id": "memory_scope-wide"}],
             },
             headers=auth_headers(),
         )
@@ -1786,9 +1791,9 @@ def test_context_with_missing_thread_ref_reads_profile_wide_memory_without_creat
             "/v1/context",
             json={
                 "space_slug": "client-app",
-                "profile_external_ref": "default",
+                "memory_scope_external_ref": "default",
                 "thread_external_ref": "missing-thread-before-first-ingest",
-                "query": "MISSING_THREAD_PROFILE_WIDE_MARKER",
+                "query": "MISSING_THREAD_MEMORY_SCOPE_WIDE_MARKER",
                 "token_budget": 512,
                 "max_facts": 8,
             },
@@ -1802,7 +1807,10 @@ def test_context_with_missing_thread_ref_reads_profile_wide_memory_without_creat
     assert context.status_code == 200
     payload = context.json()["data"]
     assert payload["diagnostics"].get("scope_not_found") is not True
-    assert "MISSING_THREAD_PROFILE_WIDE_MARKER profile prep fact." in payload["rendered_text"]
+    assert (
+        "MISSING_THREAD_MEMORY_SCOPE_WIDE_MARKER memory_scope prep fact."
+        in payload["rendered_text"]
+    )
     assert thread_count == 0
 
 
@@ -1829,7 +1837,7 @@ def test_disabled_policy_returns_no_legacy_memory_or_public_context(tmp_path: Pa
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "POLICY_DISABLED_MARKER",
                 "token_budget": 512,
             },

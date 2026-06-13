@@ -96,36 +96,36 @@ def test_mcp_sdk_protocol_version_is_explicitly_guarded() -> None:
     assert "2025-11-25" in SUPPORTED_PROTOCOL_VERSIONS
 
 
-def test_service_profile_snapshot_export_and_import_are_policy_gated() -> None:
+def test_service_memory_scope_snapshot_export_and_import_are_policy_gated() -> None:
     async def run() -> None:
         gateway = RecordingGateway()
         service = MemoryToolService(
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
         snapshot = {
             "schema_version": 1,
-            "facts": [{"id": "fact_1", "text": "Portable profile snapshot fact."}],
+            "facts": [{"id": "fact_1", "text": "Portable memory_scope snapshot fact."}],
             "documents": [],
             "chunks": [],
             "source_refs": [],
         }
 
-        exported = await service.export_profile_snapshot(redacted=True)
-        dry_run = await service.import_profile_snapshot(snapshot=snapshot)
-        refused = await service.import_profile_snapshot(
+        exported = await service.export_memory_scope_snapshot(redacted=True)
+        dry_run = await service.import_memory_scope_snapshot(snapshot=snapshot)
+        refused = await service.import_memory_scope_snapshot(
             snapshot=snapshot,
             dry_run=False,
             confirmed=False,
         )
-        imported = await service.import_profile_snapshot(
+        imported = await service.import_memory_scope_snapshot(
             snapshot=snapshot,
             dry_run=False,
             confirmed=True,
-            merge_strategy="create_new_profile",
+            merge_strategy="create_new_memory_scope",
             source_name="unit-snapshot",
         )
 
@@ -137,14 +137,14 @@ def test_service_profile_snapshot_export_and_import_are_policy_gated() -> None:
         assert refused["ok"] is False
         assert refused["error"]["code"] == "memo_stack_mcp.policy.explicit_confirmation_required"
         assert imported["ok"] is True
-        assert imported["diagnostics"]["side_effects"] == ["imported_profile_snapshot"]
+        assert imported["diagnostics"]["side_effects"] == ["imported_memory_scope_snapshot"]
         assert (
-            "export_profile_snapshot",
+            "export_memory_scope_snapshot",
             {"scope": MemoryScope("project-a", "backend", None), "redacted": True},
         ) in gateway.calls
-        assert gateway.calls[-1][0] == "import_profile_snapshot"
+        assert gateway.calls[-1][0] == "import_memory_scope_snapshot"
         assert gateway.calls[-1][1]["manifest"] is None
-        assert gateway.calls[-1][1]["merge_strategy"] == "create_new_profile"
+        assert gateway.calls[-1][1]["merge_strategy"] == "create_new_memory_scope"
         assert gateway.calls[-1][1]["source_name"] == "unit-snapshot"
 
     asyncio.run(run())
@@ -157,7 +157,7 @@ def test_service_remember_fact_uses_default_scope_and_stable_idempotency() -> No
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
                 write_mode=MemoryMcpWriteMode.DIRECT,
             ),
         )
@@ -398,7 +398,7 @@ def test_service_remember_fact_routes_low_trust_source_to_suggestion() -> None:
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
                 write_mode=MemoryMcpWriteMode.DIRECT,
             ),
         )
@@ -511,7 +511,7 @@ def test_mcp_digest_structured_output_and_scope() -> None:
             "memory_digest",
             {
                 "topic": "Graphiti decisions",
-                "profile_external_refs": ["engineering", "product"],
+                "memory_scope_external_refs": ["engineering", "product"],
                 "include_related": False,
             },
         )
@@ -523,7 +523,7 @@ def test_mcp_digest_structured_output_and_scope() -> None:
         assert gateway.calls[0][0] == "build_digest"
         assert gateway.calls[0][1]["topic"] == "Graphiti decisions"
         assert gateway.calls[0][1]["include_related"] is False
-        assert gateway.calls[0][1]["scope"].profile_external_refs == (
+        assert gateway.calls[0][1]["scope"].memory_scope_external_refs == (
             "engineering",
             "product",
         )
@@ -549,30 +549,30 @@ def test_service_status_never_echoes_auth_token() -> None:
     asyncio.run(run())
 
 
-def test_service_search_uses_read_scope_for_multiple_profiles() -> None:
+def test_service_search_uses_read_scope_for_multiple_memory_scopes() -> None:
     async def run() -> None:
         gateway = RecordingGateway()
         service = MemoryToolService(
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
 
         result = await service.search(
             query="memory architecture",
-            profile_external_refs=["backend", "frontend"],
+            memory_scope_external_refs=["backend", "frontend"],
         )
 
         assert result["ok"] is True
-        assert result["data"]["requested_profile_external_refs"] == ["backend", "frontend"]
+        assert result["data"]["requested_memory_scope_external_refs"] == ["backend", "frontend"]
         assert gateway.calls[0] == (
             "build_context",
             {
                 "scope": MemoryReadScope(
                     space_slug="project-a",
-                    profile_external_refs=("backend", "frontend"),
+                    memory_scope_external_refs=("backend", "frontend"),
                     thread_external_ref=None,
                 ),
                 "query": "memory architecture",
@@ -729,7 +729,7 @@ def test_service_search_redacts_sensitive_retrieved_text() -> None:
     asyncio.run(run())
 
 
-def test_service_search_rejects_thread_scope_with_multiple_profiles() -> None:
+def test_service_search_rejects_thread_scope_with_multiple_memory_scopes() -> None:
     async def run() -> None:
         gateway = RecordingGateway()
         service = MemoryToolService(
@@ -739,7 +739,7 @@ def test_service_search_rejects_thread_scope_with_multiple_profiles() -> None:
 
         result = await service.search(
             query="memory architecture",
-            profile_external_refs=["backend", "frontend"],
+            memory_scope_external_refs=["backend", "frontend"],
             thread_external_ref="session-1",
         )
 

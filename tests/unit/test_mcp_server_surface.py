@@ -78,14 +78,16 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_digest",
             "memory_insights",
             "memory_export_graph",
-            "memory_export_profile_snapshot",
-            "memory_preview_profile_snapshot_import",
-            "memory_import_profile_snapshot",
+            "memory_export_memory_scope_snapshot",
+            "memory_preview_memory_scope_snapshot_import",
+            "memory_import_memory_scope_snapshot",
             "memory_remember_fact",
             "memory_list_facts",
             "memory_get_fact",
             "memory_related_facts",
-            "memory_link_facts", "memory_list_fact_relations", "memory_unlink_fact_relation",
+            "memory_link_facts",
+            "memory_list_fact_relations",
+            "memory_unlink_fact_relation",
             "memory_list_fact_versions",
             "memory_update_fact",
             "memory_forget_fact",
@@ -126,14 +128,14 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             assert '"items": {}' not in data_schema
             if tool.name in {
                 "memory_forget_fact",
-                "memory_import_profile_snapshot",
+                "memory_import_memory_scope_snapshot",
                 "memory_unlink_fact_relation",
             }:
                 assert tool.annotations.destructiveHint is True
             else:
                 assert tool.annotations.destructiveHint is False
         search = next(tool for tool in tools if tool.name == "memory_search")
-        assert "profile_external_refs" in search.inputSchema["properties"]
+        assert "memory_scope_external_refs" in search.inputSchema["properties"]
         search_description = search.description.casefold()
         assert "use this whenever" in search_description
         assert "search, check, look up, or compare memory" in search_description
@@ -152,26 +154,20 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert "do not call it as a substitute" in status_description
         assert "status alone does not complete" in status_description
         assert "call this before relying on memory" not in status_description
-        runtime_status = next(
-            tool for tool in tools if tool.name == "memory_local_runtime_status"
-        )
-        runtime_start = next(
-            tool for tool in tools if tool.name == "memory_local_runtime_start"
-        )
+        runtime_status = next(tool for tool in tools if tool.name == "memory_local_runtime_status")
+        runtime_start = next(tool for tool in tools if tool.name == "memory_local_runtime_start")
         assert runtime_status.annotations.readOnlyHint is True
         assert "without writing files" in runtime_status.description
         assert "starting docker" in runtime_status.description.casefold()
         assert runtime_start.annotations.readOnlyHint is False
-        assert runtime_start.inputSchema["properties"]["profile"]["default"] == "lite"
-        assert set(runtime_start.inputSchema["properties"]["profile"]["enum"]) == {
+        assert runtime_start.inputSchema["properties"]["compose_profile"]["default"] == "lite"
+        assert set(runtime_start.inputSchema["properties"]["compose_profile"]["enum"]) == {
             "lite",
             "full",
         }
         assert "apply=false" in runtime_start.description
         assert "MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED=true" in runtime_start.description
-        obsidian_prepare = next(
-            tool for tool in tools if tool.name == "memory_obsidian_prepare"
-        )
+        obsidian_prepare = next(tool for tool in tools if tool.name == "memory_obsidian_prepare")
         assert obsidian_prepare.annotations.readOnlyHint is False
         assert obsidian_prepare.annotations.destructiveHint is False
         assert obsidian_prepare.inputSchema["properties"]["apply"]["default"] is False
@@ -187,15 +183,15 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert "graph.json" in graph_export.description
         assert "canonical" in graph_export.description.casefold()
         snapshot_export = next(
-            tool for tool in tools if tool.name == "memory_export_profile_snapshot"
+            tool for tool in tools if tool.name == "memory_export_memory_scope_snapshot"
         )
         assert snapshot_export.annotations.readOnlyHint is True
         assert "redacted=true" in snapshot_export.description
         snapshot_import = next(
-            tool for tool in tools if tool.name == "memory_import_profile_snapshot"
+            tool for tool in tools if tool.name == "memory_import_memory_scope_snapshot"
         )
         snapshot_preview = next(
-            tool for tool in tools if tool.name == "memory_preview_profile_snapshot_import"
+            tool for tool in tools if tool.name == "memory_preview_memory_scope_snapshot_import"
         )
         assert snapshot_preview.annotations.readOnlyHint is True
         assert snapshot_preview.annotations.destructiveHint is False
@@ -210,9 +206,9 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert "mutating tool" in propose_description
         assert "memory_search or memory_get_fact first" in propose_description
         assert "duplicate, update, forget, or conflict" in propose_description
-        user_confirmed_description = (
-            propose.inputSchema["properties"]["user_confirmed"]["description"].casefold()
-        )
+        user_confirmed_description = propose.inputSchema["properties"]["user_confirmed"][
+            "description"
+        ].casefold()
         assert "explicitly confirmed" in user_confirmed_description
         assert "uncertain claims" in user_confirmed_description
         assert "review-needed" in user_confirmed_description
@@ -451,7 +447,7 @@ def test_mcp_tool_calls_reject_unknown_arguments() -> None:
                 "memory_remember_fact",
                 {
                     "text": "A durable fact.",
-                    "profile_external_refs": ["invalid-on-write"],
+                    "memory_scope_external_refs": ["invalid-on-write"],
                 },
             )
         except ToolError as exc:
@@ -459,7 +455,7 @@ def test_mcp_tool_calls_reject_unknown_arguments() -> None:
         else:
             raise AssertionError("expected strict argument validation")
 
-        assert "profile_external_refs" in str(error)
+        assert "memory_scope_external_refs" in str(error)
 
     asyncio.run(run())
 
@@ -495,9 +491,9 @@ def test_mcp_resources_are_registered_and_read_only() -> None:
             "memory://status",
         }
         assert {
-            "memory://scope/{space_slug}/{profile_external_ref}/summary",
-            "memory://scope/{space_slug}/{profile_external_ref}/facts",
-            "memory://scope/{space_slug}/{profile_external_ref}/suggestions",
+            "memory://scope/{space_slug}/{memory_scope_external_ref}/summary",
+            "memory://scope/{space_slug}/{memory_scope_external_ref}/facts",
+            "memory://scope/{space_slug}/{memory_scope_external_ref}/suggestions",
             "memory://fact/{fact_id}",
             "memory://fact/{fact_id}/versions",
         }.issubset({template.uriTemplate for template in templates})
@@ -514,7 +510,9 @@ def test_mcp_resource_rejects_invalid_uri_arguments() -> None:
         service = MemoryToolService(gateway=RecordingGateway(), settings=MemoryMcpSettings())
 
         try:
-            await service.resource_scope_summary(space_slug="default", profile_external_ref="a/b")
+            await service.resource_scope_summary(
+                space_slug="default", memory_scope_external_ref="a/b"
+            )
         except ValueError as exc:
             error = exc
         else:
@@ -523,7 +521,9 @@ def test_mcp_resource_rejects_invalid_uri_arguments() -> None:
         assert "path separators" in str(error)
 
         try:
-            await service.resource_scope_summary(space_slug="default", profile_external_ref="a%2Fb")
+            await service.resource_scope_summary(
+                space_slug="default", memory_scope_external_ref="a%2Fb"
+            )
         except ValueError as exc:
             percent_error = exc
         else:
@@ -534,7 +534,7 @@ def test_mcp_resource_rejects_invalid_uri_arguments() -> None:
         try:
             await service.resource_scope_summary(
                 space_slug="default",
-                profile_external_ref="default\u200b",
+                memory_scope_external_ref="default\u200b",
             )
         except ValueError as exc:
             invisible_error = exc

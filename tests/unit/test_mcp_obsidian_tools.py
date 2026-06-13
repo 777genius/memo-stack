@@ -31,14 +31,14 @@ def test_obsidian_setup_dry_run_then_apply_uses_v2_layout(tmp_path: Path) -> Non
             obsidian_enabled=True,
             obsidian_vault_path=str(tmp_path),
             default_space_slug="memo-stack",
-            default_profile_external_ref="belief",
+            default_memory_scope_external_ref="belief",
         )
     )
 
     dry_run = asyncio.run(service.setup(apply=False))
     expected_fact_dir = (
         tmp_path
-        / "Memo Stack/spaces/memo-stack/profiles/belief/generated/facts"
+        / "Memo Stack/spaces/memo-stack/memory_scopes/belief/generated/facts"
     )
 
     assert dry_run["ok"] is True
@@ -82,7 +82,7 @@ def test_obsidian_setup_supports_custom_config_dir(tmp_path: Path) -> None:
             obsidian_vault_path=str(tmp_path),
             obsidian_config_dir=".obsidian-dev",
             default_space_slug="team",
-            default_profile_external_ref="backend",
+            default_memory_scope_external_ref="backend",
         )
     )
 
@@ -98,7 +98,7 @@ def test_obsidian_setup_supports_custom_config_dir(tmp_path: Path) -> None:
     assert (tmp_path / ".obsidian-dev/community-plugins.json").exists()
     assert not (tmp_path / ".obsidian/plugins/memo-stack").exists()
     assert settings["spaceSlug"] == "team"
-    assert settings["profileExternalRef"] == "backend"
+    assert settings["memoryScopeExternalRef"] == "backend"
 
 
 def test_obsidian_sync_apply_requires_separate_sync_gate(tmp_path: Path) -> None:

@@ -1,0 +1,413 @@
+import asyncio
+import base64
+from dataclasses import dataclass
+
+from memo_stack_adapters.extraction.content import (
+    ImageMetadataExtractionEngine,
+    PdfTextExtractionEngine,
+    SimpleFileTypeDetector,
+    StandardExtractionRouter,
+)
+from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
+from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from memo_stack_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
+from memo_stack_core.ports.extraction import (
+    ExtractionLimits,
+    ExtractionRequest,
+    FileTypeDetectionRequest,
+)
+
+
+def test_file_type_detector_prefers_office_extension_over_zip_magic() -> None:
+    result = asyncio.run(
+        SimpleFileTypeDetector().detect(
+            FileTypeDetectionRequest(
+                filename="meeting-notes.docx",
+                declared_content_type="application/octet-stream",
+                content=b"PK\x03\x04fake office zip",
+            )
+        )
+    )
+
+    assert (
+        result.content_type
+        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+def test_docling_engine_extracts_markdown_when_profile_requests_docling() -> None:
+    engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _FakeDoclingConverter())
+    request = _request(
+        parser_profile="standard_docling",
+        detected_content_type="application/pdf",
+        content=b"%PDF fake bytes",
+    )
+
+    supported = asyncio.run(engine.supports(request))
+    result = asyncio.run(engine.extract(request))
+
+    assert supported.supported is True
+    assert result.status == "succeeded"
+    assert result.parser_name == "docling_document"
+    assert "Docling extracted memory scope table" in (result.markdown or "")
+    assert result.technical_metadata["page_count"] == 2
+
+
+def test_docling_engine_ignores_standard_local_profile() -> None:
+    engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _FakeDoclingConverter())
+    request = _request(
+        parser_profile="standard_local",
+        detected_content_type="application/pdf",
+        content=b"%PDF fake bytes",
+    )
+
+    supported = asyncio.run(engine.supports(request))
+
+    assert supported.supported is False
+    assert supported.reason == "parser_profile_not_docling"
+
+
+def test_router_falls_back_from_docling_failure_to_pdf_text() -> None:
+    router = StandardExtractionRouter(
+        engines=(
+            DoclingDocumentExtractionEngine(converter_factory=lambda: _FailingDoclingConverter()),
+            PdfTextExtractionEngine(),
+        )
+    )
+    request = _request(
+        parser_profile="standard_docling",
+        detected_content_type="application/pdf",
+        content=_sample_pdf_bytes(
+            "PDF fallback preserved searchable memory scope evidence"
+        ),
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.parser_name == "pypdf_text"
+    assert result.diagnostics["docling_document_fallback"] is True
+    assert "PDF fallback preserved searchable memory scope evidence" in (
+        result.markdown or ""
+    )
+
+
+def test_openai_vision_engine_extracts_image_understanding() -> None:
+    engine = OpenAIVisionImageExtractionEngine(
+        api_key=None,
+        model="gpt-4.1-mini",
+        detail="high",
+        client_factory=lambda: _FakeVisionClient(),
+    )
+    request = _request(
+        parser_profile="standard_vision",
+        detected_content_type="image/png",
+        content=_sample_png_bytes(),
+        filename="memory-screenshot.png",
+        enable_external_ai=True,
+    )
+
+    supported = asyncio.run(engine.supports(request))
+    result = asyncio.run(engine.extract(request))
+
+    assert supported.supported is True
+    assert result.status == "succeeded"
+    assert result.parser_name == "openai_vision_image"
+    assert result.model_version == "gpt-4.1-mini"
+    assert result.technical_metadata["vision_status"] == "extracted"
+    assert "Quick capture links this screenshot to MemoryScope frontend" in (
+        result.markdown or ""
+    )
+
+
+def test_openai_vision_engine_ignores_standard_local_profile() -> None:
+    engine = OpenAIVisionImageExtractionEngine(
+        api_key=None,
+        model="gpt-4.1-mini",
+        client_factory=lambda: _FakeVisionClient(),
+    )
+    request = _request(
+        parser_profile="standard_local",
+        detected_content_type="image/png",
+        content=_sample_png_bytes(),
+        filename="memory-screenshot.png",
+        enable_external_ai=True,
+    )
+
+    supported = asyncio.run(engine.supports(request))
+
+    assert supported.supported is False
+    assert supported.reason == "parser_profile_not_vision"
+
+
+def test_openai_vision_engine_disabled_egress_allows_local_image_fallback() -> None:
+    router = StandardExtractionRouter(
+        engines=(
+            OpenAIVisionImageExtractionEngine(
+                api_key="test-key",
+                model="gpt-4.1-mini",
+                client_factory=lambda: _FakeVisionClient(),
+            ),
+            ImageMetadataExtractionEngine(),
+        )
+    )
+    request = _request(
+        parser_profile="standard_vision",
+        detected_content_type="image/png",
+        content=_sample_png_bytes(),
+        filename="memory-screenshot.png",
+        enable_external_ai=False,
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.parser_name == "image_metadata"
+    assert result.diagnostics["openai_vision_image_fallback"] is True
+    assert result.technical_metadata["image_width"] == 1
+    assert result.technical_metadata["image_height"] == 1
+
+
+def test_openai_vision_engine_missing_key_allows_fallback() -> None:
+    engine = OpenAIVisionImageExtractionEngine(
+        api_key=None,
+        model="gpt-4.1-mini",
+        client_factory=None,
+    )
+    request = _request(
+        parser_profile="standard_vision",
+        detected_content_type="image/png",
+        content=_sample_png_bytes(),
+        filename="memory-screenshot.png",
+        enable_external_ai=True,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.vision_missing_api_key"
+    assert result.diagnostics["fallback_allowed"] is True
+
+
+def test_faster_whisper_engine_extracts_transcript_artifact() -> None:
+    engine = FasterWhisperTranscriptionEngine(
+        model_factory=lambda model, device, compute_type: _FakeWhisperModel(
+            model=model,
+            device=device,
+            compute_type=compute_type,
+        )
+    )
+    request = _request(
+        parser_profile="asr:tiny",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+    )
+
+    supported = asyncio.run(engine.supports(request))
+    result = asyncio.run(engine.extract(request))
+
+    assert supported.supported is True
+    assert result.status == "succeeded"
+    assert result.parser_name == "faster_whisper_transcript"
+    assert result.model_version == "tiny"
+    assert result.language == "en"
+    assert result.technical_metadata["segment_count"] == 2
+    assert result.technical_metadata["asr_model"] == "tiny"
+    assert {artifact.artifact_type for artifact in result.artifacts} == {"transcript"}
+    assert "Alex discussed memory scopes" in (result.markdown or "")
+
+
+def test_faster_whisper_engine_ignores_standard_local_profile() -> None:
+    engine = FasterWhisperTranscriptionEngine(
+        model_factory=lambda model, device, compute_type: _FakeWhisperModel(
+            model=model,
+            device=device,
+            compute_type=compute_type,
+        )
+    )
+    request = _request(
+        parser_profile="standard_local",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+    )
+
+    supported = asyncio.run(engine.supports(request))
+
+    assert supported.supported is False
+    assert supported.reason == "parser_profile_not_asr"
+
+
+def test_faster_whisper_engine_failure_allows_media_metadata_fallback() -> None:
+    engine = FasterWhisperTranscriptionEngine(
+        model_factory=lambda model, device, compute_type: _FailingWhisperModel()
+    )
+    request = _request(
+        parser_profile="standard_asr",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.asr_transcription_failed"
+    assert result.diagnostics["fallback_allowed"] is True
+
+
+def _request(
+    *,
+    parser_profile: str,
+    detected_content_type: str,
+    content: bytes,
+    filename: str = "asset.pdf",
+    enable_external_ai: bool = False,
+) -> ExtractionRequest:
+    return ExtractionRequest(
+        job_id="extract_1",
+        asset_id="asset_1",
+        filename=filename,
+        declared_content_type=detected_content_type,
+        detected_content_type=detected_content_type,
+        byte_size=len(content),
+        sha256_hex="0" * 64,
+        content=content,
+        parser_profile=parser_profile,
+        limits=ExtractionLimits(
+            max_bytes=10_000_000,
+            enable_external_ai=enable_external_ai,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _FakeDoclingConversion:
+    document: "_FakeDoclingDocument"
+    status: str = "success"
+    page_count: int = 2
+    errors: list[object] | None = None
+
+
+class _FakeDoclingDocument:
+    def export_to_markdown(self) -> str:
+        return "# Docling extracted memory scope table\n\n| Scope | Evidence |\n| --- | --- |"
+
+
+class _FakeDoclingConverter:
+    def convert(self, source_path: str) -> _FakeDoclingConversion:
+        assert source_path.endswith(".pdf")
+        return _FakeDoclingConversion(document=_FakeDoclingDocument(), errors=[])
+
+
+class _FailingDoclingConverter:
+    def convert(self, source_path: str) -> object:
+        raise RuntimeError("docling failed")
+
+
+@dataclass(frozen=True)
+class _FakeVisionResponse:
+    output_text: str
+
+
+class _FakeVisionResponses:
+    async def create(self, **kwargs) -> _FakeVisionResponse:
+        assert kwargs["model"] == "gpt-4.1-mini"
+        assert kwargs["store"] is False
+        assert kwargs["max_output_tokens"] == 1200
+        content = kwargs["input"][0]["content"]
+        assert content[0]["type"] == "input_text"
+        assert "untrusted evidence" in content[0]["text"]
+        assert content[1]["type"] == "input_image"
+        assert content[1]["detail"] == "high"
+        assert content[1]["image_url"].startswith("data:image/png;base64,")
+        return _FakeVisionResponse(
+            output_text=(
+                "## Summary\n"
+                "Quick capture links this screenshot to MemoryScope frontend.\n"
+                "## Suggested memory tags\n"
+                "- frontend\n- screenshot"
+            )
+        )
+
+
+class _FakeVisionClient:
+    def __init__(self) -> None:
+        self.responses = _FakeVisionResponses()
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@dataclass(frozen=True)
+class _FakeWhisperInfo:
+    language: str = "en"
+    language_probability: float = 0.98
+    duration: float = 5.0
+
+
+@dataclass(frozen=True)
+class _FakeWhisperSegment:
+    start: float
+    end: float
+    text: str
+    avg_logprob: float = -0.05
+
+
+class _FakeWhisperModel:
+    def __init__(self, *, model: str, device: str, compute_type: str) -> None:
+        self._model = model
+        self._device = device
+        self._compute_type = compute_type
+
+    def transcribe(self, source_path: str) -> tuple[list[_FakeWhisperSegment], _FakeWhisperInfo]:
+        assert source_path.endswith(".wav")
+        assert self._model == "tiny"
+        assert self._device == "auto"
+        assert self._compute_type == "default"
+        return (
+            [
+                _FakeWhisperSegment(
+                    start=0.0,
+                    end=2.0,
+                    text="Alex discussed memory scopes.",
+                ),
+                _FakeWhisperSegment(
+                    start=2.5,
+                    end=4.0,
+                    text="The file should link to existing evidence.",
+                ),
+            ],
+            _FakeWhisperInfo(),
+        )
+
+
+class _FailingWhisperModel:
+    def transcribe(self, source_path: str) -> object:
+        raise RuntimeError("asr failed")
+
+
+def _sample_pdf_bytes(text: str) -> bytes:
+    stream = f"BT /F1 18 Tf 72 720 Td ({text}) Tj ET".encode("latin-1")
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n"
+        + f"5 0 obj << /Length {len(stream)} >> stream\n".encode("ascii")
+        + stream
+        + b"\nendstream endobj\nxref\n0 6\n0000000000 65535 f \n"
+        b"0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n"
+        b"0000000241 00000 n \n0000000311 00000 n \n"
+        b"trailer << /Root 1 0 R /Size 6 >>\nstartxref\n449\n%%EOF\n"
+    )
+
+
+def _sample_png_bytes() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )

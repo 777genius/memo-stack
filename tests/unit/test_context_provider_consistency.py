@@ -16,7 +16,7 @@ from memo_stack_core.application import (
     EnsureScopeCommand,
     ForgetFactCommand,
 )
-from memo_stack_core.domain.entities import ProfileId, SourceRef, SpaceId
+from memo_stack_core.domain.entities import MemoryScopeId, SourceRef, SpaceId
 from memo_stack_core.ports.adapters import (
     AdapterCapabilities,
     EmbeddingResult,
@@ -188,7 +188,7 @@ class FakeVectorAdapter:
                 VectorCandidate(
                     chunk_id=self._chunk_id,
                     space_id="",
-                    profile_id="",
+                    memory_scope_id="",
                     score=1.0,
                     projection_version="test",
                 )
@@ -202,7 +202,7 @@ def test_context_revalidation_drops_provider_only_raw_items(tmp_path: Path) -> N
             self,
             *,
             query: BuildContextQuery,
-            profile_ids: tuple[str, ...],
+            memory_scope_ids: tuple[str, ...],
             diagnostics: dict[str, object],
         ) -> tuple[ContextItem, ...]:
             diagnostics["graph_status"] = "ok"
@@ -213,7 +213,7 @@ def test_context_revalidation_drops_provider_only_raw_items(tmp_path: Path) -> N
                     text="PROVIDER_ONLY_GRAPH_TEXT_SHOULD_NOT_RENDER",
                     score=0.99,
                     source_refs=(SourceRef(source_type="graphiti", source_id="provider-only"),),
-                    diagnostics={"profile_id": str(profile_ids[0])},
+                    diagnostics={"memory_scope_id": str(memory_scope_ids[0])},
                 ),
             )
 
@@ -231,7 +231,7 @@ def test_context_revalidation_drops_provider_only_raw_items(tmp_path: Path) -> N
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="provider only graph text",
                     token_budget=512,
                 )
@@ -266,7 +266,7 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "CANONICAL_ONLY_FACT_MARKER comes only from Postgres facts.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "canonical-fact"}],
@@ -277,7 +277,7 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Canonical only",
                 "text": "CANONICAL_ONLY_CHUNK_MARKER comes only from keyword chunks.",
                 "source_type": "document",
@@ -297,7 +297,7 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="CANONICAL_ONLY",
                     consistency_mode=ConsistencyMode.CANONICAL_ONLY,
                     token_budget=512,
@@ -322,7 +322,7 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "CONTEXT_CONSISTENCY_MODE_MARKER is a canonical fact.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "consistency-mode"}],
@@ -333,7 +333,7 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "CONTEXT_CONSISTENCY_MODE_MARKER",
                 "token_budget": 512,
             },
@@ -343,7 +343,7 @@ def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path:
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "CONTEXT_CONSISTENCY_MODE_MARKER",
                 "consistency_mode": "canonical_only",
                 "token_budget": 512,
@@ -366,7 +366,7 @@ def test_context_surfaces_pending_conflict_suggestions_for_visible_facts(
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "CONFLICT_CONTEXT_ACTIVE: Postgres owns document vector retrieval.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "active-decision"}],
@@ -378,7 +378,7 @@ def test_context_surfaces_pending_conflict_suggestions_for_visible_facts(
             "/v1/suggestions",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "candidate_text": (
                     "CONFLICT_CONTEXT_PENDING: Docs retrieval should use Qdrant vectors."
                 ),
@@ -398,7 +398,7 @@ def test_context_surfaces_pending_conflict_suggestions_for_visible_facts(
             "/v1/context",
             json={
                 "space_id": "space_client_app",
-                "profile_ids": ["profile_default"],
+                "memory_scope_ids": ["memory_scope_default"],
                 "query": "document vector retrieval",
                 "token_budget": 512,
             },
@@ -416,9 +416,7 @@ def test_context_surfaces_pending_conflict_suggestions_for_visible_facts(
     assert data["diagnostics"]["pending_conflict_suggestions_considered"] == 1
     suggestion_items = [item for item in data["items"] if item["item_type"] == "suggestion"]
     assert len(suggestion_items) == 1
-    assert suggestion_items[0]["diagnostics"]["retrieval_source"] == (
-        "pending_conflict_suggestion"
-    )
+    assert suggestion_items[0]["diagnostics"]["retrieval_source"] == ("pending_conflict_suggestion")
     assert suggestion_items[0]["diagnostics"]["canonical"] is False
     assert suggestion_items[0]["diagnostics"]["conflicting_fact_id"] == fact_id
 
@@ -429,7 +427,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
     class FakeRagRecall:
         async def recall(self, query: CapabilityRecallQuery) -> CapabilityRecallResult:
             assert query.scope.space_id == "space_client_app"
-            assert query.scope.profile_ids == ("profile_default",)
+            assert query.scope.memory_scope_ids == ("memory_scope_default",)
             return CapabilityRecallResult(
                 status=CapabilityStatus.OK,
                 items=(
@@ -462,7 +460,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "RAG canonical source",
                 "text": "RAG_CANONICAL_MARKER is hydrated from the canonical chunk.",
                 "source_type": "document",
@@ -488,7 +486,7 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="semantic rag recall",
                     token_budget=512,
                 )
@@ -541,7 +539,7 @@ def test_context_drops_rag_recall_without_canonical_chunk_source(tmp_path: Path)
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="semantic rag recall",
                     token_budget=512,
                 )
@@ -575,7 +573,7 @@ def test_context_does_not_embed_when_vector_adapter_is_disabled(tmp_path: Path) 
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="VECTOR_DISABLED_COST_GUARD",
                     token_budget=512,
                 )
@@ -627,7 +625,7 @@ def test_context_marks_unavailable_vector_adapter_degraded_without_embedding(
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="VECTOR_UNAVAILABLE_COST_GUARD",
                     token_budget=512,
                 )
@@ -661,7 +659,7 @@ def test_degraded_context_has_safe_diagnostics(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "DEGRADED_CONTEXT_MARKER should still render from Postgres.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "degraded-context"}],
@@ -680,7 +678,7 @@ def test_degraded_context_has_safe_diagnostics(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="DEGRADED_CONTEXT_MARKER",
                     token_budget=512,
                 )
@@ -716,7 +714,7 @@ def test_qdrant_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "VECTOR_TIMEOUT_CANONICAL_MARKER still renders from Postgres.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "vector-timeout"}],
@@ -735,7 +733,7 @@ def test_qdrant_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="VECTOR_TIMEOUT_CANONICAL_MARKER",
                     token_budget=512,
                 )
@@ -773,7 +771,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "VECTOR_CIRCUIT_MARKER should remain available from Postgres.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "vector-circuit"}],
@@ -800,7 +798,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="VECTOR_CIRCUIT_MARKER",
                     token_budget=512,
                 )
@@ -810,7 +808,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="VECTOR_CIRCUIT_MARKER",
                     token_budget=512,
                 )
@@ -820,7 +818,7 @@ def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="VECTOR_CIRCUIT_MARKER",
                     token_budget=512,
                 )
@@ -863,7 +861,7 @@ def test_query_embedding_timeout_degrades_to_keyword_context(tmp_path: Path) -> 
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Embedding timeout fallback",
                 "text": "EMBEDDING_TIMEOUT_KEYWORD_MARKER still renders from keyword chunks.",
                 "source_type": "document",
@@ -883,7 +881,7 @@ def test_query_embedding_timeout_degrades_to_keyword_context(tmp_path: Path) -> 
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="EMBEDDING_TIMEOUT_KEYWORD_MARKER",
                     token_budget=512,
                 )
@@ -925,7 +923,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Embedding circuit fallback",
                 "text": "EMBEDDING_CIRCUIT_KEYWORD_MARKER still renders from keyword chunks.",
                 "source_type": "document",
@@ -953,7 +951,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
                     token_budget=512,
                 )
@@ -963,7 +961,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
                     token_budget=512,
                 )
@@ -973,7 +971,7 @@ def test_embedding_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="EMBEDDING_CIRCUIT_KEYWORD_MARKER",
                     token_budget=512,
                 )
@@ -1010,7 +1008,7 @@ def test_query_embedding_rate_limit_degrades_to_keyword(tmp_path: Path) -> None:
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "title": "Query embedding rate limit",
                 "text": "QUERY_RATE_LIMIT_KEYWORD_MARKER still renders from keyword chunks.",
                 "source_type": "document",
@@ -1036,7 +1034,7 @@ def test_query_embedding_rate_limit_degrades_to_keyword(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="QUERY_RATE_LIMIT_KEYWORD_MARKER",
                     token_budget=512,
                 )
@@ -1080,7 +1078,7 @@ def test_context_does_not_search_when_graph_adapter_is_disabled(tmp_path: Path) 
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="GRAPH_DISABLED_COST_GUARD",
                     token_budget=512,
                 )
@@ -1124,7 +1122,7 @@ def test_context_marks_unavailable_graph_adapter_degraded_without_search(
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="GRAPH_UNAVAILABLE_COST_GUARD",
                     token_budget=512,
                 )
@@ -1157,7 +1155,7 @@ def test_graphiti_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "GRAPH_TIMEOUT_CANONICAL_MARKER still renders from Postgres.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "graph-timeout"}],
@@ -1176,7 +1174,7 @@ def test_graphiti_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="GRAPH_TIMEOUT_CANONICAL_MARKER",
                     token_budget=512,
                 )
@@ -1215,7 +1213,7 @@ def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> Non
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "GRAPH_CIRCUIT_MARKER should remain available from Postgres.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "graph-circuit"}],
@@ -1243,7 +1241,7 @@ def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> Non
                 use_case.execute(
                     BuildContextQuery(
                         space_id=SpaceId("space_client_app"),
-                        profile_ids=(ProfileId("profile_default"),),
+                        memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                         query="GRAPH_CIRCUIT_MARKER",
                         token_budget=512,
                     )
@@ -1254,7 +1252,7 @@ def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> Non
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="GRAPH_CIRCUIT_MARKER",
                     token_budget=512,
                 )
@@ -1298,7 +1296,7 @@ def test_context_revalidates_direct_facts_after_adapter_delay(tmp_path: Path) ->
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "RACE_DELETE_FACT_MARKER must not survive final context validation.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "race-delete"}],
@@ -1318,7 +1316,7 @@ def test_context_revalidates_direct_facts_after_adapter_delay(tmp_path: Path) ->
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="RACE_DELETE_FACT_MARKER",
                     token_budget=512,
                 )
@@ -1336,7 +1334,7 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "Graph-only canonical memory marker.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "manual-graph"}],
@@ -1356,7 +1354,7 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="unrelated graph query",
                     token_budget=512,
                 )
@@ -1367,7 +1365,7 @@ def test_graph_relation_from_deleted_fact_not_rendered(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="unrelated graph query",
                     token_budget=512,
                 )
@@ -1400,7 +1398,7 @@ def test_graph_candidate_without_canonical_source_is_low_confidence_or_dropped(
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="orphan graph relation",
                     token_budget=512,
                 )
@@ -1421,7 +1419,7 @@ def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:
             "/v1/facts",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "text": "SCHEMA_MISMATCH_CANONICAL_MARKER still renders from Postgres.",
                 "kind": "note",
                 "source_refs": [{"source_type": "manual", "source_id": "schema-mismatch"}],
@@ -1440,7 +1438,7 @@ def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="SCHEMA_MISMATCH_CANONICAL_MARKER",
                     token_budget=512,
                 )
@@ -1453,7 +1451,7 @@ def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:
     assert context.diagnostics["graph_degraded_reason"] == "graph.schema_mismatch"
 
 
-def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
+def test_graph_candidates_from_same_memory_scope_wrong_thread_are_filtered(
     tmp_path: Path,
 ) -> None:
     with make_client(tmp_path) as client:
@@ -1462,7 +1460,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug="client-app",
-                    profile_external_ref="default",
+                    memory_scope_external_ref="default",
                     thread_external_ref="graph-thread-current",
                 )
             )
@@ -1471,7 +1469,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug="client-app",
-                    profile_external_ref="default",
+                    memory_scope_external_ref="default",
                     thread_external_ref="graph-thread-other",
                 )
             )
@@ -1480,7 +1478,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
             "/v1/facts",
             json={
                 "space_id": str(other_scope.space_id),
-                "profile_id": str(other_scope.profile_id),
+                "memory_scope_id": str(other_scope.memory_scope_id),
                 "thread_id": str(other_scope.thread_id),
                 "text": "WRONG_THREAD_GRAPH_MARKER must not hydrate into current context.",
                 "kind": "note",
@@ -1500,7 +1498,7 @@ def test_graph_candidates_from_same_profile_wrong_thread_are_filtered(
             use_case.execute(
                 BuildContextQuery(
                     space_id=current_scope.space_id,
-                    profile_ids=(current_scope.profile_id,),
+                    memory_scope_ids=(current_scope.memory_scope_id,),
                     thread_id=current_scope.thread_id,
                     query="unrelated graph query",
                     token_budget=512,
@@ -1531,7 +1529,7 @@ def test_vector_candidates_are_hydrated_and_deleted_chunks_are_filtered(tmp_path
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug=container.settings.default_space_slug,
-                    profile_external_ref=container.settings.default_profile_external_ref,
+                    memory_scope_external_ref=container.settings.default_memory_scope_external_ref,
                     thread_external_ref=session_id,
                 )
             )
@@ -1548,7 +1546,7 @@ def test_vector_candidates_are_hydrated_and_deleted_chunks_are_filtered(tmp_path
             use_case.execute(
                 BuildContextQuery(
                     space_id=scope.space_id,
-                    profile_ids=(scope.profile_id,),
+                    memory_scope_ids=(scope.memory_scope_id,),
                     thread_id=scope.thread_id,
                     query="unrelated vector query",
                     token_budget=512,
@@ -1560,7 +1558,7 @@ def test_vector_candidates_are_hydrated_and_deleted_chunks_are_filtered(tmp_path
             use_case.execute(
                 BuildContextQuery(
                     space_id=scope.space_id,
-                    profile_ids=(scope.profile_id,),
+                    memory_scope_ids=(scope.memory_scope_id,),
                     thread_id=scope.thread_id,
                     query="unrelated vector query",
                     token_budget=512,
@@ -1578,7 +1576,7 @@ def test_vector_candidates_are_hydrated_and_deleted_chunks_are_filtered(tmp_path
     assert deleted.diagnostics["stale_vector_drop_count"] == 1
 
 
-def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
+def test_vector_candidates_from_same_memory_scope_wrong_thread_are_filtered(
     tmp_path: Path,
 ) -> None:
     current_session_id = "vector-thread-current"
@@ -1589,7 +1587,7 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug=container.settings.default_space_slug,
-                    profile_external_ref=container.settings.default_profile_external_ref,
+                    memory_scope_external_ref=container.settings.default_memory_scope_external_ref,
                     thread_external_ref=current_session_id,
                 )
             )
@@ -1607,7 +1605,7 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
             container.ensure_scope.execute(
                 EnsureScopeCommand(
                     space_slug=container.settings.default_space_slug,
-                    profile_external_ref=container.settings.default_profile_external_ref,
+                    memory_scope_external_ref=container.settings.default_memory_scope_external_ref,
                     thread_external_ref=other_session_id,
                 )
             )
@@ -1627,7 +1625,7 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
             use_case.execute(
                 BuildContextQuery(
                     space_id=current_scope.space_id,
-                    profile_ids=(current_scope.profile_id,),
+                    memory_scope_ids=(current_scope.memory_scope_id,),
                     thread_id=current_scope.thread_id,
                     query="unrelated vector query",
                     token_budget=512,
@@ -1640,23 +1638,25 @@ def test_vector_candidates_from_same_profile_wrong_thread_are_filtered(
     assert context.diagnostics["stale_vector_drop_count"] == 1
 
 
-def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
+def test_wrong_memory_scope_vector_hit_is_dropped(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         document = client.post(
             "/v1/documents",
             json={
                 "space_id": "space_client_app",
-                "profile_id": "profile_secondary",
-                "title": "Wrong profile vector source",
-                "text": "WRONG_PROFILE_VECTOR_MARKER must not hydrate into default profile.",
+                "memory_scope_id": "memory_scope_secondary",
+                "title": "Wrong memory_scope vector source",
+                "text": (
+                    "WRONG_MEMORY_SCOPE_VECTOR_MARKER must not hydrate into default memory_scope."
+                ),
                 "source_type": "document",
-                "source_external_id": "wrong-profile-vector-doc",
+                "source_external_id": "wrong-memory_scope-vector-doc",
                 "classification": "internal",
             },
             headers=auth_headers(),
         )
         document_id = document.json()["data"]["id"]
-        wrong_profile_chunk_id = client.get(
+        wrong_memory_scope_chunk_id = client.get(
             f"/v1/documents/{document_id}/chunks",
             headers=auth_headers(),
         ).json()["data"][0]["id"]
@@ -1664,7 +1664,7 @@ def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
         use_case = BuildContextUseCase(
             uow_factory=container.uow_factory,
             ids=container.ids,
-            vector_index=FakeVectorAdapter(wrong_profile_chunk_id),
+            vector_index=FakeVectorAdapter(wrong_memory_scope_chunk_id),
             graph_index=NoopGraphMemoryAdapter(),
             embedder=FakeEmbeddingAdapter(),
         )
@@ -1672,7 +1672,7 @@ def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
             use_case.execute(
                 BuildContextQuery(
                     space_id=SpaceId("space_client_app"),
-                    profile_ids=(ProfileId("profile_default"),),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
                     query="unrelated vector query",
                     token_budget=512,
                 )
@@ -1680,17 +1680,16 @@ def test_wrong_profile_vector_hit_is_dropped(tmp_path: Path) -> None:
         )
 
     assert document.status_code == 201
-    assert "WRONG_PROFILE_VECTOR_MARKER" not in context.rendered_text
+    assert "WRONG_MEMORY_SCOPE_VECTOR_MARKER" not in context.rendered_text
     assert context.items == ()
     assert context.diagnostics["stale_vector_drop_count"] == 1
-
 
 
 async def _first_chunk_id(container, scope, query: str) -> str:
     async with container.uow_factory() as uow:
         chunks = await uow.chunks.keyword_search(
             space_id=str(scope.space_id),
-            profile_ids=(str(scope.profile_id),),
+            memory_scope_ids=(str(scope.memory_scope_id),),
             thread_id=str(scope.thread_id) if scope.thread_id else None,
             query=query,
             limit=1,

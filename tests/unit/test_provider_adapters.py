@@ -261,13 +261,13 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
             "Graphiti projection source text.",
             {
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "updated_at": "2026-05-25T10:00:00+00:00",
             },
         )
         search = await adapter.search(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             query="Graphiti projection",
             limit=3,
         )
@@ -278,8 +278,10 @@ def test_graphiti_adapter_hydrates_only_canonical_fact_ids() -> None:
         assert upsert.status == PortStatus.OK
         assert fake.episodes[0]["name"] == "fact:fact_graphiti"
         assert "uuid" not in fake.episodes[0]
-        assert fake.episodes[0]["group_id"] == "memory__space_client_app__profile_default"
-        assert fake.search_calls[0]["group_ids"] == ["memory__space_client_app__profile_default"]
+        assert fake.episodes[0]["group_id"] == "memory__space_client_app__memory_scope_default"
+        assert fake.search_calls[0]["group_ids"] == [
+            "memory__space_client_app__memory_scope_default"
+        ]
         assert search.items[0].source_fact_ids == ("fact_graphiti",)
         assert deleted.status == PortStatus.OK
         assert fake.deleted == ["fact:fact_graphiti"]
@@ -294,7 +296,7 @@ def test_graphiti_adapter_overfetches_thread_queries_for_postgres_visibility_hyd
 
         search = await adapter.search(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             thread_id="thread_current",
             query="Graphiti projection",
             limit=3,
@@ -314,7 +316,7 @@ def test_graphiti_adapter_reports_invalid_provider_key_without_retry() -> None:
         result = await adapter.upsert_fact(
             "fact_graphiti",
             "Graphiti projection source text.",
-            {"space_id": "space_client_app", "profile_id": "profile_default"},
+            {"space_id": "space_client_app", "memory_scope_id": "memory_scope_default"},
         )
 
         assert result.status == PortStatus.DEGRADED
@@ -332,7 +334,7 @@ def test_graphiti_adapter_reports_rate_limit_as_retryable() -> None:
         result = await adapter.upsert_fact(
             "fact_graphiti",
             "Graphiti projection source text.",
-            {"space_id": "space_client_app", "profile_id": "profile_default"},
+            {"space_id": "space_client_app", "memory_scope_id": "memory_scope_default"},
         )
 
         assert result.status == PortStatus.DEGRADED
@@ -351,7 +353,7 @@ def test_graphiti_search_facts_caps_thread_overfetch_to_requested_limit() -> Non
             CapabilityRecallQuery(
                 scope=MemoryScopeFilter(
                     space_id="space_client_app",
-                    profile_ids=("profile_default",),
+                    memory_scope_ids=("memory_scope_default",),
                     thread_id="thread_current",
                 ),
                 query="Graphiti projection",
@@ -377,7 +379,7 @@ def test_graphiti_adapter_exposes_temporal_capability_ports() -> None:
             FactProjectionWrite(
                 fact_id="fact_graphiti",
                 space_id="space_client_app",
-                profile_id="profile_default",
+                memory_scope_id="memory_scope_default",
                 text="Graphiti projection source text must not be returned from search.",
                 version=1,
                 source_refs=(),
@@ -387,7 +389,7 @@ def test_graphiti_adapter_exposes_temporal_capability_ports() -> None:
             CapabilityRecallQuery(
                 scope=MemoryScopeFilter(
                     space_id="space_client_app",
-                    profile_ids=("profile_default",),
+                    memory_scope_ids=("memory_scope_default",),
                 ),
                 query="Graphiti projection",
                 limit=3,
@@ -427,13 +429,13 @@ def test_graphiti_adapter_resolves_generated_episode_uuid_by_name() -> None:
             "Graphiti generated episode UUID must still hydrate canonical fact id.",
             {
                 "space_id": "space_client_app",
-                "profile_id": "profile_default",
+                "memory_scope_id": "memory_scope_default",
                 "updated_at": "2026-05-25T10:00:00+00:00",
             },
         )
         search = await adapter.search(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             query="generated episode uuid",
             limit=3,
         )
@@ -456,7 +458,7 @@ def test_graphiti_capability_mismatch_disables_graph() -> None:
         descriptors = await adapter.capability_descriptors()
         search = await adapter.search(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             query="Graphiti projection",
             limit=3,
         )
@@ -488,7 +490,7 @@ def test_noop_graph_adapter_exposes_disabled_temporal_capabilities() -> None:
         health = await adapter.health()
         recalled = await adapter.search_facts(
             CapabilityRecallQuery(
-                scope=MemoryScopeFilter(space_id="space", profile_ids=("profile",)),
+                scope=MemoryScopeFilter(space_id="space", memory_scope_ids=("memory_scope",)),
                 query="anything",
                 limit=1,
             )
@@ -509,7 +511,7 @@ def test_noop_vector_adapter_contract_fails_closed_without_candidates() -> None:
         capabilities = await adapter.capabilities()
         search = await adapter.search_chunks(
             space_id="space",
-            profile_ids=("profile",),
+            memory_scope_ids=("memory_scope",),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
         )
@@ -518,7 +520,7 @@ def test_noop_vector_adapter_contract_fails_closed_without_candidates() -> None:
                 VectorUpsertItem(
                     chunk_id="chunk_1",
                     space_id="space",
-                    profile_id="profile",
+                    memory_scope_id="memory_scope",
                     thread_id=None,
                     text="Noop vector source text.",
                     vector=(0.1, 0.2, 0.3),
@@ -646,7 +648,7 @@ def test_cognee_skeleton_is_disabled_without_importing_runtime_sdk() -> None:
         health = await adapter.health()
         recalled = await adapter.recall(
             CapabilityRecallQuery(
-                scope=MemoryScopeFilter(space_id="space", profile_ids=("profile",)),
+                scope=MemoryScopeFilter(space_id="space", memory_scope_ids=("memory_scope",)),
                 query="anything",
                 limit=1,
             )
@@ -675,7 +677,7 @@ def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> Non
             DocumentMemoryWrite(
                 document_id="doc_1",
                 space_id="space_client_app",
-                profile_id="profile_default",
+                memory_scope_id="memory_scope_default",
                 title="Architecture note",
                 text="Tenant scoped retrieval belongs in Cognee RAG.",
                 source_refs=(),
@@ -686,7 +688,7 @@ def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> Non
             CapabilityRecallQuery(
                 scope=MemoryScopeFilter(
                     space_id="space_client_app",
-                    profile_ids=("profile_default",),
+                    memory_scope_ids=("memory_scope_default",),
                 ),
                 query="tenant scoped retrieval",
                 limit=5,
@@ -696,9 +698,11 @@ def test_cognee_runtime_adapter_remembers_and_recalls_by_scoped_dataset() -> Non
         assert capabilities.enabled is True
         assert projected.status == CapabilityStatus.OK
         assert projected.affected_ids == ("doc_1",)
-        assert fake.remember_calls[0]["dataset_name"] == "mp__space_client_app__profile_default"
+        assert (
+            fake.remember_calls[0]["dataset_name"] == "mp__space_client_app__memory_scope_default"
+        )
         assert fake.remember_calls[0]["node_set"] == ["chunk_canonical_1"]
-        assert fake.recall_calls[0]["datasets"] == ["mp__space_client_app__profile_default"]
+        assert fake.recall_calls[0]["datasets"] == ["mp__space_client_app__memory_scope_default"]
         assert fake.recall_calls[0]["top_k"] == 5
         assert recalled.status == CapabilityStatus.OK
         assert recalled.items[0].text == "Cognee recalled tenant scoped document chunk."
@@ -754,13 +758,13 @@ def test_configured_graphiti_without_client_degrades_instead_of_disabling(monkey
                 "Graphiti unavailable projection text.",
                 {
                     "space_id": "space_client_app",
-                    "profile_id": "profile_default",
+                    "memory_scope_id": "memory_scope_default",
                     "updated_at": "2026-05-25T10:00:00+00:00",
                 },
             )
             search = await adapter.search(
                 space_id="space_client_app",
-                profile_ids=("profile_default",),
+                memory_scope_ids=("memory_scope_default",),
                 query="Graphiti unavailable",
                 limit=3,
             )
@@ -860,7 +864,7 @@ class FakeQdrantClient:
                     payload={
                         "chunk_id": "chunk_1",
                         "space_id": "space_client_app",
-                        "profile_id": "profile_default",
+                        "memory_scope_id": "memory_scope_default",
                         "projection_version": "v1",
                     },
                     score=0.9,
@@ -903,7 +907,7 @@ def test_qdrant_adapter_creates_collection_before_upsert_and_search() -> None:
                 VectorUpsertItem(
                     chunk_id="chunk_1",
                     space_id="space_client_app",
-                    profile_id="profile_default",
+                    memory_scope_id="memory_scope_default",
                     thread_id=None,
                     text="Qdrant projection text.",
                     vector=(0.1, 0.2, 0.3),
@@ -913,7 +917,7 @@ def test_qdrant_adapter_creates_collection_before_upsert_and_search() -> None:
         )
         search = await adapter.search_chunks(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
         )
@@ -938,7 +942,7 @@ def test_qdrant_adapter_search_contract_uses_scope_and_projection_filters() -> N
 
         search = await adapter.search_chunks(
             space_id="space_client_app",
-            profile_ids=("profile_default", "profile_candidate"),
+            memory_scope_ids=("memory_scope_default", "memory_scope_candidate"),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
         )
@@ -951,13 +955,15 @@ def test_qdrant_adapter_search_contract_uses_scope_and_projection_filters() -> N
         assert filters == {
             "space_id": {"value": "space_client_app"},
             "projection_version": {"value": "projection_v2"},
-            "profile_id": {"any": ["profile_default", "profile_candidate"]},
+            "memory_scope_id": {"any": ["memory_scope_default", "memory_scope_candidate"]},
         }
 
     asyncio.run(run())
 
 
-def test_qdrant_adapter_search_contract_filters_current_thread_or_profile_wide_chunks() -> None:
+def test_qdrant_adapter_search_contract_filters_current_thread_or_memory_scope_wide_chunks() -> (
+    None
+):
     async def run() -> None:
         fake = FakeQdrantClient()
         adapter = QdrantVectorMemoryAdapter(
@@ -969,7 +975,7 @@ def test_qdrant_adapter_search_contract_filters_current_thread_or_profile_wide_c
 
         search = await adapter.search_chunks(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             thread_id="thread_current",
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
@@ -1000,7 +1006,7 @@ def test_qdrant_zero_limit_search_is_noop() -> None:
 
         search = await adapter.search_chunks(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             query_vector=(0.1, 0.2, 0.3),
             limit=0,
         )
@@ -1028,7 +1034,7 @@ def test_qdrant_dimension_mismatch_fails_closed() -> None:
                 VectorUpsertItem(
                     chunk_id="chunk_1",
                     space_id="space_client_app",
-                    profile_id="profile_default",
+                    memory_scope_id="memory_scope_default",
                     thread_id=None,
                     text="Qdrant projection text.",
                     vector=(0.1, 0.2, 0.3),
@@ -1038,7 +1044,7 @@ def test_qdrant_dimension_mismatch_fails_closed() -> None:
         )
         search = await adapter.search_chunks(
             space_id="space_client_app",
-            profile_ids=("profile_default",),
+            memory_scope_ids=("memory_scope_default",),
             query_vector=(0.1, 0.2, 0.3),
             limit=3,
         )
@@ -1626,7 +1632,7 @@ def test_capture_openai_extractor_requires_supported_provider_and_api_key() -> N
         raise AssertionError("Expected missing OpenAI key validation to fail")
 
 
-def test_real_provider_disabled_in_test_profile() -> None:
+def test_real_provider_disabled_in_test_memory_scope() -> None:
     settings = Settings(
         deploy_profile="test",
         embeddings_enabled=True,
@@ -1637,6 +1643,6 @@ def test_real_provider_disabled_in_test_profile() -> None:
     try:
         settings.validate_for_startup()
     except RuntimeError as exc:
-        assert "test profile cannot use external adapters" in str(exc)
+        assert "test deploy profile cannot use external adapters" in str(exc)
     else:
-        raise AssertionError("Expected test profile external provider validation to fail")
+        raise AssertionError("Expected test deploy profile external provider validation to fail")

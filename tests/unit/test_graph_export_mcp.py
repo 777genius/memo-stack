@@ -15,7 +15,7 @@ class GraphExportGateway:
         return {
             "data": {
                 "schema_version": "memo_stack.graph_export.v1",
-                "scope": {"space_id": "space_1", "profile_id": "profile_1"},
+                "scope": {"space_id": "space_1", "memory_scope_id": "memory_scope_1"},
                 "nodes": [{"id": "fact:fact_1", "type": "fact", "label": "Fact", "data": {}}],
                 "edges": [],
                 "counts": {"facts": 1, "documents": 0, "chunks": 0, "nodes": 1, "edges": 0},
@@ -31,7 +31,7 @@ def test_memory_export_graph_uses_default_scope_and_preserves_payload() -> None:
         gateway=gateway,
         settings=MemoryMcpSettings(
             default_space_slug="client-app",
-            default_profile_external_ref="default",
+            default_memory_scope_external_ref="default",
         ),
     )
 
@@ -43,7 +43,7 @@ def test_memory_export_graph_uses_default_scope_and_preserves_payload() -> None:
     assert parsed.data.schema_version == "memo_stack.graph_export.v1"
     assert parsed.data.counts["facts"] == 1
     assert gateway.calls[0]["scope"].space_slug == "client-app"
-    assert gateway.calls[0]["scope"].profile_external_ref == "default"
+    assert gateway.calls[0]["scope"].memory_scope_external_ref == "default"
     assert gateway.calls[0]["include_deleted"] is False
     assert gateway.calls[0]["include_restricted"] is False
 

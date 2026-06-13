@@ -14,7 +14,7 @@ def test_service_suggest_fact_creates_pending_review_candidate() -> None:
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
 
@@ -40,7 +40,7 @@ def test_service_list_suggestions_forwards_review_queue_filters() -> None:
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
 
@@ -78,7 +78,7 @@ def test_service_propose_updates_creates_suggestion_in_suggest_mode() -> None:
             settings=MemoryMcpSettings(
                 write_mode=MemoryMcpWriteMode.SUGGEST,
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
 
@@ -649,7 +649,7 @@ def test_service_lists_and_consolidates_captures_without_raw_payload() -> None:
             gateway=gateway,
             settings=MemoryMcpSettings(
                 default_space_slug="project-a",
-                default_profile_external_ref="backend",
+                default_memory_scope_external_ref="backend",
             ),
         )
 

@@ -39,21 +39,21 @@ class FakeMemoStackClient:
             }
         }
 
-    def export_profile_snapshot(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("export_profile_snapshot", kwargs))
+    def export_memory_scope_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("export_memory_scope_snapshot", kwargs))
         return {
             "data": {
                 "schema_version": 1,
                 "space": {"slug": kwargs["space_slug"]},
-                "profile": {"external_ref": kwargs["profile_external_ref"]},
+                "memory_scope": {"external_ref": kwargs["memory_scope_external_ref"]},
                 "facts": [{"id": "fact_1", "text": None if kwargs["redacted"] else "raw"}],
                 "redacted": kwargs["redacted"],
             },
             "status": "ok",
         }
 
-    def import_profile_snapshot(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("import_profile_snapshot", kwargs))
+    def import_memory_scope_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("import_memory_scope_snapshot", kwargs))
         return {
             "data": {
                 "status": "ok",
@@ -62,8 +62,8 @@ class FakeMemoStackClient:
             }
         }
 
-    def preview_profile_snapshot_import(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("preview_profile_snapshot_import", kwargs))
+    def preview_memory_scope_snapshot_import(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("preview_memory_scope_snapshot_import", kwargs))
         return {
             "data": {
                 "status": "ok",
@@ -100,11 +100,11 @@ def test_cli_insights_prints_summary_and_uses_default_scope(
     call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
     assert call_name == "build_insights"
     assert kwargs["scope"].space_slug == "default"
-    assert kwargs["scope"].profile_external_ref == "default"
+    assert kwargs["scope"].memory_scope_external_ref == "default"
     assert kwargs["max_activity"] == 9
 
 
-def test_cli_profile_export_is_redacted_by_default(
+def test_cli_memory_scope_export_is_redacted_by_default(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -114,7 +114,7 @@ def test_cli_profile_export_is_redacted_by_default(
     FakeMemoStackClient.instances.clear()
     out_path = tmp_path / "snapshot.json"
 
-    exit_code = cli.main(["profile-export", "--out", str(out_path)])
+    exit_code = cli.main(["memory_scope-export", "--out", str(out_path)])
 
     captured = capsys.readouterr()
     written = json.loads(out_path.read_text(encoding="utf-8"))
@@ -125,16 +125,16 @@ def test_cli_profile_export_is_redacted_by_default(
     assert str(manifest_path) in captured.out
     assert written["redacted"] is True
     assert written["facts"][0]["text"] is None
-    assert manifest["schema_version"] == "memo_stack.profile_snapshot_manifest.v1"
+    assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
     assert manifest["snapshot_file"] == "snapshot.json"
     assert manifest["redacted"] is True
     assert manifest["snapshot_sha256"]
     call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
-    assert call_name == "export_profile_snapshot"
+    assert call_name == "export_memory_scope_snapshot"
     assert kwargs["redacted"] is True
 
 
-def test_cli_profile_verify_accepts_manifest_and_rejects_tamper(
+def test_cli_memory_scope_verify_accepts_manifest_and_rejects_tamper(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -144,9 +144,9 @@ def test_cli_profile_verify_accepts_manifest_and_rejects_tamper(
     FakeMemoStackClient.instances.clear()
     out_path = tmp_path / "snapshot.json"
 
-    export_exit = cli.main(["profile-export", "--out", str(out_path)])
+    export_exit = cli.main(["memory_scope-export", "--out", str(out_path)])
     capsys.readouterr()
-    verify_exit = cli.main(["profile-verify", "--snapshot", str(out_path), "--json"])
+    verify_exit = cli.main(["memory_scope-verify", "--snapshot", str(out_path), "--json"])
     verify_output = capsys.readouterr()
 
     assert export_exit == 0
@@ -154,14 +154,14 @@ def test_cli_profile_verify_accepts_manifest_and_rejects_tamper(
     assert json.loads(verify_output.out)["ok"] is True
 
     out_path.write_text('{"tampered": true}\n', encoding="utf-8")
-    tampered_exit = cli.main(["profile-verify", "--snapshot", str(out_path)])
+    tampered_exit = cli.main(["memory_scope-verify", "--snapshot", str(out_path)])
     tampered_output = capsys.readouterr()
 
     assert tampered_exit == 1
     assert "snapshot_sha256_mismatch" in tampered_output.out
 
 
-def test_cli_profile_import_dry_run_and_apply_confirmation(
+def test_cli_memory_scope_import_dry_run_and_apply_confirmation(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -172,10 +172,10 @@ def test_cli_profile_import_dry_run_and_apply_confirmation(
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
 
-    dry_run_exit = cli.main(["profile-import", "--in", str(snapshot_path)])
-    rejected_exit = cli.main(["profile-import", "--in", str(snapshot_path), "--apply"])
+    dry_run_exit = cli.main(["memory_scope-import", "--in", str(snapshot_path)])
+    rejected_exit = cli.main(["memory_scope-import", "--in", str(snapshot_path), "--apply"])
     apply_exit = cli.main(
-        ["profile-import", "--in", str(snapshot_path), "--apply", "--confirmed"]
+        ["memory_scope-import", "--in", str(snapshot_path), "--apply", "--confirmed"]
     )
 
     captured = capsys.readouterr()
@@ -185,13 +185,13 @@ def test_cli_profile_import_dry_run_and_apply_confirmation(
     assert "requires --confirmed" in captured.err
     first_call = FakeMemoStackClient.instances[0].calls[0]
     second_call = FakeMemoStackClient.instances[1].calls[0]
-    assert first_call[0] == "import_profile_snapshot"
+    assert first_call[0] == "import_memory_scope_snapshot"
     assert first_call[1]["dry_run"] is True
     assert second_call[1]["dry_run"] is False
     assert second_call[1]["confirmed"] is True
 
 
-def test_cli_profile_import_verifies_manifest_before_client_call(
+def test_cli_memory_scope_import_verifies_manifest_before_client_call(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -202,11 +202,11 @@ def test_cli_profile_import_verifies_manifest_before_client_call(
     out_path = tmp_path / "snapshot.json"
     manifest_path = tmp_path / "snapshot.json.manifest.json"
 
-    export_exit = cli.main(["profile-export", "--out", str(out_path)])
+    export_exit = cli.main(["memory_scope-export", "--out", str(out_path)])
     capsys.readouterr()
     import_exit = cli.main(
         [
-            "profile-import",
+            "memory_scope-import",
             "--in",
             str(out_path),
             "--manifest",
@@ -218,13 +218,13 @@ def test_cli_profile_import_verifies_manifest_before_client_call(
     assert export_exit == 0
     assert import_exit == 0
     assert '"dry_run": true' in good_output.out
-    assert FakeMemoStackClient.instances[-1].calls[0][0] == "import_profile_snapshot"
+    assert FakeMemoStackClient.instances[-1].calls[0][0] == "import_memory_scope_snapshot"
 
     client_count = len(FakeMemoStackClient.instances)
     out_path.write_text('{"tampered": true}\n', encoding="utf-8")
     tampered_exit = cli.main(
         [
-            "profile-import",
+            "memory_scope-import",
             "--in",
             str(out_path),
             "--manifest",
@@ -239,7 +239,7 @@ def test_cli_profile_import_verifies_manifest_before_client_call(
     assert len(FakeMemoStackClient.instances) == client_count
 
 
-def test_cli_profile_import_preview_uses_read_only_preview_endpoint(
+def test_cli_memory_scope_import_preview_uses_read_only_preview_endpoint(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -252,7 +252,7 @@ def test_cli_profile_import_preview_uses_read_only_preview_endpoint(
 
     exit_code = cli.main(
         [
-            "profile-import-preview",
+            "memory_scope-import-preview",
             "--in",
             str(snapshot_path),
             "--merge-strategy",
@@ -268,12 +268,12 @@ def test_cli_profile_import_preview_uses_read_only_preview_endpoint(
     assert "would_supersede:" in captured.out
     assert "conflicts_block_import" in captured.out
     call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
-    assert call_name == "preview_profile_snapshot_import"
+    assert call_name == "preview_memory_scope_snapshot_import"
     assert kwargs["merge_strategy"] == "supersede_matching_facts"
     assert kwargs["manifest"] is None
 
 
-def test_cli_profile_import_preview_verifies_manifest_before_client_call(
+def test_cli_memory_scope_import_preview_verifies_manifest_before_client_call(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -284,11 +284,11 @@ def test_cli_profile_import_preview_verifies_manifest_before_client_call(
     out_path = tmp_path / "snapshot.json"
     manifest_path = tmp_path / "snapshot.json.manifest.json"
 
-    export_exit = cli.main(["profile-export", "--out", str(out_path)])
+    export_exit = cli.main(["memory_scope-export", "--out", str(out_path)])
     capsys.readouterr()
     preview_exit = cli.main(
         [
-            "profile-import-preview",
+            "memory_scope-import-preview",
             "--in",
             str(out_path),
             "--manifest",
@@ -302,14 +302,14 @@ def test_cli_profile_import_preview_verifies_manifest_before_client_call(
     assert preview_exit == 0
     assert '"dry_run": true' in preview_output.out
     preview_call = FakeMemoStackClient.instances[-1].calls[0]
-    assert preview_call[0] == "preview_profile_snapshot_import"
+    assert preview_call[0] == "preview_memory_scope_snapshot_import"
     assert isinstance(preview_call[1]["manifest"], dict)
 
     client_count = len(FakeMemoStackClient.instances)
     out_path.write_text('{"tampered": true}\n', encoding="utf-8")
     tampered_exit = cli.main(
         [
-            "profile-import-preview",
+            "memory_scope-import-preview",
             "--in",
             str(out_path),
             "--manifest",

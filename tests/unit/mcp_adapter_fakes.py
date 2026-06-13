@@ -41,8 +41,8 @@ class RecordingGateway:
             }
         }
 
-    async def export_profile_snapshot(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("export_profile_snapshot", kwargs))
+    async def export_memory_scope_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("export_memory_scope_snapshot", kwargs))
         return {
             "status": "ok",
             "counts": {"facts": 1, "documents": 0, "chunks": 0, "source_refs": 1},
@@ -50,7 +50,7 @@ class RecordingGateway:
             "data": {
                 "schema_version": 1,
                 "space": {"slug": kwargs["scope"].space_slug},
-                "profile": {"external_ref": kwargs["scope"].profile_external_ref},
+                "memory_scope": {"external_ref": kwargs["scope"].memory_scope_external_ref},
                 "facts": [{"id": "fact_1", "text": None if kwargs["redacted"] else "fact"}],
                 "documents": [],
                 "chunks": [],
@@ -59,8 +59,8 @@ class RecordingGateway:
             },
         }
 
-    async def import_profile_snapshot(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("import_profile_snapshot", kwargs))
+    async def import_memory_scope_snapshot(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("import_memory_scope_snapshot", kwargs))
         return {
             "data": {
                 "status": "ok",

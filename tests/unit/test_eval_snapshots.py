@@ -49,7 +49,7 @@ def test_prompt_snapshot_payload_is_prompt_safe_and_contains_metadata(tmp_path: 
         "deleted_fact_filtered",
         "prompt_injection_quoted",
         "instruction_flag_dropped",
-        "cross_profile_isolation",
+        "cross_memory_scope_isolation",
         "degraded_qdrant",
         "degraded_graphiti",
         "token_budget_truncated",
@@ -63,7 +63,7 @@ def test_prompt_snapshot_payload_is_prompt_safe_and_contains_metadata(tmp_path: 
     fact_case = payload["cases"]["facts_only"]
     assert fact_case["items"][0]["item_id"] == "fact_canonical_owner"
     assert fact_case["items"][0]["source_refs"][0]["source_type"] == "manual"
-    assert fact_case["items"][0]["profile_id"] == "profile_alpha"
+    assert fact_case["items"][0]["memory_scope_id"] == "memory_scope_alpha"
 
 
 def test_prompt_snapshot_cases_enforce_absence_contracts() -> None:

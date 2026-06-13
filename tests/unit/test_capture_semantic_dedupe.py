@@ -191,7 +191,7 @@ def _create_fact(
         "/v1/facts",
         json={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "text": text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": "semantic-dedupe-test"}],
@@ -211,7 +211,7 @@ def _create_capture(
         "/v1/captures",
         json={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "source_agent": "codex",
             "source_kind": "hook",
             "event_type": "UserPromptSubmit",
@@ -274,7 +274,7 @@ def _list_facts(client: TestClient, *, headers: dict[str, str], space_slug: str)
         "/v1/facts",
         params={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "status": "active",
         },
         headers=headers,
@@ -286,7 +286,7 @@ def _list_suggestions(client: TestClient, *, headers: dict[str, str], space_slug
         "/v1/suggestions",
         params={
             "space_slug": space_slug,
-            "profile_external_ref": "default",
+            "memory_scope_external_ref": "default",
             "status": "pending",
         },
         headers=headers,

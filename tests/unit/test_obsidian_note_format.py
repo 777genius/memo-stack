@@ -28,7 +28,7 @@ def test_fact_note_render_parse_roundtrip() -> None:
     path = fact_note_path(fact["id"])
     note = parse_fact_note(
         path,
-        render_fact_note(fact, space_slug="default", profile_external_ref="me"),
+        render_fact_note(fact, space_slug="default", memory_scope_external_ref="me"),
     )
 
     assert note.path == PurePosixPath("Memo Stack/generated/facts/fact_123.md")
@@ -41,7 +41,7 @@ def test_fact_note_render_parse_roundtrip() -> None:
 
 def test_fact_note_detects_managed_text_change() -> None:
     fact = {"id": "fact_123", "version": 2, "text": "Old text."}
-    markdown = render_fact_note(fact, space_slug="default", profile_external_ref="me")
+    markdown = render_fact_note(fact, space_slug="default", memory_scope_external_ref="me")
     markdown = markdown.replace(
         f"{TEXT_START}\nOld text.\n{TEXT_END}",
         f"{TEXT_START}\nNew text.\n{TEXT_END}",
@@ -73,7 +73,7 @@ def test_fact_note_rejects_missing_managed_block() -> None:
         parse_fact_note(PurePosixPath("Memo Stack/generated/facts/fact_123.md"), markdown)
 
 
-def test_v2_layout_groups_facts_by_space_and_profile() -> None:
+def test_v2_layout_groups_facts_by_space_and_memory_scope() -> None:
     layout = ObsidianVaultLayout.from_values(
         root_folder="AI Memory",
         version="v2",
@@ -83,11 +83,11 @@ def test_v2_layout_groups_facts_by_space_and_profile() -> None:
         "fact_123",
         layout=layout,
         space_slug="memo-stack",
-        profile_external_ref="belief",
+        memory_scope_external_ref="belief",
     )
 
     assert path == PurePosixPath(
-        "AI Memory/spaces/memo-stack/profiles/belief/generated/facts/fact_123.md"
+        "AI Memory/spaces/memo-stack/memory_scopes/belief/generated/facts/fact_123.md"
     )
 
 
