@@ -167,7 +167,7 @@ class GraphitiGraphMemoryAdapter:
                 "episode_body": text,
                 "group_id": self._group_id(
                     metadata.get("space_id", ""),
-                    metadata.get("profile_id", ""),
+                    metadata.get("memory_scope_id", ""),
                 ),
                 "source_description": "canonical_memory_fact",
                 "reference_time": _reference_time(metadata.get("updated_at")),
@@ -191,7 +191,7 @@ class GraphitiGraphMemoryAdapter:
             command.text,
             {
                 "space_id": command.space_id,
-                "profile_id": command.profile_id,
+                "memory_scope_id": command.memory_scope_id,
                 **command.metadata,
                 **({"updated_at": command.valid_at.isoformat()} if command.valid_at else {}),
             },
@@ -236,7 +236,7 @@ class GraphitiGraphMemoryAdapter:
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None = None,
         query: str,
         limit: int,
@@ -254,11 +254,11 @@ class GraphitiGraphMemoryAdapter:
                 return GraphSearchResult.degraded("graph.missing_search", retryable=False)
             candidates: list[GraphCandidate] = []
             effective_limit = _search_limit(limit, thread_id=thread_id)
-            for profile_id in profile_ids:
+            for memory_scope_id in memory_scope_ids:
                 results = await _call_search(
                     search,
                     query=query,
-                    group_id=self._group_id(space_id, profile_id),
+                    group_id=self._group_id(space_id, memory_scope_id),
                     limit=effective_limit,
                 )
                 for result in results:
@@ -285,7 +285,7 @@ class GraphitiGraphMemoryAdapter:
     async def search_facts(self, query: CapabilityRecallQuery) -> CapabilityRecallResult:
         result = await self.search(
             space_id=query.scope.space_id,
-            profile_ids=query.scope.profile_ids,
+            memory_scope_ids=query.scope.memory_scope_ids,
             thread_id=query.scope.thread_id,
             query=query.query,
             limit=query.limit,
@@ -311,12 +311,12 @@ class GraphitiGraphMemoryAdapter:
             diagnostics=tuple(_diagnostics(result.diagnostics)),
         )
 
-    def _group_id(self, space_id: str, profile_id: str) -> str:
+    def _group_id(self, space_id: str, memory_scope_id: str) -> str:
         return "__".join(
             (
                 _safe_group_id_part(self._group_id_prefix),
                 _safe_group_id_part(space_id),
-                _safe_group_id_part(profile_id),
+                _safe_group_id_part(memory_scope_id),
             )
         )
 
@@ -541,7 +541,7 @@ async def _call_delete_episode(client: Any, fact_id: str) -> None:
 def _search_limit(limit: int, *, thread_id: str | None) -> int:
     if thread_id is None:
         return limit
-    # Graphiti is grouped by space/profile; Postgres hydration enforces thread visibility.
+    # Graphiti is grouped by space/memory_scope; Postgres hydration enforces thread visibility.
     return min(max(limit * 4, limit), 100)
 
 

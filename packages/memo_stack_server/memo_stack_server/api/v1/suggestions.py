@@ -51,9 +51,9 @@ class CreateSuggestionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     candidate_text: str = Field(min_length=1, max_length=4000)
     kind: str = "note"
     source_refs: list[SourceRefRequest] = Field(default_factory=list)
@@ -101,9 +101,9 @@ class CreateSuggestionsBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     items: list[CreateSuggestionBatchItemRequest] = Field(min_length=1, max_length=50)
     continue_on_error: bool = False
 
@@ -135,7 +135,7 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
     return {
         "id": str(suggestion.id),
         "space_id": str(suggestion.space_id),
-        "profile_id": str(suggestion.profile_id),
+        "memory_scope_id": str(suggestion.memory_scope_id),
         "candidate_text": suggestion.candidate_text,
         "kind": suggestion.kind.value,
         "operation": suggestion.operation.value,
@@ -182,15 +182,15 @@ async def create_suggestion(
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=None,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=None,
         thread_required=False,
     )
     result = await container.create_suggestion.execute(
-        _create_suggestion_command(request, scope.space_id, scope.profile_id)
+        _create_suggestion_command(request, scope.space_id, scope.memory_scope_id)
     )
     return {"data": suggestion_to_response(result.suggestion)}
 
@@ -199,9 +199,9 @@ async def create_suggestion(
 async def list_suggestions(
     container: Annotated[Container, Depends(get_container)],
     space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
-    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
-    profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = None,
     operation: Annotated[str | None, Query(max_length=40)] = None,
     category: Annotated[str | None, Query(max_length=80)] = None,
@@ -215,10 +215,10 @@ async def list_suggestions(
     scope = await resolve_existing_single_scope(
         container,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=None,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         thread_external_ref=None,
         thread_required=False,
     )
@@ -227,7 +227,7 @@ async def list_suggestions(
     suggestions = await container.list_suggestions.execute(
         ListSuggestionsQuery(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             status=status_filter,
             operation=operation,
             category=category.strip().lower() if category else None,
@@ -250,17 +250,17 @@ async def create_suggestions_batch(
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=None,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=None,
         thread_required=False,
     )
     result = await container.create_suggestions_batch.execute(
         CreateSuggestionsBatchCommand(
             items=tuple(
-                _create_suggestion_command(item, scope.space_id, scope.profile_id)
+                _create_suggestion_command(item, scope.space_id, scope.memory_scope_id)
                 for item in request.items
             ),
             continue_on_error=request.continue_on_error,
@@ -425,11 +425,11 @@ def _create_batch_item_payload(item: Any) -> dict[str, Any]:
 def _create_suggestion_command(
     request: CreateSuggestionRequest | CreateSuggestionBatchItemRequest,
     space_id: Any,
-    profile_id: Any,
+    memory_scope_id: Any,
 ) -> CreateSuggestionCommand:
     return CreateSuggestionCommand(
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         candidate_text=request.candidate_text,
         kind=map_memory_kind(request.kind),
         source_refs=tuple(map_source_ref(ref) for ref in request.source_refs),

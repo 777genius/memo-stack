@@ -9,9 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from memo_stack_adapters.postgres.models import (
+    MemoryAssetExtractionArtifactRow,
+    MemoryAssetExtractionJobRow,
+    MemoryAssetRow,
+    MemoryContextLinkRow,
     MemoryDocumentRow,
     MemoryFactRow,
-    MemoryProfileRow,
+    MemoryScopeRow,
     MemorySpaceRow,
     MemorySuggestionRow,
     MemoryThreadRow,
@@ -27,13 +31,17 @@ class PathResourceRefs:
     fact_id: str | None = None
     document_id: str | None = None
     suggestion_id: str | None = None
-    profile_id: str | None = None
+    asset_id: str | None = None
+    asset_extraction_job_id: str | None = None
+    extraction_artifact_id: str | None = None
+    context_link_id: str | None = None
+    memory_scope_id: str | None = None
 
 
 @dataclass(frozen=True)
 class ExistingScopeRefs:
     space_id: str
-    profile_id: str
+    memory_scope_id: str
     thread_id: str | None = None
 
 
@@ -41,7 +49,7 @@ async def resolve_existing_external_scope(
     container: Container,
     *,
     space_slug: str | None,
-    profile_external_ref: str | None,
+    memory_scope_external_ref: str | None,
     thread_external_ref: str | None,
 ) -> ExistingScopeRefs | None:
     """Resolve external scope refs without creating rows."""
@@ -50,9 +58,9 @@ async def resolve_existing_external_scope(
         space_slug,
         fallback=container.settings.default_space_slug,
     )
-    normalized_profile_ref = _scope_ref(
-        profile_external_ref,
-        fallback=container.settings.default_profile_external_ref,
+    normalized_memory_scope_ref = _scope_ref(
+        memory_scope_external_ref,
+        fallback=container.settings.default_memory_scope_external_ref,
     )
     normalized_thread_ref = _optional_scope_ref(thread_external_ref)
 
@@ -68,16 +76,16 @@ async def resolve_existing_external_scope(
         if space is None:
             return None
 
-        profile = (
+        memory_scope = (
             await session.execute(
-                select(MemoryProfileRow).where(
-                    MemoryProfileRow.space_id == space.id,
-                    MemoryProfileRow.external_ref == normalized_profile_ref,
-                    MemoryProfileRow.status == "active",
+                select(MemoryScopeRow).where(
+                    MemoryScopeRow.space_id == space.id,
+                    MemoryScopeRow.external_ref == normalized_memory_scope_ref,
+                    MemoryScopeRow.status == "active",
                 )
             )
         ).scalar_one_or_none()
-        if profile is None:
+        if memory_scope is None:
             return None
 
         thread_id = None
@@ -86,7 +94,7 @@ async def resolve_existing_external_scope(
                 await session.execute(
                     select(MemoryThreadRow.id).where(
                         MemoryThreadRow.space_id == space.id,
-                        MemoryThreadRow.profile_id == profile.id,
+                        MemoryThreadRow.memory_scope_id == memory_scope.id,
                         MemoryThreadRow.external_ref == normalized_thread_ref,
                         MemoryThreadRow.status == "active",
                     )
@@ -97,7 +105,7 @@ async def resolve_existing_external_scope(
 
     return ExistingScopeRefs(
         space_id=str(space.id),
-        profile_id=str(profile.id),
+        memory_scope_id=str(memory_scope.id),
         thread_id=str(thread_id) if thread_id else None,
     )
 
@@ -130,34 +138,34 @@ async def requested_space_refs(
     return refs
 
 
-async def requested_profile_refs(
+async def requested_memory_scope_refs(
     container: Container,
     *,
-    query_profile: str | None,
-    query_profile_external_ref: str | None,
-    body_profile: str | None,
-    body_profile_ids: tuple[str, ...],
-    body_profile_external_ref: str | None,
-    body_profile_external_refs: tuple[str, ...],
+    query_memory_scope: str | None,
+    query_memory_scope_external_ref: str | None,
+    body_memory_scope: str | None,
+    body_memory_scope_ids: tuple[str, ...],
+    body_memory_scope_external_ref: str | None,
+    body_memory_scope_external_refs: tuple[str, ...],
     path_refs: PathResourceRefs,
-    include_default_legacy_profile: bool,
+    include_default_legacy_memory_scope: bool,
 ) -> set[str]:
     refs: set[str] = set()
-    if query_profile:
-        refs.add(query_profile)
-    if query_profile_external_ref:
-        refs.add(query_profile_external_ref)
-    if body_profile:
-        refs.add(body_profile)
-    refs.update(body_profile_ids)
-    if body_profile_external_ref:
-        refs.add(body_profile_external_ref)
-    refs.update(body_profile_external_refs)
+    if query_memory_scope:
+        refs.add(query_memory_scope)
+    if query_memory_scope_external_ref:
+        refs.add(query_memory_scope_external_ref)
+    if body_memory_scope:
+        refs.add(body_memory_scope)
+    refs.update(body_memory_scope_ids)
+    if body_memory_scope_external_ref:
+        refs.add(body_memory_scope_external_ref)
+    refs.update(body_memory_scope_external_refs)
 
-    await _add_profile_from_path_resource(container, refs, path_refs)
+    await _add_memory_scope_from_path_resource(container, refs, path_refs)
 
-    if include_default_legacy_profile:
-        refs.add(container.settings.default_profile_external_ref)
+    if include_default_legacy_memory_scope:
+        refs.add(container.settings.default_memory_scope_external_ref)
 
     return refs
 
@@ -173,10 +181,10 @@ async def space_matches(container: Container, token_scope: str, requested_space:
     return not token_refs.isdisjoint(requested_refs)
 
 
-async def profile_matches(
+async def memory_scope_matches(
     container: Container,
     token_scope: str,
-    requested_profile: str,
+    requested_memory_scope: str,
     *,
     space_scope: str | None = None,
 ) -> bool:
@@ -185,14 +193,14 @@ async def profile_matches(
         if space_scope and not _scope_row_is_active(space):
             return False
         space_id = space.id if space else None
-        token_profile = await _load_profile(session, token_scope, space_id=space_id)
-        requested = await _load_profile(session, requested_profile, space_id=space_id)
-    if space_scope and (token_profile is None or requested is None):
+        token_memory_scope = await _load_memory_scope(session, token_scope, space_id=space_id)
+        requested = await _load_memory_scope(session, requested_memory_scope, space_id=space_id)
+    if space_scope and (token_memory_scope is None or requested is None):
         return False
-    if token_scope == requested_profile:
-        return _scope_row_is_active(token_profile) and _scope_row_is_active(requested)
-    token_refs = _profile_refs(token_profile, fallback=token_scope)
-    requested_refs = _profile_refs(requested, fallback=requested_profile)
+    if token_scope == requested_memory_scope:
+        return _scope_row_is_active(token_memory_scope) and _scope_row_is_active(requested)
+    token_refs = _memory_scope_refs(token_memory_scope, fallback=token_scope)
+    requested_refs = _memory_scope_refs(requested, fallback=requested_memory_scope)
     return not token_refs.isdisjoint(requested_refs)
 
 
@@ -200,12 +208,12 @@ async def canonical_scope_matches(
     container: Container,
     *,
     space_id: str,
-    profile_ids: tuple[str, ...],
+    memory_scope_ids: tuple[str, ...],
     thread_id: str | None,
 ) -> bool:
-    if not profile_ids:
+    if not memory_scope_ids:
         return False
-    unique_profile_ids = tuple(dict.fromkeys(profile_ids))
+    unique_memory_scope_ids = tuple(dict.fromkeys(memory_scope_ids))
     async with AsyncSession(container.engine) as session:
         space_exists = (
             await session.execute(
@@ -215,26 +223,26 @@ async def canonical_scope_matches(
                 )
             )
         ).scalar_one_or_none()
-        profile_rows = list(
+        memory_scope_rows = list(
             (
                 await session.execute(
                     select(
-                        MemoryProfileRow.id,
-                        MemoryProfileRow.space_id,
-                        MemoryProfileRow.status,
+                        MemoryScopeRow.id,
+                        MemoryScopeRow.space_id,
+                        MemoryScopeRow.status,
                     ).where(
-                        MemoryProfileRow.id.in_(unique_profile_ids),
+                        MemoryScopeRow.id.in_(unique_memory_scope_ids),
                     )
                 )
             ).all()
         )
         if space_exists is None:
-            return not profile_rows and thread_id is None
-        if len(profile_rows) != len(unique_profile_ids):
+            return not memory_scope_rows and thread_id is None
+        if len(memory_scope_rows) != len(unique_memory_scope_ids):
             return False
-        if any(row.status != "active" for row in profile_rows):
+        if any(row.status != "active" for row in memory_scope_rows):
             return False
-        if any(row.space_id != space_id for row in profile_rows):
+        if any(row.space_id != space_id for row in memory_scope_rows):
             return False
         if thread_id is None:
             return True
@@ -242,7 +250,7 @@ async def canonical_scope_matches(
             await session.execute(
                 select(
                     MemoryThreadRow.space_id,
-                    MemoryThreadRow.profile_id,
+                    MemoryThreadRow.memory_scope_id,
                     MemoryThreadRow.status,
                 ).where(
                     MemoryThreadRow.id == thread_id,
@@ -254,7 +262,7 @@ async def canonical_scope_matches(
     return (
         thread_row.status == "active"
         and thread_row.space_id == space_id
-        and thread_row.profile_id in unique_profile_ids
+        and thread_row.memory_scope_id in unique_memory_scope_ids
     )
 
 
@@ -273,27 +281,61 @@ async def _add_space_from_path_resource(
         if path_refs.suggestion_id:
             await _add_row_space(session, refs, MemorySuggestionRow, path_refs.suggestion_id)
 
-        if path_refs.profile_id:
-            await _add_row_space(session, refs, MemoryProfileRow, path_refs.profile_id)
+        if path_refs.asset_id:
+            await _add_row_space(session, refs, MemoryAssetRow, path_refs.asset_id)
+
+        if path_refs.asset_extraction_job_id:
+            await _add_row_space(
+                session, refs, MemoryAssetExtractionJobRow, path_refs.asset_extraction_job_id
+            )
+
+        if path_refs.extraction_artifact_id:
+            await _add_extraction_artifact_space(
+                session, refs, path_refs.extraction_artifact_id
+            )
+
+        if path_refs.context_link_id:
+            await _add_row_space(session, refs, MemoryContextLinkRow, path_refs.context_link_id)
+
+        if path_refs.memory_scope_id:
+            await _add_row_space(session, refs, MemoryScopeRow, path_refs.memory_scope_id)
 
 
-async def _add_profile_from_path_resource(
+async def _add_memory_scope_from_path_resource(
     container: Container,
     refs: set[str],
     path_refs: PathResourceRefs,
 ) -> None:
     async with AsyncSession(container.engine) as session:
         if path_refs.fact_id:
-            await _add_row_profile(session, refs, MemoryFactRow, path_refs.fact_id)
+            await _add_row_memory_scope(session, refs, MemoryFactRow, path_refs.fact_id)
 
         if path_refs.document_id:
-            await _add_row_profile(session, refs, MemoryDocumentRow, path_refs.document_id)
+            await _add_row_memory_scope(session, refs, MemoryDocumentRow, path_refs.document_id)
 
         if path_refs.suggestion_id:
-            await _add_row_profile(session, refs, MemorySuggestionRow, path_refs.suggestion_id)
+            await _add_row_memory_scope(session, refs, MemorySuggestionRow, path_refs.suggestion_id)
 
-        if path_refs.profile_id:
-            refs.add(path_refs.profile_id)
+        if path_refs.asset_id:
+            await _add_row_memory_scope(session, refs, MemoryAssetRow, path_refs.asset_id)
+
+        if path_refs.asset_extraction_job_id:
+            await _add_row_memory_scope(
+                session, refs, MemoryAssetExtractionJobRow, path_refs.asset_extraction_job_id
+            )
+
+        if path_refs.extraction_artifact_id:
+            await _add_extraction_artifact_memory_scope(
+                session, refs, path_refs.extraction_artifact_id
+            )
+
+        if path_refs.context_link_id:
+            await _add_row_memory_scope(
+                session, refs, MemoryContextLinkRow, path_refs.context_link_id
+            )
+
+        if path_refs.memory_scope_id:
+            refs.add(path_refs.memory_scope_id)
 
 
 async def _add_row_space(
@@ -302,7 +344,10 @@ async def _add_row_space(
     model: type[MemoryFactRow]
     | type[MemoryDocumentRow]
     | type[MemorySuggestionRow]
-    | type[MemoryProfileRow],
+    | type[MemoryAssetRow]
+    | type[MemoryAssetExtractionJobRow]
+    | type[MemoryContextLinkRow]
+    | type[MemoryScopeRow],
     row_id: str,
 ) -> None:
     space_id = await session.scalar(select(model.space_id).where(model.id == row_id))
@@ -310,15 +355,54 @@ async def _add_row_space(
         refs.add(str(space_id))
 
 
-async def _add_row_profile(
+async def _add_row_memory_scope(
     session: AsyncSession,
     refs: set[str],
-    model: type[MemoryFactRow] | type[MemoryDocumentRow] | type[MemorySuggestionRow],
+    model: type[MemoryFactRow]
+    | type[MemoryDocumentRow]
+    | type[MemorySuggestionRow]
+    | type[MemoryAssetRow]
+    | type[MemoryAssetExtractionJobRow]
+    | type[MemoryContextLinkRow],
     row_id: str,
 ) -> None:
-    profile_id = await session.scalar(select(model.profile_id).where(model.id == row_id))
-    if profile_id:
-        refs.add(str(profile_id))
+    memory_scope_id = await session.scalar(select(model.memory_scope_id).where(model.id == row_id))
+    if memory_scope_id:
+        refs.add(str(memory_scope_id))
+
+
+async def _add_extraction_artifact_space(
+    session: AsyncSession,
+    refs: set[str],
+    artifact_id: str,
+) -> None:
+    space_id = await session.scalar(
+        select(MemoryAssetExtractionJobRow.space_id)
+        .join(
+            MemoryAssetExtractionArtifactRow,
+            MemoryAssetExtractionArtifactRow.job_id == MemoryAssetExtractionJobRow.id,
+        )
+        .where(MemoryAssetExtractionArtifactRow.id == artifact_id)
+    )
+    if space_id:
+        refs.add(str(space_id))
+
+
+async def _add_extraction_artifact_memory_scope(
+    session: AsyncSession,
+    refs: set[str],
+    artifact_id: str,
+) -> None:
+    memory_scope_id = await session.scalar(
+        select(MemoryAssetExtractionJobRow.memory_scope_id)
+        .join(
+            MemoryAssetExtractionArtifactRow,
+            MemoryAssetExtractionArtifactRow.job_id == MemoryAssetExtractionJobRow.id,
+        )
+        .where(MemoryAssetExtractionArtifactRow.id == artifact_id)
+    )
+    if memory_scope_id:
+        refs.add(str(memory_scope_id))
 
 
 async def _load_space(session: AsyncSession, value: str) -> MemorySpaceRow | None:
@@ -331,16 +415,16 @@ async def _load_space(session: AsyncSession, value: str) -> MemorySpaceRow | Non
     ).scalar_one_or_none()
 
 
-async def _load_profile(
+async def _load_memory_scope(
     session: AsyncSession,
     value: str,
     *,
     space_id: str | None = None,
-) -> MemoryProfileRow | None:
-    conditions = [or_(MemoryProfileRow.id == value, MemoryProfileRow.external_ref == value)]
+) -> MemoryScopeRow | None:
+    conditions = [or_(MemoryScopeRow.id == value, MemoryScopeRow.external_ref == value)]
     if space_id is not None:
-        conditions.append(MemoryProfileRow.space_id == space_id)
-    rows = await session.execute(select(MemoryProfileRow).where(*conditions).limit(1))
+        conditions.append(MemoryScopeRow.space_id == space_id)
+    rows = await session.execute(select(MemoryScopeRow).where(*conditions).limit(1))
     return rows.scalars().first()
 
 
@@ -352,7 +436,7 @@ def _space_refs(row: MemorySpaceRow | None, *, fallback: str) -> set[str]:
     return {row.id, row.slug}
 
 
-def _profile_refs(row: MemoryProfileRow | None, *, fallback: str) -> set[str]:
+def _memory_scope_refs(row: MemoryScopeRow | None, *, fallback: str) -> set[str]:
     if row is None:
         return {fallback}
     if row.status != "active":
@@ -360,7 +444,7 @@ def _profile_refs(row: MemoryProfileRow | None, *, fallback: str) -> set[str]:
     return {row.id, row.external_ref}
 
 
-def _scope_row_is_active(row: MemorySpaceRow | MemoryProfileRow | None) -> bool:
+def _scope_row_is_active(row: MemorySpaceRow | MemoryScopeRow | None) -> bool:
     return row is None or row.status == "active"
 
 

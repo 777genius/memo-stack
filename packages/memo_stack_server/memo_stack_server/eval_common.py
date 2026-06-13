@@ -23,8 +23,8 @@ def _seed_eval_scope(
 ) -> tuple[dict[str, bool], str, str, str]:
     checks: dict[str, bool] = {}
     fallback_space_id = "space_eval"
-    fallback_alpha_profile_id = "profile_alpha"
-    fallback_beta_profile_id = "profile_beta"
+    fallback_alpha_memory_scope_id = "memory_scope_alpha"
+    fallback_beta_memory_scope_id = "memory_scope_beta"
 
     space_response = client.post(
         "/v1/spaces",
@@ -35,22 +35,22 @@ def _seed_eval_scope(
     space_id = _response_data_id(space_response) or fallback_space_id
 
     alpha_response = client.post(
-        "/v1/profiles",
+        "/v1/memory-scopes",
         json={"space_id": space_id, "external_ref": alpha_external_ref, "name": alpha_name},
         headers=headers,
     )
-    checks["alpha_profile_scope"] = _status_ok(alpha_response.status_code)
-    alpha_profile_id = _response_data_id(alpha_response) or fallback_alpha_profile_id
+    checks["alpha_memory_scope_scope"] = _status_ok(alpha_response.status_code)
+    alpha_memory_scope_id = _response_data_id(alpha_response) or fallback_alpha_memory_scope_id
 
     beta_response = client.post(
-        "/v1/profiles",
+        "/v1/memory-scopes",
         json={"space_id": space_id, "external_ref": beta_external_ref, "name": beta_name},
         headers=headers,
     )
-    checks["beta_profile_scope"] = _status_ok(beta_response.status_code)
-    beta_profile_id = _response_data_id(beta_response) or fallback_beta_profile_id
+    checks["beta_memory_scope_scope"] = _status_ok(beta_response.status_code)
+    beta_memory_scope_id = _response_data_id(beta_response) or fallback_beta_memory_scope_id
 
-    return checks, space_id, alpha_profile_id, beta_profile_id
+    return checks, space_id, alpha_memory_scope_id, beta_memory_scope_id
 
 
 def _response_data_id(response) -> str | None:
@@ -122,24 +122,24 @@ def _remember_eval_fact(
     headers: dict[str, str],
     *,
     space_id: str | None = None,
-    profile_id: str | None = None,
+    memory_scope_id: str | None = None,
     text: str,
     source_id: str,
     idempotency_key: str | None = None,
     classification: str = "internal",
     thread_id: str | None = None,
     space_slug: str | None = None,
-    profile_external_ref: str | None = None,
+    memory_scope_external_ref: str | None = None,
     thread_external_ref: str | None = None,
 ) -> bool:
     response = _remember_eval_fact_response(
         client,
         headers,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=thread_id,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         thread_external_ref=thread_external_ref,
         text=text,
         source_id=source_id,
@@ -158,10 +158,10 @@ def _remember_eval_fact_response(
     idempotency_key: str | None = None,
     classification: str = "internal",
     space_id: str | None = None,
-    profile_id: str | None = None,
+    memory_scope_id: str | None = None,
     thread_id: str | None = None,
     space_slug: str | None = None,
-    profile_external_ref: str | None = None,
+    memory_scope_external_ref: str | None = None,
     thread_external_ref: str | None = None,
 ):
     payload = {
@@ -172,10 +172,10 @@ def _remember_eval_fact_response(
     }
     for key, value in (
         ("space_id", space_id),
-        ("profile_id", profile_id),
+        ("memory_scope_id", memory_scope_id),
         ("thread_id", thread_id),
         ("space_slug", space_slug),
-        ("profile_external_ref", profile_external_ref),
+        ("memory_scope_external_ref", memory_scope_external_ref),
         ("thread_external_ref", thread_external_ref),
     ):
         if value is not None:
@@ -192,7 +192,7 @@ def _seed_eval_updated_fact(
     headers: dict[str, str],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     old_text: str,
     new_text: str,
     old_source_id: str,
@@ -205,7 +205,7 @@ def _seed_eval_updated_fact(
         "/v1/facts",
         json={
             "space_id": space_id,
-            "profile_id": profile_id,
+            "memory_scope_id": memory_scope_id,
             "text": old_text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": old_source_id}],
@@ -236,7 +236,7 @@ def _seed_eval_deleted_fact(
     headers: dict[str, str],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     text: str,
     source_id: str,
     idempotency_key: str,
@@ -246,7 +246,7 @@ def _seed_eval_deleted_fact(
         "/v1/facts",
         json={
             "space_id": space_id,
-            "profile_id": profile_id,
+            "memory_scope_id": memory_scope_id,
             "text": text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": source_id}],

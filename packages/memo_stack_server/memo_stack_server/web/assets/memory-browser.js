@@ -1,0 +1,1176 @@
+(() => {
+  "use strict";
+
+  const SETTINGS_KEY = "memoStack.browser.settings.v1";
+  const GRAPH_NODE_LIMIT = 320;
+  const POLL_MS = 5000;
+
+  const defaults = {
+    apiBase: "",
+    token: "",
+    spaceSlug: "default",
+    memoryScopeRef: "default",
+    topic: "memory",
+  };
+
+  const state = {
+    ...defaults,
+    health: null,
+    capabilities: null,
+    adapterDiagnostics: null,
+    spaces: [],
+    memory_scopes: [],
+    facts: [],
+    suggestions: [],
+    nodes: [],
+    edges: [],
+    selectedNodeId: null,
+    nodePositions: new Map(),
+    paused: false,
+    loading: false,
+    graphScale: 1,
+    graphTruncated: false,
+    lastRefreshAt: null,
+  };
+
+  const els = {};
+
+  document.addEventListener("DOMContentLoaded", init);
+
+  function init() {
+    bindElements();
+    loadSettings();
+    applySettingsToInputs();
+    bindEvents();
+    void refreshAll();
+    window.setInterval(() => {
+      if (!state.paused) {
+        void refreshAll({ silent: true });
+      }
+    }, POLL_MS);
+  }
+
+  function bindElements() {
+    for (const id of [
+      "apiBaseInput",
+      "tokenInput",
+      "spaceInput",
+      "memory_scopeInput",
+      "topicInput",
+      "saveSettingsButton",
+      "refreshButton",
+      "pauseButton",
+      "graphSearchInput",
+      "typeFilter",
+      "statusFilter",
+      "zoomInButton",
+      "zoomOutButton",
+      "fitButton",
+      "buildDigestButton",
+      "runRecallButton",
+      "scopeSummary",
+      "liveStatus",
+      "serverStatus",
+      "adapterStatus",
+      "factCount",
+      "suggestionCount",
+      "sourceCount",
+      "pendingCount",
+      "lastRefresh",
+      "graphSvg",
+      "detailsPanel",
+      "digestOutput",
+      "recallOutput",
+      "suggestionList",
+      "timelineList",
+      "errorOutput",
+      "spacesList",
+      "memory_scopesList",
+    ]) {
+      els[id] = document.getElementById(id);
+    }
+  }
+
+  function bindEvents() {
+    els.saveSettingsButton.addEventListener("click", () => {
+      readSettingsFromInputs();
+      saveSettings();
+      void refreshAll();
+    });
+    els.refreshButton.addEventListener("click", () => void refreshAll());
+    els.pauseButton.addEventListener("click", () => {
+      state.paused = !state.paused;
+      els.pauseButton.textContent = state.paused ? "Resume" : "Pause";
+      updateLiveStatus();
+    });
+    els.buildDigestButton.addEventListener("click", () => void buildDigest());
+    els.runRecallButton.addEventListener("click", () => void runRecall());
+    els.graphSearchInput.addEventListener("input", renderAll);
+    els.typeFilter.addEventListener("change", renderAll);
+    els.statusFilter.addEventListener("change", renderAll);
+    els.zoomInButton.addEventListener("click", () => {
+      state.graphScale = Math.max(0.55, state.graphScale * 0.86);
+      renderGraph();
+    });
+    els.zoomOutButton.addEventListener("click", () => {
+      state.graphScale = Math.min(2.4, state.graphScale * 1.16);
+      renderGraph();
+    });
+    els.fitButton.addEventListener("click", () => {
+      state.graphScale = 1;
+      renderGraph();
+    });
+    for (const tab of document.querySelectorAll(".tabs button")) {
+      tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+    }
+    bindGraphPointerEvents();
+  }
+
+  function loadSettings() {
+    try {
+      const loaded = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+      Object.assign(state, defaults, loaded);
+    } catch {
+      Object.assign(state, defaults);
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("space")) {
+      state.spaceSlug = params.get("space");
+    }
+    if (params.get("memory_scope")) {
+      state.memoryScopeRef = params.get("memory_scope");
+    }
+    if (params.get("topic")) {
+      state.topic = params.get("topic");
+    }
+  }
+
+  function saveSettings() {
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        apiBase: state.apiBase,
+        token: state.token,
+        spaceSlug: state.spaceSlug,
+        memoryScopeRef: state.memoryScopeRef,
+        topic: state.topic,
+      }),
+    );
+  }
+
+  function applySettingsToInputs() {
+    els.apiBaseInput.value = state.apiBase || "";
+    els.tokenInput.value = state.token || "";
+    els.spaceInput.value = state.spaceSlug || defaults.spaceSlug;
+    els.memory_scopeInput.value = state.memoryScopeRef || defaults.memoryScopeRef;
+    els.topicInput.value = state.topic || defaults.topic;
+  }
+
+  function readSettingsFromInputs() {
+    state.apiBase = els.apiBaseInput.value.trim().replace(/\/+$/, "");
+    state.token = els.tokenInput.value.trim();
+    state.spaceSlug = els.spaceInput.value.trim() || defaults.spaceSlug;
+    state.memoryScopeRef = els.memory_scopeInput.value.trim() || defaults.memoryScopeRef;
+    state.topic = els.topicInput.value.trim() || defaults.topic;
+    updateScopeSummary();
+  }
+
+  async function refreshAll(options = {}) {
+    if (state.loading) {
+      return;
+    }
+    readSettingsFromInputs();
+    state.loading = true;
+    if (!options.silent) {
+      setError("");
+    }
+    try {
+      const healthPromise = apiGet("/v1/health", { authOptional: true }).catch((error) => ({
+        status: "unavailable",
+        error: error.message,
+      }));
+      const capabilitiesPromise = apiGet("/v1/capabilities").catch((error) => ({
+        error: error.message,
+      }));
+      const [health, capabilities] = await Promise.all([healthPromise, capabilitiesPromise]);
+      state.health = health;
+      state.capabilities = capabilities;
+      await refreshSpacesAndMemoryScopes();
+      const [facts, suggestions, diagnostics] = await Promise.all([
+        fetchFacts(),
+        fetchSuggestions(),
+        apiGet("/v1/diagnostics/adapters").catch(() => null),
+      ]);
+      state.facts = facts;
+      state.suggestions = suggestions;
+      state.adapterDiagnostics = diagnostics ? diagnostics.data : null;
+      state.lastRefreshAt = new Date();
+      renderAll();
+    } catch (error) {
+      setError(error.message);
+      renderStatus();
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  async function refreshSpacesAndMemoryScopes() {
+    try {
+      const spacesResponse = await apiGet("/v1/spaces", { params: { limit: "500" } });
+      state.spaces = spacesResponse.data || [];
+      renderDatalist(els.spacesList, state.spaces, (space) => space.slug);
+      const selectedSpace = state.spaces.find((space) => space.slug === state.spaceSlug);
+      if (!selectedSpace) {
+        state.memory_scopes = [];
+        renderDatalist(els.memory_scopesList, [], () => "");
+        return;
+      }
+      const memory_scopesResponse = await apiGet("/v1/memory-scopes", {
+        params: { space_id: selectedSpace.id, limit: "500" },
+      });
+      state.memory_scopes = memory_scopesResponse.data || [];
+      renderDatalist(els.memory_scopesList, state.memory_scopes, (memory_scope) => memory_scope.external_ref);
+    } catch {
+      state.spaces = [];
+      state.memory_scopes = [];
+      renderDatalist(els.spacesList, [], () => "");
+      renderDatalist(els.memory_scopesList, [], () => "");
+    }
+  }
+
+  function renderDatalist(list, items, labelFor) {
+    list.replaceChildren();
+    for (const item of items) {
+      const option = document.createElement("option");
+      option.value = labelFor(item);
+      list.append(option);
+    }
+  }
+
+  async function fetchFacts() {
+    const statuses = ["active", "superseded", "deleted"];
+    const batches = await Promise.all(
+      statuses.map((status) =>
+        apiGet("/v1/facts", {
+          params: {
+            ...scopeParams(),
+            status,
+            limit: "500",
+          },
+        }).catch(() => ({ data: [] })),
+      ),
+    );
+    const byId = new Map();
+    for (const batch of batches) {
+      for (const fact of batch.data || []) {
+        byId.set(fact.id, fact);
+      }
+    }
+    return [...byId.values()].sort(compareUpdatedDesc);
+  }
+
+  async function fetchSuggestions() {
+    const response = await apiGet("/v1/suggestions", {
+      params: {
+        ...scopeParams(),
+        limit: "500",
+      },
+    });
+    return (response.data || []).sort(compareUpdatedDesc);
+  }
+
+  async function buildDigest() {
+    readSettingsFromInputs();
+    saveSettings();
+    setError("");
+    setText(els.digestOutput, "Building digest...");
+    try {
+      const response = await apiJson("/v1/digest", {
+        method: "POST",
+        body: {
+          ...scopeBody(),
+          topic: state.topic,
+          token_budget: 2400,
+          max_facts: 24,
+          max_chunks: 18,
+          max_suggestions: 16,
+          include_pending_suggestions: true,
+        },
+      });
+      const data = response.data || {};
+      setText(els.digestOutput, data.rendered_markdown || "Digest is empty.");
+    } catch (error) {
+      setText(els.digestOutput, "Digest failed.");
+      setError(error.message);
+    }
+  }
+
+  async function runRecall() {
+    readSettingsFromInputs();
+    saveSettings();
+    els.recallOutput.replaceChildren();
+    setError("");
+    try {
+      const response = await apiJson("/v1/search", {
+        method: "POST",
+        body: {
+          ...scopeBody(),
+          query: state.topic,
+          token_budget: 1600,
+          max_facts: 12,
+          max_chunks: 12,
+        },
+      });
+      const items = response.data?.items || [];
+      if (!items.length) {
+        els.recallOutput.append(emptyItem("No recall results."));
+        return;
+      }
+      for (const item of items) {
+        els.recallOutput.append(
+          listItem({
+            title: `${item.item_type} ${scoreLabel(item.score)}`,
+            text: item.text,
+            meta: item.item_id,
+            onClick: () => selectNode(`${item.item_type}:${item.item_id}`),
+          }),
+        );
+      }
+    } catch (error) {
+      els.recallOutput.append(emptyItem("Recall failed."));
+      setError(error.message);
+    }
+  }
+
+  async function reviewSuggestion(action, suggestionId) {
+    const reason = window.prompt(`${action} reason`, `Reviewed in Memo Stack Browser`);
+    if (reason === null) {
+      return;
+    }
+    setError("");
+    try {
+      await apiJson(`/v1/suggestions/${encodeURIComponent(suggestionId)}/${action}`, {
+        method: "POST",
+        body: { reason: reason || `Reviewed in Memo Stack Browser` },
+      });
+      await refreshAll();
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
+  function apiUrl(path, params = {}) {
+    const base = state.apiBase || window.location.origin;
+    const url = new URL(path, base.endsWith("/") ? base : `${base}/`);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== "") {
+        url.searchParams.set(key, value);
+      }
+    }
+    return url;
+  }
+
+  async function apiGet(path, options = {}) {
+    return apiJson(path, { ...options, method: "GET" });
+  }
+
+  async function apiJson(path, options = {}) {
+    const headers = { Accept: "application/json" };
+    if (options.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (state.token) {
+      headers.Authorization = `Bearer ${state.token}`;
+    }
+    const response = await window.fetch(apiUrl(path, options.params), {
+      method: options.method || "GET",
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    const contentType = response.headers.get("content-type") || "";
+    const payload = contentType.includes("application/json")
+      ? await response.json().catch(() => ({}))
+      : {};
+    if (!response.ok) {
+      const detail = payload.detail || payload.error || response.statusText;
+      throw new Error(`${response.status} ${path}: ${safeDetail(detail)}`);
+    }
+    return payload;
+  }
+
+  function scopeParams() {
+    return {
+      space_slug: state.spaceSlug,
+      memory_scope_external_ref: state.memoryScopeRef,
+    };
+  }
+
+  function scopeBody() {
+    return {
+      space_slug: state.spaceSlug,
+      memory_scope_external_ref: state.memoryScopeRef,
+    };
+  }
+
+  function renderAll() {
+    updateScopeSummary();
+    renderStatus();
+    renderMetrics();
+    buildGraphData();
+    renderGraph();
+    renderDetails();
+    renderSuggestionList();
+    renderTimeline();
+  }
+
+  function renderStatus() {
+    const healthOk = state.health?.status === "ok";
+    setStatusChip(
+      els.serverStatus,
+      healthOk ? "Server ok" : "Server degraded",
+      healthOk ? "ok" : "bad",
+    );
+    const adapters = state.capabilities?.adapters || {};
+    const adapterNames = Object.keys(adapters);
+    const healthyCount = adapterNames.filter((name) => adapters[name]?.healthy).length;
+    const enabledCount = adapterNames.filter((name) => adapters[name]?.enabled).length;
+    const adapterText = adapterNames.length
+      ? `${healthyCount}/${enabledCount || adapterNames.length} adapters`
+      : "Adapters unknown";
+    setStatusChip(els.adapterStatus, adapterText, healthyCount ? "ok" : "warn");
+    updateLiveStatus();
+  }
+
+  function updateLiveStatus() {
+    setStatusChip(els.liveStatus, state.paused ? "Paused" : "Live", state.paused ? "warn" : "ok");
+  }
+
+  function setStatusChip(element, text, statusClass) {
+    element.textContent = text;
+    element.className = `status-chip ${statusClass}`;
+  }
+
+  function renderMetrics() {
+    const sourceIds = new Set();
+    for (const fact of state.facts) {
+      for (const ref of fact.source_refs || []) {
+        sourceIds.add(sourceKey(ref));
+      }
+    }
+    for (const suggestion of state.suggestions) {
+      for (const ref of suggestion.source_refs || []) {
+        sourceIds.add(sourceKey(ref));
+      }
+    }
+    setText(els.factCount, String(state.facts.length));
+    setText(els.suggestionCount, String(state.suggestions.length));
+    setText(els.sourceCount, String(sourceIds.size));
+    setText(
+      els.pendingCount,
+      String(state.suggestions.filter((suggestion) => suggestion.status === "pending").length),
+    );
+    setText(els.lastRefresh, state.lastRefreshAt ? formatShortTime(state.lastRefreshAt) : "Never");
+  }
+
+  function updateScopeSummary() {
+    setText(els.scopeSummary, `${state.spaceSlug || "default"} / ${state.memoryScopeRef || "default"}`);
+  }
+
+  function buildGraphData() {
+    const graph = { nodes: new Map(), edges: [] };
+    const relationNodes = new Set();
+    const visibleMemory = [];
+    const search = (els.graphSearchInput.value || "").trim().toLowerCase();
+    const typeFilter = els.typeFilter.value;
+    const statusFilter = els.statusFilter.value;
+    const memoryItems = [
+      ...state.facts.map((fact) => ({ type: "fact", item: fact, updated_at: fact.updated_at })),
+      ...state.suggestions.map((suggestion) => ({
+        type: "suggestion",
+        item: suggestion,
+        updated_at: suggestion.updated_at,
+      })),
+    ].sort(compareUpdatedDesc);
+
+    for (const memory of memoryItems) {
+      if (visibleMemory.length >= GRAPH_NODE_LIMIT) {
+        state.graphTruncated = true;
+        break;
+      }
+      if (!memoryMatchesFilters(memory, search, typeFilter, statusFilter)) {
+        continue;
+      }
+      visibleMemory.push(memory);
+      if (memory.type === "fact") {
+        addFactGraph(graph, memory.item, relationNodes);
+      } else {
+        addSuggestionGraph(graph, memory.item, relationNodes);
+      }
+    }
+    if (visibleMemory.length < GRAPH_NODE_LIMIT) {
+      state.graphTruncated = false;
+    }
+
+    if (typeFilter !== "all" && !["fact", "suggestion"].includes(typeFilter)) {
+      for (const node of [...graph.nodes.values()]) {
+        if (node.type !== typeFilter && !relationNodes.has(node.id)) {
+          graph.nodes.delete(node.id);
+        }
+      }
+      graph.edges = graph.edges.filter(
+        (edge) => graph.nodes.has(edge.from) && graph.nodes.has(edge.to),
+      );
+    }
+
+    state.nodes = [...graph.nodes.values()];
+    state.edges = graph.edges.filter((edge) => graph.nodes.has(edge.from) && graph.nodes.has(edge.to));
+  }
+
+  function addFactGraph(graph, fact, relationNodes) {
+    const nodeId = `fact:${fact.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "fact",
+      status: fact.status,
+      label: compactLabel(fact.text),
+      text: fact.text,
+      data: fact,
+      degree: 0,
+    });
+    addRelation(graph, nodeId, `kind:${fact.kind}`, "kind", fact.kind, relationNodes);
+    if (fact.thread_id) {
+      addRelation(graph, nodeId, `thread:${fact.thread_id}`, "thread", fact.thread_id, relationNodes);
+    }
+    for (const ref of fact.source_refs || []) {
+      addSourceRelation(graph, nodeId, ref, relationNodes);
+    }
+  }
+
+  function addSuggestionGraph(graph, suggestion, relationNodes) {
+    const nodeId = `suggestion:${suggestion.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "suggestion",
+      status: suggestion.status,
+      label: compactLabel(suggestion.candidate_text),
+      text: suggestion.candidate_text,
+      data: suggestion,
+      degree: 0,
+    });
+    addRelation(
+      graph,
+      nodeId,
+      `status:${suggestion.status}`,
+      "status",
+      suggestion.status,
+      relationNodes,
+    );
+    addRelation(graph, nodeId, `kind:${suggestion.kind}`, "kind", suggestion.kind, relationNodes);
+    if (suggestion.target_fact_id) {
+      const targetId = `fact:${suggestion.target_fact_id}`;
+      if (!graph.nodes.has(targetId)) {
+        addNode(graph, {
+          id: targetId,
+          type: "fact",
+          status: "target",
+          label: `target ${suggestion.target_fact_id.slice(0, 8)}`,
+          text: suggestion.target_fact_id,
+          data: { id: suggestion.target_fact_id },
+          degree: 0,
+        });
+      }
+      addEdge(graph, nodeId, targetId, "target", true);
+    }
+    for (const tag of suggestion.tags || []) {
+      addRelation(graph, nodeId, `tag:${tag}`, "tag", tag, relationNodes);
+    }
+    for (const ref of suggestion.source_refs || []) {
+      addSourceRelation(graph, nodeId, ref, relationNodes);
+    }
+  }
+
+  function addSourceRelation(graph, fromNodeId, ref, relationNodes) {
+    const key = sourceKey(ref);
+    const label = `${ref.source_type}:${ref.source_id}`;
+    addRelation(graph, fromNodeId, `source:${key}`, "source", label, relationNodes);
+  }
+
+  function addRelation(graph, from, to, type, label, relationNodes) {
+    relationNodes.add(to);
+    addNode(graph, {
+      id: to,
+      type,
+      status: type,
+      label: compactLabel(label),
+      text: String(label),
+      data: { label },
+      degree: 0,
+    });
+    addEdge(graph, from, to, type, false);
+  }
+
+  function addNode(graph, node) {
+    if (!graph.nodes.has(node.id)) {
+      graph.nodes.set(node.id, node);
+    }
+  }
+
+  function addEdge(graph, from, to, label, strong) {
+    graph.edges.push({ id: `${from}->${to}:${label}`, from, to, label, strong });
+    const fromNode = graph.nodes.get(from);
+    const toNode = graph.nodes.get(to);
+    if (fromNode) {
+      fromNode.degree += 1;
+    }
+    if (toNode) {
+      toNode.degree += 1;
+    }
+  }
+
+  function renderGraph() {
+    const svg = els.graphSvg;
+    const width = svg.clientWidth || 1000;
+    const height = svg.clientHeight || 620;
+    const scaledWidth = width * state.graphScale;
+    const scaledHeight = height * state.graphScale;
+    svg.setAttribute("viewBox", `0 0 ${scaledWidth} ${scaledHeight}`);
+    svg.replaceChildren();
+
+    if (!state.nodes.length) {
+      const empty = svgEl("text", {
+        x: scaledWidth / 2,
+        y: scaledHeight / 2,
+        "text-anchor": "middle",
+        fill: "#64738a",
+      });
+      empty.textContent = "No graph data";
+      svg.append(empty);
+      return;
+    }
+
+    layoutGraph(scaledWidth, scaledHeight);
+    const edgeLayer = svgEl("g", {});
+    const nodeLayer = svgEl("g", {});
+    svg.append(edgeLayer, nodeLayer);
+    const positionById = new Map(state.nodes.map((node) => [node.id, state.nodePositions.get(node.id)]));
+
+    for (const edge of state.edges) {
+      const from = positionById.get(edge.from);
+      const to = positionById.get(edge.to);
+      if (!from || !to) {
+        continue;
+      }
+      const line = svgEl("line", {
+        class: edge.strong ? "edge strong" : "edge",
+        x1: from.x,
+        y1: from.y,
+        x2: to.x,
+        y2: to.y,
+      });
+      edgeLayer.append(line);
+    }
+
+    for (const node of state.nodes) {
+      const pos = positionById.get(node.id);
+      if (!pos) {
+        continue;
+      }
+      const group = svgEl("g", {
+        class: node.id === state.selectedNodeId ? "node selected" : "node",
+        transform: `translate(${pos.x},${pos.y})`,
+        "data-node-id": node.id,
+        tabindex: "0",
+      });
+      const radius = Math.min(26, 11 + Math.sqrt(node.degree || 1) * 3.4);
+      const circle = svgEl("circle", {
+        r: radius,
+        fill: nodeColor(node),
+      });
+      const label = svgEl("text", {
+        x: radius + 5,
+        y: 4,
+      });
+      label.textContent = node.label;
+      const title = svgEl("title", {});
+      title.textContent = `${node.type}: ${node.text}`;
+      group.append(circle, label, title);
+      group.addEventListener("click", () => selectNode(node.id));
+      group.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectNode(node.id);
+        }
+      });
+      group.addEventListener("pointerdown", (event) => {
+        state.dragging = { nodeId: node.id, pointerId: event.pointerId };
+        group.setPointerCapture(event.pointerId);
+      });
+      nodeLayer.append(group);
+    }
+  }
+
+  function layoutGraph(width, height) {
+    const center = { x: width / 2, y: height / 2 };
+    const radiusX = Math.max(180, width * 0.34);
+    const radiusY = Math.max(150, height * 0.34);
+    const nodes = state.nodes;
+    const indexById = new Map(nodes.map((node, index) => [node.id, index]));
+    for (const [index, node] of nodes.entries()) {
+      if (!state.nodePositions.has(node.id)) {
+        const angle = (hashCode(node.id) % 6283) / 1000;
+        const ring = node.type === "fact" || node.type === "suggestion" ? 1 : 0.62;
+        state.nodePositions.set(node.id, {
+          x: center.x + Math.cos(angle + index * 0.17) * radiusX * ring,
+          y: center.y + Math.sin(angle + index * 0.17) * radiusY * ring,
+        });
+      }
+    }
+
+    const positions = nodes.map((node) => state.nodePositions.get(node.id));
+    for (let step = 0; step < 70; step += 1) {
+      for (let i = 0; i < positions.length; i += 1) {
+        for (let j = i + 1; j < positions.length; j += 1) {
+          const a = positions[i];
+          const b = positions[j];
+          const dx = a.x - b.x || 0.01;
+          const dy = a.y - b.y || 0.01;
+          const distanceSq = dx * dx + dy * dy;
+          const force = Math.min(8, 1800 / Math.max(60, distanceSq));
+          const distance = Math.sqrt(distanceSq);
+          const moveX = (dx / distance) * force;
+          const moveY = (dy / distance) * force;
+          a.x += moveX;
+          a.y += moveY;
+          b.x -= moveX;
+          b.y -= moveY;
+        }
+      }
+      for (const edge of state.edges) {
+        const fromIndex = indexById.get(edge.from);
+        const toIndex = indexById.get(edge.to);
+        if (fromIndex === undefined || toIndex === undefined) {
+          continue;
+        }
+        const a = positions[fromIndex];
+        const b = positions[toIndex];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const target = edge.strong ? 130 : 105;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = (distance - target) * 0.015;
+        const moveX = (dx / distance) * force;
+        const moveY = (dy / distance) * force;
+        a.x += moveX;
+        a.y += moveY;
+        b.x -= moveX;
+        b.y -= moveY;
+      }
+      for (const pos of positions) {
+        pos.x += (center.x - pos.x) * 0.004;
+        pos.y += (center.y - pos.y) * 0.004;
+        pos.x = clamp(pos.x, 40, width - 160);
+        pos.y = clamp(pos.y, 40, height - 50);
+      }
+    }
+  }
+
+  function bindGraphPointerEvents() {
+    els.graphSvg.addEventListener("pointermove", (event) => {
+      if (!state.dragging) {
+        return;
+      }
+      const point = svgPoint(event);
+      state.nodePositions.set(state.dragging.nodeId, point);
+      renderGraph();
+    });
+    els.graphSvg.addEventListener("pointerup", () => {
+      state.dragging = null;
+    });
+    els.graphSvg.addEventListener("pointercancel", () => {
+      state.dragging = null;
+    });
+  }
+
+  function svgPoint(event) {
+    const svg = els.graphSvg;
+    const rect = svg.getBoundingClientRect();
+    const viewBox = svg.viewBox.baseVal;
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * viewBox.width + viewBox.x,
+      y: ((event.clientY - rect.top) / rect.height) * viewBox.height + viewBox.y,
+    };
+  }
+
+  function selectNode(nodeId) {
+    state.selectedNodeId = nodeId;
+    renderGraph();
+    renderDetails();
+    activateTab("details");
+  }
+
+  function renderDetails() {
+    const panel = els.detailsPanel;
+    panel.replaceChildren();
+    const node = state.nodes.find((candidate) => candidate.id === state.selectedNodeId) || preferredNode();
+    if (!node) {
+      panel.append(emptyItem("Select a memory node."));
+      return;
+    }
+    state.selectedNodeId = node.id;
+    const title = document.createElement("h2");
+    title.className = "detail-title";
+    title.textContent = nodeTitle(node);
+    const meta = document.createElement("div");
+    meta.className = "detail-meta";
+    meta.append(pill(node.type), pill(node.status || "n/a", statusClass(node.status)));
+    if (node.data?.kind) {
+      meta.append(pill(node.data.kind));
+    }
+    if (node.data?.confidence) {
+      meta.append(pill(`confidence ${node.data.confidence}`));
+    }
+    const text = document.createElement("div");
+    text.className = "text-block";
+    text.textContent = node.text || "";
+    panel.append(title, meta, text);
+    if (node.type === "fact" || node.type === "suggestion") {
+      panel.append(sourceSection(node.data?.source_refs || []));
+    }
+    if (node.type === "suggestion" && node.data?.status === "pending") {
+      const actions = document.createElement("div");
+      actions.className = "action-row";
+      actions.append(
+        actionButton("Approve", () => reviewSuggestion("approve", node.data.id), "primary-button"),
+        actionButton("Reject", () => reviewSuggestion("reject", node.data.id)),
+        actionButton("Expire", () => reviewSuggestion("expire", node.data.id)),
+      );
+      panel.append(actions);
+    }
+  }
+
+  function sourceSection(sourceRefs) {
+    const section = document.createElement("section");
+    section.className = "source-list";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Sources";
+    section.append(heading);
+    if (!sourceRefs.length) {
+      section.append(emptyItem("No source refs."));
+      return section;
+    }
+    for (const ref of sourceRefs) {
+      section.append(
+        listItem({
+          title: `${ref.source_type}:${ref.source_id}`,
+          text: ref.quote_preview || ref.chunk_id || "source ref",
+          meta: ref.chunk_id || "",
+          onClick: () => selectNode(`source:${sourceKey(ref)}`),
+        }),
+      );
+    }
+    return section;
+  }
+
+  function renderSuggestionList() {
+    els.suggestionList.replaceChildren();
+    if (!state.suggestions.length) {
+      els.suggestionList.append(emptyItem("No suggestions."));
+      return;
+    }
+    for (const suggestion of state.suggestions.slice(0, 160)) {
+      const item = listItem({
+        title: `${suggestion.operation} / ${suggestion.status}`,
+        text: suggestion.candidate_text,
+        meta: formatDate(suggestion.updated_at),
+        onClick: () => selectNode(`suggestion:${suggestion.id}`),
+      });
+      if (suggestion.status === "pending") {
+        const actions = document.createElement("div");
+        actions.className = "action-row";
+        actions.append(
+          actionButton("Approve", () => reviewSuggestion("approve", suggestion.id), "primary-button"),
+          actionButton("Reject", () => reviewSuggestion("reject", suggestion.id)),
+          actionButton("Expire", () => reviewSuggestion("expire", suggestion.id)),
+        );
+        item.append(actions);
+      }
+      els.suggestionList.append(item);
+    }
+  }
+
+  function renderTimeline() {
+    els.timelineList.replaceChildren();
+    const items = [
+      ...state.facts.map((fact) => ({
+        id: `fact:${fact.id}`,
+        title: `fact / ${fact.status}`,
+        text: fact.text,
+        updated_at: fact.updated_at,
+      })),
+      ...state.suggestions.map((suggestion) => ({
+        id: `suggestion:${suggestion.id}`,
+        title: `suggestion / ${suggestion.status}`,
+        text: suggestion.candidate_text,
+        updated_at: suggestion.updated_at,
+      })),
+    ].sort(compareUpdatedDesc);
+    if (!items.length) {
+      els.timelineList.append(emptyItem("No timeline entries."));
+      return;
+    }
+    for (const item of items.slice(0, 220)) {
+      els.timelineList.append(
+        listItem({
+          title: item.title,
+          text: item.text,
+          meta: formatDate(item.updated_at),
+          onClick: () => selectNode(item.id),
+        }),
+      );
+    }
+  }
+
+  function preferredNode() {
+    return (
+      state.nodes.find((node) => node.type === "suggestion" && node.status === "pending") ||
+      state.nodes.find((node) => node.type === "fact") ||
+      state.nodes[0]
+    );
+  }
+
+  function memoryMatchesFilters(memory, search, typeFilter, statusFilter) {
+    if (typeFilter !== "all" && memory.type !== typeFilter && ["fact", "suggestion"].includes(typeFilter)) {
+      return false;
+    }
+    const status = memory.item.status || "";
+    if (statusFilter !== "all" && status !== statusFilter) {
+      return false;
+    }
+    if (!search) {
+      return true;
+    }
+    const haystack = [
+      memory.item.text,
+      memory.item.candidate_text,
+      memory.item.kind,
+      memory.item.status,
+      memory.item.operation,
+      ...(memory.item.tags || []),
+      ...(memory.item.source_refs || []).map((ref) => `${ref.source_type}:${ref.source_id}`),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(search);
+  }
+
+  function nodeTitle(node) {
+    if (node.type === "fact") {
+      return `Fact ${node.data?.id || ""}`.trim();
+    }
+    if (node.type === "suggestion") {
+      return `Suggestion ${node.data?.id || ""}`.trim();
+    }
+    return `${node.type}: ${node.text}`;
+  }
+
+  function nodeColor(node) {
+    if (node.type === "fact") {
+      if (node.status === "deleted") {
+        return "#c2413b";
+      }
+      if (node.status === "superseded") {
+        return "#8b96a8";
+      }
+      return "#2563eb";
+    }
+    if (node.type === "suggestion") {
+      if (node.status === "pending") {
+        return "#c76b14";
+      }
+      if (node.status === "approved") {
+        return "#16835f";
+      }
+      if (node.status === "rejected") {
+        return "#8b96a8";
+      }
+      return "#7c3aed";
+    }
+    if (node.type === "source") {
+      return "#0e7490";
+    }
+    if (node.type === "tag") {
+      return "#7c3aed";
+    }
+    if (node.type === "kind") {
+      return "#16835f";
+    }
+    if (node.type === "status") {
+      return "#c76b14";
+    }
+    return "#64738a";
+  }
+
+  function statusClass(status) {
+    if (status === "active" || status === "approved") {
+      return "green";
+    }
+    if (status === "pending") {
+      return "orange";
+    }
+    if (status === "deleted" || status === "rejected") {
+      return "red";
+    }
+    if (status === "expired" || status === "superseded") {
+      return "purple";
+    }
+    return "";
+  }
+
+  function activateTab(name) {
+    for (const tab of document.querySelectorAll(".tabs button")) {
+      tab.classList.toggle("active", tab.dataset.tab === name);
+    }
+    for (const panel of document.querySelectorAll(".tab-panel")) {
+      panel.classList.toggle("active", panel.id === `${name}Panel`);
+    }
+  }
+
+  function listItem({ title, text, meta, onClick }) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    if (onClick) {
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.addEventListener("click", onClick);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      });
+    }
+    const titleEl = document.createElement("div");
+    titleEl.className = "list-item-title";
+    titleEl.textContent = title || "";
+    const textEl = document.createElement("div");
+    textEl.className = "list-item-text";
+    textEl.textContent = text || "";
+    item.append(titleEl, textEl);
+    if (meta) {
+      const metaEl = document.createElement("div");
+      metaEl.className = "pill";
+      metaEl.textContent = meta;
+      item.append(metaEl);
+    }
+    return item;
+  }
+
+  function emptyItem(text) {
+    const item = document.createElement("div");
+    item.className = "empty-state";
+    item.textContent = text;
+    return item;
+  }
+
+  function pill(text, className = "") {
+    const element = document.createElement("span");
+    element.className = className ? `pill ${className}` : "pill";
+    element.textContent = text || "n/a";
+    return element;
+  }
+
+  function actionButton(text, handler, className = "") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    if (className) {
+      button.className = className;
+    }
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void handler();
+    });
+    return button;
+  }
+
+  function setError(message) {
+    els.errorOutput.textContent = message || "";
+  }
+
+  function setText(element, text) {
+    element.textContent = text;
+  }
+
+  function svgEl(name, attrs) {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const [key, value] of Object.entries(attrs)) {
+      element.setAttribute(key, String(value));
+    }
+    return element;
+  }
+
+  function compactLabel(value) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    return text.length > 42 ? `${text.slice(0, 39)}...` : text || "n/a";
+  }
+
+  function sourceKey(ref) {
+    return `${ref.source_type || "unknown"}:${ref.source_id || "unknown"}:${ref.chunk_id || ""}`;
+  }
+
+  function compareUpdatedDesc(a, b) {
+    const aTime = Date.parse(a.updated_at || a.item?.updated_at || 0);
+    const bTime = Date.parse(b.updated_at || b.item?.updated_at || 0);
+    return bTime - aTime;
+  }
+
+  function formatShortTime(date) {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(date);
+  }
+
+  function formatDate(value) {
+    if (!value) {
+      return "";
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  }
+
+  function scoreLabel(score) {
+    return typeof score === "number" ? score.toFixed(2) : "n/a";
+  }
+
+  function safeDetail(detail) {
+    if (typeof detail === "string") {
+      return detail;
+    }
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return String(detail);
+    }
+  }
+
+  function hashCode(value) {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(index);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+})();

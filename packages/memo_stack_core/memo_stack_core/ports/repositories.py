@@ -12,7 +12,7 @@ from memo_stack_core.domain.entities import (
     MemoryEpisode,
     MemoryFact,
     MemoryFactRelation,
-    MemoryProfile,
+    MemoryScope,
     MemorySpace,
     MemorySuggestion,
 )
@@ -22,7 +22,7 @@ from memo_stack_core.domain.idempotency import IdempotencyRecord
 @dataclass(frozen=True)
 class ResolvedScope:
     space_id: str
-    profile_id: str
+    memory_scope_id: str
     thread_id: str | None = None
 
 
@@ -56,27 +56,33 @@ class ScopeRepositoryPort(Protocol):
     async def list_spaces(self, *, limit: int) -> list[MemorySpace]:
         """List active spaces."""
 
-    async def create_profile(self, profile: MemoryProfile) -> MemoryProfile:
-        """Persist or return an existing active profile by external ref within a space."""
+    async def create_memory_scope(self, memory_scope: MemoryScope) -> MemoryScope:
+        """Persist or return an existing active memory_scope by external ref within a space."""
 
-    async def list_profiles(self, *, space_id: str, limit: int) -> list[MemoryProfile]:
-        """List active profiles in a space."""
+    async def list_memory_scopes(self, *, space_id: str, limit: int) -> list[MemoryScope]:
+        """List active memory_scopes in a space."""
+
+    async def get_memory_scope(self, memory_scope_id: str) -> MemoryScope | None:
+        """Load a memory_scope by canonical id."""
+
+    async def save_memory_scope(self, memory_scope: MemoryScope) -> MemoryScope:
+        """Persist a changed memory_scope aggregate."""
 
     async def ensure_scope(
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         thread_external_ref: str | None,
         now: datetime,
     ) -> ResolvedScope:
-        """Resolve or create a space/profile/thread scope."""
+        """Resolve or create a space/memory_scope/thread scope."""
 
     async def delete_thread_memory(
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         thread_id: str,
     ) -> SessionDeleteResult:
         """Soft-delete all canonical memory attached to a thread."""
@@ -85,7 +91,7 @@ class ScopeRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         thread_id: str,
     ) -> SessionStatus:
         """Return safe thread memory counts."""
@@ -111,7 +117,7 @@ class FactRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None,
         query: str,
         limit: int,
@@ -126,7 +132,7 @@ class FactRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         thread_id: str | None,
         status: str | None,
         limit: int,
@@ -141,7 +147,7 @@ class FactRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         document_id: str,
         chunk_ids: tuple[str, ...],
         now: datetime,
@@ -194,7 +200,7 @@ class DocumentRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         thread_id: str | None,
         content_hash: str,
     ) -> MemoryDocument | None:
@@ -214,7 +220,7 @@ class DocumentRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         thread_id: str | None,
         status: str | None,
         limit: int,
@@ -242,7 +248,7 @@ class ChunkRepositoryPort(Protocol):
         *,
         chunk_ids: tuple[str, ...],
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None,
     ) -> list[MemoryChunk]:
         """Load visible active chunks after derived-index candidate retrieval."""
@@ -251,7 +257,7 @@ class ChunkRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None,
         query: str,
         limit: int,
@@ -276,7 +282,7 @@ class SuggestionRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         status: str | None,
         operation: str | None,
         category: str | None,
@@ -289,7 +295,7 @@ class SuggestionRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         candidate_fingerprint: str,
         operation: str,
         target_fact_id: str | None,
@@ -316,7 +322,7 @@ class SuggestionRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         status: str | None,
     ) -> int:
         """Count suggestions for review queue ingress limits."""

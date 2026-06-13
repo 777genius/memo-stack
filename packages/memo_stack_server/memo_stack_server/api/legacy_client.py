@@ -21,7 +21,7 @@ from memo_stack_core.application import (
 )
 from memo_stack_core.domain.entities import (
     MemoryChunkKind,
-    ProfileId,
+    MemoryScopeId,
     SpaceId,
     SpeakerRole,
     ThreadId,
@@ -100,7 +100,7 @@ async def legacy_ingest(
     result = await container.ingest_episode.execute(
         IngestEpisodeCommand(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=_required_thread(scope.thread_id),
             source_type=_legacy_source(request.source),
             source_external_id=(
@@ -152,7 +152,7 @@ async def legacy_context(
             bundle = await container.build_context.execute(
                 BuildContextQuery(
                     space_id=scope.space_id,
-                    profile_ids=(scope.profile_id,),
+                    memory_scope_ids=(scope.memory_scope_id,),
                     thread_id=scope.thread_id,
                     query=query_text,
                     consistency_mode=ConsistencyMode.BEST_EFFORT,
@@ -201,7 +201,7 @@ async def legacy_delete_session(
     result = await container.delete_thread_memory.execute(
         DeleteThreadMemoryCommand(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=_required_thread(scope.thread_id),
         )
     )
@@ -225,7 +225,7 @@ async def legacy_session_status(
     result = await container.get_session_status.execute(
         GetSessionStatusQuery(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=_required_thread(scope.thread_id),
         )
     )
@@ -249,7 +249,7 @@ async def _legacy_scope(
         return await container.ensure_scope.execute(
             EnsureScopeCommand(
                 space_slug=container.settings.default_space_slug,
-                profile_external_ref=container.settings.default_profile_external_ref,
+                memory_scope_external_ref=container.settings.default_memory_scope_external_ref,
                 thread_external_ref=session_id,
             )
         )
@@ -257,14 +257,14 @@ async def _legacy_scope(
     existing = await resolve_existing_external_scope(
         container,
         space_slug=container.settings.default_space_slug,
-        profile_external_ref=container.settings.default_profile_external_ref,
+        memory_scope_external_ref=container.settings.default_memory_scope_external_ref,
         thread_external_ref=session_id,
     )
     if existing is None:
         return None
     return ScopeResult(
         space_id=SpaceId(existing.space_id),
-        profile_id=ProfileId(existing.profile_id),
+        memory_scope_id=MemoryScopeId(existing.memory_scope_id),
         thread_id=ThreadId(existing.thread_id) if existing.thread_id else None,
     )
 

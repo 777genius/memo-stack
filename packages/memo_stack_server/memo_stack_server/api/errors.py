@@ -12,6 +12,7 @@ from memo_stack_core.domain.errors import (
     MemoryInvariantError,
     MemoryNotFoundError,
     MemoryPolicyBlockedError,
+    MemoryQuotaExceededError,
     MemoryUnauthorizedError,
     MemoryValidationError,
 )
@@ -23,6 +24,7 @@ STATUS_BY_ERROR_TYPE = {
     MemoryForbiddenError: 403,
     MemoryUnauthorizedError: 401,
     MemoryPolicyBlockedError: 422,
+    MemoryQuotaExceededError: 402,
     MemoryIngressLimitError: 429,
     MemoryInvariantError: 500,
     MemoryInfrastructureError: 503,

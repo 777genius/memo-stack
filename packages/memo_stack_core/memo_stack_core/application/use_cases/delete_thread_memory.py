@@ -13,7 +13,7 @@ class DeleteThreadMemoryUseCase:
         async with self._uow_factory() as uow:
             result = await uow.scope.delete_thread_memory(
                 space_id=str(command.space_id),
-                profile_id=str(command.profile_id),
+                memory_scope_id=str(command.memory_scope_id),
                 thread_id=str(command.thread_id),
             )
             if result.deleted_chunk_ids:
@@ -24,7 +24,7 @@ class DeleteThreadMemoryUseCase:
                         aggregate_id=str(command.thread_id),
                         payload={
                             "space_id": str(command.space_id),
-                            "profile_id": str(command.profile_id),
+                            "memory_scope_id": str(command.memory_scope_id),
                             "thread_id": str(command.thread_id),
                             "chunk_ids": list(result.deleted_chunk_ids),
                         },
@@ -38,7 +38,7 @@ class DeleteThreadMemoryUseCase:
                         aggregate_id=str(command.thread_id),
                         payload={
                             "space_id": str(command.space_id),
-                            "profile_id": str(command.profile_id),
+                            "memory_scope_id": str(command.memory_scope_id),
                             "thread_id": str(command.thread_id),
                             "fact_id": fact_id,
                         },

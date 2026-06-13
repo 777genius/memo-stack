@@ -21,7 +21,7 @@ class RelatedFactsUseCase:
                 raise MemoryNotFoundError("Fact not found")
             candidates = await uow.facts.list_for_scope(
                 space_id=str(target.space_id),
-                profile_id=str(target.profile_id),
+                memory_scope_id=str(target.memory_scope_id),
                 thread_id=None,
                 status="active",
                 limit=_candidate_limit(query.limit),

@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS memory_suggestions (
     id VARCHAR(80) PRIMARY KEY,
     space_id VARCHAR(80) NOT NULL,
-    profile_id VARCHAR(80) NOT NULL,
+    memory_scope_id VARCHAR(80) NOT NULL,
     candidate_text TEXT NOT NULL,
     kind VARCHAR(80) NOT NULL,
     status VARCHAR(40) NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS memory_suggestions (
 );
 
 CREATE INDEX IF NOT EXISTS ix_memory_suggestions_scope_status
-    ON memory_suggestions (space_id, profile_id, status);
+    ON memory_suggestions (space_id, memory_scope_id, status);
 
 CREATE INDEX IF NOT EXISTS ix_memory_suggestions_target
     ON memory_suggestions (target_fact_id, status);

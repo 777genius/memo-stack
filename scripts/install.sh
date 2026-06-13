@@ -150,11 +150,11 @@ home = "${PREFIX}"
 repo_dir = "${src_dir}"
 api_url = "http://127.0.0.1:7788"
 default_space_slug = "default"
-default_profile_external_ref = "default"
+default_memory_scope_external_ref = "default"
 
 [runtime]
 mode = "docker_compose"
-profile = "lite"
+compose_profile = "lite"
 compose_project_name = "memo_stack"
 
 [mcp]
@@ -178,7 +178,7 @@ PY
         printf 'MEMORY_SERVICE_TOKEN=%s\n' "${token}"
         printf 'MEMORY_POLICY_MODE=active_context\n'
         printf 'MEMORY_DEFAULT_SPACE_SLUG=default\n'
-        printf 'MEMORY_DEFAULT_PROFILE_EXTERNAL_REF=default\n'
+        printf 'MEMORY_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF=default\n'
       } >"${env_path}"
       chmod 600 "${env_path}" || true
     fi
@@ -236,7 +236,7 @@ Next:
   export PATH="${PREFIX}/bin:\$PATH"
   memo-stack status
   memo-stack mcp-config --agent codex
-  memo-stack digest "current architecture decisions" --space default --profile default
+  memo-stack digest "current architecture decisions" --space default --memory_scope default
 EOF
 }
 

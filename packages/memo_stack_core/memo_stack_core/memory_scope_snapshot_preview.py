@@ -1,4 +1,4 @@
-"""Deterministic import preview for portable profile snapshots."""
+"""Deterministic import preview for portable memory_scope snapshots."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ _RECORD_TYPES = ("facts", "documents", "chunks", "relations")
 _COUNT_TYPES = (*_RECORD_TYPES, "source_refs")
 
 
-def build_profile_snapshot_import_preview(
+def build_memory_scope_snapshot_import_preview(
     *,
     payload: dict[str, Any],
     merge_strategy: str,

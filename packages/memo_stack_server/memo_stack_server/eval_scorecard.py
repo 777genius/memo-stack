@@ -390,10 +390,10 @@ def _scorecard_scope_and_safety(
         )
         == 0,
         "cross_scope_leak_count": (
-            int(small.get("cross_profile_leak_count", 0))
-            + int(quality.get("cross_profile_leak_count", 0))
+            int(small.get("cross_memory_scope_leak_count", 0))
+            + int(quality.get("cross_memory_scope_leak_count", 0))
             + int(quality.get("cross_thread_leak_count", 0))
-            + int(long.get("cross_profile_leak_count", 0))
+            + int(long.get("cross_memory_scope_leak_count", 0))
             + int(long.get("cross_thread_leak_count", 0))
             + int(graph.get("graph_safety_leak_count", 0))
         )
@@ -1439,7 +1439,7 @@ def _scorecard_safety_leak_count(
         metrics = _scorecard_result_metrics(suite_results.get(suite))
         for key in (
             "deleted_memory_leak_count",
-            "cross_profile_leak_count",
+            "cross_memory_scope_leak_count",
             "cross_thread_leak_count",
             "restricted_memory_leak_count",
             "prompt_injection_promoted_count",

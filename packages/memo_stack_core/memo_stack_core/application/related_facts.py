@@ -93,7 +93,7 @@ def _relation_score(target: MemoryFact, candidate: MemoryFact) -> tuple[float, l
         reasons.append("same_thread")
     elif candidate.thread_id is None:
         score += 4
-        reasons.append("profile_wide")
+        reasons.append("memory_scope_wide")
 
     text_score = _text_overlap_score(target.text, candidate.text)
     if text_score > 0:

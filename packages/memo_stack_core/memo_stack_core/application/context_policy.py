@@ -18,12 +18,12 @@ def is_graph_fact_visible(
     fact: MemoryFact,
     *,
     query: BuildContextQuery,
-    profile_ids: tuple[str, ...],
+    memory_scope_ids: tuple[str, ...],
     now: datetime | None = None,
 ) -> bool:
     return (
         str(fact.space_id) == str(query.space_id)
-        and str(fact.profile_id) in profile_ids
+        and str(fact.memory_scope_id) in memory_scope_ids
         and fact.status.value == "active"
         and thread_is_visible(fact.thread_id, query.thread_id)
         and not fact_is_expired(fact, now=now)
@@ -35,13 +35,13 @@ def is_context_fact_visible(
     fact: MemoryFact,
     *,
     query: BuildContextQuery,
-    profile_ids: tuple[str, ...],
+    memory_scope_ids: tuple[str, ...],
     now: datetime | None = None,
 ) -> bool:
     return is_graph_fact_visible(
         fact,
         query=query,
-        profile_ids=profile_ids,
+        memory_scope_ids=memory_scope_ids,
         now=now,
     ) and (fact.classification != "restricted")
 

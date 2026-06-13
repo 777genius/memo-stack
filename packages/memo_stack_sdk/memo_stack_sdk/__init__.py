@@ -8,7 +8,9 @@ from typing import Any
 import httpx
 
 import memo_stack_sdk._payloads as _payloads
+from memo_stack_sdk.assets import MemoStackAssetsMixin
 from memo_stack_sdk.scopes import MemoryScope, ReadScope
+from memo_stack_sdk.thread_memory import MemoStackThreadMemoryMixin
 
 
 class MemoStackError(RuntimeError):
@@ -27,7 +29,7 @@ class MemoStackError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class MemoStackClient:
+class MemoStackClient(MemoStackAssetsMixin, MemoStackThreadMemoryMixin):
     base_url: str = "http://127.0.0.1:7788"
     token: str | None = None
     timeout: float = 10.0
@@ -43,7 +45,7 @@ class MemoStackClient:
     def list_spaces(self) -> dict[str, Any]:
         return self._request("GET", "/v1/spaces")
 
-    def create_profile(
+    def create_memory_scope(
         self,
         *,
         space_id: str,
@@ -52,7 +54,7 @@ class MemoStackClient:
     ) -> dict[str, Any]:
         return self._request(
             "POST",
-            "/v1/profiles",
+            "/v1/memory-scopes",
             json={
                 "space_id": space_id,
                 "external_ref": external_ref,
@@ -60,21 +62,21 @@ class MemoStackClient:
             },
         )
 
-    def list_profiles(self, *, space_id: str) -> dict[str, Any]:
-        return self._request("GET", "/v1/profiles", params={"space_id": space_id})
+    def list_memory_scopes(self, *, space_id: str) -> dict[str, Any]:
+        return self._request("GET", "/v1/memory-scopes", params={"space_id": space_id})
 
     def remember_fact(
         self,
         *,
         scope: MemoryScope | None = None,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         text: str,
         source_refs: list[dict[str, Any]],
         kind: str = "note",
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         idempotency_key: str | None = None,
         classification: str = "internal",
@@ -87,10 +89,10 @@ class MemoStackClient:
             if scope is not None
                 else _payloads.single_scope_body(
                 space_id=space_id,
-                profile_id=profile_id,
+                memory_scope_id=memory_scope_id,
                 thread_id=thread_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 thread_external_ref=thread_external_ref,
             )
         )
@@ -195,9 +197,9 @@ class MemoStackClient:
         self,
         *,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_id: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = "active",
@@ -209,9 +211,9 @@ class MemoStackClient:
         params = _payloads.without_none(
             {
                 "space_id": space_id,
-                "profile_id": profile_id,
+                "memory_scope_id": memory_scope_id,
                 "space_slug": space_slug,
-                "profile_external_ref": profile_external_ref,
+                "memory_scope_external_ref": memory_scope_external_ref,
                 "thread_id": thread_id,
                 "thread_external_ref": thread_external_ref,
                 "category": category,
@@ -254,19 +256,19 @@ class MemoStackClient:
             params["cursor"] = cursor
         return self._request("GET", "/v1/diagnostics/outbox", params=params)
 
-    def diagnostics_profile(self, profile_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/v1/diagnostics/profile/{profile_id}")
+    def diagnostics_memory_scope(self, memory_scope_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/diagnostics/memory-scope/{memory_scope_id}")
 
     def build_insights(
         self,
         *,
         scope: ReadScope | None = None,
         space_id: str | None = None,
-        profile_ids: list[str] | None = None,
+        memory_scope_ids: list[str] | None = None,
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         max_facts: int = 200,
         max_documents: int = 100,
@@ -279,11 +281,11 @@ class MemoStackClient:
             if scope is not None
             else _payloads.context_scope_payload(
                 space_id=space_id,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=thread_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
             )
         )
@@ -301,41 +303,41 @@ class MemoStackClient:
             },
         )
 
-    def export_profile_snapshot(
+    def export_memory_scope_snapshot(
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         redacted: bool = False,
     ) -> dict[str, Any]:
         return self._request(
             "GET",
-            "/v1/export/profile-snapshot",
+            "/v1/export/memory_scope-snapshot",
             params={
                 "space_slug": space_slug,
-                "profile_external_ref": profile_external_ref,
+                "memory_scope_external_ref": memory_scope_external_ref,
                 "redacted": redacted,
             },
         )
 
-    def import_profile_snapshot(
+    def import_memory_scope_snapshot(
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         snapshot: dict[str, Any],
         manifest: dict[str, Any] | None = None,
         dry_run: bool = True,
         merge_strategy: str = "fail_on_conflict",
         confirmed: bool = False,
-        source_name: str = "sdk-profile-snapshot",
+        source_name: str = "sdk-memory_scope-snapshot",
     ) -> dict[str, Any]:
         return self._request(
             "POST",
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": space_slug,
-                "profile_external_ref": profile_external_ref,
+                "memory_scope_external_ref": memory_scope_external_ref,
                 "snapshot": snapshot,
                 "manifest": manifest,
                 "dry_run": dry_run,
@@ -345,21 +347,21 @@ class MemoStackClient:
             },
         )
 
-    def preview_profile_snapshot_import(
+    def preview_memory_scope_snapshot_import(
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         snapshot: dict[str, Any],
         manifest: dict[str, Any] | None = None,
         merge_strategy: str = "fail_on_conflict",
     ) -> dict[str, Any]:
         return self._request(
             "POST",
-            "/v1/export/profile-snapshot/preview",
+            "/v1/export/memory_scope-snapshot/preview",
             json={
                 "space_slug": space_slug,
-                "profile_external_ref": profile_external_ref,
+                "memory_scope_external_ref": memory_scope_external_ref,
                 "snapshot": snapshot,
                 "manifest": manifest,
                 "merge_strategy": merge_strategy,
@@ -370,14 +372,14 @@ class MemoStackClient:
         self,
         *,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         title: str,
         text: str,
         source_external_id: str,
         source_type: str = "document",
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         idempotency_key: str | None = None,
         classification: str = "unknown",
@@ -388,10 +390,10 @@ class MemoStackClient:
             json=_payloads.without_none(
                 {
                     "space_id": space_id,
-                    "profile_id": profile_id,
+                    "memory_scope_id": memory_scope_id,
                     "thread_id": thread_id,
                     "space_slug": space_slug,
-                    "profile_external_ref": profile_external_ref,
+                    "memory_scope_external_ref": memory_scope_external_ref,
                     "thread_external_ref": thread_external_ref,
                     "title": title,
                     "text": text,
@@ -410,10 +412,10 @@ class MemoStackClient:
         text: str,
         source_type: str = "unknown",
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         occurred_at: str | None = None,
         speaker: str | None = None,
@@ -429,10 +431,10 @@ class MemoStackClient:
             json=_payloads.without_none(
                 {
                     "space_id": space_id,
-                    "profile_id": profile_id,
+                    "memory_scope_id": memory_scope_id,
                     "thread_id": thread_id,
                     "space_slug": space_slug,
-                    "profile_external_ref": profile_external_ref,
+                    "memory_scope_external_ref": memory_scope_external_ref,
                     "thread_external_ref": thread_external_ref,
                     "source_type": source_type,
                     "source_external_id": source_external_id,
@@ -455,10 +457,10 @@ class MemoStackClient:
         event_type: str,
         text: str,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         source_kind: str = "hook",
         actor_role: str = "unknown",
@@ -486,10 +488,10 @@ class MemoStackClient:
             json=_payloads.without_none(
                 {
                     "space_id": space_id,
-                    "profile_id": profile_id,
+                    "memory_scope_id": memory_scope_id,
                     "thread_id": thread_id,
                     "space_slug": space_slug,
-                    "profile_external_ref": profile_external_ref,
+                    "memory_scope_external_ref": memory_scope_external_ref,
                     "thread_external_ref": thread_external_ref,
                     "source_agent": source_agent,
                     "source_kind": source_kind,
@@ -524,9 +526,9 @@ class MemoStackClient:
         self,
         *,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         status: str | None = None,
         consolidation_status: str | None = None,
         limit: int = 50,
@@ -537,9 +539,9 @@ class MemoStackClient:
             params=_payloads.without_none(
                 {
                     "space_id": space_id,
-                    "profile_id": profile_id,
+                    "memory_scope_id": memory_scope_id,
                     "space_slug": space_slug,
-                    "profile_external_ref": profile_external_ref,
+                    "memory_scope_external_ref": memory_scope_external_ref,
                     "status": status,
                     "consolidation_status": consolidation_status,
                     "limit": limit,
@@ -570,9 +572,9 @@ class MemoStackClient:
         self,
         *,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         consolidation_status: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
@@ -582,9 +584,9 @@ class MemoStackClient:
             params=_payloads.without_none(
                 {
                     "space_id": space_id,
-                    "profile_id": profile_id,
+                    "memory_scope_id": memory_scope_id,
                     "space_slug": space_slug,
-                    "profile_external_ref": profile_external_ref,
+                    "memory_scope_external_ref": memory_scope_external_ref,
                     "consolidation_status": consolidation_status,
                     "limit": limit,
                 }
@@ -627,11 +629,11 @@ class MemoStackClient:
         query: str,
         read_scope: ReadScope | None = None,
         space_id: str | None = None,
-        profile_ids: list[str] | None = None,
+        memory_scope_ids: list[str] | None = None,
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         token_budget: int = 1800,
         max_facts: int = 20,
@@ -648,11 +650,11 @@ class MemoStackClient:
             json=_payloads.context_body(
                 scope_payload=scope_payload,
                 space_id=space_id,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=thread_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
                 query=query,
                 token_budget=token_budget,
@@ -671,11 +673,11 @@ class MemoStackClient:
         query: str,
         read_scope: ReadScope | None = None,
         space_id: str | None = None,
-        profile_ids: list[str] | None = None,
+        memory_scope_ids: list[str] | None = None,
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         token_budget: int = 1800,
         max_facts: int = 20,
@@ -692,11 +694,11 @@ class MemoStackClient:
             json=_payloads.context_body(
                 scope_payload=scope_payload,
                 space_id=space_id,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=thread_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
                 query=query,
                 token_budget=token_budget,
@@ -715,11 +717,11 @@ class MemoStackClient:
         topic: str,
         read_scope: ReadScope | None = None,
         space_id: str | None = None,
-        profile_ids: list[str] | None = None,
+        memory_scope_ids: list[str] | None = None,
         thread_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         token_budget: int = 2400,
         max_facts: int = 20,
@@ -733,11 +735,11 @@ class MemoStackClient:
         scope_payload = read_scope.to_payload() if read_scope is not None else None
         payload = scope_payload or _payloads.context_scope_payload(
             space_id=space_id,
-            profile_ids=profile_ids,
+            memory_scope_ids=memory_scope_ids,
             thread_id=thread_id,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
-            profile_external_refs=profile_external_refs,
+            memory_scope_external_ref=memory_scope_external_ref,
+            memory_scope_external_refs=memory_scope_external_refs,
             thread_external_ref=thread_external_ref,
         )
         return self._request(
@@ -759,59 +761,13 @@ class MemoStackClient:
             ),
         )
 
-    def thread_memory_status(
-        self,
-        *,
-        space_id: str | None = None,
-        profile_id: str | None = None,
-        thread_id: str | None = None,
-        space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        thread_external_ref: str | None = None,
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            "/v1/thread-memory/status",
-            json=_payloads.single_scope_body(
-                space_id=space_id,
-                profile_id=profile_id,
-                thread_id=thread_id,
-                space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                thread_external_ref=thread_external_ref,
-            ),
-        )
-
-    def delete_thread_memory(
-        self,
-        *,
-        space_id: str | None = None,
-        profile_id: str | None = None,
-        thread_id: str | None = None,
-        space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        thread_external_ref: str | None = None,
-    ) -> dict[str, Any]:
-        return self._request(
-            "DELETE",
-            "/v1/thread-memory",
-            json=_payloads.single_scope_body(
-                space_id=space_id,
-                profile_id=profile_id,
-                thread_id=thread_id,
-                space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                thread_external_ref=thread_external_ref,
-            ),
-        )
-
     def create_suggestion(
         self,
         *,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         candidate_text: str,
         safe_reason: str,
         kind: str = "note",
@@ -832,9 +788,9 @@ class MemoStackClient:
             "/v1/suggestions",
             json=_payloads.suggestion_body(
                 space_id=space_id,
-                profile_id=profile_id,
+                memory_scope_id=memory_scope_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 candidate_text=candidate_text,
                 safe_reason=safe_reason,
                 kind=kind,
@@ -854,8 +810,8 @@ class MemoStackClient:
 
     def create_suggestions_batch(
         self, *, items: list[dict[str, Any]], space_id: str | None = None,
-        profile_id: str | None = None, space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_id: str | None = None, space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
         continue_on_error: bool = False,
     ) -> dict[str, Any]:
         return self._request(
@@ -864,9 +820,9 @@ class MemoStackClient:
             json=_payloads.suggestions_batch_body(
                 items=items,
                 space_id=space_id,
-                profile_id=profile_id,
+                memory_scope_id=memory_scope_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 continue_on_error=continue_on_error,
             ),
         )
@@ -875,9 +831,9 @@ class MemoStackClient:
         self,
         *,
         space_id: str | None = None,
-        profile_id: str | None = None,
+        memory_scope_id: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         status: str | None = None,
         operation: str | None = None,
         category: str | None = None,
@@ -887,9 +843,9 @@ class MemoStackClient:
         params = _payloads.without_none(
             {
                 "space_id": space_id,
-                "profile_id": profile_id,
+                "memory_scope_id": memory_scope_id,
                 "space_slug": space_slug,
-                "profile_external_ref": profile_external_ref,
+                "memory_scope_external_ref": memory_scope_external_ref,
                 "operation": operation,
                 "category": category,
                 "tag": tag,
@@ -947,20 +903,30 @@ class MemoStackClient:
         json: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
         params: dict[str, Any] | None = None,
+        content: bytes | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        headers = {}
+        request_headers = {}
         if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+            request_headers["Authorization"] = f"Bearer {self.token}"
         if idempotency_key:
-            headers["Idempotency-Key"] = idempotency_key
+            request_headers["Idempotency-Key"] = idempotency_key
+        if headers:
+            request_headers.update(headers)
         with httpx.Client(
             base_url=self.base_url.rstrip("/"),
             timeout=self.timeout,
-            headers=headers,
+            headers=request_headers,
             transport=self.transport,
         ) as client:
             try:
-                response = client.request(method, path, json=json, params=params)
+                response = client.request(
+                    method,
+                    path,
+                    json=json,
+                    params=params,
+                    content=content,
+                )
             except httpx.TransportError as exc:
                 raise MemoStackError(
                     status_code=0,
@@ -971,6 +937,35 @@ class MemoStackClient:
             if response.is_error:
                 raise _to_error(response)
             return response.json()
+
+    def _request_bytes(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> bytes:
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        with httpx.Client(
+            base_url=self.base_url.rstrip("/"),
+            timeout=self.timeout,
+            headers=headers,
+            transport=self.transport,
+        ) as client:
+            try:
+                response = client.request(method, path, params=params)
+            except httpx.TransportError as exc:
+                raise MemoStackError(
+                    status_code=0,
+                    code="memory.network_error",
+                    message="Memo Stack request failed",
+                    retryable=True,
+                ) from exc
+            if response.is_error:
+                raise _to_error(response)
+            return response.content
 
 
 def _to_error(response: httpx.Response) -> MemoStackError:

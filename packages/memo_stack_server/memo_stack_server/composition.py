@@ -5,6 +5,8 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass
 
+from memo_stack_adapters.extraction import SimpleFileTypeDetector, build_standard_extractor
+from memo_stack_adapters.local_blob import LocalBlobStorage
 from memo_stack_adapters.noop import (
     NoopEmbeddingAdapter,
     NoopGraphMemoryAdapter,
@@ -23,55 +25,76 @@ from memo_stack_core.application import (
     BuildMemoryDigestUseCase,
     BuildMemoryInsightsUseCase,
     ConsolidateCaptureUseCase,
-    CreateProfileUseCase,
+    CreateAssetUseCase,
+    CreateContextLinkUseCase,
+    CreateMemoryScopeUseCase,
     CreateSpaceUseCase,
     CreateSuggestionsBatchUseCase,
     CreateSuggestionUseCase,
+    DeleteAssetUseCase,
+    DeleteContextLinkUseCase,
     DeleteDocumentUseCase,
+    DeleteMemoryScopeUseCase,
     DeleteThreadMemoryUseCase,
     EnsureScopeUseCase,
     ExpirePendingSuggestionsUseCase,
     ExpireSuggestionUseCase,
     ExportGraphUseCase,
     ForgetFactUseCase,
+    GetAssetExtractionUseCase,
+    GetAssetUseCase,
     GetCapabilitiesUseCase,
     GetCaptureUseCase,
     GetDocumentUseCase,
     GetFactUseCase,
     GetSessionStatusUseCase,
+    GetUsageSummaryUseCase,
     IngestDocumentUseCase,
     IngestEpisodeUseCase,
     LinkFactsUseCase,
+    ListAssetExtractionsUseCase,
+    ListAssetsUseCase,
     ListCapturesUseCase,
+    ListContextLinksUseCase,
     ListDocumentChunksUseCase,
     ListFactRelationsUseCase,
     ListFactsUseCase,
     ListFactVersionsUseCase,
-    ListProfilesUseCase,
+    ListMemoryScopesUseCase,
     ListSpacesUseCase,
     ListSuggestionsUseCase,
     ProcessDocumentUseCase,
     PurgeCaptureUseCase,
+    ReadAssetBytesUseCase,
+    ReadExtractionArtifactBytesUseCase,
     ReceiveCaptureUseCase,
     RejectSuggestionUseCase,
     RelatedFactsUseCase,
     RememberFactUseCase,
+    RequestAssetExtractionUseCase,
+    RetryAssetExtractionUseCase,
     ReviewSuggestionsBatchUseCase,
+    RunAssetExtractionUseCase,
+    SuggestContextLinksUseCase,
     UnlinkFactRelationUseCase,
     UpdateFactUseCase,
+    UpdateMemoryScopeUseCase,
 )
 from memo_stack_core.application.auto_memory import RuleBasedMemoryClassifier
 from memo_stack_core.application.context_packer import ContextPacker
 from memo_stack_core.application.extractor import NoopMemoryExtractor, RuleBasedMemoryExtractor
+from memo_stack_core.domain.usage import ProductPlan
 from memo_stack_core.ports.adapters import (
     EmbeddingPort,
     GraphMemoryPort,
     MemoryAdapterPort,
     VectorMemoryPort,
 )
+from memo_stack_core.ports.assets import BlobStoragePort
 from memo_stack_core.ports.auto_memory import MemoryExtractorPort
 from memo_stack_core.ports.capabilities import DocumentMemoryPort
 from memo_stack_core.ports.clock import ClockPort
+from memo_stack_core.ports.extraction import ExtractionLimits
 from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -106,11 +129,14 @@ class Container:
     vector_index: VectorMemoryPort
     graph_index: GraphMemoryPort
     embedder: EmbeddingPort
+    blob_storage: BlobStoragePort
     get_capabilities: GetCapabilitiesUseCase
     create_space: CreateSpaceUseCase
     list_spaces: ListSpacesUseCase
-    create_profile: CreateProfileUseCase
-    list_profiles: ListProfilesUseCase
+    create_memory_scope: CreateMemoryScopeUseCase
+    list_memory_scopes: ListMemoryScopesUseCase
+    update_memory_scope: UpdateMemoryScopeUseCase
+    delete_memory_scope: DeleteMemoryScopeUseCase
     remember_fact: RememberFactUseCase
     list_facts: ListFactsUseCase
     get_fact: GetFactUseCase
@@ -119,6 +145,21 @@ class Container:
     link_facts: LinkFactsUseCase
     list_fact_relations: ListFactRelationsUseCase
     unlink_fact_relation: UnlinkFactRelationUseCase
+    create_asset: CreateAssetUseCase
+    get_asset: GetAssetUseCase
+    list_assets: ListAssetsUseCase
+    delete_asset: DeleteAssetUseCase
+    read_asset_bytes: ReadAssetBytesUseCase
+    request_asset_extraction: RequestAssetExtractionUseCase
+    get_asset_extraction: GetAssetExtractionUseCase
+    list_asset_extractions: ListAssetExtractionsUseCase
+    read_extraction_artifact_bytes: ReadExtractionArtifactBytesUseCase
+    retry_asset_extraction: RetryAssetExtractionUseCase
+    run_asset_extraction: RunAssetExtractionUseCase
+    suggest_context_links: SuggestContextLinksUseCase
+    create_context_link: CreateContextLinkUseCase
+    list_context_links: ListContextLinksUseCase
+    delete_context_link: DeleteContextLinkUseCase
     update_fact: UpdateFactUseCase
     forget_fact: ForgetFactUseCase
     ensure_scope: EnsureScopeUseCase
@@ -134,6 +175,7 @@ class Container:
     export_graph: ExportGraphUseCase
     delete_thread_memory: DeleteThreadMemoryUseCase
     get_session_status: GetSessionStatusUseCase
+    get_usage_summary: GetUsageSummaryUseCase
     create_suggestion: CreateSuggestionUseCase
     create_suggestions_batch: CreateSuggestionsBatchUseCase
     list_suggestions: ListSuggestionsUseCase
@@ -193,6 +235,13 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         max_per_minute=resolved_settings.max_query_embeddings_per_minute,
     )
+    blob_storage = LocalBlobStorage(root_dir=resolved_settings.asset_storage_dir)
+    product_plan = ProductPlan.create(
+        tier=resolved_settings.product_plan_tier,
+        media_analysis_seconds_per_month=(
+            resolved_settings.plan_media_analysis_seconds_per_month
+        ),
+    )
     cognee = _build_cognee_adapter(resolved_settings)
     adapters: tuple[MemoryAdapterPort, ...] = (vector, graph, embeddings, cognee)
 
@@ -208,18 +257,23 @@ def build_container(settings: Settings | None = None) -> Container:
             "max_memory_candidates": resolved_settings.max_memory_candidates,
             "max_memory_results": resolved_settings.max_memory_results,
             "max_capture_text_chars": resolved_settings.max_capture_text_chars,
-            "max_pending_captures_per_profile": (
-                resolved_settings.max_pending_captures_per_profile
+            "max_pending_captures_per_memory_scope": (
+                resolved_settings.max_pending_captures_per_memory_scope
             ),
-            "max_pending_suggestions_per_profile": (
-                resolved_settings.max_pending_suggestions_per_profile
+            "max_pending_suggestions_per_memory_scope": (
+                resolved_settings.max_pending_suggestions_per_memory_scope
+            ),
+            "media_analysis_seconds_per_month": (
+                product_plan.media_analysis_seconds_per_month
             ),
         },
     )
     create_space = CreateSpaceUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     list_spaces = ListSpacesUseCase(uow_factory=uow_factory)
-    create_profile = CreateProfileUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
-    list_profiles = ListProfilesUseCase(uow_factory=uow_factory)
+    create_memory_scope = CreateMemoryScopeUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
+    list_memory_scopes = ListMemoryScopesUseCase(uow_factory=uow_factory)
+    update_memory_scope = UpdateMemoryScopeUseCase(uow_factory=uow_factory, clock=clock)
+    delete_memory_scope = DeleteMemoryScopeUseCase(uow_factory=uow_factory, clock=clock)
     remember_fact = RememberFactUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     list_facts = ListFactsUseCase(uow_factory=uow_factory)
     get_fact = GetFactUseCase(uow_factory=uow_factory)
@@ -228,6 +282,28 @@ def build_container(settings: Settings | None = None) -> Container:
     link_facts = LinkFactsUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     list_fact_relations = ListFactRelationsUseCase(uow_factory=uow_factory)
     unlink_fact_relation = UnlinkFactRelationUseCase(uow_factory=uow_factory, clock=clock)
+    create_asset = CreateAssetUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+        blob_storage=blob_storage,
+        max_bytes=resolved_settings.max_asset_upload_bytes,
+    )
+    get_asset = GetAssetUseCase(uow_factory=uow_factory)
+    list_assets = ListAssetsUseCase(uow_factory=uow_factory)
+    delete_asset = DeleteAssetUseCase(uow_factory=uow_factory, clock=clock)
+    read_asset_bytes = ReadAssetBytesUseCase(
+        uow_factory=uow_factory,
+        blob_storage=blob_storage,
+    )
+    suggest_context_links = SuggestContextLinksUseCase(uow_factory=uow_factory, clock=clock)
+    create_context_link = CreateContextLinkUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+    )
+    list_context_links = ListContextLinksUseCase(uow_factory=uow_factory)
+    delete_context_link = DeleteContextLinkUseCase(uow_factory=uow_factory, clock=clock)
     update_fact = UpdateFactUseCase(uow_factory=uow_factory, clock=clock)
     forget_fact = ForgetFactUseCase(uow_factory=uow_factory, clock=clock)
     ensure_scope = EnsureScopeUseCase(uow_factory=uow_factory, clock=clock)
@@ -239,6 +315,50 @@ def build_container(settings: Settings | None = None) -> Container:
         auto_suggestions_enabled=resolved_settings.policy_mode.value == "suggestions",
     )
     ingest_document = IngestDocumentUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
+    extraction_limits = ExtractionLimits(
+        max_bytes=resolved_settings.extraction_max_bytes,
+        max_pages=resolved_settings.extraction_max_pages,
+        max_media_seconds=resolved_settings.extraction_max_media_seconds,
+        max_output_chars=resolved_settings.extraction_max_output_chars,
+        max_tables=resolved_settings.extraction_max_tables,
+        enable_ocr=resolved_settings.extraction_ocr_enabled,
+        enable_external_ai=resolved_settings.extraction_external_ai_enabled,
+    )
+    request_asset_extraction = RequestAssetExtractionUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+        plan=product_plan,
+        default_parser_profile=resolved_settings.extraction_default_profile,
+        default_unknown_media_seconds=resolved_settings.extraction_max_media_seconds,
+    )
+    get_asset_extraction = GetAssetExtractionUseCase(uow_factory=uow_factory)
+    list_asset_extractions = ListAssetExtractionsUseCase(uow_factory=uow_factory)
+    read_extraction_artifact_bytes = ReadExtractionArtifactBytesUseCase(
+        uow_factory=uow_factory,
+        blob_storage=blob_storage,
+    )
+    retry_asset_extraction = RetryAssetExtractionUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+    )
+    run_asset_extraction = RunAssetExtractionUseCase(
+        uow_factory=uow_factory,
+        blob_storage=blob_storage,
+        detector=SimpleFileTypeDetector(),
+        extractor=build_standard_extractor(
+            openai_api_key=resolved_settings.openai_api_key,
+            vision_model=resolved_settings.extraction_vision_model,
+            vision_detail=resolved_settings.extraction_vision_detail,
+            asr_model=resolved_settings.extraction_asr_model,
+            asr_device=resolved_settings.extraction_asr_device,
+            asr_compute_type=resolved_settings.extraction_asr_compute_type,
+        ),
+        ingest_document=ingest_document,
+        clock=clock,
+        ids=ids,
+        limits=extraction_limits,
+    )
     get_document = GetDocumentUseCase(uow_factory=uow_factory)
     list_document_chunks = ListDocumentChunksUseCase(uow_factory=uow_factory)
     process_document = ProcessDocumentUseCase(uow_factory=uow_factory)
@@ -266,10 +386,13 @@ def build_container(settings: Settings | None = None) -> Container:
     export_graph = ExportGraphUseCase(uow_factory=uow_factory)
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
     get_session_status = GetSessionStatusUseCase(uow_factory=uow_factory)
-    create_suggestion = CreateSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
-    create_suggestions_batch = CreateSuggestionsBatchUseCase(
-        create_suggestion=create_suggestion
+    get_usage_summary = GetUsageSummaryUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        plan=product_plan,
     )
+    create_suggestion = CreateSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
+    create_suggestions_batch = CreateSuggestionsBatchUseCase(create_suggestion=create_suggestion)
     list_suggestions = ListSuggestionsUseCase(uow_factory=uow_factory)
     approve_suggestion = ApproveSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     reject_suggestion = RejectSuggestionUseCase(uow_factory=uow_factory, clock=clock)
@@ -283,7 +406,7 @@ def build_container(settings: Settings | None = None) -> Container:
         uow_factory=uow_factory,
         clock=clock,
         ids=ids,
-        max_pending_captures_per_profile=resolved_settings.max_pending_captures_per_profile,
+        max_pending_captures_per_memory_scope=resolved_settings.max_pending_captures_per_memory_scope,
     )
     get_capture = GetCaptureUseCase(uow_factory=uow_factory)
     list_captures = ListCapturesUseCase(uow_factory=uow_factory)
@@ -301,11 +424,10 @@ def build_container(settings: Settings | None = None) -> Container:
         capture_consolidation_enabled=(
             resolved_settings.policy_mode
             in {MemoryPolicyMode.SUGGESTIONS, MemoryPolicyMode.ACTIVE_CONTEXT}
-            and resolved_settings.capture_mode
-            in {CaptureMode.SUGGEST, CaptureMode.AUTO_APPLY_SAFE}
+            and resolved_settings.capture_mode in {CaptureMode.SUGGEST, CaptureMode.AUTO_APPLY_SAFE}
         ),
-        max_pending_suggestions_per_profile=(
-            resolved_settings.max_pending_suggestions_per_profile
+        max_pending_suggestions_per_memory_scope=(
+            resolved_settings.max_pending_suggestions_per_memory_scope
         ),
     )
     expire_pending_suggestions = ExpirePendingSuggestionsUseCase(
@@ -325,11 +447,14 @@ def build_container(settings: Settings | None = None) -> Container:
         vector_index=vector,
         graph_index=graph,
         embedder=embeddings,
+        blob_storage=blob_storage,
         get_capabilities=get_capabilities,
         create_space=create_space,
         list_spaces=list_spaces,
-        create_profile=create_profile,
-        list_profiles=list_profiles,
+        create_memory_scope=create_memory_scope,
+        list_memory_scopes=list_memory_scopes,
+        update_memory_scope=update_memory_scope,
+        delete_memory_scope=delete_memory_scope,
         remember_fact=remember_fact,
         list_facts=list_facts,
         get_fact=get_fact,
@@ -338,6 +463,21 @@ def build_container(settings: Settings | None = None) -> Container:
         link_facts=link_facts,
         list_fact_relations=list_fact_relations,
         unlink_fact_relation=unlink_fact_relation,
+        create_asset=create_asset,
+        get_asset=get_asset,
+        list_assets=list_assets,
+        delete_asset=delete_asset,
+        read_asset_bytes=read_asset_bytes,
+        request_asset_extraction=request_asset_extraction,
+        get_asset_extraction=get_asset_extraction,
+        list_asset_extractions=list_asset_extractions,
+        read_extraction_artifact_bytes=read_extraction_artifact_bytes,
+        retry_asset_extraction=retry_asset_extraction,
+        run_asset_extraction=run_asset_extraction,
+        suggest_context_links=suggest_context_links,
+        create_context_link=create_context_link,
+        list_context_links=list_context_links,
+        delete_context_link=delete_context_link,
         update_fact=update_fact,
         forget_fact=forget_fact,
         ensure_scope=ensure_scope,
@@ -353,6 +493,7 @@ def build_container(settings: Settings | None = None) -> Container:
         export_graph=export_graph,
         delete_thread_memory=delete_thread_memory,
         get_session_status=get_session_status,
+        get_usage_summary=get_usage_summary,
         create_suggestion=create_suggestion,
         create_suggestions_batch=create_suggestions_batch,
         list_suggestions=list_suggestions,

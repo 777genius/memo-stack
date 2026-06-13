@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from memo_stack_core.profile_snapshots import (
+from memo_stack_core.memory_scope_snapshots import (
     default_manifest_path,
     verify_snapshot_manifest,
     write_snapshot_bundle,
@@ -57,18 +57,18 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.set_defaults(handler=_cmd_init)
 
     up_parser = subparsers.add_parser("up", help="Start local Memo Stack.")
-    profile = up_parser.add_mutually_exclusive_group()
-    profile.add_argument("--lite", action="store_true", help="Start lite local stack.")
-    profile.add_argument("--full", action="store_true", help="Start full provider stack.")
+    compose_profile = up_parser.add_mutually_exclusive_group()
+    compose_profile.add_argument("--lite", action="store_true", help="Start lite local stack.")
+    compose_profile.add_argument("--full", action="store_true", help="Start full provider stack.")
     up_parser.set_defaults(handler=_cmd_up)
 
     down_parser = subparsers.add_parser("down", help="Stop local Memo Stack.")
     down_parser.set_defaults(handler=_cmd_down)
 
     restart_parser = subparsers.add_parser("restart", help="Restart local Memo Stack.")
-    profile = restart_parser.add_mutually_exclusive_group()
-    profile.add_argument("--lite", action="store_true")
-    profile.add_argument("--full", action="store_true")
+    compose_profile = restart_parser.add_mutually_exclusive_group()
+    compose_profile.add_argument("--lite", action="store_true")
+    compose_profile.add_argument("--full", action="store_true")
     restart_parser.set_defaults(handler=_cmd_restart)
 
     status_parser = subparsers.add_parser("status", help="Check local Memo Stack status.")
@@ -93,7 +93,7 @@ def _build_parser() -> argparse.ArgumentParser:
     digest_parser = subparsers.add_parser("digest", help="Build a memory digest.")
     digest_parser.add_argument("topic")
     digest_parser.add_argument("--space", dest="space_slug", default=None)
-    digest_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    digest_parser.add_argument("--memory_scope", dest="memory_scope_external_ref", default=None)
     digest_parser.add_argument("--thread", dest="thread_external_ref", default=None)
     digest_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     digest_parser.add_argument("--token-budget", type=int, default=2400)
@@ -107,7 +107,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     insights_parser = subparsers.add_parser("insights", help="Build memory health insights.")
     insights_parser.add_argument("--space", dest="space_slug", default=None)
-    insights_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    insights_parser.add_argument("--memory_scope", dest="memory_scope_external_ref", default=None)
     insights_parser.add_argument("--thread", dest="thread_external_ref", default=None)
     insights_parser.add_argument("--max-facts", type=int, default=200)
     insights_parser.add_argument("--max-documents", type=int, default=100)
@@ -118,11 +118,11 @@ def _build_parser() -> argparse.ArgumentParser:
     insights_parser.set_defaults(handler=_cmd_insights)
 
     export_parser = subparsers.add_parser(
-        "profile-export",
-        help="Export a portable profile snapshot.",
+        "memory_scope-export",
+        help="Export a portable memory_scope snapshot.",
     )
     export_parser.add_argument("--space", dest="space_slug", default=None)
-    export_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    export_parser.add_argument("--memory_scope", dest="memory_scope_external_ref", default=None)
     export_parser.add_argument("--out", type=Path, required=True)
     export_parser.add_argument(
         "--include-private",
@@ -131,60 +131,62 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument("--manifest-out", type=Path, default=None)
     export_parser.add_argument("--no-manifest", action="store_true")
-    export_parser.set_defaults(handler=_cmd_profile_export)
+    export_parser.set_defaults(handler=_cmd_memory_scope_export)
 
     verify_parser = subparsers.add_parser(
-        "profile-verify",
-        help="Verify a profile snapshot manifest before import or git sync.",
+        "memory_scope-verify",
+        help="Verify a memory_scope snapshot manifest before import or git sync.",
     )
     verify_parser.add_argument("--snapshot", type=Path, required=True)
     verify_parser.add_argument("--manifest", type=Path, default=None)
     verify_parser.add_argument("--json", action="store_true")
-    verify_parser.set_defaults(handler=_cmd_profile_verify)
+    verify_parser.set_defaults(handler=_cmd_memory_scope_verify)
 
     import_parser = subparsers.add_parser(
-        "profile-import",
-        help="Import a portable profile snapshot. Dry-run by default.",
+        "memory_scope-import",
+        help="Import a portable memory_scope snapshot. Dry-run by default.",
     )
     import_parser.add_argument("--space", dest="space_slug", default=None)
-    import_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    import_parser.add_argument("--memory_scope", dest="memory_scope_external_ref", default=None)
     import_parser.add_argument("--in", dest="in_path", type=Path, required=True)
     import_parser.add_argument(
         "--merge-strategy",
         choices=(
             "fail_on_conflict",
             "skip_existing",
-            "create_new_profile",
+            "create_new_memory_scope",
             "supersede_matching_facts",
         ),
         default="fail_on_conflict",
     )
-    import_parser.add_argument("--source-name", default="cli-profile-snapshot")
+    import_parser.add_argument("--source-name", default="cli-memory_scope-snapshot")
     import_parser.add_argument("--manifest", type=Path, default=None)
     import_parser.add_argument("--apply", action="store_true")
     import_parser.add_argument("--confirmed", action="store_true")
-    import_parser.set_defaults(handler=_cmd_profile_import)
+    import_parser.set_defaults(handler=_cmd_memory_scope_import)
 
     preview_import_parser = subparsers.add_parser(
-        "profile-import-preview",
-        help="Build a read-only profile snapshot import preview.",
+        "memory_scope-import-preview",
+        help="Build a read-only memory_scope snapshot import preview.",
     )
     preview_import_parser.add_argument("--space", dest="space_slug", default=None)
-    preview_import_parser.add_argument("--profile", dest="profile_external_ref", default=None)
+    preview_import_parser.add_argument(
+        "--memory_scope", dest="memory_scope_external_ref", default=None
+    )
     preview_import_parser.add_argument("--in", dest="in_path", type=Path, required=True)
     preview_import_parser.add_argument(
         "--merge-strategy",
         choices=(
             "fail_on_conflict",
             "skip_existing",
-            "create_new_profile",
+            "create_new_memory_scope",
             "supersede_matching_facts",
         ),
         default="fail_on_conflict",
     )
     preview_import_parser.add_argument("--manifest", type=Path, default=None)
     preview_import_parser.add_argument("--json", action="store_true")
-    preview_import_parser.set_defaults(handler=_cmd_profile_import_preview)
+    preview_import_parser.set_defaults(handler=_cmd_memory_scope_import_preview)
 
     return parser
 
@@ -212,8 +214,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_up(args: argparse.Namespace) -> int:
     config = load_config()
-    profile = "full" if args.full else "lite"
-    result = DockerComposeRuntime(config=config).up(profile)
+    compose_profile = "full" if args.full else "lite"
+    result = DockerComposeRuntime(config=config).up(compose_profile)
     _print_runtime_result(result)
     return 0 if result.ok else result.returncode or 1
 
@@ -231,8 +233,8 @@ def _cmd_restart(args: argparse.Namespace) -> int:
     _print_runtime_result(down)
     if not down.ok:
         return down.returncode or 1
-    profile = "full" if args.full else "lite"
-    up = runtime.up(profile)
+    compose_profile = "full" if args.full else "lite"
+    up = runtime.up(compose_profile)
     _print_runtime_result(up)
     return 0 if up.ok else up.returncode or 1
 
@@ -284,8 +286,8 @@ def _cmd_digest(args: argparse.Namespace) -> int:
         topic=args.topic,
         read_scope=ReadScope(
             space_slug=args.space_slug or config.default_space_slug,
-            profile_external_ref=args.profile_external_ref
-            or config.default_profile_external_ref,
+            memory_scope_external_ref=args.memory_scope_external_ref
+            or config.default_memory_scope_external_ref,
             thread_external_ref=args.thread_external_ref,
         ),
         token_budget=args.token_budget,
@@ -337,9 +339,11 @@ def _cmd_insights(args: argparse.Namespace) -> int:
             if not isinstance(item, dict):
                 continue
             fact_ids = item.get("candidate_fact_ids")
-            fact_label = ", ".join(str(value) for value in fact_ids[:3]) if isinstance(
-                fact_ids, list
-            ) else ""
+            fact_label = (
+                ", ".join(str(value) for value in fact_ids[:3])
+                if isinstance(fact_ids, list)
+                else ""
+            )
             print(
                 "  - "
                 f"{item.get('plan_type')}: {item.get('canonical_candidate_id')}"
@@ -348,7 +352,7 @@ def _cmd_insights(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_profile_export(args: argparse.Namespace) -> int:
+def _cmd_memory_scope_export(args: argparse.Namespace) -> int:
     config = load_config()
     out_path = args.out.expanduser()
     redacted = not args.include_private
@@ -360,20 +364,22 @@ def _cmd_profile_export(args: argparse.Namespace) -> int:
             else default_manifest_path(out_path)
         )
     client = MemoStackClient(base_url=config.api_url, token=config.service_token)
-    payload = client.export_profile_snapshot(
+    payload = client.export_memory_scope_snapshot(
         space_slug=args.space_slug or config.default_space_slug,
-        profile_external_ref=args.profile_external_ref or config.default_profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref
+        or config.default_memory_scope_external_ref,
         redacted=redacted,
     )
     snapshot = payload.get("data", payload) if isinstance(payload, dict) else payload
     if not isinstance(snapshot, dict):
-        raise ValueError("profile export response did not contain a snapshot object")
+        raise ValueError("memory_scope export response did not contain a snapshot object")
     write_snapshot_bundle(
         snapshot=snapshot,
         snapshot_path=out_path,
         manifest_path=manifest_path,
         space_slug=args.space_slug or config.default_space_slug,
-        profile_external_ref=args.profile_external_ref or config.default_profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref
+        or config.default_memory_scope_external_ref,
         redacted=redacted,
     )
     print(f"snapshot: {out_path}")
@@ -382,7 +388,7 @@ def _cmd_profile_export(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_profile_verify(args: argparse.Namespace) -> int:
+def _cmd_memory_scope_verify(args: argparse.Namespace) -> int:
     snapshot_path = args.snapshot.expanduser()
     manifest_path = (
         args.manifest.expanduser()
@@ -404,7 +410,7 @@ def _cmd_profile_verify(args: argparse.Namespace) -> int:
     return 0 if result["ok"] else 1
 
 
-def _cmd_profile_import(args: argparse.Namespace) -> int:
+def _cmd_memory_scope_import(args: argparse.Namespace) -> int:
     snapshot_path = args.in_path.expanduser()
     if args.manifest is not None:
         verification = verify_snapshot_manifest(
@@ -413,17 +419,18 @@ def _cmd_profile_import(args: argparse.Namespace) -> int:
         )
         if not verification["ok"]:
             raise ValueError(
-                "profile snapshot manifest verification failed: "
+                "memory_scope snapshot manifest verification failed: "
                 + ", ".join(verification["errors"])
             )
     if args.apply and not args.confirmed:
-        raise ValueError("profile-import --apply requires --confirmed")
+        raise ValueError("memory_scope-import --apply requires --confirmed")
     config = load_config()
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     client = MemoStackClient(base_url=config.api_url, token=config.service_token)
-    payload = client.import_profile_snapshot(
+    payload = client.import_memory_scope_snapshot(
         space_slug=args.space_slug or config.default_space_slug,
-        profile_external_ref=args.profile_external_ref or config.default_profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref
+        or config.default_memory_scope_external_ref,
         snapshot=snapshot,
         dry_run=not args.apply,
         merge_strategy=args.merge_strategy,
@@ -434,7 +441,7 @@ def _cmd_profile_import(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_profile_import_preview(args: argparse.Namespace) -> int:
+def _cmd_memory_scope_import_preview(args: argparse.Namespace) -> int:
     snapshot_path = args.in_path.expanduser()
     manifest = None
     if args.manifest is not None:
@@ -445,16 +452,17 @@ def _cmd_profile_import_preview(args: argparse.Namespace) -> int:
         )
         if not verification["ok"]:
             raise ValueError(
-                "profile snapshot manifest verification failed: "
+                "memory_scope snapshot manifest verification failed: "
                 + ", ".join(verification["errors"])
             )
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     config = load_config()
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     client = MemoStackClient(base_url=config.api_url, token=config.service_token)
-    payload = client.preview_profile_snapshot_import(
+    payload = client.preview_memory_scope_snapshot_import(
         space_slug=args.space_slug or config.default_space_slug,
-        profile_external_ref=args.profile_external_ref or config.default_profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref
+        or config.default_memory_scope_external_ref,
         snapshot=snapshot,
         manifest=manifest,
         merge_strategy=args.merge_strategy,
@@ -525,8 +533,8 @@ def _print_payload(payload: dict[str, Any], *, as_json: bool) -> None:
 def _read_scope_from_args(args: argparse.Namespace, config) -> ReadScope:
     return ReadScope(
         space_slug=args.space_slug or config.default_space_slug,
-        profile_external_ref=args.profile_external_ref
-        or config.default_profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref
+        or config.default_memory_scope_external_ref,
         thread_external_ref=args.thread_external_ref,
     )
 

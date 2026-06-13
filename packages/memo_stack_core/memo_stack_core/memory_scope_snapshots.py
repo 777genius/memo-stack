@@ -1,4 +1,4 @@
-"""Portable profile snapshot manifest helpers.
+"""Portable memory_scope snapshot manifest helpers.
 
 The manifest is a boundary artifact for backup, git-sync and migration flows.
 It deliberately hashes the canonical JSON snapshot only; derived vector/graph
@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-MANIFEST_SCHEMA_VERSION = "memo_stack.profile_snapshot_manifest.v1"
+MANIFEST_SCHEMA_VERSION = "memo_stack.memory_scope_snapshot_manifest.v1"
 
 
 def default_manifest_path(snapshot_path: Path) -> Path:
@@ -26,7 +26,7 @@ def write_snapshot_bundle(
     snapshot_path: Path,
     manifest_path: Path | None,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     redacted: bool,
 ) -> dict[str, Any] | None:
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -39,7 +39,7 @@ def write_snapshot_bundle(
         snapshot=snapshot,
         snapshot_bytes=snapshot_bytes,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         redacted=redacted,
         snapshot_file=snapshot_path.name,
     )
@@ -52,7 +52,7 @@ def build_snapshot_manifest(
     snapshot: dict[str, Any],
     snapshot_bytes: bytes | None = None,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     redacted: bool,
     snapshot_file: str | None = None,
 ) -> dict[str, Any]:
@@ -65,7 +65,7 @@ def build_snapshot_manifest(
         "snapshot_sha256": hashlib.sha256(payload_bytes).hexdigest(),
         "snapshot_bytes": len(payload_bytes),
         "space_slug": space_slug,
-        "profile_external_ref": profile_external_ref,
+        "memory_scope_external_ref": memory_scope_external_ref,
         "redacted": redacted,
         "snapshot_schema_version": snapshot.get("schema_version"),
         "counts": {

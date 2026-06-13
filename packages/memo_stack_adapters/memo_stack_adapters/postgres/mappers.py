@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from memo_stack_core.domain.assets import (
+    AssetStatus,
+    MemoryAsset,
+    MemoryAssetId,
+    MemoryContextLink,
+    MemoryContextLinkId,
+)
 from memo_stack_core.domain.capture import (
     CanonicalCapture,
     CaptureActorRole,
@@ -32,11 +39,11 @@ from memo_stack_core.domain.entities import (
     MemoryFactRelation,
     MemoryFactRelationId,
     MemoryKind,
-    MemoryProfile,
+    MemoryScope,
+    MemoryScopeId,
     MemorySpace,
     MemorySuggestion,
     MemorySuggestionId,
-    ProfileId,
     SourceRef,
     SpaceId,
     SpeakerRole,
@@ -45,15 +52,27 @@ from memo_stack_core.domain.entities import (
     ThreadId,
     TrustLevel,
 )
+from memo_stack_core.domain.extraction import (
+    AssetExtractionJob,
+    AssetExtractionJobId,
+    AssetExtractionStatus,
+    ExtractionArtifact,
+    ExtractionArtifactId,
+    ExtractionArtifactType,
+)
 
 from memo_stack_adapters.postgres.models import (
+    MemoryAssetExtractionArtifactRow,
+    MemoryAssetExtractionJobRow,
+    MemoryAssetRow,
     MemoryCaptureRow,
     MemoryChunkRow,
+    MemoryContextLinkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
     MemoryFactRelationRow,
     MemoryFactRow,
-    MemoryProfileRow,
+    MemoryScopeRow,
     MemorySourceRefRow,
     MemorySpaceRow,
     MemorySuggestionRow,
@@ -79,7 +98,7 @@ def fact_row_to_domain(row: MemoryFactRow, source_refs: list[MemorySourceRefRow]
     return MemoryFact(
         id=MemoryFactId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         thread_id=ThreadId(row.thread_id) if row.thread_id else None,
         text=row.text,
         kind=MemoryKind(row.kind),
@@ -102,7 +121,7 @@ def fact_relation_to_row(relation: MemoryFactRelation) -> MemoryFactRelationRow:
     return MemoryFactRelationRow(
         id=str(relation.id),
         space_id=str(relation.space_id),
-        profile_id=str(relation.profile_id),
+        memory_scope_id=str(relation.memory_scope_id),
         source_fact_id=str(relation.source_fact_id),
         target_fact_id=str(relation.target_fact_id),
         relation_type=relation.relation_type.value,
@@ -117,7 +136,7 @@ def fact_relation_row_to_domain(row: MemoryFactRelationRow) -> MemoryFactRelatio
     return MemoryFactRelation(
         id=MemoryFactRelationId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         source_fact_id=MemoryFactId(row.source_fact_id),
         target_fact_id=MemoryFactId(row.target_fact_id),
         relation_type=FactRelationType(row.relation_type),
@@ -139,9 +158,9 @@ def space_row_to_domain(row: MemorySpaceRow) -> MemorySpace:
     )
 
 
-def profile_row_to_domain(row: MemoryProfileRow) -> MemoryProfile:
-    return MemoryProfile(
-        id=ProfileId(row.id),
+def memory_scope_row_to_domain(row: MemoryScopeRow) -> MemoryScope:
+    return MemoryScope(
+        id=MemoryScopeId(row.id),
         space_id=SpaceId(row.space_id),
         external_ref=row.external_ref,
         name=row.name,
@@ -153,7 +172,7 @@ def profile_row_to_domain(row: MemoryProfileRow) -> MemoryProfile:
 
 def apply_fact_to_row(fact: MemoryFact, row: MemoryFactRow) -> None:
     row.space_id = str(fact.space_id)
-    row.profile_id = str(fact.profile_id)
+    row.memory_scope_id = str(fact.memory_scope_id)
     row.thread_id = str(fact.thread_id) if fact.thread_id else None
     row.kind = fact.kind.value
     row.text = fact.text
@@ -174,7 +193,7 @@ def episode_to_row(episode: MemoryEpisode) -> MemoryEpisodeRow:
     return MemoryEpisodeRow(
         id=str(episode.id),
         space_id=str(episode.space_id),
-        profile_id=str(episode.profile_id),
+        memory_scope_id=str(episode.memory_scope_id),
         thread_id=str(episode.thread_id),
         source_type=episode.source_type,
         source_external_id=episode.source_external_id,
@@ -192,7 +211,7 @@ def episode_row_to_domain(row: MemoryEpisodeRow) -> MemoryEpisode:
     return MemoryEpisode(
         id=MemoryEpisodeId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         thread_id=ThreadId(row.thread_id),
         source_type=row.source_type,
         source_external_id=row.source_external_id,
@@ -210,7 +229,7 @@ def document_to_row(document: MemoryDocument) -> MemoryDocumentRow:
     return MemoryDocumentRow(
         id=str(document.id),
         space_id=str(document.space_id),
-        profile_id=str(document.profile_id),
+        memory_scope_id=str(document.memory_scope_id),
         thread_id=str(document.thread_id) if document.thread_id else None,
         title=document.title,
         source_type=document.source_type,
@@ -227,7 +246,7 @@ def document_row_to_domain(row: MemoryDocumentRow) -> MemoryDocument:
     return MemoryDocument(
         id=MemoryDocumentId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         thread_id=ThreadId(row.thread_id) if row.thread_id else None,
         title=row.title,
         source_type=row.source_type,
@@ -240,11 +259,232 @@ def document_row_to_domain(row: MemoryDocumentRow) -> MemoryDocument:
     )
 
 
+def asset_to_row(asset: MemoryAsset) -> MemoryAssetRow:
+    return MemoryAssetRow(
+        id=str(asset.id),
+        space_id=str(asset.space_id),
+        memory_scope_id=str(asset.memory_scope_id),
+        thread_id=str(asset.thread_id) if asset.thread_id else None,
+        filename=asset.filename,
+        content_type=asset.content_type,
+        byte_size=asset.byte_size,
+        sha256_hex=asset.sha256_hex,
+        storage_backend=asset.storage_backend,
+        storage_key=asset.storage_key,
+        status=asset.status.value,
+        classification=asset.classification,
+        metadata_json=dict(asset.metadata),
+        created_at=asset.created_at,
+        updated_at=asset.updated_at,
+    )
+
+
+def apply_asset_to_row(asset: MemoryAsset, row: MemoryAssetRow) -> None:
+    row.space_id = str(asset.space_id)
+    row.memory_scope_id = str(asset.memory_scope_id)
+    row.thread_id = str(asset.thread_id) if asset.thread_id else None
+    row.filename = asset.filename
+    row.content_type = asset.content_type
+    row.byte_size = asset.byte_size
+    row.sha256_hex = asset.sha256_hex
+    row.storage_backend = asset.storage_backend
+    row.storage_key = asset.storage_key
+    row.status = asset.status.value
+    row.classification = asset.classification
+    row.metadata_json = dict(asset.metadata)
+    row.created_at = asset.created_at
+    row.updated_at = asset.updated_at
+
+
+def asset_row_to_domain(row: MemoryAssetRow) -> MemoryAsset:
+    return MemoryAsset(
+        id=MemoryAssetId(row.id),
+        space_id=SpaceId(row.space_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
+        thread_id=ThreadId(row.thread_id) if row.thread_id else None,
+        filename=row.filename,
+        content_type=row.content_type,
+        byte_size=row.byte_size,
+        sha256_hex=row.sha256_hex,
+        storage_backend=row.storage_backend,
+        storage_key=row.storage_key,
+        status=AssetStatus(row.status),
+        classification=row.classification,
+        metadata=dict(row.metadata_json or {}),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def asset_extraction_job_to_row(job: AssetExtractionJob) -> MemoryAssetExtractionJobRow:
+    return MemoryAssetExtractionJobRow(
+        id=str(job.id),
+        asset_id=str(job.asset_id),
+        space_id=str(job.space_id),
+        memory_scope_id=str(job.memory_scope_id),
+        thread_id=str(job.thread_id) if job.thread_id else None,
+        parser_profile=job.parser_profile,
+        parser_config_hash=job.parser_config_hash,
+        source_sha256_hex=job.source_sha256_hex,
+        parser_name=job.parser_name,
+        parser_version=job.parser_version,
+        model_version=job.model_version,
+        status=job.status.value,
+        attempt_count=job.attempt_count,
+        safe_error_code=job.safe_error_code,
+        safe_error_message=job.safe_error_message,
+        result_document_ids_json=list(job.result_document_ids),
+        metadata_json=dict(job.metadata),
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+    )
+
+
+def asset_extraction_job_row_to_domain(row: MemoryAssetExtractionJobRow) -> AssetExtractionJob:
+    return AssetExtractionJob(
+        id=AssetExtractionJobId(row.id),
+        asset_id=MemoryAssetId(row.asset_id),
+        space_id=SpaceId(row.space_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
+        thread_id=ThreadId(row.thread_id) if row.thread_id else None,
+        parser_profile=row.parser_profile,
+        parser_config_hash=row.parser_config_hash,
+        source_sha256_hex=row.source_sha256_hex,
+        status=AssetExtractionStatus(row.status),
+        attempt_count=row.attempt_count,
+        safe_error_code=row.safe_error_code,
+        safe_error_message=row.safe_error_message,
+        parser_name=row.parser_name,
+        parser_version=row.parser_version,
+        model_version=row.model_version,
+        result_document_ids=tuple(row.result_document_ids_json or ()),
+        metadata=dict(row.metadata_json or {}),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+    )
+
+
+def apply_asset_extraction_job_to_row(
+    job: AssetExtractionJob,
+    row: MemoryAssetExtractionJobRow,
+) -> None:
+    row.asset_id = str(job.asset_id)
+    row.space_id = str(job.space_id)
+    row.memory_scope_id = str(job.memory_scope_id)
+    row.thread_id = str(job.thread_id) if job.thread_id else None
+    row.parser_profile = job.parser_profile
+    row.parser_config_hash = job.parser_config_hash
+    row.source_sha256_hex = job.source_sha256_hex
+    row.parser_name = job.parser_name
+    row.parser_version = job.parser_version
+    row.model_version = job.model_version
+    row.status = job.status.value
+    row.attempt_count = job.attempt_count
+    row.safe_error_code = job.safe_error_code
+    row.safe_error_message = job.safe_error_message
+    row.result_document_ids_json = list(job.result_document_ids)
+    row.metadata_json = dict(job.metadata)
+    row.created_at = job.created_at
+    row.updated_at = job.updated_at
+    row.started_at = job.started_at
+    row.finished_at = job.finished_at
+
+
+def extraction_artifact_to_row(artifact: ExtractionArtifact) -> MemoryAssetExtractionArtifactRow:
+    return MemoryAssetExtractionArtifactRow(
+        id=str(artifact.id),
+        job_id=str(artifact.job_id),
+        asset_id=str(artifact.asset_id),
+        artifact_type=artifact.artifact_type.value,
+        storage_backend=artifact.storage_backend,
+        storage_key=artifact.storage_key,
+        sha256_hex=artifact.sha256_hex,
+        byte_size=artifact.byte_size,
+        metadata_json=dict(artifact.metadata),
+        created_at=artifact.created_at,
+    )
+
+
+def extraction_artifact_row_to_domain(
+    row: MemoryAssetExtractionArtifactRow,
+) -> ExtractionArtifact:
+    return ExtractionArtifact(
+        id=ExtractionArtifactId(row.id),
+        job_id=AssetExtractionJobId(row.job_id),
+        asset_id=MemoryAssetId(row.asset_id),
+        artifact_type=ExtractionArtifactType(row.artifact_type),
+        storage_backend=row.storage_backend,
+        storage_key=row.storage_key,
+        sha256_hex=row.sha256_hex,
+        byte_size=row.byte_size,
+        metadata=dict(row.metadata_json or {}),
+        created_at=row.created_at,
+    )
+
+
+def context_link_to_row(link: MemoryContextLink) -> MemoryContextLinkRow:
+    return MemoryContextLinkRow(
+        id=str(link.id),
+        space_id=str(link.space_id),
+        memory_scope_id=str(link.memory_scope_id),
+        source_type=link.source_type,
+        source_id=link.source_id,
+        target_type=link.target_type,
+        target_id=link.target_id,
+        relation_type=link.relation_type,
+        confidence=link.confidence,
+        reason=link.reason,
+        status=link.status.value,
+        metadata_json=dict(link.metadata),
+        created_at=link.created_at,
+        updated_at=link.updated_at,
+    )
+
+
+def apply_context_link_to_row(link: MemoryContextLink, row: MemoryContextLinkRow) -> None:
+    row.space_id = str(link.space_id)
+    row.memory_scope_id = str(link.memory_scope_id)
+    row.source_type = link.source_type
+    row.source_id = link.source_id
+    row.target_type = link.target_type
+    row.target_id = link.target_id
+    row.relation_type = link.relation_type
+    row.confidence = link.confidence
+    row.reason = link.reason
+    row.status = link.status.value
+    row.metadata_json = dict(link.metadata)
+    row.created_at = link.created_at
+    row.updated_at = link.updated_at
+
+
+def context_link_row_to_domain(row: MemoryContextLinkRow) -> MemoryContextLink:
+    return MemoryContextLink(
+        id=MemoryContextLinkId(row.id),
+        space_id=SpaceId(row.space_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
+        source_type=row.source_type,
+        source_id=row.source_id,
+        target_type=row.target_type,
+        target_id=row.target_id,
+        relation_type=row.relation_type,
+        confidence=row.confidence,
+        reason=row.reason,
+        status=LifecycleStatus(row.status),
+        metadata=dict(row.metadata_json or {}),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 def chunk_to_row(chunk: MemoryChunk) -> MemoryChunkRow:
     return MemoryChunkRow(
         id=str(chunk.id),
         space_id=str(chunk.space_id),
-        profile_id=str(chunk.profile_id),
+        memory_scope_id=str(chunk.memory_scope_id),
         thread_id=str(chunk.thread_id) if chunk.thread_id else None,
         document_id=str(chunk.document_id) if chunk.document_id else None,
         episode_id=str(chunk.episode_id) if chunk.episode_id else None,
@@ -270,7 +510,7 @@ def chunk_row_to_domain(row: MemoryChunkRow) -> MemoryChunk:
     return MemoryChunk(
         id=MemoryChunkId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         thread_id=ThreadId(row.thread_id) if row.thread_id else None,
         document_id=MemoryDocumentId(row.document_id) if row.document_id else None,
         episode_id=MemoryEpisodeId(row.episode_id) if row.episode_id else None,
@@ -307,7 +547,7 @@ def suggestion_to_row(suggestion: MemorySuggestion) -> MemorySuggestionRow:
     return MemorySuggestionRow(
         id=str(suggestion.id),
         space_id=str(suggestion.space_id),
-        profile_id=str(suggestion.profile_id),
+        memory_scope_id=str(suggestion.memory_scope_id),
         candidate_text=suggestion.candidate_text,
         kind=suggestion.kind.value,
         operation=suggestion.operation.value,
@@ -337,7 +577,7 @@ def suggestion_row_to_domain(row: MemorySuggestionRow) -> MemorySuggestion:
     return MemorySuggestion(
         id=MemorySuggestionId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         candidate_text=row.candidate_text,
         kind=MemoryKind(row.kind),
         operation=SuggestionOperation(getattr(row, "operation", None) or "add"),
@@ -391,7 +631,7 @@ def capture_to_row(capture: CanonicalCapture) -> MemoryCaptureRow:
     return MemoryCaptureRow(
         id=str(capture.id),
         space_id=str(capture.space_id),
-        profile_id=str(capture.profile_id),
+        memory_scope_id=str(capture.memory_scope_id),
         thread_id=str(capture.thread_id) if capture.thread_id else None,
         source_agent=capture.source_agent,
         source_kind=capture.source_kind.value,
@@ -438,7 +678,7 @@ def capture_row_to_domain(row: MemoryCaptureRow) -> CanonicalCapture:
     return CanonicalCapture(
         id=MemoryCaptureId(row.id),
         space_id=SpaceId(row.space_id),
-        profile_id=ProfileId(row.profile_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
         thread_id=ThreadId(row.thread_id) if row.thread_id else None,
         source_agent=row.source_agent,
         source_kind=CaptureSourceKind(row.source_kind),

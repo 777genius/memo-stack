@@ -41,12 +41,12 @@ class IngestDocumentUseCase:
     async def execute(self, command: IngestDocumentCommand) -> IngestDocumentResult:
         body_hash = content_hash(command.text)
         raw_key = command.idempotency_key or (
-            f"document:{command.space_id}:{command.profile_id}:"
+            f"document:{command.space_id}:{command.memory_scope_id}:"
             f"{command.source_type}:{command.source_external_id}:{body_hash}"
         )
         key = scoped_idempotency_key(
             "ingest_document",
-            command.profile_id,
+            command.memory_scope_id,
             command.thread_id,
             raw_key,
         )
@@ -69,7 +69,7 @@ class IngestDocumentUseCase:
 
             existing_document = await uow.documents.find_active_by_content_hash(
                 space_id=str(command.space_id),
-                profile_id=str(command.profile_id),
+                memory_scope_id=str(command.memory_scope_id),
                 thread_id=str(command.thread_id) if command.thread_id else None,
                 content_hash=body_hash,
             )
@@ -121,7 +121,7 @@ class IngestDocumentUseCase:
             document = MemoryDocument.create(
                 document_id=MemoryDocumentId(self._ids.new_id("doc")),
                 space_id=command.space_id,
-                profile_id=command.profile_id,
+                memory_scope_id=command.memory_scope_id,
                 thread_id=command.thread_id,
                 title=command.title,
                 source_type=command.source_type,
@@ -135,7 +135,7 @@ class IngestDocumentUseCase:
             except MemoryConflictError:
                 existing_document = await uow.documents.find_active_by_content_hash(
                     space_id=str(command.space_id),
-                    profile_id=str(command.profile_id),
+                    memory_scope_id=str(command.memory_scope_id),
                     thread_id=str(command.thread_id) if command.thread_id else None,
                     content_hash=body_hash,
                 )
@@ -151,6 +151,11 @@ class IngestDocumentUseCase:
             stored_chunks = []
             duplicate_chunks = 0
             for piece in fragment_document_text(command.text):
+                chunk_metadata = _chunk_metadata_for_fragment(
+                    command.chunk_metadata,
+                    char_start=piece.char_start,
+                    char_end=piece.char_end,
+                )
                 retrieval_text = document_chunk_retrieval_text(
                     text=piece.text,
                     title=saved_document.title,
@@ -158,7 +163,7 @@ class IngestDocumentUseCase:
                 chunk = MemoryChunk.create(
                     chunk_id=MemoryChunkId(self._ids.new_id("chunk")),
                     space_id=command.space_id,
-                    profile_id=command.profile_id,
+                    memory_scope_id=command.memory_scope_id,
                     thread_id=command.thread_id,
                     document_id=saved_document.id,
                     episode_id=None,
@@ -166,7 +171,7 @@ class IngestDocumentUseCase:
                     source_external_id=command.source_external_id,
                     source_hash=scoped_source_hash(
                         command.space_id,
-                        command.profile_id,
+                        command.memory_scope_id,
                         str(saved_document.id),
                         piece.sequence,
                         normalize_text(piece.text),
@@ -180,6 +185,7 @@ class IngestDocumentUseCase:
                     token_estimate=estimate_tokens(retrieval_text),
                     now=now,
                     metadata={
+                        **chunk_metadata,
                         "title": saved_document.title,
                         "node_kind": piece.node_kind,
                         "heading": piece.heading,
@@ -212,7 +218,7 @@ class IngestDocumentUseCase:
                             "document_id": str(saved_document.id),
                             "chunk_ids": [str(chunk.id) for chunk in stored_chunks],
                             "space_id": str(saved_document.space_id),
-                            "profile_id": str(saved_document.profile_id),
+                            "memory_scope_id": str(saved_document.memory_scope_id),
                         },
                     )
                 )
@@ -249,7 +255,7 @@ class IngestDocumentUseCase:
                     )
                 existing_document = await uow.documents.find_active_by_content_hash(
                     space_id=str(command.space_id),
-                    profile_id=str(command.profile_id),
+                    memory_scope_id=str(command.memory_scope_id),
                     thread_id=str(command.thread_id) if command.thread_id else None,
                     content_hash=body_hash,
                 )
@@ -273,3 +279,67 @@ class IngestDocumentUseCase:
 
 def _can_project_document_to_external_memory(classification: str) -> bool:
     return classification in {"public", "internal"}
+
+
+def _chunk_metadata_for_fragment(
+    metadata: dict[str, object] | None,
+    *,
+    char_start: int,
+    char_end: int,
+) -> dict[str, object]:
+    safe = dict(metadata or {})
+    refs = _source_refs_for_fragment(
+        safe.get("source_refs"),
+        char_start=char_start,
+        char_end=char_end,
+    )
+    if refs:
+        safe["source_refs"] = refs
+        safe["source_ref_count"] = len(refs)
+    else:
+        safe.pop("source_refs", None)
+        safe.pop("source_ref_count", None)
+    return safe
+
+
+def _source_refs_for_fragment(
+    value: object,
+    *,
+    char_start: int,
+    char_end: int,
+) -> list[dict[str, object]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    refs: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        ref_start = _optional_int(item.get("char_start"))
+        ref_end = _optional_int(item.get("char_end"))
+        if ref_start is None or ref_end is None:
+            if char_start != 0:
+                continue
+            refs.append(dict(item))
+        elif ref_start <= char_end and ref_end >= char_start:
+            ref = dict(item)
+            ref["chunk_char_start"] = max(ref_start, char_start) - char_start
+            ref["chunk_char_end"] = max(min(ref_end, char_end) - char_start, 0)
+            refs.append(ref)
+        if len(refs) >= 24:
+            break
+    return refs
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value.strip()))
+        except ValueError:
+            return None
+    return None

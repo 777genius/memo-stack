@@ -31,6 +31,10 @@ from memo_stack_core.reporting import build_report_provenance
 from memo_stack_server.official_public_benchmark import run_official_public_benchmark_canary
 from neo4j import GraphDatabase
 
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 try:
     from scripts.clean_full_smoke_diagnostics import (
         context_diagnostic_int as _context_diagnostic_int,
@@ -220,7 +224,7 @@ def main() -> int:
         _compose(
             project_name,
             compose_env,
-            "--profile",
+            "--memory_scope",
             "full",
             "up",
             "-d",
@@ -536,7 +540,7 @@ def _run_lifecycle(
     headers = {"Authorization": f"Bearer {token}"}
     marker = f"CLEAN_FULL_{run_id}"
     space_slug = "clean-full-smoke"
-    profile_ref = "default"
+    memory_scope_ref = "default"
     old_text = f"{marker}: Graphiti connects canonical facts to clean architecture memory."
     new_text = f"{marker}: Graphiti and Qdrant should recall updated memory."
     initial_graph_query = "Graphiti connects canonical facts to clean architecture memory"
@@ -554,7 +558,7 @@ def _run_lifecycle(
         expected=201,
         json={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "text": old_text,
             "kind": "architecture_decision",
             "classification": "internal",
@@ -562,7 +566,7 @@ def _run_lifecycle(
         },
     )
     _worker_once(env)
-    initial_context = _context(base_url, headers, space_slug, profile_ref, initial_graph_query)
+    initial_context = _context(base_url, headers, space_slug, memory_scope_ref, initial_graph_query)
     initial_graph = _graph_episode(env, fact["id"])
 
     updated = _request(
@@ -579,7 +583,7 @@ def _run_lifecycle(
         },
     )
     _worker_once(env)
-    updated_context = _context(base_url, headers, space_slug, profile_ref, updated_graph_query)
+    updated_context = _context(base_url, headers, space_slug, memory_scope_ref, updated_graph_query)
     updated_graph = _graph_episode(env, fact["id"])
 
     document = _request(
@@ -590,7 +594,7 @@ def _run_lifecycle(
         expected=201,
         json={
             "space_slug": space_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "title": f"{marker} document",
             "text": doc_text,
             "source_type": "clean_smoke",
@@ -603,7 +607,7 @@ def _run_lifecycle(
         base_url,
         headers,
         space_slug,
-        profile_ref,
+        memory_scope_ref,
         "Qdrant vector recall Postgres canonical providers derived",
     )
 
@@ -615,7 +619,7 @@ def _run_lifecycle(
         expected=200,
     )
     _worker_once(env)
-    forgotten_context = _context(base_url, headers, space_slug, profile_ref, marker)
+    forgotten_context = _context(base_url, headers, space_slug, memory_scope_ref, marker)
     forgotten_graph = _graph_episode(env, fact["id"])
     metrics = _request(base_url, headers, "GET", "/v1/diagnostics/metrics", expected=200)
     outbox = _request(base_url, headers, "GET", "/v1/diagnostics/outbox", expected=200)
@@ -690,7 +694,7 @@ async def _run_mcp_lifecycle(
     headers = {"Authorization": f"Bearer {token}"}
     marker = f"CLEAN_FULL_MCP_{run_id}"
     space_slug = "clean-full-smoke"
-    profile_ref = "default"
+    memory_scope_ref = "default"
     old_text = f"{marker}: MCP connects canonical facts to Graphiti provider projections."
     new_text = f"{marker}: MCP updates canonical facts and Graphiti recalls provider projections."
     old_graph_query = "MCP connects canonical facts Graphiti provider projections"
@@ -703,7 +707,7 @@ async def _run_mcp_lifecycle(
         base_url=base_url,
         token=token,
         space_slug=space_slug,
-        profile_ref=profile_ref,
+        memory_scope_ref=memory_scope_ref,
     )
     params = StdioServerParameters(command=PYTHON, args=["-m", "memo_stack_mcp"], env=mcp_env)
 
@@ -925,9 +929,9 @@ async def _run_prod_load_canary(
     settings = _prod_load_settings()
     marker = f"PROD_LOAD_{run_id}"
     space_slug = "prod-load-canary"
-    profiles = tuple(f"project-{index}" for index in range(settings["profiles"]))
-    alpha = profiles[0]
-    beta = profiles[1]
+    memory_scopes = tuple(f"project-{index}" for index in range(settings["memory_scopes"]))
+    alpha = memory_scopes[0]
+    beta = memory_scopes[1]
     old_text = f"{marker}: PROD_ALPHA_CURRENT_DECISION uses provider-backed recall."
     new_text = f"{marker}: PROD_ALPHA_CURRENT_DECISION uses drained projection recall."
     beta_text = f"{marker}: PROD_BETA_ISOLATION_SENTINEL belongs only to beta."
@@ -942,21 +946,21 @@ async def _run_prod_load_canary(
     outage_doc_text = f"{marker}: PROD_PROVIDER_OUTAGE_DOC recovers after retrying Qdrant."
 
     fact_requests: list[dict[str, Any]] = []
-    for profile in profiles:
-        for index in range(settings["facts_per_profile"]):
+    for memory_scope in memory_scopes:
+        for index in range(settings["facts_per_memory_scope"]):
             text = (
-                f"{marker}: {profile} production load fact {index:02d} "
+                f"{marker}: {memory_scope} production load fact {index:02d} "
                 "tracks durable coding-agent memory with scope isolation."
             )
             classification = "internal"
-            label = f"fact:{profile}:{index}"
-            if profile == alpha and index == 0:
+            label = f"fact:{memory_scope}:{index}"
+            if memory_scope == alpha and index == 0:
                 text = old_text
                 label = "target_fact"
-            elif profile == beta and index == 0:
+            elif memory_scope == beta and index == 0:
                 text = beta_text
                 label = "beta_sentinel"
-            elif profile == alpha and index == 1:
+            elif memory_scope == alpha and index == 1:
                 text = restricted_text
                 classification = "restricted"
                 label = "restricted_fact"
@@ -966,18 +970,18 @@ async def _run_prod_load_canary(
                     "path": "/v1/facts",
                     "json": {
                         "space_slug": space_slug,
-                        "profile_external_ref": profile,
+                        "memory_scope_external_ref": memory_scope,
                         "text": text,
                         "kind": "architecture_decision",
                         "classification": classification,
                         "source_refs": [
                             {
                                 "source_type": "prod_load",
-                                "source_id": f"{marker}:{profile}:{index}",
+                                "source_id": f"{marker}:{memory_scope}:{index}",
                             }
                         ],
                     },
-                    "idempotency_key": f"{marker}:{profile}:{index}",
+                    "idempotency_key": f"{marker}:{memory_scope}:{index}",
                 }
             )
 
@@ -996,7 +1000,7 @@ async def _run_prod_load_canary(
                 "path": "/v1/facts",
                 "json": {
                     "space_slug": space_slug,
-                    "profile_external_ref": alpha,
+                    "memory_scope_external_ref": alpha,
                     "text": duplicate_text,
                     "kind": "note",
                     "classification": "internal",
@@ -1023,7 +1027,7 @@ async def _run_prod_load_canary(
         expected=201,
         json={
             "space_slug": space_slug,
-            "profile_external_ref": alpha,
+            "memory_scope_external_ref": alpha,
             "thread_external_ref": thread_current,
             "text": thread_current_text,
             "kind": "note",
@@ -1040,7 +1044,7 @@ async def _run_prod_load_canary(
         expected=201,
         json={
             "space_slug": space_slug,
-            "profile_external_ref": alpha,
+            "memory_scope_external_ref": alpha,
             "thread_external_ref": thread_neighbor,
             "text": thread_neighbor_text,
             "kind": "note",
@@ -1075,7 +1079,7 @@ async def _run_prod_load_canary(
                 expected=201,
                 json={
                     "space_slug": space_slug,
-                    "profile_external_ref": alpha,
+                    "memory_scope_external_ref": alpha,
                     "title": f"{marker} prod document {index}",
                     "text": doc_text,
                     "source_type": "prod_load",
@@ -1093,7 +1097,7 @@ async def _run_prod_load_canary(
         expected=201,
         json={
             "space_slug": space_slug,
-            "profile_external_ref": alpha,
+            "memory_scope_external_ref": alpha,
             "title": f"{marker} restricted prod document",
             "text": restricted_text,
             "source_type": "prod_load",
@@ -1115,7 +1119,7 @@ async def _run_prod_load_canary(
         expected=201,
         json={
             "space_slug": space_slug,
-            "profile_external_ref": alpha,
+            "memory_scope_external_ref": alpha,
             "title": f"{marker} large prod runbook",
             "text": large_document_text,
             "source_type": "prod_load",
@@ -1156,7 +1160,7 @@ async def _run_prod_load_canary(
         base_url,
         headers,
         space_slug=space_slug,
-        profile_ref=alpha,
+        memory_scope_ref=alpha,
         query="PROD_THREAD_CURRENT_SENTINEL PROD_THREAD_NEIGHBOR_SENTINEL",
         thread_ref=thread_current,
         max_facts=10,
@@ -1173,7 +1177,7 @@ async def _run_prod_load_canary(
         base_url=base_url,
         headers=headers,
         space_slug=space_slug,
-        profile_ref=alpha,
+        memory_scope_ref=alpha,
         marker=marker,
         requests=settings["context_requests"],
     )
@@ -1239,7 +1243,7 @@ async def _run_prod_load_canary(
                 expected=201,
                 json={
                     "space_slug": space_slug,
-                    "profile_external_ref": alpha,
+                    "memory_scope_external_ref": alpha,
                     "text": outage_fact_text,
                     "kind": "architecture_decision",
                     "classification": "internal",
@@ -1260,7 +1264,7 @@ async def _run_prod_load_canary(
                 expected=201,
                 json={
                     "space_slug": space_slug,
-                    "profile_external_ref": alpha,
+                    "memory_scope_external_ref": alpha,
                     "title": f"{marker} provider outage document",
                     "text": outage_doc_text,
                     "source_type": "manual",
@@ -1309,7 +1313,7 @@ async def _run_prod_load_canary(
         base_url=base_url,
         token=token,
         space_slug=space_slug,
-        profile_ref=alpha,
+        memory_scope_ref=alpha,
     )
     params = StdioServerParameters(command=PYTHON, args=["-m", "memo_stack_mcp"], env=mcp_env)
 
@@ -1737,7 +1741,7 @@ async def _run_prod_load_canary(
             "duplicate_attempts": len(duplicate_results),
             "documents": len(documents),
             "large_document_chunks": large_document["chunks"],
-            "profiles": len(profiles),
+            "memory_scopes": len(memory_scopes),
         },
         "outbox_counts": outbox["counts"],
         "adapters": {
@@ -1763,7 +1767,7 @@ async def _run_agent_behavior_benchmark(
         base_url=base_url,
         token=token,
         space_slug="agent-bench",
-        profile_ref="default",
+        memory_scope_ref="default",
     )
     return await run_agent_behavior_benchmark(
         base_url=base_url,
@@ -1773,7 +1777,7 @@ async def _run_agent_behavior_benchmark(
         mcp_env=mcp_env,
         after_mutating_tool=lambda: _worker_once(env),
         space_slug_prefix="agent-bench",
-        profile_external_ref="default",
+        memory_scope_external_ref="default",
         python_executable=PYTHON,
     )
 
@@ -1881,14 +1885,14 @@ def _context(
     base_url: str,
     headers: Mapping[str, str],
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     query: str,
 ) -> dict[str, Any]:
     return _context_scoped(
         base_url,
         headers,
         space_slug=space_slug,
-        profile_ref=profile_ref,
+        memory_scope_ref=memory_scope_ref,
         query=query,
         thread_ref=None,
         max_facts=10,
@@ -1901,7 +1905,7 @@ def _context_scoped(
     headers: Mapping[str, str],
     *,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     query: str,
     thread_ref: str | None,
     max_facts: int,
@@ -1909,7 +1913,7 @@ def _context_scoped(
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "space_slug": space_slug,
-        "profile_external_ref": profile_ref,
+        "memory_scope_external_ref": memory_scope_ref,
         "query": query,
         "max_facts": max_facts,
         "max_chunks": max_chunks,
@@ -2042,7 +2046,7 @@ def _run_context_latency_probe(
     base_url: str,
     headers: Mapping[str, str],
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
     marker: str,
     requests: int,
 ) -> dict[str, Any]:
@@ -2054,7 +2058,7 @@ def _run_context_latency_probe(
     )
     for index in range(requests):
         started = time.perf_counter()
-        _context(base_url, headers, space_slug, profile_ref, queries[index % len(queries)])
+        _context(base_url, headers, space_slug, memory_scope_ref, queries[index % len(queries)])
         timings_ms.append((time.perf_counter() - started) * 1000)
     return {
         "request_count": len(timings_ms),
@@ -2205,7 +2209,7 @@ def _mcp_process_env(
     base_url: str,
     token: str,
     space_slug: str,
-    profile_ref: str,
+    memory_scope_ref: str,
 ) -> dict[str, str]:
     env = {key: value for key in SAFE_MCP_INHERITED_ENV_KEYS if (value := os.getenv(key))}
     env["PYTHONPATH"] = _repo_pythonpath(env.get("PYTHONPATH"))
@@ -2214,7 +2218,7 @@ def _mcp_process_env(
             "MEMORY_MCP_API_URL": base_url,
             "MEMORY_MCP_AUTH_TOKEN": token,
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": space_slug,
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": profile_ref,
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": memory_scope_ref,
             "MEMORY_MCP_AGENT_NAME": "clean-full-mcp-smoke-agent",
             "MEMORY_MCP_TRANSPORT": "stdio",
             "MEMORY_MCP_WRITE_MODE": "direct",

@@ -11,7 +11,7 @@ from datetime import datetime
 from hashlib import sha256
 
 from memo_stack_adapters.postgres.models import (
-    MemoryProfileRow,
+    MemoryScopeRow,
     MemoryServiceTokenRow,
     MemorySpaceRow,
 )
@@ -41,7 +41,7 @@ class CreatedServiceToken:
     token_id: str
     token: str
     space_id: str | None
-    profile_ids: tuple[str, ...] | None
+    memory_scope_ids: tuple[str, ...] | None
     description: str
     permissions: tuple[str, ...]
 
@@ -50,7 +50,7 @@ class CreatedServiceToken:
 class ActiveServiceToken:
     token_id: str
     space_id: str | None
-    profile_ids: frozenset[str] | None
+    memory_scope_ids: frozenset[str] | None
     permissions: frozenset[str]
 
 
@@ -75,14 +75,14 @@ async def get_active_db_token(container: Container, token: str) -> ActiveService
             return None
         token_id = row.id
         space_id = row.space_id
-        profile_ids = _profile_ids_from_row(row.profile_ids_json)
+        memory_scope_ids = _memory_scope_ids_from_row(row.memory_scope_ids_json)
         permissions = _permissions_from_row(row.permissions_json)
         row.last_used_at = now
         await session.commit()
         return ActiveServiceToken(
             token_id=token_id,
             space_id=space_id,
-            profile_ids=profile_ids,
+            memory_scope_ids=memory_scope_ids,
             permissions=permissions,
         )
 
@@ -98,35 +98,37 @@ async def create_service_token(
     token_id: str,
     description: str,
     space_id: str | None,
-    profile_ids: tuple[str, ...] | None = None,
+    memory_scope_ids: tuple[str, ...] | None = None,
     expires_at: datetime | None = None,
     permissions: tuple[str, ...] | None = None,
 ) -> CreatedServiceToken:
     raw_token = f"mp_{secrets.token_urlsafe(32)}"
     normalized_permissions = _normalize_permissions(permissions)
-    normalized_profile_ids = _normalize_profile_ids(profile_ids)
-    if normalized_profile_ids is not None and space_id is None:
-        raise ValueError("Profile scoped service token requires a space scope")
+    normalized_memory_scope_ids = _normalize_memory_scope_ids(memory_scope_ids)
+    if normalized_memory_scope_ids is not None and space_id is None:
+        raise ValueError("MemoryScope scoped service token requires a space scope")
     async with AsyncSession(engine) as session:
         space_row = await _load_active_space(session, space_id) if space_id else None
         if space_id is not None and space_row is None:
             raise ValueError("Scoped service token space must exist and be active")
-        if normalized_profile_ids is not None:
-            for profile_id in normalized_profile_ids:
-                if not await _profile_ref_exists_in_space(
+        if normalized_memory_scope_ids is not None:
+            for memory_scope_id in normalized_memory_scope_ids:
+                if not await _memory_scope_ref_exists_in_space(
                     session,
                     space_id=space_row.id,
-                    profile_ref=profile_id,
+                    memory_scope_ref=memory_scope_id,
                 ):
                     raise ValueError(
-                        "Profile scoped service token profiles must exist and be active"
+                        "MemoryScope scoped service token memory_scopes must exist and be active"
                     )
         session.add(
             MemoryServiceTokenRow(
                 id=token_id,
                 space_id=space_id,
-                profile_ids_json=(
-                    list(normalized_profile_ids) if normalized_profile_ids is not None else None
+                memory_scope_ids_json=(
+                    list(normalized_memory_scope_ids)
+                    if normalized_memory_scope_ids is not None
+                    else None
                 ),
                 description=description,
                 token_hash=token_hash(raw_token),
@@ -143,7 +145,7 @@ async def create_service_token(
         token_id=token_id,
         token=raw_token,
         space_id=space_id,
-        profile_ids=normalized_profile_ids,
+        memory_scope_ids=normalized_memory_scope_ids,
         description=description,
         permissions=normalized_permissions,
     )
@@ -163,24 +165,25 @@ async def _load_active_space(
     ).scalar_one_or_none()
 
 
-async def _profile_ref_exists_in_space(
+async def _memory_scope_ref_exists_in_space(
     session: AsyncSession,
     *,
     space_id: str,
-    profile_ref: str,
+    memory_scope_ref: str,
 ) -> bool:
-    profile = (
+    memory_scope = (
         await session.execute(
-            select(MemoryProfileRow.id).where(
-                MemoryProfileRow.space_id == space_id,
+            select(MemoryScopeRow.id).where(
+                MemoryScopeRow.space_id == space_id,
                 or_(
-                    MemoryProfileRow.id == profile_ref, MemoryProfileRow.external_ref == profile_ref
+                    MemoryScopeRow.id == memory_scope_ref,
+                    MemoryScopeRow.external_ref == memory_scope_ref,
                 ),
-                MemoryProfileRow.status == "active",
+                MemoryScopeRow.status == "active",
             )
         )
     ).scalar_one_or_none()
-    return profile is not None
+    return memory_scope is not None
 
 
 async def list_service_tokens(
@@ -197,9 +200,10 @@ async def list_service_tokens(
         {
             "id": row.id,
             "space_id": row.space_id,
-            "profile_ids": (
-                sorted(profile_ids)
-                if (profile_ids := _profile_ids_from_row(row.profile_ids_json)) is not None
+            "memory_scope_ids": (
+                sorted(memory_scope_ids)
+                if (memory_scope_ids := _memory_scope_ids_from_row(row.memory_scope_ids_json))
+                is not None
                 else None
             ),
             "description": row.description,
@@ -258,18 +262,22 @@ def _permissions_from_row(value: object) -> frozenset[str]:
     return frozenset(permission for permission in value if isinstance(permission, str))
 
 
-def _normalize_profile_ids(profile_ids: tuple[str, ...] | None) -> tuple[str, ...] | None:
-    if profile_ids is None:
+def _normalize_memory_scope_ids(memory_scope_ids: tuple[str, ...] | None) -> tuple[str, ...] | None:
+    if memory_scope_ids is None:
         return None
-    deduped = tuple(sorted({profile_id for profile_id in profile_ids if profile_id}))
+    deduped = tuple(
+        sorted({memory_scope_id for memory_scope_id in memory_scope_ids if memory_scope_id})
+    )
     if not deduped:
-        raise ValueError("Profile scoped token must include at least one profile")
+        raise ValueError("MemoryScope scoped token must include at least one memory_scope")
     return deduped
 
 
-def _profile_ids_from_row(value: object) -> frozenset[str] | None:
+def _memory_scope_ids_from_row(value: object) -> frozenset[str] | None:
     if value is None:
         return None
     if not isinstance(value, list):
         return frozenset()
-    return frozenset(profile_id for profile_id in value if isinstance(profile_id, str))
+    return frozenset(
+        memory_scope_id for memory_scope_id in value if isinstance(memory_scope_id, str)
+    )

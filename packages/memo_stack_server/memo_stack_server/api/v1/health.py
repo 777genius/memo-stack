@@ -17,3 +17,8 @@ async def health(container: Annotated[Container, Depends(get_container)]) -> dic
         "service": container.settings.service_name,
         "deploy_profile": container.settings.deploy_profile.value,
     }
+
+
+@router.get("/healthz", include_in_schema=False)
+async def healthz(container: Annotated[Container, Depends(get_container)]) -> dict[str, str]:
+    return await health(container)

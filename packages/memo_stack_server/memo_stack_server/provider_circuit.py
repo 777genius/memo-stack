@@ -174,7 +174,7 @@ class CircuitBreakingVectorMemoryAdapter:
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None = None,
         query_vector: tuple[float, ...],
         limit: int,
@@ -184,7 +184,7 @@ class CircuitBreakingVectorMemoryAdapter:
         try:
             result = await self._inner.search_chunks(
                 space_id=space_id,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=thread_id,
                 query_vector=query_vector,
                 limit=limit,
@@ -253,7 +253,7 @@ class CircuitBreakingGraphMemoryAdapter:
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None = None,
         query: str,
         limit: int,
@@ -263,7 +263,7 @@ class CircuitBreakingGraphMemoryAdapter:
         try:
             result = await self._inner.search(
                 space_id=space_id,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=thread_id,
                 query=query,
                 limit=limit,

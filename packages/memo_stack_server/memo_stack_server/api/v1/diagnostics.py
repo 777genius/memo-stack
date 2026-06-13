@@ -11,9 +11,9 @@ from memo_stack_server.api.dependencies import get_container
 from memo_stack_server.composition import Container
 from memo_stack_server.diagnostics import (
     adapter_diagnostics,
+    memory_scope_diagnostics,
     operational_metrics,
     outbox_diagnostics,
-    profile_diagnostics,
 )
 
 router = APIRouter(
@@ -41,12 +41,12 @@ async def get_outbox_diagnostics(
     }
 
 
-@router.get("/profile/{profile_id}")
-async def get_profile_diagnostics(
-    profile_id: str,
+@router.get("/memory-scope/{memory_scope_id}")
+async def get_memory_scope_diagnostics(
+    memory_scope_id: str,
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
-    return {"data": await profile_diagnostics(container, profile_id=profile_id)}
+    return {"data": await memory_scope_diagnostics(container, memory_scope_id=memory_scope_id)}
 
 
 @router.get("/metrics")

@@ -22,7 +22,7 @@ def remember_fact_fingerprint(command: RememberFactCommand) -> str:
         f"{ref.source_type}:{ref.source_id}:{ref.chunk_id or ''}" for ref in command.source_refs
     )
     raw = (
-        f"{command.space_id}:{command.profile_id}:{command.thread_id or ''}:"
+        f"{command.space_id}:{command.memory_scope_id}:{command.thread_id or ''}:"
         f"{command.kind}:{command.text}:{command.classification}:"
         f"{command.category or ''}:{','.join(command.tags)}:{command.ttl_policy or ''}:"
         f"{command.expires_at.isoformat() if command.expires_at else ''}:{source_keys}"
@@ -47,7 +47,7 @@ class RememberFactUseCase:
         idempotency_key = (
             scoped_idempotency_key(
                 "remember_fact",
-                command.profile_id,
+                command.memory_scope_id,
                 command.thread_id,
                 command.idempotency_key,
             )
@@ -86,7 +86,7 @@ class RememberFactUseCase:
             fact = MemoryFact.create(
                 fact_id=MemoryFactId(self._ids.new_id("fact")),
                 space_id=command.space_id,
-                profile_id=command.profile_id,
+                memory_scope_id=command.memory_scope_id,
                 thread_id=command.thread_id,
                 text=command.text,
                 kind=command.kind,

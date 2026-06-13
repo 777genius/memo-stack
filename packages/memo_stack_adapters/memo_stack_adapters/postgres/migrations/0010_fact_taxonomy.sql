@@ -11,4 +11,4 @@ ALTER TABLE memory_facts
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS ix_memory_facts_taxonomy
-  ON memory_facts (space_id, profile_id, category, status);
+  ON memory_facts (space_id, memory_scope_id, category, status);

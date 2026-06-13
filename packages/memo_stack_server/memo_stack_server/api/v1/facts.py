@@ -63,10 +63,10 @@ class RememberFactRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=4000)
     kind: str = "note"
@@ -116,7 +116,7 @@ def fact_to_response(fact: MemoryFact, indexing_status: str | None = None) -> di
     body: dict[str, Any] = {
         "id": str(fact.id),
         "space_id": str(fact.space_id),
-        "profile_id": str(fact.profile_id),
+        "memory_scope_id": str(fact.memory_scope_id),
         "thread_id": str(fact.thread_id) if fact.thread_id else None,
         "text": fact.text,
         "kind": fact.kind.value,
@@ -159,7 +159,7 @@ def fact_relation_to_response(relation: MemoryFactRelation) -> dict[str, Any]:
     return {
         "id": str(relation.id),
         "space_id": str(relation.space_id),
-        "profile_id": str(relation.profile_id),
+        "memory_scope_id": str(relation.memory_scope_id),
         "source_fact_id": str(relation.source_fact_id),
         "target_fact_id": str(relation.target_fact_id),
         "relation_type": relation.relation_type.value,
@@ -189,17 +189,17 @@ async def remember_fact(
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=request.thread_external_ref,
         thread_required=False,
     )
     result = await container.remember_fact.execute(
         RememberFactCommand(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
             text=request.text,
             kind=map_memory_kind(request.kind),
@@ -220,9 +220,9 @@ async def remember_fact(
 async def list_facts(
     container: Annotated[Container, Depends(get_container)],
     space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
-    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
-    profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     thread_id: Annotated[str | None, Query(max_length=80)] = None,
     thread_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "active",
@@ -235,10 +235,10 @@ async def list_facts(
     scope = await resolve_existing_single_scope(
         container,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=thread_id,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         thread_external_ref=thread_external_ref,
         thread_required=False,
     )
@@ -248,7 +248,7 @@ async def list_facts(
     result = await container.list_facts.execute(
         ListFactsQuery(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
             status=status_filter,
             limit=limit + 1,

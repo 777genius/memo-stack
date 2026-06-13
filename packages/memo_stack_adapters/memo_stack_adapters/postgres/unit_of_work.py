@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from types import TracebackType
 
 from memo_stack_core.domain.errors import MemoryConflictError
 from memo_stack_core.ports.clock import ClockPort
-from sqlalchemy import inspect, text
+from sqlalchemy import JSON, bindparam, inspect, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
@@ -16,19 +17,27 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from memo_stack_adapters.postgres.asset_repositories import (
+    PostgresAssetExtractionRepository,
+    PostgresAssetRepository,
+    PostgresContextLinkRepository,
+)
+from memo_stack_adapters.postgres.fact_repositories import (
+    PostgresFactRelationRepository,
+    PostgresFactRepository,
+)
 from memo_stack_adapters.postgres.models import Base
 from memo_stack_adapters.postgres.repositories import (
     PostgresCaptureRepository,
     PostgresChunkRepository,
     PostgresDocumentRepository,
     PostgresEpisodeRepository,
-    PostgresFactRelationRepository,
-    PostgresFactRepository,
     PostgresIdempotencyRepository,
     PostgresOutbox,
-    PostgresScopeRepository,
     PostgresSuggestionRepository,
 )
+from memo_stack_adapters.postgres.scope_repositories import PostgresScopeRepository
+from memo_stack_adapters.postgres.usage_repositories import PostgresUsageRepository
 
 
 def build_async_engine(database_url: str) -> AsyncEngine:
@@ -41,7 +50,7 @@ def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
 
 _ADDITIVE_SCHEMA_COLUMNS = {
     "memory_service_tokens": (
-        ("profile_ids_json", "JSON"),
+        ("memory_scope_ids_json", "JSON"),
         ("permissions_json", "JSON"),
         ("last_used_at", "TIMESTAMPTZ"),
         ("expires_at", "TIMESTAMPTZ"),
@@ -75,6 +84,226 @@ _ADDITIVE_SCHEMA_COLUMNS = {
     ),
 }
 
+_LEGACY_PROFILE_ID_TABLES = (
+    "memory_facts",
+    "memory_threads",
+    "memory_episodes",
+    "memory_documents",
+    "memory_chunks",
+    "memory_fact_relations",
+    "memory_suggestions",
+    "memory_captures",
+)
+
+
+def _column_names(connection: Connection, table_name: str) -> set[str]:
+    return {column["name"] for column in inspect(connection).get_columns(table_name)}
+
+
+def _ensure_legacy_profile_schema(connection: Connection) -> None:
+    """Upgrade pre-MemoryScope schemas in-place before SQLAlchemy creates tables."""
+
+    table_names = set(inspect(connection).get_table_names())
+    if "memory_profiles" in table_names:
+        if "memory_scopes" not in table_names:
+            connection.execute(text("ALTER TABLE memory_profiles RENAME TO memory_scopes"))
+        else:
+            legacy_to_current = _copy_legacy_profiles_to_memory_scopes(connection)
+            _repoint_legacy_profile_references(connection, legacy_to_current)
+            connection.execute(text("DROP TABLE memory_profiles"))
+
+    table_names = set(inspect(connection).get_table_names())
+    for table_name in _LEGACY_PROFILE_ID_TABLES:
+        if table_name in table_names:
+            _rename_or_backfill_legacy_column(
+                connection,
+                table_name=table_name,
+                legacy_column="profile_id",
+                current_column="memory_scope_id",
+            )
+    if "memory_service_tokens" in table_names:
+        _rename_or_backfill_legacy_column(
+            connection,
+            table_name="memory_service_tokens",
+            legacy_column="profile_ids_json",
+            current_column="memory_scope_ids_json",
+        )
+
+
+def _copy_legacy_profiles_to_memory_scopes(connection: Connection) -> dict[str, str]:
+    legacy_rows = list(
+        connection.execute(
+            text(
+                """
+                SELECT id, space_id, external_ref, name, status, created_at, updated_at
+                FROM memory_profiles
+                """
+            )
+        )
+        .mappings()
+        .all()
+    )
+    current_rows = list(
+        connection.execute(text("SELECT id, space_id, external_ref FROM memory_scopes"))
+        .mappings()
+        .all()
+    )
+    current_ids = {str(row["id"]) for row in current_rows}
+    current_by_ref = {
+        (str(row["space_id"]), str(row["external_ref"])): str(row["id"]) for row in current_rows
+    }
+    legacy_to_current: dict[str, str] = {}
+
+    insert_scope = text(
+        """
+        INSERT INTO memory_scopes (
+            id,
+            space_id,
+            external_ref,
+            name,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            :id,
+            :space_id,
+            :external_ref,
+            :name,
+            :status,
+            :created_at,
+            :updated_at
+        )
+        """
+    )
+    for legacy in legacy_rows:
+        legacy_id = str(legacy["id"])
+        ref_key = (str(legacy["space_id"]), str(legacy["external_ref"]))
+        if legacy_id in current_ids:
+            legacy_to_current[legacy_id] = legacy_id
+            continue
+        if ref_key in current_by_ref:
+            legacy_to_current[legacy_id] = current_by_ref[ref_key]
+            continue
+        connection.execute(insert_scope, dict(legacy))
+        current_ids.add(legacy_id)
+        current_by_ref[ref_key] = legacy_id
+        legacy_to_current[legacy_id] = legacy_id
+
+    return legacy_to_current
+
+
+def _repoint_legacy_profile_references(
+    connection: Connection,
+    legacy_to_current: dict[str, str],
+) -> None:
+    remapped_ids = {
+        legacy_id: current_id
+        for legacy_id, current_id in legacy_to_current.items()
+        if legacy_id != current_id
+    }
+    if not remapped_ids:
+        return
+
+    table_names = set(inspect(connection).get_table_names())
+    for table_name in _LEGACY_PROFILE_ID_TABLES:
+        if table_name not in table_names:
+            continue
+        columns = _column_names(connection, table_name)
+        for column_name in ("profile_id", "memory_scope_id"):
+            if column_name not in columns:
+                continue
+            _repoint_scalar_scope_column(connection, table_name, column_name, remapped_ids)
+
+    if "memory_service_tokens" in table_names:
+        columns = _column_names(connection, "memory_service_tokens")
+        for column_name in ("profile_ids_json", "memory_scope_ids_json"):
+            if column_name in columns:
+                _repoint_token_scope_json(connection, column_name, remapped_ids)
+
+
+def _repoint_scalar_scope_column(
+    connection: Connection,
+    table_name: str,
+    column_name: str,
+    remapped_ids: dict[str, str],
+) -> None:
+    statement = text(
+        f"""
+        UPDATE {table_name}
+        SET {column_name} = :current_id
+        WHERE {column_name} = :legacy_id
+        """
+    )
+    for legacy_id, current_id in remapped_ids.items():
+        connection.execute(
+            statement,
+            {"legacy_id": legacy_id, "current_id": current_id},
+        )
+
+
+def _repoint_token_scope_json(
+    connection: Connection,
+    column_name: str,
+    remapped_ids: dict[str, str],
+) -> None:
+    rows = connection.execute(
+        text(f"SELECT id, {column_name} FROM memory_service_tokens WHERE {column_name} IS NOT NULL")
+    )
+    update_statement = text(
+        f"""
+        UPDATE memory_service_tokens
+        SET {column_name} = :scope_ids
+        WHERE id = :token_id
+        """
+    ).bindparams(bindparam("scope_ids", type_=JSON))
+    for row in rows.mappings():
+        scope_ids = _decode_json_string_list(row[column_name])
+        remapped_scope_ids = [remapped_ids.get(scope_id, scope_id) for scope_id in scope_ids]
+        if remapped_scope_ids != scope_ids:
+            connection.execute(
+                update_statement,
+                {"token_id": row["id"], "scope_ids": remapped_scope_ids},
+            )
+
+
+def _decode_json_string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _rename_or_backfill_legacy_column(
+    connection: Connection,
+    *,
+    table_name: str,
+    legacy_column: str,
+    current_column: str,
+) -> None:
+    columns = _column_names(connection, table_name)
+    if legacy_column not in columns:
+        return
+    if current_column not in columns:
+        connection.execute(
+            text(f"ALTER TABLE {table_name} RENAME COLUMN {legacy_column} TO {current_column}")
+        )
+        return
+    connection.execute(
+        text(
+            f"""
+            UPDATE {table_name}
+            SET {current_column} = {legacy_column}
+            WHERE {current_column} IS NULL
+              AND {legacy_column} IS NOT NULL
+            """
+        )
+    )
+
 
 def _ensure_additive_schema_columns(connection: Connection) -> None:
     inspector = inspect(connection)
@@ -98,17 +327,19 @@ def _ensure_document_thread_unique_indexes(connection: Connection) -> None:
         )
     elif connection.dialect.name == "sqlite":
         _rebuild_sqlite_memory_documents_without_legacy_unique(connection, inspector)
-    connection.execute(text("DROP INDEX IF EXISTS uq_document_source_hash_profile_wide"))
-    connection.execute(text("DROP INDEX IF EXISTS uq_document_source_hash_thread"))
     connection.execute(text("DROP INDEX IF EXISTS uq_document_content_hash_profile_wide"))
+    connection.execute(text("DROP INDEX IF EXISTS uq_document_source_hash_profile_wide"))
+    connection.execute(text("DROP INDEX IF EXISTS uq_document_source_hash_memory_scope_wide"))
+    connection.execute(text("DROP INDEX IF EXISTS uq_document_source_hash_thread"))
+    connection.execute(text("DROP INDEX IF EXISTS uq_document_content_hash_memory_scope_wide"))
     connection.execute(text("DROP INDEX IF EXISTS uq_document_content_hash_thread"))
     connection.execute(
         text(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_document_content_hash_profile_wide
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_document_content_hash_memory_scope_wide
             ON memory_documents (
                 space_id,
-                profile_id,
+                memory_scope_id,
                 content_hash
             )
             WHERE thread_id IS NULL AND status != 'deleted'
@@ -121,7 +352,7 @@ def _ensure_document_thread_unique_indexes(connection: Connection) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS uq_document_content_hash_thread
             ON memory_documents (
                 space_id,
-                profile_id,
+                memory_scope_id,
                 thread_id,
                 content_hash
             )
@@ -137,7 +368,7 @@ def _rebuild_sqlite_memory_documents_without_legacy_unique(
 ) -> None:
     legacy_columns = (
         "space_id",
-        "profile_id",
+        "memory_scope_id",
         "source_type",
         "source_external_id",
         "content_hash",
@@ -158,7 +389,7 @@ def _rebuild_sqlite_memory_documents_without_legacy_unique(
             CREATE TABLE memory_documents (
                 id VARCHAR(80) NOT NULL,
                 space_id VARCHAR(80) NOT NULL,
-                profile_id VARCHAR(80) NOT NULL,
+                memory_scope_id VARCHAR(80) NOT NULL,
                 thread_id VARCHAR(80),
                 title VARCHAR(300) NOT NULL,
                 source_type VARCHAR(80) NOT NULL,
@@ -179,7 +410,7 @@ def _rebuild_sqlite_memory_documents_without_legacy_unique(
             INSERT INTO memory_documents (
                 id,
                 space_id,
-                profile_id,
+                memory_scope_id,
                 thread_id,
                 title,
                 source_type,
@@ -193,7 +424,7 @@ def _rebuild_sqlite_memory_documents_without_legacy_unique(
             SELECT
                 id,
                 space_id,
-                profile_id,
+                memory_scope_id,
                 thread_id,
                 title,
                 source_type,
@@ -219,15 +450,16 @@ def _sqlite_memory_documents_table_sql_has_legacy_unique(connection: Connection)
     normalized = " ".join(str(table_sql).lower().replace('"', "").split())
     return (
         "constraint uq_document_source_hash unique" in normalized
-        or "unique ( space_id, profile_id, source_type, source_external_id, content_hash )"
+        or "unique ( space_id, memory_scope_id, source_type, source_external_id, content_hash )"
         in normalized
-        or "unique (space_id, profile_id, source_type, source_external_id, content_hash)"
+        or "unique (space_id, memory_scope_id, source_type, source_external_id, content_hash)"
         in normalized
     )
 
 
 async def create_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
+        await connection.run_sync(_ensure_legacy_profile_schema)
         await connection.run_sync(Base.metadata.create_all)
         await connection.run_sync(_ensure_additive_schema_columns)
         await connection.run_sync(_ensure_document_thread_unique_indexes)
@@ -267,7 +499,7 @@ def _ensure_capture_indexes(connection: Connection) -> None:
         text(
             """
             CREATE INDEX IF NOT EXISTS ix_memory_captures_consolidation
-            ON memory_captures(space_id, profile_id, consolidation_status, created_at)
+            ON memory_captures(space_id, memory_scope_id, consolidation_status, created_at)
             """
         )
     )
@@ -282,7 +514,7 @@ def _ensure_suggestion_metadata_indexes(connection: Connection) -> None:
         text(
             """
             CREATE INDEX IF NOT EXISTS ix_memory_suggestions_expiry
-            ON memory_suggestions(space_id, profile_id, status, expires_at)
+            ON memory_suggestions(space_id, memory_scope_id, status, expires_at)
             """
         )
     )
@@ -290,7 +522,7 @@ def _ensure_suggestion_metadata_indexes(connection: Connection) -> None:
         text(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_suggestion_fingerprint_no_target
-            ON memory_suggestions(space_id, profile_id, operation, candidate_fingerprint)
+            ON memory_suggestions(space_id, memory_scope_id, operation, candidate_fingerprint)
             WHERE status = 'pending'
               AND candidate_fingerprint IS NOT NULL
               AND target_fact_id IS NULL
@@ -303,7 +535,7 @@ def _ensure_suggestion_metadata_indexes(connection: Connection) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_suggestion_fingerprint_target
             ON memory_suggestions(
                 space_id,
-                profile_id,
+                memory_scope_id,
                 operation,
                 target_fact_id,
                 candidate_fingerprint
@@ -334,7 +566,7 @@ def _expire_duplicate_pending_suggestions_before_unique_indexes(connection: Conn
                         ROW_NUMBER() OVER (
                             PARTITION BY
                                 space_id,
-                                profile_id,
+                                memory_scope_id,
                                 operation,
                                 target_fact_id,
                                 candidate_fingerprint
@@ -377,11 +609,15 @@ class PostgresUnitOfWork:
         self.scope = PostgresScopeRepository(self._session)
         self.facts = PostgresFactRepository(self._session, now=now)
         self.fact_relations = PostgresFactRelationRepository(self._session)
+        self.assets = PostgresAssetRepository(self._session)
+        self.asset_extractions = PostgresAssetExtractionRepository(self._session)
+        self.context_links = PostgresContextLinkRepository(self._session)
         self.episodes = PostgresEpisodeRepository(self._session)
         self.documents = PostgresDocumentRepository(self._session)
         self.chunks = PostgresChunkRepository(self._session)
         self.captures = PostgresCaptureRepository(self._session)
         self.suggestions = PostgresSuggestionRepository(self._session)
+        self.usage = PostgresUsageRepository(self._session)
         self.idempotency = PostgresIdempotencyRepository(self._session, now=now)
         self.outbox = PostgresOutbox(self._session, now=now)
         return self

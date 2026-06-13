@@ -1,7 +1,7 @@
 CREATE TABLE memory_service_tokens (
   id VARCHAR(80) PRIMARY KEY,
   space_id VARCHAR(80),
-  profile_ids_json JSONB,
+  memory_scope_ids_json JSONB,
   description VARCHAR(240) NOT NULL,
   token_hash VARCHAR(80) UNIQUE NOT NULL,
   permissions_json JSONB,

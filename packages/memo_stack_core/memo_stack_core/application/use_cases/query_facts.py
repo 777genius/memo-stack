@@ -21,7 +21,7 @@ class ListFactsUseCase:
         async with self._uow_factory() as uow:
             facts = await uow.facts.list_for_scope(
                 space_id=str(query.space_id),
-                profile_id=str(query.profile_id),
+                memory_scope_id=str(query.memory_scope_id),
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 status=query.status,
                 limit=query.limit,

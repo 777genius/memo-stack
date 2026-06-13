@@ -38,7 +38,7 @@ from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 def episode_fingerprint(command: IngestEpisodeCommand) -> str:
     raw = (
-        f"{command.space_id}:{command.profile_id}:{command.thread_id}:"
+        f"{command.space_id}:{command.memory_scope_id}:{command.thread_id}:"
         f"{command.source_type}:{command.source_external_id}:{command.text}:"
         f"{command.kind_hint}:{command.language}"
     )
@@ -94,7 +94,7 @@ class IngestEpisodeUseCase:
         raw_key = command.idempotency_key or command.source_external_id
         key = scoped_idempotency_key(
             "ingest_episode",
-            command.profile_id,
+            command.memory_scope_id,
             command.thread_id,
             raw_key,
         )
@@ -115,7 +115,7 @@ class IngestEpisodeUseCase:
             episode = MemoryEpisode.create(
                 episode_id=MemoryEpisodeId(self._ids.new_id("episode")),
                 space_id=command.space_id,
-                profile_id=command.profile_id,
+                memory_scope_id=command.memory_scope_id,
                 thread_id=command.thread_id,
                 source_type=command.source_type,
                 source_external_id=command.source_external_id,
@@ -136,7 +136,7 @@ class IngestEpisodeUseCase:
                 chunk = MemoryChunk.create(
                     chunk_id=MemoryChunkId(self._ids.new_id("chunk")),
                     space_id=command.space_id,
-                    profile_id=command.profile_id,
+                    memory_scope_id=command.memory_scope_id,
                     thread_id=command.thread_id,
                     episode_id=saved_episode.id,
                     document_id=None,
@@ -144,7 +144,7 @@ class IngestEpisodeUseCase:
                     source_external_id=command.source_external_id,
                     source_hash=scoped_source_hash(
                         command.space_id,
-                        command.profile_id,
+                        command.memory_scope_id,
                         command.thread_id,
                         command.source_external_id,
                         piece.sequence,
@@ -198,7 +198,7 @@ class IngestEpisodeUseCase:
                     suggestion = MemorySuggestion.create(
                         suggestion_id=MemorySuggestionId(self._ids.new_id("sug")),
                         space_id=command.space_id,
-                        profile_id=command.profile_id,
+                        memory_scope_id=command.memory_scope_id,
                         candidate_text=candidate.text,
                         kind=candidate.kind,
                         source_refs=candidate.source_refs,

@@ -13,7 +13,7 @@ DEFAULT_HOME = Path("~/.memo-stack").expanduser()
 DEFAULT_API_URL = "http://127.0.0.1:7788"
 DEFAULT_SERVICE_TOKEN = "local-dev-token"
 DEFAULT_SPACE_SLUG = "default"
-DEFAULT_PROFILE_EXTERNAL_REF = "default"
+DEFAULT_MEMORY_SCOPE_EXTERNAL_REF = "default"
 
 
 @dataclass(frozen=True)
@@ -23,8 +23,8 @@ class MemoStackCliConfig:
     api_url: str
     service_token: str
     default_space_slug: str
-    default_profile_external_ref: str
-    runtime_profile: str
+    default_memory_scope_external_ref: str
+    runtime_compose_profile: str
     compose_project_name: str
 
     @property
@@ -69,13 +69,15 @@ def load_config(home: Path | None = None) -> MemoStackCliConfig:
             or local.get("default_space_slug")
             or DEFAULT_SPACE_SLUG
         ),
-        default_profile_external_ref=str(
-            os.environ.get("MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF")
-            or os.environ.get("MEMORY_DEFAULT_PROFILE_EXTERNAL_REF")
-            or local.get("default_profile_external_ref")
-            or DEFAULT_PROFILE_EXTERNAL_REF
+        default_memory_scope_external_ref=str(
+            os.environ.get("MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF")
+            or os.environ.get("MEMORY_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF")
+            or local.get("default_memory_scope_external_ref")
+            or DEFAULT_MEMORY_SCOPE_EXTERNAL_REF
         ),
-        runtime_profile=str(runtime.get("profile") or "lite"),
+        runtime_compose_profile=str(
+            runtime.get("compose_profile") or runtime.get("memory_scope") or "lite"
+        ),
         compose_project_name=str(runtime.get("compose_project_name") or "memo_stack"),
     )
 
@@ -107,7 +109,7 @@ def init_local_config(
                     f"MEMORY_SERVICE_TOKEN={token}",
                     "MEMORY_POLICY_MODE=active_context",
                     "MEMORY_DEFAULT_SPACE_SLUG=default",
-                    "MEMORY_DEFAULT_PROFILE_EXTERNAL_REF=default",
+                    "MEMORY_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF=default",
                     "",
                 ]
             ),
@@ -161,11 +163,11 @@ def _config_text(*, home: Path, repo_dir: Path, api_url: str) -> str:
             f'repo_dir = "{repo_dir}"',
             f'api_url = "{api_url.rstrip("/")}"',
             'default_space_slug = "default"',
-            'default_profile_external_ref = "default"',
+            'default_memory_scope_external_ref = "default"',
             "",
             "[runtime]",
             'mode = "docker_compose"',
-            'profile = "lite"',
+            'compose_profile = "lite"',
             'compose_project_name = "memo_stack"',
             "",
             "[mcp]",

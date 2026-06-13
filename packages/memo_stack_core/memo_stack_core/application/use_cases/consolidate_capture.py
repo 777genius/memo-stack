@@ -65,7 +65,7 @@ class ConsolidateCaptureUseCase:
         external_ai_enabled: bool = False,
         auto_apply_safe_enabled: bool = False,
         capture_consolidation_enabled: bool = True,
-        max_pending_suggestions_per_profile: int = 500,
+        max_pending_suggestions_per_memory_scope: int = 500,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
@@ -77,7 +77,9 @@ class ConsolidateCaptureUseCase:
         self._external_ai_enabled = external_ai_enabled
         self._auto_apply_safe_enabled = auto_apply_safe_enabled
         self._capture_consolidation_enabled = capture_consolidation_enabled
-        self._max_pending_suggestions_per_profile = max(1, max_pending_suggestions_per_profile)
+        self._max_pending_suggestions_per_memory_scope = max(
+            1, max_pending_suggestions_per_memory_scope
+        )
 
     async def execute(self, command: ConsolidateCaptureCommand) -> CaptureResult:
         now = self._clock.now()
@@ -142,7 +144,7 @@ class ConsolidateCaptureUseCase:
             resolver_rejected_codes: list[str] = []
             pending_suggestion_count = await uow.suggestions.count_for_scope(
                 space_id=str(current.space_id),
-                profile_id=str(current.profile_id),
+                memory_scope_id=str(current.memory_scope_id),
                 status="pending",
             )
             seen_fingerprints: set[str] = set()
@@ -151,12 +153,14 @@ class ConsolidateCaptureUseCase:
                 if candidate.operation_hint == CandidateOperation.NOOP:
                     resolver_rejected_codes.append("noop_candidate")
                     continue
-                candidate, target_resolution, resolution_rejection = (
-                    await _resolve_candidate_target(
-                        uow,
-                        capture=current,
-                        candidate=candidate,
-                    )
+                (
+                    candidate,
+                    target_resolution,
+                    resolution_rejection,
+                ) = await _resolve_candidate_target(
+                    uow,
+                    capture=current,
+                    candidate=candidate,
                 )
                 if resolution_rejection is not None:
                     resolver_rejected_codes.append(resolution_rejection)
@@ -172,7 +176,7 @@ class ConsolidateCaptureUseCase:
                         continue
                     if (
                         target_fact.space_id != current.space_id
-                        or target_fact.profile_id != current.profile_id
+                        or target_fact.memory_scope_id != current.memory_scope_id
                     ):
                         resolver_rejected_codes.append("target_fact_scope_mismatch")
                         continue
@@ -201,7 +205,7 @@ class ConsolidateCaptureUseCase:
                 taxonomy = self._taxonomy.normalize(candidate)
                 fingerprint = _candidate_fingerprint(
                     space_id=str(current.space_id),
-                    profile_id=str(current.profile_id),
+                    memory_scope_id=str(current.memory_scope_id),
                     text=candidate.text,
                     operation=candidate.operation_hint.value,
                     target_fact_id=candidate.target_fact_id,
@@ -216,7 +220,7 @@ class ConsolidateCaptureUseCase:
                     active_duplicate = await _find_active_duplicate(
                         uow,
                         space_id=str(current.space_id),
-                        profile_id=str(current.profile_id),
+                        memory_scope_id=str(current.memory_scope_id),
                         thread_id=str(current.thread_id) if current.thread_id else None,
                         text=candidate.text,
                         kind=candidate.kind.value,
@@ -229,14 +233,14 @@ class ConsolidateCaptureUseCase:
                     active_conflict = await _find_active_conflict(
                         uow,
                         space_id=str(current.space_id),
-                        profile_id=str(current.profile_id),
+                        memory_scope_id=str(current.memory_scope_id),
                         thread_id=str(current.thread_id) if current.thread_id else None,
                         text=candidate.text,
                         kind=candidate.kind.value,
                     )
                 duplicate = await uow.suggestions.find_pending_duplicate(
                     space_id=str(current.space_id),
-                    profile_id=str(current.profile_id),
+                    memory_scope_id=str(current.memory_scope_id),
                     candidate_fingerprint=fingerprint,
                     operation=_suggestion_operation(candidate.operation_hint).value,
                     target_fact_id=candidate.target_fact_id,
@@ -259,7 +263,7 @@ class ConsolidateCaptureUseCase:
                     fact = MemoryFact.create(
                         fact_id=MemoryFactId(self._ids.new_id("fact")),
                         space_id=current.space_id,
-                        profile_id=current.profile_id,
+                        memory_scope_id=current.memory_scope_id,
                         thread_id=current.thread_id,
                         text=candidate.text,
                         kind=candidate.kind,
@@ -282,14 +286,14 @@ class ConsolidateCaptureUseCase:
                     continue
                 resolver_rejected_codes.append(auto_apply.reason)
                 if pending_suggestion_count + len(created_ids) >= (
-                    self._max_pending_suggestions_per_profile
+                    self._max_pending_suggestions_per_memory_scope
                 ):
                     resolver_rejected_codes.append("pending_suggestion_limit_reached")
                     continue
                 suggestion = MemorySuggestion.create(
                     suggestion_id=MemorySuggestionId(self._ids.new_id("sug")),
                     space_id=current.space_id,
-                    profile_id=current.profile_id,
+                    memory_scope_id=current.memory_scope_id,
                     candidate_text=candidate.text,
                     kind=candidate.kind,
                     source_refs=source_refs,
@@ -443,7 +447,7 @@ async def _resolve_candidate_target(
 
     candidates = await uow.facts.find_active(
         space_id=str(capture.space_id),
-        profile_ids=(str(capture.profile_id),),
+        memory_scope_ids=(str(capture.memory_scope_id),),
         thread_id=str(capture.thread_id) if capture.thread_id else None,
         query=target_hint,
         limit=5,
@@ -507,13 +511,13 @@ def _effective_capture_trust(capture) -> TrustLevel:
 def _candidate_fingerprint(
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     text: str,
     operation: str,
     target_fact_id: str | None,
     category: str,
 ) -> str:
-    raw = f"{space_id}:{profile_id}:{operation}:{target_fact_id or ''}:{category}:{text}"
+    raw = f"{space_id}:{memory_scope_id}:{operation}:{target_fact_id or ''}:{category}:{text}"
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -527,7 +531,7 @@ async def _find_active_duplicate(
     uow,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     thread_id: str | None,
     text: str,
     kind: str,
@@ -536,7 +540,7 @@ async def _find_active_duplicate(
     candidates = await _active_duplicate_candidates(
         uow,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=thread_id,
         text=text,
     )
@@ -552,7 +556,7 @@ async def _find_active_duplicate(
             return fact
     fallback_candidates = await uow.facts.find_active(
         space_id=space_id,
-        profile_ids=(profile_id,),
+        memory_scope_ids=(memory_scope_id,),
         thread_id=thread_id,
         query="",
         limit=50,
@@ -572,14 +576,14 @@ async def _find_active_conflict(
     uow,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     thread_id: str | None,
     text: str,
     kind: str,
 ):
     candidates = await uow.facts.find_active(
         space_id=space_id,
-        profile_ids=(profile_id,),
+        memory_scope_ids=(memory_scope_id,),
         thread_id=thread_id,
         query=text,
         limit=50,
@@ -589,7 +593,7 @@ async def _find_active_conflict(
             return fact
     fallback_candidates = await uow.facts.find_active(
         space_id=space_id,
-        profile_ids=(profile_id,),
+        memory_scope_ids=(memory_scope_id,),
         thread_id=thread_id,
         query="",
         limit=50,
@@ -607,13 +611,13 @@ async def _active_duplicate_candidates(
     uow,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     thread_id: str | None,
     text: str,
 ):
     return await uow.facts.find_active(
         space_id=space_id,
-        profile_ids=(profile_id,),
+        memory_scope_ids=(memory_scope_id,),
         thread_id=thread_id,
         query=text,
         limit=10,

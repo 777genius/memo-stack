@@ -28,7 +28,7 @@ class ProcessDocumentUseCase:
             idempotency_key = (
                 scoped_idempotency_key(
                     "process_document",
-                    document.profile_id,
+                    document.memory_scope_id,
                     command.idempotency_key,
                 )
                 if command.idempotency_key

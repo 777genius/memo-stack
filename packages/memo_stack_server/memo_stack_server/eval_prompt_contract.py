@@ -216,18 +216,18 @@ def _prompt_snapshot_cases() -> tuple[PromptSnapshotCase, ...]:
             expected_absent_item_ids=("fact_instruction_candidate",),
         ),
         PromptSnapshotCase(
-            case_id="cross_profile_isolation",
+            case_id="cross_memory_scope_isolation",
             items=(
                 _fact(
-                    "fact_profile_alpha_visible",
-                    "Profile alpha uses local Memo Stack for Client App.",
-                    source_id="manual_profile_alpha",
-                    profile_id="profile_alpha",
+                    "fact_memory_scope_alpha_visible",
+                    "MemoryScope alpha uses local Memo Stack for Client App.",
+                    source_id="manual_memory_scope_alpha",
+                    memory_scope_id="memory_scope_alpha",
                     score=0.95,
                 ),
             ),
-            diagnostics={"blocked_profile_count": 1},
-            expected_absent_item_ids=("fact_profile_beta_hidden",),
+            diagnostics={"blocked_memory_scope_count": 1},
+            expected_absent_item_ids=("fact_memory_scope_beta_hidden",),
         ),
         PromptSnapshotCase(
             case_id="degraded_qdrant",
@@ -289,7 +289,7 @@ def _fact(
     text: str,
     *,
     source_id: str,
-    profile_id: str = "profile_alpha",
+    memory_scope_id: str = "memory_scope_alpha",
     score: float = 0.9,
     is_instruction: bool = False,
 ) -> ContextItem:
@@ -300,7 +300,7 @@ def _fact(
         score=score,
         source_refs=(SourceRef(source_type="manual", source_id=source_id),),
         is_instruction=is_instruction,
-        diagnostics={"profile_id": profile_id, "retrieval_source": "snapshot_fact"},
+        diagnostics={"memory_scope_id": memory_scope_id, "retrieval_source": "snapshot_fact"},
     )
 
 
@@ -309,7 +309,7 @@ def _chunk(
     text: str,
     *,
     source_id: str,
-    profile_id: str = "profile_alpha",
+    memory_scope_id: str = "memory_scope_alpha",
     score: float = 0.8,
 ) -> ContextItem:
     return ContextItem(
@@ -324,7 +324,7 @@ def _chunk(
                 chunk_id=item_id,
             ),
         ),
-        diagnostics={"profile_id": profile_id, "retrieval_source": "snapshot_chunk"},
+        diagnostics={"memory_scope_id": memory_scope_id, "retrieval_source": "snapshot_chunk"},
     )
 
 
@@ -333,7 +333,7 @@ def _snapshot_item(item: ContextItem) -> dict[str, object]:
     return {
         "item_id": item.item_id,
         "item_type": item.item_type,
-        "profile_id": str(diagnostics.get("profile_id") or "unknown_profile"),
+        "memory_scope_id": str(diagnostics.get("memory_scope_id") or "unknown_memory_scope"),
         "retrieval_source": str(diagnostics.get("retrieval_source") or "unknown"),
         "source_refs": [
             {

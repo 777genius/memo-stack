@@ -15,15 +15,15 @@ def prod_load_settings(
     failure_cls: type[Exception] = RuntimeError,
 ) -> dict[str, int | float | bool]:
     return {
-        "profiles": bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_PROFILES",
+        "memory_scopes": bounded_int_env(
+            "MEMORY_CLEAN_SMOKE_LOAD_MEMORY_SCOPES",
             default=3,
             minimum=2,
             maximum=12,
             failure_cls=failure_cls,
         ),
-        "facts_per_profile": bounded_int_env(
-            "MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_PROFILE",
+        "facts_per_memory_scope": bounded_int_env(
+            "MEMORY_CLEAN_SMOKE_LOAD_FACTS_PER_MEMORY_SCOPE",
             default=8,
             minimum=3,
             maximum=100,
@@ -227,7 +227,7 @@ def run_prod_chaos_flood(
                 "/v1/facts",
                 json={
                     "space_slug": "prod-load-chaos",
-                    "profile_external_ref": "wrong-token",
+                    "memory_scope_external_ref": "wrong-token",
                     "text": f"{marker}: unauthorized chaos request {index}",
                     "kind": "note",
                     "source_refs": [{"source_type": "prod_load", "source_id": f"unauth:{index}"}],
@@ -237,7 +237,7 @@ def run_prod_chaos_flood(
                 "/v1/context",
                 json={
                     "space_slug": "prod-load-chaos",
-                    "profile_external_ref": "invalid-context",
+                    "memory_scope_external_ref": "invalid-context",
                     "query": "",
                 },
             )

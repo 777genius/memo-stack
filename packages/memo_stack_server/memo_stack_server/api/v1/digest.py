@@ -23,11 +23,11 @@ class DigestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    memory_scope_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)
     thread_id: str | None = Field(default=None, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
-    profile_external_refs: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_refs: list[str] | None = Field(default=None, min_length=1, max_length=20)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     topic: str = Field(min_length=1, max_length=12000)
     consistency_mode: ConsistencyMode = Field(default=ConsistencyMode.BEST_EFFORT)
@@ -65,11 +65,11 @@ async def build_digest(
     scope = await resolve_existing_context_scope(
         container,
         space_id=request.space_id,
-        profile_ids=request.profile_ids,
+        memory_scope_ids=request.memory_scope_ids,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
-        profile_external_refs=request.profile_external_refs,
+        memory_scope_external_ref=request.memory_scope_external_ref,
+        memory_scope_external_refs=request.memory_scope_external_refs,
         thread_external_ref=request.thread_external_ref,
     )
     if scope is None:
@@ -90,7 +90,7 @@ async def build_digest(
     digest = await container.build_memory_digest.execute(
         BuildMemoryDigestQuery(
             space_id=scope.space_id,
-            profile_ids=scope.profile_ids,
+            memory_scope_ids=scope.memory_scope_ids,
             thread_id=scope.thread_id,
             topic=request.topic,
             consistency_mode=request.consistency_mode,
@@ -115,7 +115,9 @@ async def build_digest(
         use_case="build_digest",
         scope={
             "space_id": str(scope.space_id),
-            "profile_ids": [str(profile_id) for profile_id in scope.profile_ids],
+            "memory_scope_ids": [
+                str(memory_scope_id) for memory_scope_id in scope.memory_scope_ids
+            ],
             "thread_id": str(scope.thread_id) if scope.thread_id else None,
         },
     )

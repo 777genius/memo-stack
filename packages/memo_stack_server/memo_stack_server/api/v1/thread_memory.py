@@ -25,10 +25,10 @@ class ThreadMemoryScopeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
 
 
@@ -40,10 +40,10 @@ async def thread_memory_status(
     scope = await resolve_existing_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=request.thread_external_ref,
         thread_required=True,
     )
@@ -52,7 +52,7 @@ async def thread_memory_status(
     result = await container.get_session_status.execute(
         GetSessionStatusQuery(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
         )
     )
@@ -75,10 +75,10 @@ async def delete_thread_memory(
     scope = await resolve_existing_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=request.thread_external_ref,
         thread_required=True,
     )
@@ -87,7 +87,7 @@ async def delete_thread_memory(
     result = await container.delete_thread_memory.execute(
         DeleteThreadMemoryCommand(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
         )
     )

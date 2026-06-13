@@ -26,7 +26,7 @@ class DeleteDocumentUseCase:
             document, chunk_ids = result
             deleted_facts = await uow.facts.delete_facts_sourced_only_by_chunks(
                 space_id=str(document.space_id),
-                profile_id=str(document.profile_id),
+                memory_scope_id=str(document.memory_scope_id),
                 document_id=str(document.id),
                 chunk_ids=chunk_ids,
                 now=now,
@@ -49,7 +49,7 @@ class DeleteDocumentUseCase:
                             "document_id": str(document.id),
                             "chunk_ids": list(chunk_ids),
                             "space_id": str(document.space_id),
-                            "profile_id": str(document.profile_id),
+                            "memory_scope_id": str(document.memory_scope_id),
                         },
                     )
                 )

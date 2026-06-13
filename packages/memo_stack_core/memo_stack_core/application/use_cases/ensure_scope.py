@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from memo_stack_core.application.dto import EnsureScopeCommand, ScopeResult
-from memo_stack_core.domain.entities import ProfileId, SpaceId, ThreadId
+from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
 from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
@@ -17,13 +17,13 @@ class EnsureScopeUseCase:
         async with self._uow_factory() as uow:
             scope = await uow.scope.ensure_scope(
                 space_slug=command.space_slug,
-                profile_external_ref=command.profile_external_ref,
+                memory_scope_external_ref=command.memory_scope_external_ref,
                 thread_external_ref=command.thread_external_ref,
                 now=self._clock.now(),
             )
             await uow.commit()
         return ScopeResult(
             space_id=SpaceId(scope.space_id),
-            profile_id=ProfileId(scope.profile_id),
+            memory_scope_id=MemoryScopeId(scope.memory_scope_id),
             thread_id=ThreadId(scope.thread_id) if scope.thread_id else None,
         )

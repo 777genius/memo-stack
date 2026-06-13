@@ -90,23 +90,31 @@ async def outbox_diagnostics(
     }
 
 
-async def profile_diagnostics(container: Container, *, profile_id: str) -> dict[str, Any]:
+async def memory_scope_diagnostics(container: Container, *, memory_scope_id: str) -> dict[str, Any]:
     async with AsyncSession(container.engine) as session:
-        active_facts = await _count_by_profile(session, MemoryFactRow, profile_id, "active")
-        deleted_facts = await _count_by_profile(session, MemoryFactRow, profile_id, "deleted")
-        active_documents = await _count_by_profile(
-            session, MemoryDocumentRow, profile_id, "active"
+        active_facts = await _count_by_memory_scope(
+            session, MemoryFactRow, memory_scope_id, "active"
         )
-        deleted_documents = await _count_by_profile(
-            session, MemoryDocumentRow, profile_id, "deleted"
+        deleted_facts = await _count_by_memory_scope(
+            session, MemoryFactRow, memory_scope_id, "deleted"
         )
-        active_chunks = await _count_by_profile(session, MemoryChunkRow, profile_id, "active")
-        deleted_chunks = await _count_by_profile(session, MemoryChunkRow, profile_id, "deleted")
-        pending_suggestions = await _count_by_profile(
-            session, MemorySuggestionRow, profile_id, "pending"
+        active_documents = await _count_by_memory_scope(
+            session, MemoryDocumentRow, memory_scope_id, "active"
+        )
+        deleted_documents = await _count_by_memory_scope(
+            session, MemoryDocumentRow, memory_scope_id, "deleted"
+        )
+        active_chunks = await _count_by_memory_scope(
+            session, MemoryChunkRow, memory_scope_id, "active"
+        )
+        deleted_chunks = await _count_by_memory_scope(
+            session, MemoryChunkRow, memory_scope_id, "deleted"
+        )
+        pending_suggestions = await _count_by_memory_scope(
+            session, MemorySuggestionRow, memory_scope_id, "pending"
         )
     return {
-        "profile_id": profile_id,
+        "memory_scope_id": memory_scope_id,
         "facts": {"active": active_facts, "deleted": deleted_facts},
         "documents": {"active": active_documents, "deleted": deleted_documents},
         "chunks": {"active": active_chunks, "deleted": deleted_chunks},
@@ -171,13 +179,13 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
     }
 
 
-async def _count_by_profile(
+async def _count_by_memory_scope(
     session: AsyncSession,
     model: type[MemoryFactRow]
     | type[MemoryDocumentRow]
     | type[MemoryChunkRow]
     | type[MemorySuggestionRow],
-    profile_id: str,
+    memory_scope_id: str,
     status: str,
 ) -> int:
     return int(
@@ -185,7 +193,7 @@ async def _count_by_profile(
             await session.scalar(
                 select(func.count())
                 .select_from(model)
-                .where(model.profile_id == profile_id, model.status == status)
+                .where(model.memory_scope_id == memory_scope_id, model.status == status)
             )
         )
         or 0

@@ -43,13 +43,13 @@ class ReceiveCaptureUseCase:
         clock: ClockPort,
         ids: IdGeneratorPort,
         admission: CaptureAdmissionService | None = None,
-        max_pending_captures_per_profile: int = 5_000,
+        max_pending_captures_per_memory_scope: int = 5_000,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
         self._ids = ids
         self._admission = admission or CaptureAdmissionService()
-        self._max_pending_captures_per_profile = max(1, max_pending_captures_per_profile)
+        self._max_pending_captures_per_memory_scope = max(1, max_pending_captures_per_memory_scope)
 
     async def execute(self, command: ReceiveCaptureCommand) -> CaptureResult:
         now = self._clock.now()
@@ -74,7 +74,7 @@ class ReceiveCaptureUseCase:
 
             pending_count = await uow.captures.count_for_scope(
                 space_id=str(command.space_id),
-                profile_id=str(command.profile_id),
+                memory_scope_id=str(command.memory_scope_id),
                 status=CaptureStatus.ACCEPTED.value,
                 consolidation_statuses=(
                     ConsolidationStatus.PENDING.value,
@@ -82,14 +82,14 @@ class ReceiveCaptureUseCase:
                     ConsolidationStatus.RETRY_PENDING.value,
                 ),
             )
-            if pending_count >= self._max_pending_captures_per_profile:
+            if pending_count >= self._max_pending_captures_per_memory_scope:
                 raise MemoryIngressLimitError("Pending capture limit reached")
 
             safe_metadata = _safe_metadata(command.metadata)
             capture = CanonicalCapture.create(
                 capture_id=MemoryCaptureId(self._ids.new_id("cap")),
                 space_id=command.space_id,
-                profile_id=command.profile_id,
+                memory_scope_id=command.memory_scope_id,
                 thread_id=command.thread_id,
                 source_agent=command.source_agent,
                 source_kind=_source_kind(command.source_kind),
@@ -143,12 +143,12 @@ class ReceiveCaptureUseCase:
                         aggregate_type="capture",
                         aggregate_id=str(saved.id),
                         workload_class="auto_memory",
-                        fairness_key=str(saved.profile_id),
+                        fairness_key=str(saved.memory_scope_id),
                         payload={
                             "schema_version": 1,
                             "capture_id": str(saved.id),
                             "space_id": str(saved.space_id),
-                            "profile_id": str(saved.profile_id),
+                            "memory_scope_id": str(saved.memory_scope_id),
                             "trace_id": saved.trace_id,
                         },
                     )

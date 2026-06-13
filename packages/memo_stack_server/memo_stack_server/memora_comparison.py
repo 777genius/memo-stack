@@ -177,7 +177,7 @@ DIMENSIONS: tuple[Dimension, ...] = (
             "Graphiti/Neo4j is modeled as a temporal derived graph adapter with "
             "canonical Postgres as source of truth, plus portable graph.json "
             "export for canonical facts, documents, fragments and evidence links "
-            "and durable typed fact links through API, SDK and MCP. Profile "
+            "and durable typed fact links through API, SDK and MCP. MemoryScope "
             "snapshot export/import preserves those links for backup/git-sync "
             "without depending on derived Graphiti/Cognee runtime state."
         ),
@@ -205,18 +205,18 @@ DIMENSIONS: tuple[Dimension, ...] = (
         requirement="coding_agent_integration",
     ),
     Dimension(
-        id="scope_isolation_team_profiles",
-        label="Project/team/profile isolation",
+        id="scope_isolation_team_memory_scopes",
+        label="Project/team/memory_scope isolation",
         weight=0.10,
         memo_stack_score=9.2,
         memora_score=7.5,
         memo_stack_rationale=(
-            "Space/profile/thread is a first-class contract, with category/tags "
-            "inside each profile, auth scope and cross-profile/thread leak checks."
+            "Space/memory_scope/thread is a first-class contract, with category/tags "
+            "inside each memory_scope, auth scope and cross-memory_scope/thread leak checks."
         ),
         memora_rationale=(
             "Tags and metadata filters can model scope, and D1/S3/R2 can sync, "
-            "but public docs do not expose a hard profile/thread isolation model."
+            "but public docs do not expose a hard memory_scope/thread isolation model."
         ),
         requirement="scope_isolation",
     ),
@@ -229,9 +229,9 @@ DIMENSIONS: tuple[Dimension, ...] = (
         memo_stack_rationale=(
             "Quality scorecard, full-provider canary, public benchmark canary, "
             "agent behavior benchmark, secret/top-evidence gates, and portable "
-            "profile snapshot export/import with manifest verification plus "
+            "memory_scope snapshot export/import with manifest verification plus "
             "dedicated read-only import previews via API, SDK, MCP and CLI exist. "
-            "Profile snapshots now include durable typed fact relations. Memory "
+            "MemoryScope snapshots now include durable typed fact relations. Memory "
             "insights, recent activity, duplicate/similar fact review actions and "
             "safe consolidation plans are available via API, SDK, MCP and CLI."
         ),
@@ -307,10 +307,10 @@ def build_memora_agent_memory_comparison(
                 "tests/unit/test_mcp_fact_relations.py",
                 "tests/unit/test_mcp_suggestion_batch_review.py",
                 "tests/unit/test_suggestions_api.py",
-                "tests/unit/test_profile_snapshot_api.py",
-                "tests/unit/test_mcp_profile_snapshot_preview.py",
-                "memo_stack_core.profile_snapshots",
-                "memo_stack_core.profile_snapshot_preview",
+                "tests/unit/test_memory_scope_snapshot_api.py",
+                "tests/unit/test_mcp_memory_scope_snapshot_preview.py",
+                "memo_stack_core.memory_scope_snapshots",
+                "memo_stack_core.memory_scope_snapshot_preview",
                 "tests/e2e/test_memory_quality_e2e.py",
                 "tests/e2e/test_memo_stack_agent_behavior_bench_e2e.py",
                 "tests/e2e/test_memo_stack_agent_plugin_e2e.py",
@@ -339,7 +339,7 @@ def build_memora_agent_memory_comparison(
             {
                 "case": "Team/project memory with strict scopes and review gates",
                 "winner": "memo_stack",
-                "reason": "Space/profile/thread, canonical lifecycle and safer write policy.",
+                "reason": "Space/memory_scope/thread, canonical lifecycle and safer write policy.",
             },
             {
                 "case": "Reusable platform behind multiple apps and agents",

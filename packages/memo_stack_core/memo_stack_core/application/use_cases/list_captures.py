@@ -15,7 +15,7 @@ class ListCapturesUseCase:
         async with self._uow_factory() as uow:
             captures = await uow.captures.list_for_scope(
                 space_id=str(query.space_id),
-                profile_id=str(query.profile_id),
+                memory_scope_id=str(query.memory_scope_id),
                 status=query.status,
                 consolidation_status=query.consolidation_status,
                 limit=query.limit,

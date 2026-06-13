@@ -33,7 +33,7 @@ class MemoryServiceTokenRow(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    profile_ids_json: Mapped[list[str] | None] = mapped_column(json_type(), nullable=True)
+    memory_scope_ids_json: Mapped[list[str] | None] = mapped_column(json_type(), nullable=True)
     description: Mapped[str] = mapped_column(String(240), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     permissions_json: Mapped[list[str] | None] = mapped_column(json_type(), nullable=True)
@@ -55,9 +55,11 @@ class MemorySpaceRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class MemoryProfileRow(Base):
-    __tablename__ = "memory_profiles"
-    __table_args__ = (UniqueConstraint("space_id", "external_ref", name="uq_profile_external_ref"),)
+class MemoryScopeRow(Base):
+    __tablename__ = "memory_scopes"
+    __table_args__ = (
+        UniqueConstraint("space_id", "external_ref", name="uq_memory_scope_external_ref"),
+    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(
@@ -72,16 +74,51 @@ class MemoryProfileRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class MemoryUsageRecordRow(Base):
+    __tablename__ = "memory_usage_records"
+    __table_args__ = (
+        Index("uq_memory_usage_idempotency", "idempotency_key", unique=True),
+        Index(
+            "ix_memory_usage_subject_window",
+            "subject_type",
+            "subject_id",
+            "resource",
+            "status",
+            "window_start",
+            "window_end",
+        ),
+        Index("ix_memory_usage_space_created", "space_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    subject_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    space_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    resource: Mapped[str] = mapped_column(String(80), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(240), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MemoryThreadRow(Base):
     __tablename__ = "memory_threads"
     __table_args__ = (
-        UniqueConstraint("space_id", "profile_id", "external_ref", name="uq_thread_external_ref"),
-        Index("ix_memory_threads_scope_status", "space_id", "profile_id", "status"),
+        UniqueConstraint(
+            "space_id", "memory_scope_id", "external_ref", name="uq_thread_external_ref"
+        ),
+        Index("ix_memory_threads_scope_status", "space_id", "memory_scope_id", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     external_ref: Mapped[str] = mapped_column(String(240), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -92,13 +129,15 @@ class MemoryFactRow(Base):
     __tablename__ = "memory_facts"
     __table_args__ = (
         CheckConstraint("version > 0", name="ck_fact_version_positive"),
-        Index("ix_memory_facts_scope_status", "space_id", "profile_id", "status", "updated_at"),
-        Index("ix_memory_facts_taxonomy", "space_id", "profile_id", "category", "status"),
+        Index(
+            "ix_memory_facts_scope_status", "space_id", "memory_scope_id", "status", "updated_at"
+        ),
+        Index("ix_memory_facts_taxonomy", "space_id", "memory_scope_id", "category", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     kind: Mapped[str] = mapped_column(String(80), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -120,7 +159,7 @@ class MemoryEpisodeRow(Base):
     __table_args__ = (
         UniqueConstraint(
             "space_id",
-            "profile_id",
+            "memory_scope_id",
             "thread_id",
             "source_external_id",
             name="uq_episode_source",
@@ -130,7 +169,7 @@ class MemoryEpisodeRow(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     thread_id: Mapped[str] = mapped_column(String(80), nullable=False)
     source_type: Mapped[str] = mapped_column(String(80), nullable=False)
     source_external_id: Mapped[str] = mapped_column(String(240), nullable=False)
@@ -148,7 +187,7 @@ class MemoryDocumentRow(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     source_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -160,9 +199,9 @@ class MemoryDocumentRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     __table_args__ = (
         Index(
-            "uq_document_content_hash_profile_wide",
+            "uq_document_content_hash_memory_scope_wide",
             "space_id",
-            "profile_id",
+            "memory_scope_id",
             "content_hash",
             unique=True,
             sqlite_where=thread_id.is_(None) & (status != "deleted"),
@@ -171,29 +210,121 @@ class MemoryDocumentRow(Base):
         Index(
             "uq_document_content_hash_thread",
             "space_id",
-            "profile_id",
+            "memory_scope_id",
             "thread_id",
             "content_hash",
             unique=True,
             sqlite_where=thread_id.is_not(None) & (status != "deleted"),
             postgresql_where=thread_id.is_not(None) & (status != "deleted"),
         ),
-        Index("ix_memory_documents_scope_status", "space_id", "profile_id", "status"),
+        Index("ix_memory_documents_scope_status", "space_id", "memory_scope_id", "status"),
     )
+
+
+class MemoryAssetRow(Base):
+    __tablename__ = "memory_assets"
+    __table_args__ = (
+        Index(
+            "ix_memory_assets_scope_status", "space_id", "memory_scope_id", "status", "created_at"
+        ),
+        Index("ix_memory_assets_hash_scope", "space_id", "memory_scope_id", "sha256_hex", "status"),
+        Index("ix_memory_assets_thread_status", "thread_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    space_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    filename: Mapped[str] = mapped_column(String(240), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256_hex: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_backend: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="stored")
+    classification: Mapped[str] = mapped_column(String(40), nullable=False, default="unknown")
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MemoryAssetExtractionJobRow(Base):
+    __tablename__ = "memory_asset_extraction_jobs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    space_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    parser_profile: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_config_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_sha256_hex: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    parser_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    safe_error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    safe_error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    result_document_ids_json: Mapped[list[str]] = mapped_column(json_type(), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index("ix_asset_extraction_jobs_asset_status", "asset_id", "status", "created_at"),
+        Index(
+            "ix_asset_extraction_jobs_scope_status",
+            "space_id",
+            "memory_scope_id",
+            "status",
+            "updated_at",
+        ),
+        Index(
+            "uq_asset_extraction_jobs_active_profile",
+            "asset_id",
+            "parser_profile",
+            "parser_config_hash",
+            "source_sha256_hex",
+            unique=True,
+            sqlite_where=status.in_(("pending", "running", "succeeded")),
+            postgresql_where=status.in_(("pending", "running", "succeeded")),
+        ),
+    )
+
+
+class MemoryAssetExtractionArtifactRow(Base):
+    __tablename__ = "memory_asset_extraction_artifacts"
+    __table_args__ = (
+        Index("ix_asset_extraction_artifacts_job", "job_id", "artifact_type"),
+        Index("ix_asset_extraction_artifacts_asset", "asset_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    asset_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_backend: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    sha256_hex: Mapped[str] = mapped_column(String(80), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class MemoryChunkRow(Base):
     __tablename__ = "memory_chunks"
     __table_args__ = (
-        UniqueConstraint("space_id", "profile_id", "source_hash", name="uq_chunk_source_hash"),
-        Index("ix_memory_chunks_scope_status", "space_id", "profile_id", "status"),
+        UniqueConstraint("space_id", "memory_scope_id", "source_hash", name="uq_chunk_source_hash"),
+        Index("ix_memory_chunks_scope_status", "space_id", "memory_scope_id", "status"),
         Index("ix_memory_chunks_thread_status", "thread_id", "status"),
         Index("ix_memory_chunks_document", "document_id", "status", "sequence"),
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     document_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     episode_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -248,7 +379,7 @@ class MemoryFactRelationRow(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     source_fact_id: Mapped[str] = mapped_column(
         String(80),
         ForeignKey("memory_facts.id"),
@@ -276,21 +407,23 @@ class MemoryFactRelationRow(Base):
         ),
         Index("ix_memory_fact_relations_source", "source_fact_id", "status"),
         Index("ix_memory_fact_relations_target", "target_fact_id", "status"),
-        Index("ix_memory_fact_relations_scope", "space_id", "profile_id", "status"),
+        Index("ix_memory_fact_relations_scope", "space_id", "memory_scope_id", "status"),
     )
 
 
 class MemorySuggestionRow(Base):
     __tablename__ = "memory_suggestions"
     __table_args__ = (
-        Index("ix_memory_suggestions_scope_status", "space_id", "profile_id", "status"),
+        Index("ix_memory_suggestions_scope_status", "space_id", "memory_scope_id", "status"),
         Index("ix_memory_suggestions_target", "target_fact_id", "status"),
-        Index("ix_memory_suggestions_expiry", "space_id", "profile_id", "status", "expires_at"),
+        Index(
+            "ix_memory_suggestions_expiry", "space_id", "memory_scope_id", "status", "expires_at"
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     candidate_text: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(String(80), nullable=False)
     operation: Mapped[str] = mapped_column(String(40), nullable=False, default="add")
@@ -323,18 +456,20 @@ class MemoryCaptureRow(Base):
     __tablename__ = "memory_captures"
     __table_args__ = (
         UniqueConstraint("space_id", "idempotency_key", name="uq_capture_idempotency"),
-        Index("ix_memory_captures_scope_status", "space_id", "profile_id", "status", "created_at"),
+        Index(
+            "ix_memory_captures_scope_status", "space_id", "memory_scope_id", "status", "created_at"
+        ),
         Index(
             "ix_memory_captures_consolidation",
             "space_id",
-            "profile_id",
+            "memory_scope_id",
             "consolidation_status",
             "created_at",
         ),
         Index(
             "ix_memory_captures_source",
             "space_id",
-            "profile_id",
+            "memory_scope_id",
             "source_agent",
             "event_type",
             "created_at",
@@ -343,7 +478,7 @@ class MemoryCaptureRow(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     space_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    profile_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
     thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     source_agent: Mapped[str] = mapped_column(String(80), nullable=False)
     source_kind: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -383,6 +518,56 @@ class MemoryCaptureRow(Base):
     resolver_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     last_error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_error_message: Mapped[str | None] = mapped_column(String(400), nullable=True)
+
+
+class MemoryContextLinkRow(Base):
+    __tablename__ = "memory_context_links"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    space_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(40), nullable=False, default="medium")
+    reason: Mapped[str] = mapped_column(String(320), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        Index(
+            "uq_memory_context_link_active",
+            "space_id",
+            "memory_scope_id",
+            "source_type",
+            "source_id",
+            "target_type",
+            "target_id",
+            "relation_type",
+            unique=True,
+            sqlite_where=status == "active",
+            postgresql_where=status == "active",
+        ),
+        Index(
+            "ix_memory_context_links_source",
+            "space_id",
+            "memory_scope_id",
+            "source_type",
+            "source_id",
+            "status",
+        ),
+        Index(
+            "ix_memory_context_links_target",
+            "space_id",
+            "memory_scope_id",
+            "target_type",
+            "target_id",
+            "status",
+        ),
+    )
 
 
 class MemoryOutboxRow(Base):

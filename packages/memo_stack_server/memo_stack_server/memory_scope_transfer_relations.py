@@ -1,4 +1,4 @@
-"""Relation helpers for profile snapshot transfer."""
+"""Relation helpers for memory_scope snapshot transfer."""
 
 from __future__ import annotations
 
@@ -25,17 +25,17 @@ def relation_from_json(
     item: dict[str, Any],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     now: datetime,
 ) -> MemoryFactRelationRow:
     return MemoryFactRelationRow(
         id=str(item["id"]),
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         source_fact_id=str(item["source_fact_id"]),
         target_fact_id=str(item["target_fact_id"]),
         relation_type=str(item.get("relation_type", "related_to")),
-        reason=str(item.get("reason") or "imported profile snapshot relation")[:320],
+        reason=str(item.get("reason") or "imported memory_scope snapshot relation")[:320],
         status=str(item.get("status", "active")),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),

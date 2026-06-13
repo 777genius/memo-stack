@@ -12,13 +12,13 @@ def _seed_updated_fact(
     headers: dict[str, str],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
 ) -> bool:
     return _seed_eval_updated_fact(
         client,
         headers,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         old_text="EVAL_FACT_UPDATED_OLD: use pgvector for document recall.",
         new_text="EVAL_FACT_UPDATED_NEW: use Qdrant for document recall.",
         old_source_id="eval-update-old",
@@ -33,13 +33,13 @@ def _seed_deleted_fact(
     headers: dict[str, str],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
 ) -> bool:
     return _seed_eval_deleted_fact(
         client,
         headers,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         text="EVAL_FACT_DELETED: this deleted fact must not render.",
         source_id="eval-delete",
         idempotency_key="eval-delete-fact-v1",
@@ -51,13 +51,13 @@ def _seed_quality_updated_fact(
     headers: dict[str, str],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
 ) -> bool:
     return _seed_eval_updated_fact(
         client,
         headers,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         old_text=(
             "QUALITY_FACT_PROVIDER_OLD: obsolete document memory uses pgvector only "
             "and has no temporal graph."
@@ -78,13 +78,13 @@ def _seed_quality_deleted_fact(
     headers: dict[str, str],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
 ) -> bool:
     return _seed_eval_deleted_fact(
         client,
         headers,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         text="QUALITY_FACT_DELETED: obsolete deleted benchmark fact must not render.",
         source_id="quality-delete",
         idempotency_key="quality-delete-fact-v1",

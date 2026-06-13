@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from memo_stack_core.domain.assets import MemoryAsset, MemoryContextLink
 from memo_stack_core.domain.capture import CanonicalCapture
 from memo_stack_core.domain.entities import (
     MemoryChunk,
@@ -14,16 +15,18 @@ from memo_stack_core.domain.entities import (
     MemoryFact,
     MemoryFactRelation,
     MemoryKind,
-    MemoryProfile,
+    MemoryScope,
+    MemoryScopeId,
     MemorySpace,
     MemorySuggestion,
-    ProfileId,
     SourceRef,
     SpaceId,
     SpeakerRole,
     ThreadId,
     TrustLevel,
 )
+from memo_stack_core.domain.extraction import AssetExtractionJob, ExtractionArtifact
+from memo_stack_core.domain.usage import ProductPlan, UsageQuotaSnapshot
 from memo_stack_core.ports.capabilities import ConsistencyMode as ConsistencyMode
 
 
@@ -34,10 +37,22 @@ class CreateSpaceCommand:
 
 
 @dataclass(frozen=True)
-class CreateProfileCommand:
+class CreateMemoryScopeCommand:
     space_id: SpaceId
     external_ref: str
     name: str
+
+
+@dataclass(frozen=True)
+class UpdateMemoryScopeCommand:
+    memory_scope_id: MemoryScopeId
+    external_ref: str | None = None
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class DeleteMemoryScopeCommand:
+    memory_scope_id: MemoryScopeId
 
 
 @dataclass(frozen=True)
@@ -47,15 +62,220 @@ class SpaceResult:
 
 
 @dataclass(frozen=True)
-class ProfileResult:
-    profile: MemoryProfile
+class MemoryScopeResult:
+    memory_scope: MemoryScope
     created: bool = True
+
+
+@dataclass(frozen=True)
+class CreateAssetCommand:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    filename: str
+    content_type: str
+    content: bytes
+    thread_id: ThreadId | None = None
+    classification: str = "unknown"
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class DeleteAssetCommand:
+    asset_id: str
+
+
+@dataclass(frozen=True)
+class AssetResult:
+    asset: MemoryAsset
+    duplicate: bool = False
+
+
+@dataclass(frozen=True)
+class GetAssetQuery:
+    asset_id: str
+
+
+@dataclass(frozen=True)
+class ListAssetsQuery:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    thread_id: ThreadId | None
+    status: str | None
+    limit: int
+    cursor_created_at: datetime | None = None
+    cursor_id: str | None = None
+
+
+@dataclass(frozen=True)
+class RequestAssetExtractionCommand:
+    asset_id: str
+    parser_profile: str | None = None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class RunAssetExtractionCommand:
+    job_id: str
+    force: bool = False
+
+
+@dataclass(frozen=True)
+class GetAssetExtractionQuery:
+    job_id: str
+
+
+@dataclass(frozen=True)
+class ListAssetExtractionsQuery:
+    asset_id: str | None = None
+    space_id: SpaceId | None = None
+    memory_scope_id: MemoryScopeId | None = None
+    thread_id: ThreadId | None = None
+    status: str | None = None
+    limit: int = 50
+    cursor_created_at: datetime | None = None
+    cursor_id: str | None = None
+
+
+@dataclass(frozen=True)
+class GetExtractionArtifactQuery:
+    artifact_id: str
+
+
+@dataclass(frozen=True)
+class RetryAssetExtractionCommand:
+    job_id: str
+
+
+@dataclass(frozen=True)
+class AssetExtractionResult:
+    job: AssetExtractionJob
+    artifacts: tuple[ExtractionArtifact, ...] = ()
+    duplicate: bool = False
+    indexing_status: str = "pending"
+
+
+@dataclass(frozen=True)
+class AssetExtractionsResult:
+    jobs: tuple[AssetExtractionJob, ...]
+
+
+@dataclass(frozen=True)
+class ExtractionArtifactBytesResult:
+    artifact: ExtractionArtifact
+    content: bytes
+
+
+@dataclass(frozen=True)
+class UsageSummaryQuery:
+    space_id: SpaceId
+
+
+@dataclass(frozen=True)
+class UsageResourceSummary:
+    resource: str
+    limit: int
+    used: int
+    remaining: int
+    window_start: datetime
+    window_end: datetime
+
+
+@dataclass(frozen=True)
+class UsageSummaryResult:
+    plan: ProductPlan
+    resources: tuple[UsageResourceSummary, ...]
+
+    @classmethod
+    def from_snapshots(
+        cls,
+        *,
+        plan: ProductPlan,
+        snapshots: tuple[UsageQuotaSnapshot, ...],
+    ) -> UsageSummaryResult:
+        return cls(
+            plan=plan,
+            resources=tuple(
+                UsageResourceSummary(
+                    resource=snapshot.resource.value,
+                    limit=snapshot.limit,
+                    used=snapshot.used,
+                    remaining=snapshot.remaining,
+                    window_start=snapshot.window.start,
+                    window_end=snapshot.window.end,
+                )
+                for snapshot in snapshots
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class CreateContextLinkCommand:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    source_type: str
+    source_id: str
+    target_type: str
+    target_id: str
+    relation_type: str
+    reason: str
+    confidence: str = "medium"
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class DeleteContextLinkCommand:
+    context_link_id: str
+
+
+@dataclass(frozen=True)
+class ContextLinkResult:
+    link: MemoryContextLink
+    duplicate: bool = False
+
+
+@dataclass(frozen=True)
+class ListContextLinksQuery:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    source_type: str
+    source_id: str
+    status: str | None
+    limit: int
+
+
+@dataclass(frozen=True)
+class SuggestContextLinksCommand:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    text: str
+    source_type: str | None = None
+    source_id: str | None = None
+    thread_id: ThreadId | None = None
+    limit: int = 10
+
+
+@dataclass(frozen=True)
+class ContextLinkCandidate:
+    target_type: str
+    target_id: str
+    label: str
+    preview: str
+    score: float
+    tier: str
+    reasons: tuple[str, ...]
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class ContextLinkSuggestionsResult:
+    candidates: tuple[ContextLinkCandidate, ...]
+    diagnostics: dict[str, object]
 
 
 @dataclass(frozen=True)
 class RememberFactCommand:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     text: str
     kind: MemoryKind
     source_refs: tuple[SourceRef, ...]
@@ -108,7 +328,7 @@ class RelatedFactsQuery:
 @dataclass(frozen=True)
 class ListFactsQuery:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId | None
     status: str | None
     limit: int
@@ -183,21 +403,21 @@ class FactRelationsResult:
 @dataclass(frozen=True)
 class EnsureScopeCommand:
     space_slug: str
-    profile_external_ref: str
+    memory_scope_external_ref: str
     thread_external_ref: str | None = None
 
 
 @dataclass(frozen=True)
 class ScopeResult:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId | None = None
 
 
 @dataclass(frozen=True)
 class IngestEpisodeCommand:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId
     source_type: str
     source_external_id: str
@@ -224,7 +444,7 @@ class IngestEpisodeResult:
 @dataclass(frozen=True)
 class IngestDocumentCommand:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     title: str
     text: str
     source_type: str
@@ -232,6 +452,7 @@ class IngestDocumentCommand:
     thread_id: ThreadId | None = None
     idempotency_key: str | None = None
     classification: str = "unknown"
+    chunk_metadata: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -269,7 +490,7 @@ class DocumentChunksQueryResult:
 @dataclass(frozen=True)
 class ExportGraphQuery:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId | None
     include_deleted: bool
     include_restricted: bool
@@ -356,7 +577,7 @@ class ContextBundle:
 @dataclass(frozen=True)
 class BuildContextQuery:
     space_id: SpaceId
-    profile_ids: tuple[ProfileId, ...]
+    memory_scope_ids: tuple[MemoryScopeId, ...]
     query: str
     thread_id: ThreadId | None = None
     consistency_mode: ConsistencyMode = ConsistencyMode.BEST_EFFORT
@@ -375,7 +596,7 @@ class BuildContextQuery:
 @dataclass(frozen=True)
 class BuildMemoryDigestQuery:
     space_id: SpaceId
-    profile_ids: tuple[ProfileId, ...]
+    memory_scope_ids: tuple[MemoryScopeId, ...]
     topic: str
     thread_id: ThreadId | None = None
     consistency_mode: ConsistencyMode = ConsistencyMode.BEST_EFFORT
@@ -410,7 +631,7 @@ class MemoryDigest:
 @dataclass(frozen=True)
 class BuildMemoryInsightsQuery:
     space_id: SpaceId
-    profile_ids: tuple[ProfileId, ...]
+    memory_scope_ids: tuple[MemoryScopeId, ...]
     thread_id: ThreadId | None = None
     max_facts: int = 200
     max_documents: int = 100
@@ -426,7 +647,7 @@ class MemoryInsightActionItem:
     action: str
     target_type: str
     target_id: str | None
-    profile_id: str
+    memory_scope_id: str
     reason: str
     preview: str | None = None
     metadata: dict[str, object] | None = None
@@ -439,7 +660,7 @@ class MemoryActivityItem:
     event_type: str
     entity_type: str
     entity_id: str
-    profile_id: str
+    memory_scope_id: str
     thread_id: str | None
     status: str
     preview: str | None = None
@@ -450,7 +671,7 @@ class MemoryActivityItem:
 class MemoryConsolidationPlanItem:
     id: str
     plan_type: str
-    profile_id: str
+    memory_scope_id: str
     confidence: str
     canonical_candidate_id: str
     candidate_fact_ids: tuple[str, ...]
@@ -477,7 +698,7 @@ class MemoryInsightsResult:
 @dataclass(frozen=True)
 class DeleteThreadMemoryCommand:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId
 
 
@@ -491,7 +712,7 @@ class DeleteThreadMemoryResult:
 @dataclass(frozen=True)
 class GetSessionStatusQuery:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId
 
 
@@ -506,7 +727,7 @@ class SessionStatusResult:
 @dataclass(frozen=True)
 class CreateSuggestionCommand:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     candidate_text: str
     kind: MemoryKind
     source_refs: tuple[SourceRef, ...]
@@ -562,7 +783,7 @@ class CreateSuggestionsBatchResult:
 @dataclass(frozen=True)
 class ListSuggestionsQuery:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     status: str | None = None
     operation: str | None = None
     category: str | None = None
@@ -624,7 +845,7 @@ class ReviewSuggestionsBatchResult:
 @dataclass(frozen=True)
 class ReceiveCaptureCommand:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     text: str
     source_agent: str
     source_kind: str
@@ -663,7 +884,7 @@ class CaptureResult:
 @dataclass(frozen=True)
 class ListCapturesQuery:
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     status: str | None = None
     consolidation_status: str | None = None
     limit: int = 50

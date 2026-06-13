@@ -110,7 +110,7 @@ class CogneeMemoryAdapter:
                 affected_ids=(),
                 diagnostics=(_diagnostic("cognee.missing_remember"),),
             )
-        dataset_name = self._dataset_name(command.space_id, command.profile_id)
+        dataset_name = self._dataset_name(command.space_id, command.memory_scope_id)
         try:
             await remember(
                 f"{command.title}\n\n{command.text}",
@@ -157,8 +157,8 @@ class CogneeMemoryAdapter:
                 diagnostics=(_diagnostic("cognee.missing_recall"),),
             )
         datasets = [
-            self._dataset_name(query.scope.space_id, profile_id)
-            for profile_id in query.scope.profile_ids
+            self._dataset_name(query.scope.space_id, memory_scope_id)
+            for memory_scope_id in query.scope.memory_scope_ids
         ]
         try:
             results = await recall(
@@ -195,12 +195,12 @@ class CogneeMemoryAdapter:
         self._client = cognee
         return self._client
 
-    def _dataset_name(self, space_id: str, profile_id: str) -> str:
+    def _dataset_name(self, space_id: str, memory_scope_id: str) -> str:
         return "__".join(
             (
                 _safe_dataset_part(self._dataset_prefix),
                 _safe_dataset_part(space_id),
-                _safe_dataset_part(profile_id),
+                _safe_dataset_part(memory_scope_id),
             )
         )
 

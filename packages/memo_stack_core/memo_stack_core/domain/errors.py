@@ -24,6 +24,10 @@ class MemoryIngressLimitError(MemoryError):
     retryable = True
 
 
+class MemoryQuotaExceededError(MemoryError):
+    code = "memory.quota_exceeded"
+
+
 class MemoryConflictError(MemoryError):
     code = "memory.conflict"
 

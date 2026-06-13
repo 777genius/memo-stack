@@ -28,11 +28,11 @@ class InsightsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    memory_scope_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)
     thread_id: str | None = Field(default=None, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
-    profile_external_refs: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_refs: list[str] | None = Field(default=None, min_length=1, max_length=20)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     max_facts: int = Field(default=200, ge=0, le=1000)
     max_documents: int = Field(default=100, ge=0, le=500)
@@ -64,11 +64,11 @@ async def build_insights(
     scope = await resolve_existing_context_scope(
         container,
         space_id=request.space_id,
-        profile_ids=request.profile_ids,
+        memory_scope_ids=request.memory_scope_ids,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
-        profile_external_refs=request.profile_external_refs,
+        memory_scope_external_ref=request.memory_scope_external_ref,
+        memory_scope_external_refs=request.memory_scope_external_refs,
         thread_external_ref=request.thread_external_ref,
     )
     if scope is None:
@@ -88,7 +88,7 @@ async def build_insights(
     insights = await container.build_memory_insights.execute(
         BuildMemoryInsightsQuery(
             space_id=scope.space_id,
-            profile_ids=scope.profile_ids,
+            memory_scope_ids=scope.memory_scope_ids,
             thread_id=scope.thread_id,
             max_facts=request.max_facts,
             max_documents=request.max_documents,
@@ -135,7 +135,7 @@ def _action_item_to_response(item: MemoryInsightActionItem) -> dict[str, Any]:
         "action": item.action,
         "target_type": item.target_type,
         "target_id": item.target_id,
-        "profile_id": item.profile_id,
+        "memory_scope_id": item.memory_scope_id,
         "reason": item.reason,
         "preview": item.preview,
         "metadata": item.metadata or {},
@@ -149,7 +149,7 @@ def _activity_item_to_response(item: MemoryActivityItem) -> dict[str, Any]:
         "event_type": item.event_type,
         "entity_type": item.entity_type,
         "entity_id": item.entity_id,
-        "profile_id": item.profile_id,
+        "memory_scope_id": item.memory_scope_id,
         "thread_id": item.thread_id,
         "status": item.status,
         "preview": item.preview,
@@ -161,7 +161,7 @@ def _consolidation_plan_item_to_response(item: MemoryConsolidationPlanItem) -> d
     return {
         "id": item.id,
         "plan_type": item.plan_type,
-        "profile_id": item.profile_id,
+        "memory_scope_id": item.memory_scope_id,
         "confidence": item.confidence,
         "canonical_candidate_id": item.canonical_candidate_id,
         "candidate_fact_ids": list(item.candidate_fact_ids),

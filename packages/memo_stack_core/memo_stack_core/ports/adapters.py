@@ -71,7 +71,7 @@ class EmbeddingPort(MemoryAdapterPort, Protocol):
 class VectorCandidate:
     chunk_id: str
     space_id: str
-    profile_id: str
+    memory_scope_id: str
     score: float
     projection_version: str
     preview: str | None = None
@@ -115,7 +115,7 @@ class VectorSearchResult:
 class VectorUpsertItem:
     chunk_id: str
     space_id: str
-    profile_id: str
+    memory_scope_id: str
     thread_id: str | None
     text: str
     vector: tuple[float, ...]
@@ -159,7 +159,7 @@ class VectorMemoryPort(MemoryAdapterPort, Protocol):
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None = None,
         query_vector: tuple[float, ...],
         limit: int,
@@ -208,7 +208,7 @@ class GraphMemoryPort(MemoryAdapterPort, Protocol):
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None = None,
         query: str,
         limit: int,

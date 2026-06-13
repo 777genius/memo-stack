@@ -7,7 +7,7 @@ CREATE TABLE memory_spaces (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE memory_profiles (
+CREATE TABLE memory_scopes (
   id VARCHAR(80) PRIMARY KEY,
   space_id VARCHAR(80) NOT NULL REFERENCES memory_spaces(id),
   external_ref VARCHAR(200) NOT NULL,
@@ -15,13 +15,13 @@ CREATE TABLE memory_profiles (
   status VARCHAR(40) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
-  CONSTRAINT uq_profile_external_ref UNIQUE (space_id, external_ref)
+  CONSTRAINT uq_memory_scope_external_ref UNIQUE (space_id, external_ref)
 );
 
 CREATE TABLE memory_facts (
   id VARCHAR(80) PRIMARY KEY,
   space_id VARCHAR(80) NOT NULL,
-  profile_id VARCHAR(80) NOT NULL,
+  memory_scope_id VARCHAR(80) NOT NULL,
   thread_id VARCHAR(80),
   kind VARCHAR(80) NOT NULL,
   text TEXT NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE memory_facts (
 );
 
 CREATE INDEX ix_memory_facts_scope_status
-  ON memory_facts(space_id, profile_id, status, updated_at);
+  ON memory_facts(space_id, memory_scope_id, status, updated_at);
 
 CREATE TABLE memory_source_refs (
   id SERIAL PRIMARY KEY,

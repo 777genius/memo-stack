@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 7788
     service_token: str | None = None
+    ui_enabled: bool = True
     policy_mode: MemoryPolicyMode = MemoryPolicyMode.ACTIVE_CONTEXT
     auto_memory_mode: CaptureMode | None = None
     capture_mode: CaptureMode = CaptureMode.RETRIEVE_ONLY
@@ -45,8 +46,30 @@ class Settings(BaseSettings):
     capture_default_consolidate: bool = True
     auto_apply_safe_enabled: bool = False
     max_capture_text_chars: int = Field(default=20_000, ge=100, le=100_000)
-    max_pending_captures_per_profile: int = Field(default=5_000, ge=1, le=100_000)
-    max_pending_suggestions_per_profile: int = Field(default=500, ge=1, le=10_000)
+    max_pending_captures_per_memory_scope: int = Field(default=5_000, ge=1, le=100_000)
+    max_pending_suggestions_per_memory_scope: int = Field(default=500, ge=1, le=10_000)
+    product_plan_tier: str = "free"
+    plan_media_analysis_seconds_per_month: int = Field(
+        default=10 * 60 * 60,
+        ge=0,
+        le=10_000 * 3600,
+    )
+    asset_storage_dir: str = "~/.memo-stack/assets"
+    max_asset_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=500 * 1024 * 1024)
+    extraction_enabled: bool = True
+    extraction_default_profile: str = "standard_local"
+    extraction_external_ai_enabled: bool = False
+    extraction_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=500 * 1024 * 1024)
+    extraction_max_pages: int = Field(default=100, ge=1, le=10_000)
+    extraction_max_media_seconds: int = Field(default=600, ge=1, le=24 * 3600)
+    extraction_max_output_chars: int = Field(default=500_000, ge=1_000, le=10_000_000)
+    extraction_max_tables: int = Field(default=100, ge=0, le=10_000)
+    extraction_ocr_enabled: bool = True
+    extraction_vision_model: str = "gpt-4.1-mini"
+    extraction_vision_detail: str = "high"
+    extraction_asr_model: str = "base"
+    extraction_asr_device: str = "auto"
+    extraction_asr_compute_type: str = "default"
     qdrant_enabled: bool = False
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_api_key: str | None = None
@@ -66,7 +89,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     legacy_client_enabled: bool = False
     default_space_slug: str = "default"
-    default_profile_external_ref: str = "default"
+    default_memory_scope_external_ref: str = "default"
     max_context_tokens: int = Field(default=1800, ge=256, le=16000)
     max_context_chars: int = Field(default=18000, ge=1000, le=60000)
     max_memory_candidates: int = Field(default=2000, ge=1, le=10000)
@@ -91,13 +114,13 @@ class Settings(BaseSettings):
 
     def validate_for_startup(self) -> None:
         if self.deploy_profile == DeployProfile.SERVER and not self.service_token:
-            raise RuntimeError("MEMORY_SERVICE_TOKEN is required for server profile")
+            raise RuntimeError("MEMORY_SERVICE_TOKEN is required for server deploy profile")
         if self.deploy_profile == DeployProfile.SERVER and self.auto_create_schema:
-            raise RuntimeError("MEMORY_AUTO_CREATE_SCHEMA is not allowed for server profile")
+            raise RuntimeError("MEMORY_AUTO_CREATE_SCHEMA is not allowed for server deploy profile")
         if self.deploy_profile == DeployProfile.TEST and (
             self.qdrant_enabled or self.graphiti_enabled or self.embeddings_enabled
         ):
-            raise RuntimeError("test profile cannot use external adapters")
+            raise RuntimeError("test deploy profile cannot use external adapters")
         if self.qdrant_enabled and not self.embeddings_enabled:
             raise RuntimeError("MEMORY_QDRANT_ENABLED requires MEMORY_EMBEDDINGS_ENABLED")
         if self.embeddings_enabled and self.embeddings_provider != "openai":

@@ -57,12 +57,12 @@ class CanonicalContextCollector:
         self,
         *,
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
     ) -> CanonicalCollectionResult:
         async with self._uow_factory() as uow:
             facts = await uow.facts.find_active(
                 space_id=str(query.space_id),
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 query=query.query,
                 limit=query.max_facts,
@@ -73,7 +73,7 @@ class CanonicalContextCollector:
             )
             keyword_chunks = await uow.chunks.keyword_search(
                 space_id=str(query.space_id),
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 query=query.query,
                 limit=query.max_chunks,
@@ -100,7 +100,7 @@ class VectorContextCollector:
         self,
         *,
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         diagnostics: dict[str, object],
     ) -> tuple[MemoryChunk, ...]:
         if query.max_chunks <= 0:
@@ -139,7 +139,7 @@ class VectorContextCollector:
         try:
             result = await self._vector_index.search_chunks(
                 space_id=str(query.space_id),
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 query_vector=embedding.vectors[0],
                 limit=query.max_chunks,
@@ -158,7 +158,7 @@ class VectorContextCollector:
         chunks = await self._hydrator.hydrate_visible_chunks(
             chunk_ids=chunk_ids,
             query=query,
-            profile_ids=profile_ids,
+            memory_scope_ids=memory_scope_ids,
         )
         hydrated_ids = {str(chunk.id) for chunk in chunks}
         diagnostics["vector_hydrated_count"] = len(chunks)
@@ -182,7 +182,7 @@ class GraphContextCollector:
         self,
         *,
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         diagnostics: dict[str, object],
     ) -> tuple[ContextItem, ...]:
         if not query.include_graph or query.max_facts <= 0:
@@ -209,7 +209,7 @@ class GraphContextCollector:
         try:
             result = await self._graph_index.search(
                 space_id=str(query.space_id),
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 query=query.query,
                 limit=query.max_facts,
@@ -241,7 +241,7 @@ class GraphContextCollector:
         items, stale_count = await self._hydrator.hydrate_graph_facts(
             fact_ids=fact_ids,
             query=query,
-            profile_ids=profile_ids,
+            memory_scope_ids=memory_scope_ids,
         )
         diagnostics["graph_hydrated_count"] = len(items)
         diagnostics["stale_graph_drop_count"] = stale_count + orphan_candidate_count
@@ -262,7 +262,7 @@ class RagContextCollector:
         self,
         *,
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         diagnostics: dict[str, object],
     ) -> tuple[ContextItem, ...]:
         if self._rag_recall is None or query.max_chunks <= 0:
@@ -273,7 +273,7 @@ class RagContextCollector:
                 CapabilityRecallQuery(
                     scope=MemoryScopeFilter(
                         space_id=str(query.space_id),
-                        profile_ids=profile_ids,
+                        memory_scope_ids=memory_scope_ids,
                         thread_id=str(query.thread_id) if query.thread_id else None,
                     ),
                     query=query.query,
@@ -300,7 +300,7 @@ class RagContextCollector:
         chunks = await self._hydrator.hydrate_visible_chunks(
             chunk_ids=chunk_ids,
             query=query,
-            profile_ids=profile_ids,
+            memory_scope_ids=memory_scope_ids,
         )
         chunks_by_id = {str(chunk.id): chunk for chunk in chunks}
         items: list[ContextItem] = []
@@ -352,7 +352,7 @@ def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) ->
             ),
         ),
         diagnostics={
-            "profile_id": str(chunk.profile_id),
+            "memory_scope_id": str(chunk.memory_scope_id),
             "retrieval_source": "rag_recall",
             "adapter_name": _safe_adapter_name(candidate.adapter_name),
             **_safe_recall_metadata(candidate.metadata),

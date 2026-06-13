@@ -20,6 +20,7 @@ from memo_stack_server.api.v1 import router as v1_router
 from memo_stack_server.api.v1.health import router as root_health_router
 from memo_stack_server.composition import build_container
 from memo_stack_server.config import Settings
+from memo_stack_server.web_ui import mount_web_ui
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from memo_stack_server.api.legacy_client import router as legacy_client_router
 
         app.include_router(legacy_client_router)
+    mount_web_ui(app, enabled=container.settings.ui_enabled)
     return app
 
 

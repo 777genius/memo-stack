@@ -42,7 +42,7 @@ AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS = (
     "live_long_transcript_rollup",
     "live_update_delete_chain",
     "live_review_gated_uncertain_transcript",
-    "live_cross_profile_meeting_noise",
+    "live_cross_memory_scope_meeting_noise",
     "live_transcript_secret_injection_trap",
     "live_long_tail_recall_after_document",
     "transcript_architecture_drift_rollup",

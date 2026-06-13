@@ -42,10 +42,10 @@ class CreateCaptureRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     source_agent: str = Field(min_length=1, max_length=80)
     source_kind: str = Field(default="hook", max_length=80)
@@ -99,10 +99,10 @@ async def create_capture(
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=request.thread_external_ref,
         thread_required=False,
     )
@@ -119,7 +119,7 @@ async def create_capture(
     result = await container.receive_capture.execute(
         ReceiveCaptureCommand(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
             source_agent=request.source_agent,
             source_kind=request.source_kind,
@@ -161,9 +161,9 @@ async def create_capture(
 async def list_captures(
     container: Annotated[Container, Depends(get_container)],
     space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
-    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
-    profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = None,
     consolidation_status: Annotated[str | None, Query(max_length=40)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
@@ -172,10 +172,10 @@ async def list_captures(
     scope = await resolve_existing_single_scope(
         container,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=None,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         thread_external_ref=None,
         thread_required=False,
     )
@@ -184,7 +184,7 @@ async def list_captures(
     captures = await container.list_captures.execute(
         ListCapturesQuery(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             status=status_filter,
             consolidation_status=consolidation_status,
             limit=limit,
@@ -247,18 +247,18 @@ async def consolidate_capture(
 async def capture_diagnostics(
     container: Annotated[Container, Depends(get_container)],
     space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
-    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
-    profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     consolidation_status: Annotated[str | None, Query(max_length=40)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, Any]:
     return await list_captures(
         container=container,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         consolidation_status=consolidation_status,
         limit=limit,
     )
@@ -268,7 +268,7 @@ def capture_to_response(capture: CanonicalCapture) -> dict[str, Any]:
     return {
         "id": str(capture.id),
         "space_id": str(capture.space_id),
-        "profile_id": str(capture.profile_id),
+        "memory_scope_id": str(capture.memory_scope_id),
         "thread_id": str(capture.thread_id) if capture.thread_id else None,
         "source_agent": capture.source_agent,
         "source_kind": capture.source_kind.value,

@@ -62,8 +62,10 @@ class BuildContextUseCase:
         )
 
     async def execute(self, query: BuildContextQuery) -> ContextBundle:
-        profile_ids = tuple(str(profile_id) for profile_id in query.profile_ids)
-        canonical = await self._canonical_collector.collect(query=query, profile_ids=profile_ids)
+        memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
+        canonical = await self._canonical_collector.collect(
+            query=query, memory_scope_ids=memory_scope_ids
+        )
 
         diagnostics: dict[str, object] = {
             "consistency_mode": query.consistency_mode.value,
@@ -93,17 +95,17 @@ class BuildContextUseCase:
         else:
             vector_chunks = await self._vector_collector.collect(
                 query=query,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 diagnostics=diagnostics,
             )
             graph_items = await self._graph_collector.collect(
                 query=query,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 diagnostics=diagnostics,
             )
             rag_items = await self._rag_collector.collect(
                 query=query,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 diagnostics=diagnostics,
             )
 
@@ -117,7 +119,7 @@ class BuildContextUseCase:
                     score=0.95,
                     source_refs=fact.source_refs,
                     diagnostics={
-                        "profile_id": str(fact.profile_id),
+                        "memory_scope_id": str(fact.memory_scope_id),
                         "retrieval_source": "postgres_facts",
                     },
                 )
@@ -145,7 +147,7 @@ class BuildContextUseCase:
                         ),
                     ),
                     diagnostics={
-                        "profile_id": str(chunk.profile_id),
+                        "memory_scope_id": str(chunk.memory_scope_id),
                         "retrieval_source": "chunks",
                     },
                 )
@@ -156,13 +158,11 @@ class BuildContextUseCase:
         deduped = await self._hydrator.revalidate_visible_items(
             dedupe_rank_items(tuple(items)),
             query=query,
-            profile_ids=profile_ids,
+            memory_scope_ids=memory_scope_ids,
         )
         pending_conflicts = await self._pending_conflict_items(
             query=query,
-            visible_fact_ids=tuple(
-                item.item_id for item in deduped if item.item_type == "fact"
-            ),
+            visible_fact_ids=tuple(item.item_id for item in deduped if item.item_type == "fact"),
         )
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
@@ -193,12 +193,12 @@ class BuildContextUseCase:
 
         items: list[ContextItem] = []
         async with self._uow_factory() as uow:
-            for profile_id in query.profile_ids:
+            for memory_scope_id in query.memory_scope_ids:
                 if len(items) >= max_items:
                     break
                 suggestions = await uow.suggestions.list_for_scope(
                     space_id=str(query.space_id),
-                    profile_id=str(profile_id),
+                    memory_scope_id=str(memory_scope_id),
                     status="pending",
                     operation=None,
                     category=None,
@@ -221,7 +221,7 @@ class BuildContextUseCase:
                             score=0.94,
                             source_refs=suggestion.source_refs,
                             diagnostics={
-                                "profile_id": str(suggestion.profile_id),
+                                "memory_scope_id": str(suggestion.memory_scope_id),
                                 "retrieval_source": "pending_conflict_suggestion",
                                 "status": suggestion.status.value,
                                 "operation": suggestion.operation.value,

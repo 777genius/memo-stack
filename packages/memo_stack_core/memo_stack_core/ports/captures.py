@@ -33,7 +33,7 @@ class CaptureRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         status: str | None,
         consolidation_status: str | None,
         limit: int,
@@ -46,7 +46,7 @@ class CaptureRepositoryPort(Protocol):
         self,
         *,
         space_id: str,
-        profile_id: str,
+        memory_scope_id: str,
         status: str | None,
         consolidation_statuses: tuple[str, ...],
     ) -> int:

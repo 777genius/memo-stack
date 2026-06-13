@@ -28,13 +28,13 @@ class ContextHydrator:
         *,
         chunk_ids: tuple[str, ...],
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
     ) -> tuple[MemoryChunk, ...]:
         async with self._uow_factory() as uow:
             chunks = await uow.chunks.hydrate_visible_chunks(
                 chunk_ids=chunk_ids,
                 space_id=str(query.space_id),
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
             )
         return tuple(chunks)
@@ -44,7 +44,7 @@ class ContextHydrator:
         *,
         fact_ids: tuple[str, ...],
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
     ) -> tuple[tuple[ContextItem, ...], int]:
         async with self._uow_factory() as uow:
             hydrated: list[ContextItem] = []
@@ -55,7 +55,7 @@ class ContextHydrator:
                 if fact is not None and is_graph_fact_visible(
                     fact,
                     query=query,
-                    profile_ids=profile_ids,
+                    memory_scope_ids=memory_scope_ids,
                     now=now,
                 ):
                     hydrated.append(
@@ -66,7 +66,7 @@ class ContextHydrator:
                             score=0.78,
                             source_refs=fact.source_refs,
                             diagnostics={
-                                "profile_id": str(fact.profile_id),
+                                "memory_scope_id": str(fact.memory_scope_id),
                                 "retrieval_source": "graph_hydrated",
                             },
                         )
@@ -80,7 +80,7 @@ class ContextHydrator:
         items: tuple[ContextItem, ...],
         *,
         query: BuildContextQuery,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
     ) -> tuple[ContextItem, ...]:
         if not items:
             return ()
@@ -91,7 +91,7 @@ class ContextHydrator:
             for chunk in await self.hydrate_visible_chunks(
                 chunk_ids=chunk_ids,
                 query=query,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
             )
         }
         async with self._uow_factory() as uow:
@@ -104,7 +104,7 @@ class ContextHydrator:
                 if fact is not None and is_context_fact_visible(
                     fact,
                     query=query,
-                    profile_ids=profile_ids,
+                    memory_scope_ids=memory_scope_ids,
                     now=now,
                 ):
                     visible_facts[str(fact.id)] = fact

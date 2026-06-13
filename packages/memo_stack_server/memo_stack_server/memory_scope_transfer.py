@@ -1,4 +1,4 @@
-"""Profile export/import lite.
+"""MemoryScope export/import lite.
 
 This is a local portability tool, not a sync protocol. It reads and writes
 canonical Postgres rows only and never serializes derived Qdrant/Graphiti state.
@@ -18,20 +18,20 @@ from memo_stack_adapters.postgres.models import (
     MemoryFactRelationRow,
     MemoryFactRow,
     MemoryOutboxRow,
-    MemoryProfileRow,
+    MemoryScopeRow,
     MemorySourceRefRow,
     MemorySpaceRow,
 )
-from memo_stack_core.profile_snapshot_preview import (
-    build_profile_snapshot_import_preview,
+from memo_stack_core.memory_scope_snapshot_preview import (
+    build_memory_scope_snapshot_import_preview,
     import_counts,
     skipped_snapshot_ids,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from memo_stack_server.profile_transfer_conflicts import profile_snapshot_conflicts
-from memo_stack_server.profile_transfer_relations import (
+from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
+from memo_stack_server.memory_scope_transfer_relations import (
     relation_from_json,
     relation_to_json,
     remap_relation,
@@ -42,22 +42,23 @@ SUPPORTED_SCHEMA_VERSIONS = {1, 2}
 SUPPORTED_MERGE_STRATEGIES = {
     "fail_on_conflict",
     "skip_existing",
-    "create_new_profile",
+    "create_new_memory_scope",
     "supersede_matching_facts",
 }
 
-async def export_profile(
+
+async def export_memory_scope(
     *,
     engine: AsyncEngine,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     out_path: Path,
     redacted: bool,
 ) -> dict[str, object]:
-    result = await export_profile_payload(
+    result = await export_memory_scope_payload(
         engine=engine,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         redacted=redacted,
     )
     if result["status"] != "ok":
@@ -66,35 +67,39 @@ async def export_profile(
     out_path.write_text(json.dumps(result["snapshot"], ensure_ascii=False, indent=2), "utf-8")
     counts = result["counts"]
     return {
-        "status": "ok", "out": str(out_path), "facts": counts["facts"],
-        "documents": counts["documents"], "chunks": counts["chunks"],
-        "relations": counts["relations"], "redacted": redacted,
+        "status": "ok",
+        "out": str(out_path),
+        "facts": counts["facts"],
+        "documents": counts["documents"],
+        "chunks": counts["chunks"],
+        "relations": counts["relations"],
+        "redacted": redacted,
     }
 
 
-async def export_profile_payload(
+async def export_memory_scope_payload(
     *,
     engine: AsyncEngine,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     redacted: bool,
 ) -> dict[str, object]:
     async with AsyncSession(engine) as session:
         scope = await _load_scope(
             session,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         if scope is None:
             return {"status": "not_found"}
-        space, profile = scope
+        space, memory_scope = scope
         facts = list(
             (
                 await session.execute(
                     select(MemoryFactRow)
                     .where(
                         MemoryFactRow.space_id == space.id,
-                        MemoryFactRow.profile_id == profile.id,
+                        MemoryFactRow.memory_scope_id == memory_scope.id,
                     )
                     .order_by(MemoryFactRow.created_at, MemoryFactRow.id)
                 )
@@ -106,7 +111,7 @@ async def export_profile_payload(
                     select(MemoryDocumentRow)
                     .where(
                         MemoryDocumentRow.space_id == space.id,
-                        MemoryDocumentRow.profile_id == profile.id,
+                        MemoryDocumentRow.memory_scope_id == memory_scope.id,
                     )
                     .order_by(MemoryDocumentRow.created_at, MemoryDocumentRow.id)
                 )
@@ -118,7 +123,7 @@ async def export_profile_payload(
                     select(MemoryChunkRow)
                     .where(
                         MemoryChunkRow.space_id == space.id,
-                        MemoryChunkRow.profile_id == profile.id,
+                        MemoryChunkRow.memory_scope_id == memory_scope.id,
                     )
                     .order_by(MemoryChunkRow.created_at, MemoryChunkRow.id)
                 )
@@ -143,7 +148,7 @@ async def export_profile_payload(
                         select(MemoryFactRelationRow)
                         .where(
                             MemoryFactRelationRow.space_id == space.id,
-                            MemoryFactRelationRow.profile_id == profile.id,
+                            MemoryFactRelationRow.memory_scope_id == memory_scope.id,
                             MemoryFactRelationRow.source_fact_id.in_(fact_ids),
                             MemoryFactRelationRow.target_fact_id.in_(fact_ids),
                         )
@@ -155,7 +160,7 @@ async def export_profile_payload(
     payload = {
         "schema_version": SCHEMA_VERSION,
         "space": {"slug": space.slug, "id": space.id},
-        "profile": {"external_ref": profile.external_ref, "id": profile.id},
+        "memory_scope": {"external_ref": memory_scope.external_ref, "id": memory_scope.id},
         "facts": [_fact_to_json(fact, redacted=redacted) for fact in facts],
         "documents": [_document_to_json(document) for document in documents],
         "chunks": [_chunk_to_json(chunk, redacted=redacted) for chunk in chunks],
@@ -178,22 +183,22 @@ async def export_profile_payload(
     }
 
 
-async def import_profile(
+async def import_memory_scope(
     *,
     engine: AsyncEngine,
     now: datetime,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     in_path: Path,
     dry_run: bool,
     merge_strategy: str,
 ) -> dict[str, object]:
     payload = json.loads(in_path.read_text(encoding="utf-8"))
-    return await import_profile_payload(
+    return await import_memory_scope_payload(
         engine=engine,
         now=now,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         payload=payload,
         dry_run=dry_run,
         merge_strategy=merge_strategy,
@@ -201,16 +206,16 @@ async def import_profile(
     )
 
 
-async def import_profile_payload(
+async def import_memory_scope_payload(
     *,
     engine: AsyncEngine,
     now: datetime,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     payload: dict[str, Any],
     dry_run: bool,
     merge_strategy: str,
-    source_name: str = "profile-snapshot",
+    source_name: str = "memory_scope-snapshot",
 ) -> dict[str, object]:
     if int(payload.get("schema_version", 0)) not in SUPPORTED_SCHEMA_VERSIONS:
         return {"status": "failed", "reason": "unsupported_schema_version"}
@@ -223,40 +228,45 @@ async def import_profile_payload(
     relations = list(payload.get("relations", []))
     source_refs = list(payload.get("source_refs", []))
     if not dry_run and _contains_redacted_memory(payload, facts=facts, chunks=chunks):
-        return {"status": "refused", "reason": "redacted_profile_export_cannot_be_imported"}
+        return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
 
     async with AsyncSession(engine) as session:
-        target_profile_id = profile_id
-        created_profile: dict[str, str] | None = None
+        target_memory_scope_id = memory_scope_id
+        created_memory_scope: dict[str, str] | None = None
         import_batch_id = _stable_id("import", source_name, now.isoformat())
         fact_id_map: dict[str, str] = {}
         document_id_map: dict[str, str] = {}
         chunk_id_map: dict[str, str] = {}
         relation_id_map: dict[str, str] = {}
 
-        if merge_strategy == "create_new_profile" and not dry_run:
-            profile = await _create_import_profile(
+        if merge_strategy == "create_new_memory_scope" and not dry_run:
+            memory_scope = await _create_import_memory_scope(
                 session,
                 space_id=space_id,
-                base_profile_id=profile_id,
+                base_memory_scope_id=memory_scope_id,
                 now=now,
             )
-            target_profile_id = profile.id
-            created_profile = {"id": profile.id, "external_ref": profile.external_ref}
-            fact_id_map = _build_id_map("fact", facts, target_profile_id, import_batch_id)
-            document_id_map = _build_id_map("doc", documents, target_profile_id, import_batch_id)
-            chunk_id_map = _build_id_map("chunk", chunks, target_profile_id, import_batch_id)
+            target_memory_scope_id = memory_scope.id
+            created_memory_scope = {
+                "id": memory_scope.id,
+                "external_ref": memory_scope.external_ref,
+            }
+            fact_id_map = _build_id_map("fact", facts, target_memory_scope_id, import_batch_id)
+            document_id_map = _build_id_map(
+                "doc", documents, target_memory_scope_id, import_batch_id
+            )
+            chunk_id_map = _build_id_map("chunk", chunks, target_memory_scope_id, import_batch_id)
             relation_id_map = _build_id_map(
-                "relation", relations, target_profile_id, import_batch_id
+                "relation", relations, target_memory_scope_id, import_batch_id
             )
 
         conflict_ids = (
             []
-            if merge_strategy == "create_new_profile"
-            else await profile_snapshot_conflicts(
+            if merge_strategy == "create_new_memory_scope"
+            else await memory_scope_snapshot_conflicts(
                 session,
                 space_id=space_id,
-                profile_id=target_profile_id,
+                memory_scope_id=target_memory_scope_id,
                 facts=facts,
                 documents=documents,
                 chunks=chunks,
@@ -264,7 +274,7 @@ async def import_profile_payload(
             )
         )
         conflict_id_set = set(conflict_ids)
-        preview = build_profile_snapshot_import_preview(
+        preview = build_memory_scope_snapshot_import_preview(
             payload=payload,
             merge_strategy=merge_strategy,
             conflict_ids=conflict_id_set,
@@ -301,9 +311,9 @@ async def import_profile_payload(
                 "merge_strategy": merge_strategy,
                 "preview": preview,
             }
-            if merge_strategy == "create_new_profile":
-                result["would_create_profile"] = True
-                preview["would_create_profile"] = True
+            if merge_strategy == "create_new_memory_scope":
+                result["would_create_memory_scope"] = True
+                preview["would_create_memory_scope"] = True
             return {
                 **result,
             }
@@ -322,7 +332,7 @@ async def import_profile_payload(
                 conflict_ids=conflict_id_set,
             )
             fact_id_map = {
-                fact_id: _stable_id("fact", target_profile_id, fact_id, import_batch_id)
+                fact_id: _stable_id("fact", target_memory_scope_id, fact_id, import_batch_id)
                 for fact_id in superseded_fact_ids
             }
             await _supersede_facts(session, fact_ids=superseded_fact_ids, now=now)
@@ -346,7 +356,7 @@ async def import_profile_payload(
                 _fact_from_json(
                     mapped,
                     space_id=space_id,
-                    profile_id=target_profile_id,
+                    memory_scope_id=target_memory_scope_id,
                     now=now,
                 )
             )
@@ -359,7 +369,7 @@ async def import_profile_payload(
                 _document_from_json(
                     mapped,
                     space_id=space_id,
-                    profile_id=target_profile_id,
+                    memory_scope_id=target_memory_scope_id,
                     now=now,
                 )
             )
@@ -375,7 +385,7 @@ async def import_profile_payload(
                 _chunk_from_json(
                     mapped,
                     space_id=space_id,
-                    profile_id=target_profile_id,
+                    memory_scope_id=target_memory_scope_id,
                     now=now,
                 )
             )
@@ -421,7 +431,7 @@ async def import_profile_payload(
                 relation_from_json(
                     mapped,
                     space_id=space_id,
-                    profile_id=target_profile_id,
+                    memory_scope_id=target_memory_scope_id,
                     now=now,
                 )
             )
@@ -433,8 +443,8 @@ async def import_profile_payload(
                     fact_id=fact_id,
                     fact_version=fact_version,
                     source_type="import",
-                    source_id=_bounded_optional_text(f"profile-import:{source_name}", 160)
-                    or "profile-import",
+                    source_id=_bounded_optional_text(f"memory_scope-import:{source_name}", 160)
+                    or "memory_scope-import",
                     chunk_id=None,
                     char_start=None,
                     char_end=None,
@@ -471,8 +481,8 @@ async def import_profile_payload(
         ),
         "preview": preview,
     }
-    if created_profile is not None:
-        result["created_profile"] = created_profile
+    if created_memory_scope is not None:
+        result["created_memory_scope"] = created_memory_scope
     return result
 
 
@@ -480,8 +490,8 @@ async def _load_scope(
     session: AsyncSession,
     *,
     space_slug: str,
-    profile_external_ref: str,
-) -> tuple[MemorySpaceRow, MemoryProfileRow] | None:
+    memory_scope_external_ref: str,
+) -> tuple[MemorySpaceRow, MemoryScopeRow] | None:
     space = (
         await session.execute(
             select(MemorySpaceRow).where(
@@ -492,18 +502,18 @@ async def _load_scope(
     ).scalar_one_or_none()
     if space is None:
         return None
-    profile = (
+    memory_scope = (
         await session.execute(
-            select(MemoryProfileRow).where(
-                MemoryProfileRow.space_id == space.id,
-                MemoryProfileRow.external_ref == profile_external_ref,
-                MemoryProfileRow.status == "active",
+            select(MemoryScopeRow).where(
+                MemoryScopeRow.space_id == space.id,
+                MemoryScopeRow.external_ref == memory_scope_external_ref,
+                MemoryScopeRow.status == "active",
             )
         )
     ).scalar_one_or_none()
-    if profile is None:
+    if memory_scope is None:
         return None
-    return space, profile
+    return space, memory_scope
 
 
 def _contains_redacted_memory(
@@ -550,28 +560,28 @@ async def _supersede_facts(
         row.updated_at = now
 
 
-async def _create_import_profile(
+async def _create_import_memory_scope(
     session: AsyncSession,
     *,
     space_id: str,
-    base_profile_id: str,
+    base_memory_scope_id: str,
     now: datetime,
-) -> MemoryProfileRow:
-    base_profile = await session.get(MemoryProfileRow, base_profile_id)
-    if base_profile is None:
-        msg = "Base profile not found"
+) -> MemoryScopeRow:
+    base_memory_scope = await session.get(MemoryScopeRow, base_memory_scope_id)
+    if base_memory_scope is None:
+        msg = "Base memory_scope not found"
         raise ValueError(msg)
-    external_ref = await _next_import_profile_ref(
+    external_ref = await _next_import_memory_scope_ref(
         session,
         space_id=space_id,
-        base_external_ref=base_profile.external_ref,
+        base_external_ref=base_memory_scope.external_ref,
         now=now,
     )
-    row = MemoryProfileRow(
-        id=_stable_id("profile", space_id, external_ref),
+    row = MemoryScopeRow(
+        id=_stable_id("memory_scope", space_id, external_ref),
         space_id=space_id,
         external_ref=external_ref,
-        name=f"{base_profile.name} import",
+        name=f"{base_memory_scope.name} import",
         status="active",
         created_at=now,
         updated_at=now,
@@ -581,7 +591,7 @@ async def _create_import_profile(
     return row
 
 
-async def _next_import_profile_ref(
+async def _next_import_memory_scope_ref(
     session: AsyncSession,
     *,
     space_id: str,
@@ -594,13 +604,13 @@ async def _next_import_profile_ref(
     )
     candidate = base
     suffix = 2
-    while await _profile_ref_exists(session, space_id=space_id, external_ref=candidate):
+    while await _memory_scope_ref_exists(session, space_id=space_id, external_ref=candidate):
         candidate = _bounded_external_ref(base, suffix=f"-{suffix}")
         suffix += 1
     return candidate
 
 
-async def _profile_ref_exists(
+async def _memory_scope_ref_exists(
     session: AsyncSession,
     *,
     space_id: str,
@@ -608,9 +618,9 @@ async def _profile_ref_exists(
 ) -> bool:
     return (
         await session.scalar(
-            select(MemoryProfileRow.id).where(
-                MemoryProfileRow.space_id == space_id,
-                MemoryProfileRow.external_ref == external_ref,
+            select(MemoryScopeRow.id).where(
+                MemoryScopeRow.space_id == space_id,
+                MemoryScopeRow.external_ref == external_ref,
             )
         )
         is not None
@@ -625,11 +635,11 @@ def _bounded_external_ref(value: str, *, suffix: str) -> str:
 def _build_id_map(
     prefix: str,
     items: list[dict[str, Any]],
-    profile_id: str,
+    memory_scope_id: str,
     import_batch_id: str,
 ) -> dict[str, str]:
     return {
-        str(item["id"]): _stable_id(prefix, profile_id, str(item["id"]), import_batch_id)
+        str(item["id"]): _stable_id(prefix, memory_scope_id, str(item["id"]), import_batch_id)
         for item in items
     }
 
@@ -770,13 +780,13 @@ def _fact_from_json(
     item: dict[str, Any],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     now: datetime,
 ) -> MemoryFactRow:
     return MemoryFactRow(
         id=str(item["id"]),
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=None,
         kind=str(item.get("kind", "note")),
         text=str(item.get("text") or "[redacted]"),
@@ -798,13 +808,13 @@ def _document_from_json(
     item: dict[str, Any],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     now: datetime,
 ) -> MemoryDocumentRow:
     return MemoryDocumentRow(
         id=str(item["id"]),
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=None,
         title=str(item.get("title") or "Imported document"),
         source_type=str(item.get("source_type", "import")),
@@ -821,14 +831,14 @@ def _chunk_from_json(
     item: dict[str, Any],
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     now: datetime,
 ) -> MemoryChunkRow:
     text = str(item.get("text") or "[redacted]")
     return MemoryChunkRow(
         id=str(item["id"]),
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=None,
         document_id=item.get("document_id"),
         episode_id=None,

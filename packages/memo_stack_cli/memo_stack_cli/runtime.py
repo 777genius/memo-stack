@@ -22,7 +22,7 @@ class RuntimeResult:
 
 
 class RuntimePort(Protocol):
-    def up(self, profile: str) -> RuntimeResult: ...
+    def up(self, compose_profile: str) -> RuntimeResult: ...
 
     def down(self) -> RuntimeResult: ...
 
@@ -33,8 +33,8 @@ class DockerComposeRuntime:
     def __init__(self, *, config: MemoStackCliConfig) -> None:
         self._config = config
 
-    def up(self, profile: str) -> RuntimeResult:
-        if profile == "full":
+    def up(self, compose_profile: str) -> RuntimeResult:
+        if compose_profile == "full":
             command = (
                 "docker",
                 "compose",
@@ -44,6 +44,7 @@ class DockerComposeRuntime:
                 "-d",
                 "memo_stack_server_full",
                 "memo_stack_worker_full",
+                "memo_stack_extraction_worker_full",
             )
         else:
             command = (
@@ -55,6 +56,7 @@ class DockerComposeRuntime:
                 "-d",
                 "memo_stack_server",
                 "memo_stack_worker",
+                "memo_stack_extraction_worker",
             )
         return self._run(command)
 

@@ -106,7 +106,7 @@ class QdrantVectorMemoryAdapter:
                     payload={
                         "chunk_id": item.chunk_id,
                         "space_id": item.space_id,
-                        "profile_id": item.profile_id,
+                        "memory_scope_id": item.memory_scope_id,
                         "thread_id": item.thread_id,
                         "projection_version": item.projection_version,
                         **item.metadata,
@@ -147,7 +147,7 @@ class QdrantVectorMemoryAdapter:
         self,
         *,
         space_id: str,
-        profile_ids: tuple[str, ...],
+        memory_scope_ids: tuple[str, ...],
         thread_id: str | None = None,
         query_vector: tuple[float, ...],
         limit: int,
@@ -167,8 +167,8 @@ class QdrantVectorMemoryAdapter:
                     match=models.MatchValue(value=self._projection_version),
                 ),
                 models.FieldCondition(
-                    key="profile_id",
-                    match=models.MatchAny(any=list(profile_ids)),
+                    key="memory_scope_id",
+                    match=models.MatchAny(any=list(memory_scope_ids)),
                 ),
             ]
             filter_kwargs = {"must": must_conditions}
@@ -190,7 +190,7 @@ class QdrantVectorMemoryAdapter:
                 VectorCandidate(
                     chunk_id=str(point.payload.get("chunk_id", "")),
                     space_id=str(point.payload.get("space_id", "")),
-                    profile_id=str(point.payload.get("profile_id", "")),
+                    memory_scope_id=str(point.payload.get("memory_scope_id", "")),
                     score=float(point.score),
                     projection_version=str(point.payload.get("projection_version", "")),
                     preview=None,

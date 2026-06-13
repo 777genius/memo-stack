@@ -60,7 +60,7 @@ class LinkFactsUseCase:
             relation = MemoryFactRelation.create(
                 relation_id=MemoryFactRelationId(self._ids.new_id("relation")),
                 space_id=source.space_id,
-                profile_id=source.profile_id,
+                memory_scope_id=source.memory_scope_id,
                 source_fact_id=MemoryFactId(command.source_fact_id),
                 target_fact_id=MemoryFactId(command.target_fact_id),
                 relation_type=relation_type,
@@ -134,8 +134,8 @@ class UnlinkFactRelationUseCase:
 
 
 def _ensure_linkable(*, source, target) -> None:
-    if source.space_id != target.space_id or source.profile_id != target.profile_id:
-        raise MemoryConflictError("Fact relations cannot cross profile boundaries")
+    if source.space_id != target.space_id or source.memory_scope_id != target.memory_scope_id:
+        raise MemoryConflictError("Fact relations cannot cross memory_scope boundaries")
     if source.status == FactStatus.DELETED or target.status == FactStatus.DELETED:
         raise MemoryConflictError("Deleted facts cannot be linked")
     if source.classification == "restricted" or target.classification == "restricted":

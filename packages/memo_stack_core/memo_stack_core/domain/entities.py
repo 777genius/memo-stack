@@ -14,7 +14,7 @@ from typing import NewType
 from memo_stack_core.domain.errors import MemoryConflictError, MemoryValidationError
 
 SpaceId = NewType("SpaceId", str)
-ProfileId = NewType("ProfileId", str)
+MemoryScopeId = NewType("MemoryScopeId", str)
 ThreadId = NewType("ThreadId", str)
 MemoryFactId = NewType("MemoryFactId", str)
 MemoryFactRelationId = NewType("MemoryFactRelationId", str)
@@ -154,8 +154,8 @@ class MemorySpace:
 
 
 @dataclass(frozen=True)
-class MemoryProfile:
-    id: ProfileId
+class MemoryScope:
+    id: MemoryScopeId
     space_id: SpaceId
     external_ref: str
     name: str
@@ -167,18 +167,18 @@ class MemoryProfile:
     def create(
         cls,
         *,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         space_id: SpaceId,
         external_ref: str,
         name: str,
         now: datetime,
-    ) -> MemoryProfile:
+    ) -> MemoryScope:
         if not external_ref.strip():
-            raise MemoryValidationError("Profile external_ref is required")
+            raise MemoryValidationError("MemoryScope external_ref is required")
         if not name.strip():
-            raise MemoryValidationError("Profile name is required")
+            raise MemoryValidationError("MemoryScope name is required")
         return cls(
-            id=profile_id,
+            id=memory_scope_id,
             space_id=space_id,
             external_ref=external_ref.strip(),
             name=name.strip(),
@@ -186,6 +186,33 @@ class MemoryProfile:
             created_at=now,
             updated_at=now,
         )
+
+    def update_details(
+        self,
+        *,
+        external_ref: str | None = None,
+        name: str | None = None,
+        now: datetime,
+    ) -> MemoryScope:
+        if self.status == LifecycleStatus.DELETED:
+            raise MemoryConflictError("Deleted memory_scope cannot be updated")
+        next_external_ref = self.external_ref if external_ref is None else external_ref.strip()
+        next_name = self.name if name is None else name.strip()
+        if not next_external_ref:
+            raise MemoryValidationError("MemoryScope external_ref is required")
+        if not next_name:
+            raise MemoryValidationError("MemoryScope name is required")
+        return replace(
+            self,
+            external_ref=next_external_ref,
+            name=next_name,
+            updated_at=now,
+        )
+
+    def delete(self, *, now: datetime) -> MemoryScope:
+        if self.status == LifecycleStatus.DELETED:
+            return self
+        return replace(self, status=LifecycleStatus.DELETED, updated_at=now)
 
 
 @dataclass(frozen=True)
@@ -218,7 +245,7 @@ class SourceRef:
 class MemoryThread:
     id: ThreadId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     external_ref: str
     status: LifecycleStatus
     created_at: datetime
@@ -230,7 +257,7 @@ class MemoryThread:
         *,
         thread_id: ThreadId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         external_ref: str,
         now: datetime,
     ) -> MemoryThread:
@@ -239,7 +266,7 @@ class MemoryThread:
         return cls(
             id=thread_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             external_ref=external_ref.strip(),
             status=LifecycleStatus.ACTIVE,
             created_at=now,
@@ -251,7 +278,7 @@ class MemoryThread:
 class MemoryFact:
     id: MemoryFactId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     text: str
     kind: MemoryKind
     source_refs: tuple[SourceRef, ...]
@@ -274,7 +301,7 @@ class MemoryFact:
         *,
         fact_id: MemoryFactId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         text: str,
         kind: MemoryKind,
         source_refs: tuple[SourceRef, ...],
@@ -296,7 +323,7 @@ class MemoryFact:
         return cls(
             id=fact_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             thread_id=thread_id,
             text=text.strip(),
             kind=kind,
@@ -361,7 +388,7 @@ class MemoryFact:
 class MemoryFactRelation:
     id: MemoryFactRelationId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     source_fact_id: MemoryFactId
     target_fact_id: MemoryFactId
     relation_type: FactRelationType
@@ -376,7 +403,7 @@ class MemoryFactRelation:
         *,
         relation_id: MemoryFactRelationId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         source_fact_id: MemoryFactId,
         target_fact_id: MemoryFactId,
         relation_type: FactRelationType,
@@ -390,7 +417,7 @@ class MemoryFactRelation:
         return cls(
             id=relation_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             source_fact_id=source_fact_id,
             target_fact_id=target_fact_id,
             relation_type=relation_type,
@@ -410,7 +437,7 @@ class MemoryFactRelation:
 class MemoryEpisode:
     id: MemoryEpisodeId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId
     source_type: str
     source_external_id: str
@@ -428,7 +455,7 @@ class MemoryEpisode:
         *,
         episode_id: MemoryEpisodeId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         thread_id: ThreadId,
         source_type: str,
         source_external_id: str,
@@ -448,7 +475,7 @@ class MemoryEpisode:
         return cls(
             id=episode_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             thread_id=thread_id,
             source_type=source_type.strip(),
             source_external_id=source_external_id.strip(),
@@ -466,7 +493,7 @@ class MemoryEpisode:
 class MemoryDocument:
     id: MemoryDocumentId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId | None
     title: str
     source_type: str
@@ -483,7 +510,7 @@ class MemoryDocument:
         *,
         document_id: MemoryDocumentId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         title: str,
         source_type: str,
         source_external_id: str,
@@ -503,7 +530,7 @@ class MemoryDocument:
         return cls(
             id=document_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             thread_id=thread_id,
             title=title.strip(),
             source_type=source_type.strip(),
@@ -520,7 +547,7 @@ class MemoryDocument:
 class MemoryChunk:
     id: MemoryChunkId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId | None
     document_id: MemoryDocumentId | None
     episode_id: MemoryEpisodeId | None
@@ -546,7 +573,7 @@ class MemoryChunk:
         *,
         chunk_id: MemoryChunkId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         source_type: str,
         source_external_id: str,
         source_hash: str,
@@ -575,7 +602,7 @@ class MemoryChunk:
         return cls(
             id=chunk_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             thread_id=thread_id,
             document_id=document_id,
             episode_id=episode_id,
@@ -622,7 +649,7 @@ def _validate_taxonomy(*, tags: tuple[str, ...], ttl_policy: str | None) -> None
 class MemorySuggestion:
     id: MemorySuggestionId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     candidate_text: str
     kind: MemoryKind
     operation: SuggestionOperation
@@ -652,7 +679,7 @@ class MemorySuggestion:
         *,
         suggestion_id: MemorySuggestionId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         candidate_text: str,
         kind: MemoryKind,
         source_refs: tuple[SourceRef, ...],
@@ -686,7 +713,7 @@ class MemorySuggestion:
         return cls(
             id=suggestion_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             candidate_text=candidate_text.strip(),
             kind=kind,
             operation=operation,

@@ -130,13 +130,13 @@ def _item_lines(item: ContextItem) -> list[str]:
     diagnostics = item.diagnostics or {}
     canonical = diagnostics.get("canonical")
     status = diagnostics.get("status")
-    profile_id = diagnostics.get("profile_id")
+    memory_scope_id = diagnostics.get("memory_scope_id")
     labels = [
         f"{item.item_type}:{item.item_id}",
         f"score={item.score:.2f}",
     ]
-    if profile_id:
-        labels.append(f"profile={profile_id}")
+    if memory_scope_id:
+        labels.append(f"memory_scope={memory_scope_id}")
     if status:
         labels.append(f"status={status}")
     if canonical is False:

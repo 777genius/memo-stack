@@ -42,7 +42,7 @@ class ContextPacker:
         dropped_by_char_cap = 0
         used_tokens = 0
         lines = list(_HEADER_LINES)
-        current_profile_id: str | None = None
+        current_memory_scope_id: str | None = None
         for item in sorted(items, key=lambda value: value.score, reverse=True):
             if item.is_instruction:
                 dropped_by_instruction_flag += 1
@@ -58,14 +58,16 @@ class ContextPacker:
                 dropped_by_budget += 1
                 continue
 
-            profile_id = _profile_id(item)
-            profile_line = (
-                f"Profile {profile_id}:" if profile_id != current_profile_id else None
+            memory_scope_id = _memory_scope_id(item)
+            memory_scope_line = (
+                f"MemoryScope {memory_scope_id}:"
+                if memory_scope_id != current_memory_scope_id
+                else None
             )
             item_line = _item_line(len(selected) + 1, item)
             candidate_lines = [
                 *lines,
-                *([profile_line] if profile_line is not None else []),
+                *([memory_scope_line] if memory_scope_line is not None else []),
                 item_line,
             ]
             if len("\n".join(candidate_lines).strip()) > char_budget:
@@ -76,9 +78,9 @@ class ContextPacker:
             if item.item_type == "chunk":
                 selected_chunks_by_source[source_key] = source_count + 1
             used_tokens += item_tokens
-            if profile_line is not None:
-                lines.append(profile_line)
-                current_profile_id = profile_id
+            if memory_scope_line is not None:
+                lines.append(memory_scope_line)
+                current_memory_scope_id = memory_scope_id
             lines.append(item_line)
 
         dropped_count = len(items) - len(selected)
@@ -112,23 +114,23 @@ def _one_line(text: str) -> str:
 def _item_line(index: int, item: ContextItem) -> str:
     safe_text = _one_line(item.text)
     return (
-        f'[{index}] {item.item_type}:{item.item_id} '
+        f"[{index}] {item.item_type}:{item.item_id} "
         f'source={_source_label(item)} text="{_quote_text(safe_text)}"'
     )
 
 
-def _profile_id(item: ContextItem) -> str:
+def _memory_scope_id(item: ContextItem) -> str:
     diagnostics = item.diagnostics or {}
-    profile_id = diagnostics.get("profile_id")
-    return str(profile_id) if profile_id else "unknown_profile"
+    memory_scope_id = diagnostics.get("memory_scope_id")
+    return str(memory_scope_id) if memory_scope_id else "unknown_memory_scope"
 
 
 def _source_key(item: ContextItem) -> str:
-    profile_id = _profile_id(item)
+    memory_scope_id = _memory_scope_id(item)
     if item.source_refs:
         ref = item.source_refs[0]
-        return f"{profile_id}:{ref.source_type}:{ref.source_id}"
-    return f"{profile_id}:{item.item_type}:{item.item_id}"
+        return f"{memory_scope_id}:{ref.source_type}:{ref.source_id}"
+    return f"{memory_scope_id}:{item.item_type}:{item.item_id}"
 
 
 def _source_label(item: ContextItem) -> str:

@@ -35,10 +35,10 @@ class IngestDocumentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_id: str | None = Field(default=None, min_length=1, max_length=80)
-    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, max_length=80)
     space_slug: str | None = Field(default=None, min_length=1, max_length=160)
-    profile_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     thread_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=300)
     text: str = Field(min_length=1, max_length=500_000)
@@ -60,7 +60,7 @@ def document_to_response(
     body: dict[str, Any] = {
         "id": str(document.id),
         "space_id": str(document.space_id),
-        "profile_id": str(document.profile_id),
+        "memory_scope_id": str(document.memory_scope_id),
         "thread_id": str(document.thread_id) if document.thread_id else None,
         "title": document.title,
         "source_type": document.source_type,
@@ -98,8 +98,16 @@ def chunk_to_response(chunk: MemoryChunk) -> dict[str, Any]:
         "sequence": chunk.sequence,
         "status": chunk.status.value,
         "classification": chunk.classification,
+        "source_refs": _source_refs_from_metadata(chunk.metadata),
         "metadata": chunk.metadata,
     }
+
+
+def _source_refs_from_metadata(metadata: dict[str, object]) -> list[dict[str, Any]]:
+    refs = metadata.get("source_refs")
+    if not isinstance(refs, list):
+        return []
+    return [dict(item) for item in refs if isinstance(item, dict)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -116,17 +124,17 @@ async def ingest_document(
     scope = await resolve_single_scope(
         container,
         space_id=request.space_id,
-        profile_id=request.profile_id,
+        memory_scope_id=request.memory_scope_id,
         thread_id=request.thread_id,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=request.thread_external_ref,
         thread_required=False,
     )
     result = await container.ingest_document.execute(
         IngestDocumentCommand(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
             title=request.title,
             text=request.text,

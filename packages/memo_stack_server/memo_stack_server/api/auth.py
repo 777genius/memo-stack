@@ -8,8 +8,8 @@ from memo_stack_core.domain.errors import MemoryForbiddenError, MemoryUnauthoriz
 from memo_stack_server.api.dependencies import get_container
 from memo_stack_server.auth_scope import (
     PathResourceRefs,
-    profile_matches,
-    requested_profile_refs,
+    memory_scope_matches,
+    requested_memory_scope_refs,
     requested_space_refs,
     space_matches,
 )
@@ -44,7 +44,7 @@ async def require_service_token(
         raise MemoryUnauthorizedError("Missing or invalid service token")
     _ensure_permission(request, db_token)
     await _ensure_scoped_token_can_access_request(container, request, db_token)
-    await _ensure_profile_scoped_token_can_access_request(container, request, db_token)
+    await _ensure_memory_scope_scoped_token_can_access_request(container, request, db_token)
 
 
 def _ensure_permission(request: Request, token: ActiveServiceToken) -> None:
@@ -79,6 +79,23 @@ def _required_permission(request: Request) -> str | None:
             return MEMORY_PERMISSION_DELETE
         return MEMORY_PERMISSION_READ if method == "GET" else MEMORY_PERMISSION_WRITE
 
+    if (
+        path.startswith("/v1/assets")
+        or path.startswith("/v1/asset-extractions")
+        or path.startswith("/v1/extraction-artifacts")
+    ):
+        if method == "DELETE":
+            return MEMORY_PERMISSION_DELETE
+        return MEMORY_PERMISSION_READ if method == "GET" else MEMORY_PERMISSION_WRITE
+
+    if path.startswith("/v1/context-links"):
+        if method == "DELETE":
+            return MEMORY_PERMISSION_DELETE
+        return MEMORY_PERMISSION_READ if method == "GET" else MEMORY_PERMISSION_WRITE
+
+    if path == "/v1/link-suggestions":
+        return MEMORY_PERMISSION_READ
+
     if path.startswith("/v1/thread-memory"):
         if method == "DELETE" or path.endswith("/delete"):
             return MEMORY_PERMISSION_DELETE
@@ -96,8 +113,8 @@ def _required_permission(request: Request) -> str | None:
     if path == "/v1/spaces":
         return MEMORY_PERMISSION_WRITE if method == "POST" else MEMORY_PERMISSION_READ
 
-    if path == "/v1/profiles":
-        return MEMORY_PERMISSION_WRITE if method == "POST" else MEMORY_PERMISSION_READ
+    if path.startswith("/v1/memory-scopes"):
+        return _memory_scope_required_permission(method)
 
     return MEMORY_PERMISSION_READ
 
@@ -132,6 +149,14 @@ def _suggestion_required_permission(method: str) -> str:
     return MEMORY_PERMISSION_WRITE
 
 
+def _memory_scope_required_permission(method: str) -> str:
+    if method == "DELETE":
+        return MEMORY_PERMISSION_DELETE
+    if method in {"POST", "PATCH", "PUT"}:
+        return MEMORY_PERMISSION_WRITE
+    return MEMORY_PERMISSION_READ
+
+
 async def _ensure_scoped_token_can_access_request(
     container: Container,
     request: Request,
@@ -151,34 +176,36 @@ async def _ensure_scoped_token_can_access_request(
             raise MemoryForbiddenError("Scoped service token cannot access requested space")
 
 
-async def _ensure_profile_scoped_token_can_access_request(
+async def _ensure_memory_scope_scoped_token_can_access_request(
     container: Container,
     request: Request,
     token: ActiveServiceToken,
 ) -> None:
-    if token.profile_ids is None:
+    if token.memory_scope_ids is None:
         return
     if _is_safe_unscoped_endpoint(request):
         return
 
-    requested_profiles = await _requested_profile_refs(container, request)
-    if not requested_profiles:
-        raise MemoryForbiddenError("Profile-scoped service token cannot access unscoped endpoint")
+    requested_memory_scopes = await _requested_memory_scope_refs(container, request)
+    if not requested_memory_scopes:
+        raise MemoryForbiddenError(
+            "MemoryScope-scoped service token cannot access unscoped endpoint"
+        )
 
-    for requested_profile in requested_profiles:
+    for requested_memory_scope in requested_memory_scopes:
         matched = False
-        for token_profile in token.profile_ids:
-            if await profile_matches(
+        for token_memory_scope in token.memory_scope_ids:
+            if await memory_scope_matches(
                 container,
-                token_profile,
-                requested_profile,
+                token_memory_scope,
+                requested_memory_scope,
                 space_scope=token.space_id,
             ):
                 matched = True
                 break
         if not matched:
             raise MemoryForbiddenError(
-                "Profile-scoped service token cannot access requested profile"
+                "MemoryScope-scoped service token cannot access requested memory_scope"
             )
 
 
@@ -208,8 +235,13 @@ async def _requested_space_refs(container: Container, request: Request) -> set[s
                 request.url.path == "/v1/spaces"
                 or request.url.path in {"/v1/context", "/v1/search", "/v1/episodes"}
                 or request.url.path.startswith("/v1/facts")
+                or request.url.path.startswith("/v1/assets")
+                or request.url.path.startswith("/v1/asset-extractions")
+                or request.url.path.startswith("/v1/extraction-artifacts")
                 or request.url.path.startswith("/v1/captures")
+                or request.url.path.startswith("/v1/context-links")
                 or request.url.path.startswith("/v1/documents")
+                or request.url.path == "/v1/link-suggestions"
                 or request.url.path.startswith("/v1/suggestions")
                 or request.url.path.startswith("/v1/thread-memory")
             )
@@ -219,60 +251,81 @@ async def _requested_space_refs(container: Container, request: Request) -> set[s
             fact_id=_path_param(path_params, "fact_id"),
             document_id=_path_param(path_params, "document_id"),
             suggestion_id=_path_param(path_params, "suggestion_id"),
-            profile_id=_path_param(path_params, "profile_id"),
+            asset_id=_path_param(path_params, "asset_id"),
+            asset_extraction_job_id=_path_param(path_params, "job_id"),
+            extraction_artifact_id=_path_param(path_params, "artifact_id"),
+            context_link_id=_path_param(path_params, "context_link_id"),
+            memory_scope_id=_path_param(path_params, "memory_scope_id"),
         ),
         include_default_legacy_space=request.url.path.startswith("/api/v1/interview-memory"),
     )
 
 
-async def _requested_profile_refs(container: Container, request: Request) -> set[str]:
-    query_profile = request.query_params.get("profile_id")
-    query_profile_external_ref = request.query_params.get("profile_external_ref")
+async def _requested_memory_scope_refs(container: Container, request: Request) -> set[str]:
+    query_memory_scope = request.query_params.get("memory_scope_id")
+    query_memory_scope_external_ref = request.query_params.get("memory_scope_external_ref")
 
     body = await _json_body(request)
-    body_profile = body.get("profile_id")
-    body_profile_ids = body.get("profile_ids")
-    body_profile_external_ref = body.get("profile_external_ref") or body.get("external_ref")
-    body_profile_external_refs = body.get("profile_external_refs")
+    body_memory_scope = body.get("memory_scope_id")
+    body_memory_scope_ids = body.get("memory_scope_ids")
+    body_memory_scope_external_ref = body.get("memory_scope_external_ref") or body.get(
+        "external_ref"
+    )
+    body_memory_scope_external_refs = body.get("memory_scope_external_refs")
 
     path_params = request.path_params
-    return await requested_profile_refs(
+    return await requested_memory_scope_refs(
         container,
-        query_profile=query_profile,
-        query_profile_external_ref=query_profile_external_ref,
-        body_profile=body_profile if isinstance(body_profile, str) and body_profile else None,
-        body_profile_ids=(
-            tuple(profile_id for profile_id in body_profile_ids if isinstance(profile_id, str))
-            if isinstance(body_profile_ids, list)
+        query_memory_scope=query_memory_scope,
+        query_memory_scope_external_ref=query_memory_scope_external_ref,
+        body_memory_scope=body_memory_scope
+        if isinstance(body_memory_scope, str) and body_memory_scope
+        else None,
+        body_memory_scope_ids=(
+            tuple(
+                memory_scope_id
+                for memory_scope_id in body_memory_scope_ids
+                if isinstance(memory_scope_id, str)
+            )
+            if isinstance(body_memory_scope_ids, list)
             else ()
         ),
-        body_profile_external_ref=(
-            body_profile_external_ref
+        body_memory_scope_external_ref=(
+            body_memory_scope_external_ref
             if (
-                request.url.path == "/v1/profiles"
+                request.url.path == "/v1/memory-scopes"
                 or request.url.path in {"/v1/context", "/v1/search", "/v1/episodes"}
                 or request.url.path.startswith("/v1/facts")
+                or request.url.path.startswith("/v1/assets")
+                or request.url.path.startswith("/v1/asset-extractions")
+                or request.url.path.startswith("/v1/extraction-artifacts")
                 or request.url.path.startswith("/v1/captures")
+                or request.url.path.startswith("/v1/context-links")
                 or request.url.path.startswith("/v1/documents")
+                or request.url.path == "/v1/link-suggestions"
                 or request.url.path.startswith("/v1/suggestions")
                 or request.url.path.startswith("/v1/thread-memory")
             )
-            and isinstance(body_profile_external_ref, str)
-            and body_profile_external_ref
+            and isinstance(body_memory_scope_external_ref, str)
+            and body_memory_scope_external_ref
             else None
         ),
-        body_profile_external_refs=(
-            tuple(ref for ref in body_profile_external_refs if isinstance(ref, str))
-            if isinstance(body_profile_external_refs, list)
+        body_memory_scope_external_refs=(
+            tuple(ref for ref in body_memory_scope_external_refs if isinstance(ref, str))
+            if isinstance(body_memory_scope_external_refs, list)
             else ()
         ),
         path_refs=PathResourceRefs(
             fact_id=_path_param(path_params, "fact_id"),
             document_id=_path_param(path_params, "document_id"),
             suggestion_id=_path_param(path_params, "suggestion_id"),
-            profile_id=_path_param(path_params, "profile_id"),
+            asset_id=_path_param(path_params, "asset_id"),
+            asset_extraction_job_id=_path_param(path_params, "job_id"),
+            extraction_artifact_id=_path_param(path_params, "artifact_id"),
+            context_link_id=_path_param(path_params, "context_link_id"),
+            memory_scope_id=_path_param(path_params, "memory_scope_id"),
         ),
-        include_default_legacy_profile=request.url.path.startswith("/api/v1/interview-memory"),
+        include_default_legacy_memory_scope=request.url.path.startswith("/api/v1/interview-memory"),
     )
 
 

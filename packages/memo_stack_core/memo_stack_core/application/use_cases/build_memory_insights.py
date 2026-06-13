@@ -20,8 +20,8 @@ from memo_stack_core.domain.entities import (
     FactStatus,
     MemoryDocument,
     MemoryFact,
+    MemoryScopeId,
     MemorySuggestion,
-    ProfileId,
 )
 from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.ids import IdGeneratorPort
@@ -46,8 +46,8 @@ _CAPTURE_ATTENTION_STATUSES = {
 
 
 @dataclass(frozen=True)
-class _ProfileSample:
-    profile_id: str
+class _MemoryScopeSample:
+    memory_scope_id: str
     facts: tuple[MemoryFact, ...]
     documents: tuple[MemoryDocument, ...]
     document_chunk_counts: dict[str, int]
@@ -83,7 +83,9 @@ class BuildMemoryInsightsUseCase:
             generated_at=now,
             scope={
                 "space_id": str(query.space_id),
-                "profile_ids": [str(profile_id) for profile_id in query.profile_ids],
+                "memory_scope_ids": [
+                    str(memory_scope_id) for memory_scope_id in query.memory_scope_ids
+                ],
                 "thread_id": str(query.thread_id) if query.thread_id else None,
             },
             health_score=_health_score(metrics),
@@ -96,27 +98,27 @@ class BuildMemoryInsightsUseCase:
                 "evidence_only": True,
                 "read_only": True,
                 "sample_limited": True,
-                "max_facts_per_profile": query.max_facts,
-                "max_documents_per_profile": query.max_documents,
-                "max_suggestions_per_profile": query.max_suggestions,
-                "max_captures_per_profile": query.max_captures,
+                "max_facts_per_memory_scope": query.max_facts,
+                "max_documents_per_memory_scope": query.max_documents,
+                "max_suggestions_per_memory_scope": query.max_suggestions,
+                "max_captures_per_memory_scope": query.max_captures,
                 "max_activity": query.max_activity,
-                "profiles_sampled": len(samples),
+                "memory_scopes_sampled": len(samples),
             },
         )
 
     async def _load_samples(
         self,
         query: BuildMemoryInsightsQuery,
-    ) -> tuple[_ProfileSample, ...]:
-        samples: list[_ProfileSample] = []
+    ) -> tuple[_MemoryScopeSample, ...]:
+        samples: list[_MemoryScopeSample] = []
         async with self._uow_factory() as uow:
-            for profile_id in query.profile_ids:
-                facts = await self._load_facts(query, profile_id=profile_id, uow=uow)
+            for memory_scope_id in query.memory_scope_ids:
+                facts = await self._load_facts(query, memory_scope_id=memory_scope_id, uow=uow)
                 documents = tuple(
                     await uow.documents.list_for_scope(
                         space_id=str(query.space_id),
-                        profile_id=str(profile_id),
+                        memory_scope_id=str(memory_scope_id),
                         thread_id=str(query.thread_id) if query.thread_id else None,
                         status=None,
                         limit=query.max_documents,
@@ -126,15 +128,17 @@ class BuildMemoryInsightsUseCase:
                 for document in documents:
                     chunks = await uow.documents.list_chunks(str(document.id), limit=501)
                     chunk_counts[str(document.id)] = min(len(chunks), 500)
-                suggestions = await self._load_suggestions(query, profile_id=profile_id, uow=uow)
+                suggestions = await self._load_suggestions(
+                    query, memory_scope_id=memory_scope_id, uow=uow
+                )
                 captures, capture_counts = await self._load_captures(
                     query,
-                    profile_id=profile_id,
+                    memory_scope_id=memory_scope_id,
                     uow=uow,
                 )
                 samples.append(
-                    _ProfileSample(
-                        profile_id=str(profile_id),
+                    _MemoryScopeSample(
+                        memory_scope_id=str(memory_scope_id),
                         facts=tuple(facts),
                         documents=documents,
                         document_chunk_counts=chunk_counts,
@@ -149,7 +153,7 @@ class BuildMemoryInsightsUseCase:
         self,
         query: BuildMemoryInsightsQuery,
         *,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         uow: object,
     ) -> tuple[MemoryFact, ...]:
         facts: list[MemoryFact] = []
@@ -157,7 +161,7 @@ class BuildMemoryInsightsUseCase:
             facts.extend(
                 await uow.facts.list_for_scope(
                     space_id=str(query.space_id),
-                    profile_id=str(profile_id),
+                    memory_scope_id=str(memory_scope_id),
                     thread_id=str(query.thread_id) if query.thread_id else None,
                     status=status,
                     limit=query.max_facts,
@@ -165,7 +169,7 @@ class BuildMemoryInsightsUseCase:
             )
         status_none_facts = await uow.facts.list_for_scope(
             space_id=str(query.space_id),
-            profile_id=str(profile_id),
+            memory_scope_id=str(memory_scope_id),
             thread_id=str(query.thread_id) if query.thread_id else None,
             status=None,
             limit=query.max_facts,
@@ -176,7 +180,7 @@ class BuildMemoryInsightsUseCase:
         self,
         query: BuildMemoryInsightsQuery,
         *,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         uow: object,
     ) -> tuple[MemorySuggestion, ...]:
         suggestions: list[MemorySuggestion] = []
@@ -184,7 +188,7 @@ class BuildMemoryInsightsUseCase:
             suggestions.extend(
                 await uow.suggestions.list_for_scope(
                     space_id=str(query.space_id),
-                    profile_id=str(profile_id),
+                    memory_scope_id=str(memory_scope_id),
                     status=status,
                     operation=None,
                     category=None,
@@ -198,7 +202,7 @@ class BuildMemoryInsightsUseCase:
         self,
         query: BuildMemoryInsightsQuery,
         *,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         uow: object,
     ) -> tuple[tuple[CanonicalCapture, ...], dict[str, int]]:
         counts: dict[str, int] = {}
@@ -206,7 +210,7 @@ class BuildMemoryInsightsUseCase:
         for consolidation_status in _CAPTURE_CONSOLIDATION_STATUSES:
             status_captures = await uow.captures.list_for_scope(
                 space_id=str(query.space_id),
-                profile_id=str(profile_id),
+                memory_scope_id=str(memory_scope_id),
                 status=None,
                 consolidation_status=consolidation_status,
                 limit=query.max_captures,
@@ -216,7 +220,7 @@ class BuildMemoryInsightsUseCase:
         return _dedupe_captures(tuple(captures)), counts
 
 
-def _metrics(*, samples: tuple[_ProfileSample, ...], now: datetime) -> dict[str, object]:
+def _metrics(*, samples: tuple[_MemoryScopeSample, ...], now: datetime) -> dict[str, object]:
     fact_status_counts: Counter[str] = Counter()
     suggestion_status_counts: Counter[str] = Counter()
     suggestion_operation_counts: Counter[str] = Counter()
@@ -258,7 +262,7 @@ def _metrics(*, samples: tuple[_ProfileSample, ...], now: datetime) -> dict[str,
         if status in _CAPTURE_ATTENTION_STATUSES
     )
     return {
-        "profiles": len(samples),
+        "memory_scopes": len(samples),
         "facts": {
             "total_sampled": sum(fact_status_counts.values()),
             "active": active_facts,
@@ -285,7 +289,7 @@ def _metrics(*, samples: tuple[_ProfileSample, ...], now: datetime) -> dict[str,
     }
 
 
-def _taxonomy(samples: tuple[_ProfileSample, ...]) -> dict[str, object]:
+def _taxonomy(samples: tuple[_MemoryScopeSample, ...]) -> dict[str, object]:
     categories: Counter[str] = Counter()
     tags: Counter[str] = Counter()
     ttl_policies: Counter[str] = Counter()
@@ -306,7 +310,7 @@ def _taxonomy(samples: tuple[_ProfileSample, ...]) -> dict[str, object]:
 
 def _action_items(
     *,
-    samples: tuple[_ProfileSample, ...],
+    samples: tuple[_MemoryScopeSample, ...],
     now: datetime,
 ) -> list[MemoryInsightActionItem]:
     items: list[MemoryInsightActionItem] = []
@@ -321,7 +325,7 @@ def _action_items(
                     action="review_pending_suggestions",
                     target_type="suggestion_queue",
                     target_id=None,
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     reason=f"{len(pending_suggestions)} pending suggestions need review.",
                     metadata={"pending_count": len(pending_suggestions)},
                 )
@@ -333,7 +337,7 @@ def _action_items(
                     action="review_suggestion",
                     target_type="suggestion",
                     target_id=str(suggestion.id),
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     reason=f"Pending {suggestion.operation.value} suggestion.",
                     preview=_preview(suggestion.candidate_text),
                     metadata={
@@ -347,8 +351,7 @@ def _action_items(
         expired = [
             fact
             for fact in sample.facts
-            if fact.status == FactStatus.ACTIVE
-            and _is_expired(fact.expires_at, now)
+            if fact.status == FactStatus.ACTIVE and _is_expired(fact.expires_at, now)
         ]
         for fact in expired[:10]:
             items.append(
@@ -357,21 +360,17 @@ def _action_items(
                     action="review_expired_fact",
                     target_type="fact",
                     target_id=str(fact.id),
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     reason="Active fact has expired and is hidden from active recall.",
                     preview=_preview(fact.text),
                     metadata={
                         "ttl_policy": fact.ttl_policy,
-                        "expires_at": fact.expires_at.isoformat()
-                        if fact.expires_at
-                        else None,
+                        "expires_at": fact.expires_at.isoformat() if fact.expires_at else None,
                     },
                 )
             )
         uncategorized = [
-            fact
-            for fact in sample.facts
-            if fact.status == FactStatus.ACTIVE and not fact.category
+            fact for fact in sample.facts if fact.status == FactStatus.ACTIVE and not fact.category
         ]
         if len(uncategorized) >= 5:
             items.append(
@@ -380,7 +379,7 @@ def _action_items(
                     action="backfill_fact_taxonomy",
                     target_type="fact_set",
                     target_id=None,
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     reason=f"{len(uncategorized)} active facts have no category.",
                     metadata={"uncategorized_active_count": len(uncategorized)},
                 )
@@ -396,7 +395,7 @@ def _action_items(
                         action="process_document",
                         target_type="document",
                         target_id=str(document.id),
-                        profile_id=sample.profile_id,
+                        memory_scope_id=sample.memory_scope_id,
                         reason="Active document has no indexed chunks.",
                         preview=_preview(document.title),
                     )
@@ -409,7 +408,7 @@ def _action_items(
                     action="inspect_dead_captures",
                     target_type="capture_queue",
                     target_id=None,
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     reason=f"{dead_captures} capture consolidations are dead.",
                     metadata={"dead_capture_count": dead_captures},
                 )
@@ -419,7 +418,7 @@ def _action_items(
 
 def _fact_consolidation_actions(
     *,
-    sample: _ProfileSample,
+    sample: _MemoryScopeSample,
     now: datetime,
 ) -> list[MemoryInsightActionItem]:
     active_facts = [
@@ -427,13 +426,13 @@ def _fact_consolidation_actions(
         for fact in sample.facts
         if fact.status == FactStatus.ACTIVE and not _is_expired(fact.expires_at, now)
     ]
-    items = _exact_duplicate_fact_actions(sample.profile_id, active_facts)
-    items.extend(_similar_fact_actions(sample.profile_id, active_facts))
+    items = _exact_duplicate_fact_actions(sample.memory_scope_id, active_facts)
+    items.extend(_similar_fact_actions(sample.memory_scope_id, active_facts))
     return items[:10]
 
 
 def _exact_duplicate_fact_actions(
-    profile_id: str,
+    memory_scope_id: str,
     facts: list[MemoryFact],
 ) -> list[MemoryInsightActionItem]:
     by_key: dict[str, list[MemoryFact]] = {}
@@ -455,7 +454,7 @@ def _exact_duplicate_fact_actions(
                 action="review_duplicate_facts",
                 target_type="fact_set",
                 target_id=str(primary.id),
-                profile_id=profile_id,
+                memory_scope_id=memory_scope_id,
                 reason=f"{len(ordered)} active facts have equivalent text.",
                 preview=_preview(primary.text),
                 metadata={
@@ -466,11 +465,11 @@ def _exact_duplicate_fact_actions(
                 },
             )
         )
-    return sorted(items, key=lambda item: (item.profile_id, item.target_id or item.id))[:5]
+    return sorted(items, key=lambda item: (item.memory_scope_id, item.target_id or item.id))[:5]
 
 
 def _similar_fact_actions(
-    profile_id: str,
+    memory_scope_id: str,
     facts: list[MemoryFact],
 ) -> list[MemoryInsightActionItem]:
     candidates: list[tuple[float, MemoryFact, MemoryFact]] = []
@@ -506,7 +505,7 @@ def _similar_fact_actions(
                 action="review_similar_facts",
                 target_type="fact_set",
                 target_id=str(newest.id),
-                profile_id=profile_id,
+                memory_scope_id=memory_scope_id,
                 reason="Two active facts look similar enough to review for consolidation.",
                 preview=_preview(newest.text),
                 metadata={
@@ -525,7 +524,7 @@ def _similar_fact_actions(
 
 
 def _recent_activity(
-    samples: tuple[_ProfileSample, ...],
+    samples: tuple[_MemoryScopeSample, ...],
     *,
     limit: int,
 ) -> list[MemoryActivityItem]:
@@ -545,7 +544,7 @@ def _recent_activity(
                     event_type=event_type,
                     entity_type="fact",
                     entity_id=str(fact.id),
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     thread_id=str(fact.thread_id) if fact.thread_id else None,
                     status=fact.status.value,
                     preview=_preview(fact.text),
@@ -569,7 +568,7 @@ def _recent_activity(
                     event_type=event_type,
                     entity_type="suggestion",
                     entity_id=str(suggestion.id),
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     thread_id=None,
                     status=suggestion.status.value,
                     preview=_preview(suggestion.candidate_text),
@@ -586,9 +585,7 @@ def _recent_activity(
             )
         for document in sample.documents:
             event_type = (
-                "document_deleted"
-                if document.status.value == "deleted"
-                else "document_ingested"
+                "document_deleted" if document.status.value == "deleted" else "document_ingested"
             )
             items.append(
                 _activity_item(
@@ -596,7 +593,7 @@ def _recent_activity(
                     event_type=event_type,
                     entity_type="document",
                     entity_id=str(document.id),
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     thread_id=str(document.thread_id) if document.thread_id else None,
                     status=document.status.value,
                     preview=_preview(document.title),
@@ -614,7 +611,7 @@ def _recent_activity(
                     event_type=event_type,
                     entity_type="capture",
                     entity_id=str(capture.id),
-                    profile_id=sample.profile_id,
+                    memory_scope_id=sample.memory_scope_id,
                     thread_id=str(capture.thread_id) if capture.thread_id else None,
                     status=capture.consolidation_status.value,
                     preview=_preview(capture.text),
@@ -639,7 +636,7 @@ def _consolidation_plan(
             items.append(
                 _plan_item(
                     plan_type="exact_duplicate_fact_review",
-                    profile_id=action.profile_id,
+                    memory_scope_id=action.memory_scope_id,
                     confidence="high",
                     canonical_candidate_id=_metadata_string(
                         metadata,
@@ -663,7 +660,7 @@ def _consolidation_plan(
             items.append(
                 _plan_item(
                     plan_type="similar_fact_review",
-                    profile_id=action.profile_id,
+                    memory_scope_id=action.memory_scope_id,
                     confidence="medium",
                     canonical_candidate_id=_metadata_string(
                         metadata,
@@ -707,12 +704,12 @@ def _item(
     action: str,
     target_type: str,
     target_id: str | None,
-    profile_id: str,
+    memory_scope_id: str,
     reason: str,
     preview: str | None = None,
     metadata: dict[str, object] | None = None,
 ) -> MemoryInsightActionItem:
-    stable = "|".join((severity, action, target_type, str(target_id), profile_id, reason))
+    stable = "|".join((severity, action, target_type, str(target_id), memory_scope_id, reason))
     digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()[:24]
     return MemoryInsightActionItem(
         id=f"mai_{digest}",
@@ -720,7 +717,7 @@ def _item(
         action=action,
         target_type=target_type,
         target_id=target_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         reason=reason,
         preview=preview,
         metadata=metadata or {},
@@ -733,13 +730,15 @@ def _activity_item(
     event_type: str,
     entity_type: str,
     entity_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     thread_id: str | None,
     status: str,
     preview: str | None,
     metadata: dict[str, object],
 ) -> MemoryActivityItem:
-    stable = "|".join((event_type, entity_type, entity_id, profile_id, occurred_at.isoformat()))
+    stable = "|".join(
+        (event_type, entity_type, entity_id, memory_scope_id, occurred_at.isoformat())
+    )
     digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()[:24]
     return MemoryActivityItem(
         id=f"act_{digest}",
@@ -747,7 +746,7 @@ def _activity_item(
         event_type=event_type,
         entity_type=entity_type,
         entity_id=entity_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=thread_id,
         status=status,
         preview=preview,
@@ -758,7 +757,7 @@ def _activity_item(
 def _plan_item(
     *,
     plan_type: str,
-    profile_id: str,
+    memory_scope_id: str,
     confidence: str,
     canonical_candidate_id: str,
     candidate_fact_ids: tuple[str, ...],
@@ -768,13 +767,13 @@ def _plan_item(
     metadata: dict[str, object],
 ) -> MemoryConsolidationPlanItem:
     stable = "|".join(
-        (plan_type, profile_id, canonical_candidate_id, ",".join(candidate_fact_ids), reason)
+        (plan_type, memory_scope_id, canonical_candidate_id, ",".join(candidate_fact_ids), reason)
     )
     digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()[:24]
     return MemoryConsolidationPlanItem(
         id=f"mplan_{digest}",
         plan_type=plan_type,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         confidence=confidence,
         canonical_candidate_id=canonical_candidate_id,
         candidate_fact_ids=candidate_fact_ids,
@@ -789,7 +788,7 @@ def _action_sort_key(item: MemoryInsightActionItem) -> tuple[int, str, str]:
     severity_rank = {"critical": 0, "warning": 1, "info": 2}
     return (
         severity_rank.get(item.severity, 3),
-        item.profile_id,
+        item.memory_scope_id,
         item.target_id or item.action,
     )
 
@@ -880,10 +879,7 @@ def _metadata_ids(metadata: dict[str, object], key: str) -> list[str]:
 
 
 def _top_counts(counter: Counter[str], *, limit: int = 20) -> list[dict[str, object]]:
-    return [
-        {"value": value, "count": count}
-        for value, count in counter.most_common(limit)
-    ]
+    return [{"value": value, "count": count} for value, count in counter.most_common(limit)]
 
 
 def _capture_activity_type(capture: CanonicalCapture) -> str:

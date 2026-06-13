@@ -105,7 +105,7 @@ class CapabilityDescriptor:
 @dataclass(frozen=True)
 class MemoryScopeFilter:
     space_id: str
-    profile_ids: tuple[str, ...]
+    memory_scope_ids: tuple[str, ...]
     thread_id: str | None = None
     category: str | None = None
     tags: tuple[str, ...] = ()
@@ -113,12 +113,14 @@ class MemoryScopeFilter:
     def __post_init__(self) -> None:
         if not self.space_id.strip():
             raise MemoryValidationError("MemoryScopeFilter.space_id is required")
-        if not self.profile_ids:
-            raise MemoryValidationError("MemoryScopeFilter.profile_ids is required")
-        if any(not profile_id.strip() for profile_id in self.profile_ids):
-            raise MemoryValidationError("MemoryScopeFilter.profile_ids cannot contain blanks")
-        if len(set(self.profile_ids)) != len(self.profile_ids):
-            raise MemoryValidationError("MemoryScopeFilter.profile_ids cannot contain duplicates")
+        if not self.memory_scope_ids:
+            raise MemoryValidationError("MemoryScopeFilter.memory_scope_ids is required")
+        if any(not memory_scope_id.strip() for memory_scope_id in self.memory_scope_ids):
+            raise MemoryValidationError("MemoryScopeFilter.memory_scope_ids cannot contain blanks")
+        if len(set(self.memory_scope_ids)) != len(self.memory_scope_ids):
+            raise MemoryValidationError(
+                "MemoryScopeFilter.memory_scope_ids cannot contain duplicates"
+            )
         if self.thread_id is not None and not self.thread_id.strip():
             raise MemoryValidationError("MemoryScopeFilter.thread_id cannot be blank")
 
@@ -177,7 +179,7 @@ class CapabilityRecallResult:
 class DocumentMemoryWrite:
     document_id: str
     space_id: str
-    profile_id: str
+    memory_scope_id: str
     title: str
     text: str
     source_refs: tuple[SourceRef, ...]
@@ -189,8 +191,8 @@ class DocumentMemoryWrite:
             raise MemoryValidationError("DocumentMemoryWrite.document_id is required")
         if not self.space_id.strip():
             raise MemoryValidationError("DocumentMemoryWrite.space_id is required")
-        if not self.profile_id.strip():
-            raise MemoryValidationError("DocumentMemoryWrite.profile_id is required")
+        if not self.memory_scope_id.strip():
+            raise MemoryValidationError("DocumentMemoryWrite.memory_scope_id is required")
         if not self.title.strip():
             raise MemoryValidationError("DocumentMemoryWrite.title is required")
         if not self.text.strip():
@@ -203,7 +205,7 @@ class DocumentMemoryWrite:
 class FactProjectionWrite:
     fact_id: str
     space_id: str
-    profile_id: str
+    memory_scope_id: str
     text: str
     version: int
     source_refs: tuple[SourceRef, ...]
@@ -216,8 +218,8 @@ class FactProjectionWrite:
             raise MemoryValidationError("FactProjectionWrite.fact_id is required")
         if not self.space_id.strip():
             raise MemoryValidationError("FactProjectionWrite.space_id is required")
-        if not self.profile_id.strip():
-            raise MemoryValidationError("FactProjectionWrite.profile_id is required")
+        if not self.memory_scope_id.strip():
+            raise MemoryValidationError("FactProjectionWrite.memory_scope_id is required")
         if not self.text.strip():
             raise MemoryValidationError("FactProjectionWrite.text is required")
         if self.version < 1:

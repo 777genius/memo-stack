@@ -12,19 +12,19 @@ def without_none(values: dict[str, Any]) -> dict[str, Any]:
 def single_scope_body(
     *,
     space_id: str | None,
-    profile_id: str | None,
+    memory_scope_id: str | None,
     thread_id: str | None,
     space_slug: str | None,
-    profile_external_ref: str | None,
+    memory_scope_external_ref: str | None,
     thread_external_ref: str | None,
 ) -> dict[str, Any]:
     return without_none(
         {
             "space_id": space_id,
-            "profile_id": profile_id,
+            "memory_scope_id": memory_scope_id,
             "thread_id": thread_id,
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
+            "memory_scope_external_ref": memory_scope_external_ref,
             "thread_external_ref": thread_external_ref,
         }
     )
@@ -33,21 +33,21 @@ def single_scope_body(
 def context_scope_payload(
     *,
     space_id: str | None,
-    profile_ids: list[str] | None,
+    memory_scope_ids: list[str] | None,
     thread_id: str | None,
     space_slug: str | None,
-    profile_external_ref: str | None,
-    profile_external_refs: list[str] | None,
+    memory_scope_external_ref: str | None,
+    memory_scope_external_refs: list[str] | None,
     thread_external_ref: str | None,
 ) -> dict[str, Any]:
     return without_none(
         {
             "space_id": space_id,
-            "profile_ids": profile_ids,
+            "memory_scope_ids": memory_scope_ids,
             "thread_id": thread_id,
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
-            "profile_external_refs": profile_external_refs,
+            "memory_scope_external_ref": memory_scope_external_ref,
+            "memory_scope_external_refs": memory_scope_external_refs,
             "thread_external_ref": thread_external_ref,
         }
     )
@@ -57,11 +57,11 @@ def context_body(
     *,
     scope_payload: dict[str, Any] | None,
     space_id: str | None,
-    profile_ids: list[str] | None,
+    memory_scope_ids: list[str] | None,
     thread_id: str | None,
     space_slug: str | None,
-    profile_external_ref: str | None,
-    profile_external_refs: list[str] | None,
+    memory_scope_external_ref: str | None,
+    memory_scope_external_refs: list[str] | None,
     thread_external_ref: str | None,
     query: str,
     token_budget: int,
@@ -74,11 +74,11 @@ def context_body(
 ) -> dict[str, Any]:
     payload = scope_payload or context_scope_payload(
         space_id=space_id,
-        profile_ids=profile_ids,
+        memory_scope_ids=memory_scope_ids,
         thread_id=thread_id,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
-        profile_external_refs=profile_external_refs,
+        memory_scope_external_ref=memory_scope_external_ref,
+        memory_scope_external_refs=memory_scope_external_refs,
         thread_external_ref=thread_external_ref,
     )
     return without_none(
@@ -99,11 +99,11 @@ def context_body(
 def context_scope_body(
     *,
     space_id: str | None,
-    profile_ids: list[str] | None,
+    memory_scope_ids: list[str] | None,
     thread_id: str | None,
     space_slug: str | None,
-    profile_external_ref: str | None,
-    profile_external_refs: list[str] | None,
+    memory_scope_external_ref: str | None,
+    memory_scope_external_refs: list[str] | None,
     thread_external_ref: str | None,
     query: str,
     token_budget: int,
@@ -114,11 +114,11 @@ def context_scope_body(
         {
             **context_scope_payload(
                 space_id=space_id,
-                profile_ids=profile_ids,
+                memory_scope_ids=memory_scope_ids,
                 thread_id=thread_id,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
             ),
             "query": query,
@@ -133,17 +133,17 @@ def suggestions_batch_body(
     *,
     items: list[dict[str, Any]],
     space_id: str | None,
-    profile_id: str | None,
+    memory_scope_id: str | None,
     space_slug: str | None,
-    profile_external_ref: str | None,
+    memory_scope_external_ref: str | None,
     continue_on_error: bool,
 ) -> dict[str, Any]:
     return without_none(
         {
             "space_id": space_id,
-            "profile_id": profile_id,
+            "memory_scope_id": memory_scope_id,
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
+            "memory_scope_external_ref": memory_scope_external_ref,
             "items": items,
             "continue_on_error": continue_on_error,
         }
@@ -153,9 +153,9 @@ def suggestions_batch_body(
 def suggestion_body(
     *,
     space_id: str | None,
-    profile_id: str | None,
+    memory_scope_id: str | None,
     space_slug: str | None,
-    profile_external_ref: str | None,
+    memory_scope_external_ref: str | None,
     candidate_text: str,
     safe_reason: str,
     kind: str,
@@ -174,9 +174,9 @@ def suggestion_body(
     return without_none(
         {
             "space_id": space_id,
-            "profile_id": profile_id,
+            "memory_scope_id": memory_scope_id,
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
+            "memory_scope_external_ref": memory_scope_external_ref,
             "candidate_text": candidate_text,
             "safe_reason": safe_reason,
             "kind": kind,
@@ -196,43 +196,44 @@ def suggestion_body(
 
 
 def validate_single_scope_payload(payload: dict[str, Any]) -> None:
-    canonical = any(payload.get(key) for key in ("space_id", "profile_id", "thread_id"))
+    canonical = any(payload.get(key) for key in ("space_id", "memory_scope_id", "thread_id"))
     external = any(
-        payload.get(key) for key in ("space_slug", "profile_external_ref", "thread_external_ref")
+        payload.get(key)
+        for key in ("space_slug", "memory_scope_external_ref", "thread_external_ref")
     )
     if canonical and external:
         raise ValueError("Use either canonical ids or external refs, not both")
-    if canonical and (not payload.get("space_id") or not payload.get("profile_id")):
-        raise ValueError("space_id and profile_id are required with canonical scope")
+    if canonical and (not payload.get("space_id") or not payload.get("memory_scope_id")):
+        raise ValueError("space_id and memory_scope_id are required with canonical scope")
 
 
 def validate_read_scope_payload(payload: dict[str, Any]) -> None:
-    profile_ids = payload.get("profile_ids")
+    memory_scope_ids = payload.get("memory_scope_ids")
     raw_external_refs = []
-    if payload.get("profile_external_ref"):
-        raw_external_refs.append(payload["profile_external_ref"])
-    raw_external_refs.extend(payload.get("profile_external_refs") or ())
+    if payload.get("memory_scope_external_ref"):
+        raw_external_refs.append(payload["memory_scope_external_ref"])
+    raw_external_refs.extend(payload.get("memory_scope_external_refs") or ())
     external_refs = tuple(ref for ref in raw_external_refs if isinstance(ref, str))
-    canonical = any(payload.get(key) for key in ("space_id", "profile_ids", "thread_id"))
+    canonical = any(payload.get(key) for key in ("space_id", "memory_scope_ids", "thread_id"))
     external = any(
         payload.get(key)
         for key in (
             "space_slug",
-            "profile_external_ref",
-            "profile_external_refs",
+            "memory_scope_external_ref",
+            "memory_scope_external_refs",
             "thread_external_ref",
         )
     )
     if canonical and external:
-        raise ValueError("Use profile_ids/thread_id or external profile refs, not both")
-    if profile_ids is not None:
-        if not isinstance(profile_ids, list) or not profile_ids:
-            raise ValueError("profile_ids must be a non-empty list")
-        if len(set(profile_ids)) != len(profile_ids):
-            raise ValueError("profile_ids must be unique")
+        raise ValueError("Use memory_scope_ids/thread_id or external memory_scope refs, not both")
+    if memory_scope_ids is not None:
+        if not isinstance(memory_scope_ids, list) or not memory_scope_ids:
+            raise ValueError("memory_scope_ids must be a non-empty list")
+        if len(set(memory_scope_ids)) != len(memory_scope_ids):
+            raise ValueError("memory_scope_ids must be unique")
         if not payload.get("space_id"):
-            raise ValueError("space_id is required with profile_ids")
+            raise ValueError("space_id is required with memory_scope_ids")
     if external_refs and len(set(external_refs)) != len(external_refs):
-        raise ValueError("profile_external_refs must be unique")
+        raise ValueError("memory_scope_external_refs must be unique")
     if payload.get("thread_external_ref") and len(external_refs) > 1:
-        raise ValueError("thread_external_ref supports a single profile for context")
+        raise ValueError("thread_external_ref supports a single memory_scope for context")

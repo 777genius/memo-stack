@@ -67,7 +67,7 @@ class CreateSuggestionUseCase:
         suggestion = MemorySuggestion.create(
             suggestion_id=MemorySuggestionId(self._ids.new_id("sug")),
             space_id=command.space_id,
-            profile_id=command.profile_id,
+            memory_scope_id=command.memory_scope_id,
             candidate_text=command.candidate_text,
             kind=command.kind,
             source_refs=command.source_refs,
@@ -91,7 +91,7 @@ class CreateSuggestionUseCase:
             async with self._uow_factory() as uow:
                 duplicate = await uow.suggestions.find_pending_duplicate(
                     space_id=str(command.space_id),
-                    profile_id=str(command.profile_id),
+                    memory_scope_id=str(command.memory_scope_id),
                     candidate_fingerprint=candidate_fingerprint,
                     operation=operation.value,
                     target_fact_id=command.target_fact_id,
@@ -121,7 +121,7 @@ class CreateSuggestionUseCase:
         async with self._uow_factory() as uow:
             return await uow.suggestions.find_pending_duplicate(
                 space_id=str(command.space_id),
-                profile_id=str(command.profile_id),
+                memory_scope_id=str(command.memory_scope_id),
                 candidate_fingerprint=candidate_fingerprint,
                 operation=operation.value,
                 target_fact_id=command.target_fact_id,
@@ -200,7 +200,7 @@ class ListSuggestionsUseCase:
         async with self._uow_factory() as uow:
             return await uow.suggestions.list_for_scope(
                 space_id=str(query.space_id),
-                profile_id=str(query.profile_id),
+                memory_scope_id=str(query.memory_scope_id),
                 status=query.status,
                 operation=query.operation,
                 category=query.category,
@@ -238,7 +238,7 @@ class ApproveSuggestionUseCase:
                 if (
                     current is None
                     or current.space_id != suggestion.space_id
-                    or current.profile_id != suggestion.profile_id
+                    or current.memory_scope_id != suggestion.memory_scope_id
                 ):
                     raise MemoryNotFoundError("Target fact not found")
                 if (
@@ -270,7 +270,7 @@ class ApproveSuggestionUseCase:
                 fact = MemoryFact.create(
                     fact_id=MemoryFactId(self._ids.new_id("fact")),
                     space_id=suggestion.space_id,
-                    profile_id=suggestion.profile_id,
+                    memory_scope_id=suggestion.memory_scope_id,
                     text=suggestion.candidate_text,
                     kind=suggestion.kind,
                     source_refs=suggestion.source_refs,
@@ -431,7 +431,7 @@ def _suggestion_fingerprint(
     raw = "|".join(
         (
             str(command.space_id),
-            str(command.profile_id),
+            str(command.memory_scope_id),
             operation.value,
             command.target_fact_id or "",
             str(command.target_fact_version or ""),
@@ -456,7 +456,7 @@ def _has_independent_source(suggestion: MemorySuggestion) -> bool:
 def _batch_candidate_key(command: CreateSuggestionCommand) -> tuple[object, ...]:
     return (
         str(command.space_id),
-        str(command.profile_id),
+        str(command.memory_scope_id),
         command.operation,
         command.target_fact_id or "",
         command.target_fact_version or 0,

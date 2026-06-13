@@ -77,7 +77,7 @@ class PublicBenchmarkCase:
     forbidden_terms: tuple[str, ...] = ()
     memories: tuple[BenchmarkMemoryInput, ...] = ()
     documents: tuple[BenchmarkDocumentInput, ...] = ()
-    profile_external_ref: str | None = None
+    memory_scope_external_ref: str | None = None
     thread_external_ref: str | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
 
@@ -360,7 +360,7 @@ def _run_case(
     dataset_hash: str,
     case: PublicBenchmarkCase,
 ) -> CaseRunResult:
-    profile_ref = case.profile_external_ref or f"{case.benchmark}-{case.case_id}"
+    memory_scope_ref = case.memory_scope_external_ref or f"{case.benchmark}-{case.case_id}"
     thread_ref = case.thread_external_ref or f"{case.benchmark}-{case.case_id}"
     for index, memory in enumerate(case.memories):
         source_id = _safe_identifier(
@@ -373,7 +373,7 @@ def _run_case(
             headers=headers,
             payload={
                 "space_slug": scope_slug,
-                "profile_external_ref": profile_ref,
+                "memory_scope_external_ref": memory_scope_ref,
                 "thread_external_ref": thread_ref,
                 "text": memory.text,
                 "kind": memory.kind,
@@ -400,7 +400,7 @@ def _run_case(
             headers=headers,
             payload={
                 "space_slug": scope_slug,
-                "profile_external_ref": profile_ref,
+                "memory_scope_external_ref": memory_scope_ref,
                 "thread_external_ref": thread_ref,
                 "title": document.title,
                 "text": document.text,
@@ -418,7 +418,7 @@ def _run_case(
         headers=headers,
         payload={
             "space_slug": scope_slug,
-            "profile_external_ref": profile_ref,
+            "memory_scope_external_ref": memory_scope_ref,
             "thread_external_ref": thread_ref,
             "query": case.question,
             "token_budget": 2000,
@@ -438,9 +438,7 @@ def _run_case(
     )
     items = data.get("items", [])
     item_ids = tuple(
-        str(item.get("item_id"))
-        for item in items
-        if isinstance(item, dict) and item.get("item_id")
+        str(item.get("item_id")) for item in items if isinstance(item, dict) and item.get("item_id")
     )
     return CaseRunResult(
         benchmark=case.benchmark,
@@ -534,7 +532,7 @@ def _official_locomo_cases(raw: Mapping[str, object]) -> tuple[PublicBenchmarkCa
                 question=question,
                 expected_terms=expected_terms,
                 documents=documents,
-                profile_external_ref=f"locomo-{sample_id}",
+                memory_scope_external_ref=f"locomo-{sample_id}",
                 thread_external_ref=f"locomo-{sample_id}",
                 metadata={
                     "source_format": "official_locomo",
@@ -629,9 +627,7 @@ def _official_locomo_documents(
 
 def _is_session_key(value: object) -> bool:
     return (
-        isinstance(value, str)
-        and value.startswith("session_")
-        and not value.endswith("_date_time")
+        isinstance(value, str) and value.startswith("session_") and not value.endswith("_date_time")
     )
 
 
@@ -666,7 +662,7 @@ def _official_longmemeval_case(raw: Mapping[str, object]) -> PublicBenchmarkCase
         question=question,
         expected_terms=expected_terms,
         documents=_official_longmemeval_documents(raw, question_id=question_id),
-        profile_external_ref=f"longmemeval-{question_id}",
+        memory_scope_external_ref=f"longmemeval-{question_id}",
         thread_external_ref=f"longmemeval-{question_id}",
         metadata={
             "source_format": "official_longmemeval",
@@ -749,7 +745,9 @@ def _normalize_case(raw: Mapping[str, object]) -> PublicBenchmarkCase:
         forbidden_terms=forbidden_terms,
         memories=memories,
         documents=documents,
-        profile_external_ref=_first_str(raw, "profile_external_ref", "user_id", "profile_id"),
+        memory_scope_external_ref=_first_str(
+            raw, "memory_scope_external_ref", "user_id", "memory_scope_id"
+        ),
         thread_external_ref=_first_str(raw, "thread_external_ref", "thread_id", "session_id"),
         metadata=_metadata(raw),
     )

@@ -27,7 +27,7 @@ def build_mcp_config(
             config.service_token if include_token else "${MEMORY_MCP_AUTH_TOKEN}"
         ),
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": config.default_space_slug,
-        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": config.default_profile_external_ref,
+        "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": config.default_memory_scope_external_ref,
         "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": "__MEMO_STACK_NO_DEFAULT_THREAD__",
         "MEMORY_MCP_WRITE_MODE": "suggest",
         "MEMORY_MCP_DELETE_MODE": "off",

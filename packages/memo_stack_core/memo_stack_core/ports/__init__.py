@@ -10,7 +10,7 @@ from memo_stack_core.ports.adapters import (
     VectorCandidate,
     VectorSearchResult,
 )
-from memo_stack_core.ports.auth import AuthPort, MemoryPrincipal, MemoryScope, ReadScope
+from memo_stack_core.ports.auth import AuthPort, MemoryUser, MemoryWriteScope, ReadScope
 from memo_stack_core.ports.auto_memory import (
     ALLOWED_TTL_POLICIES,
     FactExtractionPort,
@@ -47,12 +47,26 @@ from memo_stack_core.ports.capabilities import (
     VectorRecallPort,
 )
 from memo_stack_core.ports.clock import ClockPort
+from memo_stack_core.ports.extraction import (
+    AssetExtractionRepositoryPort,
+    ContentExtractionPort,
+    ExtractedElement,
+    ExtractionArtifactCandidate,
+    ExtractionLimits,
+    ExtractionRequest,
+    ExtractionResult,
+    FileTypeDetectionRequest,
+    FileTypeDetectionResult,
+    FileTypeDetectorPort,
+)
 from memo_stack_core.ports.ids import IdGeneratorPort
+from memo_stack_core.ports.usage import UsageRepositoryPort
 
 __all__ = [
     "AdapterCapabilities",
     "ALLOWED_TTL_POLICIES",
     "AuthPort",
+    "AssetExtractionRepositoryPort",
     "CapabilityDescriptor",
     "CapabilityDiagnostic",
     "CapabilityMode",
@@ -62,13 +76,22 @@ __all__ = [
     "CapabilityStatus",
     "ClockPort",
     "ConsistencyMode",
+    "ContentExtractionPort",
     "DocumentMemoryPort",
     "DocumentMemoryWrite",
     "EngineHealthPort",
     "EngineHealthSnapshot",
+    "ExtractedElement",
+    "ExtractionArtifactCandidate",
+    "ExtractionLimits",
+    "ExtractionRequest",
+    "ExtractionResult",
     "FactExtractionPort",
     "FactProjectionPort",
     "FactProjectionWrite",
+    "FileTypeDetectionRequest",
+    "FileTypeDetectionResult",
+    "FileTypeDetectorPort",
     "GraphCandidate",
     "GraphSearchResult",
     "IdGeneratorPort",
@@ -77,8 +100,8 @@ __all__ = [
     "MemoryCapability",
     "MemoryClassifierPort",
     "MemoryExtractorPort",
-    "MemoryPrincipal",
-    "MemoryScope",
+    "MemoryUser",
+    "MemoryWriteScope",
     "MemoryScopeFilter",
     "PortDiagnostic",
     "PortStatus",
@@ -92,6 +115,7 @@ __all__ = [
     "SessionMemoryPort",
     "SourceProvenance",
     "TemporalFactGraphPort",
+    "UsageRepositoryPort",
     "VectorCandidate",
     "VectorRecallPort",
     "VectorSearchResult",

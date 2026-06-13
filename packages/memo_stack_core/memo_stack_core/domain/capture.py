@@ -14,7 +14,7 @@ from typing import NewType
 
 from memo_stack_core.domain.entities import (
     DataClassification,
-    ProfileId,
+    MemoryScopeId,
     SourceRef,
     SpaceId,
     ThreadId,
@@ -88,7 +88,7 @@ class SourceAuthority(StrEnum):
 class CanonicalCapture:
     id: MemoryCaptureId
     space_id: SpaceId
-    profile_id: ProfileId
+    memory_scope_id: MemoryScopeId
     thread_id: ThreadId | None
     source_agent: str
     source_kind: CaptureSourceKind
@@ -135,7 +135,7 @@ class CanonicalCapture:
         *,
         capture_id: MemoryCaptureId,
         space_id: SpaceId,
-        profile_id: ProfileId,
+        memory_scope_id: MemoryScopeId,
         thread_id: ThreadId | None,
         source_agent: str,
         source_kind: CaptureSourceKind,
@@ -179,7 +179,7 @@ class CanonicalCapture:
         return cls(
             id=capture_id,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             thread_id=thread_id,
             source_agent=source_agent.strip(),
             source_kind=source_kind,

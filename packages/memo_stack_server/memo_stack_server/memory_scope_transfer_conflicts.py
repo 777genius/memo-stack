@@ -1,4 +1,4 @@
-"""Conflict detection for profile snapshot imports."""
+"""Conflict detection for memory_scope snapshot imports."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def profile_snapshot_conflicts(
+async def memory_scope_snapshot_conflicts(
     session: AsyncSession,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     facts: list[dict[str, Any]],
     documents: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
@@ -43,7 +43,7 @@ async def profile_snapshot_conflicts(
         await _document_hash_conflicts(
             session,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             documents=documents,
         )
     )
@@ -51,7 +51,7 @@ async def profile_snapshot_conflicts(
         await _chunk_hash_conflicts(
             session,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             chunks=chunks,
         )
     )
@@ -59,7 +59,7 @@ async def profile_snapshot_conflicts(
         await _relation_signature_conflicts(
             session,
             space_id=space_id,
-            profile_id=profile_id,
+            memory_scope_id=memory_scope_id,
             relations=relations,
         )
     )
@@ -70,7 +70,7 @@ async def _document_hash_conflicts(
     session: AsyncSession,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     documents: list[dict[str, Any]],
 ) -> list[str]:
     by_hash = {
@@ -84,7 +84,7 @@ async def _document_hash_conflicts(
         await session.execute(
             select(MemoryDocumentRow.id, MemoryDocumentRow.content_hash).where(
                 MemoryDocumentRow.space_id == space_id,
-                MemoryDocumentRow.profile_id == profile_id,
+                MemoryDocumentRow.memory_scope_id == memory_scope_id,
                 MemoryDocumentRow.status != "deleted",
                 MemoryDocumentRow.content_hash.in_(by_hash),
             )
@@ -101,7 +101,7 @@ async def _chunk_hash_conflicts(
     session: AsyncSession,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     chunks: list[dict[str, Any]],
 ) -> list[str]:
     by_hash = {
@@ -113,7 +113,7 @@ async def _chunk_hash_conflicts(
         await session.execute(
             select(MemoryChunkRow.id, MemoryChunkRow.source_hash).where(
                 MemoryChunkRow.space_id == space_id,
-                MemoryChunkRow.profile_id == profile_id,
+                MemoryChunkRow.memory_scope_id == memory_scope_id,
                 MemoryChunkRow.status != "deleted",
                 MemoryChunkRow.source_hash.in_(by_hash),
             )
@@ -130,7 +130,7 @@ async def _relation_signature_conflicts(
     session: AsyncSession,
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     relations: list[dict[str, Any]],
 ) -> list[str]:
     by_signature = {
@@ -153,7 +153,7 @@ async def _relation_signature_conflicts(
                 MemoryFactRelationRow.relation_type,
             ).where(
                 MemoryFactRelationRow.space_id == space_id,
-                MemoryFactRelationRow.profile_id == profile_id,
+                MemoryFactRelationRow.memory_scope_id == memory_scope_id,
                 MemoryFactRelationRow.status == "active",
                 MemoryFactRelationRow.relation_type.in_(
                     {signature[2] for signature in by_signature}

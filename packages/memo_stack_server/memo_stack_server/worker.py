@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 
 from memo_stack_adapters.postgres import create_schema
 from memo_stack_adapters.postgres.models import MemoryOutboxRow
-from memo_stack_core.application import ConsolidateCaptureCommand
+from memo_stack_core.application import ConsolidateCaptureCommand, RunAssetExtractionCommand
 from memo_stack_core.application.document_text import document_chunk_retrieval_text
 from memo_stack_core.domain.entities import FactStatus, LifecycleStatus, SourceRef
 from memo_stack_core.ports.adapters import (
@@ -33,6 +34,12 @@ from memo_stack_server.config import Settings
 MAX_ATTEMPTS = 5
 RUNNING_LEASE_TIMEOUT = timedelta(minutes=5)
 
+WORKER_ROLE_WORKLOAD_CLASSES: dict[str, tuple[str, ...]] = {
+    "all": (),
+    "projection": ("projection", "auto_memory"),
+    "extraction": ("extraction",),
+}
+
 
 @dataclass(frozen=True)
 class ClaimedOutboxJob:
@@ -46,6 +53,24 @@ class ClaimedOutboxJob:
     payload_json: dict[str, object]
 
 
+@dataclass(frozen=True)
+class OutboxWorkerFilter:
+    workload_classes: tuple[str, ...] = ()
+    event_types: tuple[str, ...] = ()
+
+    @classmethod
+    def from_values(
+        cls,
+        *,
+        workload_classes: Iterable[str] = (),
+        event_types: Iterable[str] = (),
+    ) -> OutboxWorkerFilter:
+        return cls(
+            workload_classes=_normalize_filter_values(workload_classes),
+            event_types=_normalize_filter_values(event_types),
+        )
+
+
 class OutboxProjectionError(RuntimeError):
     def __init__(self, operation: str, diagnostic_code: str) -> None:
         super().__init__(operation)
@@ -53,11 +78,18 @@ class OutboxProjectionError(RuntimeError):
 
 
 class OutboxWorker:
-    def __init__(self, container: Container) -> None:
+    def __init__(
+        self,
+        container: Container,
+        *,
+        worker_filter: OutboxWorkerFilter | None = None,
+    ) -> None:
         self._container = container
+        self._filter = worker_filter or OutboxWorkerFilter()
 
     async def run_once(self, *, limit: int = 25) -> int:
-        await self._container.expire_pending_suggestions.execute(limit=limit)
+        if _should_run_suggestion_maintenance(self._filter):
+            await self._container.expire_pending_suggestions.execute(limit=limit)
         jobs = await self._claim_pending(limit=limit)
         for job in jobs:
             try:
@@ -72,18 +104,20 @@ class OutboxWorker:
         now = self._container.clock.now()
         async with AsyncSession(self._container.engine) as session:
             await self._recover_expired_running_jobs(session, now=now, limit=limit)
+            query = (
+                select(MemoryOutboxRow)
+                .where(
+                    MemoryOutboxRow.status.in_(("pending", "retry_pending")),
+                    MemoryOutboxRow.next_attempt_at <= now,
+                )
+                .order_by(MemoryOutboxRow.created_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+            query = _apply_worker_filter(query, self._filter)
             rows = list(
                 (
-                    await session.execute(
-                        select(MemoryOutboxRow)
-                        .where(
-                            MemoryOutboxRow.status.in_(("pending", "retry_pending")),
-                            MemoryOutboxRow.next_attempt_at <= now,
-                        )
-                        .order_by(MemoryOutboxRow.created_at)
-                        .limit(limit)
-                        .with_for_update(skip_locked=True)
-                    )
+                    await session.execute(query)
                 ).scalars()
             )
             claimed = [
@@ -113,18 +147,20 @@ class OutboxWorker:
         limit: int,
     ) -> None:
         lease_cutoff = now - RUNNING_LEASE_TIMEOUT
+        query = (
+            select(MemoryOutboxRow)
+            .where(
+                MemoryOutboxRow.status == "running",
+                MemoryOutboxRow.updated_at <= lease_cutoff,
+            )
+            .order_by(MemoryOutboxRow.updated_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        query = _apply_worker_filter(query, self._filter)
         rows = list(
             (
-                await session.execute(
-                    select(MemoryOutboxRow)
-                    .where(
-                        MemoryOutboxRow.status == "running",
-                        MemoryOutboxRow.updated_at <= lease_cutoff,
-                    )
-                    .order_by(MemoryOutboxRow.updated_at)
-                    .limit(limit)
-                    .with_for_update(skip_locked=True)
-                )
+                await session.execute(query)
             ).scalars()
         )
         for row in rows:
@@ -159,6 +195,13 @@ class OutboxWorker:
             await self._container.consolidate_capture.execute(
                 ConsolidateCaptureCommand(
                     capture_id=str(job.payload_json.get("capture_id") or job.aggregate_id),
+                    force=job.attempt_count > 0,
+                )
+            )
+        elif job.event_type == "asset.extract":
+            await self._container.run_asset_extraction.execute(
+                RunAssetExtractionCommand(
+                    job_id=str(job.payload_json.get("job_id") or job.aggregate_id),
                     force=job.attempt_count > 0,
                 )
             )
@@ -208,7 +251,7 @@ class OutboxWorker:
                 VectorUpsertItem(
                     chunk_id=str(chunk.id),
                     space_id=str(chunk.space_id),
-                    profile_id=str(chunk.profile_id),
+                    memory_scope_id=str(chunk.memory_scope_id),
                     thread_id=str(chunk.thread_id) if chunk.thread_id else None,
                     text=projection_text,
                     vector=embedding.vectors[0],
@@ -236,7 +279,7 @@ class OutboxWorker:
             fact.text,
             {
                 "space_id": str(fact.space_id),
-                "profile_id": str(fact.profile_id),
+                "memory_scope_id": str(fact.memory_scope_id),
                 "updated_at": fact.updated_at.isoformat(),
             },
         )
@@ -261,7 +304,7 @@ class OutboxWorker:
             DocumentMemoryWrite(
                 document_id=str(document.id),
                 space_id=str(document.space_id),
-                profile_id=str(document.profile_id),
+                memory_scope_id=str(document.memory_scope_id),
                 title=document.title,
                 text="\n\n".join(chunk.text for chunk in safe_chunks),
                 source_refs=tuple(_chunk_source_ref(chunk) for chunk in safe_chunks),
@@ -399,11 +442,42 @@ def _safe_diagnostic_code(exc: Exception) -> str:
     return exc.__class__.__name__
 
 
+def _normalize_filter_values(values: Iterable[str]) -> tuple[str, ...]:
+    normalized = tuple(dict.fromkeys(value.strip() for value in values if value.strip()))
+    return normalized
+
+
+def _apply_worker_filter(query, worker_filter: OutboxWorkerFilter):
+    if worker_filter.workload_classes:
+        query = query.where(MemoryOutboxRow.workload_class.in_(worker_filter.workload_classes))
+    if worker_filter.event_types:
+        query = query.where(MemoryOutboxRow.event_type.in_(worker_filter.event_types))
+    return query
+
+
+def _should_run_suggestion_maintenance(worker_filter: OutboxWorkerFilter) -> bool:
+    if worker_filter.event_types:
+        return False
+    if not worker_filter.workload_classes:
+        return True
+    return any(value in {"projection", "auto_memory"} for value in worker_filter.workload_classes)
+
+
+def _worker_filter_from_args(args: argparse.Namespace) -> OutboxWorkerFilter:
+    workload_classes = tuple(args.workload_class or ())
+    if not workload_classes:
+        workload_classes = WORKER_ROLE_WORKLOAD_CLASSES[args.role]
+    return OutboxWorkerFilter.from_values(
+        workload_classes=workload_classes,
+        event_types=tuple(args.event_type or ()),
+    )
+
+
 async def _run(args: argparse.Namespace) -> None:
     container = build_container(Settings())
     if container.settings.auto_create_schema:
         await create_schema(container.engine)
-    worker = OutboxWorker(container)
+    worker = OutboxWorker(container, worker_filter=_worker_filter_from_args(args))
     try:
         while True:
             count = await worker.run_once(limit=args.limit)
@@ -421,6 +495,25 @@ def main() -> None:
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--sleep-seconds", type=float, default=2.0)
+    parser.add_argument(
+        "--role",
+        choices=tuple(WORKER_ROLE_WORKLOAD_CLASSES),
+        default="all",
+        help=(
+            "Worker contract preset. 'projection' excludes extraction jobs; "
+            "'extraction' processes only asset extraction jobs; 'all' keeps legacy behavior."
+        ),
+    )
+    parser.add_argument(
+        "--workload-class",
+        action="append",
+        help="Restrict this worker to one workload class. Can be passed more than once.",
+    )
+    parser.add_argument(
+        "--event-type",
+        action="append",
+        help="Restrict this worker to one outbox event type. Can be passed more than once.",
+    )
     args = parser.parse_args()
     if not args.once and not args.loop:
         args.once = True

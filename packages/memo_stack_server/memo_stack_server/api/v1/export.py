@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from memo_stack_core.application import EnsureScopeCommand, ExportGraphQuery, GraphExportResult
 from memo_stack_core.domain.errors import MemoryValidationError
-from memo_stack_core.profile_snapshots import (
+from memo_stack_core.memory_scope_snapshots import (
     build_snapshot_manifest,
     verify_snapshot_manifest_payload,
 )
@@ -18,10 +18,10 @@ from memo_stack_server.api.dependencies import get_container
 from memo_stack_server.api.policy import ensure_server_writes_enabled
 from memo_stack_server.api.v1.scope_resolution import resolve_existing_single_scope
 from memo_stack_server.composition import Container
-from memo_stack_server.profile_transfer import (
+from memo_stack_server.memory_scope_transfer import (
     SUPPORTED_MERGE_STRATEGIES,
-    export_profile_payload,
-    import_profile_payload,
+    export_memory_scope_payload,
+    import_memory_scope_payload,
 )
 
 router = APIRouter(
@@ -31,24 +31,24 @@ router = APIRouter(
 )
 
 
-class ImportProfileSnapshotRequest(BaseModel):
+class ImportMemoryScopeSnapshotRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_slug: str = Field(min_length=1, max_length=160)
-    profile_external_ref: str = Field(min_length=1, max_length=200)
+    memory_scope_external_ref: str = Field(min_length=1, max_length=200)
     snapshot: dict[str, Any]
     manifest: dict[str, Any] | None = None
     dry_run: bool = True
     merge_strategy: str = Field(default="fail_on_conflict", max_length=80)
     confirmed: bool = False
-    source_name: str = Field(default="api-profile-snapshot", max_length=160)
+    source_name: str = Field(default="api-memory_scope-snapshot", max_length=160)
 
 
-class PreviewProfileSnapshotRequest(BaseModel):
+class PreviewMemoryScopeSnapshotRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     space_slug: str = Field(min_length=1, max_length=160)
-    profile_external_ref: str = Field(min_length=1, max_length=200)
+    memory_scope_external_ref: str = Field(min_length=1, max_length=200)
     snapshot: dict[str, Any]
     manifest: dict[str, Any] | None = None
     merge_strategy: str = Field(default="fail_on_conflict", max_length=80)
@@ -58,10 +58,10 @@ class PreviewProfileSnapshotRequest(BaseModel):
 async def export_graph_json(
     container: Annotated[Container, Depends(get_container)],
     space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
-    profile_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     thread_id: Annotated[str | None, Query(max_length=80)] = None,
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
-    profile_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     thread_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     include_deleted: Annotated[bool, Query()] = False,
     include_restricted: Annotated[bool, Query()] = False,
@@ -72,10 +72,10 @@ async def export_graph_json(
     scope = await resolve_existing_single_scope(
         container,
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         thread_id=thread_id,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         thread_external_ref=thread_external_ref,
         thread_required=False,
     )
@@ -94,7 +94,7 @@ async def export_graph_json(
     graph = await container.export_graph.execute(
         ExportGraphQuery(
             space_id=scope.space_id,
-            profile_id=scope.profile_id,
+            memory_scope_id=scope.memory_scope_id,
             thread_id=scope.thread_id,
             include_deleted=include_deleted,
             include_restricted=include_restricted,
@@ -106,17 +106,17 @@ async def export_graph_json(
     return {"data": graph_export_to_response(graph)}
 
 
-@router.get("/profile-snapshot")
-async def export_profile_snapshot(
+@router.get("/memory_scope-snapshot")
+async def export_memory_scope_snapshot(
     container: Annotated[Container, Depends(get_container)],
     space_slug: Annotated[str, Query(min_length=1, max_length=160)],
-    profile_external_ref: Annotated[str, Query(min_length=1, max_length=200)],
+    memory_scope_external_ref: Annotated[str, Query(min_length=1, max_length=200)],
     redacted: Annotated[bool, Query()] = False,
 ) -> dict[str, Any]:
-    result = await export_profile_payload(
+    result = await export_memory_scope_payload(
         engine=container.engine,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
         redacted=redacted,
     )
     if result["status"] != "ok":
@@ -131,52 +131,52 @@ async def export_profile_snapshot(
         "manifest": build_snapshot_manifest(
             snapshot=snapshot,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             redacted=redacted,
         ),
     }
 
 
-@router.post("/profile-snapshot/import")
-async def import_profile_snapshot(
-    request: ImportProfileSnapshotRequest,
+@router.post("/memory_scope-snapshot/import")
+async def import_memory_scope_snapshot(
+    request: ImportMemoryScopeSnapshotRequest,
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
     if request.merge_strategy not in SUPPORTED_MERGE_STRATEGIES:
-        raise MemoryValidationError("Unsupported profile snapshot merge strategy")
+        raise MemoryValidationError("Unsupported memory_scope snapshot merge strategy")
     if not request.dry_run and not request.confirmed:
-        raise MemoryValidationError("Profile snapshot import requires confirmed=true")
-    _verify_profile_snapshot_manifest(request.snapshot, request.manifest)
+        raise MemoryValidationError("MemoryScope snapshot import requires confirmed=true")
+    _verify_memory_scope_snapshot_manifest(request.snapshot, request.manifest)
 
     if request.dry_run:
         scope = await resolve_existing_single_scope(
             container,
             space_id=None,
-            profile_id=None,
+            memory_scope_id=None,
             thread_id=None,
             space_slug=request.space_slug,
-            profile_external_ref=request.profile_external_ref,
+            memory_scope_external_ref=request.memory_scope_external_ref,
             thread_external_ref=None,
             thread_required=False,
         )
         space_id = str(scope.space_id) if scope else ""
-        profile_id = str(scope.profile_id) if scope else ""
+        memory_scope_id = str(scope.memory_scope_id) if scope else ""
     else:
         ensure_server_writes_enabled(container)
         scope_result = await container.ensure_scope.execute(
             EnsureScopeCommand(
                 space_slug=request.space_slug,
-                profile_external_ref=request.profile_external_ref,
+                memory_scope_external_ref=request.memory_scope_external_ref,
             )
         )
         space_id = str(scope_result.space_id)
-        profile_id = str(scope_result.profile_id)
+        memory_scope_id = str(scope_result.memory_scope_id)
 
-    result = await import_profile_payload(
+    result = await import_memory_scope_payload(
         engine=container.engine,
         now=container.clock.now(),
         space_id=space_id,
-        profile_id=profile_id,
+        memory_scope_id=memory_scope_id,
         payload=request.snapshot,
         dry_run=request.dry_run,
         merge_strategy=request.merge_strategy,
@@ -185,38 +185,38 @@ async def import_profile_snapshot(
     return {"data": result}
 
 
-@router.post("/profile-snapshot/preview")
-async def preview_profile_snapshot_import(
-    request: PreviewProfileSnapshotRequest,
+@router.post("/memory_scope-snapshot/preview")
+async def preview_memory_scope_snapshot_import(
+    request: PreviewMemoryScopeSnapshotRequest,
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
     if request.merge_strategy not in SUPPORTED_MERGE_STRATEGIES:
-        raise MemoryValidationError("Unsupported profile snapshot merge strategy")
-    _verify_profile_snapshot_manifest(request.snapshot, request.manifest)
+        raise MemoryValidationError("Unsupported memory_scope snapshot merge strategy")
+    _verify_memory_scope_snapshot_manifest(request.snapshot, request.manifest)
     scope = await resolve_existing_single_scope(
         container,
         space_id=None,
-        profile_id=None,
+        memory_scope_id=None,
         thread_id=None,
         space_slug=request.space_slug,
-        profile_external_ref=request.profile_external_ref,
+        memory_scope_external_ref=request.memory_scope_external_ref,
         thread_external_ref=None,
         thread_required=False,
     )
-    result = await import_profile_payload(
+    result = await import_memory_scope_payload(
         engine=container.engine,
         now=container.clock.now(),
         space_id=str(scope.space_id) if scope else "",
-        profile_id=str(scope.profile_id) if scope else "",
+        memory_scope_id=str(scope.memory_scope_id) if scope else "",
         payload=request.snapshot,
         dry_run=True,
         merge_strategy=request.merge_strategy,
-        source_name="api-profile-snapshot-preview",
+        source_name="api-memory_scope-snapshot-preview",
     )
     return {"data": result}
 
 
-def _verify_profile_snapshot_manifest(
+def _verify_memory_scope_snapshot_manifest(
     snapshot: dict[str, Any],
     manifest: dict[str, Any] | None,
 ) -> None:
@@ -229,7 +229,7 @@ def _verify_profile_snapshot_manifest(
     )
     if not verification["ok"]:
         errors = ", ".join(verification["errors"])
-        raise MemoryValidationError(f"Profile snapshot manifest verification failed: {errors}")
+        raise MemoryValidationError(f"MemoryScope snapshot manifest verification failed: {errors}")
 
 
 def graph_export_to_response(graph: GraphExportResult) -> dict[str, Any]:

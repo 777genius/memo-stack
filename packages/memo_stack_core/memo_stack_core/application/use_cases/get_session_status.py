@@ -12,7 +12,7 @@ class GetSessionStatusUseCase:
         async with self._uow_factory() as uow:
             status = await uow.scope.thread_status(
                 space_id=str(query.space_id),
-                profile_id=str(query.profile_id),
+                memory_scope_id=str(query.memory_scope_id),
                 thread_id=str(query.thread_id),
             )
         return SessionStatusResult(

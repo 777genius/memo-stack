@@ -39,14 +39,14 @@ class ExportGraphUseCase:
         async with self._uow_factory() as uow:
             facts = await uow.facts.list_for_scope(
                 space_id=str(query.space_id),
-                profile_id=str(query.profile_id),
+                memory_scope_id=str(query.memory_scope_id),
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 status=fact_status,
                 limit=query.max_facts + 1,
             )
             documents = await uow.documents.list_for_scope(
                 space_id=str(query.space_id),
-                profile_id=str(query.profile_id),
+                memory_scope_id=str(query.memory_scope_id),
                 thread_id=str(query.thread_id) if query.thread_id else None,
                 status=document_status,
                 limit=query.max_documents + 1,
@@ -80,7 +80,7 @@ class ExportGraphUseCase:
 
         nodes = _build_nodes(
             space_id=str(query.space_id),
-            profile_id=str(query.profile_id),
+            memory_scope_id=str(query.memory_scope_id),
             thread_id=str(query.thread_id) if query.thread_id else None,
             facts=facts,
             documents=documents,
@@ -91,7 +91,7 @@ class ExportGraphUseCase:
             schema_version=_SCHEMA_VERSION,
             scope={
                 "space_id": str(query.space_id),
-                "profile_id": str(query.profile_id),
+                "memory_scope_id": str(query.memory_scope_id),
                 "thread_id": str(query.thread_id) if query.thread_id else None,
             },
             nodes=tuple(nodes),
@@ -116,11 +116,7 @@ def _visible_facts(
 ) -> list[MemoryFact]:
     if include_restricted:
         return list(facts)
-    return [
-        fact
-        for fact in facts
-        if fact.classification != DataClassification.RESTRICTED.value
-    ]
+    return [fact for fact in facts if fact.classification != DataClassification.RESTRICTED.value]
 
 
 def _visible_documents(
@@ -155,8 +151,7 @@ async def _load_document_chunks(
         visible_chunks = [
             chunk
             for chunk in document_chunks
-            if include_restricted
-            or chunk.classification != DataClassification.RESTRICTED.value
+            if include_restricted or chunk.classification != DataClassification.RESTRICTED.value
         ]
         if len(visible_chunks) > remaining:
             truncated = True
@@ -190,7 +185,7 @@ def _bounded(items: Iterable[_T], limit: int) -> tuple[list[_T], bool]:
 def _build_nodes(
     *,
     space_id: str,
-    profile_id: str,
+    memory_scope_id: str,
     thread_id: str | None,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
@@ -198,10 +193,10 @@ def _build_nodes(
 ) -> list[GraphExportNode]:
     nodes = [
         GraphExportNode(
-            id=f"profile:{profile_id}",
-            type="profile",
-            label=profile_id,
-            data={"space_id": space_id, "profile_id": profile_id, "thread_id": thread_id},
+            id=f"memory_scope:{memory_scope_id}",
+            type="memory_scope",
+            label=memory_scope_id,
+            data={"space_id": space_id, "memory_scope_id": memory_scope_id, "thread_id": thread_id},
         )
     ]
     nodes.extend(_fact_node(fact) for fact in facts)
@@ -276,11 +271,15 @@ def _build_edges(
     relations: list[MemoryFactRelation],
 ) -> list[GraphExportEdge]:
     edges: list[GraphExportEdge] = []
-    profile_id = str(facts[0].profile_id if facts else documents[0].profile_id) if (
-        facts or documents
-    ) else None
-    if profile_id:
-        edges.extend(_scope_edges(profile_id=profile_id, facts=facts, documents=documents))
+    memory_scope_id = (
+        str(facts[0].memory_scope_id if facts else documents[0].memory_scope_id)
+        if (facts or documents)
+        else None
+    )
+    if memory_scope_id:
+        edges.extend(
+            _scope_edges(memory_scope_id=memory_scope_id, facts=facts, documents=documents)
+        )
     edges.extend(_document_chunk_edges(chunks))
     edges.extend(_fact_evidence_edges(facts=facts, documents=documents, chunks=chunks))
     edges.extend(_fact_relation_edges(relations))
@@ -309,15 +308,15 @@ def _fact_relation_edges(relations: list[MemoryFactRelation]) -> list[GraphExpor
 
 def _scope_edges(
     *,
-    profile_id: str,
+    memory_scope_id: str,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
 ) -> list[GraphExportEdge]:
     edges = [
         _edge(
-            edge_id=f"profile:{profile_id}->fact:{fact.id}",
+            edge_id=f"memory_scope:{memory_scope_id}->fact:{fact.id}",
             edge_type="contains_fact",
-            source=f"profile:{profile_id}",
+            source=f"memory_scope:{memory_scope_id}",
             target=f"fact:{fact.id}",
             label="contains fact",
         )
@@ -325,9 +324,9 @@ def _scope_edges(
     ]
     edges.extend(
         _edge(
-            edge_id=f"profile:{profile_id}->document:{document.id}",
+            edge_id=f"memory_scope:{memory_scope_id}->document:{document.id}",
             edge_type="contains_document",
-            source=f"profile:{profile_id}",
+            source=f"memory_scope:{memory_scope_id}",
             target=f"document:{document.id}",
             label="contains document",
         )

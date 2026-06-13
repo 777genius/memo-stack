@@ -36,7 +36,7 @@ class BuildMemoryDigestUseCase:
         context = await self._context_builder.execute(
             BuildContextQuery(
                 space_id=query.space_id,
-                profile_ids=query.profile_ids,
+                memory_scope_ids=query.memory_scope_ids,
                 thread_id=query.thread_id,
                 query=query.topic,
                 consistency_mode=query.consistency_mode,
@@ -102,12 +102,12 @@ class BuildMemoryDigestUseCase:
         items: list[ContextItem] = []
         remaining = query.max_suggestions
         async with self._uow_factory() as uow:
-            for profile_id in query.profile_ids:
+            for memory_scope_id in query.memory_scope_ids:
                 if remaining <= 0:
                     break
                 suggestions = await uow.suggestions.list_for_scope(
                     space_id=str(query.space_id),
-                    profile_id=str(profile_id),
+                    memory_scope_id=str(memory_scope_id),
                     status="pending",
                     operation=None,
                     category=None,
@@ -123,7 +123,7 @@ class BuildMemoryDigestUseCase:
                             score=0.5,
                             source_refs=suggestion.source_refs,
                             diagnostics={
-                                "profile_id": str(suggestion.profile_id),
+                                "memory_scope_id": str(suggestion.memory_scope_id),
                                 "status": suggestion.status.value,
                                 "operation": suggestion.operation.value,
                                 "kind": suggestion.kind.value,
@@ -142,12 +142,12 @@ class BuildMemoryDigestUseCase:
         items: list[ContextItem] = []
         remaining = max(0, min(query.max_facts, 20))
         async with self._uow_factory() as uow:
-            for profile_id in query.profile_ids:
+            for memory_scope_id in query.memory_scope_ids:
                 if remaining <= 0:
                     break
                 facts = await uow.facts.list_for_scope(
                     space_id=str(query.space_id),
-                    profile_id=str(profile_id),
+                    memory_scope_id=str(memory_scope_id),
                     thread_id=str(query.thread_id) if query.thread_id else None,
                     status="superseded",
                     limit=remaining,
@@ -161,7 +161,7 @@ class BuildMemoryDigestUseCase:
                             score=0.25,
                             source_refs=fact.source_refs,
                             diagnostics={
-                                "profile_id": str(fact.profile_id),
+                                "memory_scope_id": str(fact.memory_scope_id),
                                 "status": fact.status.value,
                                 "kind": fact.kind.value,
                                 "canonical": False,
