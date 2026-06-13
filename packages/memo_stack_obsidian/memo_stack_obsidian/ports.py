@@ -14,7 +14,7 @@ class MemoryGatewayPort(Protocol):
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
@@ -38,7 +38,7 @@ class MemoryGatewayPort(Protocol):
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         candidate_text: str,
         safe_reason: str,
         source_refs: list[dict[str, Any]],

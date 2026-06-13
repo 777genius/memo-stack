@@ -6,14 +6,14 @@ import { browser } from "@wdio/globals";
 const fakeCliPath = path.resolve("test/fixtures/fake-memo-stack-obsidian.cjs");
 const fakeLocalCliPath = path.resolve("test/fixtures/fake-memo-stack.cjs");
 const spaceSlug = "wdio-e2e";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const pluginId = "memo-stack";
 const factsDir = path.join(
   "Memo Stack",
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
   "generated",
   "facts",
 );
@@ -123,7 +123,7 @@ describe("Memo Stack Obsidian plugin", function () {
     });
     assert.equal(
       activeConflictPath,
-      ["Memo Stack", "spaces", spaceSlug, "profiles", profileExternalRef, "conflicts", "README.md"].join("/"),
+      ["Memo Stack", "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef, "conflicts", "README.md"].join("/"),
     );
 
     const calls = readCliCalls(vaultPath);
@@ -324,7 +324,7 @@ describe("Memo Stack Obsidian plugin", function () {
     });
     assert.equal(
       activeInboxPath,
-      ["Memo Stack", "spaces", spaceSlug, "profiles", profileExternalRef, "inbox", "README.md"].join("/"),
+      ["Memo Stack", "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef, "inbox", "README.md"].join("/"),
     );
   });
 
@@ -335,14 +335,14 @@ describe("Memo Stack Obsidian plugin", function () {
     });
     const vaultPath = obsidianPage.getVaultPath();
     const persistedSpaceSlug = "persisted-project";
-    const persistedProfileRef = "persisted-profile";
+    const persistedMemoryScopeRef = "persisted-memory_scope";
     const persistedRoot = "Persisted Memo";
     const persistedFactsDir = path.join(
       persistedRoot,
       "spaces",
       persistedSpaceSlug,
-      "profiles",
-      persistedProfileRef,
+      "memory_scopes",
+      persistedMemoryScopeRef,
       "generated",
       "facts",
     );
@@ -358,7 +358,7 @@ describe("Memo Stack Obsidian plugin", function () {
           cliPath: fakeCliPath,
           vaultPathOverride: path.resolve(vaultPath),
           spaceSlug: persistedSpaceSlug,
-          profileExternalRef: persistedProfileRef,
+          memoryScopeExternalRef: persistedMemoryScopeRef,
           rootFolder: persistedRoot,
           layoutVersion: "v2",
           applyImportOnSync: false,
@@ -378,7 +378,7 @@ describe("Memo Stack Obsidian plugin", function () {
     const snapshot = await memoStackSnapshot();
     assert.equal(snapshot.apiUrl, "http://127.0.0.1:65534");
     assert.equal(snapshot.spaceSlug, persistedSpaceSlug);
-    assert.equal(snapshot.profileExternalRef, persistedProfileRef);
+    assert.equal(snapshot.memoryScopeExternalRef, persistedMemoryScopeRef);
     assert.equal(snapshot.rootFolder, persistedRoot);
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
@@ -393,8 +393,8 @@ describe("Memo Stack Obsidian plugin", function () {
     assert.ok(calls.every((call) => call.args.includes("http://127.0.0.1:65534")));
     assert.ok(calls.every((call) => call.args.includes("--space")));
     assert.ok(calls.every((call) => call.args.includes(persistedSpaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes("--profile")));
-    assert.ok(calls.every((call) => call.args.includes(persistedProfileRef)));
+    assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+    assert.ok(calls.every((call) => call.args.includes(persistedMemoryScopeRef)));
     assert.ok(calls.every((call) => call.args.includes("--root-folder")));
     assert.ok(calls.every((call) => call.args.includes(persistedRoot)));
     assert.ok(!calls[1].args.includes("--apply-import"));
@@ -421,7 +421,7 @@ describe("Memo Stack Obsidian plugin", function () {
           cliPath: fakeCliPath,
           vaultPathOverride: path.resolve(vaultPath),
           spaceSlug,
-          profileExternalRef,
+          memoryScopeExternalRef,
           rootFolder: "../escape",
           layoutVersion: "v2",
           applyImportOnSync: true,
@@ -475,7 +475,7 @@ async function resetVaultAndConfigure(
       cliPath: overrides.cliPath ?? fakeCliPath,
       vaultPathOverride: vaultPath,
       spaceSlug,
-      profileExternalRef,
+      memoryScopeExternalRef,
       rootFolder: "Memo Stack",
       layoutVersion: "v2",
       applyImportOnSync: overrides.applyImportOnSync ?? true,

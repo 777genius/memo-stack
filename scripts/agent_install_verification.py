@@ -329,7 +329,7 @@ async def run_generated_mcp_status(
             "MEMORY_MCP_API_URL": api_url,
             "MEMORY_MCP_AUTH_TOKEN": auth_token,
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": space_slug,
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
             "MEMORY_MCP_AGENT_NAME": agent_name,
             "MEMORY_MCP_TRANSPORT": "stdio",
         }
@@ -354,9 +354,9 @@ async def run_generated_mcp_status(
             "space_slug": payload.get("data", {})
             .get("default_scope", {})
             .get("space_slug"),
-            "profile_external_ref": payload.get("data", {})
+            "memory_scope_external_ref": payload.get("data", {})
             .get("default_scope", {})
-            .get("profile_external_ref"),
+            .get("memory_scope_external_ref"),
         }
 
 
@@ -379,7 +379,7 @@ def run_agent_cli_smokes(
     agent_env = {
         "MEMORY_MCP_API_URL": api_url,
         "MEMORY_MCP_AUTH_TOKEN": auth_token,
-        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+        "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
         "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
         "MEMORY_MCP_WRITE_MODE": "suggest",
         "MEMORY_MCP_DELETE_MODE": "off",
@@ -387,7 +387,7 @@ def run_agent_cli_smokes(
         "MEMORY_MCP_TRANSPORT": "stdio",
         "MEMORY_MCP_RUNTIME_API_URL": api_url,
         "MEMORY_MCP_RUNTIME_AUTH_TOKEN": auth_token,
-        "MEMORY_MCP_RUNTIME_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+        "MEMORY_MCP_RUNTIME_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
         "MEMORY_MCP_RUNTIME_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
         "MEMORY_MCP_RUNTIME_WRITE_MODE": "suggest",
         "MEMORY_MCP_RUNTIME_DELETE_MODE": "off",

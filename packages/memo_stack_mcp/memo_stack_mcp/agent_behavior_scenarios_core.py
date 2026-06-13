@@ -206,7 +206,7 @@ def default_scenarios() -> tuple[AgentBenchScenario, ...]:
                 {
                     "action": "remember_fact",
                     "space_slug": "{space_slug}-other",
-                    "profile_external_ref": "{profile_ref}",
+                    "memory_scope_external_ref": "{memory_scope_ref}",
                     "text": "{marker}: Project B release checklist uses the hidden beta branch.",
                     "kind": "note",
                 },

@@ -46,7 +46,7 @@ async def run_benchmark(
     settings: MemoryMcpSettings,
     iterations: int,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
 ) -> dict[str, Any]:
     gateway = HttpMemoryGateway(
         base_url=settings.api_url,
@@ -103,7 +103,7 @@ async def run_benchmark(
                     }
                 ],
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 source_type="manual",
                 source_id=f"bench-proposal-{run_id}-{index}",
             ),
@@ -117,7 +117,7 @@ async def run_benchmark(
                 text=old_text,
                 kind="architecture_decision",
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 source_type="manual",
                 source_id=f"bench-{run_id}-{index}",
                 classification="internal",
@@ -134,7 +134,7 @@ async def run_benchmark(
             service.search(
                 query=marker,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 max_facts=5,
                 max_chunks=0,
             ),
@@ -162,7 +162,7 @@ async def run_benchmark(
             service.search(
                 query=marker,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 max_facts=5,
                 max_chunks=0,
             ),
@@ -175,7 +175,7 @@ async def run_benchmark(
             service.search(
                 query=old_text,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 max_facts=5,
                 max_chunks=0,
             ),
@@ -193,7 +193,7 @@ async def run_benchmark(
             service.search(
                 query=marker,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 max_facts=5,
                 max_chunks=0,
             ),
@@ -206,7 +206,7 @@ async def run_benchmark(
         "iterations": iterations,
         "scope": {
             "space_slug": space_slug,
-            "profile_external_ref": profile_external_ref,
+            "memory_scope_external_ref": memory_scope_external_ref,
         },
         "rates": _rates(counters, iterations),
         "counters": counters,
@@ -236,7 +236,7 @@ def main() -> None:
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--api-url", default=None)
     parser.add_argument("--space-slug", default=None)
-    parser.add_argument("--profile-ref", default=None)
+    parser.add_argument("--memory_scope-ref", default=None)
     args = parser.parse_args()
 
     base = load_settings()
@@ -244,7 +244,8 @@ def main() -> None:
         api_url=args.api_url or base.api_url,
         auth_token=base.auth_token,
         default_space_slug=args.space_slug or base.default_space_slug,
-        default_profile_external_ref=args.profile_ref or base.default_profile_external_ref,
+        default_memory_scope_external_ref=args.memory_scope_ref
+        or base.default_memory_scope_external_ref,
         default_thread_external_ref=base.default_thread_external_ref,
         agent_name=base.agent_name,
         source_type=base.source_type,
@@ -266,7 +267,7 @@ def main() -> None:
             settings=settings,
             iterations=args.iterations,
             space_slug=settings.default_space_slug,
-            profile_external_ref=settings.default_profile_external_ref,
+            memory_scope_external_ref=settings.default_memory_scope_external_ref,
         )
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))

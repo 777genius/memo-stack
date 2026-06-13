@@ -48,7 +48,7 @@ class MemoryObsidianData(McpDataModel):
     root_folder: str | None = None
     layout_version: str | None = None
     space_slug: str | None = None
-    profile_external_ref: str | None = None
+    memory_scope_external_ref: str | None = None
     checks: list[MemoryObsidianCheckData] = Field(default_factory=list)
     written: list[str] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)

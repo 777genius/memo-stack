@@ -31,7 +31,7 @@ class WriteConflictArtifactsUseCase:
         direction: str,
         changes: Iterable[ExportChange | ImportChange],
         space_slug: str = "default",
-        profile_external_ref: str = "default",
+        memory_scope_external_ref: str = "default",
     ) -> ConflictArtifactResult:
         paths: list[str] = []
         for change in changes:
@@ -42,7 +42,7 @@ class WriteConflictArtifactsUseCase:
                 change=change,
                 layout=self.layout,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             self.vault.write_text(
                 path,
@@ -58,13 +58,13 @@ def conflict_artifact_path(
     change: ExportChange | ImportChange,
     layout: ObsidianVaultLayout | None = None,
     space_slug: str = "default",
-    profile_external_ref: str = "default",
+    memory_scope_external_ref: str = "default",
 ) -> PurePosixPath:
     identity = change.fact_id or change.path.as_posix()
     conflicts_dir = (
         layout.conflicts_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         if layout is not None
         else CONFLICTS_DIR

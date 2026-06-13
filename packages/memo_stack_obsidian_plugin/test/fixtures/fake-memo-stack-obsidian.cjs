@@ -122,8 +122,8 @@ function layoutPaths() {
     };
   }
   const space = valueAfter("--space") || "default";
-  const profile = valueAfter("--profile") || "default";
-  const scope = path.join(root, "spaces", space, "profiles", profile);
+  const memory_scope = valueAfter("--memory_scope") || "default";
+  const scope = path.join(root, "spaces", space, "memory_scopes", memory_scope);
   return {
     readme: path.join(root, "README.md"),
     generatedFacts: path.join(scope, "generated", "facts"),

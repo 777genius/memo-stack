@@ -11,7 +11,7 @@ const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-root-control-token";
 const spaceSlug = "wdio-root-control";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const primaryRoot = "Team Memory";
 const secondaryRoot = "Client Knowledge/Research Notes";
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
@@ -50,7 +50,7 @@ describe("Memo Stack root folder control E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", primaryRoot);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsToggle("applyImportOnSync", true);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginRoot(primaryRoot);
@@ -132,8 +132,8 @@ describe("Memo Stack root folder control E2E", function () {
     assertCallsUseRoot(calls.slice(3), secondaryRoot);
     assert.ok(calls.every((call) => call.args.includes("--space")));
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes("--profile")));
-    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+    assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
     assert.ok(calls.every((call) => call.status === 0));
   });
 
@@ -154,7 +154,7 @@ describe("Memo Stack root folder control E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", primaryRoot);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsToggle("applyImportOnSync", true);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginRoot(primaryRoot);
@@ -259,7 +259,7 @@ describe("Memo Stack root folder control E2E", function () {
     await setSettingsInput("rootFolder", legacyRoot);
     await setSettingsDropdown("Layout", "v1");
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsToggle("applyImportOnSync", true);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginRoot(legacyRoot);
@@ -389,7 +389,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -435,7 +435,7 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
@@ -781,7 +781,7 @@ function assertCallsUseRoot(
 }
 
 function scopedRootFor(rootFolder: string): string {
-  return path.join(rootFolder, "spaces", spaceSlug, "profiles", profileExternalRef);
+  return path.join(rootFolder, "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef);
 }
 
 function posixPath(filePath: string): string {

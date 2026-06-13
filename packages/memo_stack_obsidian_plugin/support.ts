@@ -23,7 +23,7 @@ export interface MemoStackSnapshot {
   rootFolder: string;
   layoutVersion: "v1" | "v2";
   spaceSlug: string;
-  profileExternalRef: string;
+  memoryScopeExternalRef: string;
   paths: MemoStackPathPlan;
   readmeExists: boolean;
   generatedFactsExists: boolean;
@@ -41,7 +41,7 @@ export interface MemoStackSnapshot {
 export interface DefaultLayoutSettings {
   rootFolder: string;
   spaceSlug: string;
-  profileExternalRef: string;
+  memoryScopeExternalRef: string;
 }
 
 export type ConnectorCommand = "connect" | "doctor" | "preview" | "sync";
@@ -161,7 +161,7 @@ export function localStackArgs(command: LocalStackCommand, apiUrl: string): stri
 
 export function defaultLayoutPaths(settings: DefaultLayoutSettings): MemoStackPathPlan {
   const root = settings.rootFolder;
-  const scope = `${root}/spaces/${settings.spaceSlug}/profiles/${settings.profileExternalRef}`;
+  const scope = `${root}/spaces/${settings.spaceSlug}/memory_scopes/${settings.memoryScopeExternalRef}`;
   return {
     root,
     readme: normalizePath(`${root}/README.md`),
@@ -197,10 +197,10 @@ export function safeRootFolder(value: string): string {
 export function safeScopeSegment(value: string, fallback: string): string {
   const raw = (value.trim() || fallback).trim();
   if (!raw) {
-    throw new Error("Project and profile cannot be empty");
+    throw new Error("Project and memory_scope cannot be empty");
   }
   if (hasControlOrZeroWidth(raw)) {
-    throw new Error("Project or profile contains unsafe formatting characters");
+    throw new Error("Project or memory_scope contains unsafe formatting characters");
   }
   const normalized = raw.toLocaleLowerCase();
   let slug = normalized.replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");

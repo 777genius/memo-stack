@@ -12,14 +12,14 @@ const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const fakeLocalCliPath = path.resolve("test/fixtures/fake-memo-stack.cjs");
 const token = "wdio-full-e2e-token";
 const spaceSlug = "wdio-full-e2e";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
 );
 const localEnvKeys = [
   "MEMO_STACK_FAKE_LOCAL_DELAY_MS",
@@ -79,8 +79,8 @@ describe("Memo Stack prepare flow E2E", function () {
     assert.ok(prepareCalls.every((call) => call.args.includes(baseUrl)));
     assert.ok(prepareCalls.every((call) => call.args.includes("--space")));
     assert.ok(prepareCalls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(prepareCalls.every((call) => call.args.includes("--profile")));
-    assert.ok(prepareCalls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(prepareCalls.every((call) => call.args.includes("--memory_scope")));
+    assert.ok(prepareCalls.every((call) => call.args.includes(memoryScopeExternalRef)));
     assert.ok(prepareCalls.every((call) => call.args.includes("--root-folder")));
     assert.ok(prepareCalls.every((call) => call.args.includes(rootFolder)));
     assert.ok(prepareCalls.every((call) => call.args.includes("--layout")));
@@ -206,7 +206,7 @@ describe("Memo Stack prepare flow E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForSettingsFile(vaultPath, missingLocalCliPath);
 
@@ -295,7 +295,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug,
-    profileExternalRef,
+    memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -379,7 +379,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [

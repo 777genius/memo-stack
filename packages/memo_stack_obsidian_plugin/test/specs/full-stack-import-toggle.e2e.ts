@@ -11,9 +11,9 @@ const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-import-toggle-token";
 const spaceSlug = "wdio-import-toggle";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Import Toggle Memory";
-const scopedRoot = path.join(rootFolder, "spaces", spaceSlug, "profiles", profileExternalRef);
+const scopedRoot = path.join(rootFolder, "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef);
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
 const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
 
@@ -50,7 +50,7 @@ describe("Memo Stack import toggle E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsToggle("applyImportOnSync", true);
     await waitForApplyImport(true);
     await setSettingsToggle("applyImportOnSync", false);
@@ -126,7 +126,7 @@ describe("Memo Stack import toggle E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsToggle("applyImportOnSync", false);
     await waitForApplyImport(false);
     await setSettingsInput("commandTimeoutMs", "20000");
@@ -262,7 +262,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -308,7 +308,7 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);

@@ -29,10 +29,10 @@ CAPTURE_CONSOLIDATION_STATUSES = {
 }
 CONFIDENCE_VALUES = {"low", "medium", "high"}
 TRUST_VALUES = {"low", "medium", "high"}
-PROFILE_SNAPSHOT_MERGE_STRATEGIES = {
+MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES = {
     "fail_on_conflict",
     "skip_existing",
-    "create_new_profile",
+    "create_new_memory_scope",
     "supersede_matching_facts",
 }
 UNCERTAIN_EVIDENCE_MARKERS = (

@@ -43,7 +43,7 @@ from memo_stack_obsidian.vault import FilesystemVault
 
 DEFAULT_API_URL = "http://127.0.0.1:7788"
 DEFAULT_SPACE_SLUG = "default"
-DEFAULT_PROFILE_EXTERNAL_REF = "default"
+DEFAULT_MEMORY_SCOPE_EXTERNAL_REF = "default"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -83,9 +83,9 @@ def _build_parser() -> argparse.ArgumentParser:
     install_plugin_parser.add_argument("--cli-path", default="memo-stack-obsidian")
     install_plugin_parser.add_argument("--space", dest="space_slug", default=DEFAULT_SPACE_SLUG)
     install_plugin_parser.add_argument(
-        "--profile",
-        dest="profile_external_ref",
-        default=DEFAULT_PROFILE_EXTERNAL_REF,
+        "--memory_scope",
+        dest="memory_scope_external_ref",
+        default=DEFAULT_MEMORY_SCOPE_EXTERNAL_REF,
     )
     install_plugin_parser.add_argument("--apply-import", action="store_true")
     install_plugin_parser.add_argument("--root-folder", default=DEFAULT_ROOT_FOLDER)
@@ -168,7 +168,7 @@ def _cmd_install_plugin(args: argparse.Namespace) -> int:
             "cliPath": args.cli_path,
             "vaultPathOverride": str(args.vault.expanduser().resolve()),
             "spaceSlug": args.space_slug,
-            "profileExternalRef": args.profile_external_ref,
+            "memoryScopeExternalRef": args.memory_scope_external_ref,
             "rootFolder": args.root_folder,
             "layoutVersion": args.layout_version,
             "applyImportOnSync": args.apply_import,
@@ -204,9 +204,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--space", dest="space_slug", default=DEFAULT_SPACE_SLUG)
     parser.add_argument(
-        "--profile",
-        dest="profile_external_ref",
-        default=DEFAULT_PROFILE_EXTERNAL_REF,
+        "--memory_scope",
+        dest="memory_scope_external_ref",
+        default=DEFAULT_MEMORY_SCOPE_EXTERNAL_REF,
     )
     parser.add_argument(
         "--api-url",
@@ -231,7 +231,7 @@ def _cmd_connect(args: argparse.Namespace) -> int:
     context = _context(args)
     result = context["setup"].execute(
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
         overwrite=args.overwrite,
     )
     _print(
@@ -253,13 +253,13 @@ def _cmd_export(args: argparse.Namespace) -> int:
     context = _context(args)
     result = context["exporter"].execute(
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
     )
     conflict_artifacts = context["conflict_writer"].execute(
         direction="export",
         changes=result.changes,
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
     )
     _print(
         {
@@ -279,7 +279,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_preview(args: argparse.Namespace) -> int:
     result = _context(args)["previewer"].execute(
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
         include_inbox=not args.no_inbox,
     )
     _print(_preview_payload(result), as_json=args.json)
@@ -293,7 +293,7 @@ def _cmd_import(args: argparse.Namespace) -> int:
         direction="import",
         changes=result.changes,
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
     )
     payload = _import_payload(result, applied=args.apply)
     payload["conflict_artifacts_written"] = conflict_artifacts.written
@@ -306,7 +306,7 @@ def _cmd_sync(args: argparse.Namespace) -> int:
     context = _context(args)
     result = context["syncer"].execute(
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
         apply_import=args.apply_import,
         include_inbox=not args.no_inbox,
     )
@@ -314,13 +314,13 @@ def _cmd_sync(args: argparse.Namespace) -> int:
         direction="import",
         changes=result.import_result.changes,
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
     )
     export_conflicts = context["conflict_writer"].execute(
         direction="export",
         changes=result.export_result.changes,
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
     )
     _print(
         _sync_payload(
@@ -339,7 +339,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         api_url=args.api_url,
         token=args.token or None,
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
         root_folder=args.root_folder,
         layout_version=args.layout_version,
         obsidian_config_dir=args.obsidian_config_dir,
@@ -360,7 +360,7 @@ def _cmd_watch(args: argparse.Namespace) -> int:
             direction="import",
             changes=imported.changes,
             space_slug=args.space_slug,
-            profile_external_ref=args.profile_external_ref,
+            memory_scope_external_ref=args.memory_scope_external_ref,
         )
         print(
             "import "
@@ -374,13 +374,13 @@ def _cmd_watch(args: argparse.Namespace) -> int:
         if iteration % max(args.export_every, 1) == 0:
             exported = context["exporter"].execute(
                 space_slug=args.space_slug,
-                profile_external_ref=args.profile_external_ref,
+                memory_scope_external_ref=args.memory_scope_external_ref,
             )
             export_conflicts = context["conflict_writer"].execute(
                 direction="export",
                 changes=exported.changes,
                 space_slug=args.space_slug,
-                profile_external_ref=args.profile_external_ref,
+                memory_scope_external_ref=args.memory_scope_external_ref,
             )
             print(
                 "export "
@@ -451,13 +451,13 @@ def _run_import(
     facts = context["importer"].execute(
         apply=apply,
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
     )
     if args.no_inbox:
         return facts
     inbox = context["inbox_importer"].execute(
         space_slug=args.space_slug,
-        profile_external_ref=args.profile_external_ref,
+        memory_scope_external_ref=args.memory_scope_external_ref,
         apply=apply,
     )
     return merge_import_results(facts, inbox)

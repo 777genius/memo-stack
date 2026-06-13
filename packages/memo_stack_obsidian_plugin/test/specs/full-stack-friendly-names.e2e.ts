@@ -11,20 +11,20 @@ import { browser } from "@wdio/globals";
 const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
-type Scope = { spaceSlug: string; profileExternalRef: string };
+type Scope = { spaceSlug: string; memoryScopeExternalRef: string };
 const primaryScope: Scope = {
   spaceSlug: "Client Alpha / Research 2026",
-  profileExternalRef: "Default User+Agent",
+  memoryScopeExternalRef: "Default User+Agent",
 };
 const secondaryScope: Scope = {
   spaceSlug: "Client Beta / Field Notes",
-  profileExternalRef: "Research Lead+Ops",
+  memoryScopeExternalRef: "Research Lead+Ops",
 };
 const rawSpaceSlug = primaryScope.spaceSlug;
-const rawProfileExternalRef = primaryScope.profileExternalRef;
+const rawMemoryScopeExternalRef = primaryScope.memoryScopeExternalRef;
 const rootFolder = "Team Memory";
 const safeSpaceSlug = safeScopeSegment(rawSpaceSlug);
-const safeProfileExternalRef = safeScopeSegment(rawProfileExternalRef);
+const safeMemoryScopeExternalRef = safeScopeSegment(rawMemoryScopeExternalRef);
 const scopedRoot = scopedRootFor(primaryScope);
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
 const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
@@ -47,7 +47,7 @@ describe("Memo Stack friendly project names E2E", function () {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("stores friendly project and profile names in safe scoped vault folders", async function () {
+  it("stores friendly project and memory_scope names in safe scoped vault folders", async function () {
     const fact = await createFact(baseUrl, {
       text: "Obsidian WDIO friendly project visible fact.",
       sourceId: "wdio-friendly-names-seed",
@@ -61,7 +61,7 @@ describe("Memo Stack friendly project names E2E", function () {
 
     let snapshot = await memoStackSnapshot();
     assert.equal(snapshot.spaceSlug, rawSpaceSlug);
-    assert.equal(snapshot.profileExternalRef, rawProfileExternalRef);
+    assert.equal(snapshot.memoryScopeExternalRef, rawMemoryScopeExternalRef);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
     assert.equal(snapshot.paths.inbox, posixPath(path.join(scopedRoot, "inbox")));
     assert.equal(snapshot.paths.conflicts, posixPath(path.join(scopedRoot, "conflicts")));
@@ -82,7 +82,7 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.equal(path.dirname(exportedFact), path.join(vaultPath, scopedRoot, "generated", "facts"));
     assert.match(fs.readFileSync(exportedFact, "utf8"), /friendly project visible fact/);
     assert.match(fs.readFileSync(exportedFact, "utf8"), /memo_stack_space_slug: Client Alpha \/ Research 2026/);
-    assert.match(fs.readFileSync(exportedFact, "utf8"), /memo_stack_profile_external_ref: Default User\+Agent/);
+    assert.match(fs.readFileSync(exportedFact, "utf8"), /memo_stack_memory_scope_external_ref: Default User\+Agent/);
     assert.equal((await getFact(baseUrl, fact.id)).text, "Obsidian WDIO friendly project visible fact.");
 
     const inboxMarker = "WDIO friendly project inbox marker";
@@ -103,8 +103,8 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.deepEqual(calls.map((call) => call.command), ["connect", "preview", "sync", "sync"]);
     assert.ok(calls.every((call) => call.args.includes("--space")));
     assert.ok(calls.every((call) => call.args.includes(rawSpaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes("--profile")));
-    assert.ok(calls.every((call) => call.args.includes(rawProfileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+    assert.ok(calls.every((call) => call.args.includes(rawMemoryScopeExternalRef)));
     assert.ok(calls.every((call) => call.args.includes("--root-folder")));
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.slice(2).every((call) => call.args.includes("--apply-import")));
@@ -153,7 +153,7 @@ describe("Memo Stack friendly project names E2E", function () {
 
     let snapshot = await memoStackSnapshot();
     assert.equal(snapshot.spaceSlug, secondaryScope.spaceSlug);
-    assert.equal(snapshot.profileExternalRef, secondaryScope.profileExternalRef);
+    assert.equal(snapshot.memoryScopeExternalRef, secondaryScope.memoryScopeExternalRef);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(secondaryRoot, "generated", "facts")));
     assert.equal(snapshot.paths.inbox, posixPath(path.join(secondaryRoot, "inbox")));
     assert.equal(snapshot.inboxExists, true);
@@ -223,7 +223,7 @@ describe("Memo Stack friendly project names E2E", function () {
     let snapshot = await memoStackSnapshot();
     assert.equal(snapshot.apiUrl, baseUrl);
     assert.equal(snapshot.spaceSlug, rawSpaceSlug);
-    assert.equal(snapshot.profileExternalRef, rawProfileExternalRef);
+    assert.equal(snapshot.memoryScopeExternalRef, rawMemoryScopeExternalRef);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
     assert.equal(snapshot.paths.inbox, posixPath(path.join(scopedRoot, "inbox")));
     assert.equal(factFiles(vaultPath).length, 1);
@@ -268,7 +268,7 @@ describe("Memo Stack friendly project names E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", rawSpaceSlug);
-    await setSettingsInput("profileExternalRef", rawProfileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", rawMemoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginScope(primaryScope);
 
@@ -304,20 +304,20 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.ok(calls.every((call) => call.status === 0));
   });
 
-  it("switches profiles inside one friendly project through settings without mixing notes", async function () {
-    const teamProfileScope: Scope = {
+  it("switches memory_scopes inside one friendly project through settings without mixing notes", async function () {
+    const teamMemoryScopeScope: Scope = {
       spaceSlug: primaryScope.spaceSlug,
-      profileExternalRef: "Research Lead+Ops",
+      memoryScopeExternalRef: "Research Lead+Ops",
     };
     await createFact(baseUrl, {
-      text: "Primary profile same project backend fact.",
-      sourceId: "wdio-same-project-primary-profile-seed",
+      text: "Primary memory_scope same project backend fact.",
+      sourceId: "wdio-same-project-primary-memory_scope-seed",
       scope: primaryScope,
     });
     await createFact(baseUrl, {
-      text: "Team profile same project backend fact.",
-      sourceId: "wdio-same-project-team-profile-seed",
-      scope: teamProfileScope,
+      text: "Team memory_scope same project backend fact.",
+      sourceId: "wdio-same-project-team-memory_scope-seed",
+      scope: teamMemoryScopeScope,
     });
     const vaultPath = await resetVault();
     fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
@@ -329,10 +329,10 @@ describe("Memo Stack friendly project names E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", primaryScope.spaceSlug);
-    await setSettingsInput("profileExternalRef", primaryScope.profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", primaryScope.memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginScope(primaryScope);
-    await waitForSettingsFile(vaultPath, primaryScope.profileExternalRef);
+    await waitForSettingsFile(vaultPath, primaryScope.memoryScopeExternalRef);
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 1);
@@ -342,21 +342,21 @@ describe("Memo Stack friendly project names E2E", function () {
     await waitForPluginIdle();
 
     const primaryFile = onlyFactFile(vaultPath, primaryScope);
-    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary profile same project backend fact/);
-    assert.equal(factFiles(vaultPath, teamProfileScope).length, 0);
+    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary memory_scope same project backend fact/);
+    assert.equal(factFiles(vaultPath, teamMemoryScopeScope).length, 0);
 
-    const primaryInboxMarker = "WDIO same project primary profile inbox marker";
-    writeVaultFile(vaultPath, path.join(scopedRootFor(primaryScope), "inbox", "primary-profile.md"), primaryInboxMarker);
+    const primaryInboxMarker = "WDIO same project primary memory_scope inbox marker";
+    writeVaultFile(vaultPath, path.join(scopedRootFor(primaryScope), "inbox", "primary-memory_scope.md"), primaryInboxMarker);
     await browser.executeObsidianCommand("memo-stack:sync-now");
     await waitForCliCalls(vaultPath, 3);
     await waitForPluginIdle();
     await waitForSuggestionsContaining(baseUrl, primaryInboxMarker, 1, primaryScope);
-    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamProfileScope)).length, 0);
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamMemoryScopeScope)).length, 0);
 
     await openMemoStackSettings();
-    await setSettingsInput("profileExternalRef", teamProfileScope.profileExternalRef);
-    await waitForPluginScope(teamProfileScope);
-    await waitForSettingsFile(vaultPath, teamProfileScope.profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", teamMemoryScopeScope.memoryScopeExternalRef);
+    await waitForPluginScope(teamMemoryScopeScope);
+    await waitForSettingsFile(vaultPath, teamMemoryScopeScope.memoryScopeExternalRef);
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 4);
@@ -365,50 +365,50 @@ describe("Memo Stack friendly project names E2E", function () {
     await waitForCliCalls(vaultPath, 5);
     await waitForPluginIdle();
 
-    const teamFile = onlyFactFile(vaultPath, teamProfileScope);
-    assert.match(fs.readFileSync(teamFile, "utf8"), /Team profile same project backend fact/);
-    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary profile same project backend fact/);
+    const teamFile = onlyFactFile(vaultPath, teamMemoryScopeScope);
+    assert.match(fs.readFileSync(teamFile, "utf8"), /Team memory_scope same project backend fact/);
+    assert.match(fs.readFileSync(primaryFile, "utf8"), /Primary memory_scope same project backend fact/);
     assert.equal(factFiles(vaultPath, primaryScope).length, 1);
-    assert.equal(factFiles(vaultPath, teamProfileScope).length, 1);
+    assert.equal(factFiles(vaultPath, teamMemoryScopeScope).length, 1);
     assert.equal(path.dirname(primaryFile).includes(safeScopeSegment(primaryScope.spaceSlug)), true);
     assert.equal(path.dirname(teamFile).includes(safeScopeSegment(primaryScope.spaceSlug)), true);
     assert.notEqual(path.dirname(primaryFile), path.dirname(teamFile));
 
-    const teamInboxMarker = "WDIO same project team profile inbox marker";
-    writeVaultFile(vaultPath, path.join(scopedRootFor(teamProfileScope), "inbox", "team-profile.md"), teamInboxMarker);
+    const teamInboxMarker = "WDIO same project team memory_scope inbox marker";
+    writeVaultFile(vaultPath, path.join(scopedRootFor(teamMemoryScopeScope), "inbox", "team-memory_scope.md"), teamInboxMarker);
     await browser.executeObsidianCommand("memo-stack:sync-now");
     await waitForCliCalls(vaultPath, 6);
     await waitForPluginIdle();
-    await waitForSuggestionsContaining(baseUrl, teamInboxMarker, 1, teamProfileScope);
+    await waitForSuggestionsContaining(baseUrl, teamInboxMarker, 1, teamMemoryScopeScope);
     assert.equal((await suggestionsContaining(baseUrl, teamInboxMarker, primaryScope)).length, 0);
 
     await browser.executeObsidianCommand("memo-stack:open-inbox");
-    assert.equal(await activeFilePath(), posixPath(path.join(scopedRootFor(teamProfileScope), "inbox", "README.md")));
+    assert.equal(await activeFilePath(), posixPath(path.join(scopedRootFor(teamMemoryScopeScope), "inbox", "README.md")));
 
     const calls = readCliCalls(vaultPath);
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync", "connect", "sync", "sync"]);
     assertCallsUseScope(calls.slice(0, 3), primaryScope);
-    assertCallsUseScope(calls.slice(3), teamProfileScope);
+    assertCallsUseScope(calls.slice(3), teamMemoryScopeScope);
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.status === 0));
   });
 
-  it("preserves pending old-profile edits and inbox notes across profile switches", async function () {
-    const teamProfileScope: Scope = {
+  it("preserves pending old-memory_scope edits and inbox notes across memory_scope switches", async function () {
+    const teamMemoryScopeScope: Scope = {
       spaceSlug: primaryScope.spaceSlug,
-      profileExternalRef: "Research Lead+Ops",
+      memoryScopeExternalRef: "Research Lead+Ops",
     };
-    const initialText = "Obsidian WDIO profile switch pending initial fact.";
-    const recoveredText = "Obsidian WDIO profile switch pending local edit recovered.";
+    const initialText = "Obsidian WDIO memory_scope switch pending initial fact.";
+    const recoveredText = "Obsidian WDIO memory_scope switch pending local edit recovered.";
     const primaryFact = await createFact(baseUrl, {
       text: initialText,
-      sourceId: "wdio-profile-switch-pending-primary-seed",
+      sourceId: "wdio-memory_scope-switch-pending-primary-seed",
       scope: primaryScope,
     });
     await createFact(baseUrl, {
-      text: "Team profile switch backend fact stays isolated.",
-      sourceId: "wdio-profile-switch-pending-team-seed",
-      scope: teamProfileScope,
+      text: "Team memory_scope switch backend fact stays isolated.",
+      sourceId: "wdio-memory_scope-switch-pending-team-seed",
+      scope: teamMemoryScopeScope,
     });
     const vaultPath = await resetVault();
     fs.mkdirSync(path.join(vaultPath, ".obsidian", "plugins", "memo-stack"), { recursive: true });
@@ -420,10 +420,10 @@ describe("Memo Stack friendly project names E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", primaryScope.spaceSlug);
-    await setSettingsInput("profileExternalRef", primaryScope.profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", primaryScope.memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginScope(primaryScope);
-    await waitForSettingsFile(vaultPath, primaryScope.profileExternalRef);
+    await waitForSettingsFile(vaultPath, primaryScope.memoryScopeExternalRef);
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 1);
@@ -434,17 +434,17 @@ describe("Memo Stack friendly project names E2E", function () {
 
     const primaryFile = onlyFactFile(vaultPath, primaryScope);
     replaceManagedText(primaryFile, recoveredText);
-    const primaryInboxMarker = "WDIO profile switch pending inbox imports only after return";
+    const primaryInboxMarker = "WDIO memory_scope switch pending inbox imports only after return";
     writeVaultFile(
       vaultPath,
-      path.join(scopedRootFor(primaryScope), "inbox", "profile-switch-pending.md"),
+      path.join(scopedRootFor(primaryScope), "inbox", "memory_scope-switch-pending.md"),
       primaryInboxMarker,
     );
 
     await openMemoStackSettings();
-    await setSettingsInput("profileExternalRef", teamProfileScope.profileExternalRef);
-    await waitForPluginScope(teamProfileScope);
-    await waitForSettingsFile(vaultPath, teamProfileScope.profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", teamMemoryScopeScope.memoryScopeExternalRef);
+    await waitForPluginScope(teamMemoryScopeScope);
+    await waitForSettingsFile(vaultPath, teamMemoryScopeScope.memoryScopeExternalRef);
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 3);
     await waitForPluginIdle();
@@ -454,18 +454,18 @@ describe("Memo Stack friendly project names E2E", function () {
 
     assert.equal((await getFact(baseUrl, primaryFact.id)).text, initialText);
     assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, primaryScope)).length, 0);
-    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamProfileScope)).length, 0);
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamMemoryScopeScope)).length, 0);
     assert.match(fs.readFileSync(primaryFile, "utf8"), new RegExp(recoveredText));
-    const teamFile = onlyFactFile(vaultPath, teamProfileScope);
-    assert.match(fs.readFileSync(teamFile, "utf8"), /Team profile switch backend fact stays isolated/);
+    const teamFile = onlyFactFile(vaultPath, teamMemoryScopeScope);
+    assert.match(fs.readFileSync(teamFile, "utf8"), /Team memory_scope switch backend fact stays isolated/);
     assert.doesNotMatch(fs.readFileSync(teamFile, "utf8"), new RegExp(recoveredText));
     assert.equal(conflictFiles(vaultPath, primaryScope).length, 0);
-    assert.equal(conflictFiles(vaultPath, teamProfileScope).length, 0);
+    assert.equal(conflictFiles(vaultPath, teamMemoryScopeScope).length, 0);
 
     await openMemoStackSettings();
-    await setSettingsInput("profileExternalRef", primaryScope.profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", primaryScope.memoryScopeExternalRef);
     await waitForPluginScope(primaryScope);
-    await waitForSettingsFile(vaultPath, primaryScope.profileExternalRef);
+    await waitForSettingsFile(vaultPath, primaryScope.memoryScopeExternalRef);
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 5);
     await waitForPluginIdle();
@@ -483,9 +483,9 @@ describe("Memo Stack friendly project names E2E", function () {
     assert.match(fs.readFileSync(onlyFactFile(vaultPath, primaryScope), "utf8"), /memo_stack_version: 2/);
 
     await openMemoStackSettings();
-    await setSettingsInput("profileExternalRef", teamProfileScope.profileExternalRef);
-    await waitForPluginScope(teamProfileScope);
-    await waitForSettingsFile(vaultPath, teamProfileScope.profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", teamMemoryScopeScope.memoryScopeExternalRef);
+    await waitForPluginScope(teamMemoryScopeScope);
+    await waitForSettingsFile(vaultPath, teamMemoryScopeScope.memoryScopeExternalRef);
     await browser.executeObsidianCommand("memo-stack:connect-vault");
     await waitForCliCalls(vaultPath, 8);
     await waitForPluginIdle();
@@ -493,10 +493,10 @@ describe("Memo Stack friendly project names E2E", function () {
     await waitForCliCalls(vaultPath, 9);
     await waitForPluginIdle();
 
-    assert.doesNotMatch(fs.readFileSync(onlyFactFile(vaultPath, teamProfileScope), "utf8"), new RegExp(recoveredText));
-    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamProfileScope)).length, 0);
+    assert.doesNotMatch(fs.readFileSync(onlyFactFile(vaultPath, teamMemoryScopeScope), "utf8"), new RegExp(recoveredText));
+    assert.equal((await suggestionsContaining(baseUrl, primaryInboxMarker, teamMemoryScopeScope)).length, 0);
     assert.equal(conflictFiles(vaultPath, primaryScope).length, 0);
-    assert.equal(conflictFiles(vaultPath, teamProfileScope).length, 0);
+    assert.equal(conflictFiles(vaultPath, teamMemoryScopeScope).length, 0);
 
     const calls = readCliCalls(vaultPath);
     assert.deepEqual(
@@ -504,9 +504,9 @@ describe("Memo Stack friendly project names E2E", function () {
       ["connect", "sync", "connect", "sync", "connect", "sync", "sync", "connect", "sync"],
     );
     assertCallsUseScope(calls.slice(0, 2), primaryScope);
-    assertCallsUseScope(calls.slice(2, 4), teamProfileScope);
+    assertCallsUseScope(calls.slice(2, 4), teamMemoryScopeScope);
     assertCallsUseScope(calls.slice(4, 7), primaryScope);
-    assertCallsUseScope(calls.slice(7), teamProfileScope);
+    assertCallsUseScope(calls.slice(7), teamMemoryScopeScope);
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.status === 0));
   });
@@ -533,7 +533,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string, scope: Scope =
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug: scope.spaceSlug,
-    profileExternalRef: scope.profileExternalRef,
+    memoryScopeExternalRef: scope.memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -617,7 +617,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: scope.spaceSlug,
-    profile_external_ref: scope.profileExternalRef,
+    memory_scope_external_ref: scope.memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -668,7 +668,7 @@ async function suggestionsContaining(
 ): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: scope.spaceSlug,
-    profile_external_ref: scope.profileExternalRef,
+    memory_scope_external_ref: scope.memoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
@@ -739,7 +739,7 @@ async function waitForPluginScope(scope: Scope): Promise<void> {
     async () => {
       try {
         const snapshot = await memoStackSnapshot();
-        return snapshot.spaceSlug === scope.spaceSlug && snapshot.profileExternalRef === scope.profileExternalRef;
+        return snapshot.spaceSlug === scope.spaceSlug && snapshot.memoryScopeExternalRef === scope.memoryScopeExternalRef;
       } catch (_error) {
         return false;
       }
@@ -758,7 +758,7 @@ async function waitForConnectedLayout(scope: Scope): Promise<void> {
         const snapshot = await memoStackSnapshot();
         return (
           snapshot.spaceSlug === scope.spaceSlug &&
-          snapshot.profileExternalRef === scope.profileExternalRef &&
+          snapshot.memoryScopeExternalRef === scope.memoryScopeExternalRef &&
           snapshot.paths.generatedFacts === posixPath(path.join(scopedRootFor(scope), "generated", "facts")) &&
           snapshot.readmeExists === true &&
           snapshot.generatedFactsExists === true &&
@@ -916,8 +916,8 @@ function assertCallsUseScope(
 ): void {
   assert.ok(calls.every((call) => call.args.includes("--space")));
   assert.ok(calls.every((call) => call.args.includes(scope.spaceSlug)));
-  assert.ok(calls.every((call) => call.args.includes("--profile")));
-  assert.ok(calls.every((call) => call.args.includes(scope.profileExternalRef)));
+  assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+  assert.ok(calls.every((call) => call.args.includes(scope.memoryScopeExternalRef)));
 }
 
 function scopedRootFor(scope: Scope): string {
@@ -925,8 +925,8 @@ function scopedRootFor(scope: Scope): string {
     rootFolder,
     "spaces",
     safeScopeSegment(scope.spaceSlug),
-    "profiles",
-    safeScopeSegment(scope.profileExternalRef),
+    "memory_scopes",
+    safeScopeSegment(scope.memoryScopeExternalRef),
   );
 }
 

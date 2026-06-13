@@ -15,7 +15,7 @@ const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-packaged-token";
 const apiUrl = "http://127.0.0.1:65532";
 const spaceSlug = "packaged-project";
-const profileExternalRef = "packaged-profile";
+const memoryScopeExternalRef = "packaged-memory_scope";
 const rootFolder = "Packaged Memo";
 
 describe("Memo Stack packaged plugin install E2E", function () {
@@ -59,7 +59,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
           cliPath: fakeCliPath,
           vaultPathOverride: vaultPath,
           spaceSlug,
-          profileExternalRef,
+          memoryScopeExternalRef,
           rootFolder,
           layoutVersion: "v2",
           applyImportOnSync: true,
@@ -82,7 +82,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
     assert.equal(runtime.enabled, true);
     assert.equal(runtime.snapshot.apiUrl, apiUrl);
     assert.equal(runtime.snapshot.spaceSlug, spaceSlug);
-    assert.equal(runtime.snapshot.profileExternalRef, profileExternalRef);
+    assert.equal(runtime.snapshot.memoryScopeExternalRef, memoryScopeExternalRef);
     assert.equal(runtime.snapshot.rootFolder, rootFolder);
 
     await obsidianPage.disablePlugin(pluginId);
@@ -107,8 +107,8 @@ describe("Memo Stack packaged plugin install E2E", function () {
     assert.ok(calls[0].args.includes(apiUrl));
     assert.ok(calls[0].args.includes("--space"));
     assert.ok(calls[0].args.includes(spaceSlug));
-    assert.ok(calls[0].args.includes("--profile"));
-    assert.ok(calls[0].args.includes(profileExternalRef));
+    assert.ok(calls[0].args.includes("--memory_scope"));
+    assert.ok(calls[0].args.includes(memoryScopeExternalRef));
     assert.ok(calls[0].args.includes("--root-folder"));
     assert.ok(calls[0].args.includes(rootFolder));
     assert.match(readVaultFile(vaultPath, path.join(rootFolder, "README.md")), /Connected by plugin E2E/);
@@ -148,7 +148,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
             cliPath: realCliPath,
             vaultPathOverride: vaultPath,
             spaceSlug,
-            profileExternalRef,
+            memoryScopeExternalRef,
             rootFolder,
             layoutVersion: "v2",
             applyImportOnSync: true,
@@ -170,7 +170,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
       assert.equal(runtime.loaded, true);
       assert.equal(runtime.enabled, true);
       assert.equal(runtime.snapshot.spaceSlug, spaceSlug);
-      assert.equal(runtime.snapshot.profileExternalRef, profileExternalRef);
+      assert.equal(runtime.snapshot.memoryScopeExternalRef, memoryScopeExternalRef);
       assert.equal(runtime.snapshot.rootFolder, rootFolder);
 
       await browser.executeObsidianCommand("memo-stack:connect-vault");
@@ -186,8 +186,8 @@ describe("Memo Stack packaged plugin install E2E", function () {
       assert.ok(calls.every((call) => call.args.includes(baseUrl)));
       assert.ok(calls.every((call) => call.args.includes("--space")));
       assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-      assert.ok(calls.every((call) => call.args.includes("--profile")));
-      assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+      assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+      assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
       assert.ok(calls.every((call) => call.args.includes("--root-folder")));
       assert.ok(calls.every((call) => call.args.includes(rootFolder)));
 
@@ -238,7 +238,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
       await setSettingsInput("vaultPathOverride", vaultPath);
       await setSettingsInput("rootFolder", rootFolder);
       await setSettingsInput("spaceSlug", spaceSlug);
-      await setSettingsInput("profileExternalRef", profileExternalRef);
+      await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
       await setSettingsInput("commandTimeoutMs", "20000");
       await setSettingsToggle("applyImportOnSync", true);
       await waitForSettingsFile(vaultPath, baseUrl);
@@ -251,7 +251,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
       const inboxMarker = "WDIO packaged settings UI inbox marker imports once";
       writeVaultFile(
         vaultPath,
-        path.join(rootFolder, "spaces", spaceSlug, "profiles", profileExternalRef, "inbox", "settings-ui-inbox.md"),
+        path.join(rootFolder, "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef, "inbox", "settings-ui-inbox.md"),
         inboxMarker,
       );
 
@@ -267,7 +267,7 @@ describe("Memo Stack packaged plugin install E2E", function () {
       assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0"]);
       assert.ok(calls.every((call) => call.args.includes(baseUrl)));
       assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-      assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+      assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
       assert.ok(calls.every((call) => call.args.includes(rootFolder)));
 
       const exportedFact = onlyFactFile(vaultPath);
@@ -480,7 +480,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${baseUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -509,7 +509,7 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(baseUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${baseUrl}/v1/suggestions?${query.toString()}`);
@@ -632,8 +632,8 @@ function factFiles(vaultPath: string): string[] {
     rootFolder,
     "spaces",
     spaceSlug,
-    "profiles",
-    profileExternalRef,
+    "memory_scopes",
+    memoryScopeExternalRef,
     "generated",
     "facts",
   );

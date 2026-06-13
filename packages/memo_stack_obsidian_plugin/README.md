@@ -15,14 +15,14 @@ memo-stack-obsidian install-plugin \
   --vault "<vault>" \
   --enable \
   --space default \
-  --profile default \
+  --memory_scope default \
   --local-cli-path memo-stack \
   --root-folder "Memo Stack" \
   --layout v2
 ```
 
 Then open Obsidian. The plugin settings are prefilled with the vault path,
-project, profile, root folder and default local API URL.
+project, memory_scope, root folder and default local API URL.
 
 Vaults with a non-default Obsidian config folder can use
 `memo-stack-obsidian install-plugin --obsidian-config-dir <relative-dir>` or
@@ -35,7 +35,7 @@ Open the Memo Stack sidebar panel from the ribbon or command palette:
 Memo Stack: Open control center
 ```
 
-The panel shows the current vault path, root folder, project, profile, scoped
+The panel shows the current vault path, root folder, project, memory_scope, scoped
 Generated/Inbox/Conflicts paths, a five-step setup checklist, local stack
 controls, and vault sync controls. Opening the panel does not start the backend,
 run the connector, or mutate notes.
@@ -54,9 +54,9 @@ By default, notes are grouped inside the vault:
 
 ```text
 Memo Stack/
-  spaces/<project>/profiles/<profile>/generated/facts/
-  spaces/<project>/profiles/<profile>/inbox/
-  spaces/<project>/profiles/<profile>/conflicts/
+  spaces/<project>/memory_scopes/<memory_scope>/generated/facts/
+  spaces/<project>/memory_scopes/<memory_scope>/inbox/
+  spaces/<project>/memory_scopes/<memory_scope>/conflicts/
 ```
 
 The legacy flat layout is still readable with `--layout v1`.

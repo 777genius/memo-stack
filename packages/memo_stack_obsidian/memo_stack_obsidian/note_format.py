@@ -31,14 +31,14 @@ def fact_note_path(
     *,
     layout: ObsidianVaultLayout | None = None,
     space_slug: str = "default",
-    profile_external_ref: str = "default",
+    memory_scope_external_ref: str = "default",
 ) -> PurePosixPath:
     if layout is None:
         return FACTS_DIR / f"{safe_filename(fact_id)}.md"
     return layout.fact_note_path(
         fact_id,
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
     )
 
 
@@ -46,7 +46,7 @@ def render_fact_note(
     fact: Mapping[str, Any],
     *,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     sync_mode: SyncMode = SyncMode.DIRECT,
 ) -> str:
     fact_id = str(fact["id"])
@@ -60,7 +60,7 @@ def render_fact_note(
         "memo_stack_sync_mode": sync_mode.value,
         "memo_stack_hash": content_hash(text),
         "memo_stack_space_slug": space_slug,
-        "memo_stack_profile_external_ref": profile_external_ref,
+        "memo_stack_memory_scope_external_ref": memory_scope_external_ref,
         "memo_stack_managed": True,
     }
     title = _title_for_fact(fact)

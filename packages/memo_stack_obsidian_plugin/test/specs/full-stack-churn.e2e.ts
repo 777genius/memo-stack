@@ -11,14 +11,14 @@ const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
 const spaceSlug = "wdio-churn";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
 );
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
 const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
@@ -186,7 +186,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug,
-    profileExternalRef,
+    memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -295,7 +295,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [

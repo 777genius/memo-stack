@@ -55,7 +55,7 @@ def candidate_fingerprint(
     return stable_key(
         "mcp-candidate",
         scope.space_slug,
-        scope.profile_external_ref,
+        scope.memory_scope_external_ref,
         scope.thread_external_ref,
         candidate.operation.value,
         candidate.target_fact_id,

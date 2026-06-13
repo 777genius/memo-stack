@@ -28,7 +28,7 @@ class ObsidianPrepareMcpService:
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         home: str | None = None,
         repo_dir: str | None = None,
         api_url: str | None = None,
@@ -60,7 +60,7 @@ class ObsidianPrepareMcpService:
             root_folder=root_folder,
             layout_version=layout_version,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             apply=apply,
             overwrite=overwrite,
             install_plugin=install_plugin,
@@ -119,7 +119,7 @@ class ObsidianPrepareMcpService:
             root_folder=root_folder,
             layout_version=layout_version,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             include_inbox=include_inbox,
         )
         if not _ok(preview):

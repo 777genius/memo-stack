@@ -245,7 +245,7 @@ def create_fact(base_url: str) -> dict[str, Any]:
         headers=headers(),
         json={
             "space_slug": SPACE,
-            "profile_external_ref": PROFILE,
+            "memory_scope_external_ref": PROFILE,
             "text": "Obsidian E2E initial fact.",
             "kind": "note",
             "source_refs": [
@@ -302,7 +302,7 @@ def list_suggestions(base_url: str) -> list[dict[str, Any]]:
         headers=headers(),
         params={
             "space_slug": SPACE,
-            "profile_external_ref": PROFILE,
+            "memory_scope_external_ref": PROFILE,
             "status": "pending",
         },
         timeout=5,
@@ -349,7 +349,7 @@ def run_connector_with_exit(
         str(vault),
         "--space",
         SPACE,
-        "--profile",
+        "--memory_scope",
         PROFILE,
         "--api-url",
         base_url,
@@ -393,7 +393,7 @@ def install_plugin(root: Path, vault: Path, base_url: str) -> dict[str, Any]:
         base_url,
         "--space",
         SPACE,
-        "--profile",
+        "--memory_scope",
         PROFILE,
         "--apply-import",
         "--json",
@@ -449,7 +449,7 @@ def replace_managed_text(path: Path, text: str) -> None:
 
 
 def write_inbox_note(vault: Path, text: str) -> None:
-    path = vault / "Memo Stack/spaces/obsidian-e2e/profiles/default/inbox/e2e-inbox.md"
+    path = vault / "Memo Stack/spaces/obsidian-e2e/memory_scopes/default/inbox/e2e-inbox.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 

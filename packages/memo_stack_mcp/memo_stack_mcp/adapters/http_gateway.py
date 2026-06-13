@@ -49,14 +49,14 @@ class HttpMemoryGateway:
         tags_all: list[str] | None = None,
         tags_none: list[str] | None = None,
     ) -> dict[str, Any]:
-        profile_payload = _read_scope_profile_payload(scope)
+        memory_scope_payload = _read_scope_memory_scope_payload(scope)
         return await self._request(
             "POST",
             "/v1/context",
             json=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    **profile_payload,
+                    **memory_scope_payload,
                     "thread_external_ref": scope.thread_external_ref,
                     "query": query,
                     "token_budget": token_budget,
@@ -83,14 +83,14 @@ class HttpMemoryGateway:
         include_superseded: bool,
         include_related: bool,
     ) -> dict[str, Any]:
-        profile_payload = _read_scope_profile_payload(scope)
+        memory_scope_payload = _read_scope_memory_scope_payload(scope)
         return await self._request(
             "POST",
             "/v1/digest",
             json=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    **profile_payload,
+                    **memory_scope_payload,
                     "thread_external_ref": scope.thread_external_ref,
                     "topic": topic,
                     "token_budget": token_budget,
@@ -114,14 +114,14 @@ class HttpMemoryGateway:
         max_captures: int,
         max_activity: int,
     ) -> dict[str, Any]:
-        profile_payload = _read_scope_profile_payload(scope)
+        memory_scope_payload = _read_scope_memory_scope_payload(scope)
         return await self._request(
             "POST",
             "/v1/insights",
             json=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    **profile_payload,
+                    **memory_scope_payload,
                     "thread_external_ref": scope.thread_external_ref,
                     "max_facts": max_facts,
                     "max_documents": max_documents,
@@ -148,7 +148,7 @@ class HttpMemoryGateway:
             params=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "thread_external_ref": scope.thread_external_ref,
                     "include_deleted": include_deleted,
                     "include_restricted": include_restricted,
@@ -159,7 +159,7 @@ class HttpMemoryGateway:
             ),
         )
 
-    async def export_profile_snapshot(
+    async def export_memory_scope_snapshot(
         self,
         *,
         scope: MemoryScope,
@@ -167,15 +167,15 @@ class HttpMemoryGateway:
     ) -> dict[str, Any]:
         return await self._request(
             "GET",
-            "/v1/export/profile-snapshot",
+            "/v1/export/memory_scope-snapshot",
             params={
                 "space_slug": scope.space_slug,
-                "profile_external_ref": scope.profile_external_ref,
+                "memory_scope_external_ref": scope.memory_scope_external_ref,
                 "redacted": redacted,
             },
         )
 
-    async def import_profile_snapshot(
+    async def import_memory_scope_snapshot(
         self,
         *,
         scope: MemoryScope,
@@ -188,10 +188,10 @@ class HttpMemoryGateway:
     ) -> dict[str, Any]:
         return await self._request(
             "POST",
-            "/v1/export/profile-snapshot/import",
+            "/v1/export/memory_scope-snapshot/import",
             json={
                 "space_slug": scope.space_slug,
-                "profile_external_ref": scope.profile_external_ref,
+                "memory_scope_external_ref": scope.memory_scope_external_ref,
                 "snapshot": snapshot,
                 "manifest": manifest,
                 "dry_run": dry_run,
@@ -201,7 +201,7 @@ class HttpMemoryGateway:
             },
         )
 
-    async def preview_profile_snapshot_import(
+    async def preview_memory_scope_snapshot_import(
         self,
         *,
         scope: MemoryScope,
@@ -211,10 +211,10 @@ class HttpMemoryGateway:
     ) -> dict[str, Any]:
         return await self._request(
             "POST",
-            "/v1/export/profile-snapshot/preview",
+            "/v1/export/memory_scope-snapshot/preview",
             json={
                 "space_slug": scope.space_slug,
-                "profile_external_ref": scope.profile_external_ref,
+                "memory_scope_external_ref": scope.memory_scope_external_ref,
                 "snapshot": snapshot,
                 "manifest": manifest,
                 "merge_strategy": merge_strategy,
@@ -240,7 +240,7 @@ class HttpMemoryGateway:
             json=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "thread_external_ref": scope.thread_external_ref,
                     "text": text,
                     "kind": kind,
@@ -270,7 +270,7 @@ class HttpMemoryGateway:
             params=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "status": status,
                     "category": category,
                     "tag": tag,
@@ -379,7 +379,7 @@ class HttpMemoryGateway:
             json=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "candidate_text": candidate_text,
                     "kind": kind,
                     "source_refs": [source.to_payload() for source in source_refs],
@@ -406,7 +406,7 @@ class HttpMemoryGateway:
             "/v1/suggestions/batch",
             json={
                 "space_slug": scope.space_slug,
-                "profile_external_ref": scope.profile_external_ref,
+                "memory_scope_external_ref": scope.memory_scope_external_ref,
                 "items": [
                     {
                         **item,
@@ -436,7 +436,7 @@ class HttpMemoryGateway:
             params=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "status": status,
                     "operation": operation,
                     "category": category,
@@ -509,7 +509,7 @@ class HttpMemoryGateway:
             params=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "status": status,
                     "consolidation_status": consolidation_status,
                     "limit": limit,
@@ -546,7 +546,7 @@ class HttpMemoryGateway:
             json=_without_none(
                 {
                     "space_slug": scope.space_slug,
-                    "profile_external_ref": scope.profile_external_ref,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
                     "thread_external_ref": scope.thread_external_ref,
                     "title": title,
                     "text": text,
@@ -656,7 +656,7 @@ def _without_none(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
 
 
-def _read_scope_profile_payload(scope: MemoryReadScope) -> dict[str, Any]:
-    if len(scope.profile_external_refs) == 1:
-        return {"profile_external_ref": scope.profile_external_refs[0]}
-    return {"profile_external_refs": list(scope.profile_external_refs)}
+def _read_scope_memory_scope_payload(scope: MemoryReadScope) -> dict[str, Any]:
+    if len(scope.memory_scope_external_refs) == 1:
+        return {"memory_scope_external_ref": scope.memory_scope_external_refs[0]}
+    return {"memory_scope_external_refs": list(scope.memory_scope_external_refs)}

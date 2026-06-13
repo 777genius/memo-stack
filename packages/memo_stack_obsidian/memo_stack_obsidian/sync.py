@@ -124,14 +124,14 @@ class ExportFactsToVaultUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         limit: int = 100,
     ) -> ExportFactsResult:
         changes: list[ExportChange] = []
         for fact in _iter_facts(
             self.memory,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             limit=limit,
         ):
             fact_id = str(fact["id"])
@@ -140,7 +140,7 @@ class ExportFactsToVaultUseCase:
                 fact_id,
                 layout=self.layout,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             relocated_path = _find_relocated_fact_note(
                 vault=self.vault,
@@ -148,7 +148,7 @@ class ExportFactsToVaultUseCase:
                 fact_id=fact_id,
                 canonical_path=path,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             if relocated_path is not None:
                 changes.append(
@@ -179,7 +179,7 @@ class ExportFactsToVaultUseCase:
             markdown = render_fact_note(
                 fact,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             self.vault.write_text(path, markdown)
             note = parse_fact_note(path, markdown)
@@ -217,13 +217,13 @@ class PreviewVaultSyncUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         include_inbox: bool = True,
         limit: int = 100,
     ) -> PreviewVaultSyncResult:
         export_plan = self._preview_export(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             limit=limit,
         )
         managed_import = ImportVaultChangesUseCase(
@@ -234,7 +234,7 @@ class PreviewVaultSyncUseCase:
         ).execute(
             apply=False,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         if include_inbox:
             inbox_import = ImportInboxSuggestionsUseCase(
@@ -244,7 +244,7 @@ class PreviewVaultSyncUseCase:
                 layout=self.layout,
             ).execute(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 apply=False,
             )
             import_plan = merge_import_results(managed_import, inbox_import)
@@ -256,14 +256,14 @@ class PreviewVaultSyncUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         limit: int,
     ) -> ExportFactsResult:
         changes: list[ExportChange] = []
         for fact in _iter_facts(
             self.memory,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             limit=limit,
         ):
             fact_id = str(fact["id"])
@@ -272,14 +272,14 @@ class PreviewVaultSyncUseCase:
                 fact_id,
                 layout=self.layout,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             change = self._preview_fact_export(
                 fact=fact,
                 path=path,
                 version=version,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             changes.append(change)
         return ExportFactsResult(changes=tuple(changes))
@@ -291,7 +291,7 @@ class PreviewVaultSyncUseCase:
         path: PurePosixPath,
         version: int,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
     ) -> ExportChange:
         fact_id = str(fact["id"])
         relocated_path = _find_relocated_fact_note(
@@ -300,7 +300,7 @@ class PreviewVaultSyncUseCase:
             fact_id=fact_id,
             canonical_path=path,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         if relocated_path is not None:
             return ExportChange(
@@ -370,13 +370,13 @@ class ImportVaultChangesUseCase:
         *,
         apply: bool = False,
         space_slug: str = "default",
-        profile_external_ref: str = "default",
+        memory_scope_external_ref: str = "default",
     ) -> ImportVaultChangesResult:
         self._seen_fact_ids = set()
         changes: list[ImportChange] = []
         for directory in self.layout.fact_scan_dirs(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ):
             changes.extend(
                 self._import_path(path=path, apply=apply)
@@ -464,8 +464,8 @@ class ImportVaultChangesUseCase:
         rendered = render_fact_note(
             updated_fact,
             space_slug=str(note.frontmatter.get("memo_stack_space_slug") or ""),
-            profile_external_ref=str(
-                note.frontmatter.get("memo_stack_profile_external_ref") or ""
+            memory_scope_external_ref=str(
+                note.frontmatter.get("memo_stack_memory_scope_external_ref") or ""
             ),
         )
         self.vault.write_text(path, rendered)
@@ -520,19 +520,19 @@ class ImportInboxSuggestionsUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         apply: bool = False,
     ) -> ImportVaultChangesResult:
         changes: list[ImportChange] = []
         for directory in self.layout.inbox_scan_dirs(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ):
             changes.extend(
                 self._import_path(
                     path=path,
                     space_slug=space_slug,
-                    profile_external_ref=profile_external_ref,
+                    memory_scope_external_ref=memory_scope_external_ref,
                     apply=apply,
                 )
                 for path in self.vault.iter_markdown_files(directory)
@@ -545,7 +545,7 @@ class ImportInboxSuggestionsUseCase:
         *,
         path: PurePosixPath,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         apply: bool,
     ) -> ImportChange:
         try:
@@ -582,7 +582,7 @@ class ImportInboxSuggestionsUseCase:
 
         self.memory.create_suggestion(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             candidate_text=text,
             safe_reason=f"Imported from Obsidian inbox note {path.as_posix()}",
             source_refs=[
@@ -620,19 +620,19 @@ class SyncVaultOnceUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         apply_import: bool = False,
         include_inbox: bool = True,
     ) -> SyncVaultOnceResult:
         managed_import = self.importer.execute(
             apply=apply_import,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         if include_inbox:
             inbox_import = self.inbox_importer.execute(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
                 apply=apply_import,
             )
             import_result = merge_import_results(managed_import, inbox_import)
@@ -651,7 +651,7 @@ class SyncVaultOnceUseCase:
 
         export_result = self.exporter.execute(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         return SyncVaultOnceResult(
             import_result=import_result,
@@ -688,11 +688,11 @@ def _find_relocated_fact_note(
     fact_id: str,
     canonical_path: PurePosixPath,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
 ) -> PurePosixPath | None:
     for directory in layout.fact_scan_dirs(
         space_slug=space_slug,
-        profile_external_ref=profile_external_ref,
+        memory_scope_external_ref=memory_scope_external_ref,
     ):
         for path in vault.iter_markdown_files(directory):
             if path == canonical_path or _is_hidden_path(path):
@@ -723,7 +723,7 @@ def _iter_facts(
     memory: MemoryGatewayPort,
     *,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     limit: int,
 ) -> tuple[dict[str, object], ...]:
     cursor: str | None = None
@@ -731,7 +731,7 @@ def _iter_facts(
     while True:
         response = memory.list_facts(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             limit=limit,
             cursor=cursor,
         )

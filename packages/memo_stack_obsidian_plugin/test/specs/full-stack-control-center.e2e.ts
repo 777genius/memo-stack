@@ -11,14 +11,14 @@ const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
 const spaceSlug = "wdio-control-center";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
 );
 
 describe("Memo Stack Control Center E2E", function () {
@@ -70,7 +70,7 @@ describe("Memo Stack Control Center E2E", function () {
     assert.equal(panel.buttons.README.disabled, false);
     assert.equal(panel.buttons.Inbox.disabled, false);
     assert.equal(panel.buttons.Conflicts.disabled, false);
-    assert.match(panel.text, /Generated\s+Memo Stack\/spaces\/wdio-control-center\/profiles\/default\/generated\/facts/);
+    assert.match(panel.text, /Generated\s+Memo Stack\/spaces\/wdio-control-center\/memory_scopes\/default\/generated\/facts/);
     assert.match(readVaultFile(vaultPath, path.join(rootFolder, "README.md")), /Memo Stack/);
 
     await clickVaultAction("Preview");
@@ -108,8 +108,8 @@ describe("Memo Stack Control Center E2E", function () {
     assert.ok(calls.every((call) => call.args.includes(baseUrl)));
     assert.ok(calls.every((call) => call.args.includes("--space")));
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes("--profile")));
-    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+    assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
     assert.ok(calls[2].args.includes("--apply-import"));
   });
 
@@ -176,7 +176,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug,
-    profileExternalRef,
+    memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -288,7 +288,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [

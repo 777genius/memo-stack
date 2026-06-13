@@ -52,8 +52,8 @@ class McpDataModel(BaseModel):
 
 class MemoryScopeData(McpDataModel):
     space_slug: str | None = None
-    profile_external_ref: str | None = None
-    profile_external_refs: list[str] = Field(default_factory=list)
+    memory_scope_external_ref: str | None = None
+    memory_scope_external_refs: list[str] = Field(default_factory=list)
     thread_external_ref: str | None = None
 
 
@@ -192,7 +192,7 @@ class MemorySearchData(McpDataModel):
     facts: list[MemorySearchItemData] = Field(default_factory=list)
     chunks: list[MemorySearchItemData] = Field(default_factory=list)
     resource_uris: list[str] = Field(default_factory=list)
-    requested_profile_external_refs: list[str] = Field(default_factory=list)
+    requested_memory_scope_external_refs: list[str] = Field(default_factory=list)
     requested_token_budget: int | None = None
     effective_token_budget: int | None = None
     budget_clamped: bool | None = None
@@ -218,7 +218,7 @@ class MemoryDigestData(McpDataModel):
     sections: list[MemoryDigestSectionData] = Field(default_factory=list)
     source_refs: list[MemorySourceRefData] = Field(default_factory=list)
     token_estimate: int | None = None
-    requested_profile_external_refs: list[str] = Field(default_factory=list)
+    requested_memory_scope_external_refs: list[str] = Field(default_factory=list)
     requested_token_budget: int | None = None
     effective_token_budget: int | None = None
     budget_clamped: bool | None = None
@@ -236,7 +236,7 @@ class MemoryInsightActionItemData(McpDataModel):
     action: str | None = None
     target_type: str | None = None
     target_id: str | None = None
-    profile_id: str | None = None
+    memory_scope_id: str | None = None
     reason: str | None = None
     preview: str | None = None
     metadata: dict[str, JsonScalar | list[JsonScalar]] = Field(default_factory=dict)
@@ -248,7 +248,7 @@ class MemoryActivityItemData(McpDataModel):
     event_type: str | None = None
     entity_type: str | None = None
     entity_id: str | None = None
-    profile_id: str | None = None
+    memory_scope_id: str | None = None
     thread_id: str | None = None
     status: str | None = None
     preview: str | None = None
@@ -258,7 +258,7 @@ class MemoryActivityItemData(McpDataModel):
 class MemoryConsolidationPlanItemData(McpDataModel):
     id: str | None = None
     plan_type: str | None = None
-    profile_id: str | None = None
+    memory_scope_id: str | None = None
     confidence: Literal["low", "medium", "high"] | str | None = None
     canonical_candidate_id: str | None = None
     candidate_fact_ids: list[str] = Field(default_factory=list)
@@ -301,7 +301,7 @@ class MemoryInsightCaptureMetricsData(McpDataModel):
 
 
 class MemoryInsightsMetricsData(McpDataModel):
-    profiles: int | None = None
+    memory_scopes: int | None = None
     facts: MemoryInsightFactsMetricsData = Field(
         default_factory=MemoryInsightFactsMetricsData
     )
@@ -329,12 +329,12 @@ class MemoryInsightsDiagnosticsData(McpDataModel):
     retrieval_disabled: bool | None = None
     scope_not_found: bool | None = None
     policy_mode: str | None = None
-    max_facts_per_profile: int | None = None
-    max_documents_per_profile: int | None = None
-    max_suggestions_per_profile: int | None = None
-    max_captures_per_profile: int | None = None
+    max_facts_per_memory_scope: int | None = None
+    max_documents_per_memory_scope: int | None = None
+    max_suggestions_per_memory_scope: int | None = None
+    max_captures_per_memory_scope: int | None = None
     max_activity: int | None = None
-    profiles_sampled: int | None = None
+    memory_scopes_sampled: int | None = None
 
 
 class MemoryInsightsData(McpDataModel):
@@ -350,7 +350,7 @@ class MemoryInsightsData(McpDataModel):
     diagnostics: MemoryInsightsDiagnosticsData = Field(
         default_factory=MemoryInsightsDiagnosticsData
     )
-    requested_profile_external_refs: list[str] = Field(default_factory=list)
+    requested_memory_scope_external_refs: list[str] = Field(default_factory=list)
     requested_max_facts: int | None = None
     effective_max_facts: int | None = None
     requested_max_documents: int | None = None
@@ -387,7 +387,7 @@ class MemoryGraphExportData(McpDataModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class MemoryProfileSnapshotDocumentData(McpDataModel):
+class MemoryScopeSnapshotDocumentData(McpDataModel):
     id: str | None = None
     thread_id: str | None = None
     title: str | None = None
@@ -400,7 +400,7 @@ class MemoryProfileSnapshotDocumentData(McpDataModel):
     updated_at: str | None = None
 
 
-class MemoryProfileSnapshotChunkData(McpDataModel):
+class MemoryScopeSnapshotChunkData(McpDataModel):
     id: str | None = None
     thread_id: str | None = None
     document_id: str | None = None
@@ -422,25 +422,25 @@ class MemoryProfileSnapshotChunkData(McpDataModel):
     metadata_json: dict[str, JsonScalar] = Field(default_factory=dict)
 
 
-class MemoryProfileSnapshotSourceRefData(MemorySourceRefData):
+class MemoryScopeSnapshotSourceRefData(MemorySourceRefData):
     fact_id: str | None = None
     fact_version: int | None = None
 
 
-class MemoryProfileSnapshotData(McpDataModel):
+class MemoryScopeSnapshotData(McpDataModel):
     schema_version: int | None = None
     space: dict[str, JsonScalar] = Field(default_factory=dict)
-    profile: dict[str, JsonScalar] = Field(default_factory=dict)
+    memory_scope: dict[str, JsonScalar] = Field(default_factory=dict)
     facts: list[MemoryRecordData] = Field(default_factory=list)
-    documents: list[MemoryProfileSnapshotDocumentData] = Field(default_factory=list)
-    chunks: list[MemoryProfileSnapshotChunkData] = Field(default_factory=list)
+    documents: list[MemoryScopeSnapshotDocumentData] = Field(default_factory=list)
+    chunks: list[MemoryScopeSnapshotChunkData] = Field(default_factory=list)
     relations: list[dict[str, JsonScalar]] = Field(default_factory=list)
-    source_refs: list[MemoryProfileSnapshotSourceRefData] = Field(default_factory=list)
+    source_refs: list[MemoryScopeSnapshotSourceRefData] = Field(default_factory=list)
     exported_at: str | None = None
     redacted: bool | None = None
 
 
-class MemoryProfileSnapshotManifestCountsData(McpDataModel):
+class MemoryScopeSnapshotManifestCountsData(McpDataModel):
     facts: int | None = None
     documents: int | None = None
     chunks: int | None = None
@@ -448,22 +448,22 @@ class MemoryProfileSnapshotManifestCountsData(McpDataModel):
     source_refs: int | None = None
 
 
-class MemoryProfileSnapshotManifestData(McpDataModel):
+class MemoryScopeSnapshotManifestData(McpDataModel):
     schema_version: str | None = None
     created_at: str | None = None
     snapshot_file: str | None = None
     snapshot_sha256: str | None = None
     snapshot_bytes: int | None = None
     space_slug: str | None = None
-    profile_external_ref: str | None = None
+    memory_scope_external_ref: str | None = None
     redacted: bool | None = None
     snapshot_schema_version: int | str | None = None
-    counts: MemoryProfileSnapshotManifestCountsData = Field(
-        default_factory=MemoryProfileSnapshotManifestCountsData
+    counts: MemoryScopeSnapshotManifestCountsData = Field(
+        default_factory=MemoryScopeSnapshotManifestCountsData
     )
 
 
-class MemoryProfileSnapshotImportConflictsData(McpDataModel):
+class MemoryScopeSnapshotImportConflictsData(McpDataModel):
     facts: list[str] = Field(default_factory=list)
     documents: list[str] = Field(default_factory=list)
     chunks: list[str] = Field(default_factory=list)
@@ -471,43 +471,43 @@ class MemoryProfileSnapshotImportConflictsData(McpDataModel):
     unknown: list[str] = Field(default_factory=list)
 
 
-class MemoryProfileSnapshotImportSupersedeData(McpDataModel):
+class MemoryScopeSnapshotImportSupersedeData(McpDataModel):
     facts: int | None = None
     fact_ids: list[str] = Field(default_factory=list)
 
 
-class MemoryProfileSnapshotImportPreviewData(McpDataModel):
-    snapshot_counts: MemoryProfileSnapshotManifestCountsData = Field(
-        default_factory=MemoryProfileSnapshotManifestCountsData
+class MemoryScopeSnapshotImportPreviewData(McpDataModel):
+    snapshot_counts: MemoryScopeSnapshotManifestCountsData = Field(
+        default_factory=MemoryScopeSnapshotManifestCountsData
     )
     conflict_count: int | None = None
-    conflicts: MemoryProfileSnapshotImportConflictsData = Field(
-        default_factory=MemoryProfileSnapshotImportConflictsData
+    conflicts: MemoryScopeSnapshotImportConflictsData = Field(
+        default_factory=MemoryScopeSnapshotImportConflictsData
     )
-    would_import: MemoryProfileSnapshotManifestCountsData = Field(
-        default_factory=MemoryProfileSnapshotManifestCountsData
+    would_import: MemoryScopeSnapshotManifestCountsData = Field(
+        default_factory=MemoryScopeSnapshotManifestCountsData
     )
-    would_skip: MemoryProfileSnapshotManifestCountsData = Field(
-        default_factory=MemoryProfileSnapshotManifestCountsData
+    would_skip: MemoryScopeSnapshotManifestCountsData = Field(
+        default_factory=MemoryScopeSnapshotManifestCountsData
     )
-    would_supersede: MemoryProfileSnapshotImportSupersedeData = Field(
-        default_factory=MemoryProfileSnapshotImportSupersedeData
+    would_supersede: MemoryScopeSnapshotImportSupersedeData = Field(
+        default_factory=MemoryScopeSnapshotImportSupersedeData
     )
     warnings: list[str] = Field(default_factory=list)
-    would_create_profile: bool | None = None
+    would_create_memory_scope: bool | None = None
 
 
-class MemoryProfileSnapshotExportData(McpDataModel):
+class MemoryScopeSnapshotExportData(McpDataModel):
     status: str | None = None
-    snapshot: MemoryProfileSnapshotData = Field(default_factory=MemoryProfileSnapshotData)
+    snapshot: MemoryScopeSnapshotData = Field(default_factory=MemoryScopeSnapshotData)
     counts: dict[str, int] = Field(default_factory=dict)
     redacted: bool | None = None
-    manifest: MemoryProfileSnapshotManifestData = Field(
-        default_factory=MemoryProfileSnapshotManifestData
+    manifest: MemoryScopeSnapshotManifestData = Field(
+        default_factory=MemoryScopeSnapshotManifestData
     )
 
 
-class MemoryProfileSnapshotImportData(McpDataModel):
+class MemoryScopeSnapshotImportData(McpDataModel):
     status: str | None = None
     dry_run: bool | None = None
     merge_strategy: str | None = None
@@ -515,8 +515,8 @@ class MemoryProfileSnapshotImportData(McpDataModel):
     imported: dict[str, int] | None = None
     conflict_count: int | None = None
     conflict_ids: list[str] = Field(default_factory=list)
-    created_profile: dict[str, str] | None = None
-    preview: MemoryProfileSnapshotImportPreviewData | None = None
+    created_memory_scope: dict[str, str] | None = None
+    preview: MemoryScopeSnapshotImportPreviewData | None = None
     reason: str | None = None
 
 
@@ -536,7 +536,7 @@ class MemoryRelatedFactsData(McpDataModel):
 class MemoryFactRelationData(McpDataModel):
     id: str | None = None
     space_id: str | None = None
-    profile_id: str | None = None
+    memory_scope_id: str | None = None
     source_fact_id: str | None = None
     target_fact_id: str | None = None
     relation_type: str | None = None
@@ -766,12 +766,12 @@ class MemoryGraphExportResponse(McpToolResponse):
     data: MemoryGraphExportData | None = None
 
 
-class MemoryProfileSnapshotExportResponse(McpToolResponse):
-    data: MemoryProfileSnapshotExportData | None = None
+class MemoryScopeSnapshotExportResponse(McpToolResponse):
+    data: MemoryScopeSnapshotExportData | None = None
 
 
-class MemoryProfileSnapshotImportResponse(McpToolResponse):
-    data: MemoryProfileSnapshotImportData | None = None
+class MemoryScopeSnapshotImportResponse(McpToolResponse):
+    data: MemoryScopeSnapshotImportData | None = None
 
 
 class MemoryCandidateOperation(StrEnum):
@@ -815,13 +815,13 @@ class MemoryReviewSuggestionBatchItemInput(McpPublicModel):
 @dataclass(frozen=True)
 class MemoryScope:
     space_slug: str
-    profile_external_ref: str
+    memory_scope_external_ref: str
     thread_external_ref: str | None = None
 
     def to_read_scope(self) -> MemoryReadScope:
         return MemoryReadScope(
             space_slug=self.space_slug,
-            profile_external_refs=(self.profile_external_ref,),
+            memory_scope_external_refs=(self.memory_scope_external_ref,),
             thread_external_ref=self.thread_external_ref,
         )
 
@@ -829,27 +829,27 @@ class MemoryScope:
 @dataclass(frozen=True)
 class MemoryReadScope:
     space_slug: str
-    profile_external_refs: tuple[str, ...]
+    memory_scope_external_refs: tuple[str, ...]
     thread_external_ref: str | None = None
 
     def __post_init__(self) -> None:
         normalized_space = self.space_slug.strip()
-        normalized_profiles = tuple(ref.strip() for ref in self.profile_external_refs)
+        normalized_memory_scopes = tuple(ref.strip() for ref in self.memory_scope_external_refs)
         if not normalized_space:
             raise ValueError("MemoryReadScope.space_slug is required")
-        if not normalized_profiles:
-            raise ValueError("MemoryReadScope.profile_external_refs is required")
-        if any(not ref for ref in normalized_profiles):
-            raise ValueError("MemoryReadScope.profile_external_refs cannot contain blanks")
-        if len(set(normalized_profiles)) != len(normalized_profiles):
-            raise ValueError("MemoryReadScope.profile_external_refs must be unique")
+        if not normalized_memory_scopes:
+            raise ValueError("MemoryReadScope.memory_scope_external_refs is required")
+        if any(not ref for ref in normalized_memory_scopes):
+            raise ValueError("MemoryReadScope.memory_scope_external_refs cannot contain blanks")
+        if len(set(normalized_memory_scopes)) != len(normalized_memory_scopes):
+            raise ValueError("MemoryReadScope.memory_scope_external_refs must be unique")
         normalized_thread = self.thread_external_ref.strip() if self.thread_external_ref else None
         if self.thread_external_ref is not None and not normalized_thread:
             raise ValueError("MemoryReadScope.thread_external_ref cannot be blank")
-        if normalized_thread is not None and len(normalized_profiles) > 1:
-            raise ValueError("MemoryReadScope thread scope supports one profile")
+        if normalized_thread is not None and len(normalized_memory_scopes) > 1:
+            raise ValueError("MemoryReadScope thread scope supports one memory_scope")
         object.__setattr__(self, "space_slug", normalized_space)
-        object.__setattr__(self, "profile_external_refs", normalized_profiles)
+        object.__setattr__(self, "memory_scope_external_refs", normalized_memory_scopes)
         object.__setattr__(self, "thread_external_ref", normalized_thread)
 
 

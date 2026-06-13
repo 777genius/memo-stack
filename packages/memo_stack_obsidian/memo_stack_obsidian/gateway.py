@@ -15,13 +15,13 @@ class SdkMemoryGateway:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         limit: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         return self._client.list_facts(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             limit=limit,
             cursor=cursor,
         )
@@ -50,7 +50,7 @@ class SdkMemoryGateway:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         candidate_text: str,
         safe_reason: str,
         source_refs: list[dict[str, Any]],
@@ -58,7 +58,7 @@ class SdkMemoryGateway:
     ) -> dict[str, Any]:
         return self._client.create_suggestion(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             candidate_text=candidate_text,
             safe_reason=safe_reason,
             source_refs=source_refs,

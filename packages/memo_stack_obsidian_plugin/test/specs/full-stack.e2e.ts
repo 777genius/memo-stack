@@ -17,14 +17,14 @@ const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
 const spaceSlug = "wdio-full-e2e";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
 );
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
 const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
@@ -554,18 +554,18 @@ describe("Memo Stack full Obsidian E2E", function () {
     assert.match(conflict, new RegExp(fact.id));
   });
 
-  it("exports only the configured project and profile scope", async function () {
+  it("exports only the configured project and memory_scope scope", async function () {
     const scopedFact = await createFact(baseUrl, {
       text: "Obsidian WDIO scoped export visible fact.",
       sourceId: "wdio-scope-visible-seed",
     });
     const otherSpace = "wdio-other-space";
-    const otherProfile = "other-profile";
+    const otherMemoryScope = "other-memory_scope";
     await createFact(baseUrl, {
       text: "Obsidian WDIO other scope hidden fact.",
       sourceId: "wdio-scope-hidden-seed",
       space: otherSpace,
-      profile: otherProfile,
+      memory_scope: otherMemoryScope,
     });
     const vaultPath = await resetVaultAndConfigure(baseUrl);
 
@@ -584,7 +584,7 @@ describe("Memo Stack full Obsidian E2E", function () {
     );
     assert.equal(
       fs.existsSync(
-        path.join(vaultPath, rootFolder, "spaces", otherSpace, "profiles", otherProfile),
+        path.join(vaultPath, rootFolder, "spaces", otherSpace, "memory_scopes", otherMemoryScope),
       ),
       false,
     );
@@ -666,7 +666,7 @@ async function configurePlugin(
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug,
-    profileExternalRef,
+    memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync,
@@ -781,17 +781,17 @@ async function createFact(
     text,
     sourceId,
     space = spaceSlug,
-    profile = profileExternalRef,
+    memory_scope = memoryScopeExternalRef,
   }: {
     text: string;
     sourceId: string;
     space?: string;
-    profile?: string;
+    memory_scope?: string;
   },
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: space,
-    profile_external_ref: profile,
+    memory_scope_external_ref: memory_scope,
     text,
     kind: "note",
     source_refs: [
@@ -872,7 +872,7 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);

@@ -62,7 +62,7 @@ class HookSettings:
     api_url: str
     auth_token: str | None
     default_space_slug: str
-    default_profile_external_ref: str
+    default_memory_scope_external_ref: str
     default_thread_external_ref: str | None
     agent_name: str
     enabled: bool
@@ -94,8 +94,8 @@ class HookSettings:
             or _get(values, "MEMORY_SERVICE_TOKEN")
             or None,
             default_space_slug=_get(values, "MEMORY_MCP_DEFAULT_SPACE_SLUG", "default"),
-            default_profile_external_ref=_get(
-                values, "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF", "default"
+            default_memory_scope_external_ref=_get(
+                values, "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF", "default"
             ),
             default_thread_external_ref=_thread_ref(
                 _get(values, "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF")
@@ -193,7 +193,7 @@ class MemoryHookGateway:
             "/v1/context",
             {
                 "space_slug": self._settings.default_space_slug,
-                "profile_external_ref": self._settings.default_profile_external_ref,
+                "memory_scope_external_ref": self._settings.default_memory_scope_external_ref,
                 "thread_external_ref": self._settings.default_thread_external_ref,
                 "query": query,
                 "token_budget": self._settings.token_budget,
@@ -216,7 +216,7 @@ class MemoryHookGateway:
             "/v1/episodes",
             {
                 "space_slug": self._settings.default_space_slug,
-                "profile_external_ref": self._settings.default_profile_external_ref,
+                "memory_scope_external_ref": self._settings.default_memory_scope_external_ref,
                 "thread_external_ref": self._settings.default_thread_external_ref,
                 "source_type": self._settings.source_type,
                 "source_external_id": source_external_id,
@@ -257,7 +257,7 @@ class MemoryHookGateway:
             "/v1/captures",
             {
                 "space_slug": self._settings.default_space_slug,
-                "profile_external_ref": self._settings.default_profile_external_ref,
+                "memory_scope_external_ref": self._settings.default_memory_scope_external_ref,
                 "thread_external_ref": self._settings.default_thread_external_ref,
                 "source_agent": self._settings.agent_name,
                 "source_kind": source_kind,

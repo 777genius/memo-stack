@@ -47,7 +47,7 @@ class DoctorVaultUseCase:
         api_url: str,
         token: str | None,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         root_folder: str = "Memo Stack",
         layout_version: str = "v2",
         obsidian_config_dir: str = DEFAULT_OBSIDIAN_CONFIG_DIR,
@@ -67,7 +67,7 @@ class DoctorVaultUseCase:
                 vault=vault,
                 layout=layout,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
         )
         if require_plugin:
@@ -76,7 +76,7 @@ class DoctorVaultUseCase:
                     vault=vault,
                     api_url=api_url,
                     space_slug=space_slug,
-                    profile_external_ref=profile_external_ref,
+                    memory_scope_external_ref=memory_scope_external_ref,
                     root_folder=root_folder,
                     layout_version=layout_version,
                     obsidian_config_dir=obsidian_config_dir,
@@ -122,7 +122,7 @@ def _check_connected_layout(
     vault: Path,
     layout: ObsidianVaultLayout,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
 ) -> tuple[DoctorCheck, ...]:
     expected = (
         (("memo_stack_readme",), (vault / layout.root_dir() / "README.md",)),
@@ -132,7 +132,7 @@ def _check_connected_layout(
                 vault / path
                 for path in layout.fact_scan_dirs(
                     space_slug=space_slug,
-                    profile_external_ref=profile_external_ref,
+                    memory_scope_external_ref=memory_scope_external_ref,
                 )
             ),
         ),
@@ -142,7 +142,7 @@ def _check_connected_layout(
                 vault / path
                 for path in layout.inbox_scan_dirs(
                     space_slug=space_slug,
-                    profile_external_ref=profile_external_ref,
+                    memory_scope_external_ref=memory_scope_external_ref,
                 )
             ),
         ),
@@ -152,7 +152,7 @@ def _check_connected_layout(
                 vault
                 / layout.conflicts_dir(
                     space_slug=space_slug,
-                    profile_external_ref=profile_external_ref,
+                    memory_scope_external_ref=memory_scope_external_ref,
                 ),
                 vault / layout.root_dir() / "conflicts",
             ),
@@ -190,7 +190,7 @@ def _check_plugin(
     vault: Path,
     api_url: str,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     root_folder: str,
     layout_version: str,
     obsidian_config_dir: str,
@@ -213,7 +213,7 @@ def _check_plugin(
             plugin_dir=plugin_directory,
             api_url=api_url,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             root_folder=root_folder,
             layout_version=layout_version,
         )
@@ -247,7 +247,7 @@ def _check_plugin_settings(
     plugin_dir: Path,
     api_url: str,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
     root_folder: str,
     layout_version: str,
 ) -> DoctorCheck:
@@ -264,7 +264,7 @@ def _check_plugin_settings(
     expected = {
         "apiUrl": api_url,
         "spaceSlug": space_slug,
-        "profileExternalRef": profile_external_ref,
+        "memoryScopeExternalRef": memory_scope_external_ref,
         "rootFolder": root_folder,
         "layoutVersion": layout_version,
         "vaultPathOverride": str(vault),

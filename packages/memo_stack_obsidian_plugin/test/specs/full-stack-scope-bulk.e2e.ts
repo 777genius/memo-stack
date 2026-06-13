@@ -11,31 +11,31 @@ const repoRoot = path.resolve("../../");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
 const spaceSlug = "wdio-scope-bulk";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const otherSpaceSlug = "wdio-other-scope-bulk";
-const otherProfileExternalRef = "other-profile";
-const sameSpaceOtherProfileRef = "hidden-profile";
+const otherMemoryScopeExternalRef = "other-memory_scope";
+const sameSpaceOtherMemoryScopeRef = "hidden-memory_scope";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
 );
 const otherScopeRoot = path.join(
   rootFolder,
   "spaces",
   otherSpaceSlug,
-  "profiles",
-  otherProfileExternalRef,
+  "memory_scopes",
+  otherMemoryScopeExternalRef,
 );
-const sameSpaceOtherProfileRoot = path.join(
+const sameSpaceOtherMemoryScopeRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  sameSpaceOtherProfileRef,
+  "memory_scopes",
+  sameSpaceOtherMemoryScopeRef,
 );
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
 const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
@@ -58,33 +58,33 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("keeps a large vault isolated to the configured project and profile", async function () {
+  it("keeps a large vault isolated to the configured project and memory_scope", async function () {
     const visibleFacts = await createFacts(baseUrl, {
       count: 12,
       textPrefix: "Obsidian WDIO bulk visible fact",
       sourcePrefix: "wdio-bulk-visible",
       space: spaceSlug,
-      profile: profileExternalRef,
+      memory_scope: memoryScopeExternalRef,
     });
     const hiddenOtherSpaceFacts = await createFacts(baseUrl, {
       count: 4,
       textPrefix: "Obsidian WDIO hidden other project fact",
       sourcePrefix: "wdio-bulk-hidden-other-space",
       space: otherSpaceSlug,
-      profile: otherProfileExternalRef,
+      memory_scope: otherMemoryScopeExternalRef,
     });
-    const hiddenOtherProfileFact = await createFact(baseUrl, {
-      text: "Obsidian WDIO hidden same project other profile fact.",
-      sourceId: "wdio-bulk-hidden-other-profile",
+    const hiddenOtherMemoryScopeFact = await createFact(baseUrl, {
+      text: "Obsidian WDIO hidden same project other memory_scope fact.",
+      sourceId: "wdio-bulk-hidden-other-memory_scope",
       space: spaceSlug,
-      profile: sameSpaceOtherProfileRef,
+      memory_scope: sameSpaceOtherMemoryScopeRef,
     });
     const vaultPath = await resetVaultAndConfigure(baseUrl);
 
     const currentInboxMarker = "WDIO bulk current scoped inbox marker";
     const secondInboxMarker = "WDIO bulk second current scoped inbox marker";
     const hiddenOtherSpaceInbox = "WDIO bulk hidden other project inbox marker";
-    const hiddenOtherProfileInbox = "WDIO bulk hidden other profile inbox marker";
+    const hiddenOtherMemoryScopeInbox = "WDIO bulk hidden other memory_scope inbox marker";
     const foreignGeneratedMarkdown = [
       "# Foreign generated note",
       "",
@@ -104,8 +104,8 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
     );
     writeVaultFile(
       vaultPath,
-      path.join(sameSpaceOtherProfileRoot, "inbox", "foreign-profile-inbox.md"),
-      hiddenOtherProfileInbox,
+      path.join(sameSpaceOtherMemoryScopeRoot, "inbox", "foreign-memory_scope-inbox.md"),
+      hiddenOtherMemoryScopeInbox,
     );
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
@@ -125,7 +125,7 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
       assert.match(markdown, /memo_stack_version: 1/);
     }
     assertNoExportedText(vaultPath, "Obsidian WDIO hidden other project fact");
-    assertNoExportedText(vaultPath, "Obsidian WDIO hidden same project other profile fact");
+    assertNoExportedText(vaultPath, "Obsidian WDIO hidden same project other memory_scope fact");
     assert.equal(
       readVaultFile(vaultPath, path.join(otherScopeRoot, "generated", "facts", "foreign-owned.md")),
       foreignGeneratedMarkdown,
@@ -138,7 +138,7 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
       (
         await suggestionsContaining(baseUrl, hiddenOtherSpaceInbox, {
           space: spaceSlug,
-          profile: profileExternalRef,
+          memory_scope: memoryScopeExternalRef,
         })
       ).length,
       0,
@@ -147,16 +147,16 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
       (
         await suggestionsContaining(baseUrl, hiddenOtherSpaceInbox, {
           space: otherSpaceSlug,
-          profile: otherProfileExternalRef,
+          memory_scope: otherMemoryScopeExternalRef,
         })
       ).length,
       0,
     );
     assert.equal(
       (
-        await suggestionsContaining(baseUrl, hiddenOtherProfileInbox, {
+        await suggestionsContaining(baseUrl, hiddenOtherMemoryScopeInbox, {
           space: spaceSlug,
-          profile: sameSpaceOtherProfileRef,
+          memory_scope: sameSpaceOtherMemoryScopeRef,
         })
       ).length,
       0,
@@ -193,8 +193,8 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
       assert.match((await getFact(baseUrl, fact.id)).text, /hidden other project fact/);
     }
     assert.equal(
-      (await getFact(baseUrl, hiddenOtherProfileFact.id)).text,
-      "Obsidian WDIO hidden same project other profile fact.",
+      (await getFact(baseUrl, hiddenOtherMemoryScopeFact.id)).text,
+      "Obsidian WDIO hidden same project other memory_scope fact.",
     );
 
     await browser.executeObsidianCommand("memo-stack:open-inbox");
@@ -205,10 +205,10 @@ describe("Memo Stack multi-scope bulk Obsidian E2E", function () {
     assert.ok(calls.every((call) => call.status === 0));
     assert.ok(calls.every((call) => call.args.includes("--space")));
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes("--profile")));
-    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes("--memory_scope")));
+    assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
     assert.ok(!calls.some((call) => call.args.includes(otherSpaceSlug)));
-    assert.ok(!calls.some((call) => call.args.includes(sameSpaceOtherProfileRef)));
+    assert.ok(!calls.some((call) => call.args.includes(sameSpaceOtherMemoryScopeRef)));
   });
 });
 
@@ -229,7 +229,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug,
-    profileExternalRef,
+    memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -314,13 +314,13 @@ async function createFacts(
     textPrefix,
     sourcePrefix,
     space,
-    profile,
+    memory_scope,
   }: {
     count: number;
     textPrefix: string;
     sourcePrefix: string;
     space: string;
-    profile: string;
+    memory_scope: string;
   },
 ): Promise<Record<string, any>[]> {
   const facts: Record<string, any>[] = [];
@@ -331,7 +331,7 @@ async function createFacts(
         text: `${textPrefix} ${number}.`,
         sourceId: `${sourcePrefix}-${number}`,
         space,
-        profile,
+        memory_scope,
       }),
     );
   }
@@ -344,17 +344,17 @@ async function createFact(
     text,
     sourceId,
     space,
-    profile,
+    memory_scope,
   }: {
     text: string;
     sourceId: string;
     space: string;
-    profile: string;
+    memory_scope: string;
   },
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: space,
-    profile_external_ref: profile,
+    memory_scope_external_ref: memory_scope,
     text,
     kind: "note",
     source_refs: [
@@ -400,14 +400,14 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(
   apiUrl: string,
   marker: string,
-  scope: { space: string; profile: string } = {
+  scope: { space: string; memory_scope: string } = {
     space: spaceSlug,
-    profile: profileExternalRef,
+    memory_scope: memoryScopeExternalRef,
   },
 ): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: scope.space,
-    profile_external_ref: scope.profile,
+    memory_scope_external_ref: scope.memory_scope,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);

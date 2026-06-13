@@ -14,11 +14,11 @@ const fakeLocalCliPath = path.resolve("test/fixtures/fake-memo-stack.cjs");
 const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const defaultApiUrl = "http://127.0.0.1:7788";
 const defaultSpaceSlug = "default";
-const defaultProfileExternalRef = "default";
+const defaultMemoryScopeExternalRef = "default";
 const defaultRootFolder = "Memo Stack";
 const realToken = "wdio-settings-recovery-real-token";
 const realSpaceSlug = "settings-recovery-real";
-const realProfileExternalRef = "default";
+const realMemoryScopeExternalRef = "default";
 const realRootFolder = "Recovered Real Memo";
 
 describe("Memo Stack plugin settings recovery E2E", function () {
@@ -38,7 +38,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
     assert.ok(runtime.commandIds.includes("memo-stack:connect-vault"));
     assert.equal(runtime.snapshot.apiUrl, defaultApiUrl);
     assert.equal(runtime.snapshot.spaceSlug, defaultSpaceSlug);
-    assert.equal(runtime.snapshot.profileExternalRef, defaultProfileExternalRef);
+    assert.equal(runtime.snapshot.memoryScopeExternalRef, defaultMemoryScopeExternalRef);
     assert.equal(runtime.snapshot.rootFolder, defaultRootFolder);
     assert.equal(runtime.snapshot.busyLabel, "");
 
@@ -49,7 +49,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
       cliPath: fakeCliPath,
       vaultPathOverride: vaultPath,
       spaceSlug: "recovered-project",
-      profileExternalRef: "recovered-profile",
+      memoryScopeExternalRef: "recovered-memory_scope",
       rootFolder: "Recovered Memo",
       layoutVersion: "v2",
       applyImportOnSync: true,
@@ -73,7 +73,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
 
     runtime = await pluginRuntime();
     assert.equal(runtime.snapshot.apiUrl, recoveredSettings.apiUrl);
-    assert.equal(runtime.snapshot.profileExternalRef, recoveredSettings.profileExternalRef);
+    assert.equal(runtime.snapshot.memoryScopeExternalRef, recoveredSettings.memoryScopeExternalRef);
     assert.equal(runtime.snapshot.rootFolder, recoveredSettings.rootFolder);
 
     await browser.executeObsidianCommand("memo-stack:connect-vault");
@@ -85,7 +85,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
     assert.equal(calls[0].envToken, recoveredSettings.token);
     assert.ok(calls[0].args.includes(recoveredSettings.apiUrl));
     assert.ok(calls[0].args.includes(recoveredSettings.spaceSlug));
-    assert.ok(calls[0].args.includes(recoveredSettings.profileExternalRef));
+    assert.ok(calls[0].args.includes(recoveredSettings.memoryScopeExternalRef));
     assert.ok(calls[0].args.includes(recoveredSettings.rootFolder));
     assert.match(readVaultFile(vaultPath, "Recovered Memo/README.md"), /Connected by plugin E2E/);
   });
@@ -109,7 +109,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
           rootFolder: "Typed Memo",
           layoutVersion: "v99",
           spaceSlug: 123,
-          profileExternalRef: null,
+          memoryScopeExternalRef: null,
           applyImportOnSync: "true",
           commandTimeoutMs: "fast",
         },
@@ -126,7 +126,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
     assert.equal(runtime.loaded, true);
     assert.equal(runtime.snapshot.apiUrl, defaultApiUrl);
     assert.equal(runtime.snapshot.spaceSlug, defaultSpaceSlug);
-    assert.equal(runtime.snapshot.profileExternalRef, defaultProfileExternalRef);
+    assert.equal(runtime.snapshot.memoryScopeExternalRef, defaultMemoryScopeExternalRef);
     assert.equal(runtime.snapshot.rootFolder, "Typed Memo");
     assert.equal(runtime.snapshot.layoutVersion, "v2");
     assert.equal(runtime.snapshot.pathError, "");
@@ -140,7 +140,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
     assert.equal(calls[0].envToken, "");
     assert.ok(calls[0].args.includes(defaultApiUrl));
     assert.ok(calls[0].args.includes(defaultSpaceSlug));
-    assert.ok(calls[0].args.includes(defaultProfileExternalRef));
+    assert.ok(calls[0].args.includes(defaultMemoryScopeExternalRef));
     assert.ok(calls[0].args.includes("Typed Memo"));
     assert.match(readVaultFile(vaultPath, "Typed Memo/README.md"), /Connected by plugin E2E/);
   });
@@ -176,7 +176,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
       await setSettingsInput("vaultPathOverride", vaultPath);
       await setSettingsInput("rootFolder", realRootFolder);
       await setSettingsInput("spaceSlug", realSpaceSlug);
-      await setSettingsInput("profileExternalRef", realProfileExternalRef);
+      await setSettingsInput("memoryScopeExternalRef", realMemoryScopeExternalRef);
       await setSettingsInput("commandTimeoutMs", "20000");
       await setSettingsToggle("applyImportOnSync", true);
       await waitForSettingsFile(vaultPath, baseUrl);
@@ -188,7 +188,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
       const inboxMarker = "WDIO malformed settings real recovery inbox imports once";
       writeVaultFile(
         vaultPath,
-        path.join(scopedRoot(realRootFolder, realSpaceSlug, realProfileExternalRef), "inbox", "recovered-real-inbox.md"),
+        path.join(scopedRoot(realRootFolder, realSpaceSlug, realMemoryScopeExternalRef), "inbox", "recovered-real-inbox.md"),
         inboxMarker,
       );
 
@@ -204,7 +204,7 @@ describe("Memo Stack plugin settings recovery E2E", function () {
       assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0"]);
       assert.ok(calls.every((call) => call.args.includes(baseUrl)));
       assert.ok(calls.every((call) => call.args.includes(realSpaceSlug)));
-      assert.ok(calls.every((call) => call.args.includes(realProfileExternalRef)));
+      assert.ok(calls.every((call) => call.args.includes(realMemoryScopeExternalRef)));
       assert.ok(calls.every((call) => call.args.includes(realRootFolder)));
       assert.equal(factFiles(vaultPath).length, 1);
       assert.match(fs.readFileSync(onlyFactFile(vaultPath), "utf8"), /malformed settings real recovery fact/);
@@ -408,7 +408,7 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: realSpaceSlug,
-    profile_external_ref: realProfileExternalRef,
+    memory_scope_external_ref: realMemoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);
@@ -424,7 +424,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: realSpaceSlug,
-    profile_external_ref: realProfileExternalRef,
+    memory_scope_external_ref: realMemoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -548,7 +548,7 @@ function readRealCliCalls(vaultPath: string): Array<{ command: string; args: str
 function factFiles(vaultPath: string): string[] {
   const factsDir = path.join(
     vaultPath,
-    scopedRoot(realRootFolder, realSpaceSlug, realProfileExternalRef),
+    scopedRoot(realRootFolder, realSpaceSlug, realMemoryScopeExternalRef),
     "generated",
     "facts",
   );
@@ -568,8 +568,8 @@ function onlyFactFile(vaultPath: string): string {
   return files[0];
 }
 
-function scopedRoot(rootFolder: string, spaceSlug: string, profileExternalRef: string): string {
-  return path.join(rootFolder, "spaces", spaceSlug, "profiles", profileExternalRef);
+function scopedRoot(rootFolder: string, spaceSlug: string, memoryScopeExternalRef: string): string {
+  return path.join(rootFolder, "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef);
 }
 
 function pythonpath(): string {

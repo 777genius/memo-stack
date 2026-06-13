@@ -12,9 +12,9 @@ const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-path-safety-token";
 const spaceSlug = "wdio-path-safety";
 const unsafeSpaceSlug = "unsafe\u200bproject";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Safe Team Memory";
-const scopedRoot = path.join(rootFolder, "spaces", spaceSlug, "profiles", profileExternalRef);
+const scopedRoot = path.join(rootFolder, "spaces", spaceSlug, "memory_scopes", memoryScopeExternalRef);
 
 describe("Memo Stack path safety E2E", function () {
   let server: ChildProcess | undefined;
@@ -50,7 +50,7 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", outsideVaultRoot);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPathError(/Folder must be relative to the vault/);
 
@@ -68,14 +68,14 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("rootFolder", rootFolder);
     await waitForPathReady(rootFolder, spaceSlug);
     await setSettingsInput("spaceSlug", unsafeSpaceSlug);
-    await waitForPathError(/Project or profile contains unsafe formatting characters/);
+    await waitForPathError(/Project or memory_scope contains unsafe formatting characters/);
 
     await clickSettingsButton("Vault sync", "Sync");
     await waitForPluginIdle();
     await sleep(500);
 
     snapshot = await memoStackSnapshot();
-    assert.match(snapshot.pathError, /Project or profile contains unsafe formatting characters/);
+    assert.match(snapshot.pathError, /Project or memory_scope contains unsafe formatting characters/);
     assert.equal(snapshot.lastCommand, null);
     assert.equal(readCliCalls(vaultPath).length, 0);
     assert.equal(factFiles(vaultPath).length, 0);
@@ -99,7 +99,7 @@ describe("Memo Stack path safety E2E", function () {
     assert.equal(snapshot.pathError, "");
     assert.equal(snapshot.rootFolder, rootFolder);
     assert.equal(snapshot.spaceSlug, spaceSlug);
-    assert.equal(snapshot.profileExternalRef, profileExternalRef);
+    assert.equal(snapshot.memoryScopeExternalRef, memoryScopeExternalRef);
     assert.equal(snapshot.generatedFactsExists, true);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
 
@@ -108,7 +108,7 @@ describe("Memo Stack path safety E2E", function () {
     assert.ok(calls.every((call) => call.status === 0));
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
     assert.ok(calls.every((call) => !call.args.includes(outsideVaultRoot)));
     assert.ok(calls.every((call) => !call.args.includes(unsafeSpaceSlug)));
   });
@@ -129,7 +129,7 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", outsideVaultRoot);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPathError(/Folder must be relative to the vault/);
 
@@ -178,7 +178,7 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPathReady(rootFolder, spaceSlug);
 
@@ -216,7 +216,7 @@ describe("Memo Stack path safety E2E", function () {
     assert.ok(calls.every((call) => call.status === 0));
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
   });
 
   it("uses the current Obsidian vault when the vault path override is blank", async function () {
@@ -234,7 +234,7 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("vaultPathOverride", "");
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPathReady(rootFolder, spaceSlug);
 
@@ -262,7 +262,7 @@ describe("Memo Stack path safety E2E", function () {
     assert.ok(calls.every((call) => valueAfter(call.args, "--vault") === vaultPath));
     assert.ok(calls.every((call) => call.args.includes(rootFolder)));
     assert.ok(calls.every((call) => call.args.includes(spaceSlug)));
-    assert.ok(calls.every((call) => call.args.includes(profileExternalRef)));
+    assert.ok(calls.every((call) => call.args.includes(memoryScopeExternalRef)));
   });
 
   it("recovers when a wrong existing vault path override sends sync to another folder", async function () {
@@ -282,7 +282,7 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("vaultPathOverride", wrongVaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForSettingsFile(vaultPath, wrongVaultPath);
     await waitForVaultPath(wrongVaultPath);
@@ -352,7 +352,7 @@ describe("Memo Stack path safety E2E", function () {
     await setSettingsInput("vaultPathOverride", "");
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPathReady(rootFolder, spaceSlug);
     await waitForSettingsFile(vaultPath, rootFolder);
@@ -457,7 +457,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [

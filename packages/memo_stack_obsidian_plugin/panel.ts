@@ -70,7 +70,7 @@ export class MemoStackControlView extends ItemView {
     statusRow(status, "Vault", snapshot.vaultPath || "Set vault path override", Boolean(snapshot.vaultPath));
     statusRow(status, "Folder", snapshot.pathError || snapshot.rootFolder, !snapshot.pathError);
     statusRow(status, "Project", snapshot.spaceSlug, true);
-    statusRow(status, "Profile", snapshot.profileExternalRef, true);
+    statusRow(status, "MemoryScope", snapshot.memoryScopeExternalRef, true);
     statusRow(status, "Connected", connectedLabel(snapshot), connected(snapshot));
 
     contentEl.createEl("h3", { text: "Paths" });

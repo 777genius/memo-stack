@@ -24,7 +24,7 @@ class MemoryMcpSettings:
     api_url: str = "http://127.0.0.1:7788"
     auth_token: str | None = None
     default_space_slug: str = "default"
-    default_profile_external_ref: str = "default"
+    default_memory_scope_external_ref: str = "default"
     default_thread_external_ref: str | None = None
     agent_name: str = "mcp-agent"
     source_type: str = "ai_response"
@@ -81,8 +81,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
         api_url=_get(values, "MEMORY_MCP_API_URL", "http://127.0.0.1:7788").rstrip("/"),
         auth_token=token,
         default_space_slug=_get(values, "MEMORY_MCP_DEFAULT_SPACE_SLUG", "default"),
-        default_profile_external_ref=_get(
-            values, "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF", "default"
+        default_memory_scope_external_ref=_get(
+            values, "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF", "default"
         ),
         default_thread_external_ref=_empty_to_none(
             _get(values, "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF")

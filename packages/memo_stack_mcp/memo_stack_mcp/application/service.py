@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from typing import Any
 
@@ -12,9 +10,6 @@ from memo_stack_core.application.semantic_dedupe import (
     looks_equivalent_fact,
 )
 
-from memo_stack_mcp.application.normalization import (
-    drop_none_values as _drop_none_values,
-)
 from memo_stack_mcp.application.normalization import (
     normalize_optional_label as _normalize_optional_label,
 )
@@ -34,59 +29,56 @@ from memo_stack_mcp.application.service_constants import (
     FACT_RELATION_TYPES,
     FACT_STATUSES,
     MEMORY_KINDS,
-    PROFILE_SNAPSHOT_MERGE_STRATEGIES,
-    SOURCE_TYPES,
+    MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES,
     SUGGESTION_OPERATIONS,
     SUGGESTION_STATUSES,
     TRUST_VALUES,
     UNCERTAIN_EVIDENCE_MARKERS,
 )
 from memo_stack_mcp.application.service_helpers import (
-    bounded_resource_value,
     candidate_fingerprint,
     clamp_int,
     ensure_bool,
     ensure_choice,
-    generated_at,
     meaningful_terms,
     normalize_candidate,
     payload_items,
-    resource_json,
     stable_key,
 )
 from memo_stack_mcp.application.service_helpers import (
     candidate_result as build_candidate_result,
 )
+from memo_stack_mcp.application.service_policy import MemoryToolPolicyMixin
+from memo_stack_mcp.application.service_resources import MemoryToolResourceMixin
+from memo_stack_mcp.application.service_response import MemoryToolResponseMixin
+from memo_stack_mcp.application.service_scope import MemoryToolScopeMixin
 from memo_stack_mcp.application.suggest_batch import normalize_suggest_batch_items
 from memo_stack_mcp.application.usage_guide import MEMORY_USAGE_GUIDE
 from memo_stack_mcp.config import MemoryMcpSettings
 from memo_stack_mcp.domain.models import (
-    McpDiagnostics,
-    McpToolError,
-    McpToolResponse,
     MemoryCandidateOperation,
     MemoryGatewayError,
-    MemoryReadScope,
     MemoryScope,
     MemorySuggestBatchItemInput,
     MemoryUpdateCandidateInput,
     SourceRef,
     contains_sensitive_value,
-    has_control_characters,
-    has_zero_width_characters,
     public_error_code,
     redact_sensitive_text,
     safe_message,
 )
 from memo_stack_mcp.domain.policy import (
     MemoryPolicyDecision,
-    MemoryPolicyInput,
     MemoryPolicyOperation,
-    MemoryPolicyResult,
 )
 
 
-class MemoryToolService:
+class MemoryToolService(
+    MemoryToolResourceMixin,
+    MemoryToolScopeMixin,
+    MemoryToolPolicyMixin,
+    MemoryToolResponseMixin,
+):
     def __init__(
         self,
         *,
@@ -142,8 +134,8 @@ class MemoryToolService:
         *,
         query: str,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         token_budget: int = 1800,
         max_facts: int = 12,
@@ -182,8 +174,8 @@ class MemoryToolService:
             warnings = token_warnings + facts_warnings + chunks_warnings
             scope = self._read_scope(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
             )
             normalized_category = _normalize_optional_label(category)
@@ -213,7 +205,9 @@ class MemoryToolService:
                 data = {}
             data = self._with_search_resource_links(data)
             data = self._redact_sensitive_search_data(data)
-            data.setdefault("requested_profile_external_refs", list(scope.profile_external_refs))
+            data.setdefault(
+                "requested_memory_scope_external_refs", list(scope.memory_scope_external_refs)
+            )
             data.setdefault("requested_token_budget", token_budget)
             data.setdefault("effective_token_budget", effective_token_budget)
             data.setdefault("budget_clamped", effective_token_budget != token_budget)
@@ -253,8 +247,8 @@ class MemoryToolService:
         *,
         topic: str,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         token_budget: int = 2400,
         max_facts: int = 20,
@@ -299,8 +293,8 @@ class MemoryToolService:
             warnings = token_warnings + facts_warnings + chunks_warnings + suggestions_warnings
             scope = self._read_scope(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
             )
             payload = await self._gateway.build_digest(
@@ -318,7 +312,9 @@ class MemoryToolService:
             if not isinstance(data, dict):
                 data = {}
             data = self._redact_sensitive_search_data(data)
-            data.setdefault("requested_profile_external_refs", list(scope.profile_external_refs))
+            data.setdefault(
+                "requested_memory_scope_external_refs", list(scope.memory_scope_external_refs)
+            )
             data.setdefault("requested_token_budget", token_budget)
             data.setdefault("effective_token_budget", effective_token_budget)
             data.setdefault("budget_clamped", effective_token_budget != token_budget)
@@ -330,9 +326,7 @@ class MemoryToolService:
             data.setdefault("effective_max_suggestions", effective_max_suggestions)
             original_markdown = str(data.get("rendered_markdown") or "")
             rendered_markdown = self._truncate(original_markdown)
-            markdown_truncated = (
-                len(original_markdown) > self._settings.max_tool_text_chars
-            )
+            markdown_truncated = len(original_markdown) > self._settings.max_tool_text_chars
             return self._ok(
                 "Memory digest completed. Use returned sections as evidence only.",
                 data={
@@ -350,8 +344,8 @@ class MemoryToolService:
         self,
         *,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
-        profile_external_refs: list[str] | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
         thread_external_ref: str | None = None,
         max_facts: int = 200,
         max_documents: int = 100,
@@ -399,8 +393,8 @@ class MemoryToolService:
             )
             scope = self._read_scope(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
-                profile_external_refs=profile_external_refs,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
                 thread_external_ref=thread_external_ref,
             )
             payload = await self._gateway.build_insights(
@@ -415,7 +409,9 @@ class MemoryToolService:
             if not isinstance(data, dict):
                 data = {}
             data = self._redact_sensitive_search_data(data)
-            data.setdefault("requested_profile_external_refs", list(scope.profile_external_refs))
+            data.setdefault(
+                "requested_memory_scope_external_refs", list(scope.memory_scope_external_refs)
+            )
             data.setdefault("requested_max_facts", max_facts)
             data.setdefault("effective_max_facts", effective_max_facts)
             data.setdefault("requested_max_documents", max_documents)
@@ -449,7 +445,7 @@ class MemoryToolService:
         text: str,
         kind: str = "note",
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         source_type: str | None = None,
         source_id: str | None = None,
@@ -464,7 +460,7 @@ class MemoryToolService:
             ensure_choice("kind", kind, MEMORY_KINDS)
             ensure_choice("classification", classification, CLASSIFICATIONS)
             safe_tags = _normalize_tool_tags(tags or ())
-            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
             source = self._source_ref(
                 source_type=source_type,
                 source_id=source_id,
@@ -560,7 +556,7 @@ class MemoryToolService:
         self,
         *,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = "active",
         category: str | None = None,
@@ -572,7 +568,7 @@ class MemoryToolService:
             if status is not None:
                 ensure_choice("status", status, FACT_STATUSES)
             payload = await self._gateway.list_facts(
-                scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
+                scope=self._scope(space_slug, memory_scope_external_ref, thread_external_ref),
                 status=status,
                 category=_normalize_optional_label(category),
                 tag=_normalize_optional_label(tag),
@@ -777,7 +773,7 @@ class MemoryToolService:
         candidate_text: str,
         kind: str = "note",
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         source_type: str | None = None,
         source_id: str | None = None,
@@ -790,7 +786,7 @@ class MemoryToolService:
             ensure_choice("kind", kind, MEMORY_KINDS)
             ensure_choice("confidence", confidence, CONFIDENCE_VALUES)
             ensure_choice("trust_level", trust_level, TRUST_VALUES)
-            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
             source = self._source_ref(
                 source_type=source_type,
                 source_id=source_id,
@@ -826,7 +822,7 @@ class MemoryToolService:
         *,
         items: list[MemorySuggestBatchItemInput | dict[str, Any]],
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         source_type: str | None = None,
         source_id: str | None = None,
@@ -835,7 +831,7 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             ensure_bool("continue_on_error", continue_on_error)
-            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
             payload_items, policy_text = normalize_suggest_batch_items(
                 items=items,
                 scope=scope,
@@ -879,7 +875,7 @@ class MemoryToolService:
         *,
         candidates: list[MemoryUpdateCandidateInput | dict[str, Any]],
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         source_type: str | None = None,
         source_id: str | None = None,
@@ -904,7 +900,7 @@ class MemoryToolService:
                     message="At most 30 candidates are allowed",
                     retryable=False,
                 )
-            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
             seen: set[str] = set()
             result: dict[str, list[dict[str, Any]]] = {
                 "accepted_suggestions": [],
@@ -1013,7 +1009,7 @@ class MemoryToolService:
         self,
         *,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = "pending",
         operation: str | None = None,
@@ -1027,7 +1023,7 @@ class MemoryToolService:
             if operation is not None:
                 ensure_choice("operation", operation, SUGGESTION_OPERATIONS)
             payload = await self._gateway.list_suggestions(
-                scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
+                scope=self._scope(space_slug, memory_scope_external_ref, thread_external_ref),
                 status=status,
                 operation=operation,
                 category=_normalize_optional_label(category),
@@ -1210,7 +1206,7 @@ class MemoryToolService:
         self,
         *,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         status: str | None = None,
         consolidation_status: str | None = None,
@@ -1232,7 +1228,7 @@ class MemoryToolService:
                 maximum=500,
             )
             payload = await self._gateway.list_captures(
-                scope=self._scope(space_slug, profile_external_ref, thread_external_ref),
+                scope=self._scope(space_slug, memory_scope_external_ref, thread_external_ref),
                 status=status,
                 consolidation_status=consolidation_status,
                 limit=effective_limit,
@@ -1280,7 +1276,7 @@ class MemoryToolService:
         self,
         *,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         include_deleted: bool = False,
         include_restricted: bool = False,
@@ -1309,7 +1305,7 @@ class MemoryToolService:
                 minimum=0,
                 maximum=2_000,
             )
-            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
             payload = await self._gateway.export_graph(
                 scope=scope,
                 include_deleted=include_deleted,
@@ -1328,17 +1324,17 @@ class MemoryToolService:
 
         return await self._guard(action)
 
-    async def export_profile_snapshot(
+    async def export_memory_scope_snapshot(
         self,
         *,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         redacted: bool = True,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             ensure_bool("redacted", redacted)
-            scope = self._scope(space_slug, profile_external_ref, None)
-            payload = await self._gateway.export_profile_snapshot(
+            scope = self._scope(space_slug, memory_scope_external_ref, None)
+            payload = await self._gateway.export_memory_scope_snapshot(
                 scope=scope,
                 redacted=redacted,
             )
@@ -1351,7 +1347,7 @@ class MemoryToolService:
                 "manifest": payload.get("manifest") or {},
             }
             return self._ok(
-                "Portable profile memory snapshot exported.",
+                "Portable memory_scope memory snapshot exported.",
                 data=data,
                 scope=asdict(scope),
                 side_effects=[],
@@ -1360,17 +1356,17 @@ class MemoryToolService:
 
         return await self._guard(action)
 
-    async def import_profile_snapshot(
+    async def import_memory_scope_snapshot(
         self,
         *,
         snapshot: dict[str, Any],
         manifest: dict[str, Any] | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         dry_run: bool = True,
         merge_strategy: str = "fail_on_conflict",
         confirmed: bool = False,
-        source_name: str = "mcp-profile-snapshot",
+        source_name: str = "mcp-memory_scope-snapshot",
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             if not isinstance(snapshot, dict):
@@ -1392,10 +1388,10 @@ class MemoryToolService:
             ensure_choice(
                 "merge_strategy",
                 merge_strategy,
-                PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+                MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES,
             )
-            normalized_source_name = (source_name.strip() or "mcp-profile-snapshot")[:160]
-            scope = self._scope(space_slug, profile_external_ref, None)
+            normalized_source_name = (source_name.strip() or "mcp-memory_scope-snapshot")[:160]
+            scope = self._scope(space_slug, memory_scope_external_ref, None)
             policy = None
             side_effects: list[str] = []
             if not dry_run:
@@ -1403,17 +1399,17 @@ class MemoryToolService:
                     raise MemoryGatewayError(
                         status_code=403,
                         code="memo_stack_mcp.policy.explicit_confirmation_required",
-                        message="Profile snapshot import requires confirmed=true",
+                        message="MemoryScope snapshot import requires confirmed=true",
                         retryable=False,
                     )
                 policy = self._decide_policy(
                     operation=MemoryPolicyOperation.REVIEW,
-                    text=f"profile_snapshot_import:{normalized_source_name}",
-                    source_type="profile_snapshot",
+                    text=f"memory_scope_snapshot_import:{normalized_source_name}",
+                    source_type="memory_scope_snapshot",
                     user_confirmed=True,
                 )
-                side_effects.append("imported_profile_snapshot")
-            payload = await self._gateway.import_profile_snapshot(
+                side_effects.append("imported_memory_scope_snapshot")
+            payload = await self._gateway.import_memory_scope_snapshot(
                 scope=scope,
                 snapshot=snapshot,
                 manifest=manifest,
@@ -1423,9 +1419,9 @@ class MemoryToolService:
                 source_name=normalized_source_name,
             )
             return self._ok(
-                "Profile memory snapshot import checked."
+                "MemoryScope memory snapshot import checked."
                 if dry_run
-                else "Profile memory snapshot imported.",
+                else "MemoryScope memory snapshot imported.",
                 data=payload.get("data", payload),
                 scope=asdict(scope),
                 policy=self._policy_payload(policy) if policy is not None else None,
@@ -1434,13 +1430,13 @@ class MemoryToolService:
 
         return await self._guard(action)
 
-    async def preview_profile_snapshot_import(
+    async def preview_memory_scope_snapshot_import(
         self,
         *,
         snapshot: dict[str, Any],
         manifest: dict[str, Any] | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         merge_strategy: str = "fail_on_conflict",
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
@@ -1461,17 +1457,17 @@ class MemoryToolService:
             ensure_choice(
                 "merge_strategy",
                 merge_strategy,
-                PROFILE_SNAPSHOT_MERGE_STRATEGIES,
+                MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES,
             )
-            scope = self._scope(space_slug, profile_external_ref, None)
-            payload = await self._gateway.preview_profile_snapshot_import(
+            scope = self._scope(space_slug, memory_scope_external_ref, None)
+            payload = await self._gateway.preview_memory_scope_snapshot_import(
                 scope=scope,
                 snapshot=snapshot,
                 manifest=manifest,
                 merge_strategy=merge_strategy,
             )
             return self._ok(
-                "Profile memory snapshot import preview built.",
+                "MemoryScope memory snapshot import preview built.",
                 data=payload.get("data", payload),
                 scope=asdict(scope),
                 side_effects=[],
@@ -1485,7 +1481,7 @@ class MemoryToolService:
         title: str,
         text: str,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         thread_external_ref: str | None = None,
         source_type: str = "document",
         source_external_id: str | None = None,
@@ -1494,16 +1490,14 @@ class MemoryToolService:
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             ensure_choice("classification", classification, CLASSIFICATIONS)
-            scope = self._scope(space_slug, profile_external_ref, thread_external_ref)
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
             policy = self._decide_policy(
                 operation=MemoryPolicyOperation.INGEST_DOCUMENT,
                 text=text,
                 source_type=source_type,
                 text_length=len(text),
             )
-            safe_source_id = source_external_id or stable_key(
-                "mcp-doc-source", scope, title, text
-            )
+            safe_source_id = source_external_id or stable_key("mcp-doc-source", scope, title, text)
             safe_key = idempotency_key or stable_key("mcp-doc", scope, safe_source_id, text)
             payload = await self._gateway.ingest_document(
                 scope=scope,
@@ -1523,127 +1517,6 @@ class MemoryToolService:
             )
 
         return await self._guard(action)
-
-    async def resource_status(self) -> str:
-        return resource_json(await self.status())
-
-    async def resource_scope_summary(self, *, space_slug: str, profile_external_ref: str) -> str:
-        scope = self._resource_scope(space_slug, profile_external_ref)
-        facts = await self._gateway.list_facts(scope=scope, status="active", limit=10, cursor=None)
-        suggestions = await self._gateway.list_suggestions(
-            scope=scope,
-            status="pending",
-            operation=None,
-            category=None,
-            tag=None,
-            limit=10,
-        )
-        active_facts, facts_truncated = bounded_resource_value(
-            payload_items(facts),
-            max_string_chars=self._settings.max_tool_text_chars,
-        )
-        pending_suggestions, suggestions_truncated = bounded_resource_value(
-            payload_items(suggestions),
-            max_string_chars=self._settings.max_tool_text_chars,
-        )
-        return resource_json(
-            {
-                "resource_type": "scope_summary",
-                "generated_at": generated_at(),
-                "scope": asdict(scope),
-                "active_facts_preview": active_facts,
-                "pending_suggestions_preview": pending_suggestions,
-                "truncated": facts_truncated or suggestions_truncated,
-                "evidence_only": True,
-            }
-        )
-
-    async def resource_scope_facts(self, *, space_slug: str, profile_external_ref: str) -> str:
-        scope = self._resource_scope(space_slug, profile_external_ref)
-        payload = await self._gateway.list_facts(
-            scope=scope,
-            status="active",
-            limit=50,
-            cursor=None,
-        )
-        facts, truncated = bounded_resource_value(
-            payload_items(payload),
-            max_string_chars=self._settings.max_tool_text_chars,
-        )
-        return resource_json(
-            {
-                "resource_type": "scope_facts",
-                "generated_at": generated_at(),
-                "scope": asdict(scope),
-                "facts": facts,
-                "truncated": truncated,
-                "evidence_only": True,
-            }
-        )
-
-    async def resource_scope_suggestions(
-        self,
-        *,
-        space_slug: str,
-        profile_external_ref: str,
-    ) -> str:
-        scope = self._resource_scope(space_slug, profile_external_ref)
-        payload = await self._gateway.list_suggestions(
-            scope=scope,
-            status="pending",
-            operation=None,
-            category=None,
-            tag=None,
-            limit=50,
-        )
-        suggestions, truncated = bounded_resource_value(
-            payload_items(payload),
-            max_string_chars=self._settings.max_tool_text_chars,
-        )
-        return resource_json(
-            {
-                "resource_type": "scope_suggestions",
-                "generated_at": generated_at(),
-                "scope": asdict(scope),
-                "suggestions": suggestions,
-                "truncated": truncated,
-                "evidence_only": True,
-            }
-        )
-
-    async def resource_fact(self, *, fact_id: str) -> str:
-        safe_fact_id = self._resource_arg("fact_id", fact_id)
-        payload = await self._gateway.get_fact(fact_id=safe_fact_id)
-        fact, truncated = bounded_resource_value(
-            payload.get("data", payload),
-            max_string_chars=self._settings.max_tool_text_chars,
-        )
-        return resource_json(
-            {
-                "resource_type": "fact",
-                "generated_at": generated_at(),
-                "fact": fact,
-                "truncated": truncated,
-                "evidence_only": True,
-            }
-        )
-
-    async def resource_fact_versions(self, *, fact_id: str) -> str:
-        safe_fact_id = self._resource_arg("fact_id", fact_id)
-        payload = await self._gateway.list_fact_versions(fact_id=safe_fact_id)
-        versions, truncated = bounded_resource_value(
-            payload.get("data", payload),
-            max_string_chars=self._settings.max_tool_text_chars,
-        )
-        return resource_json(
-            {
-                "resource_type": "fact_versions",
-                "generated_at": generated_at(),
-                "versions": versions,
-                "truncated": truncated,
-                "evidence_only": True,
-            }
-        )
 
     async def _process_candidate(
         self,
@@ -1767,8 +1640,8 @@ class MemoryToolService:
                     text=candidate.text,
                     duplicate_id=duplicate_id,
                 ),
-                    "_bucket": "duplicates",
-                }
+                "_bucket": "duplicates",
+            }
         if policy.direct_allowed and self._needs_review_for_uncertainty(candidate, source):
             payload = await self._gateway.create_suggestion(
                 scope=scope,
@@ -2015,300 +1888,3 @@ class MemoryToolService:
         if possible_conflict is not None:
             return ("conflict", possible_conflict)
         return None
-
-    def _with_search_resource_links(self, data: dict[str, Any]) -> dict[str, Any]:
-        normalized = dict(data)
-        resource_uris: list[str] = []
-        for key in ("items", "facts", "chunks"):
-            raw_items = normalized.get(key)
-            if not isinstance(raw_items, list):
-                continue
-            linked_items: list[dict[str, Any]] = []
-            for raw_item in raw_items:
-                if not isinstance(raw_item, dict):
-                    continue
-                item = dict(raw_item)
-                fact_id = str(item.get("fact_id") or item.get("id") or item.get("item_id") or "")
-                item_type = str(item.get("item_type") or item.get("type") or "")
-                if fact_id and (not item_type or item_type == "fact"):
-                    item.setdefault("resource_uri", f"memory://fact/{fact_id}")
-                    resource_uris.append(str(item["resource_uri"]))
-                    item.setdefault("item_type", "fact")
-                    item.setdefault("item_id", fact_id)
-                linked_items.append(item)
-            normalized[key] = linked_items
-        if resource_uris:
-            normalized.setdefault("resource_uris", sorted(set(resource_uris)))
-        return normalized
-
-    def _resource_scope(self, space_slug: str, profile_external_ref: str) -> MemoryScope:
-        return MemoryScope(
-            space_slug=self._resource_arg("space_slug", space_slug),
-            profile_external_ref=self._resource_arg("profile_external_ref", profile_external_ref),
-        )
-
-    def _resource_arg(self, field_name: str, value: str) -> str:
-        safe_value = value.strip()
-        if not safe_value:
-            raise ValueError(f"{field_name} is required")
-        if safe_value in {".", ".."}:
-            raise ValueError(f"{field_name} is invalid")
-        if "%" in safe_value:
-            raise ValueError(f"{field_name} cannot contain percent encoding")
-        if "/" in safe_value or "\\" in safe_value:
-            raise ValueError(f"{field_name} cannot contain path separators")
-        if ":" in safe_value:
-            raise ValueError(f"{field_name} cannot contain nested URI syntax")
-        if has_control_characters(safe_value) or has_zero_width_characters(safe_value):
-            raise ValueError(f"{field_name} contains unsafe formatting characters")
-        return safe_value
-
-    def _default_scope(self) -> MemoryScope:
-        return MemoryScope(
-            space_slug=self._settings.default_space_slug,
-            profile_external_ref=self._settings.default_profile_external_ref,
-            thread_external_ref=self._settings.default_thread_external_ref,
-        )
-
-    def _scope(
-        self,
-        space_slug: str | None,
-        profile_external_ref: str | None,
-        thread_external_ref: str | None,
-    ) -> MemoryScope:
-        return MemoryScope(
-            space_slug=(space_slug or self._settings.default_space_slug).strip(),
-            profile_external_ref=(
-                profile_external_ref or self._settings.default_profile_external_ref
-            ).strip(),
-            thread_external_ref=thread_external_ref or self._settings.default_thread_external_ref,
-        )
-
-    def _read_scope(
-        self,
-        *,
-        space_slug: str | None,
-        profile_external_ref: str | None,
-        profile_external_refs: list[str] | None,
-        thread_external_ref: str | None,
-    ) -> MemoryReadScope:
-        refs: list[str] = []
-        if profile_external_ref:
-            refs.append(profile_external_ref)
-        refs.extend(profile_external_refs or [])
-        if not refs:
-            refs.append(self._settings.default_profile_external_ref)
-        try:
-            return MemoryReadScope(
-                space_slug=(space_slug or self._settings.default_space_slug).strip(),
-                profile_external_refs=tuple(refs),
-                thread_external_ref=(
-                    thread_external_ref or self._settings.default_thread_external_ref
-                ),
-            )
-        except ValueError as exc:
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.invalid_scope",
-                message=str(exc),
-                retryable=False,
-            ) from exc
-
-    def _source_ref(
-        self,
-        *,
-        source_type: str | None,
-        source_id: str | None,
-        quote_preview: str | None,
-        fallback_seed: str,
-    ) -> SourceRef:
-        quote = quote_preview.strip() if quote_preview else None
-        if contains_sensitive_value(quote):
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.policy.secret_detected",
-                message="Quote preview contains a credential-like value",
-                retryable=False,
-            )
-        try:
-            return SourceRef(
-                source_type=self._safe_source_type(source_type),
-                source_id=self._safe_source_id(
-                    source_id or stable_key("mcp-source", fallback_seed)
-                ),
-                quote_preview=quote,
-            )
-        except ValueError as exc:
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.validation.invalid_source_ref",
-                message=str(exc),
-                retryable=False,
-            ) from exc
-
-    def _safe_source_type(self, source_type: str | None) -> str:
-        value = (source_type or self._settings.source_type).strip()
-        if value not in SOURCE_TYPES:
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.validation.invalid_source_ref",
-                message=f"Unsupported source_type: {safe_message(value)}",
-                retryable=False,
-            )
-        return value
-
-    def _safe_source_id(self, source_id: str) -> str:
-        value = source_id.strip()
-        if contains_sensitive_value(value):
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.validation.invalid_source_ref",
-                message="Source id contains a credential-like value",
-                retryable=False,
-            )
-        if has_control_characters(value) or has_zero_width_characters(value):
-            raise MemoryGatewayError(
-                status_code=400,
-                code="memo_stack_mcp.validation.invalid_source_ref",
-                message="Source id contains unsafe formatting characters",
-                retryable=False,
-            )
-        if value.startswith(("/Users/", "/home/")) or "\\Users\\" in value:
-            return stable_key("mcp-source-path", value)
-        return value
-
-    def _decide_policy(
-        self,
-        *,
-        operation: MemoryPolicyOperation,
-        text: str,
-        source_type: str | None,
-        user_confirmed: bool = False,
-        text_length: int | None = None,
-    ) -> MemoryPolicyResult:
-        result = self._policy.decide(
-            MemoryPolicyInput(
-                operation=operation,
-                text=text,
-                source_type=source_type,
-                write_mode=self._settings.write_mode,
-                delete_mode=self._settings.delete_mode,
-                ingest_mode=self._settings.ingest_mode,
-                writes_enabled=self._settings.writes_enabled,
-                deletes_enabled=self._settings.deletes_enabled,
-                user_confirmed=user_confirmed,
-                text_length=len(text) if text_length is None else text_length,
-                small_doc_max_chars=self._settings.small_doc_max_chars,
-            )
-        )
-        if not result.allowed:
-            raise MemoryGatewayError(
-                status_code=403,
-                code=result.code,
-                message=result.safe_message,
-                retryable=False,
-            )
-        return result
-
-    @staticmethod
-    def _policy_payload(result: MemoryPolicyResult) -> dict[str, Any]:
-        return {
-            "decision": result.decision.value,
-            "code": result.code,
-            "direct_allowed": result.direct_allowed,
-            "allowed": result.allowed,
-        }
-
-    def _ensure_writes_allowed(self) -> None:
-        if not self._settings.writes_enabled:
-            raise MemoryGatewayError(
-                status_code=403,
-                code="memo_stack_mcp.policy.write_mode_off",
-                message="Memo Stack MCP writes are disabled by local policy",
-                retryable=False,
-            )
-
-    def _ensure_deletes_allowed(self) -> None:
-        if not self._settings.deletes_enabled:
-            raise MemoryGatewayError(
-                status_code=403,
-                code="memo_stack_mcp.policy.delete_mode_off",
-                message="Memo Stack MCP deletes are disabled by local policy",
-                retryable=False,
-            )
-
-    def _truncate(self, value: str) -> str:
-        if len(value) <= self._settings.max_tool_text_chars:
-            return value
-        return value[: self._settings.max_tool_text_chars] + "\n[truncated]"
-
-    async def _guard(self, action) -> dict[str, Any]:
-        try:
-            return await action()
-        except MemoryGatewayError as exc:
-            code = public_error_code(exc.code, status_code=exc.status_code)
-            message = safe_message(exc.message)
-            response = McpToolResponse(
-                ok=False,
-                message=message,
-                error=McpToolError(
-                    status_code=exc.status_code,
-                    code=code,
-                    message=message,
-                    safe_message=message,
-                    retryable=exc.retryable,
-                    unknown_commit_state=exc.unknown_commit_state,
-                ),
-                diagnostics=McpDiagnostics(
-                    trace_id=self._trace_id(),
-                    backend={"code": safe_message(exc.code), "status_code": exc.status_code},
-                    degraded=code.startswith(
-                        ("memo_stack_mcp.gateway.", "memo_stack_mcp.degraded.")
-                    ),
-                ),
-            )
-            return response.model_dump(exclude_none=True)
-
-    def _ok(
-        self,
-        message: str,
-        *,
-        data: dict[str, Any] | list[Any],
-        scope: dict[str, Any] | None = None,
-        policy: dict[str, Any] | None = None,
-        side_effects: list[str] | None = None,
-        warnings: list[str] | None = None,
-        degraded: bool = False,
-        backend: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        diagnostics = McpDiagnostics(
-            trace_id=self._trace_id(),
-            scope=scope,
-            policy=policy or {},
-            side_effects=side_effects or [],
-            warnings=warnings or [],
-            degraded=degraded,
-            backend=backend or {},
-        )
-        clean_data = _drop_none_values(data)
-        response_data: dict[str, Any] | list[Any]
-        response_data = {"items": clean_data} if isinstance(clean_data, list) else clean_data
-        return {
-            "ok": True,
-            "message": message,
-            "data": response_data,
-            "diagnostics": diagnostics.model_dump(exclude_none=True),
-        }
-
-    async def _capture_gateway(
-        self,
-        call: Callable[[], Awaitable[dict[str, Any]]],
-    ) -> tuple[dict[str, Any] | None, MemoryGatewayError | None]:
-        try:
-            return await call(), None
-        except MemoryGatewayError as exc:
-            return None, exc
-
-    @staticmethod
-    def _trace_id() -> str:
-        return f"mcp_{uuid.uuid4().hex[:16]}"

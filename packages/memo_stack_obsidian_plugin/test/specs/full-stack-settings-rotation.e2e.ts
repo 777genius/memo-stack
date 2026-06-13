@@ -12,14 +12,14 @@ const realCliPath = path.resolve("test/fixtures/real-memo-stack-obsidian.cjs");
 const token = "wdio-full-e2e-token";
 const wrongToken = "wrong-wdio-full-e2e-token";
 const spaceSlug = "wdio-settings-rotation";
-const profileExternalRef = "default";
+const memoryScopeExternalRef = "default";
 const rootFolder = "Memo Stack";
 const scopedRoot = path.join(
   rootFolder,
   "spaces",
   spaceSlug,
-  "profiles",
-  profileExternalRef,
+  "memory_scopes",
+  memoryScopeExternalRef,
 );
 const textStart = "<!-- memo-stack-managed:fact-text:start -->";
 const textEnd = "<!-- memo-stack-managed:fact-text:end -->";
@@ -99,7 +99,7 @@ describe("Memo Stack settings rotation E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForMemoStackApiUrl(baseUrl);
     await waitForSettingsFile(vaultPath, wrongToken);
@@ -270,7 +270,7 @@ describe("Memo Stack settings rotation E2E", function () {
     await setSettingsInput("vaultPathOverride", vaultPath);
     await setSettingsInput("rootFolder", rootFolder);
     await setSettingsInput("spaceSlug", spaceSlug);
-    await setSettingsInput("profileExternalRef", profileExternalRef);
+    await setSettingsInput("memoryScopeExternalRef", memoryScopeExternalRef);
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForMemoStackApiUrl(deadUrl);
     await waitForSettingsFile(vaultPath, deadUrl);
@@ -428,7 +428,7 @@ async function updatePluginSettings({
     cliPath: realCliPath,
     vaultPathOverride: vaultPath,
     spaceSlug,
-    profileExternalRef,
+    memoryScopeExternalRef,
     rootFolder,
     layoutVersion: "v2",
     applyImportOnSync: true,
@@ -580,7 +580,7 @@ async function createFact(
 ): Promise<Record<string, any>> {
   const response = await requestJson("POST", `${apiUrl}/v1/facts`, {
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     text,
     kind: "note",
     source_refs: [
@@ -626,7 +626,7 @@ async function waitForSuggestionsContaining(
 async function suggestionsContaining(apiUrl: string, marker: string): Promise<Record<string, any>[]> {
   const query = new URLSearchParams({
     space_slug: spaceSlug,
-    profile_external_ref: profileExternalRef,
+    memory_scope_external_ref: memoryScopeExternalRef,
     status: "pending",
   });
   const response = await requestJson("GET", `${apiUrl}/v1/suggestions?${query.toString()}`);

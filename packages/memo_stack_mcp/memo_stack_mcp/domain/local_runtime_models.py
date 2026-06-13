@@ -42,9 +42,9 @@ class MemoryLocalRuntimeData(McpDataModel):
     env_exists: bool | None = None
     token_configured: bool | None = None
     default_local_token: bool | None = None
-    runtime_profile: str | None = None
+    runtime_compose_profile: str | None = None
     compose_project_name: str | None = None
-    start_profile: str | None = None
+    start_compose_profile: str | None = None
     checks: list[MemoryLocalRuntimeCheckData] = Field(default_factory=list)
     written: list[str] = Field(default_factory=list)
     would_write: list[str] = Field(default_factory=list)

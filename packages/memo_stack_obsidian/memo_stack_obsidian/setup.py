@@ -32,12 +32,12 @@ class SetupVaultUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         overwrite: bool = False,
     ) -> VaultSetupResult:
         return self._run(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             overwrite=overwrite,
             apply=True,
         )
@@ -46,12 +46,12 @@ class SetupVaultUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         overwrite: bool = False,
     ) -> VaultSetupResult:
         return self._run(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
             overwrite=overwrite,
             apply=False,
         )
@@ -60,7 +60,7 @@ class SetupVaultUseCase:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
         overwrite: bool,
         apply: bool,
     ) -> VaultSetupResult:
@@ -69,7 +69,7 @@ class SetupVaultUseCase:
         for path, text in _setup_files(
             layout=self.layout,
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ):
             if self.vault.exists(path) and not overwrite:
                 skipped.append(path.as_posix())
@@ -84,7 +84,7 @@ def _setup_files(
     *,
     layout: ObsidianVaultLayout,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
 ) -> tuple[tuple[PurePosixPath, str], ...]:
     return (
         (
@@ -92,13 +92,13 @@ def _setup_files(
             _root_readme(
                 layout=layout,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             ),
         ),
         (
             layout.inbox_dir(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             / "README.md",
             _inbox_readme(),
@@ -106,7 +106,7 @@ def _setup_files(
         (
             layout.conflicts_dir(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             / "README.md",
             _conflicts_readme(),
@@ -114,7 +114,7 @@ def _setup_files(
         (
             layout.facts_dir(
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             / ".gitkeep.md",
             _generated_keep_readme(),
@@ -126,7 +126,7 @@ def _root_readme(
     *,
     layout: ObsidianVaultLayout,
     space_slug: str,
-    profile_external_ref: str,
+    memory_scope_external_ref: str,
 ) -> str:
     return "\n".join(
         [
@@ -137,22 +137,24 @@ def _root_readme(
             "## Scope",
             "",
             f"- Space: `{space_slug}`",
-            f"- Profile: `{profile_external_ref}`",
+            f"- MemoryScope: `{memory_scope_external_ref}`",
             f"- Layout: `{layout.version.value}`",
             f"- Root folder: `{layout.root_dir().as_posix()}`",
             "",
             "## Folders",
             "",
-            "- `spaces/<project>/profiles/<profile>/generated/facts` contains managed fact notes.",
-            "- `spaces/<project>/profiles/<profile>/inbox` is for free-form suggestions.",
-            "- `spaces/<project>/profiles/<profile>/conflicts` contains sync review artifacts.",
+            "- `spaces/<project>/memory_scopes/<memory_scope>/generated/facts` contains "
+            "managed fact notes.",
+            "- `spaces/<project>/memory_scopes/<memory_scope>/inbox` is for free-form suggestions.",
+            "- `spaces/<project>/memory_scopes/<memory_scope>/conflicts` contains sync "
+            "review artifacts.",
             "",
             "Run preview before applying sync changes:",
             "",
             "```bash",
             "memo-stack-obsidian preview --vault <vault> --space "
-            f"{space_slug} --profile {profile_external_ref} "
-            f"--root-folder \"{layout.root_dir().as_posix()}\" "
+            f"{space_slug} --memory_scope {memory_scope_external_ref} "
+            f'--root-folder "{layout.root_dir().as_posix()}" '
             f"--layout {layout.version.value}",
             "```",
             "",

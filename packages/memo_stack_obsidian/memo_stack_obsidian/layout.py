@@ -46,28 +46,28 @@ class ObsidianVaultLayout:
     def root_dir(self) -> PurePosixPath:
         return self.root_folder
 
-    def facts_dir(self, *, space_slug: str, profile_external_ref: str) -> PurePosixPath:
+    def facts_dir(self, *, space_slug: str, memory_scope_external_ref: str) -> PurePosixPath:
         if self.version == LayoutVersion.V1:
             return self.root_folder / "generated" / "facts"
         return self._scope_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ) / "generated" / "facts"
 
-    def inbox_dir(self, *, space_slug: str, profile_external_ref: str) -> PurePosixPath:
+    def inbox_dir(self, *, space_slug: str, memory_scope_external_ref: str) -> PurePosixPath:
         if self.version == LayoutVersion.V1:
             return self.root_folder / "inbox"
         return self._scope_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ) / "inbox"
 
-    def conflicts_dir(self, *, space_slug: str, profile_external_ref: str) -> PurePosixPath:
+    def conflicts_dir(self, *, space_slug: str, memory_scope_external_ref: str) -> PurePosixPath:
         if self.version == LayoutVersion.V1:
             return self.root_folder / "conflicts"
         return self._scope_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ) / "conflicts"
 
     def fact_note_path(
@@ -75,22 +75,22 @@ class ObsidianVaultLayout:
         fact_id: str,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
     ) -> PurePosixPath:
         return self.facts_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         ) / f"{safe_filename(fact_id)}.md"
 
     def fact_scan_dirs(
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
     ) -> tuple[PurePosixPath, ...]:
         current = self.facts_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         legacy = self.root_folder / "generated" / "facts"
         return _unique_paths(
@@ -101,11 +101,11 @@ class ObsidianVaultLayout:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
     ) -> tuple[PurePosixPath, ...]:
         current = self.inbox_dir(
             space_slug=space_slug,
-            profile_external_ref=profile_external_ref,
+            memory_scope_external_ref=memory_scope_external_ref,
         )
         legacy = self.root_folder / "inbox"
         return _unique_paths(
@@ -116,14 +116,14 @@ class ObsidianVaultLayout:
         self,
         *,
         space_slug: str,
-        profile_external_ref: str,
+        memory_scope_external_ref: str,
     ) -> PurePosixPath:
         return (
             self.root_folder
             / "spaces"
             / safe_scope_segment(space_slug, "space_slug")
-            / "profiles"
-            / safe_scope_segment(profile_external_ref, "profile_external_ref")
+            / "memory_scopes"
+            / safe_scope_segment(memory_scope_external_ref, "memory_scope_external_ref")
         )
 
 

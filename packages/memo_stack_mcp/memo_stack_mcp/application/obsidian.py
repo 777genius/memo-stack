@@ -50,7 +50,7 @@ class ObsidianMcpService:
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         require_plugin: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
@@ -60,7 +60,7 @@ class ObsidianMcpService:
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             if not self._settings.obsidian_enabled:
                 return self._ok(
@@ -90,7 +90,7 @@ class ObsidianMcpService:
                 api_url=self._settings.api_url,
                 token=self._settings.auth_token,
                 space_slug=str(request["space_slug"]),
-                profile_external_ref=str(request["profile_external_ref"]),
+                memory_scope_external_ref=str(request["memory_scope_external_ref"]),
                 root_folder=str(request["root_folder"]),
                 layout_version=str(request["layout_version"]),
                 obsidian_config_dir=str(request["obsidian_config_dir"]),
@@ -120,7 +120,7 @@ class ObsidianMcpService:
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         apply: bool = False,
         overwrite: bool = False,
         install_plugin: bool = False,
@@ -134,7 +134,7 @@ class ObsidianMcpService:
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             vault = self._require_vault_path(request)
             context = self._context(request)
@@ -142,13 +142,13 @@ class ObsidianMcpService:
             result = (
                 setup.execute(
                     space_slug=str(request["space_slug"]),
-                    profile_external_ref=str(request["profile_external_ref"]),
+                    memory_scope_external_ref=str(request["memory_scope_external_ref"]),
                     overwrite=overwrite,
                 )
                 if apply
                 else setup.plan(
                     space_slug=str(request["space_slug"]),
-                    profile_external_ref=str(request["profile_external_ref"]),
+                    memory_scope_external_ref=str(request["memory_scope_external_ref"]),
                     overwrite=overwrite,
                 )
             )
@@ -197,7 +197,7 @@ class ObsidianMcpService:
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         include_inbox: bool = True,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
@@ -208,12 +208,12 @@ class ObsidianMcpService:
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             self._require_vault_path(request)
             result = self._context(request)["previewer"].execute(
                 space_slug=str(request["space_slug"]),
-                profile_external_ref=str(request["profile_external_ref"]),
+                memory_scope_external_ref=str(request["memory_scope_external_ref"]),
                 include_inbox=include_inbox,
             )
             return self._ok(
@@ -240,7 +240,7 @@ class ObsidianMcpService:
         root_folder: str | None = None,
         layout_version: str | None = None,
         space_slug: str | None = None,
-        profile_external_ref: str | None = None,
+        memory_scope_external_ref: str | None = None,
         apply: bool = False,
         apply_import: bool = False,
         include_inbox: bool = True,
@@ -254,7 +254,7 @@ class ObsidianMcpService:
                     root_folder=root_folder,
                     layout_version=layout_version,
                     space_slug=space_slug,
-                    profile_external_ref=profile_external_ref,
+                    memory_scope_external_ref=memory_scope_external_ref,
                     include_inbox=include_inbox,
                 )
                 preview["message"] = "Obsidian sync dry-run completed."
@@ -266,13 +266,13 @@ class ObsidianMcpService:
                 root_folder=root_folder,
                 layout_version=layout_version,
                 space_slug=space_slug,
-                profile_external_ref=profile_external_ref,
+                memory_scope_external_ref=memory_scope_external_ref,
             )
             self._require_vault_path(request)
             context = self._context(request)
             result = context["syncer"].execute(
                 space_slug=str(request["space_slug"]),
-                profile_external_ref=str(request["profile_external_ref"]),
+                memory_scope_external_ref=str(request["memory_scope_external_ref"]),
                 apply_import=apply_import,
                 include_inbox=include_inbox,
             )
@@ -280,13 +280,13 @@ class ObsidianMcpService:
                 direction="import",
                 changes=result.import_result.changes,
                 space_slug=str(request["space_slug"]),
-                profile_external_ref=str(request["profile_external_ref"]),
+                memory_scope_external_ref=str(request["memory_scope_external_ref"]),
             )
             export_conflicts = context["conflict_writer"].execute(
                 direction="export",
                 changes=result.export_result.changes,
                 space_slug=str(request["space_slug"]),
-                profile_external_ref=str(request["profile_external_ref"]),
+                memory_scope_external_ref=str(request["memory_scope_external_ref"]),
             )
             return self._ok(
                 "Obsidian sync completed." if result.ok else "Obsidian sync needs review.",
@@ -318,7 +318,7 @@ class ObsidianMcpService:
         root_folder: str | None,
         layout_version: str | None,
         space_slug: str | None,
-        profile_external_ref: str | None,
+        memory_scope_external_ref: str | None,
     ) -> dict[str, Any]:
         return {
             "vault_path": vault_path or self._settings.obsidian_vault_path,
@@ -328,8 +328,8 @@ class ObsidianMcpService:
             "root_folder": root_folder or self._settings.obsidian_root_folder,
             "layout_version": layout_version or self._settings.obsidian_layout_version,
             "space_slug": space_slug or self._settings.default_space_slug,
-            "profile_external_ref": (
-                profile_external_ref or self._settings.default_profile_external_ref
+            "memory_scope_external_ref": (
+                memory_scope_external_ref or self._settings.default_memory_scope_external_ref
             ),
         }
 
@@ -390,7 +390,7 @@ class ObsidianMcpService:
             "cliPath": "memo-stack-obsidian",
             "vaultPathOverride": str(vault_path),
             "spaceSlug": str(request["space_slug"]),
-            "profileExternalRef": str(request["profile_external_ref"]),
+            "memoryScopeExternalRef": str(request["memory_scope_external_ref"]),
             "rootFolder": str(request["root_folder"]),
             "layoutVersion": str(request["layout_version"]),
             "applyImportOnSync": False,

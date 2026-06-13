@@ -39,7 +39,7 @@ interface MemoStackSettings {
   rootFolder: string;
   layoutVersion: "v1" | "v2";
   spaceSlug: string;
-  profileExternalRef: string;
+  memoryScopeExternalRef: string;
   applyImportOnSync: boolean;
   commandTimeoutMs: number;
 }
@@ -53,7 +53,7 @@ const DEFAULT_SETTINGS: MemoStackSettings = {
   rootFolder: "Memo Stack",
   layoutVersion: "v2",
   spaceSlug: "default",
-  profileExternalRef: "default",
+  memoryScopeExternalRef: "default",
   applyImportOnSync: false,
   commandTimeoutMs: 30000,
 };
@@ -76,10 +76,10 @@ function normalizeSettings(value: unknown): MemoStackSettings {
     rootFolder: stringSetting(data, "rootFolder", DEFAULT_SETTINGS.rootFolder),
     layoutVersion: layoutVersionSetting(data.layoutVersion),
     spaceSlug: stringSetting(data, "spaceSlug", DEFAULT_SETTINGS.spaceSlug),
-    profileExternalRef: stringSetting(
+    memoryScopeExternalRef: stringSetting(
       data,
-      "profileExternalRef",
-      DEFAULT_SETTINGS.profileExternalRef,
+      "memoryScopeExternalRef",
+      DEFAULT_SETTINGS.memoryScopeExternalRef,
     ),
     applyImportOnSync:
       typeof data.applyImportOnSync === "boolean"
@@ -421,8 +421,8 @@ export default class MemoStackPlugin extends Plugin {
       rootFolder: this.settings.rootFolder.trim() || DEFAULT_SETTINGS.rootFolder,
       layoutVersion: this.settings.layoutVersion || DEFAULT_SETTINGS.layoutVersion,
       spaceSlug: this.settings.spaceSlug.trim() || DEFAULT_SETTINGS.spaceSlug,
-      profileExternalRef:
-        this.settings.profileExternalRef.trim() || DEFAULT_SETTINGS.profileExternalRef,
+      memoryScopeExternalRef:
+        this.settings.memoryScopeExternalRef.trim() || DEFAULT_SETTINGS.memoryScopeExternalRef,
       paths,
       readmeExists: this.exists(paths.readme),
       generatedFactsExists: this.exists(paths.generatedFacts),
@@ -592,8 +592,8 @@ export default class MemoStackPlugin extends Plugin {
       vaultPath,
       "--space",
       this.settings.spaceSlug.trim() || DEFAULT_SETTINGS.spaceSlug,
-      "--profile",
-      this.settings.profileExternalRef.trim() || DEFAULT_SETTINGS.profileExternalRef,
+      "--memory_scope",
+      this.settings.memoryScopeExternalRef.trim() || DEFAULT_SETTINGS.memoryScopeExternalRef,
       "--root-folder",
       this.settings.rootFolder.trim() || DEFAULT_SETTINGS.rootFolder,
       "--layout",
@@ -674,11 +674,11 @@ export default class MemoStackPlugin extends Plugin {
       this.settings.spaceSlug || DEFAULT_SETTINGS.spaceSlug,
       DEFAULT_SETTINGS.spaceSlug,
     );
-    const profile = safeScopeSegment(
-      this.settings.profileExternalRef || DEFAULT_SETTINGS.profileExternalRef,
-      DEFAULT_SETTINGS.profileExternalRef,
+    const memory_scope = safeScopeSegment(
+      this.settings.memoryScopeExternalRef || DEFAULT_SETTINGS.memoryScopeExternalRef,
+      DEFAULT_SETTINGS.memoryScopeExternalRef,
     );
-    const scope = normalizePath(`${root}/spaces/${space}/profiles/${profile}`);
+    const scope = normalizePath(`${root}/spaces/${space}/memory_scopes/${memory_scope}`);
     return {
       root,
       readme: normalizePath(`${root}/README.md`),
@@ -821,7 +821,7 @@ class MemoStackSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Layout")
-      .setDesc("v2 groups notes by project and profile. v1 reads the legacy flat layout.")
+      .setDesc("v2 groups notes by project and memory_scope. v1 reads the legacy flat layout.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("v2", "Project folders")
@@ -847,15 +847,15 @@ class MemoStackSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Profile")
+      .setName("MemoryScope")
       .addText((text) => {
-        markSettingInput(text.inputEl, "profileExternalRef");
+        markSettingInput(text.inputEl, "memoryScopeExternalRef");
         text
-          .setPlaceholder(DEFAULT_SETTINGS.profileExternalRef)
-          .setValue(this.plugin.settings.profileExternalRef)
+          .setPlaceholder(DEFAULT_SETTINGS.memoryScopeExternalRef)
+          .setValue(this.plugin.settings.memoryScopeExternalRef)
           .onChange(async (value) => {
-            this.plugin.settings.profileExternalRef =
-              value.trim() || DEFAULT_SETTINGS.profileExternalRef;
+            this.plugin.settings.memoryScopeExternalRef =
+              value.trim() || DEFAULT_SETTINGS.memoryScopeExternalRef;
             await this.plugin.saveSettings();
           });
       });

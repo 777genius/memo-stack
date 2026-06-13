@@ -157,14 +157,14 @@ class LocalRuntimeMcpService:
     async def start(
         self,
         *,
-        profile: str = "lite",
+        compose_profile: str = "lite",
         home: str | None = None,
         apply: bool = False,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             self._ensure_enabled()
             request = self._request(home=home, repo_dir=None, api_url=None)
-            command = list(_planned_start_command(profile))
+            command = list(_planned_start_command(compose_profile))
             if not apply:
                 return self._ok(
                     "Local runtime start planned.",
@@ -175,13 +175,13 @@ class LocalRuntimeMcpService:
                         "status": "start_planned",
                         "dry_run": True,
                         "applied": False,
-                        "start_profile": profile,
+                        "start_compose_profile": compose_profile,
                         "command": command,
                     },
                 )
             self._ensure_start_enabled()
             config = load_config(Path(str(request["home"])))
-            result = DockerComposeRuntime(config=config).up(profile)
+            result = DockerComposeRuntime(config=config).up(compose_profile)
             return self._ok(
                 "Local runtime start completed."
                 if result.ok
@@ -193,7 +193,7 @@ class LocalRuntimeMcpService:
                     "status": "started" if result.ok else "start_failed",
                     "dry_run": False,
                     "applied": True,
-                    "start_profile": profile,
+                    "start_compose_profile": compose_profile,
                     "runtime_result": _runtime_result(result, token=config.service_token),
                 },
                 side_effects=["local_runtime_started"] if result.ok else [],
@@ -266,7 +266,7 @@ class LocalRuntimeMcpService:
             "env_exists": config.env_path.exists(),
             "token_configured": bool(config.service_token),
             "default_local_token": config.service_token == DEFAULT_SERVICE_TOKEN,
-            "runtime_profile": config.runtime_profile,
+            "runtime_compose_profile": config.runtime_compose_profile,
             "compose_project_name": config.compose_project_name,
         }
 
@@ -431,8 +431,8 @@ def _scalar(value: Any) -> str | int | bool | None:
     return str(value)[:500]
 
 
-def _planned_start_command(profile: str) -> tuple[str, ...]:
-    if profile == "full":
+def _planned_start_command(compose_profile: str) -> tuple[str, ...]:
+    if compose_profile == "full":
         return (
             "docker",
             "compose",
@@ -442,6 +442,7 @@ def _planned_start_command(profile: str) -> tuple[str, ...]:
             "-d",
             "memo_stack_server_full",
             "memo_stack_worker_full",
+            "memo_stack_extraction_worker_full",
         )
     return (
         "docker",
@@ -452,6 +453,7 @@ def _planned_start_command(profile: str) -> tuple[str, ...]:
         "-d",
         "memo_stack_server",
         "memo_stack_worker",
+        "memo_stack_extraction_worker",
     )
 
 

@@ -128,7 +128,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         callback=lambda session: _call(
             session,
             "memory_local_runtime_start",
-            {"profile": "lite", "apply": False},
+            {"memory_scope": "lite", "apply": False},
         ),
     )
     _assert(
@@ -142,7 +142,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         callback=lambda session: _call_error(
             session,
             "memory_local_runtime_start",
-            {"profile": "lite", "apply": True},
+            {"memory_scope": "lite", "apply": True},
         ),
     )
     _assert(
@@ -163,7 +163,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
         "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "prepare-smoke",
-        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+        "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
     }
     prepare_dry_run = await _with_session(
         repo_root=repo_root,
@@ -172,7 +172,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     )
     prepare_facts = (
         prepare_vault
-        / "Memo Stack/spaces/prepare-smoke/profiles/default/generated/facts"
+        / "Memo Stack/spaces/prepare-smoke/memory_scopes/default/generated/facts"
     )
     _assert(prepare_dry_run["ok"] is True, "prepare dry-run should succeed")
     _assert(
@@ -215,7 +215,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
         "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "custom-config-smoke",
-        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+        "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
     }
     custom_config_setup = await _with_session(
         repo_root=repo_root,
@@ -278,7 +278,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
         "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-smoke",
-        "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": "default",
+        "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
     }
     dry_run = await _with_session(
         repo_root=repo_root,
@@ -289,7 +289,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
             {"apply": False, "install_plugin": True, "enable_plugin": True},
         ),
     )
-    expected_facts = vault / "Memo Stack/spaces/mcp-smoke/profiles/default/generated/facts"
+    expected_facts = vault / "Memo Stack/spaces/mcp-smoke/memory_scopes/default/generated/facts"
     _assert(dry_run["ok"] is True, "dry-run setup should succeed")
     _assert(dry_run["data"]["dry_run"] is True, "dry-run setup should remain dry")
     _assert(dry_run["data"]["would_install_plugin"] is True, "dry-run should plan plugin install")
@@ -412,7 +412,7 @@ async def _run_live_backend_sync(
             "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
             "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": LIVE_SPACE,
-            "MEMORY_MCP_DEFAULT_PROFILE_EXTERNAL_REF": PROFILE,
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": PROFILE,
         }
 
         setup = await _with_session(
@@ -425,7 +425,7 @@ async def _run_live_backend_sync(
             ),
         )
         live_facts_dir = (
-            vault / f"Memo Stack/spaces/{LIVE_SPACE}/profiles/{PROFILE}/generated/facts"
+            vault / f"Memo Stack/spaces/{LIVE_SPACE}/memory_scopes/{PROFILE}/generated/facts"
         )
         _assert(setup["ok"] is True, "live MCP setup should succeed")
         _assert(setup["data"]["plugin_installed"] is True, "live setup should install plugin")
@@ -678,7 +678,7 @@ def _create_fact(base_url: str, *, text: str) -> dict[str, Any]:
         headers=_headers(),
         json={
             "space_slug": LIVE_SPACE,
-            "profile_external_ref": PROFILE,
+            "memory_scope_external_ref": PROFILE,
             "text": text,
             "kind": "note",
             "source_refs": [
@@ -735,7 +735,7 @@ def _list_suggestions(base_url: str) -> list[dict[str, Any]]:
         headers=_headers(),
         params={
             "space_slug": LIVE_SPACE,
-            "profile_external_ref": PROFILE,
+            "memory_scope_external_ref": PROFILE,
             "status": "pending",
         },
         timeout=5,
@@ -763,7 +763,7 @@ def _replace_managed_text(path: Path, text: str) -> None:
 
 
 def _write_inbox_note(vault: Path, text: str) -> None:
-    path = vault / f"Memo Stack/spaces/{LIVE_SPACE}/profiles/{PROFILE}/inbox/mcp-live-inbox.md"
+    path = vault / f"Memo Stack/spaces/{LIVE_SPACE}/memory_scopes/{PROFILE}/inbox/mcp-live-inbox.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
