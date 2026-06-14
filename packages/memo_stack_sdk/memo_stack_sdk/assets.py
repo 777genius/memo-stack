@@ -160,3 +160,86 @@ class MemoStackAssetsMixin:
             "GET",
             f"/v1/extraction-artifacts/{artifact_id}/download",
         )
+
+    def suggest_context_links(
+        self,
+        *,
+        text: str = "",
+        source_type: str | None = None,
+        source_id: str | None = None,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        thread_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
+        limit: int = 10,
+        persist: bool = False,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/link-suggestions",
+            json=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=thread_id,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=thread_external_ref,
+                    ),
+                    "text": text,
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "limit": limit,
+                    "persist": persist,
+                }
+            ),
+        )
+
+    def list_context_link_suggestions(
+        self,
+        *,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        status: str | None = "pending",
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/v1/context-link-suggestions",
+            params=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=None,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=None,
+                    ),
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "status": status,
+                    "limit": limit,
+                }
+            ),
+        )
+
+    def review_context_link_suggestion(
+        self,
+        suggestion_id: str,
+        *,
+        action: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/context-link-suggestions/{suggestion_id}/review",
+            json=_payloads.without_none({"action": action, "reason": reason}),
+        )

@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from memo_stack_core.domain.assets import MemoryAsset, MemoryContextLink
+from memo_stack_core.domain.assets import (
+    MemoryAsset,
+    MemoryContextLink,
+    MemoryContextLinkSuggestion,
+)
 from memo_stack_core.domain.capture import CanonicalCapture
 from memo_stack_core.domain.entities import (
     MemoryChunk,
@@ -240,6 +244,13 @@ class ContextLinkResult:
 
 
 @dataclass(frozen=True)
+class ContextLinkSuggestionResult:
+    suggestion: MemoryContextLinkSuggestion
+    link: MemoryContextLink | None = None
+    duplicate_link: bool = False
+
+
+@dataclass(frozen=True)
 class ListContextLinksQuery:
     space_id: SpaceId
     memory_scope_id: MemoryScopeId
@@ -258,6 +269,7 @@ class SuggestContextLinksCommand:
     source_id: str | None = None
     thread_id: ThreadId | None = None
     limit: int = 10
+    persist: bool = False
 
 
 @dataclass(frozen=True)
@@ -269,6 +281,8 @@ class ContextLinkCandidate:
     score: float
     tier: str
     reasons: tuple[str, ...]
+    suggestion_id: str | None = None
+    status: str | None = None
     metadata: dict[str, object] | None = None
 
 
@@ -276,6 +290,23 @@ class ContextLinkCandidate:
 class ContextLinkSuggestionsResult:
     candidates: tuple[ContextLinkCandidate, ...]
     diagnostics: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ListContextLinkSuggestionsQuery:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    status: str | None
+    limit: int
+    source_type: str | None = None
+    source_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ReviewContextLinkSuggestionCommand:
+    suggestion_id: str
+    action: str
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

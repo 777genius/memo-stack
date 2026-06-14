@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -582,6 +583,59 @@ class MemoryContextLinkRow(Base):
             "target_type",
             "target_id",
             "status",
+        ),
+    )
+
+
+class MemoryContextLinkSuggestionRow(Base):
+    __tablename__ = "memory_context_link_suggestions"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    space_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    memory_scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(40), nullable=False, default="medium")
+    reason: Mapped[str] = mapped_column(String(320), nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
+    metadata_json: Mapped[dict[str, object]] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    __table_args__ = (
+        Index(
+            "uq_context_link_suggestion_pending",
+            "space_id",
+            "memory_scope_id",
+            "source_type",
+            "source_id",
+            "target_type",
+            "target_id",
+            "relation_type",
+            unique=True,
+            sqlite_where=status == "pending",
+            postgresql_where=status == "pending",
+        ),
+        Index(
+            "ix_context_link_suggestions_source",
+            "space_id",
+            "memory_scope_id",
+            "source_type",
+            "source_id",
+            "status",
+            "updated_at",
+        ),
+        Index(
+            "ix_context_link_suggestions_status",
+            "space_id",
+            "memory_scope_id",
+            "status",
+            "updated_at",
         ),
     )
 

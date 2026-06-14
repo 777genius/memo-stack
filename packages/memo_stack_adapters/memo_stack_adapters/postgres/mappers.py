@@ -6,10 +6,13 @@ from dataclasses import asdict
 
 from memo_stack_core.domain.assets import (
     AssetStatus,
+    ContextLinkSuggestionStatus,
     MemoryAsset,
     MemoryAssetId,
     MemoryContextLink,
     MemoryContextLinkId,
+    MemoryContextLinkSuggestion,
+    MemoryContextLinkSuggestionId,
 )
 from memo_stack_core.domain.capture import (
     CanonicalCapture,
@@ -69,6 +72,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryCaptureRow,
     MemoryChunkRow,
     MemoryContextLinkRow,
+    MemoryContextLinkSuggestionRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
     MemoryFactRelationRow,
@@ -500,6 +504,76 @@ def context_link_row_to_domain(row: MemoryContextLinkRow) -> MemoryContextLink:
         metadata=dict(row.metadata_json or {}),
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def context_link_suggestion_to_row(
+    suggestion: MemoryContextLinkSuggestion,
+) -> MemoryContextLinkSuggestionRow:
+    return MemoryContextLinkSuggestionRow(
+        id=str(suggestion.id),
+        space_id=str(suggestion.space_id),
+        memory_scope_id=str(suggestion.memory_scope_id),
+        source_type=suggestion.source_type,
+        source_id=suggestion.source_id,
+        target_type=suggestion.target_type,
+        target_id=suggestion.target_id,
+        relation_type=suggestion.relation_type,
+        confidence=suggestion.confidence,
+        reason=suggestion.reason,
+        score=suggestion.score,
+        status=suggestion.status.value,
+        metadata_json=dict(suggestion.metadata),
+        created_at=suggestion.created_at,
+        updated_at=suggestion.updated_at,
+        reviewed_at=suggestion.reviewed_at,
+        review_reason=suggestion.review_reason,
+    )
+
+
+def apply_context_link_suggestion_to_row(
+    suggestion: MemoryContextLinkSuggestion,
+    row: MemoryContextLinkSuggestionRow,
+) -> None:
+    row.space_id = str(suggestion.space_id)
+    row.memory_scope_id = str(suggestion.memory_scope_id)
+    row.source_type = suggestion.source_type
+    row.source_id = suggestion.source_id
+    row.target_type = suggestion.target_type
+    row.target_id = suggestion.target_id
+    row.relation_type = suggestion.relation_type
+    row.confidence = suggestion.confidence
+    row.reason = suggestion.reason
+    row.score = suggestion.score
+    row.status = suggestion.status.value
+    row.metadata_json = dict(suggestion.metadata)
+    row.created_at = suggestion.created_at
+    row.updated_at = suggestion.updated_at
+    row.reviewed_at = suggestion.reviewed_at
+    row.review_reason = suggestion.review_reason
+
+
+def context_link_suggestion_row_to_domain(
+    row: MemoryContextLinkSuggestionRow,
+) -> MemoryContextLinkSuggestion:
+    return MemoryContextLinkSuggestion(
+        id=MemoryContextLinkSuggestionId(row.id),
+        space_id=SpaceId(row.space_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
+        source_type=row.source_type,
+        source_id=row.source_id,
+        target_type=row.target_type,
+        target_id=row.target_id,
+        relation_type=row.relation_type,
+        confidence=row.confidence,
+        reason=row.reason,
+        score=float(row.score),
+        status=ContextLinkSuggestionStatus(row.status),
+        metadata=dict(row.metadata_json or {}),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        reviewed_at=row.reviewed_at,
+        review_reason=row.review_reason,
     )
 
 

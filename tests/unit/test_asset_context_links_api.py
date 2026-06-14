@@ -183,6 +183,117 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert deleted_links.json()["data"][0]["id"] == link_id
 
 
+def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "text": "Alex agreed that screenshots should be linked to context memory.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "alex-review"}],
+            },
+            headers=auth_headers({"Idempotency-Key": "review-fact"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-review",
+                "text": "Screenshot note from Alex about context memory links.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex screenshot context memory",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        repeated = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex screenshot context memory",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        suggestion_id = suggestions.json()["data"]["candidates"][0]["suggestion_id"]
+        pending = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+            },
+            headers=auth_headers(),
+        )
+        approved = client.post(
+            f"/v1/context-link-suggestions/{suggestion_id}/review",
+            json={"action": "approve", "reason": "reviewed by user"},
+            headers=auth_headers(),
+        )
+        approve_again = client.post(
+            f"/v1/context-link-suggestions/{suggestion_id}/review",
+            json={"action": "approve"},
+            headers=auth_headers(),
+        )
+        links = client.get(
+            "/v1/context-links",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+            },
+            headers=auth_headers(),
+        )
+
+    assert fact.status_code == 201
+    assert capture.status_code == 201
+    assert suggestions.status_code == 200
+    candidate = suggestions.json()["data"]["candidates"][0]
+    assert candidate["target_type"] == "fact"
+    assert candidate["target_id"] == fact.json()["data"]["id"]
+    assert candidate["suggestion_id"]
+    assert candidate["status"] == "pending"
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["candidates"][0]["suggestion_id"] == suggestion_id
+    assert pending.status_code == 200
+    assert pending.json()["data"][0]["id"] == suggestion_id
+    assert pending.json()["data"][0]["status"] == "pending"
+    assert approved.status_code == 200
+    assert approved.json()["data"]["suggestion"]["status"] == "approved"
+    assert approved.json()["data"]["link"]["target_id"] == fact.json()["data"]["id"]
+    assert approved.json()["data"]["duplicate_link"] is False
+    assert approve_again.status_code == 200
+    assert approve_again.json()["data"]["duplicate_link"] is True
+    assert links.status_code == 200
+    assert links.json()["data"][0]["target_id"] == fact.json()["data"]["id"]
+
+
 def test_asset_upload_limit_uses_ingress_error(tmp_path: Path) -> None:
     with make_client(tmp_path, max_asset_upload_bytes=4) as client:
         response = client.post(
@@ -385,6 +496,7 @@ def test_scoped_tokens_can_only_access_assets_and_links_in_their_memory_scope(
                 "source_type": "capture",
                 "source_id": capture_a["id"],
                 "text": "Alpha asset link",
+                "persist": True,
             },
             headers=scoped_headers,
         )
@@ -410,6 +522,12 @@ def test_scoped_tokens_can_only_access_assets_and_links_in_their_memory_scope(
                 "confidence": "high",
                 "reason": "same scoped memory_scope",
             },
+            headers=scoped_headers,
+        )
+        scoped_review = client.post(
+            "/v1/context-link-suggestions/"
+            f"{same_suggestions.json()['data']['candidates'][0]['suggestion_id']}/review",
+            json={"action": "approve", "reason": "scoped token accepted"},
             headers=scoped_headers,
         )
         cross_link = client.post(
@@ -447,8 +565,11 @@ def test_scoped_tokens_can_only_access_assets_and_links_in_their_memory_scope(
     assert same_asset_download.content == b"alpha asset"
     assert cross_asset_download.status_code == 403
     assert same_suggestions.status_code == 200
+    assert same_suggestions.json()["data"]["candidates"][0]["status"] == "pending"
     assert cross_suggestions.status_code == 403
     assert same_link.status_code == 200
+    assert scoped_review.status_code == 200
+    assert scoped_review.json()["data"]["suggestion"]["status"] == "approved"
     assert cross_link.status_code == 403
     assert hidden_cross_target.status_code == 400
     assert hidden_cross_target.json()["error"]["code"] == "memory.validation"

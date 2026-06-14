@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from math import log
 
 from memo_stack_core.application.dto import (
     ContextLinkCandidate,
     ContextLinkResult,
+    ContextLinkSuggestionResult,
     ContextLinkSuggestionsResult,
     CreateContextLinkCommand,
     DeleteContextLinkCommand,
     ListContextLinksQuery,
+    ListContextLinkSuggestionsQuery,
+    ReviewContextLinkSuggestionCommand,
     SuggestContextLinksCommand,
 )
-from memo_stack_core.domain.assets import MemoryContextLink, MemoryContextLinkId
+from memo_stack_core.domain.assets import (
+    MemoryContextLink,
+    MemoryContextLinkId,
+    MemoryContextLinkSuggestion,
+    MemoryContextLinkSuggestionId,
+)
 from memo_stack_core.domain.errors import MemoryNotFoundError, MemoryValidationError
 from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.ids import IdGeneratorPort
@@ -127,9 +136,16 @@ class DeleteContextLinkUseCase:
 
 
 class SuggestContextLinksUseCase:
-    def __init__(self, *, uow_factory: UnitOfWorkFactoryPort, clock: ClockPort) -> None:
+    def __init__(
+        self,
+        *,
+        uow_factory: UnitOfWorkFactoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+    ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
+        self._ids = ids
 
     async def execute(self, command: SuggestContextLinksCommand) -> ContextLinkSuggestionsResult:
         query_text = command.text.strip()
@@ -138,6 +154,10 @@ class SuggestContextLinksUseCase:
             "source_type": command.source_type,
             "source_id": command.source_id,
         }
+        if command.persist and (not command.source_type or not command.source_id):
+            raise MemoryValidationError(
+                "Persisted context link suggestions require source_type and source_id"
+            )
         async with self._uow_factory() as uow:
             source_thread_id = str(command.thread_id) if command.thread_id else None
             if command.source_type == "capture" and command.source_id:
@@ -292,9 +312,196 @@ class SuggestContextLinksUseCase:
         )
         diagnostics["query_terms"] = list(terms)
         diagnostics["candidate_count"] = len(ranked)
+        ranked = ranked[: command.limit]
+        if command.persist:
+            ranked = await self._persist_candidates(command, ranked, diagnostics)
         return ContextLinkSuggestionsResult(
-            candidates=tuple(ranked[: command.limit]),
+            candidates=tuple(ranked),
             diagnostics=diagnostics,
+        )
+
+    async def _persist_candidates(
+        self,
+        command: SuggestContextLinksCommand,
+        candidates: list[ContextLinkCandidate],
+        diagnostics: dict[str, object],
+    ) -> list[ContextLinkCandidate]:
+        if not command.source_type or not command.source_id:
+            return candidates
+        now = self._clock.now()
+        persisted: list[ContextLinkCandidate] = []
+        skipped_existing_links = 0
+        async with self._uow_factory() as uow:
+            await _assert_endpoint_visible(
+                uow,
+                endpoint_type=command.source_type,
+                endpoint_id=command.source_id,
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                role="source",
+            )
+            for candidate in candidates:
+                existing_link = await uow.context_links.find_active(
+                    space_id=str(command.space_id),
+                    memory_scope_id=str(command.memory_scope_id),
+                    source_type=command.source_type,
+                    source_id=command.source_id,
+                    target_type=candidate.target_type,
+                    target_id=candidate.target_id,
+                    relation_type="related_to",
+                )
+                if existing_link is not None:
+                    skipped_existing_links += 1
+                    continue
+                existing = await uow.context_link_suggestions.find_pending(
+                    space_id=str(command.space_id),
+                    memory_scope_id=str(command.memory_scope_id),
+                    source_type=command.source_type,
+                    source_id=command.source_id,
+                    target_type=candidate.target_type,
+                    target_id=candidate.target_id,
+                    relation_type="related_to",
+                )
+                if existing is None:
+                    suggestion = MemoryContextLinkSuggestion.create(
+                        suggestion_id=MemoryContextLinkSuggestionId(
+                            self._ids.new_id("ctxlinksug")
+                        ),
+                        space_id=command.space_id,
+                        memory_scope_id=command.memory_scope_id,
+                        source_type=command.source_type,
+                        source_id=command.source_id,
+                        target_type=candidate.target_type,
+                        target_id=candidate.target_id,
+                        relation_type="related_to",
+                        confidence=_confidence_for_candidate(candidate),
+                        reason=_candidate_reason(candidate),
+                        score=candidate.score,
+                        metadata=_candidate_metadata(candidate, diagnostics),
+                        now=now,
+                    )
+                    saved = await uow.context_link_suggestions.create(suggestion)
+                else:
+                    saved = existing
+                persisted.append(
+                    replace(
+                        candidate,
+                        suggestion_id=str(saved.id),
+                        status=saved.status.value,
+                    )
+                )
+            await uow.commit()
+        diagnostics["persisted_count"] = len(persisted)
+        diagnostics["skipped_existing_link_count"] = skipped_existing_links
+        return persisted
+
+
+class ListContextLinkSuggestionsUseCase:
+    def __init__(self, *, uow_factory: UnitOfWorkFactoryPort) -> None:
+        self._uow_factory = uow_factory
+
+    async def execute(
+        self,
+        query: ListContextLinkSuggestionsQuery,
+    ) -> list[MemoryContextLinkSuggestion]:
+        async with self._uow_factory() as uow:
+            return await uow.context_link_suggestions.list_for_scope(
+                space_id=str(query.space_id),
+                memory_scope_id=str(query.memory_scope_id),
+                status=query.status,
+                limit=query.limit,
+                source_type=query.source_type,
+                source_id=query.source_id,
+            )
+
+
+class ReviewContextLinkSuggestionUseCase:
+    def __init__(
+        self,
+        *,
+        uow_factory: UnitOfWorkFactoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+        self._ids = ids
+
+    async def execute(
+        self,
+        command: ReviewContextLinkSuggestionCommand,
+    ) -> ContextLinkSuggestionResult:
+        normalized_action = command.action.strip().lower()
+        if normalized_action not in {"approve", "reject"}:
+            raise MemoryValidationError("Unknown context link suggestion review action")
+
+        now = self._clock.now()
+        async with self._uow_factory() as uow:
+            suggestion = await uow.context_link_suggestions.get_by_id(command.suggestion_id)
+            if suggestion is None:
+                raise MemoryNotFoundError("Context link suggestion not found")
+
+            if normalized_action == "reject":
+                saved = await uow.context_link_suggestions.save(
+                    suggestion.reject(now=now, reason=command.reason)
+                )
+                await uow.commit()
+                return ContextLinkSuggestionResult(suggestion=saved)
+
+            await _assert_endpoint_visible(
+                uow,
+                endpoint_type=suggestion.source_type,
+                endpoint_id=suggestion.source_id,
+                space_id=str(suggestion.space_id),
+                memory_scope_id=str(suggestion.memory_scope_id),
+                role="source",
+            )
+            await _assert_endpoint_visible(
+                uow,
+                endpoint_type=suggestion.target_type,
+                endpoint_id=suggestion.target_id,
+                space_id=str(suggestion.space_id),
+                memory_scope_id=str(suggestion.memory_scope_id),
+                role="target",
+            )
+            existing_link = await uow.context_links.find_active(
+                space_id=str(suggestion.space_id),
+                memory_scope_id=str(suggestion.memory_scope_id),
+                source_type=suggestion.source_type,
+                source_id=suggestion.source_id,
+                target_type=suggestion.target_type,
+                target_id=suggestion.target_id,
+                relation_type=suggestion.relation_type,
+            )
+            duplicate_link = existing_link is not None
+            link = existing_link
+            if link is None:
+                link = MemoryContextLink.create(
+                    link_id=MemoryContextLinkId(self._ids.new_id("ctxlink")),
+                    space_id=suggestion.space_id,
+                    memory_scope_id=suggestion.memory_scope_id,
+                    source_type=suggestion.source_type,
+                    source_id=suggestion.source_id,
+                    target_type=suggestion.target_type,
+                    target_id=suggestion.target_id,
+                    relation_type=suggestion.relation_type,
+                    confidence=suggestion.confidence,
+                    reason=command.reason or suggestion.reason,
+                    metadata={
+                        **dict(suggestion.metadata),
+                        "approved_from_suggestion_id": str(suggestion.id),
+                    },
+                    now=now,
+                )
+                link = await uow.context_links.create(link)
+            saved = await uow.context_link_suggestions.save(
+                suggestion.approve(now=now, reason=command.reason)
+            )
+            await uow.commit()
+        return ContextLinkSuggestionResult(
+            suggestion=saved,
+            link=link,
+            duplicate_link=duplicate_link,
         )
 
 
@@ -417,6 +624,35 @@ def _candidate(
         reasons=tuple(dict.fromkeys(reasons)),
         metadata=metadata,
     )
+
+
+def _candidate_reason(candidate: ContextLinkCandidate) -> str:
+    reason = "; ".join(candidate.reasons)
+    return reason[:320] if reason else "related memory candidate"
+
+
+def _confidence_for_candidate(candidate: ContextLinkCandidate) -> str:
+    if candidate.tier == "likely":
+        return "high"
+    if candidate.tier == "possible":
+        return "medium"
+    return "low"
+
+
+def _candidate_metadata(
+    candidate: ContextLinkCandidate,
+    diagnostics: dict[str, object],
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "target_label": candidate.label,
+        "target_preview": candidate.preview,
+        "target_tier": candidate.tier,
+        "resolver_version": str(diagnostics.get("resolver_version", "unknown")),
+    }
+    for key, value in (candidate.metadata or {}).items():
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            metadata[str(key)] = value
+    return metadata
 
 
 def _tier(score: float) -> str:

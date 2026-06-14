@@ -13,6 +13,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryAssetExtractionJobRow,
     MemoryAssetRow,
     MemoryContextLinkRow,
+    MemoryContextLinkSuggestionRow,
     MemoryDocumentRow,
     MemoryFactRow,
     MemoryScopeRow,
@@ -35,6 +36,7 @@ class PathResourceRefs:
     asset_extraction_job_id: str | None = None
     extraction_artifact_id: str | None = None
     context_link_id: str | None = None
+    context_link_suggestion_id: str | None = None
     memory_scope_id: str | None = None
 
 
@@ -297,6 +299,14 @@ async def _add_space_from_path_resource(
         if path_refs.context_link_id:
             await _add_row_space(session, refs, MemoryContextLinkRow, path_refs.context_link_id)
 
+        if path_refs.context_link_suggestion_id:
+            await _add_row_space(
+                session,
+                refs,
+                MemoryContextLinkSuggestionRow,
+                path_refs.context_link_suggestion_id,
+            )
+
         if path_refs.memory_scope_id:
             await _add_row_space(session, refs, MemoryScopeRow, path_refs.memory_scope_id)
 
@@ -334,6 +344,14 @@ async def _add_memory_scope_from_path_resource(
                 session, refs, MemoryContextLinkRow, path_refs.context_link_id
             )
 
+        if path_refs.context_link_suggestion_id:
+            await _add_row_memory_scope(
+                session,
+                refs,
+                MemoryContextLinkSuggestionRow,
+                path_refs.context_link_suggestion_id,
+            )
+
         if path_refs.memory_scope_id:
             refs.add(path_refs.memory_scope_id)
 
@@ -347,6 +365,7 @@ async def _add_row_space(
     | type[MemoryAssetRow]
     | type[MemoryAssetExtractionJobRow]
     | type[MemoryContextLinkRow]
+    | type[MemoryContextLinkSuggestionRow]
     | type[MemoryScopeRow],
     row_id: str,
 ) -> None:
@@ -363,7 +382,8 @@ async def _add_row_memory_scope(
     | type[MemorySuggestionRow]
     | type[MemoryAssetRow]
     | type[MemoryAssetExtractionJobRow]
-    | type[MemoryContextLinkRow],
+    | type[MemoryContextLinkRow]
+    | type[MemoryContextLinkSuggestionRow],
     row_id: str,
 ) -> None:
     memory_scope_id = await session.scalar(select(model.memory_scope_id).where(model.id == row_id))

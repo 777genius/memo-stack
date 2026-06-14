@@ -252,6 +252,10 @@ def test_create_schema_adds_asset_and_context_link_tables(tmp_path: Path) -> Non
                     "context_link_indexes": {
                         index["name"] for index in inspector.get_indexes("memory_context_links")
                     },
+                    "context_link_suggestion_indexes": {
+                        index["name"]
+                        for index in inspector.get_indexes("memory_context_link_suggestions")
+                    },
                     "usage_indexes": {
                         index["name"] for index in inspector.get_indexes("memory_usage_records")
                     },
@@ -268,6 +272,7 @@ def test_create_schema_adds_asset_and_context_link_tables(tmp_path: Path) -> Non
     assert "memory_asset_extraction_jobs" in result["tables"]
     assert "memory_asset_extraction_artifacts" in result["tables"]
     assert "memory_context_links" in result["tables"]
+    assert "memory_context_link_suggestions" in result["tables"]
     assert "memory_usage_records" in result["tables"]
     assert "ix_memory_assets_scope_status" in result["asset_indexes"]
     assert "ix_memory_assets_hash_scope" in result["asset_indexes"]
@@ -287,6 +292,9 @@ def test_create_schema_adds_asset_and_context_link_tables(tmp_path: Path) -> Non
     assert "ix_asset_extraction_artifacts_asset" in result["asset_extraction_artifact_indexes"]
     assert "uq_memory_context_link_active" in result["context_link_indexes"]
     assert "ix_memory_context_links_source" in result["context_link_indexes"]
+    assert "uq_context_link_suggestion_pending" in result["context_link_suggestion_indexes"]
+    assert "ix_context_link_suggestions_source" in result["context_link_suggestion_indexes"]
+    assert "ix_context_link_suggestions_status" in result["context_link_suggestion_indexes"]
     assert "uq_memory_usage_idempotency" in result["usage_indexes"]
     assert "ix_memory_usage_subject_window" in result["usage_indexes"]
 

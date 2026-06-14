@@ -21,6 +21,7 @@ from memo_stack_adapters.postgres.asset_repositories import (
     PostgresAssetExtractionRepository,
     PostgresAssetRepository,
     PostgresContextLinkRepository,
+    PostgresContextLinkSuggestionRepository,
 )
 from memo_stack_adapters.postgres.fact_repositories import (
     PostgresFactRelationRepository,
@@ -629,6 +630,7 @@ class PostgresUnitOfWork:
         self.assets = PostgresAssetRepository(self._session)
         self.asset_extractions = PostgresAssetExtractionRepository(self._session)
         self.context_links = PostgresContextLinkRepository(self._session)
+        self.context_link_suggestions = PostgresContextLinkSuggestionRepository(self._session)
         self.episodes = PostgresEpisodeRepository(self._session)
         self.documents = PostgresDocumentRepository(self._session)
         self.chunks = PostgresChunkRepository(self._session)

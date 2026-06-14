@@ -9,9 +9,11 @@ from memo_stack_core.application import (
     CreateContextLinkCommand,
     DeleteContextLinkCommand,
     ListContextLinksQuery,
+    ListContextLinkSuggestionsQuery,
+    ReviewContextLinkSuggestionCommand,
     SuggestContextLinksCommand,
 )
-from memo_stack_core.domain.assets import MemoryContextLink
+from memo_stack_core.domain.assets import MemoryContextLink, MemoryContextLinkSuggestion
 from pydantic import BaseModel, ConfigDict, Field
 
 from memo_stack_server.api.auth import require_service_token
@@ -42,6 +44,7 @@ class SuggestContextLinksRequest(BaseModel):
     source_type: str | None = Field(default=None, max_length=80)
     source_id: str | None = Field(default=None, max_length=160)
     limit: int = Field(default=10, ge=1, le=30)
+    persist: bool = False
 
 
 class CreateContextLinkRequest(BaseModel):
@@ -61,11 +64,20 @@ class CreateContextLinkRequest(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class ReviewContextLinkSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1, max_length=16)
+    reason: str | None = Field(default=None, max_length=320)
+
+
 @router.post("/link-suggestions")
 async def suggest_context_links(
     request: SuggestContextLinksRequest,
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
+    if request.persist:
+        ensure_server_writes_enabled(container)
     scope = await resolve_existing_single_scope(
         container,
         space_id=request.space_id,
@@ -87,6 +99,7 @@ async def suggest_context_links(
             source_type=request.source_type,
             source_id=request.source_id,
             limit=request.limit,
+            persist=request.persist,
         )
     )
     return {
@@ -100,6 +113,8 @@ async def suggest_context_links(
                     "score": item.score,
                     "tier": item.tier,
                     "reasons": list(item.reasons),
+                    "suggestion_id": item.suggestion_id,
+                    "status": item.status,
                     "metadata": item.metadata or {},
                 }
                 for item in result.candidates
@@ -179,6 +194,66 @@ async def list_context_links(
     return {"data": [context_link_to_response(link) for link in links]}
 
 
+@router.get("/context-link-suggestions")
+async def list_context_link_suggestions(
+    container: Annotated[Container, Depends(get_container)],
+    space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    source_type: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    source_id: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "pending",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> dict[str, Any]:
+    scope = await resolve_existing_single_scope(
+        container,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        thread_id=None,
+        space_slug=space_slug,
+        memory_scope_external_ref=memory_scope_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
+    if scope is None:
+        return {"data": []}
+    suggestions = await container.list_context_link_suggestions.execute(
+        ListContextLinkSuggestionsQuery(
+            space_id=scope.space_id,
+            memory_scope_id=scope.memory_scope_id,
+            status=status_filter,
+            source_type=source_type,
+            source_id=source_id,
+            limit=limit,
+        )
+    )
+    return {"data": [context_link_suggestion_to_response(item) for item in suggestions]}
+
+
+@router.post("/context-link-suggestions/{context_link_suggestion_id}/review")
+async def review_context_link_suggestion(
+    context_link_suggestion_id: str,
+    request: ReviewContextLinkSuggestionRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    result = await container.review_context_link_suggestion.execute(
+        ReviewContextLinkSuggestionCommand(
+            suggestion_id=context_link_suggestion_id,
+            action=request.action,
+            reason=request.reason,
+        )
+    )
+    return {
+        "data": {
+            "suggestion": context_link_suggestion_to_response(result.suggestion),
+            "link": context_link_to_response(result.link) if result.link else None,
+            "duplicate_link": result.duplicate_link,
+        }
+    }
+
+
 @router.delete("/context-links/{context_link_id}")
 async def delete_context_link(
     context_link_id: str,
@@ -207,6 +282,30 @@ def context_link_to_response(link: MemoryContextLink) -> dict[str, Any]:
         "metadata": _safe_metadata(link.metadata),
         "created_at": link.created_at.isoformat(),
         "updated_at": link.updated_at.isoformat(),
+    }
+
+
+def context_link_suggestion_to_response(
+    suggestion: MemoryContextLinkSuggestion,
+) -> dict[str, Any]:
+    return {
+        "id": str(suggestion.id),
+        "space_id": str(suggestion.space_id),
+        "memory_scope_id": str(suggestion.memory_scope_id),
+        "source_type": suggestion.source_type,
+        "source_id": suggestion.source_id,
+        "target_type": suggestion.target_type,
+        "target_id": suggestion.target_id,
+        "relation_type": suggestion.relation_type,
+        "confidence": suggestion.confidence,
+        "reason": suggestion.reason,
+        "score": suggestion.score,
+        "status": suggestion.status.value,
+        "metadata": _safe_metadata(suggestion.metadata),
+        "created_at": suggestion.created_at.isoformat(),
+        "updated_at": suggestion.updated_at.isoformat(),
+        "reviewed_at": suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None,
+        "review_reason": suggestion.review_reason,
     }
 
 

@@ -19,6 +19,7 @@ from memo_stack_core.domain.errors import MemoryValidationError
 
 MemoryAssetId = NewType("MemoryAssetId", str)
 MemoryContextLinkId = NewType("MemoryContextLinkId", str)
+MemoryContextLinkSuggestionId = NewType("MemoryContextLinkSuggestionId", str)
 
 MAX_ASSET_FILENAME_CHARS = 240
 MAX_ASSET_CONTENT_TYPE_CHARS = 120
@@ -31,6 +32,13 @@ class AssetStatus(StrEnum):
     STORED = "stored"
     FAILED = "failed"
     DELETED = "deleted"
+
+
+class ContextLinkSuggestionStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
 
 
 @dataclass(frozen=True)
@@ -183,6 +191,122 @@ class MemoryContextLink:
         if self.status == LifecycleStatus.DELETED:
             return self
         return replace(self, status=LifecycleStatus.DELETED, updated_at=now)
+
+
+@dataclass(frozen=True)
+class MemoryContextLinkSuggestion:
+    id: MemoryContextLinkSuggestionId
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    source_type: str
+    source_id: str
+    target_type: str
+    target_id: str
+    relation_type: str
+    confidence: str
+    reason: str
+    score: float
+    status: ContextLinkSuggestionStatus
+    metadata: Mapping[str, object]
+    created_at: datetime
+    updated_at: datetime
+    reviewed_at: datetime | None
+    review_reason: str | None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        suggestion_id: MemoryContextLinkSuggestionId,
+        space_id: SpaceId,
+        memory_scope_id: MemoryScopeId,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+        confidence: str,
+        reason: str,
+        score: float,
+        now: datetime,
+        metadata: Mapping[str, object] | None = None,
+    ) -> MemoryContextLinkSuggestion:
+        safe_source_type = source_type.strip()
+        safe_source_id = source_id.strip()
+        safe_target_type = target_type.strip()
+        safe_target_id = target_id.strip()
+        safe_relation_type = relation_type.strip()
+        if not safe_source_type or not safe_source_id:
+            raise MemoryValidationError("Context link suggestion source is required")
+        if not safe_target_type or not safe_target_id:
+            raise MemoryValidationError("Context link suggestion target is required")
+        if safe_source_type == safe_target_type and safe_source_id == safe_target_id:
+            raise MemoryValidationError("Context link suggestion requires two distinct objects")
+        if not safe_relation_type:
+            raise MemoryValidationError("Context link suggestion relation_type is required")
+        if not reason.strip():
+            raise MemoryValidationError("Context link suggestion reason is required")
+        safe_confidence = confidence.strip() or "medium"
+        if safe_confidence not in {"low", "medium", "high"}:
+            raise MemoryValidationError("Context link suggestion confidence is invalid")
+        return cls(
+            id=suggestion_id,
+            space_id=space_id,
+            memory_scope_id=memory_scope_id,
+            source_type=safe_source_type,
+            source_id=safe_source_id,
+            target_type=safe_target_type,
+            target_id=safe_target_id,
+            relation_type=safe_relation_type,
+            confidence=safe_confidence,
+            reason=reason.strip()[:320],
+            score=max(0.0, min(float(score), 100.0)),
+            status=ContextLinkSuggestionStatus.PENDING,
+            metadata=_safe_metadata(metadata, max_keys=MAX_CONTEXT_LINK_METADATA_KEYS),
+            created_at=now,
+            updated_at=now,
+            reviewed_at=None,
+            review_reason=None,
+        )
+
+    def approve(self, *, now: datetime, reason: str | None = None) -> MemoryContextLinkSuggestion:
+        if self.status == ContextLinkSuggestionStatus.APPROVED:
+            return self
+        if self.status != ContextLinkSuggestionStatus.PENDING:
+            raise MemoryValidationError("Only pending context link suggestions can be approved")
+        return replace(
+            self,
+            status=ContextLinkSuggestionStatus.APPROVED,
+            updated_at=now,
+            reviewed_at=now,
+            review_reason=(reason or self.review_reason),
+        )
+
+    def reject(self, *, now: datetime, reason: str | None = None) -> MemoryContextLinkSuggestion:
+        if self.status == ContextLinkSuggestionStatus.REJECTED:
+            return self
+        if self.status != ContextLinkSuggestionStatus.PENDING:
+            raise MemoryValidationError("Only pending context link suggestions can be rejected")
+        return replace(
+            self,
+            status=ContextLinkSuggestionStatus.REJECTED,
+            updated_at=now,
+            reviewed_at=now,
+            review_reason=reason,
+        )
+
+    def expire(self, *, now: datetime, reason: str | None = None) -> MemoryContextLinkSuggestion:
+        if self.status == ContextLinkSuggestionStatus.EXPIRED:
+            return self
+        if self.status != ContextLinkSuggestionStatus.PENDING:
+            raise MemoryValidationError("Only pending context link suggestions can be expired")
+        return replace(
+            self,
+            status=ContextLinkSuggestionStatus.EXPIRED,
+            updated_at=now,
+            reviewed_at=now,
+            review_reason=reason,
+        )
 
 
 def _classification_value(value: str) -> str:

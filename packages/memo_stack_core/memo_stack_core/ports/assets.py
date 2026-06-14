@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from memo_stack_core.domain.assets import MemoryAsset, MemoryContextLink
+from memo_stack_core.domain.assets import (
+    MemoryAsset,
+    MemoryContextLink,
+    MemoryContextLinkSuggestion,
+)
 
 
 @dataclass(frozen=True)
@@ -94,3 +98,48 @@ class ContextLinkRepositoryPort(Protocol):
         limit: int,
     ) -> list[MemoryContextLink]:
         """List links from one source object."""
+
+
+class ContextLinkSuggestionRepositoryPort(Protocol):
+    async def create(
+        self,
+        suggestion: MemoryContextLinkSuggestion,
+    ) -> MemoryContextLinkSuggestion:
+        """Persist a context link suggestion."""
+
+    async def save(
+        self,
+        suggestion: MemoryContextLinkSuggestion,
+    ) -> MemoryContextLinkSuggestion:
+        """Persist context link suggestion changes."""
+
+    async def get_by_id(
+        self,
+        suggestion_id: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        """Load a context link suggestion by id."""
+
+    async def find_pending(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        """Find a pending suggestion for idempotent suggestion creation."""
+
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        status: str | None,
+        limit: int,
+        source_type: str | None = None,
+        source_id: str | None = None,
+    ) -> list[MemoryContextLinkSuggestion]:
+        """List context link suggestions in a scope."""

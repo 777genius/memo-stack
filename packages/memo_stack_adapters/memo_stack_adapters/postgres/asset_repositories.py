@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from memo_stack_core.domain.assets import MemoryAsset, MemoryContextLink
+from memo_stack_core.domain.assets import (
+    MemoryAsset,
+    MemoryContextLink,
+    MemoryContextLinkSuggestion,
+)
 from memo_stack_core.domain.errors import MemoryConflictError, MemoryNotFoundError
 from memo_stack_core.domain.extraction import AssetExtractionJob, ExtractionArtifact
-from memo_stack_core.ports.assets import AssetRepositoryPort, ContextLinkRepositoryPort
+from memo_stack_core.ports.assets import (
+    AssetRepositoryPort,
+    ContextLinkRepositoryPort,
+    ContextLinkSuggestionRepositoryPort,
+)
 from memo_stack_core.ports.extraction import AssetExtractionRepositoryPort
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -16,12 +24,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from memo_stack_adapters.postgres.mappers import (
     apply_asset_extraction_job_to_row,
     apply_asset_to_row,
+    apply_context_link_suggestion_to_row,
     apply_context_link_to_row,
     asset_extraction_job_row_to_domain,
     asset_extraction_job_to_row,
     asset_row_to_domain,
     asset_to_row,
     context_link_row_to_domain,
+    context_link_suggestion_row_to_domain,
+    context_link_suggestion_to_row,
     context_link_to_row,
     extraction_artifact_row_to_domain,
     extraction_artifact_to_row,
@@ -31,6 +42,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryAssetExtractionJobRow,
     MemoryAssetRow,
     MemoryContextLinkRow,
+    MemoryContextLinkSuggestionRow,
 )
 
 
@@ -363,3 +375,100 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
             )
         ).scalars()
         return [context_link_row_to_domain(row) for row in rows]
+
+
+class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        suggestion: MemoryContextLinkSuggestion,
+    ) -> MemoryContextLinkSuggestion:
+        self._session.add(context_link_suggestion_to_row(suggestion))
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise MemoryConflictError(
+                "Context link suggestion conflicted with existing data"
+            ) from exc
+        return suggestion
+
+    async def save(
+        self,
+        suggestion: MemoryContextLinkSuggestion,
+    ) -> MemoryContextLinkSuggestion:
+        row = await self._session.get(MemoryContextLinkSuggestionRow, str(suggestion.id))
+        if row is None:
+            raise MemoryNotFoundError("Context link suggestion not found")
+        apply_context_link_suggestion_to_row(suggestion, row)
+        await self._session.flush()
+        return context_link_suggestion_row_to_domain(row)
+
+    async def get_by_id(
+        self,
+        suggestion_id: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        row = await self._session.get(MemoryContextLinkSuggestionRow, suggestion_id)
+        return context_link_suggestion_row_to_domain(row) if row is not None else None
+
+    async def find_pending(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        row = (
+            await self._session.execute(
+                select(MemoryContextLinkSuggestionRow).where(
+                    MemoryContextLinkSuggestionRow.space_id == space_id,
+                    MemoryContextLinkSuggestionRow.memory_scope_id == memory_scope_id,
+                    MemoryContextLinkSuggestionRow.source_type == source_type,
+                    MemoryContextLinkSuggestionRow.source_id == source_id,
+                    MemoryContextLinkSuggestionRow.target_type == target_type,
+                    MemoryContextLinkSuggestionRow.target_id == target_id,
+                    MemoryContextLinkSuggestionRow.relation_type == relation_type,
+                    MemoryContextLinkSuggestionRow.status == "pending",
+                )
+            )
+        ).scalar_one_or_none()
+        return context_link_suggestion_row_to_domain(row) if row is not None else None
+
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        status: str | None,
+        limit: int,
+        source_type: str | None = None,
+        source_id: str | None = None,
+    ) -> list[MemoryContextLinkSuggestion]:
+        conditions = [
+            MemoryContextLinkSuggestionRow.space_id == space_id,
+            MemoryContextLinkSuggestionRow.memory_scope_id == memory_scope_id,
+        ]
+        if status:
+            conditions.append(MemoryContextLinkSuggestionRow.status == status)
+        if source_type:
+            conditions.append(MemoryContextLinkSuggestionRow.source_type == source_type)
+        if source_id:
+            conditions.append(MemoryContextLinkSuggestionRow.source_id == source_id)
+        rows = (
+            await self._session.execute(
+                select(MemoryContextLinkSuggestionRow)
+                .where(*conditions)
+                .order_by(
+                    MemoryContextLinkSuggestionRow.updated_at.desc(),
+                    MemoryContextLinkSuggestionRow.id.desc(),
+                )
+                .limit(limit)
+            )
+        ).scalars()
+        return [context_link_suggestion_row_to_domain(row) for row in rows]

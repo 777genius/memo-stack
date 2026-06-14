@@ -6,7 +6,11 @@ from types import TracebackType
 from typing import Protocol
 
 from memo_stack_core.domain.events import OutboxEvent
-from memo_stack_core.ports.assets import AssetRepositoryPort, ContextLinkRepositoryPort
+from memo_stack_core.ports.assets import (
+    AssetRepositoryPort,
+    ContextLinkRepositoryPort,
+    ContextLinkSuggestionRepositoryPort,
+)
 from memo_stack_core.ports.captures import CaptureRepositoryPort
 from memo_stack_core.ports.extraction import AssetExtractionRepositoryPort
 from memo_stack_core.ports.repositories import (
@@ -34,6 +38,7 @@ class UnitOfWorkPort(Protocol):
     assets: AssetRepositoryPort
     asset_extractions: AssetExtractionRepositoryPort
     context_links: ContextLinkRepositoryPort
+    context_link_suggestions: ContextLinkSuggestionRepositoryPort
     episodes: EpisodeRepositoryPort
     documents: DocumentRepositoryPort
     chunks: ChunkRepositoryPort

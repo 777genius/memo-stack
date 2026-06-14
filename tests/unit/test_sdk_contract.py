@@ -649,6 +649,67 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
     assert seen[6][2]["limit"] == "10"
 
 
+def test_sdk_supports_context_link_suggestion_review_contract() -> None:
+    seen: list[tuple[str, str, dict[str, str], dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, request.url.path, dict(request.url.params), body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.suggest_context_links(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        thread_external_ref="session-assets",
+        source_type="capture",
+        source_id="cap_1",
+        text="alex screenshot memory",
+        persist=True,
+    )
+    client.list_context_link_suggestions(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        source_type="capture",
+        source_id="cap_1",
+    )
+    client.review_context_link_suggestion(
+        "ctxlinksug_1",
+        action="approve",
+        reason="user accepted",
+    )
+
+    assert [f"{method} {path}" for method, path, _params, _body in seen] == [
+        "POST /v1/link-suggestions",
+        "GET /v1/context-link-suggestions",
+        "POST /v1/context-link-suggestions/ctxlinksug_1/review",
+    ]
+    assert seen[0][3] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "thread_external_ref": "session-assets",
+        "text": "alex screenshot memory",
+        "source_type": "capture",
+        "source_id": "cap_1",
+        "limit": 10,
+        "persist": True,
+    }
+    assert seen[1][2] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "source_type": "capture",
+        "source_id": "cap_1",
+        "status": "pending",
+        "limit": "50",
+    }
+    assert seen[2][3] == {"action": "approve", "reason": "user accepted"}
+
+
 def test_sdk_supports_typed_scope_dtos() -> None:
     seen: list[tuple[str, dict[str, object]]] = []
 

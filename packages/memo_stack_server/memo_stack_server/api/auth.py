@@ -93,8 +93,11 @@ def _required_permission(request: Request) -> str | None:
             return MEMORY_PERMISSION_DELETE
         return MEMORY_PERMISSION_READ if method == "GET" else MEMORY_PERMISSION_WRITE
 
+    if path.startswith("/v1/context-link-suggestions"):
+        return MEMORY_PERMISSION_READ if method == "GET" else MEMORY_PERMISSION_WRITE
+
     if path == "/v1/link-suggestions":
-        return MEMORY_PERMISSION_READ
+        return MEMORY_PERMISSION_WRITE
 
     if path.startswith("/v1/thread-memory"):
         if method == "DELETE" or path.endswith("/delete"):
@@ -240,6 +243,7 @@ async def _requested_space_refs(container: Container, request: Request) -> set[s
                 or request.url.path.startswith("/v1/extraction-artifacts")
                 or request.url.path.startswith("/v1/captures")
                 or request.url.path.startswith("/v1/context-links")
+                or request.url.path.startswith("/v1/context-link-suggestions")
                 or request.url.path.startswith("/v1/documents")
                 or request.url.path == "/v1/link-suggestions"
                 or request.url.path.startswith("/v1/suggestions")
@@ -255,6 +259,10 @@ async def _requested_space_refs(container: Container, request: Request) -> set[s
             asset_extraction_job_id=_path_param(path_params, "job_id"),
             extraction_artifact_id=_path_param(path_params, "artifact_id"),
             context_link_id=_path_param(path_params, "context_link_id"),
+            context_link_suggestion_id=_path_param(
+                path_params,
+                "context_link_suggestion_id",
+            ),
             memory_scope_id=_path_param(path_params, "memory_scope_id"),
         ),
         include_default_legacy_space=request.url.path.startswith("/api/v1/interview-memory"),
@@ -301,6 +309,7 @@ async def _requested_memory_scope_refs(container: Container, request: Request) -
                 or request.url.path.startswith("/v1/extraction-artifacts")
                 or request.url.path.startswith("/v1/captures")
                 or request.url.path.startswith("/v1/context-links")
+                or request.url.path.startswith("/v1/context-link-suggestions")
                 or request.url.path.startswith("/v1/documents")
                 or request.url.path == "/v1/link-suggestions"
                 or request.url.path.startswith("/v1/suggestions")
@@ -323,6 +332,10 @@ async def _requested_memory_scope_refs(container: Container, request: Request) -
             asset_extraction_job_id=_path_param(path_params, "job_id"),
             extraction_artifact_id=_path_param(path_params, "artifact_id"),
             context_link_id=_path_param(path_params, "context_link_id"),
+            context_link_suggestion_id=_path_param(
+                path_params,
+                "context_link_suggestion_id",
+            ),
             memory_scope_id=_path_param(path_params, "memory_scope_id"),
         ),
         include_default_legacy_memory_scope=request.url.path.startswith("/api/v1/interview-memory"),
