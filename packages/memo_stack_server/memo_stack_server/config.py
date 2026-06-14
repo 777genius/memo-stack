@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     extraction_ocr_enabled: bool = True
     extraction_vision_model: str = "gpt-4.1-mini"
     extraction_vision_detail: str = "high"
+    transcription_provider: str = "openai"
+    transcription_openai_model: str = "gpt-4o-mini-transcribe"
     extraction_asr_model: str = "base"
     extraction_asr_device: str = "auto"
     extraction_asr_compute_type: str = "default"
@@ -140,6 +142,10 @@ class Settings(BaseSettings):
         ):
             raise RuntimeError(
                 "MEMORY_OPENAI_API_KEY is required when OpenAI capture extractor is enabled"
+            )
+        if self.transcription_provider not in {"disabled", "openai"}:
+            raise RuntimeError(
+                "MEMORY_TRANSCRIPTION_PROVIDER must be disabled or openai"
             )
         if self.graphiti_enabled and not self.graphiti_neo4j_password:
             raise RuntimeError("MEMORY_GRAPHITI_ENABLED requires MEMORY_GRAPHITI_NEO4J_PASSWORD")

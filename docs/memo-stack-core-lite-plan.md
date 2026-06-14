@@ -1445,16 +1445,20 @@ pnpm e2e:memory-canary -- --api-url http://127.0.0.1:7788
 
 Core Lite should create short ADRs while implementing. Do not hide key decisions inside code comments.
 
-Required ADRs:
+Current accepted ADRs live under `docs/adr/`. Earlier planning placeholders for
+Client App compatibility, prompt-safe rendering and idempotency/outbox semantics
+should be written as new ADRs with the next available numbers instead of
+reusing existing ADR ids.
+
+Accepted ADRs:
 
 ```text
 ADR-0001: Memo Stack Core Lite boundaries
 ADR-0002: Postgres is canonical truth
-ADR-0003: Qdrant is derived vector index
-ADR-0004: Graphiti is derived graph adapter
-ADR-0005: Client App compatibility routes
-ADR-0006: Prompt-safe context rendering
-ADR-0007: Idempotency and outbox semantics
+ADR-0003: Canonical fact lifecycle
+ADR-0004: Derived retrieval adapters
+ADR-0005: Capability ports for Cognee and Graphiti
+ADR-0006: Multimodal ingestion provider policy
 ```
 
 ADR template:

@@ -3,19 +3,28 @@ import base64
 from dataclasses import dataclass
 
 from memo_stack_adapters.extraction.content import (
+    ExtractionEngine,
     ImageMetadataExtractionEngine,
     PdfTextExtractionEngine,
     SimpleFileTypeDetector,
     StandardExtractionRouter,
+    SupportDecision,
 )
 from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from memo_stack_adapters.extraction.transcription.openai_adapter import (
+    OpenAISpeechTranscriptionAdapter,
+)
+from memo_stack_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
 from memo_stack_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
 from memo_stack_core.ports.extraction import (
+    ExtractedElement,
     ExtractionLimits,
     ExtractionRequest,
+    ExtractionResult,
     FileTypeDetectionRequest,
 )
+from memo_stack_core.ports.transcription import SpeechTranscriptionRequest
 
 
 def test_file_type_detector_prefers_office_extension_over_zip_magic() -> None:
@@ -189,6 +198,95 @@ def test_openai_vision_engine_missing_key_allows_fallback() -> None:
     assert result.diagnostics["fallback_allowed"] is True
 
 
+def test_openai_speech_transcription_adapter_transcribes_audio() -> None:
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key=None,
+        model="gpt-4o-mini-transcribe",
+        client_factory=lambda: _FakeTranscriptionClient(),
+    )
+
+    result = asyncio.run(
+        adapter.transcribe(
+            SpeechTranscriptionRequest(
+                job_id="extract_1",
+                asset_id="asset_1",
+                filename="voice-note.wav",
+                content_type="audio/wav",
+                byte_size=20,
+                sha256_hex="0" * 64,
+                content=b"RIFF0000WAVEfake wav bytes",
+                max_output_chars=1000,
+            )
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert result.provider_name == "openai_transcription"
+    assert result.provider_model == "gpt-4o-mini-transcribe"
+    assert result.language == "en"
+    assert result.duration_seconds == 4.0
+    assert result.segments[0].start_ms == 0
+    assert result.segments[0].end_ms == 2000
+    assert "Alex discussed memory scopes" in result.text
+
+
+def test_speech_transcription_engine_extracts_timecoded_transcript_artifact() -> None:
+    engine = SpeechTranscriptionExtractionEngine(
+        transcription=OpenAISpeechTranscriptionAdapter(
+            api_key=None,
+            model="gpt-4o-mini-transcribe",
+            client_factory=lambda: _FakeTranscriptionClient(),
+        )
+    )
+    request = _request(
+        parser_profile="media_api",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+        enable_external_ai=True,
+    )
+
+    supported = asyncio.run(engine.supports(request))
+    result = asyncio.run(engine.extract(request))
+
+    assert supported.supported is True
+    assert result.status == "succeeded"
+    assert result.parser_name == "speech_transcription"
+    assert result.model_version == "gpt-4o-mini-transcribe"
+    assert result.technical_metadata["transcript_status"] == "extracted"
+    assert result.technical_metadata["transcription_provider"] == "openai_transcription"
+    assert {artifact.artifact_type for artifact in result.artifacts} == {"transcript"}
+    assert "00:00:00.000 --> 00:00:02.000" in (result.markdown or "")
+
+
+def test_speech_transcription_engine_disabled_egress_falls_back_to_media_metadata() -> None:
+    router = StandardExtractionRouter(
+        engines=(
+            SpeechTranscriptionExtractionEngine(
+                transcription=OpenAISpeechTranscriptionAdapter(
+                    api_key="test-key",
+                    model="gpt-4o-mini-transcribe",
+                    client_factory=lambda: _FakeTranscriptionClient(),
+                )
+            ),
+            _FallbackMediaEngine(),
+        )
+    )
+    request = _request(
+        parser_profile="media_api",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+        enable_external_ai=False,
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.parser_name == "fallback_media"
+    assert result.diagnostics["speech_transcription_fallback"] is True
+
+
 def test_faster_whisper_engine_extracts_transcript_artifact() -> None:
     engine = FasterWhisperTranscriptionEngine(
         model_factory=lambda model, device, compute_type: _FakeWhisperModel(
@@ -239,12 +337,33 @@ def test_faster_whisper_engine_ignores_standard_local_profile() -> None:
     assert supported.reason == "parser_profile_not_asr"
 
 
+def test_faster_whisper_engine_ignores_standard_full_profile() -> None:
+    engine = FasterWhisperTranscriptionEngine(
+        model_factory=lambda model, device, compute_type: _FakeWhisperModel(
+            model=model,
+            device=device,
+            compute_type=compute_type,
+        )
+    )
+    request = _request(
+        parser_profile="standard_full",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+    )
+
+    supported = asyncio.run(engine.supports(request))
+
+    assert supported.supported is False
+    assert supported.reason == "parser_profile_not_asr"
+
+
 def test_faster_whisper_engine_failure_allows_media_metadata_fallback() -> None:
     engine = FasterWhisperTranscriptionEngine(
         model_factory=lambda model, device, compute_type: _FailingWhisperModel()
     )
     request = _request(
-        parser_profile="standard_asr",
+        parser_profile="media_local_asr",
         detected_content_type="audio/wav",
         content=b"RIFF0000WAVEfake wav bytes",
         filename="voice-note.wav",
@@ -339,6 +458,78 @@ class _FakeVisionClient:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+@dataclass(frozen=True)
+class _FakeTranscriptionResponse:
+    text: str
+    language: str = "en"
+    duration: float = 4.0
+    segments: list[dict[str, object]] | None = None
+
+
+class _FakeAudioTranscriptions:
+    async def create(self, **kwargs) -> _FakeTranscriptionResponse:
+        assert kwargs["model"] == "gpt-4o-mini-transcribe"
+        assert kwargs["response_format"] == "json"
+        assert kwargs["file"].name == "voice-note.wav"
+        return _FakeTranscriptionResponse(
+            text=(
+                "Alex discussed memory scopes. "
+                "The file should link to existing evidence."
+            ),
+            segments=[
+                {
+                    "start": 0.0,
+                    "end": 2.0,
+                    "text": "Alex discussed memory scopes.",
+                },
+                {
+                    "start": 2.5,
+                    "end": 4.0,
+                    "text": "The file should link to existing evidence.",
+                },
+            ],
+        )
+
+
+class _FakeAudioClient:
+    def __init__(self) -> None:
+        self.transcriptions = _FakeAudioTranscriptions()
+
+
+class _FakeTranscriptionClient:
+    def __init__(self) -> None:
+        self.audio = _FakeAudioClient()
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _FallbackMediaEngine(ExtractionEngine):
+    name = "fallback_media"
+
+    async def supports(self, request: ExtractionRequest) -> SupportDecision:
+        return SupportDecision(request.detected_content_type.startswith(("audio/", "video/")))
+
+    async def extract(self, request: ExtractionRequest) -> ExtractionResult:
+        return ExtractionResult(
+            status="succeeded",
+            normalized_content_type=request.detected_content_type,
+            title=request.filename,
+            markdown="Media metadata fallback",
+            elements=(
+                ExtractedElement(
+                    kind="media_metadata",
+                    text="Media metadata fallback",
+                    metadata={"source": self.name},
+                ),
+            ),
+            technical_metadata={"transcript_status": "not_configured"},
+            parser_name=self.name,
+            parser_version="test",
+        )
 
 
 @dataclass(frozen=True)

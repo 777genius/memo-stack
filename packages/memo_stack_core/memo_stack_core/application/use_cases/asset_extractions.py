@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from hashlib import sha256
 from math import ceil
 
+from memo_stack_core.application.asset_extraction_mapping import (
+    ASSET_EXTRACTION_SOURCE_TYPE,
+    artifact_storage_key,
+    asset_extraction_chunk_metadata,
+    extracted_text,
+    result_json,
+)
 from memo_stack_core.application.dto import (
     AssetExtractionResult,
     AssetExtractionsResult,
@@ -48,7 +54,6 @@ from memo_stack_core.ports.assets import BlobStoragePort
 from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.extraction import (
     ContentExtractionPort,
-    ExtractedElement,
     ExtractionArtifactCandidate,
     ExtractionLimits,
     ExtractionRequest,
@@ -60,8 +65,6 @@ from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _DEFAULT_PARSER_CONFIG_VERSION = "v1"
-_SOURCE_TYPE = "asset_extraction"
-_MAX_SOURCE_REFS = 200
 
 
 class RequestAssetExtractionUseCase:
@@ -390,8 +393,8 @@ class RunAssetExtractionUseCase:
             )
             raise MemoryInfrastructureError("Asset extraction returned invalid status")
 
-        extracted_text = _extracted_text(result)
-        if not extracted_text.strip():
+        extracted_text_value = extracted_text(result)
+        if not extracted_text_value.strip():
             job = await self._reconcile_media_usage(job, result=result)
             unsupported = await self._mark_unsupported(
                 job,
@@ -416,16 +419,18 @@ class RunAssetExtractionUseCase:
                 memory_scope_id=asset.memory_scope_id,
                 thread_id=asset.thread_id,
                 title=result.title or asset.filename,
-                source_type=_SOURCE_TYPE,
+                source_type=ASSET_EXTRACTION_SOURCE_TYPE,
                 source_external_id=str(job.id),
-                text=extracted_text,
-                idempotency_key=f"asset_extraction:{job.id}:{content_hash(extracted_text)}",
+                text=extracted_text_value,
+                idempotency_key=(
+                    f"asset_extraction:{job.id}:{content_hash(extracted_text_value)}"
+                ),
                 classification=asset.classification,
-                chunk_metadata=_asset_extraction_chunk_metadata(
+                chunk_metadata=asset_extraction_chunk_metadata(
                     asset=asset,
                     job=job,
                     result=result,
-                    extracted_text=extracted_text,
+                    extracted_text_value=extracted_text_value,
                 ),
             )
         )
@@ -438,7 +443,7 @@ class RunAssetExtractionUseCase:
         artifacts = await self._store_artifacts(
             job=job,
             result=result,
-            markdown=extracted_text,
+            markdown=extracted_text_value,
         )
         await self._save_progress(
             job,
@@ -521,7 +526,7 @@ class RunAssetExtractionUseCase:
                 artifact_type="extracted_json",
                 filename="extracted.json",
                 content_type="application/json",
-                content=_result_json(result).encode("utf-8"),
+                content=result_json(result).encode("utf-8"),
                 metadata={"parser": result.parser_name},
             ),
             *result.artifacts,
@@ -538,7 +543,7 @@ class RunAssetExtractionUseCase:
                 asset_id=job.asset_id,
                 artifact_type=candidate.artifact_type,
                 storage_backend=self._artifact_storage_backend,
-                storage_key=_artifact_storage_key(
+                storage_key=artifact_storage_key(
                     space_id=str(job.space_id),
                     memory_scope_id=str(job.memory_scope_id),
                     job_id=str(job.id),
@@ -858,174 +863,6 @@ def _indexing_status(status: AssetExtractionStatus) -> str:
         AssetExtractionStatus.CANCELED: "canceled",
         AssetExtractionStatus.STALE: "stale",
     }[status]
-
-
-def _extracted_text(result: ExtractionResult) -> str:
-    if result.markdown and result.markdown.strip():
-        return result.markdown.strip()
-    return "\n\n".join(element.text.strip() for element in result.elements if element.text.strip())
-
-
-def _asset_extraction_chunk_metadata(
-    *,
-    asset,
-    job: AssetExtractionJob,
-    result: ExtractionResult,
-    extracted_text: str,
-) -> dict[str, object]:
-    refs = _extraction_source_refs(
-        job=job,
-        result=result,
-        extracted_text=extracted_text,
-    )
-    metadata: dict[str, object] = {
-        "source_kind": _SOURCE_TYPE,
-        "asset_id": str(asset.id),
-        "asset_filename": asset.filename,
-        "asset_content_type": asset.content_type,
-        "extraction_job_id": str(job.id),
-        "parser_profile": job.parser_profile,
-        "parser_name": result.parser_name,
-        "normalized_content_type": result.normalized_content_type,
-        "source_ref_count": len(refs),
-        "source_refs": refs,
-    }
-    if result.parser_version:
-        metadata["parser_version"] = result.parser_version
-    if result.model_version:
-        metadata["model_version"] = result.model_version
-    if result.language:
-        metadata["language"] = result.language
-    return metadata
-
-
-def _extraction_source_refs(
-    *,
-    job: AssetExtractionJob,
-    result: ExtractionResult,
-    extracted_text: str,
-) -> list[dict[str, object]]:
-    refs: list[dict[str, object]] = []
-    cursor = 0
-    for index, element in enumerate(result.elements):
-        text = element.text.strip()
-        if not text:
-            continue
-        span = _find_element_span(extracted_text, text, cursor)
-        if span is not None:
-            cursor = span[1]
-        refs.append(
-            _element_source_ref(
-                job=job,
-                index=index,
-                element=element,
-                text=text,
-                span=span,
-            )
-        )
-        if len(refs) >= _MAX_SOURCE_REFS:
-            break
-    if refs:
-        return refs
-    return [
-        {
-            "source_type": _SOURCE_TYPE,
-            "source_id": str(job.id),
-            "asset_id": str(job.asset_id),
-            "kind": "extracted_text",
-            "char_start": 0,
-            "char_end": len(extracted_text),
-            "quote_preview": extracted_text[:240],
-        }
-    ]
-
-
-def _element_source_ref(
-    *,
-    job: AssetExtractionJob,
-    index: int,
-    element: ExtractedElement,
-    text: str,
-    span: tuple[int, int] | None,
-) -> dict[str, object]:
-    ref: dict[str, object] = {
-        "source_type": _SOURCE_TYPE,
-        "source_id": str(job.id),
-        "asset_id": str(job.asset_id),
-        "element_index": index,
-        "kind": element.kind,
-        "quote_preview": text[:240],
-    }
-    if span is not None:
-        ref["char_start"] = span[0]
-        ref["char_end"] = span[1]
-    if element.page_number is not None:
-        ref["page_number"] = element.page_number
-    if element.time_start_ms is not None:
-        ref["time_start_ms"] = element.time_start_ms
-    if element.time_end_ms is not None:
-        ref["time_end_ms"] = element.time_end_ms
-    if element.bbox is not None:
-        ref["bbox"] = [float(value) for value in element.bbox]
-    if element.confidence is not None:
-        ref["confidence"] = element.confidence
-    provider_source = element.metadata.get("source")
-    if isinstance(provider_source, str) and provider_source.strip():
-        ref["provider_source"] = provider_source.strip()[:120]
-    return ref
-
-
-def _find_element_span(
-    extracted_text: str,
-    element_text: str,
-    cursor: int,
-) -> tuple[int, int] | None:
-    start = extracted_text.find(element_text, max(cursor, 0))
-    if start < 0:
-        start = extracted_text.find(element_text)
-    if start < 0:
-        return None
-    return start, start + len(element_text)
-
-
-def _result_json(result: ExtractionResult) -> str:
-    payload = {
-        "status": result.status,
-        "normalized_content_type": result.normalized_content_type,
-        "title": result.title,
-        "language": result.language,
-        "parser_name": result.parser_name,
-        "parser_version": result.parser_version,
-        "model_version": result.model_version,
-        "technical_metadata": result.technical_metadata,
-        "diagnostics": result.diagnostics,
-        "elements": [
-            {
-                "kind": element.kind,
-                "text": element.text,
-                "page_number": element.page_number,
-                "time_start_ms": element.time_start_ms,
-                "time_end_ms": element.time_end_ms,
-                "bbox": element.bbox,
-                "confidence": element.confidence,
-                "metadata": element.metadata,
-            }
-            for element in result.elements
-        ],
-    }
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
-
-
-def _artifact_storage_key(
-    *,
-    space_id: str,
-    memory_scope_id: str,
-    job_id: str,
-    digest: str,
-    filename: str,
-) -> str:
-    safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in filename)[:160]
-    return f"{space_id}/{memory_scope_id}/extractions/{job_id}/{digest[:2]}/{digest}/{safe_name}"
 
 
 def _safe_exception_code(exc: Exception) -> str:

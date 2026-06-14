@@ -2,6 +2,10 @@
 
 Date: 2026-06-11
 
+Refresh note: selected dependency versions and the audio/video policy were
+updated on 2026-06-13. See
+`docs/adr/ADR-0006-multimodal-ingestion-provider-policy.md`.
+
 ## Goal
 
 Find a scalable, clean-architecture friendly way to parse uploaded files before
@@ -25,11 +29,12 @@ ffmpeg, ASR and OCR libraries should live in adapters or a separate worker.
 
 ## Dependency snapshot
 
-Checked PyPI on 2026-06-11.
+Initial check was done on 2026-06-11. Selected dependencies were refreshed on
+2026-06-13.
 
 | Package | Version | Python | License | Role |
 | --- | ---: | --- | --- | --- |
-| `docling` | 2.101.0 | >=3.10,<4.0 | MIT | Primary structured document parser |
+| `docling` | 2.102.1 | >=3.10,<4.0 | MIT | Primary structured document parser |
 | `unstructured` | 0.23.0 | >=3.11,<3.14 | Apache-2.0 | Fallback parser and OCR/table extraction |
 | `tika` | 3.1.0 | not declared | Apache-2.0 | Broad text/metadata fallback through Apache Tika |
 | `markitdown` | 0.1.6 | >=3.10 | MIT | Lightweight Markdown conversion |
@@ -40,6 +45,8 @@ Checked PyPI on 2026-06-11.
 | `av` | 17.1.0 | >=3.10 | BSD-3-Clause | Python FFmpeg bindings |
 | `scenedetect` | 0.7 | >=3.10 | BSD-3-Clause | Video scene boundaries/keyframes |
 | `python-magic` | 0.4.27 | broad | MIT | libmagic MIME sniffing |
+| `filetype` | 1.2.0 | broad | MIT | lightweight magic-byte MIME sniffing |
+| `openai` | 2.41.1 | >=3.8 | Apache-2.0 | API transcription, vision and structured extraction adapter |
 | `openai-whisper` | 20250625 | >=3.8 | MIT | Alternative local ASR |
 | `marker-pdf` | 1.10.2 | >=3.10,<4.0 | GPL-3.0-or-later | High-quality doc-to-Markdown/JSON/chunks, license-sensitive |
 | `mineru` | 3.3.1 | >=3.10,<3.14 | MinerU Open Source License | High-quality PDF/Office/image parser, license-sensitive |
@@ -77,6 +84,9 @@ Important caveat:
 
 - title/authors/references/language metadata extraction is still listed by
   Docling as coming soon, so do not rely on Docling alone for metadata.
+- even where Docling supports media-like inputs, Memo Stack routes audio/video
+  through the media pipeline and `SpeechTranscriptionPort`, not through the
+  document parser path.
 
 Primary sources:
 
@@ -337,7 +347,10 @@ Recommended stack:
 
 - `ffprobe` or MediaInfo for streams, duration, codecs, dimensions, frame rate,
   language tags and container metadata;
-- `faster-whisper` for local speech-to-text;
+- provider-neutral `SpeechTranscriptionPort` for speech-to-text;
+- API-first transcription provider by default, initially OpenAI when external
+  processing policy allows it;
+- `faster-whisper` only as an explicit local/offline/self-hosted opt-in;
 - optional WhisperX if word-level timestamps and diarization become important;
 - PySceneDetect and ffmpeg frame extraction for keyframes;
 - OCR selected keyframes through Docling/Unstructured/Tesseract only when useful.
@@ -346,6 +359,7 @@ Primary sources:
 
 - https://ffmpeg.org/ffprobe.html
 - https://mediaarea.net/en/MediaInfo
+- https://developers.openai.com/api/docs/guides/audio
 - https://github.com/SYSTRAN/faster-whisper
 - https://www.scenedetect.com/docs/latest/
 - https://exiftool.org/
@@ -449,11 +463,11 @@ Routing:
 
 | Input | Primary | Fallback |
 | --- | --- | --- |
-| PDF/DOCX/PPTX/XLSX/HTML/images/email/text | Docling | Unstructured, then Tika |
-| scanned PDF/images | Docling OCR | Unstructured `hi_res`/`ocr_only` |
-| unknown office/document | Tika | metadata-only |
-| audio | faster-whisper | metadata-only |
-| video | ffprobe + faster-whisper + PySceneDetect | metadata-only |
+| PDF/DOCX/PPTX/XLSX/HTML/images/email/text | standard_local deterministic extraction, or Docling when `standard_docling` is selected | metadata-only or optional Unstructured/Tika |
+| scanned PDF/images | Docling OCR when `standard_docling` is selected | local metadata/OCR hooks or optional Unstructured `hi_res`/`ocr_only` |
+| unknown office/document | metadata-only first | optional Tika sidecar/profile |
+| audio | API-first SpeechTranscriptionPort | metadata-only or faster-whisper opt-in |
+| video | ffprobe + API-first SpeechTranscriptionPort + PySceneDetect | metadata-only or faster-whisper opt-in |
 | ZIP/archive | safe manifest only first | explicit opt-in recursive extraction |
 
 ### Parser profiles
@@ -462,14 +476,19 @@ Do not hard-code one parser. Add a profile-based router:
 
 ```text
 standard_local
-  Docling primary
-  Unstructured OCR/table fallback
-  Tika metadata/text fallback
+  Lightweight deterministic extraction
+  plain text, JSON/CSV/HTML, pypdf fallback
+  image/media metadata and metadata-only fallback
 
-quality_local
+standard_docling
+  Docling primary
+  local deterministic fallback
+  optional install/profile only
+
+quality_document
   Docling primary
   Marker or MinerU sidecar for hard PDFs, after license review
-  Unstructured/Tika fallback
+  Unstructured/Tika fallback only when explicitly installed
 
 enterprise_gpu
   NVIDIA NeMo Retriever sidecar/container
@@ -479,11 +498,18 @@ cloud_opt_in
   LlamaParse, Mistral OCR, Google Document AI, Azure Document Intelligence or AWS Textract
   only when tenant policy allows external processing
 
-media_local
+media_api
+  ffprobe/MediaInfo metadata
+  OpenAI/Deepgram/AssemblyAI-style transcription provider when policy allows
+  PySceneDetect keyframes
+  metadata-only fallback when no provider is configured
+
+media_local_asr
   ffprobe/MediaInfo metadata
   faster-whisper transcript
   PySceneDetect keyframes
   optional OCR/captioning for selected frames
+  explicit opt-in only, never default
 ```
 
 Profile choice should be persisted on `asset_extraction_jobs.parser_profile`.
@@ -498,7 +524,7 @@ Scale: 10 is best, except implementation complexity where 10 is hardest.
 
 | Option | Extraction quality | Product reliability | Local privacy | License safety | Ops simplicity | Scale potential | Memo Stack fit | Complexity |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Extraction Router, Docling default plus profiles | 9 | 9 | 9 | 8 | 7 | 9 | 10 | 8 |
+| Extraction Router, local default plus optional profiles | 9 | 9 | 9 | 8 | 7 | 9 | 10 | 8 |
 | NVIDIA NeMo Retriever service | 9 | 8 | 7 | 8 | 4 | 10 | 8 | 9 |
 | Managed cloud Document AI profile | 9 | 8 | 4 | 9 | 8 | 9 | 7 | 6 |
 | Docling-only | 7 | 8 | 10 | 10 | 9 | 7 | 8 | 4 |
@@ -518,11 +544,12 @@ Reading:
 - Cloud Document AI is excellent when the tenant explicitly allows external
   processing.
 
-### Option 1: Extraction Router with Docling default and optional high-quality profiles
+### Option 1: Extraction Router with local default and optional high-quality profiles
 
-Use a stable `ContentExtractionPort` plus parser registry. Default to Docling,
-fallback to Unstructured and Tika, and add Marker/MinerU/NVIDIA/LlamaParse/cloud
-Document AI as opt-in profiles.
+Use a stable `ContentExtractionPort` plus parser registry. Default to lightweight
+local deterministic extraction, add Docling as the first high-quality document
+profile, and add Unstructured/Tika/Marker/MinerU/NVIDIA/LlamaParse/cloud
+Document AI only as explicitly configured profiles or sidecars.
 
 Best fit for Memo Stack because it avoids betting canonical memory on one
 vendor/library while still allowing high-quality parsing when needed.
@@ -630,10 +657,16 @@ Choose the Extraction Router.
 The ideal solution for this project is not a single parser. It is a stable,
 provider-neutral extraction boundary with profiles.
 
-Default profile:
+Default document profile:
 
 ```text
-Docling -> Unstructured -> Tika -> metadata-only
+local deterministic extraction -> Docling when installed/profile-selected -> metadata-only fallback
+```
+
+Default media profile:
+
+```text
+ffprobe metadata -> API-first SpeechTranscriptionPort when policy allows -> metadata-only fallback
 ```
 
 High-quality optional profiles:
@@ -648,7 +681,7 @@ This gives us the best balance:
 
 - structured document model for high-quality memory chunks;
 - local-first privacy;
-- fallback coverage from Unstructured and Tika;
+- optional fallback coverage from Unstructured and Tika;
 - room for stronger engines without licensing/dependency lock-in;
 - clean separation between canonical memory and parser-specific output;
 - a clear route to video/audio without forcing document parsers to handle media.
@@ -663,7 +696,8 @@ MVP order:
 6. Add Unstructured fallback for OCR-heavy/scanned/table cases.
 7. Add Tika fallback for unknown formats.
 8. Add media metadata with ffprobe/MediaInfo.
-9. Add audio transcript with faster-whisper.
-10. Add video keyframes and optional OCR later.
-11. Add Marker/MinerU sidecar only after license review and quality tests.
-12. Add cloud/NVIDIA profile only when deployment actually needs it.
+9. Add audio transcript through API-first `SpeechTranscriptionPort`.
+10. Add optional faster-whisper local ASR profile.
+11. Add video keyframes and optional OCR later.
+12. Add Marker/MinerU sidecar only after license review and quality tests.
+13. Add cloud/NVIDIA profile only when deployment actually needs it.

@@ -60,6 +60,12 @@ from memo_stack_core.ports.extraction import (
     FileTypeDetectorPort,
 )
 from memo_stack_core.ports.ids import IdGeneratorPort
+from memo_stack_core.ports.transcription import (
+    SpeechTranscriptionPort,
+    SpeechTranscriptionRequest,
+    SpeechTranscriptionResult,
+    SpeechTranscriptSegment,
+)
 from memo_stack_core.ports.usage import UsageRepositoryPort
 
 __all__ = [
@@ -113,6 +119,10 @@ __all__ = [
     "RagRecallPort",
     "ReadScope",
     "SessionMemoryPort",
+    "SpeechTranscriptSegment",
+    "SpeechTranscriptionPort",
+    "SpeechTranscriptionRequest",
+    "SpeechTranscriptionResult",
     "SourceProvenance",
     "TemporalFactGraphPort",
     "UsageRepositoryPort",

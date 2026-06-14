@@ -10,7 +10,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any
 
 from memo_stack_core.ports.extraction import (
     ContentExtractionPort,
@@ -21,6 +20,11 @@ from memo_stack_core.ports.extraction import (
     FileTypeDetectionRequest,
     FileTypeDetectionResult,
     FileTypeDetectorPort,
+)
+
+from memo_stack_adapters.extraction.media_tools import (
+    extract_first_video_keyframe,
+    probe_media_with_ffprobe,
 )
 
 _TEXT_TYPES = {
@@ -487,7 +491,7 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
         return await asyncio.to_thread(self._extract_sync, request)
 
     def _extract_sync(self, request: ExtractionRequest) -> ExtractionResult:
-        probe = _probe_media_with_ffprobe(request)
+        probe = probe_media_with_ffprobe(request)
         if probe.status == "unavailable":
             return _unsupported(
                 request,
@@ -529,7 +533,7 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
 
         keyframe = None
         if request.detected_content_type.startswith("video/"):
-            keyframe = _extract_first_video_keyframe(request)
+            keyframe = extract_first_video_keyframe(request)
 
         lines = [
             f"# {request.filename.strip() or 'Media asset'}",
@@ -574,41 +578,6 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
             parser_name=self.name,
             parser_version=self.version,
         )
-
-
-def build_standard_extractor(
-    *,
-    openai_api_key: str | None = None,
-    vision_model: str = "gpt-4.1-mini",
-    vision_detail: str = "high",
-    asr_model: str = "base",
-    asr_device: str = "auto",
-    asr_compute_type: str = "default",
-) -> ContentExtractionPort:
-    from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
-    from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
-    from memo_stack_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
-
-    return StandardExtractionRouter(
-        engines=(
-            OpenAIVisionImageExtractionEngine(
-                api_key=openai_api_key,
-                model=vision_model,
-                detail=vision_detail,
-            ),
-            DoclingDocumentExtractionEngine(),
-            FasterWhisperTranscriptionEngine(
-                model_name=asr_model,
-                device=asr_device,
-                compute_type=asr_compute_type,
-            ),
-            TimedTextTranscriptExtractionEngine(),
-            SimpleTextExtractionEngine(),
-            PdfTextExtractionEngine(),
-            ImageMetadataExtractionEngine(),
-            MediaMetadataExtractionEngine(),
-        )
-    )
 
 
 def _normalize_content_type(value: str) -> str:
@@ -912,138 +881,6 @@ def _format_timestamp_ms(value: int) -> str:
     minutes = total_minutes % 60
     hours = total_minutes // 60
     return f"{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}"
-
-
-@dataclass(frozen=True)
-class MediaProbeResult:
-    status: str
-    duration_seconds: float | None = None
-    stream_summaries: tuple[str, ...] = ()
-    metadata: dict[str, object] | None = None
-
-
-def _probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
-    ffprobe = shutil.which("ffprobe")
-    if not ffprobe:
-        return MediaProbeResult(status="unavailable", metadata={"probe_status": "unavailable"})
-    suffix = _safe_suffix(request.filename)
-    try:
-        with tempfile.NamedTemporaryFile(suffix=suffix) as media_file:
-            media_file.write(request.content)
-            media_file.flush()
-            completed = subprocess.run(
-                [
-                    ffprobe,
-                    "-v",
-                    "error",
-                    "-show_entries",
-                    "format=duration:stream=index,codec_type,codec_name,width,height,channels,"
-                    "sample_rate,duration",
-                    "-of",
-                    "json",
-                    media_file.name,
-                ],
-                check=False,
-                capture_output=True,
-                timeout=20,
-            )
-    except (OSError, subprocess.TimeoutExpired):
-        return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
-    if completed.returncode != 0:
-        return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
-    try:
-        payload = json.loads(completed.stdout.decode("utf-8"))
-    except json.JSONDecodeError:
-        return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
-    return _media_probe_from_payload(payload)
-
-
-def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
-    format_payload = payload.get("format") if isinstance(payload.get("format"), dict) else {}
-    duration_seconds = _positive_float(format_payload.get("duration"))
-    stream_summaries: list[str] = []
-    metadata: dict[str, object] = {"probe_status": "succeeded"}
-    for stream in payload.get("streams") or []:
-        if not isinstance(stream, dict):
-            continue
-        codec_type = str(stream.get("codec_type") or "unknown")
-        codec_name = str(stream.get("codec_name") or "unknown")
-        if codec_type == "video":
-            width = stream.get("width")
-            height = stream.get("height")
-            summary = f"video/{codec_name}"
-            if width and height:
-                summary = f"{summary} {width}x{height}"
-                metadata.setdefault("video_width", width)
-                metadata.setdefault("video_height", height)
-            stream_summaries.append(summary)
-        elif codec_type == "audio":
-            summary = f"audio/{codec_name}"
-            sample_rate = stream.get("sample_rate")
-            channels = stream.get("channels")
-            if sample_rate:
-                summary = f"{summary} {sample_rate}Hz"
-                metadata.setdefault("audio_sample_rate", sample_rate)
-            if channels:
-                summary = f"{summary} {channels}ch"
-                metadata.setdefault("audio_channels", channels)
-            stream_summaries.append(summary)
-        else:
-            stream_summaries.append(f"{codec_type}/{codec_name}")
-    return MediaProbeResult(
-        status="succeeded",
-        duration_seconds=duration_seconds,
-        stream_summaries=tuple(stream_summaries),
-        metadata=metadata,
-    )
-
-
-def _extract_first_video_keyframe(
-    request: ExtractionRequest,
-) -> ExtractionArtifactCandidate | None:
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        return None
-    try:
-        with (
-            tempfile.NamedTemporaryFile(suffix=_safe_suffix(request.filename)) as input_file,
-            tempfile.NamedTemporaryFile(suffix=".jpg") as output_file,
-        ):
-            input_file.write(request.content)
-            input_file.flush()
-            completed = subprocess.run(
-                [
-                    ffmpeg,
-                    "-y",
-                    "-v",
-                    "error",
-                    "-ss",
-                    "0",
-                    "-i",
-                    input_file.name,
-                    "-frames:v",
-                    "1",
-                    output_file.name,
-                ],
-                check=False,
-                capture_output=True,
-                timeout=30,
-            )
-            if completed.returncode != 0:
-                return None
-            output_file.seek(0)
-            content = output_file.read()
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if not content:
-        return None
-    return ExtractionArtifactCandidate(
-        artifact_type="keyframe",
-        filename="keyframe-0001.jpg",
-        content_type="image/jpeg",
-        content=content,
-        metadata={"time_start_ms": 0, "parser": "ffmpeg"},
-    )
 
 
 def _safe_suffix(filename: str) -> str:

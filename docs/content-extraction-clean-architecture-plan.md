@@ -12,6 +12,7 @@ This plan builds on:
 
 - `docs/content-extraction-parser-library-research.md`;
 - `docs/memo-stack-core-lite-plan.md`;
+- `docs/adr/ADR-0006-multimodal-ingestion-provider-policy.md`;
 - current `MemoryAsset`, `MemoryDocument`, `MemoryChunk`, outbox and UoW code.
 
 ## Current-state evidence
@@ -76,6 +77,8 @@ memo_stack_adapters
   extraction/engines/unstructured.py
   extraction/engines/tika.py
   extraction/engines/media.py
+  extraction/transcription/openai.py
+  extraction/transcription/faster_whisper.py
   postgres extraction repositories + migrations
 
 memo_stack_server
@@ -422,6 +425,7 @@ memo_stack_adapters/extraction/
   router.py
   metadata.py
   sanitizer.py
+  transcription_router.py
   engines/
     docling_adapter.py
     unstructured_adapter.py
@@ -431,6 +435,11 @@ memo_stack_adapters/extraction/
     mineru_sidecar_adapter.py
     nvidia_retriever_adapter.py
     llamaparse_adapter.py
+  transcription/
+    openai_adapter.py
+    faster_whisper_adapter.py
+    deepgram_adapter.py
+    assemblyai_adapter.py
 ```
 
 ### Router
@@ -455,22 +464,30 @@ adapters in the composition root.
 
 ```text
 standard_local
-  Docling primary
-  Unstructured fallback
-  Tika fallback
-  metadata-only final fallback
+  Lightweight deterministic default. Plain text, JSON/CSV/HTML, pypdf fallback,
+  Pillow image metadata/OCR hooks, ffprobe/ffmpeg media metadata/keyframes.
 
-quality_local
+standard_docling
+  Docling primary
+  local deterministic fallbacks
+
+quality_document
   Docling primary
   Marker/MinerU sidecar after license review
-  Unstructured fallback
-  Tika fallback
+  Unstructured/Tika fallback only when explicitly installed
 
-media_local
+media_api
+  ffprobe/MediaInfo metadata
+  API-first SpeechTranscriptionPort when external processing policy allows it
+  PySceneDetect keyframes
+  optional frame OCR
+
+media_local_asr
   ffprobe/MediaInfo metadata
   faster-whisper transcript
   PySceneDetect keyframes
   optional frame OCR
+  explicit opt-in only, never silent default
 
 enterprise_gpu
   NVIDIA NeMo Retriever sidecar/container
@@ -487,17 +504,30 @@ Add extras instead of making all installs heavy:
 
 ```toml
 [project.optional-dependencies]
-extraction-standard = [
-  "docling>=2.101.0,<3.0.0",
+extraction-docling = [
+  "docling>=2.102.1,<3.0.0",
+]
+
+extraction-transcription-openai = [
+  "openai>=2.41.1,<3.0.0",
+]
+
+extraction-transcription-local = [
+  "faster-whisper>=1.2.1,<2.0.0",
+]
+
+extraction-video = [
+  "scenedetect>=0.7,<1.0.0",
+]
+
+extraction-filetype = [
+  "filetype>=1.2.0,<2.0.0",
+]
+
+extraction-fallbacks = [
   "unstructured>=0.23.0,<1.0.0",
   "tika>=3.1.0,<4.0.0",
   "python-magic>=0.4.27,<1.0.0",
-]
-extraction-media = [
-  "faster-whisper>=1.2.1,<2.0.0",
-  "pymediainfo>=7.0.1,<8.0.0",
-  "av>=17.1.0,<18.0.0",
-  "scenedetect>=0.7,<1.0.0",
 ]
 extraction-cloud = [
   "llama-parse>=0.6.94,<1.0.0",
@@ -510,6 +540,11 @@ extraction-cloud = [
 
 Do not add `marker-pdf`, `mineru` or `pymupdf4llm` as default dependencies until
 license review. Prefer sidecar adapters for them.
+
+Do not make faster-whisper a default dependency. It is useful for
+privacy/offline/self-hosted deployments, but it can saturate local CPU/GPU and
+should be selected only through `media_local_asr` or equivalent deployment
+configuration.
 
 ## Persistence design
 
@@ -658,9 +693,13 @@ MEMORY_EXTRACTION_MAX_MEDIA_SECONDS
 MEMORY_EXTRACTION_MAX_OUTPUT_CHARS
 MEMORY_EXTRACTION_VISION_MODEL
 MEMORY_EXTRACTION_VISION_DETAIL
-MEMORY_EXTRACTION_ASR_MODEL
-MEMORY_EXTRACTION_ASR_DEVICE
-MEMORY_EXTRACTION_ASR_COMPUTE_TYPE
+MEMORY_TRANSCRIPTION_PROVIDER
+MEMORY_TRANSCRIPTION_OPENAI_MODEL
+MEMORY_TRANSCRIPTION_DEEPGRAM_MODEL
+MEMORY_TRANSCRIPTION_ASSEMBLYAI_MODEL
+MEMORY_TRANSCRIPTION_LOCAL_MODEL
+MEMORY_TRANSCRIPTION_LOCAL_DEVICE
+MEMORY_TRANSCRIPTION_LOCAL_COMPUTE_TYPE
 MEMORY_PRODUCT_PLAN_TIER
 MEMORY_PLAN_MEDIA_ANALYSIS_SECONDS_PER_MONTH
 MEMORY_EXTRACTION_WORKER_LIMIT
@@ -687,13 +726,24 @@ standard_vision
   unconfigured or unavailable.
 
 standard_asr
-  Optional local speech-to-text path. Install `memo-stack[asr]` and use this
+  Deprecated profile name. Use `media_api` or `media_local_asr`.
+
+media_api
+  Default speech-to-text path for audio/video when external AI is allowed.
+  Uses `SpeechTranscriptionPort` with a configured provider such as OpenAI,
+  Deepgram or AssemblyAI. If no provider is available or egress is disabled,
+  falls back to media metadata/keyframes instead of running heavy local ASR.
+
+media_local_asr
+  Optional local speech-to-text path. Install the local ASR extra and use this
   profile for audio/video transcript extraction through faster-whisper, with
   fallback to media metadata/keyframes when ASR is unavailable or fails.
 
 standard_full
   Enables optional provider paths: Docling for documents, OpenAI vision for
-  images and faster-whisper for media, while preserving local fallbacks.
+  images and API-first transcription for media, while preserving local
+  deterministic fallbacks. Local faster-whisper is still opt-in through
+  `media_local_asr`.
 ```
 
 Current outbox worker has one lease timeout. Extraction should eventually get
@@ -846,6 +896,11 @@ ExtractionRouter(ContentExtractionPort)
   -> UnstructuredEngine
   -> TikaEngine
   -> MediaEngine
+  -> SpeechTranscriptionPort
+      -> OpenAITranscriptionAdapter
+      -> DeepgramTranscriptionAdapter
+      -> AssemblyAITranscriptionAdapter
+      -> FasterWhisperLocalAdapter
 ```
 
 `memo_stack_core` must not import parser libraries.
@@ -969,7 +1024,9 @@ Approx changes: `900-1800` lines.
 Approx changes: `1200-2400` lines.
 
 - ffprobe/MediaInfo metadata;
-- faster-whisper transcript;
+- provider-neutral `SpeechTranscriptionPort`;
+- API-first transcript adapter;
+- optional faster-whisper local adapter;
 - timecoded chunks;
 - optional keyframe extraction.
 

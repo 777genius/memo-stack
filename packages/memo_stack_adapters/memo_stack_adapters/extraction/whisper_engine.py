@@ -22,12 +22,17 @@ from memo_stack_adapters.extraction.content import (
     SupportDecision,
     _format_timestamp_ms,
     _limit_text,
-    _probe_media_with_ffprobe,
     _safe_suffix,
     _unsupported,
 )
+from memo_stack_adapters.extraction.media_tools import probe_media_with_ffprobe
 
-_ASR_PROFILES = {"asr", "faster_whisper", "standard_asr", "standard_full", "full"}
+_ASR_PROFILES = {
+    "asr",
+    "faster_whisper",
+    "local_asr",
+    "media_local_asr",
+}
 
 
 class FasterWhisperTranscriptionEngine(ExtractionEngine):
@@ -61,7 +66,7 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
         return await asyncio.to_thread(self._extract_sync, request)
 
     def _extract_sync(self, request: ExtractionRequest) -> ExtractionResult:
-        probe = _probe_media_with_ffprobe(request)
+        probe = probe_media_with_ffprobe(request)
         if probe.duration_seconds and probe.duration_seconds > request.limits.max_media_seconds:
             return _fallback_unsupported(
                 request,
@@ -181,7 +186,9 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
 
 def _profile_wants_asr(parser_profile: str) -> bool:
     normalized = parser_profile.strip().lower()
-    return normalized in _ASR_PROFILES or normalized.startswith(("asr:", "faster_whisper:"))
+    return normalized in _ASR_PROFILES or normalized.startswith(
+        ("asr:", "faster_whisper:", "media_local_asr:")
+    )
 
 
 def _model_name_for_profile(parser_profile: str, default: str) -> str:
@@ -189,7 +196,7 @@ def _model_name_for_profile(parser_profile: str, default: str) -> str:
     if ":" not in normalized:
         return default
     prefix, value = normalized.split(":", 1)
-    if prefix.lower() in {"asr", "faster_whisper", "standard_asr"} and value.strip():
+    if prefix.lower() in {"asr", "faster_whisper", "media_local_asr"} and value.strip():
         return value.strip()
     return default
 

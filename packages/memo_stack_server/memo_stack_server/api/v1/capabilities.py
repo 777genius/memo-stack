@@ -68,6 +68,8 @@ async def capabilities(
                 "standard_local",
                 "standard_docling",
                 "standard_vision",
+                "media_api",
+                "media_local_asr",
                 "standard_asr",
                 "standard_full",
             ],
@@ -86,12 +88,28 @@ async def capabilities(
                     "model": container.settings.extraction_vision_model,
                     "detail": container.settings.extraction_vision_detail,
                 },
-                "asr": {
+                "transcription_api": {
+                    "installed": _module_available("openai"),
+                    "configured": (
+                        container.settings.transcription_provider == "openai"
+                        and container.settings.extraction_external_ai_enabled
+                        and bool(container.settings.openai_api_key)
+                    ),
+                    "provider": container.settings.transcription_provider,
+                    "profiles": ["media_api", "standard_asr", "standard_full"],
+                    "model": container.settings.transcription_openai_model,
+                },
+                "transcription_local": {
                     "installed": _module_available("faster_whisper"),
-                    "profiles": ["standard_asr", "standard_full"],
+                    "profiles": ["media_local_asr", "asr:<model>", "faster_whisper:<model>"],
                     "model": container.settings.extraction_asr_model,
                     "device": container.settings.extraction_asr_device,
                     "compute_type": container.settings.extraction_asr_compute_type,
+                    "default": False,
+                },
+                "asr": {
+                    "deprecated": True,
+                    "replacement_profiles": ["media_api", "media_local_asr"],
                 },
             },
             "external_provider_egress": container.settings.extraction_external_ai_enabled,

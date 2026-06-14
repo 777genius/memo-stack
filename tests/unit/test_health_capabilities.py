@@ -105,6 +105,8 @@ def test_capabilities_return_noop_adapters() -> None:
         "standard_local",
         "standard_docling",
         "standard_vision",
+        "media_api",
+        "media_local_asr",
         "standard_asr",
         "standard_full",
     ]
@@ -113,8 +115,25 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["extraction"]["optional_extras"]["vision"]["configured"] is False
     assert body["extraction"]["optional_extras"]["vision"]["model"] == "gpt-4.1-mini"
     assert body["extraction"]["optional_extras"]["vision"]["detail"] == "high"
-    assert isinstance(body["extraction"]["optional_extras"]["asr"]["installed"], bool)
-    assert body["extraction"]["optional_extras"]["asr"]["model"] == "base"
+    assert isinstance(
+        body["extraction"]["optional_extras"]["transcription_api"]["installed"], bool
+    )
+    assert body["extraction"]["optional_extras"]["transcription_api"]["configured"] is False
+    assert body["extraction"]["optional_extras"]["transcription_api"]["provider"] == "openai"
+    assert (
+        body["extraction"]["optional_extras"]["transcription_api"]["model"]
+        == "gpt-4o-mini-transcribe"
+    )
+    assert isinstance(
+        body["extraction"]["optional_extras"]["transcription_local"]["installed"], bool
+    )
+    assert body["extraction"]["optional_extras"]["transcription_local"]["model"] == "base"
+    assert body["extraction"]["optional_extras"]["transcription_local"]["default"] is False
+    assert body["extraction"]["optional_extras"]["asr"]["deprecated"] is True
+    assert body["extraction"]["optional_extras"]["asr"]["replacement_profiles"] == [
+        "media_api",
+        "media_local_asr",
+    ]
     assert body["extraction"]["limits"]["max_media_seconds"] == 600
     assert body["captures"]["max_pending_per_memory_scope"] == 5_000
     assert body["captures"]["ingress_limit_code"] == "memory.capture.ingress_limited"

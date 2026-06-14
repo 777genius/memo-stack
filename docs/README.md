@@ -8,9 +8,12 @@ This folder contains the platform planning documents moved out of Client App.
 2. [Global architecture plan](memo-stack-architecture-plan.md)
 3. [MCP memory foundation plan](mcp-memory-foundation-plan.md)
 4. [Auto-memory capture platform plan](auto-memory-capture-platform-plan.md)
-5. [Client compatibility notes](client-integration/interview-memo-stack-clean-architecture-plan.md)
-6. [Client integration run notes](client-integration/current-integration-run-notes.md)
-7. [Self-hosted team deployment](self-hosted-team-deployment.md)
+5. [Multimodal quick capture research](multimodal-quick-capture-memory-research.md)
+6. [Content extraction clean architecture plan](content-extraction-clean-architecture-plan.md)
+7. [Parser library research](content-extraction-parser-library-research.md)
+8. [Client compatibility notes](client-integration/interview-memo-stack-clean-architecture-plan.md)
+9. [Client integration run notes](client-integration/current-integration-run-notes.md)
+10. [Self-hosted team deployment](self-hosted-team-deployment.md)
 
 ## Architecture Decisions
 
@@ -19,6 +22,7 @@ This folder contains the platform planning documents moved out of Client App.
 - [ADR-0003 - Canonical Fact Lifecycle](adr/ADR-0003-canonical-fact-lifecycle.md)
 - [ADR-0004 - Derived Retrieval Adapters](adr/ADR-0004-derived-retrieval-adapters.md)
 - [ADR-0005 - Capability Ports For Cognee And Graphiti](adr/ADR-0005-capability-ports-cognee-graphiti.md)
+- [ADR-0006 - Multimodal Ingestion Provider Policy](adr/ADR-0006-multimodal-ingestion-provider-policy.md)
 
 ## Ownership
 
