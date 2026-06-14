@@ -5,9 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -22,6 +19,12 @@ from memo_stack_core.ports.extraction import (
     FileTypeDetectorPort,
 )
 
+from memo_stack_adapters.extraction.image_evidence import (
+    extract_tesseract_ocr_blocks,
+    full_image_region,
+    image_regions_artifact,
+    read_image_metadata,
+)
 from memo_stack_adapters.extraction.media_tools import (
     extract_first_video_keyframe,
     probe_media_with_ffprobe,
@@ -158,9 +161,8 @@ class SimpleTextExtractionEngine(ExtractionEngine):
     async def supports(self, request: ExtractionRequest) -> SupportDecision:
         if request.detected_content_type in _TEXT_TYPES:
             return SupportDecision(True)
-        if (
-            request.detected_content_type in _TEXT_HEURISTIC_TYPES
-            and _looks_like_utf8_text(request.content)
+        if request.detected_content_type in _TEXT_HEURISTIC_TYPES and _looks_like_utf8_text(
+            request.content
         ):
             return SupportDecision(True, reason="utf8_text_heuristic")
         return SupportDecision(False, reason="not_text")
@@ -309,24 +311,8 @@ class ImageMetadataExtractionEngine(ExtractionEngine):
         return await asyncio.to_thread(self._extract_sync, request)
 
     def _extract_sync(self, request: ExtractionRequest) -> ExtractionResult:
-        try:
-            from PIL import Image
-        except ImportError:
-            return _unsupported(
-                request,
-                parser_name=self.name,
-                parser_version=self.version,
-                code="asset_extraction.image_dependency_missing",
-                message="Image metadata dependency is not installed",
-            )
-
-        try:
-            with Image.open(BytesIO(request.content)) as image:
-                image.load()
-                width, height = image.size
-                image_format = image.format
-                mode = image.mode
-        except Exception:
+        image = read_image_metadata(request.content)
+        if image is None:
             return _unsupported(
                 request,
                 parser_name=self.name,
@@ -335,65 +321,69 @@ class ImageMetadataExtractionEngine(ExtractionEngine):
                 message="Image could not be read locally",
             )
 
-        ocr_text = ""
-        ocr_status = "disabled"
+        ocr_result = None
         if request.limits.enable_ocr:
-            ocr_text, ocr_status = _run_tesseract_ocr(
+            ocr_result = extract_tesseract_ocr_blocks(
                 content=request.content,
                 extension=_extension(request.filename),
             )
+        ocr_status = ocr_result.status if ocr_result is not None else "disabled"
+        ocr_regions = ocr_result.regions if ocr_result is not None else ()
 
         lines = [
             f"# {request.filename.strip() or 'Image asset'}",
             "Image asset evidence",
             f"- Content type: {request.detected_content_type}",
-            f"- Dimensions: {width}x{height}",
-            f"- Format: {image_format or 'unknown'}",
+            f"- Dimensions: {image.width}x{image.height}",
+            f"- Format: {image.image_format or 'unknown'}",
             f"- OCR status: {ocr_status}",
+            f"- OCR blocks: {len(ocr_regions)}",
         ]
-        elements = [
-            ExtractedElement(
-                kind="image_metadata",
-                text=(
-                    f"Image asset {request.filename} "
-                    f"({request.detected_content_type}, {width}x{height})"
-                ),
-                metadata={
-                    "source": self.name,
-                    "width": width,
-                    "height": height,
-                    "format": image_format,
-                    "ocr_status": ocr_status,
-                },
+        image_region = full_image_region(
+            metadata=image,
+            parser_name=self.name,
+            text=(
+                f"Image asset {request.filename} "
+                f"({request.detected_content_type}, {image.width}x{image.height})"
+            ),
+        )
+        elements = [image_region.to_element(parser_name=self.name)]
+        if ocr_result is not None and ocr_result.text.strip():
+            limited_ocr_text = _limit_text(
+                ocr_result.text,
+                request.limits.max_output_chars,
             )
-        ]
-        if ocr_text.strip():
-            limited_ocr_text = _limit_text(ocr_text, request.limits.max_output_chars)
             lines.extend(("## OCR Text", limited_ocr_text))
-            elements.append(
-                ExtractedElement(
-                    kind="ocr_text",
-                    text=limited_ocr_text,
-                    confidence=None,
-                    metadata={"source": "tesseract_cli"},
-                )
-            )
+            elements.extend(region.to_element(parser_name=self.name) for region in ocr_regions)
 
         markdown = _limit_text("\n".join(lines), request.limits.max_output_chars)
+        regions = (image_region, *ocr_regions)
         return ExtractionResult(
             status="succeeded",
             normalized_content_type=request.detected_content_type,
             title=request.filename.strip() or "Image asset",
             markdown=markdown,
             elements=tuple(elements),
+            artifacts=(
+                image_regions_artifact(
+                    filename="image-regions.json",
+                    parser_name=self.name,
+                    image=image,
+                    regions=regions,
+                    metadata={
+                        "ocr_status": ocr_status,
+                        "ocr_block_count": len(ocr_regions),
+                    },
+                ),
+            ),
             technical_metadata={
                 "byte_size": request.byte_size,
                 "mime_detected": request.detected_content_type,
-                "image_width": width,
-                "image_height": height,
-                "image_format": image_format,
-                "image_mode": mode,
+                **image.as_metadata(),
                 "ocr_status": ocr_status,
+                "ocr_block_count": len(ocr_regions),
+                "image_region_count": len(regions),
+                "image_artifact_count": 1,
                 "output_chars": len(markdown),
             },
             diagnostics={"engine": self.name},
@@ -802,29 +792,6 @@ def _unsupported(
         safe_error_code=code,
         safe_error_message=message,
     )
-
-
-def _run_tesseract_ocr(*, content: bytes, extension: str | None) -> tuple[str, str]:
-    tesseract = shutil.which("tesseract")
-    if not tesseract:
-        return "", "unavailable"
-    suffix = f".{extension}" if extension else ".img"
-    try:
-        with tempfile.NamedTemporaryFile(suffix=suffix) as image_file:
-            image_file.write(content)
-            image_file.flush()
-            completed = subprocess.run(
-                [tesseract, image_file.name, "stdout"],
-                check=False,
-                capture_output=True,
-                timeout=20,
-            )
-    except (OSError, subprocess.TimeoutExpired):
-        return "", "failed"
-    if completed.returncode != 0:
-        return "", "failed"
-    text = completed.stdout.decode("utf-8", errors="replace").strip()
-    return text, "extracted" if text else "no_text"
 
 
 def _parse_timed_text_segments(text: str) -> list[tuple[int, int, str]]:

@@ -407,6 +407,17 @@ class _ExtractionEvidenceDialog extends StatelessWidget {
                       color: scheme.onSurfaceVariant,
                     ),
               ),
+              if (job.artifacts.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    for (final artifact in job.artifacts.take(8))
+                      _EvidenceArtifactButton(artifact: artifact),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               Expanded(
                 child: FutureBuilder<List<DocumentChunk>>(
@@ -460,6 +471,60 @@ class _ExtractionEvidenceDialog extends StatelessWidget {
     final filename = job.metadata['filename']?.toString().trim();
     if (filename != null && filename.isNotEmpty) return filename;
     return job.parserName ?? job.parserProfile;
+  }
+}
+
+class _EvidenceArtifactButton extends StatelessWidget {
+  final ExtractionArtifact artifact;
+
+  const _EvidenceArtifactButton({required this.artifact});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ActionChip(
+      key: ValueKey('asset_extraction_artifact_${sidebarKeyPart(artifact.id)}'),
+      avatar: Icon(
+        _artifactIcon(artifact),
+        size: 16,
+        color: scheme.onSurfaceVariant,
+      ),
+      label: Text(
+        _artifactLabel(artifact),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      tooltip: artifact.filename,
+      visualDensity: VisualDensity.compact,
+      onPressed: () => _openArtifact(context, artifact),
+    );
+  }
+
+  IconData _artifactIcon(ExtractionArtifact artifact) {
+    return switch (artifact.artifactType) {
+      'transcript' => Icons.subtitles_outlined,
+      'table_markdown' || 'table_html' => Icons.table_chart_outlined,
+      'extracted_json' ||
+      'normalized_json' ||
+      'vision_json' =>
+        Icons.data_object_outlined,
+      'image_regions' => Icons.crop_free_outlined,
+      'keyframe' => Icons.image_outlined,
+      _ => Icons.description_outlined,
+    };
+  }
+
+  String _artifactLabel(ExtractionArtifact artifact) {
+    final type = artifact.artifactType.replaceAll('_', ' ');
+    return '$type (${_bytesLabel(artifact.byteSize)})';
+  }
+
+  String _bytesLabel(int bytes) {
+    if (bytes < 1024) return '${bytes}B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(kb < 10 ? 1 : 0)}KB';
+    final mb = kb / 1024;
+    return '${mb.toStringAsFixed(mb < 10 ? 1 : 0)}MB';
   }
 }
 
@@ -591,6 +656,9 @@ class _EvidenceSourceChip extends StatelessWidget {
       );
     }
     if (ref.hasBBox) parts.add('BBox');
+    if (ref.charStart != null && ref.charEnd != null) {
+      parts.add('${ref.charStart}-${ref.charEnd}');
+    }
     if (ref.confidence != null) {
       parts.add('${(ref.confidence! * 100).round()}%');
     }

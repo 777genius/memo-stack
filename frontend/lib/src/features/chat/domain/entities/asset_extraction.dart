@@ -46,7 +46,11 @@ class ExtractionArtifact extends Equatable {
     return switch (artifactType) {
       'markdown' => 'extracted.md',
       'extracted_json' => 'extracted.json',
+      'normalized_json' => 'normalized.json',
+      'vision_json' => 'vision.json',
+      'image_regions' => 'image-regions.json',
       'transcript' => 'transcript.txt',
+      'table_markdown' => 'table.md',
       'table_html' => 'table.html',
       'keyframe' => 'keyframe.bin',
       _ => '$artifactType.bin',
@@ -57,6 +61,10 @@ class ExtractionArtifact extends Equatable {
       artifactType == 'markdown' ||
       artifactType == 'transcript' ||
       artifactType == 'extracted_json' ||
+      artifactType == 'normalized_json' ||
+      artifactType == 'vision_json' ||
+      artifactType == 'image_regions' ||
+      artifactType == 'table_markdown' ||
       artifactType == 'table_html';
 
   @override

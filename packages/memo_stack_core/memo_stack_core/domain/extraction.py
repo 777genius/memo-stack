@@ -31,10 +31,13 @@ class AssetExtractionStatus(StrEnum):
 
 class ExtractionArtifactType(StrEnum):
     EXTRACTED_JSON = "extracted_json"
+    NORMALIZED_JSON = "normalized_json"
     MARKDOWN = "markdown"
     TRANSCRIPT = "transcript"
     KEYFRAME = "keyframe"
     TABLE_HTML = "table_html"
+    IMAGE_REGIONS = "image_regions"
+    VISION_JSON = "vision_json"
 
 
 @dataclass(frozen=True)

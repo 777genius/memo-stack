@@ -298,6 +298,112 @@ void main() {
         find.textContaining('Q3 roadmap - selected by user'), findsOneWidget);
   });
 
+  testWidgets('memory evidence viewer filters files and opens artifacts', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    final opener = _FakeDownloadedFileOpener();
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+    repo.captures = [
+      _capture('capture-1', threadId: store.activeChatId),
+      _capture('capture-other', threadId: 'other-thread'),
+    ];
+    repo.extractions = [
+      _job(
+        id: 'extract-ready',
+        status: 'succeeded',
+        threadId: store.activeChatId,
+        artifacts: [_artifact('artifact-ready', 'extract-ready')],
+      ),
+      _job(id: 'extract-failed', status: 'failed'),
+      _job(id: 'extract-other', status: 'succeeded', threadId: 'other-thread'),
+    ];
+
+    await store.refreshMemoryCaptures();
+    await store.refreshAssetExtractions();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      opener: opener,
+      child: const Scaffold(
+        body: SizedBox(width: 430, height: 760, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_evidence_viewer_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_evidence_viewer_dialog')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('memory_evidence_capture_capture_1')),
+        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_ready')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('memory_evidence_capture_capture_other')),
+        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_other')),
+      findsOneWidget,
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_evidence_range_thread')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_evidence_capture_capture_1')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('memory_evidence_capture_capture_other')),
+        findsNothing);
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_ready')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_other')),
+      findsNothing,
+    );
+
+    await tester.tap(
+        find.byKey(const ValueKey('memory_evidence_artifact_artifact_ready')));
+    await tester.pumpAndSettle();
+    expect(repo.downloadedArtifactIds, ['artifact-ready']);
+    expect(opener.requests.single.namespace, 'artifact-ready');
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_evidence_filter_files')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('memory_evidence_capture_capture_1')),
+        findsNothing);
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_ready')),
+      findsOneWidget,
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_evidence_filter_issues')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_failed')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('memory_evidence_extraction_extract_ready')),
+      findsNothing,
+    );
+
+    await tester.tap(
+        find.byKey(const ValueKey('memory_evidence_retry_extract_failed')));
+    await tester.pumpAndSettle();
+    expect(
+        store.assetExtractions.any((job) => job.status == 'pending'), isTrue);
+    store.dispose();
+  });
+
   testWidgets('store polls pending extraction until it reaches terminal status',
       (
     tester,
@@ -658,13 +764,13 @@ MemoryScope _scope(String id, String externalRef, String name) {
   );
 }
 
-MemoryCapture _capture(String id) {
+MemoryCapture _capture(String id, {String threadId = 'thread-1'}) {
   final now = DateTime.now();
   return MemoryCapture.fromMap({
     'id': id,
     'space_id': 'space-1',
     'memory_scope_id': 'scope-default',
-    'thread_id': 'thread-1',
+    'thread_id': threadId,
     'source_agent': 'memo-stack-frontend',
     'source_kind': 'manual',
     'event_type': 'QuickCapture',
@@ -712,6 +818,7 @@ AssetExtractionJob _job({
   required String id,
   required String status,
   List<ExtractionArtifact> artifacts = const <ExtractionArtifact>[],
+  String? threadId,
 }) {
   final now = DateTime.now();
   return AssetExtractionJob(
@@ -719,7 +826,7 @@ AssetExtractionJob _job({
     assetId: 'asset-$id',
     spaceId: 'space-1',
     memoryScopeId: 'scope-default',
-    threadId: null,
+    threadId: threadId,
     parserProfile: 'standard_local',
     parserConfigHash: 'hash',
     sourceSha256Hex: 'sha',

@@ -11,6 +11,7 @@ from memo_stack_adapters.extraction.content import (
     SupportDecision,
 )
 from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
+from memo_stack_adapters.extraction.image_evidence import parse_tesseract_tsv
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
 from memo_stack_adapters.extraction.transcription.openai_adapter import (
     OpenAISpeechTranscriptionAdapter,
@@ -44,6 +45,20 @@ def test_file_type_detector_prefers_office_extension_over_zip_magic() -> None:
     )
 
 
+def test_tesseract_tsv_parser_groups_words_into_ocr_blocks() -> None:
+    regions = parse_tesseract_tsv(
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+        "5\t1\t1\t1\t1\t1\t10\t20\t40\t10\t92\tMemory\n"
+        "5\t1\t1\t1\t1\t2\t55\t20\t30\t10\t88\tScope\n"
+        "5\t1\t1\t1\t2\t1\t10\t40\t45\t12\t95\tFrontend\n"
+    )
+
+    assert [region.text for region in regions] == ["Memory Scope", "Frontend"]
+    assert regions[0].bbox == (10.0, 20.0, 85.0, 30.0)
+    assert regions[0].confidence == 0.9
+    assert regions[0].metadata["source"] == "tesseract_cli"
+
+
 def test_docling_engine_extracts_markdown_when_profile_requests_docling() -> None:
     engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _FakeDoclingConverter())
     request = _request(
@@ -60,6 +75,18 @@ def test_docling_engine_extracts_markdown_when_profile_requests_docling() -> Non
     assert result.parser_name == "docling_document"
     assert "Docling extracted memory scope table" in (result.markdown or "")
     assert result.technical_metadata["page_count"] == 2
+    assert result.technical_metadata["docling_element_strategy"] == "docling_items"
+    assert result.technical_metadata["docling_element_count"] == 3
+    assert result.technical_metadata["docling_table_count"] == 1
+    assert result.technical_metadata["docling_bbox_ref_count"] == 2
+    assert result.elements[0].kind == "section_heading"
+    assert result.elements[0].page_number == 1
+    assert result.elements[1].kind == "table"
+    assert result.elements[1].bbox == (10.0, 20.0, 300.0, 180.0)
+    assert {artifact.artifact_type for artifact in result.artifacts} == {
+        "normalized_json",
+        "table_html",
+    }
 
 
 def test_docling_engine_ignores_standard_local_profile() -> None:
@@ -86,9 +113,7 @@ def test_router_falls_back_from_docling_failure_to_pdf_text() -> None:
     request = _request(
         parser_profile="standard_docling",
         detected_content_type="application/pdf",
-        content=_sample_pdf_bytes(
-            "PDF fallback preserved searchable memory scope evidence"
-        ),
+        content=_sample_pdf_bytes("PDF fallback preserved searchable memory scope evidence"),
     )
 
     result = asyncio.run(router.extract(request))
@@ -96,9 +121,7 @@ def test_router_falls_back_from_docling_failure_to_pdf_text() -> None:
     assert result.status == "succeeded"
     assert result.parser_name == "pypdf_text"
     assert result.diagnostics["docling_document_fallback"] is True
-    assert "PDF fallback preserved searchable memory scope evidence" in (
-        result.markdown or ""
-    )
+    assert "PDF fallback preserved searchable memory scope evidence" in (result.markdown or "")
 
 
 def test_openai_vision_engine_extracts_image_understanding() -> None:
@@ -124,9 +147,19 @@ def test_openai_vision_engine_extracts_image_understanding() -> None:
     assert result.parser_name == "openai_vision_image"
     assert result.model_version == "gpt-4.1-mini"
     assert result.technical_metadata["vision_status"] == "extracted"
-    assert "Quick capture links this screenshot to MemoryScope frontend" in (
-        result.markdown or ""
-    )
+    assert result.technical_metadata["image_width"] == 1
+    assert result.technical_metadata["image_height"] == 1
+    assert result.technical_metadata["vision_prompt_policy"] == ("image_text_is_untrusted_evidence")
+    assert result.technical_metadata["vision_json_status"] == "parsed"
+    assert result.technical_metadata["vision_region_count"] == 1
+    assert result.elements[0].bbox == (0.0, 0.0, 1.0, 1.0)
+    assert result.elements[0].kind == "screenshot_ui_summary"
+    assert result.elements[1].kind == "visible_text"
+    assert {artifact.artifact_type for artifact in result.artifacts} == {
+        "image_regions",
+        "vision_json",
+    }
+    assert "Quick capture links this screenshot to MemoryScope frontend" in (result.markdown or "")
 
 
 def test_openai_vision_engine_ignores_standard_local_profile() -> None:
@@ -410,13 +443,47 @@ class _FakeDoclingConversion:
 
 
 class _FakeDoclingDocument:
+    elements = (
+        {
+            "kind": "heading",
+            "text": "Docling extracted memory scope table",
+            "page_number": 1,
+        },
+        {
+            "kind": "table",
+            "text": "| Scope | Evidence |\n| --- | --- |\n| frontend | screenshot |",
+            "prov": [
+                {
+                    "page_no": 1,
+                    "bbox": (10, 20, 300, 180),
+                }
+            ],
+        },
+        {
+            "kind": "text",
+            "text": "Memory scopes keep uploaded evidence linked to the right thread.",
+            "prov": [
+                {
+                    "page_no": 2,
+                    "bbox": (20, 40, 320, 100),
+                }
+            ],
+        },
+    )
+
     def export_to_markdown(self) -> str:
         return "# Docling extracted memory scope table\n\n| Scope | Evidence |\n| --- | --- |"
 
+    def export_to_dict(self, **kwargs) -> dict[str, object]:
+        assert kwargs["mode"] == "json"
+        return {"schema_name": "DoclingDocument", "texts": ["memory scope"]}
+
 
 class _FakeDoclingConverter:
-    def convert(self, source_path: str) -> _FakeDoclingConversion:
+    def convert(self, source_path: str, **kwargs) -> _FakeDoclingConversion:
         assert source_path.endswith(".pdf")
+        assert kwargs["max_num_pages"] == 100
+        assert kwargs["max_file_size"] == 10_000_000
         return _FakeDoclingConversion(document=_FakeDoclingDocument(), errors=[])
 
 
@@ -435,6 +502,8 @@ class _FakeVisionResponses:
         assert kwargs["model"] == "gpt-4.1-mini"
         assert kwargs["store"] is False
         assert kwargs["max_output_tokens"] == 1200
+        assert kwargs["text"]["format"]["type"] == "json_schema"
+        assert kwargs["text"]["format"]["strict"] is True
         content = kwargs["input"][0]["content"]
         assert content[0]["type"] == "input_text"
         assert "untrusted evidence" in content[0]["text"]
@@ -443,10 +512,12 @@ class _FakeVisionResponses:
         assert content[1]["image_url"].startswith("data:image/png;base64,")
         return _FakeVisionResponse(
             output_text=(
-                "## Summary\n"
-                "Quick capture links this screenshot to MemoryScope frontend.\n"
-                "## Suggested memory tags\n"
-                "- frontend\n- screenshot"
+                '{"summary":"Quick capture links this screenshot to MemoryScope frontend.",'
+                '"visible_text":["MemoryScope frontend"],'
+                '"screenshot_ui_summary":"A compact quick-capture UI is visible.",'
+                '"suggested_tags":["frontend","screenshot"],'
+                '"regions":[{"kind":"visible_text","text":"MemoryScope frontend",'
+                '"bbox":[0,0,1,1],"confidence":0.91}]}'
             )
         )
 
@@ -474,10 +545,7 @@ class _FakeAudioTranscriptions:
         assert kwargs["response_format"] == "json"
         assert kwargs["file"].name == "voice-note.wav"
         return _FakeTranscriptionResponse(
-            text=(
-                "Alex discussed memory scopes. "
-                "The file should link to existing evidence."
-            ),
+            text=("Alex discussed memory scopes. The file should link to existing evidence."),
             segments=[
                 {
                     "start": 0.0,

@@ -180,7 +180,7 @@ ExtractionArtifact
   id: ExtractionArtifactId
   job_id: AssetExtractionJobId
   asset_id: MemoryAssetId
-  artifact_type: extracted_json | markdown | transcript | keyframe | table_html
+  artifact_type: extracted_json | normalized_json | markdown | transcript | keyframe | table_html | image_regions | vision_json
   storage_backend: str
   storage_key: str
   sha256_hex: str

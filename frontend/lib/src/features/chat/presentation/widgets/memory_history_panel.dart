@@ -6,6 +6,7 @@ import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/memory_evidence_viewer_dialog.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/sidebar_formatters.dart';
 import 'package:frontend/src/presentation/theme/app_theme.dart';
 
@@ -55,7 +56,22 @@ class MemoryHistoryPanel extends StatelessWidget {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  else
+                  else ...[
+                    IconButton(
+                      key: const ValueKey('memory_evidence_viewer_button'),
+                      tooltip: 'Open memory evidence',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => showMemoryEvidenceViewer(
+                        context,
+                        store,
+                        onOpenCapture: _showCaptureDialog,
+                      ),
+                      icon: Icon(
+                        Icons.manage_search_outlined,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                     IconButton(
                       key: const ValueKey('memory_history_refresh_button'),
                       tooltip: 'Refresh saved memory',
@@ -67,6 +83,7 @@ class MemoryHistoryPanel extends StatelessWidget {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  ],
                 ],
               ),
               if (store.memoryCaptureError != null)
@@ -229,8 +246,11 @@ class _MemoryCaptureDialog extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.history_edu_outlined,
-                      size: 20, color: scheme.primary),
+                  Icon(
+                    Icons.history_edu_outlined,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

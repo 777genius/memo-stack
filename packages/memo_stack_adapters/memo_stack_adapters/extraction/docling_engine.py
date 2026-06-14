@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import importlib.metadata
+import json
 import tempfile
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
 from memo_stack_core.ports.extraction import (
-    ExtractedElement,
+    ExtractionArtifactCandidate,
     ExtractionRequest,
     ExtractionResult,
 )
@@ -24,6 +25,9 @@ from memo_stack_adapters.extraction.content import (
     _limit_text,
     _safe_suffix,
     _unsupported,
+)
+from memo_stack_adapters.extraction.document_normalization import (
+    normalize_docling_document,
 )
 
 _DOCLING_PROFILES = {"docling", "standard_docling", "standard_full", "full"}
@@ -67,7 +71,11 @@ class DoclingDocumentExtractionEngine(ExtractionEngine):
             with tempfile.NamedTemporaryFile(suffix=_safe_suffix(request.filename)) as source_file:
                 source_file.write(request.content)
                 source_file.flush()
-                conversion = converter_factory().convert(source_file.name)
+                conversion = converter_factory().convert(
+                    source_file.name,
+                    max_num_pages=request.limits.max_pages,
+                    max_file_size=request.limits.max_bytes,
+                )
         except Exception:
             return _fallback_unsupported(
                 request,
@@ -96,24 +104,35 @@ class DoclingDocumentExtractionEngine(ExtractionEngine):
 
         markdown = _limit_text(markdown, request.limits.max_output_chars)
         docling_metadata = _conversion_metadata(conversion)
+        normalized = normalize_docling_document(
+            document=document,
+            markdown=markdown,
+            max_tables=request.limits.max_tables,
+            max_output_chars=request.limits.max_output_chars,
+            parser_name=self.name,
+        )
+        artifacts = (
+            _normalized_json_artifact(
+                document=document,
+                parser_name=self.name,
+                parser_version=_docling_version(),
+            ),
+            *normalized.artifacts,
+        )
         return ExtractionResult(
             status="succeeded",
             normalized_content_type=request.detected_content_type,
             title=request.filename.strip() or "Docling document",
             markdown=markdown,
-            elements=(
-                ExtractedElement(
-                    kind="document_markdown",
-                    text=markdown,
-                    metadata={"source": self.name, **docling_metadata},
-                ),
-            ),
+            elements=normalized.elements,
+            artifacts=tuple(item for item in artifacts if item is not None),
             technical_metadata={
                 "byte_size": request.byte_size,
                 "mime_detected": request.detected_content_type,
                 "output_chars": len(markdown),
                 "docling_status": _safe_text(getattr(conversion, "status", None)),
                 **docling_metadata,
+                **normalized.metadata,
             },
             diagnostics={"engine": self.name},
             parser_name=self.name,
@@ -158,6 +177,37 @@ def _conversion_metadata(conversion: Any) -> dict[str, object]:
     if isinstance(errors, list):
         metadata["docling_error_count"] = len(errors)
     return metadata
+
+
+def _normalized_json_artifact(
+    *,
+    document: Any,
+    parser_name: str,
+    parser_version: str | None,
+) -> ExtractionArtifactCandidate | None:
+    export = getattr(document, "export_to_dict", None)
+    if not callable(export):
+        return None
+    try:
+        payload = export(mode="json", by_alias=True, exclude_none=True, coord_precision=2)
+    except TypeError:
+        try:
+            payload = export()
+        except Exception:
+            return None
+    except Exception:
+        return None
+    content = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return ExtractionArtifactCandidate(
+        artifact_type="normalized_json",
+        filename="docling-normalized.json",
+        content_type="application/json",
+        content=content,
+        metadata={
+            "parser": parser_name,
+            **({"parser_version": parser_version} if parser_version else {}),
+        },
+    )
 
 
 def _fallback_unsupported(

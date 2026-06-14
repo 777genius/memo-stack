@@ -132,9 +132,7 @@ def test_text_asset_extraction_indexes_document_chunks_and_artifacts(tmp_path: P
             "terminal": False,
         }
 
-        processed = asyncio.run(
-            OutboxWorker(client.app.state.container).run_once(limit=10)
-        )
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
         assert processed >= 1
 
         fetched = client.get(
@@ -251,9 +249,7 @@ def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> 
         chunk_text = " ".join(item["text"] for item in chunks.json()["data"])
         assert marker in chunk_text
         assert "linked scope thread assets" in chunk_text
-        source_refs = [
-            ref for chunk in chunks.json()["data"] for ref in chunk["source_refs"]
-        ]
+        source_refs = [ref for chunk in chunks.json()["data"] for ref in chunk["source_refs"]]
         assert source_refs
         assert source_refs[0]["page_number"] == 1
         assert source_refs[0]["kind"] == "page_text"
@@ -295,6 +291,12 @@ def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
             "no_text",
             "unavailable",
         }
+        assert extracted["metadata"]["image_region_count"] >= 1
+        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
+            "extracted_json",
+            "image_regions",
+            "markdown",
+        }
 
         chunks = client.get(
             f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",
@@ -304,6 +306,8 @@ def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
         chunk_text = " ".join(item["text"] for item in chunks.json()["data"])
         assert "Image asset evidence" in chunk_text
         assert "120x40" in chunk_text
+        source_refs = [ref for chunk in chunks.json()["data"] for ref in chunk["source_refs"]]
+        assert source_refs[0]["bbox"] == [0.0, 0.0, 120.0, 40.0]
 
 
 def test_standard_vision_profile_falls_back_to_local_image_metadata(
@@ -340,6 +344,7 @@ def test_standard_vision_profile_falls_back_to_local_image_metadata(
         assert extracted["parser_name"] == "image_metadata"
         assert extracted["metadata"]["image_width"] == 120
         assert extracted["metadata"]["image_height"] == 40
+        assert extracted["metadata"]["image_region_count"] >= 1
 
 
 def test_timed_text_transcript_extraction_stores_transcript_artifact(tmp_path: Path) -> None:
@@ -392,9 +397,7 @@ def test_timed_text_transcript_extraction_stores_transcript_artifact(tmp_path: P
         assert chunks.status_code == 200, chunks.text
         chunk_text = " ".join(item["text"] for item in chunks.json()["data"])
         assert "connect memory scope with uploaded evidence" in chunk_text
-        source_refs = [
-            ref for chunk in chunks.json()["data"] for ref in chunk["source_refs"]
-        ]
+        source_refs = [ref for chunk in chunks.json()["data"] for ref in chunk["source_refs"]]
         assert any(ref.get("time_start_ms") == 1000 for ref in source_refs)
         assert any(ref.get("time_end_ms") == 6500 for ref in source_refs)
 
@@ -614,9 +617,7 @@ def test_asset_extraction_request_is_idempotent_before_and_after_worker(
         assert second_data["duplicate"] is True
         assert second_data["id"] == first_data["id"]
 
-        processed = asyncio.run(
-            OutboxWorker(client.app.state.container).run_once(limit=10)
-        )
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
         assert processed >= 1
 
         after_worker = client.post(
@@ -648,9 +649,7 @@ def test_unsupported_asset_extraction_finishes_without_document_or_retry(
         assert upload.status_code == 201, upload.text
         extraction_id = upload.json()["data"]["extraction"]["id"]
 
-        processed = asyncio.run(
-            OutboxWorker(client.app.state.container).run_once(limit=10)
-        )
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
         assert processed >= 1
 
         fetched = client.get(
@@ -719,9 +718,7 @@ def test_invalid_media_asset_extraction_finishes_unsupported(tmp_path: Path) -> 
         )
         assert retry.status_code == 202, retry.text
 
-        processed_retry = asyncio.run(
-            OutboxWorker(client.app.state.container).run_once(limit=10)
-        )
+        processed_retry = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
         assert processed_retry >= 1
 
         after_retry = client.get(

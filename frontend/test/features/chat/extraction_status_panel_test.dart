@@ -283,7 +283,32 @@ void main() {
         'attempt_count': 1,
         'parser_name': 'timed_text_transcript',
         'result_document_ids': ['doc-1'],
-        'artifacts': <Map<String, dynamic>>[],
+        'artifacts': [
+          {
+            'id': 'artifact-table',
+            'job_id': 'extract-1',
+            'asset_id': 'asset-1',
+            'artifact_type': 'table_html',
+            'storage_backend': 'local',
+            'storage_key': 'table.html',
+            'sha256_hex': 'abc',
+            'byte_size': 64,
+            'metadata': {'filename': 'table-001.html'},
+            'created_at': '2026-06-13T00:01:00Z',
+          },
+          {
+            'id': 'artifact-normalized',
+            'job_id': 'extract-1',
+            'asset_id': 'asset-1',
+            'artifact_type': 'normalized_json',
+            'storage_backend': 'local',
+            'storage_key': 'docling-normalized.json',
+            'sha256_hex': 'def',
+            'byte_size': 128,
+            'metadata': {'filename': 'docling-normalized.json'},
+            'created_at': '2026-06-13T00:01:00Z',
+          },
+        ],
         'metadata': {'filename': 'alex-call.srt'},
         'progress': <String, dynamic>{},
         'usage': <String, dynamic>{},
@@ -310,6 +335,17 @@ void main() {
         findsOneWidget);
     expect(find.text('Evidence'), findsOneWidget);
     expect(find.text('alex-call.srt - 1 docs'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('asset_extraction_artifact_artifact_table')),
+      findsOneWidget,
+    );
+    expect(find.text('table html (64B)'), findsOneWidget);
+    expect(
+      find.byKey(
+          const ValueKey('asset_extraction_artifact_artifact_normalized')),
+      findsOneWidget,
+    );
+    expect(find.text('normalized json (128B)'), findsOneWidget);
     expect(
       find.text('Alex confirmed the Q3 rollout decision in the call.'),
       findsOneWidget,
