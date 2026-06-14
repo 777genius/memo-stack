@@ -212,7 +212,7 @@ class SuggestContextLinksUseCase:
             if key in seen or _is_same_source(key, command):
                 continue
             seen.add(key)
-            score, reasons = _score_text_candidate(
+            score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
                 target_text=fact.text,
                 updated_at=fact.updated_at,
@@ -232,7 +232,11 @@ class SuggestContextLinksUseCase:
                     preview=fact.text,
                     score=score,
                     reasons=reasons,
-                    metadata={"version": fact.version, "tags": list(fact.tags)},
+                    metadata={
+                        "version": fact.version,
+                        "tags": list(fact.tags),
+                        "matched_terms": list(matched_terms),
+                    },
                 )
             )
         for capture in captures:
@@ -240,7 +244,7 @@ class SuggestContextLinksUseCase:
             if key in seen or _is_same_source(key, command):
                 continue
             seen.add(key)
-            score, reasons = _score_text_candidate(
+            score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
                 target_text=capture.text,
                 updated_at=capture.created_at,
@@ -255,7 +259,10 @@ class SuggestContextLinksUseCase:
                     preview=capture.text,
                     score=score,
                     reasons=reasons,
-                    metadata={"source_agent": capture.source_agent},
+                    metadata={
+                        "source_agent": capture.source_agent,
+                        "matched_terms": list(matched_terms),
+                    },
                 )
             )
         for suggestion in suggestions:
@@ -263,7 +270,7 @@ class SuggestContextLinksUseCase:
             if key in seen or _is_same_source(key, command):
                 continue
             seen.add(key)
-            score, reasons = _score_text_candidate(
+            score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
                 target_text=suggestion.candidate_text,
                 updated_at=suggestion.created_at,
@@ -278,7 +285,10 @@ class SuggestContextLinksUseCase:
                     preview=suggestion.candidate_text,
                     score=score,
                     reasons=reasons,
-                    metadata={"confidence": suggestion.confidence.value},
+                    metadata={
+                        "confidence": suggestion.confidence.value,
+                        "matched_terms": list(matched_terms),
+                    },
                 )
             )
         for asset in assets:
@@ -287,7 +297,7 @@ class SuggestContextLinksUseCase:
                 continue
             seen.add(key)
             target_text = f"{asset.filename} {asset.content_type}"
-            score, reasons = _score_text_candidate(
+            score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
                 target_text=target_text,
                 updated_at=asset.created_at,
@@ -302,7 +312,11 @@ class SuggestContextLinksUseCase:
                     preview=target_text,
                     score=score,
                     reasons=reasons,
-                    metadata={"content_type": asset.content_type, "byte_size": asset.byte_size},
+                    metadata={
+                        "content_type": asset.content_type,
+                        "byte_size": asset.byte_size,
+                        "matched_terms": list(matched_terms),
+                    },
                 )
             )
 
@@ -581,11 +595,11 @@ def _score_text_candidate(
     updated_at: datetime,
     now: datetime,
     base: float,
-) -> tuple[float, list[str]]:
+) -> tuple[float, list[str], tuple[str, ...]]:
     score = base
     reasons: list[str] = []
     lowered = target_text.lower()
-    hits = [term for term in query_terms if term in lowered]
+    hits = tuple(term for term in query_terms if term in lowered)
     if hits:
         score += min(28.0, 9.0 * len(hits))
         reasons.append("matching text")
@@ -601,7 +615,7 @@ def _score_text_candidate(
         reasons.append("near in time")
     if not reasons:
         reasons.append("recent context")
-    return min(score, 99.0), reasons
+    return min(score, 99.0), reasons, hits
 
 
 def _candidate(
@@ -614,6 +628,9 @@ def _candidate(
     reasons: list[str],
     metadata: dict[str, object],
 ) -> ContextLinkCandidate:
+    unique_reasons = tuple(dict.fromkeys(reasons))
+    safe_metadata = dict(metadata)
+    safe_metadata["reason_codes"] = _reason_codes(unique_reasons)
     return ContextLinkCandidate(
         target_type=target_type,
         target_id=target_id,
@@ -621,8 +638,8 @@ def _candidate(
         preview=preview[:_MAX_CANDIDATE_PREVIEW],
         score=round(score, 2),
         tier=_tier(score),
-        reasons=tuple(dict.fromkeys(reasons)),
-        metadata=metadata,
+        reasons=unique_reasons,
+        metadata=safe_metadata,
     )
 
 
@@ -648,11 +665,40 @@ def _candidate_metadata(
         "target_preview": candidate.preview,
         "target_tier": candidate.tier,
         "resolver_version": str(diagnostics.get("resolver_version", "unknown")),
+        "reason_codes": _reason_codes(candidate.reasons),
     }
     for key, value in (candidate.metadata or {}).items():
         if isinstance(value, (str, int, float, bool)) or value is None:
             metadata[str(key)] = value
+        elif isinstance(value, (list, tuple)):
+            cleaned = [
+                item
+                for item in value
+                if isinstance(item, (str, int, float, bool)) or item is None
+            ]
+            if cleaned:
+                metadata[str(key)] = cleaned
     return metadata
+
+
+def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
+    codes: list[str] = []
+    for reason in reasons:
+        if reason == "matching text":
+            codes.append("text_match")
+        elif reason == "recent activity":
+            codes.append("recent_activity")
+        elif reason == "near in time":
+            codes.append("temporal_proximity")
+        elif reason == "same thread":
+            codes.append("same_thread")
+        elif reason.startswith("category:"):
+            codes.append("shared_category")
+        elif reason == "recent context":
+            codes.append("recent_context")
+        else:
+            codes.append("rule_signal")
+    return list(dict.fromkeys(codes))
 
 
 def _tier(score: float) -> str:

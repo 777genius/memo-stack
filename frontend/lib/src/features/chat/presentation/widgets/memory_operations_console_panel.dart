@@ -647,6 +647,7 @@ class _ConsoleSuggestionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final matchedTerms = _metadataList(suggestion.metadata['matched_terms']);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -681,6 +682,10 @@ class _ConsoleSuggestionTile extends StatelessWidget {
             runSpacing: 6,
             children: [
               _DetailChip(label: 'reason: ${suggestion.reason}'),
+              if (matchedTerms.isNotEmpty)
+                _DetailChip(
+                  label: 'matched: ${matchedTerms.take(4).join(', ')}',
+                ),
               _DetailChip(
                   label: 'score: ${suggestion.score.toStringAsFixed(0)}'),
               _DetailChip(label: 'confidence: ${suggestion.confidence}'),
@@ -887,6 +892,14 @@ List<String> _noSuggestionReasons(MemoryOperationsConsole? console) {
       })
       .where((item) => item.isNotEmpty)
       .take(4)
+      .toList(growable: false);
+}
+
+List<String> _metadataList(Object? value) {
+  if (value is! List) return const <String>[];
+  return value
+      .map((item) => item?.toString().trim() ?? '')
+      .where((item) => item.isNotEmpty)
       .toList(growable: false);
 }
 

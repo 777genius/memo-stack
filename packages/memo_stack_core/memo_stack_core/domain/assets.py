@@ -332,4 +332,13 @@ def _safe_metadata(
             safe[key_text] = value[:500]
         elif isinstance(value, (int, float, bool)) or value is None:
             safe[key_text] = value
+        elif isinstance(value, (list, tuple)):
+            items: list[object] = []
+            for item in value[:20]:
+                if isinstance(item, str):
+                    items.append(item[:120])
+                elif isinstance(item, (int, float, bool)) or item is None:
+                    items.append(item)
+            if items:
+                safe[key_text] = items
     return safe

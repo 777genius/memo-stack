@@ -171,6 +171,10 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert candidate["target_type"] == "fact"
     assert candidate["target_id"] == fact.json()["data"]["id"]
     assert "matching text" in candidate["reasons"]
+    assert "text_match" in candidate["metadata"]["reason_codes"]
+    assert {"alex", "frontend", "capture"}.issubset(
+        set(candidate["metadata"]["matched_terms"])
+    )
     assert link.status_code == 200
     assert link.json()["data"]["duplicate"] is False
     assert listed_links.status_code == 200
@@ -395,6 +399,10 @@ def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path)
             item for item in data["context_link_suggestions"] if item["id"] == suggestion_id
         )
         assert saved_suggestion["metadata"]["resolver_version"]
+        assert "text_match" in saved_suggestion["metadata"]["reason_codes"]
+        assert {"alex", "link", "review"}.issubset(
+            set(saved_suggestion["metadata"]["matched_terms"])
+        )
         assert saved_suggestion["reason"]
 
         retry = client.post(

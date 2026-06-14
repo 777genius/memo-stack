@@ -250,6 +250,33 @@ void main() {
     expect(find.textContaining('No visible same-scope memory'), findsOneWidget);
   });
 
+  testWidgets('operations console shows suggestion matched terms', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshOperationsConsole();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link suggestions'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('matched: alex, q3'), findsOneWidget);
+  });
+
   testWidgets('sidebar reviews pending context link suggestions', (
     tester,
   ) async {
@@ -1024,6 +1051,7 @@ MemoryContextLinkSuggestion _suggestion(String id) {
     metadata: const {
       'target_label': 'Q3 roadmap',
       'target_preview': 'Alex confirmed Q3 rollout.',
+      'matched_terms': ['alex', 'q3'],
     },
     createdAt: now,
     updatedAt: now,

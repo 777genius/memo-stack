@@ -312,8 +312,17 @@ def context_link_suggestion_to_response(
 def _safe_metadata(metadata: Any) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         return {}
-    return {
-        str(key): value
-        for key, value in metadata.items()
-        if isinstance(value, (str, int, float, bool, type(None)))
-    }
+    safe: dict[str, Any] = {}
+    for key, value in metadata.items():
+        key_text = str(key)
+        if isinstance(value, (str, int, float, bool, type(None))):
+            safe[key_text] = value
+        elif isinstance(value, list):
+            items = [
+                item
+                for item in value[:20]
+                if isinstance(item, (str, int, float, bool, type(None)))
+            ]
+            if items:
+                safe[key_text] = items
+    return safe
