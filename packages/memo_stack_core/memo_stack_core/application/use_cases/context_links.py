@@ -25,6 +25,7 @@ from memo_stack_core.domain.assets import (
     MemoryContextLinkSuggestion,
     MemoryContextLinkSuggestionId,
 )
+from memo_stack_core.domain.entities import MemoryChunk
 from memo_stack_core.domain.errors import MemoryNotFoundError, MemoryValidationError
 from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.ids import IdGeneratorPort
@@ -204,6 +205,20 @@ class SuggestContextLinksUseCase:
                 status="stored",
                 limit=max(command.limit, 8),
             )
+            documents = await uow.documents.list_for_scope(
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                thread_id=source_thread_id,
+                status="active",
+                limit=max(command.limit, 8),
+            )
+            chunks = await uow.chunks.keyword_search(
+                space_id=str(command.space_id),
+                memory_scope_ids=(str(command.memory_scope_id),),
+                thread_id=source_thread_id,
+                query=query_text,
+                limit=max(command.limit * 2, 12),
+            )
             threads = await uow.scope.list_threads(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
@@ -322,6 +337,73 @@ class SuggestContextLinksUseCase:
                     metadata={
                         "content_type": asset.content_type,
                         "byte_size": asset.byte_size,
+                        "matched_terms": list(matched_terms),
+                    },
+                )
+            )
+        for document in documents:
+            key = ("document", str(document.id))
+            if key in seen or _is_same_source(key, command):
+                continue
+            seen.add(key)
+            target_text = f"{document.title} {document.source_type} {document.source_external_id}"
+            score, reasons, matched_terms = _score_text_candidate(
+                query_terms=terms,
+                target_text=target_text,
+                updated_at=document.updated_at,
+                now=self._clock.now(),
+                base=38,
+            )
+            if document.thread_id and str(document.thread_id) == source_thread_id:
+                score += 8
+                reasons.append("same thread")
+            candidates.append(
+                _candidate(
+                    target_type="document",
+                    target_id=str(document.id),
+                    label=document.title,
+                    preview=target_text,
+                    score=score,
+                    reasons=reasons,
+                    metadata={
+                        "source_type": document.source_type,
+                        "source_external_id": document.source_external_id,
+                        "classification": document.classification,
+                        "matched_terms": list(matched_terms),
+                    },
+                )
+            )
+        for chunk in chunks:
+            key = ("chunk", str(chunk.id))
+            if key in seen or _is_same_source(key, command):
+                continue
+            seen.add(key)
+            score, reasons, matched_terms = _score_text_candidate(
+                query_terms=terms,
+                target_text=chunk.text,
+                updated_at=chunk.updated_at,
+                now=self._clock.now(),
+                base=46,
+            )
+            if chunk.thread_id and str(chunk.thread_id) == source_thread_id:
+                score += 8
+                reasons.append("same thread")
+            candidates.append(
+                _candidate(
+                    target_type="chunk",
+                    target_id=str(chunk.id),
+                    label=_chunk_label(chunk),
+                    preview=chunk.text,
+                    score=score,
+                    reasons=reasons,
+                    metadata={
+                        "document_id": str(chunk.document_id) if chunk.document_id else None,
+                        "source_type": chunk.source_type,
+                        "source_external_id": chunk.source_external_id,
+                        "kind": chunk.kind.value,
+                        "sequence": chunk.sequence,
+                        "char_start": chunk.char_start,
+                        "char_end": chunk.char_end,
                         "matched_terms": list(matched_terms),
                     },
                 )
@@ -683,6 +765,16 @@ def _candidate(
 def _candidate_reason(candidate: ContextLinkCandidate) -> str:
     reason = "; ".join(candidate.reasons)
     return reason[:320] if reason else "related memory candidate"
+
+
+def _chunk_label(chunk: MemoryChunk) -> str:
+    sequence = chunk.sequence
+    kind = chunk.kind.value
+    source = chunk.source_external_id.strip()
+    suffix = f" - {source}" if source else ""
+    if isinstance(sequence, int):
+        return f"{kind} #{sequence}{suffix}"
+    return f"{kind}{suffix}"
 
 
 def _confidence_for_candidate(candidate: ContextLinkCandidate) -> str:

@@ -243,6 +243,88 @@ def test_context_link_suggestions_include_thread_anchor(tmp_path: Path) -> None:
     assert approved_data["link"]["metadata"]["external_ref"] == "alex-call"
 
 
+def test_context_link_suggestions_include_document_and_chunk_targets(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "doc-review",
+                "title": "Qdrant memory architecture",
+                "text": (
+                    "Memo Stack keeps canonical memory in Postgres. "
+                    "Qdrant stores derived document chunks for retrieval."
+                ),
+                "source_type": "document",
+                "source_external_id": "qdrant-architecture.md",
+            },
+            headers=auth_headers(),
+        )
+        assert document.status_code == 201, document.text
+        document_id = document.json()["data"]["id"]
+
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "doc-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "document-link-capture",
+                "text": "Need to link this screenshot to the Qdrant document chunks.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "doc-review",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Qdrant document chunks",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        candidates = suggestions.json()["data"]["candidates"]
+        document_candidate = next(
+            item
+            for item in candidates
+            if item["target_type"] == "document" and item["target_id"] == document_id
+        )
+        chunk_candidate = next(item for item in candidates if item["target_type"] == "chunk")
+        assert document_candidate["label"] == "Qdrant memory architecture"
+        assert document_candidate["metadata"]["source_external_id"] == "qdrant-architecture.md"
+        assert "text_match" in document_candidate["metadata"]["reason_codes"]
+        assert chunk_candidate["metadata"]["document_id"] == document_id
+        assert chunk_candidate["metadata"]["source_external_id"] == "qdrant-architecture.md"
+        assert "qdrant" in chunk_candidate["metadata"]["matched_terms"]
+        assert chunk_candidate["suggestion_id"]
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{chunk_candidate['suggestion_id']}/review",
+            json={"action": "approve", "reason": "linked to exact document chunk"},
+            headers=auth_headers(),
+        )
+
+    assert approved.status_code == 200, approved.text
+    approved_data = approved.json()["data"]
+    assert approved_data["suggestion"]["target_type"] == "chunk"
+    assert approved_data["suggestion"]["review_reason"] == "linked to exact document chunk"
+    assert approved_data["link"]["target_type"] == "chunk"
+    assert approved_data["link"]["metadata"]["document_id"] == document_id
+
+
 def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         fact = client.post(

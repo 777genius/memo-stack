@@ -937,6 +937,8 @@ IconData _iconFor(String type) {
     'fact' => Icons.psychology_alt_outlined,
     'capture' => Icons.history_outlined,
     'asset' => Icons.attach_file,
+    'chunk' => Icons.segment_outlined,
+    'document' => Icons.description_outlined,
     'suggestion' => Icons.rate_review_outlined,
     'thread' => Icons.forum_outlined,
     _ => Icons.label_outline,
