@@ -193,6 +193,36 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('operations console dialog keeps backend errors visible', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository()
+      ..operationsConsoleError = Exception('backend offline');
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshOperationsConsole();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    expect(
+        find.textContaining('Operations console unavailable'), findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_operations_error_banner')),
+        findsOneWidget);
+    expect(find.textContaining('backend offline'), findsWidgets);
+  });
+
   testWidgets('sidebar reviews pending context link suggestions', (
     tester,
   ) async {
@@ -563,6 +593,7 @@ class _UxFakeChatRepository implements ChatRepository {
   List<MemoryContextLink> contextLinks = const <MemoryContextLink>[];
   List<MemoryContextLinkSuggestion> contextLinkSuggestions =
       const <MemoryContextLinkSuggestion>[];
+  Object? operationsConsoleError;
   int listExtractionCalls = 0;
   final downloadedArtifactIds = <String>[];
   final reviewedSuggestions = <String>[];
@@ -741,6 +772,8 @@ class _UxFakeChatRepository implements ChatRepository {
 
   @override
   Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    final error = operationsConsoleError;
+    if (error != null) throw error;
     listExtractionCalls += 1;
     return MemoryOperationsConsole(
       generatedAt: DateTime.now(),

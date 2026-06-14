@@ -170,6 +170,7 @@ class _MemoryOperationsConsoleDialog extends StatelessWidget {
             child: Observer(
               builder: (_) {
                 final console = store.operationsConsole.value;
+                final error = store.operationsConsoleError.value;
                 final jobs = console?.extractionJobs ?? store.assetExtractions;
                 final suggestions = console?.contextLinkSuggestions ??
                     store.contextLinkSuggestions;
@@ -227,6 +228,10 @@ class _MemoryOperationsConsoleDialog extends StatelessWidget {
                       pendingLinks: console?.pendingLinkSuggestionCount ??
                           suggestions.where((item) => item.isPending).length,
                     ),
+                    if (error != null) ...[
+                      const SizedBox(height: 8),
+                      _OperationsErrorBanner(error: error),
+                    ],
                     const SizedBox(height: 10),
                     const TabBar(
                       tabs: [
@@ -251,6 +256,44 @@ class _MemoryOperationsConsoleDialog extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OperationsErrorBanner extends StatelessWidget {
+  final String error;
+
+  const _OperationsErrorBanner({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('memory_operations_error_banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 16, color: scheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              error,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }
