@@ -102,6 +102,7 @@ class AssetExtractionJob extends Equatable {
   final List<ExtractionArtifact> artifacts;
   final Map<String, dynamic> metadata;
   final ExtractionProgress progress;
+  final ExtractionExecution execution;
   final ExtractionUsage usage;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -128,6 +129,7 @@ class AssetExtractionJob extends Equatable {
     required this.artifacts,
     required this.metadata,
     required this.progress,
+    this.execution = const ExtractionExecution(),
     required this.usage,
     required this.createdAt,
     required this.updatedAt,
@@ -159,6 +161,7 @@ class AssetExtractionJob extends Equatable {
         _map(map['progress']),
         status: _string(map['status'], fallback: 'pending'),
       ),
+      execution: ExtractionExecution.fromMap(_map(map['execution'])),
       usage: ExtractionUsage.fromMap(_map(map['usage'])),
       createdAt: _date(map['created_at']),
       updatedAt: _date(map['updated_at']),
@@ -170,7 +173,13 @@ class AssetExtractionJob extends Equatable {
   bool get isRunning => status == 'pending' || status == 'running';
   bool get isSucceeded => status == 'succeeded';
   bool get isFailed => status == 'failed' || status == 'unsupported';
-  bool get canRetry => status == 'failed' || status == 'unsupported';
+  bool get canCancel => status == 'pending' || status == 'running';
+  bool get canReprocess =>
+      status == 'failed' ||
+      status == 'unsupported' ||
+      status == 'canceled' ||
+      status == 'stale';
+  bool get canRetry => canReprocess;
   bool get hasDocuments => resultDocumentIds.isNotEmpty;
 
   ExtractionArtifact? get preferredArtifact {
@@ -204,11 +213,54 @@ class AssetExtractionJob extends Equatable {
         artifacts,
         metadata,
         progress,
+        execution,
         usage,
         createdAt,
         updatedAt,
         startedAt,
         finishedAt,
+      ];
+}
+
+class ExtractionExecution extends Equatable {
+  final String? leaseOwner;
+  final DateTime? leaseExpiresAt;
+  final DateTime? heartbeatAt;
+  final DateTime? retryAfterAt;
+  final String? retryDisposition;
+  final DateTime? cancellationRequestedAt;
+
+  const ExtractionExecution({
+    this.leaseOwner,
+    this.leaseExpiresAt,
+    this.heartbeatAt,
+    this.retryAfterAt,
+    this.retryDisposition,
+    this.cancellationRequestedAt,
+  });
+
+  factory ExtractionExecution.fromMap(Map<String, dynamic> map) {
+    return ExtractionExecution(
+      leaseOwner: _nullableString(map['lease_owner']),
+      leaseExpiresAt: _nullableDate(map['lease_expires_at']),
+      heartbeatAt: _nullableDate(map['heartbeat_at']),
+      retryAfterAt: _nullableDate(map['retry_after_at']),
+      retryDisposition: _nullableString(map['retry_disposition']),
+      cancellationRequestedAt: _nullableDate(map['cancellation_requested_at']),
+    );
+  }
+
+  bool get hasLease => leaseOwner != null || leaseExpiresAt != null;
+  bool get cancellationRequested => cancellationRequestedAt != null;
+
+  @override
+  List<Object?> get props => [
+        leaseOwner,
+        leaseExpiresAt,
+        heartbeatAt,
+        retryAfterAt,
+        retryDisposition,
+        cancellationRequestedAt,
       ];
 }
 

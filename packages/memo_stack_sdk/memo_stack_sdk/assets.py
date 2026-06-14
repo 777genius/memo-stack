@@ -155,6 +155,35 @@ class MemoStackAssetsMixin:
     def cancel_asset_extraction(self, job_id: str) -> dict[str, Any]:
         return self._request("POST", f"/v1/asset-extractions/{job_id}/cancel")
 
+    def get_operations_console(
+        self,
+        *,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        thread_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/v1/operations-console",
+            params=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=thread_id,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=thread_external_ref,
+                    ),
+                    "limit": limit,
+                }
+            ),
+        )
+
     def download_extraction_artifact(self, artifact_id: str) -> bytes:
         return self._request_bytes(
             "GET",

@@ -164,6 +164,29 @@ class BackendRestClient {
     return _data(resp.data);
   }
 
+  Future<Map<String, dynamic>> cancelAssetExtraction(String jobId) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/asset-extractions/$jobId/cancel',
+    );
+    return _data(resp.data);
+  }
+
+  Future<Map<String, dynamic>> getOperationsConsole({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    int limit = 50,
+  }) async {
+    final resp = await _dio.get<Map<String, dynamic>>(
+      '/v1/operations-console',
+      queryParameters: {
+        'space_slug': spaceSlug,
+        'memory_scope_external_ref': memoryScopeExternalRef,
+        'limit': limit,
+      },
+    );
+    return _data(resp.data);
+  }
+
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     final resp = await _dio.get<List<int>>(
       '/v1/extraction-artifacts/$artifactId/download',

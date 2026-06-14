@@ -24,6 +24,7 @@ from memo_stack_core.application import (
     BuildContextUseCase,
     BuildMemoryDigestUseCase,
     BuildMemoryInsightsUseCase,
+    BuildMemoryOperationsConsoleUseCase,
     CancelAssetExtractionUseCase,
     ConsolidateCaptureUseCase,
     CreateAssetUseCase,
@@ -178,6 +179,7 @@ class Container:
     build_context: BuildContextUseCase
     build_memory_digest: BuildMemoryDigestUseCase
     build_memory_insights: BuildMemoryInsightsUseCase
+    build_memory_operations_console: BuildMemoryOperationsConsoleUseCase
     export_graph: ExportGraphUseCase
     delete_thread_memory: DeleteThreadMemoryUseCase
     get_session_status: GetSessionStatusUseCase
@@ -409,6 +411,10 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         ids=ids,
     )
+    build_memory_operations_console = BuildMemoryOperationsConsoleUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+    )
     export_graph = ExportGraphUseCase(uow_factory=uow_factory)
     delete_thread_memory = DeleteThreadMemoryUseCase(uow_factory=uow_factory)
     get_session_status = GetSessionStatusUseCase(uow_factory=uow_factory)
@@ -519,6 +525,7 @@ def build_container(settings: Settings | None = None) -> Container:
         build_context=build_context,
         build_memory_digest=build_memory_digest,
         build_memory_insights=build_memory_insights,
+        build_memory_operations_console=build_memory_operations_console,
         export_graph=export_graph,
         delete_thread_memory=delete_thread_memory,
         get_session_status=get_session_status,

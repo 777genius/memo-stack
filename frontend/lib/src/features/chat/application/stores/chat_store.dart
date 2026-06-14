@@ -8,6 +8,7 @@ import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 // injectable не используем для ChatStore, создаётся через Provider
@@ -25,6 +26,7 @@ abstract class ChatStoreBase with Store {
   final Duration _assetExtractionPollInterval;
   Timer? _assetExtractionPollTimer;
   bool _assetExtractionRefreshInFlight = false;
+  bool _operationsConsoleRefreshInFlight = false;
   bool _disposed = false;
 
   ChatStoreBase(
@@ -76,7 +78,7 @@ abstract class ChatStoreBase with Store {
     _persistMessage(cid, m);
     if (m.kind == 'attachment' &&
         (m.meta?['extractionId']?.toString().isNotEmpty ?? false)) {
-      unawaited(refreshAssetExtractions());
+      unawaited(refreshOperationsConsole());
     }
   }
 
@@ -182,6 +184,13 @@ abstract class ChatStoreBase with Store {
   final ObservableMap<String, bool> contextLinkSuggestionReviewing =
       ObservableMap.of({});
 
+  final Observable<MemoryOperationsConsole?> operationsConsole =
+      Observable(null);
+
+  final Observable<bool> operationsConsoleLoading = Observable(false);
+
+  final Observable<String?> operationsConsoleError = Observable(null);
+
   final ObservableMap<String, ObservableList<ChatMessage>> _messagesByChat =
       ObservableMap.of({});
 
@@ -230,9 +239,8 @@ abstract class ChatStoreBase with Store {
     try {
       await repo.runTask(task: text);
     } finally {
-      await refreshAssetExtractions();
       await refreshMemoryCaptures();
-      await refreshContextLinkSuggestions(showLoading: false);
+      await refreshOperationsConsole();
     }
   }
 
@@ -310,7 +318,7 @@ abstract class ChatStoreBase with Store {
         );
       }
       unawaited(refreshMemoryCaptures(showLoading: false));
-      unawaited(refreshContextLinkSuggestions(showLoading: false));
+      unawaited(refreshOperationsConsole(showLoading: false));
     } catch (e) {
       _appendMessageTo(
         activeChatId,
@@ -370,9 +378,8 @@ abstract class ChatStoreBase with Store {
     } catch (e) {
       connectionError = 'Backend connection failed: $e';
     }
-    await refreshAssetExtractions();
     await refreshMemoryCaptures();
-    await refreshContextLinkSuggestions();
+    await refreshOperationsConsole();
   }
 
   @action
@@ -465,6 +472,41 @@ abstract class ChatStoreBase with Store {
     }
   }
 
+  Future<void> refreshOperationsConsole({bool showLoading = true}) async {
+    if (_disposed || _operationsConsoleRefreshInFlight) return;
+    _operationsConsoleRefreshInFlight = true;
+    if (showLoading) {
+      runInAction(() => operationsConsoleLoading.value = true);
+    }
+    runInAction(() => operationsConsoleError.value = null);
+    try {
+      final console = await repo.getOperationsConsole(limit: 50);
+      if (_disposed) return;
+      runInAction(() {
+        operationsConsole.value = console;
+        assetExtractions = ObservableList.of(console.extractionJobs);
+        contextLinkSuggestions
+          ..clear()
+          ..addAll(
+            console.contextLinkSuggestions.where((item) => item.isPending),
+          );
+        assetExtractionError = null;
+        contextLinkSuggestionError.value = null;
+      });
+      _scheduleAssetExtractionPollingIfNeeded();
+    } catch (e) {
+      if (_disposed) return;
+      runInAction(() {
+        operationsConsoleError.value = 'Operations console unavailable: $e';
+      });
+    } finally {
+      _operationsConsoleRefreshInFlight = false;
+      if (showLoading && !_disposed) {
+        runInAction(() => operationsConsoleLoading.value = false);
+      }
+    }
+  }
+
   Future<void> reviewContextLinkSuggestion(
     MemoryContextLinkSuggestion suggestion, {
     required bool approve,
@@ -487,6 +529,7 @@ abstract class ChatStoreBase with Store {
       if (approve) {
         unawaited(refreshMemoryCaptures(showLoading: false));
       }
+      unawaited(refreshOperationsConsole(showLoading: false));
     } catch (e) {
       runInAction(() {
         contextLinkSuggestionError.value = 'Review failed: $e';
@@ -505,8 +548,22 @@ abstract class ChatStoreBase with Store {
       final updated = await repo.retryAssetExtraction(job.id);
       _upsertAssetExtraction(updated);
       await refreshAssetExtractions();
+      await refreshOperationsConsole(showLoading: false);
     } catch (e) {
       assetExtractionError = 'Asset extraction retry failed: $e';
+    }
+  }
+
+  Future<void> cancelAssetExtraction(AssetExtractionJob job) async {
+    runInAction(() => assetExtractionError = null);
+    try {
+      final updated = await repo.cancelAssetExtraction(job.id);
+      runInAction(() => _upsertAssetExtraction(updated));
+      await refreshOperationsConsole(showLoading: false);
+    } catch (e) {
+      runInAction(() {
+        assetExtractionError = 'Asset extraction cancel failed: $e';
+      });
     }
   }
 
@@ -657,8 +714,8 @@ abstract class ChatStoreBase with Store {
       return;
     }
     createNewChat(memoryScopeExternalRef: ref);
-    unawaited(refreshAssetExtractions());
     unawaited(refreshMemoryCaptures());
+    unawaited(refreshOperationsConsole());
   }
 
   @action
@@ -691,17 +748,16 @@ abstract class ChatStoreBase with Store {
       repo.setActiveMemoryScopeExternalRef(scopeRef);
       repo.setActiveChat(id);
     } catch (_) {}
-    unawaited(refreshAssetExtractions());
     unawaited(refreshMemoryCaptures());
-    unawaited(refreshContextLinkSuggestions());
+    unawaited(refreshOperationsConsole());
     return id;
   }
 
   @action
   Future<void> setActiveChat(String id) async {
     if (id == activeChatId) {
-      await refreshAssetExtractions();
       await refreshMemoryCaptures();
+      await refreshOperationsConsole();
       return;
     }
     final session = _sessionById(id);
@@ -737,9 +793,8 @@ abstract class ChatStoreBase with Store {
     } catch (_) {}
     // Restore conversation context for AI
     _restoreContext(id, loaded);
-    await refreshAssetExtractions();
     await refreshMemoryCaptures();
-    await refreshContextLinkSuggestions();
+    await refreshOperationsConsole();
   }
 
   @action
@@ -780,9 +835,8 @@ abstract class ChatStoreBase with Store {
           repo.setActiveChat(activeChatId);
         } catch (_) {}
         _resetAssetExtractionsForScopeSwitch();
-        unawaited(refreshAssetExtractions());
         unawaited(refreshMemoryCaptures());
-        unawaited(refreshContextLinkSuggestions());
+        unawaited(refreshOperationsConsole());
       } else {
         final nid = createNewChat();
         activeChatId = nid;
@@ -792,9 +846,8 @@ abstract class ChatStoreBase with Store {
           repo.setActiveChat(activeChatId);
         } catch (_) {}
         _resetAssetExtractionsForScopeSwitch();
-        unawaited(refreshAssetExtractions());
         unawaited(refreshMemoryCaptures());
-        unawaited(refreshContextLinkSuggestions());
+        unawaited(refreshOperationsConsole());
       }
     }
   }
@@ -984,7 +1037,7 @@ abstract class ChatStoreBase with Store {
     if (_disposed) return;
     if (!assetExtractions.any((job) => job.isRunning)) return;
     _assetExtractionPollTimer = Timer(_assetExtractionPollInterval, () {
-      unawaited(refreshAssetExtractions(showLoading: false));
+      unawaited(refreshOperationsConsole(showLoading: false));
     });
   }
 
@@ -1000,6 +1053,9 @@ abstract class ChatStoreBase with Store {
     contextLinkSuggestionError.value = null;
     contextLinkSuggestionsLoading.value = false;
     contextLinkSuggestionReviewing.clear();
+    operationsConsole.value = null;
+    operationsConsoleError.value = null;
+    operationsConsoleLoading.value = false;
   }
 
   void _replaceMemoryScope(String oldRef, MemoryScope scope) {

@@ -5,9 +5,8 @@ import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_session.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/chat_thread_item.dart';
-import 'package:frontend/src/features/chat/presentation/widgets/context_link_review_panel.dart';
-import 'package:frontend/src/features/chat/presentation/widgets/extraction_status_panel.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/memory_history_panel.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/memory_operations_console_panel.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/memory_scope_dialogs.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/sidebar_formatters.dart';
 import 'package:frontend/src/presentation/theme/app_theme.dart';
@@ -58,9 +57,8 @@ class MemoryScopeSection extends StatelessWidget {
             onChatTapped: onChatTapped,
           ),
           children: [
-            if (active) const ContextLinkReviewPanel(),
+            if (active) const MemoryOperationsConsolePanel(),
             if (active) const MemoryHistoryPanel(),
-            if (active) const ExtractionStatusPanel(),
             if (sessions.isEmpty)
               const _EmptyScopeMessage()
             else

@@ -9,6 +9,7 @@ import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 
@@ -367,6 +368,27 @@ class _FakeChatRepository implements ChatRepository {
   @override
   Future<AssetExtractionJob> retryAssetExtraction(String jobId) async {
     throw UnimplementedError();
+  }
+
+  @override
+  Future<AssetExtractionJob> cancelAssetExtraction(String jobId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    return MemoryOperationsConsole(
+      generatedAt: DateTime.now(),
+      scope: const <String, dynamic>{},
+      extractionStatusCounts: const <String, int>{},
+      linkSuggestionStatusCounts: {
+        'pending':
+            contextLinkSuggestions.where((item) => item.isPending).length,
+      },
+      extractionJobs: const <AssetExtractionJob>[],
+      contextLinkSuggestions: contextLinkSuggestions.take(limit).toList(),
+      diagnostics: const <String, dynamic>{},
+    );
   }
 
   @override

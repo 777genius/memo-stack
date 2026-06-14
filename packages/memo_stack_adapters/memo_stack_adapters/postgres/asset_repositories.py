@@ -17,7 +17,7 @@ from memo_stack_core.ports.assets import (
     ContextLinkSuggestionRepositoryPort,
 )
 from memo_stack_core.ports.extraction import AssetExtractionRepositoryPort
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -250,6 +250,36 @@ class PostgresAssetExtractionRepository(AssetExtractionRepositoryPort):
         ).scalars()
         return [asset_extraction_job_row_to_domain(row) for row in rows]
 
+    async def count_by_status_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        thread_id: str | None,
+    ) -> dict[str, int]:
+        conditions = [
+            MemoryAssetExtractionJobRow.space_id == space_id,
+            MemoryAssetExtractionJobRow.memory_scope_id == memory_scope_id,
+        ]
+        if thread_id is not None:
+            conditions.append(
+                or_(
+                    MemoryAssetExtractionJobRow.thread_id == thread_id,
+                    MemoryAssetExtractionJobRow.thread_id.is_(None),
+                )
+            )
+        rows = (
+            await self._session.execute(
+                select(
+                    MemoryAssetExtractionJobRow.status,
+                    func.count(MemoryAssetExtractionJobRow.id),
+                )
+                .where(*conditions)
+                .group_by(MemoryAssetExtractionJobRow.status)
+            )
+        ).all()
+        return {str(status): int(count) for status, count in rows}
+
     async def list_for_scope(
         self,
         *,
@@ -472,3 +502,24 @@ class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPor
             )
         ).scalars()
         return [context_link_suggestion_row_to_domain(row) for row in rows]
+
+    async def count_by_status_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+    ) -> dict[str, int]:
+        rows = (
+            await self._session.execute(
+                select(
+                    MemoryContextLinkSuggestionRow.status,
+                    func.count(MemoryContextLinkSuggestionRow.id),
+                )
+                .where(
+                    MemoryContextLinkSuggestionRow.space_id == space_id,
+                    MemoryContextLinkSuggestionRow.memory_scope_id == memory_scope_id,
+                )
+                .group_by(MemoryContextLinkSuggestionRow.status)
+            )
+        ).all()
+        return {str(status): int(count) for status, count in rows}

@@ -5,6 +5,7 @@ import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 
 abstract class ChatRepository {
@@ -63,6 +64,8 @@ abstract class ChatRepository {
   });
   Future<AssetExtractionJob> getAssetExtraction(String jobId);
   Future<AssetExtractionJob> retryAssetExtraction(String jobId);
+  Future<AssetExtractionJob> cancelAssetExtraction(String jobId);
+  Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50});
   Future<List<int>> downloadExtractionArtifact(String artifactId);
   Future<List<DocumentChunk>> listDocumentChunks(String documentId);
   Future<List<MemoryCapture>> listMemoryCaptures({int limit = 50});

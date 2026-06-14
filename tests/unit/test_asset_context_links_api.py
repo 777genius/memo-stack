@@ -294,6 +294,121 @@ def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> N
     assert links.json()["data"][0]["target_id"] == fact.json()["data"]["id"]
 
 
+def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "ops-thread",
+                "filename": "ops-note.txt",
+                "extract": "true",
+            },
+            content=b"Operational note about Alex link review and ingestion retry.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        canceled = client.post(
+            f"/v1/asset-extractions/{extraction_id}/cancel",
+            headers=auth_headers(),
+        )
+        assert canceled.status_code == 202, canceled.text
+        assert canceled.json()["data"]["status"] == "canceled"
+
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "ops-thread",
+                "text": "Alex link review should explain why memory candidates were suggested.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "ops-fact"}],
+            },
+            headers=auth_headers({"Idempotency-Key": "ops-fact"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "ops-thread",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "ops-capture",
+                "text": "Alex asked for link review explanations in the operations console.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert fact.status_code == 201, fact.text
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "ops-thread",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex link review explanations",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        suggestion_id = suggestions.json()["data"]["candidates"][0]["suggestion_id"]
+
+        console = client.get(
+            "/v1/operations-console",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+            },
+            headers=auth_headers(),
+        )
+        assert console.status_code == 200, console.text
+        data = console.json()["data"]
+        assert data["extraction_status_counts"]["canceled"] == 1
+        assert data["link_suggestion_status_counts"]["pending"] >= 1
+        assert data["diagnostics"]["extraction_retryable_count"] == 1
+        assert data["diagnostics"]["link_suggestion_pending_count"] >= 1
+        assert "no_suggestion_note" in data["diagnostics"]["link_suggestion_explainability"]
+        assert data["extraction_jobs"][0]["id"] == extraction_id
+        assert data["extraction_jobs"][0]["execution"]["cancellation_requested_at"]
+        saved_suggestion = next(
+            item for item in data["context_link_suggestions"] if item["id"] == suggestion_id
+        )
+        assert saved_suggestion["metadata"]["resolver_version"]
+        assert saved_suggestion["reason"]
+
+        retry = client.post(
+            f"/v1/asset-extractions/{extraction_id}/retry",
+            headers=auth_headers(),
+        )
+        assert retry.status_code == 202, retry.text
+        assert retry.json()["data"]["status"] == "pending"
+
+        after_retry = client.get(
+            "/v1/operations-console",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+            },
+            headers=auth_headers(),
+        )
+        assert after_retry.status_code == 200, after_retry.text
+        retry_data = after_retry.json()["data"]
+        assert retry_data["extraction_status_counts"]["pending"] == 1
+        assert retry_data["diagnostics"]["extraction_active_count"] == 1
+
+
 def test_asset_upload_limit_uses_ingress_error(tmp_path: Path) -> None:
     with make_client(tmp_path, max_asset_upload_bytes=4) as client:
         response = client.post(

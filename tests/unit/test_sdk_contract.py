@@ -622,6 +622,11 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
     client.get_asset_extraction("extract_1")
     client.retry_asset_extraction("extract_1")
     client.cancel_asset_extraction("extract_1")
+    client.get_operations_console(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        limit=20,
+    )
     assert client.download_extraction_artifact("artifact_1") == b"downloaded-bytes"
 
     assert [f"{method} {path}" for method, path, _params, _body, _content_type in seen] == [
@@ -635,6 +640,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
         "GET /v1/asset-extractions/extract_1",
         "POST /v1/asset-extractions/extract_1/retry",
         "POST /v1/asset-extractions/extract_1/cancel",
+        "GET /v1/operations-console",
         "GET /v1/extraction-artifacts/artifact_1/download",
     ]
     assert seen[0][2]["space_slug"] == "client-app"
@@ -647,6 +653,11 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
     assert seen[0][4] == "text/plain"
     assert seen[5][2] == {"status": "succeeded", "limit": "5"}
     assert seen[6][2]["limit"] == "10"
+    assert seen[10][2] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "limit": "20",
+    }
 
 
 def test_sdk_supports_context_link_suggestion_review_contract() -> None:

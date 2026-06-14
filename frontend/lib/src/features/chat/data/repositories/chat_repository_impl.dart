@@ -10,6 +10,7 @@ import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/data/datasources/backend_rest_client.dart';
@@ -606,6 +607,22 @@ class ChatRepositoryImpl
   Future<AssetExtractionJob> retryAssetExtraction(String jobId) async {
     final row = await _rest.retryAssetExtraction(jobId);
     return AssetExtractionJob.fromMap(row);
+  }
+
+  @override
+  Future<AssetExtractionJob> cancelAssetExtraction(String jobId) async {
+    final row = await _rest.cancelAssetExtraction(jobId);
+    return AssetExtractionJob.fromMap(row);
+  }
+
+  @override
+  Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    final row = await _rest.getOperationsConsole(
+      spaceSlug: _spaceSlugGetter(),
+      memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
+      limit: limit,
+    );
+    return MemoryOperationsConsole.fromMap(row);
   }
 
   @override

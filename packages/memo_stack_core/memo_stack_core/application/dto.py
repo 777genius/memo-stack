@@ -170,6 +170,25 @@ class AssetExtractionsResult:
 
 
 @dataclass(frozen=True)
+class MemoryOperationsConsoleQuery:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    thread_id: ThreadId | None = None
+    limit: int = 50
+
+
+@dataclass(frozen=True)
+class MemoryOperationsConsoleResult:
+    generated_at: datetime
+    scope: dict[str, object]
+    extraction_status_counts: dict[str, int]
+    link_suggestion_status_counts: dict[str, int]
+    extraction_jobs: tuple[AssetExtractionJob, ...]
+    context_link_suggestions: tuple[MemoryContextLinkSuggestion, ...]
+    diagnostics: dict[str, object]
+
+
+@dataclass(frozen=True)
 class ExtractionArtifactBytesResult:
     artifact: ExtractionArtifact
     content: bytes

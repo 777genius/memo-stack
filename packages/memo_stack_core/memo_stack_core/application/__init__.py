@@ -77,6 +77,8 @@ from memo_stack_core.application.dto import (
     MemoryDigestSection,
     MemoryInsightActionItem,
     MemoryInsightsResult,
+    MemoryOperationsConsoleQuery,
+    MemoryOperationsConsoleResult,
     MemoryScopeResult,
     ProcessDocumentCommand,
     ProcessDocumentResult,
@@ -157,6 +159,9 @@ from memo_stack_core.application.use_cases.get_session_status import GetSessionS
 from memo_stack_core.application.use_cases.ingest_document import IngestDocumentUseCase
 from memo_stack_core.application.use_cases.ingest_episode import IngestEpisodeUseCase
 from memo_stack_core.application.use_cases.list_captures import ListCapturesUseCase
+from memo_stack_core.application.use_cases.operations_console import (
+    BuildMemoryOperationsConsoleUseCase,
+)
 from memo_stack_core.application.use_cases.process_document import ProcessDocumentUseCase
 from memo_stack_core.application.use_cases.purge_capture import PurgeCaptureUseCase
 from memo_stack_core.application.use_cases.query_documents import (
@@ -203,6 +208,7 @@ __all__ = [
     "BuildMemoryDigestUseCase",
     "BuildMemoryInsightsQuery",
     "BuildMemoryInsightsUseCase",
+    "BuildMemoryOperationsConsoleUseCase",
     "CancelAssetExtractionCommand",
     "CancelAssetExtractionUseCase",
     "CapabilitiesResult",
@@ -315,6 +321,8 @@ __all__ = [
     "MemoryDigestSection",
     "MemoryInsightActionItem",
     "MemoryInsightsResult",
+    "MemoryOperationsConsoleQuery",
+    "MemoryOperationsConsoleResult",
     "ProcessDocumentCommand",
     "ProcessDocumentResult",
     "ProcessDocumentUseCase",

@@ -12,6 +12,7 @@ import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/presentation/screen/chat_list_overlay_screen.dart';
@@ -167,7 +168,7 @@ void main() {
     addTearDown(store.dispose);
     addTearDown(repo.close);
 
-    await store.refreshAssetExtractions();
+    await store.refreshOperationsConsole();
     await _pumpWithStore(
       tester,
       store: store,
@@ -176,18 +177,20 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey('asset_extraction_status_panel')),
+    expect(find.byKey(const ValueKey('memory_operations_console_panel')),
         findsOneWidget);
-    expect(find.textContaining('Ready'), findsOneWidget);
     expect(find.textContaining('Failed'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
+      find.byKey(const ValueKey('memory_operations_reprocess_extract_failed')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('asset_extraction_retry_extract_failed')),
-      findsOneWidget,
-    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Ready'), findsOneWidget);
+    expect(find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
+        findsOneWidget);
   });
 
   testWidgets('sidebar reviews pending context link suggestions', (
@@ -199,7 +202,7 @@ void main() {
     addTearDown(store.dispose);
     addTearDown(repo.close);
 
-    await store.refreshContextLinkSuggestions();
+    await store.refreshOperationsConsole();
     await _pumpWithStore(
       tester,
       store: store,
@@ -208,13 +211,13 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey('context_link_review_panel')),
+    expect(find.byKey(const ValueKey('memory_operations_console_panel')),
         findsOneWidget);
     expect(find.text('Q3 roadmap'), findsOneWidget);
 
     await tester.tap(
       find.byKey(
-        const ValueKey('context_link_suggestion_approve_ctxlinksug_1'),
+        const ValueKey('memory_operations_approve_ctxlinksug_1'),
       ),
     );
     await tester.pump();
@@ -239,7 +242,7 @@ void main() {
     addTearDown(store.dispose);
     addTearDown(repo.close);
 
-    await store.refreshAssetExtractions();
+    await store.refreshOperationsConsole();
     await _pumpWithStore(
       tester,
       store: store,
@@ -249,9 +252,11 @@ void main() {
       ),
     );
 
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
-    );
+        find.byKey(const ValueKey('asset_extraction_open_artifact_ready')));
     await tester.pump();
 
     expect(repo.downloadedArtifactIds, ['artifact-ready']);
@@ -275,7 +280,7 @@ void main() {
     addTearDown(store.dispose);
     addTearDown(repo.close);
 
-    await store.refreshAssetExtractions();
+    await store.refreshOperationsConsole();
     await _pumpWithStore(
       tester,
       store: store,
@@ -285,9 +290,11 @@ void main() {
       ),
     );
 
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey('asset_extraction_open_artifact_ready')),
-    );
+        find.byKey(const ValueKey('asset_extraction_open_artifact_ready')));
     await tester.pump();
 
     expect(
@@ -719,6 +726,39 @@ class _UxFakeChatRepository implements ChatRepository {
   }
 
   @override
+  Future<AssetExtractionJob> cancelAssetExtraction(String jobId) async {
+    final idx = extractions.indexWhere((job) => job.id == jobId);
+    final updated = _job(id: jobId, status: 'canceled');
+    if (idx >= 0) {
+      extractions = [
+        ...extractions.take(idx),
+        updated,
+        ...extractions.skip(idx + 1),
+      ];
+    }
+    return updated;
+  }
+
+  @override
+  Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    listExtractionCalls += 1;
+    return MemoryOperationsConsole(
+      generatedAt: DateTime.now(),
+      scope: const <String, dynamic>{},
+      extractionStatusCounts: _statusCounts(extractions),
+      linkSuggestionStatusCounts: _statusCounts(contextLinkSuggestions),
+      extractionJobs: extractions.take(limit).toList(growable: false),
+      contextLinkSuggestions:
+          contextLinkSuggestions.take(limit).toList(growable: false),
+      diagnostics: const <String, dynamic>{
+        'link_suggestion_explainability': {
+          'no_suggestion_note': 'No pending links',
+        },
+      },
+    );
+  }
+
+  @override
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     downloadedArtifactIds.add(artifactId);
     return <int>[1, 2, 3];
@@ -955,6 +995,15 @@ AssetExtractionJob _job({
     startedAt: null,
     finishedAt: status == 'pending' ? null : now,
   );
+}
+
+Map<String, int> _statusCounts(Iterable<dynamic> items) {
+  final counts = <String, int>{};
+  for (final item in items) {
+    final status = item.status.toString();
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+  return counts;
 }
 
 ExtractionArtifact _artifact(String id, String jobId) {

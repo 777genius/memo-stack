@@ -10,6 +10,7 @@ import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/chat_input_composer.dart';
@@ -189,6 +190,24 @@ class _RecordingChatRepository implements ChatRepository {
   @override
   Future<AssetExtractionJob> retryAssetExtraction(String jobId) async {
     throw UnimplementedError();
+  }
+
+  @override
+  Future<AssetExtractionJob> cancelAssetExtraction(String jobId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    return MemoryOperationsConsole(
+      generatedAt: DateTime.now(),
+      scope: const <String, dynamic>{},
+      extractionStatusCounts: const <String, int>{},
+      linkSuggestionStatusCounts: const <String, int>{},
+      extractionJobs: const <AssetExtractionJob>[],
+      contextLinkSuggestions: const <MemoryContextLinkSuggestion>[],
+      diagnostics: const <String, dynamic>{},
+    );
   }
 
   @override

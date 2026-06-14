@@ -153,3 +153,12 @@ class AssetExtractionRepositoryPort(Protocol):
         cursor_id: str | None = None,
     ) -> list[AssetExtractionJob]:
         """List extraction jobs for one memory scope."""
+
+    async def count_by_status_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        thread_id: str | None,
+    ) -> dict[str, int]:
+        """Count extraction jobs by lifecycle status for one memory scope."""

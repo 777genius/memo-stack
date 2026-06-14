@@ -143,3 +143,11 @@ class ContextLinkSuggestionRepositoryPort(Protocol):
         source_id: str | None = None,
     ) -> list[MemoryContextLinkSuggestion]:
         """List context link suggestions in a scope."""
+
+    async def count_by_status_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+    ) -> dict[str, int]:
+        """Count context link suggestions by review status for one memory scope."""
