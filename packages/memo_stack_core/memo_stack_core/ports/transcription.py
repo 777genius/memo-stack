@@ -30,10 +30,21 @@ class SpeechTranscriptSegment:
 
 
 @dataclass(frozen=True)
+class SpeechTranscriptWord:
+    word: str
+    start_ms: int | None = None
+    end_ms: int | None = None
+    confidence: float | None = None
+    speaker: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class SpeechTranscriptionResult:
     status: str
     text: str = ""
     segments: tuple[SpeechTranscriptSegment, ...] = ()
+    words: tuple[SpeechTranscriptWord, ...] = ()
     language: str | None = None
     duration_seconds: float | None = None
     provider_name: str = "unknown"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.metadata
+import json
 import tempfile
 from collections.abc import Callable
 from dataclasses import replace
@@ -25,7 +26,10 @@ from memo_stack_adapters.extraction.content import (
     _safe_suffix,
     _unsupported,
 )
-from memo_stack_adapters.extraction.media_tools import probe_media_with_ffprobe
+from memo_stack_adapters.extraction.media_tools import (
+    media_manifest_artifact,
+    probe_media_with_ffprobe,
+)
 
 _ASR_PROFILES = {
     "asr",
@@ -170,6 +174,37 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
             "output_chars": len(markdown),
             **(probe.metadata or {}),
         }
+        transcript_json = json.dumps(
+            {
+                "schema_name": "memo_stack.transcript",
+                "schema_version": 1,
+                "asset_id": request.asset_id,
+                "filename": request.filename,
+                "content_type": request.detected_content_type,
+                "duration_seconds": duration_seconds,
+                "language": language,
+                "provider": {
+                    "name": self.name,
+                    "model": model_name,
+                    "version": _faster_whisper_version(),
+                },
+                "text": "\n".join(item.text for item in segment_items),
+                "segments": [
+                    {
+                        "text": item.text,
+                        "start_ms": item.start_ms,
+                        "end_ms": item.end_ms,
+                        "confidence": item.confidence,
+                        "speaker": None,
+                        "metadata": {"source": self.name, "asr_model": model_name},
+                    }
+                    for item in segment_items
+                ],
+                "words": [],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
         return ExtractionResult(
             status="succeeded",
             normalized_content_type=request.detected_content_type,
@@ -177,6 +212,11 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
             markdown=markdown,
             elements=tuple(elements),
             artifacts=(
+                media_manifest_artifact(
+                    request=request,
+                    probe=probe,
+                    parser_name=self.name,
+                ),
                 ExtractionArtifactCandidate(
                     artifact_type="transcript",
                     filename="transcript.txt",
@@ -185,6 +225,18 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
                     metadata={
                         "parser": self.name,
                         "segment_count": len(elements),
+                        "asr_model": model_name,
+                    },
+                ),
+                ExtractionArtifactCandidate(
+                    artifact_type="transcript_json",
+                    filename="transcript.json",
+                    content_type="application/json",
+                    content=transcript_json,
+                    metadata={
+                        "parser": self.name,
+                        "segment_count": len(elements),
+                        "word_count": 0,
                         "asr_model": model_name,
                     },
                 ),

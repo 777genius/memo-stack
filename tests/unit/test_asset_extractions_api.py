@@ -488,6 +488,7 @@ def test_audio_asset_extraction_indexes_media_metadata(tmp_path: Path) -> None:
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
             "extracted_json",
             "markdown",
+            "media_manifest",
         }
 
 
@@ -619,11 +620,12 @@ def test_video_asset_extraction_stores_keyframe_artifact(tmp_path: Path) -> None
         assert extracted["parser_name"] == "media_metadata"
         assert extracted["metadata"]["duration_seconds"] > 0
         assert extracted["metadata"]["keyframe_status"] == "extracted"
-        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
-            "extracted_json",
-            "keyframe",
-            "markdown",
-        }
+        artifact_types = {item["artifact_type"] for item in extracted["artifacts"]}
+        assert {"extracted_json", "keyframe", "markdown", "media_manifest"}.issubset(
+            artifact_types
+        )
+        assert "video_frame_timeline" in artifact_types
+        assert extracted["metadata"]["video_keyframe_count"] >= 1
 
 
 def test_asset_extraction_request_is_idempotent_before_and_after_worker(

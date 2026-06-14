@@ -1,4 +1,4 @@
-"""Local media probing helpers for extraction adapters."""
+"""Local media probing and video frame helpers for extraction adapters."""
 
 from __future__ import annotations
 
@@ -16,11 +16,54 @@ from memo_stack_core.ports.extraction import (
 
 
 @dataclass(frozen=True)
+class MediaStreamSummary:
+    index: int | None
+    codec_type: str
+    codec_name: str
+    width: int | None = None
+    height: int | None = None
+    channels: int | None = None
+    sample_rate: str | None = None
+    duration_seconds: float | None = None
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "codec_type": self.codec_type,
+            "codec_name": self.codec_name,
+            "width": self.width,
+            "height": self.height,
+            "channels": self.channels,
+            "sample_rate": self.sample_rate,
+            "duration_seconds": self.duration_seconds,
+        }
+
+
+@dataclass(frozen=True)
 class MediaProbeResult:
     status: str
     duration_seconds: float | None = None
     stream_summaries: tuple[str, ...] = ()
+    streams: tuple[MediaStreamSummary, ...] = ()
     metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class VideoKeyframe:
+    filename: str
+    content: bytes
+    content_type: str
+    time_start_ms: int
+    metadata: dict[str, object]
+
+    def to_artifact(self) -> ExtractionArtifactCandidate:
+        return ExtractionArtifactCandidate(
+            artifact_type="keyframe",
+            filename=self.filename,
+            content_type=self.content_type,
+            content=self.content,
+            metadata=self.metadata,
+        )
 
 
 def probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
@@ -62,48 +105,126 @@ def probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
 def extract_first_video_keyframe(
     request: ExtractionRequest,
 ) -> ExtractionArtifactCandidate | None:
+    keyframes = extract_selected_video_keyframes(request, max_frames=1)
+    return keyframes[0].to_artifact() if keyframes else None
+
+
+def extract_selected_video_keyframes(
+    request: ExtractionRequest,
+    *,
+    duration_seconds: float | None = None,
+    max_frames: int = 3,
+) -> tuple[VideoKeyframe, ...]:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return ()
+    timestamps = _selected_keyframe_seconds(duration_seconds, max_frames=max_frames)
+    frames: list[VideoKeyframe] = []
+    try:
+        with tempfile.NamedTemporaryFile(suffix=_safe_suffix(request.filename)) as input_file:
+            input_file.write(request.content)
+            input_file.flush()
+            for index, timestamp_seconds in enumerate(timestamps, start=1):
+                frame = _extract_one_keyframe(
+                    request=request,
+                    input_path=input_file.name,
+                    index=index,
+                    timestamp_seconds=timestamp_seconds,
+                )
+                if frame is not None:
+                    frames.append(frame)
+    except (OSError, subprocess.TimeoutExpired):
+        return tuple(frames)
+    return tuple(frames)
+
+
+def media_manifest_artifact(
+    *,
+    request: ExtractionRequest,
+    probe: MediaProbeResult,
+    parser_name: str,
+) -> ExtractionArtifactCandidate:
+    payload = {
+        "schema_name": "memo_stack.media_manifest",
+        "schema_version": 1,
+        "parser": parser_name,
+        "file": {
+            "asset_id": request.asset_id,
+            "filename": request.filename,
+            "content_type": request.detected_content_type,
+            "byte_size": request.byte_size,
+            "sha256_hex": request.sha256_hex,
+        },
+        "probe": {
+            "status": probe.status,
+            "duration_seconds": probe.duration_seconds,
+            "streams": [stream.to_payload() for stream in probe.streams],
+            "stream_summaries": list(probe.stream_summaries),
+            "metadata": probe.metadata or {},
+        },
+    }
+    content = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return ExtractionArtifactCandidate(
+        artifact_type="media_manifest",
+        filename="media-manifest.json",
+        content_type="application/json",
+        content=content,
+        metadata={
+            "parser": parser_name,
+            "probe_status": probe.status,
+            "duration_seconds": probe.duration_seconds,
+            "stream_count": len(probe.streams),
+        },
+    )
+
+
+def _extract_one_keyframe(
+    *,
+    request: ExtractionRequest,
+    input_path: str,
+    index: int,
+    timestamp_seconds: float,
+) -> VideoKeyframe | None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return None
-    try:
-        with (
-            tempfile.NamedTemporaryFile(suffix=_safe_suffix(request.filename)) as input_file,
-            tempfile.NamedTemporaryFile(suffix=".jpg") as output_file,
-        ):
-            input_file.write(request.content)
-            input_file.flush()
-            completed = subprocess.run(
-                [
-                    ffmpeg,
-                    "-y",
-                    "-v",
-                    "error",
-                    "-ss",
-                    "0",
-                    "-i",
-                    input_file.name,
-                    "-frames:v",
-                    "1",
-                    output_file.name,
-                ],
-                check=False,
-                capture_output=True,
-                timeout=_subprocess_timeout_seconds(request),
-            )
-            if completed.returncode != 0:
-                return None
-            output_file.seek(0)
-            content = output_file.read()
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    with tempfile.NamedTemporaryFile(suffix=".jpg") as output_file:
+        completed = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-v",
+                "error",
+                "-ss",
+                _format_ffmpeg_seconds(timestamp_seconds),
+                "-i",
+                input_path,
+                "-frames:v",
+                "1",
+                output_file.name,
+            ],
+            check=False,
+            capture_output=True,
+            timeout=_subprocess_timeout_seconds(request),
+        )
+        if completed.returncode != 0:
+            return None
+        output_file.seek(0)
+        content = output_file.read()
     if not content:
         return None
-    return ExtractionArtifactCandidate(
-        artifact_type="keyframe",
-        filename="keyframe-0001.jpg",
-        content_type="image/jpeg",
+    time_start_ms = int(round(timestamp_seconds * 1000))
+    return VideoKeyframe(
+        filename=f"keyframe-{index:04d}.jpg",
         content=content,
-        metadata={"time_start_ms": 0, "parser": "ffmpeg"},
+        content_type="image/jpeg",
+        time_start_ms=time_start_ms,
+        metadata={
+            "time_start_ms": time_start_ms,
+            "parser": "ffmpeg",
+            "frame_index": index,
+            "selection": "sampled_keyframe",
+        },
     )
 
 
@@ -111,15 +232,30 @@ def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
     format_payload = payload.get("format") if isinstance(payload.get("format"), dict) else {}
     duration_seconds = _positive_float(format_payload.get("duration"))
     stream_summaries: list[str] = []
+    streams: list[MediaStreamSummary] = []
     metadata: dict[str, object] = {"probe_status": "succeeded"}
     for stream in payload.get("streams") or []:
         if not isinstance(stream, dict):
             continue
         codec_type = str(stream.get("codec_type") or "unknown")
         codec_name = str(stream.get("codec_name") or "unknown")
+        width = _positive_int(stream.get("width"))
+        height = _positive_int(stream.get("height"))
+        channels = _positive_int(stream.get("channels"))
+        sample_rate = _safe_text(stream.get("sample_rate"))
+        streams.append(
+            MediaStreamSummary(
+                index=_positive_int(stream.get("index")),
+                codec_type=codec_type,
+                codec_name=codec_name,
+                width=width,
+                height=height,
+                channels=channels,
+                sample_rate=sample_rate,
+                duration_seconds=_positive_float(stream.get("duration")),
+            )
+        )
         if codec_type == "video":
-            width = stream.get("width")
-            height = stream.get("height")
             summary = f"video/{codec_name}"
             if width and height:
                 summary = f"{summary} {width}x{height}"
@@ -128,8 +264,6 @@ def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
             stream_summaries.append(summary)
         elif codec_type == "audio":
             summary = f"audio/{codec_name}"
-            sample_rate = stream.get("sample_rate")
-            channels = stream.get("channels")
             if sample_rate:
                 summary = f"{summary} {sample_rate}Hz"
                 metadata.setdefault("audio_sample_rate", sample_rate)
@@ -143,6 +277,7 @@ def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
         status="succeeded",
         duration_seconds=duration_seconds,
         stream_summaries=tuple(stream_summaries),
+        streams=tuple(streams),
         metadata=metadata,
     )
 
@@ -159,6 +294,33 @@ def _subprocess_timeout_seconds(request: ExtractionRequest) -> int:
     return max(1, int(request.limits.subprocess_timeout_seconds))
 
 
+def _selected_keyframe_seconds(
+    duration_seconds: float | None,
+    *,
+    max_frames: int,
+) -> tuple[float, ...]:
+    max_frames = max(1, max_frames)
+    if duration_seconds is None or duration_seconds <= 1 or max_frames == 1:
+        return (0.0,)
+    candidates = [0.0]
+    if max_frames >= 2:
+        candidates.append(max(0.0, duration_seconds / 2))
+    if max_frames >= 3 and duration_seconds > 2:
+        candidates.append(max(0.0, duration_seconds - 0.5))
+    selected: list[float] = []
+    for value in candidates:
+        rounded = round(value, 3)
+        if rounded not in selected:
+            selected.append(rounded)
+        if len(selected) >= max_frames:
+            break
+    return tuple(selected)
+
+
+def _format_ffmpeg_seconds(value: float) -> str:
+    return f"{max(0.0, value):.3f}"
+
+
 def _positive_float(value: object) -> float | None:
     try:
         number = float(value)  # type: ignore[arg-type]
@@ -167,3 +329,18 @@ def _positive_float(value: object) -> float | None:
     if number <= 0:
         return None
     return number
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    return number
+
+
+def _safe_text(value: object) -> str | None:
+    text = str(value).strip()
+    return text or None

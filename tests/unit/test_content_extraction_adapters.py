@@ -317,6 +317,67 @@ def test_openai_speech_transcription_adapter_transcribes_audio() -> None:
     assert result.segments[0].start_ms == 0
     assert result.segments[0].end_ms == 2000
     assert "Alex discussed memory scopes" in result.text
+    assert result.diagnostics["response_format"] == "json"
+
+
+def test_openai_speech_transcription_adapter_requests_whisper_segment_timestamps() -> None:
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key=None,
+        model="whisper-1",
+        client_factory=lambda: _FakeWhisperTranscriptionClient(),
+    )
+
+    result = asyncio.run(
+        adapter.transcribe(
+            SpeechTranscriptionRequest(
+                job_id="extract_1",
+                asset_id="asset_1",
+                filename="voice-note.wav",
+                content_type="audio/wav",
+                byte_size=20,
+                sha256_hex="0" * 64,
+                content=b"RIFF0000WAVEfake wav bytes",
+                max_output_chars=1000,
+            )
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert result.provider_model == "whisper-1"
+    assert result.diagnostics["response_format"] == "verbose_json"
+    assert result.diagnostics["timestamp_granularities"] == ["segment"]
+    assert result.segments[0].start_ms == 0
+    assert result.segments[0].end_ms == 3200
+    assert result.words[0].word == "Alex"
+
+
+def test_openai_speech_transcription_adapter_requests_diarized_json() -> None:
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key=None,
+        model="gpt-4o-transcribe-diarize",
+        client_factory=lambda: _FakeDiarizedTranscriptionClient(),
+        prompt="Should not be sent to diarize model",
+    )
+
+    result = asyncio.run(
+        adapter.transcribe(
+            SpeechTranscriptionRequest(
+                job_id="extract_1",
+                asset_id="asset_1",
+                filename="call.mp3",
+                content_type="audio/mpeg",
+                byte_size=20,
+                sha256_hex="0" * 64,
+                content=b"fake mp3 bytes",
+                max_output_chars=1000,
+            )
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert result.diagnostics["response_format"] == "diarized_json"
+    assert result.diagnostics["chunking_strategy"] == "auto"
+    assert result.segments[0].speaker == "agent"
 
 
 def test_speech_transcription_engine_extracts_timecoded_transcript_artifact() -> None:
@@ -344,7 +405,11 @@ def test_speech_transcription_engine_extracts_timecoded_transcript_artifact() ->
     assert result.model_version == "gpt-4o-mini-transcribe"
     assert result.technical_metadata["transcript_status"] == "extracted"
     assert result.technical_metadata["transcription_provider"] == "openai_transcription"
-    assert {artifact.artifact_type for artifact in result.artifacts} == {"transcript"}
+    assert {artifact.artifact_type for artifact in result.artifacts} == {
+        "media_manifest",
+        "transcript",
+        "transcript_json",
+    }
     assert "00:00:00.000 --> 00:00:02.000" in (result.markdown or "")
 
 
@@ -401,7 +466,11 @@ def test_faster_whisper_engine_extracts_transcript_artifact() -> None:
     assert result.language == "en"
     assert result.technical_metadata["segment_count"] == 2
     assert result.technical_metadata["asr_model"] == "tiny"
-    assert {artifact.artifact_type for artifact in result.artifacts} == {"transcript"}
+    assert {artifact.artifact_type for artifact in result.artifacts} == {
+        "media_manifest",
+        "transcript",
+        "transcript_json",
+    }
     assert "Alex discussed memory scopes" in (result.markdown or "")
 
 
@@ -605,6 +674,7 @@ class _FakeTranscriptionResponse:
     language: str = "en"
     duration: float = 4.0
     segments: list[dict[str, object]] | None = None
+    words: list[dict[str, object]] | None = None
 
 
 class _FakeAudioTranscriptions:
@@ -629,18 +699,77 @@ class _FakeAudioTranscriptions:
         )
 
 
+class _FakeWhisperAudioTranscriptions:
+    async def create(self, **kwargs) -> _FakeTranscriptionResponse:
+        assert kwargs["model"] == "whisper-1"
+        assert kwargs["response_format"] == "verbose_json"
+        assert kwargs["timestamp_granularities"] == ["segment"]
+        assert kwargs["file"].name == "voice-note.wav"
+        response = _FakeTranscriptionResponse(
+            text="Alex discussed memory scopes.",
+            duration=3.2,
+            segments=[
+                {
+                    "id": 0,
+                    "start": 0.0,
+                    "end": 3.2,
+                    "text": "Alex discussed memory scopes.",
+                    "avg_logprob": -0.2,
+                }
+            ],
+            words=[
+                {"word": "Alex", "start": 0.0, "end": 0.4},
+                {"word": "discussed", "start": 0.4, "end": 1.2},
+            ],
+        )
+        return response
+
+
+class _FakeDiarizedAudioTranscriptions:
+    async def create(self, **kwargs) -> _FakeTranscriptionResponse:
+        assert kwargs["model"] == "gpt-4o-transcribe-diarize"
+        assert kwargs["response_format"] == "diarized_json"
+        assert kwargs["chunking_strategy"] == "auto"
+        assert "prompt" not in kwargs
+        assert kwargs["file"].name == "call.mp3"
+        return _FakeTranscriptionResponse(
+            text="Agent: Memory scopes are ready.",
+            duration=2.0,
+            segments=[
+                {
+                    "type": "transcript.text.segment",
+                    "id": "seg_001",
+                    "start": 0.0,
+                    "end": 2.0,
+                    "text": "Memory scopes are ready.",
+                    "speaker": "agent",
+                }
+            ],
+        )
+
+
 class _FakeAudioClient:
-    def __init__(self) -> None:
-        self.transcriptions = _FakeAudioTranscriptions()
+    def __init__(self, transcriptions=None) -> None:
+        self.transcriptions = transcriptions or _FakeAudioTranscriptions()
 
 
 class _FakeTranscriptionClient:
-    def __init__(self) -> None:
-        self.audio = _FakeAudioClient()
+    def __init__(self, transcriptions=None) -> None:
+        self.audio = _FakeAudioClient(transcriptions=transcriptions)
         self.closed = False
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class _FakeWhisperTranscriptionClient(_FakeTranscriptionClient):
+    def __init__(self) -> None:
+        super().__init__(transcriptions=_FakeWhisperAudioTranscriptions())
+
+
+class _FakeDiarizedTranscriptionClient(_FakeTranscriptionClient):
+    def __init__(self) -> None:
+        super().__init__(transcriptions=_FakeDiarizedAudioTranscriptions())
 
 
 class _FallbackMediaEngine(ExtractionEngine):

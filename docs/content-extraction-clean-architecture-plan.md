@@ -139,7 +139,7 @@ Use these names consistently:
 | `AssetExtractionJob` | Durable attempt to extract searchable content from an asset |
 | `ExtractionProfile` | Policy/profile choosing parser chain and limits |
 | `ExtractionResult` | Provider-neutral output from parser adapters |
-| `ExtractionArtifact` | Stored extracted JSON/Markdown/transcript/table/keyframe side artifact |
+| `ExtractionArtifact` | Stored extracted JSON/Markdown/transcript/media/table/keyframe side artifact |
 | `ExtractedElement` | Text/table/image/transcript/frame item with provenance |
 | `MemoryDocument` | Canonical extracted text document visible to memory retrieval |
 | `MemoryChunk` | Canonical retrieval unit with page/time/bbox metadata |
@@ -180,7 +180,7 @@ ExtractionArtifact
   id: ExtractionArtifactId
   job_id: AssetExtractionJobId
   asset_id: MemoryAssetId
-  artifact_type: extracted_json | normalized_json | markdown | transcript | keyframe | table_html | image_regions | vision_json
+  artifact_type: extracted_json | normalized_json | markdown | transcript | transcript_json | media_manifest | keyframe | video_frame_timeline | table_html | image_regions | vision_json
   storage_backend: str
   storage_key: str
   sha256_hex: str

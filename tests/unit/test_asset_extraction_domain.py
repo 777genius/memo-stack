@@ -35,6 +35,15 @@ def test_image_region_artifacts_are_supported_extraction_artifact_types() -> Non
     assert _artifact("vision_json").artifact_type == ExtractionArtifactType.VISION_JSON
 
 
+def test_media_artifacts_are_supported_extraction_artifact_types() -> None:
+    assert _artifact("media_manifest").artifact_type == ExtractionArtifactType.MEDIA_MANIFEST
+    assert _artifact("transcript_json").artifact_type == ExtractionArtifactType.TRANSCRIPT_JSON
+    assert (
+        _artifact("video_frame_timeline").artifact_type
+        == ExtractionArtifactType.VIDEO_FRAME_TIMELINE
+    )
+
+
 def test_extraction_job_running_records_lease_and_heartbeat() -> None:
     now = datetime(2026, 6, 14, 10, tzinfo=UTC)
     lease_expires_at = now + timedelta(minutes=15)

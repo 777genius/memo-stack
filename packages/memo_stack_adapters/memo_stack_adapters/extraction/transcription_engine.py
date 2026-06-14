@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 from memo_stack_core.ports.extraction import (
@@ -13,7 +14,9 @@ from memo_stack_core.ports.extraction import (
 from memo_stack_core.ports.transcription import (
     SpeechTranscriptionPort,
     SpeechTranscriptionRequest,
+    SpeechTranscriptionResult,
     SpeechTranscriptSegment,
+    SpeechTranscriptWord,
 )
 
 from memo_stack_adapters.extraction.content import (
@@ -24,7 +27,12 @@ from memo_stack_adapters.extraction.content import (
     _limit_text,
     _unsupported,
 )
-from memo_stack_adapters.extraction.media_tools import probe_media_with_ffprobe
+from memo_stack_adapters.extraction.media_tools import (
+    extract_selected_video_keyframes,
+    media_manifest_artifact,
+    probe_media_with_ffprobe,
+)
+from memo_stack_adapters.extraction.video_evidence import analyze_video_keyframes
 
 _API_TRANSCRIPTION_PROFILES = {
     "media_api",
@@ -89,7 +97,7 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                     "transcription_provider": result.provider_name,
                     "transcription_model": result.provider_model,
                     **result.diagnostics,
-                    **probe.metadata,
+                    **(probe.metadata or {}),
                 },
             )
 
@@ -102,7 +110,7 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                 metadata={
                     "transcription_provider": result.provider_name,
                     "transcription_model": result.provider_model,
-                    **probe.metadata,
+                    **(probe.metadata or {}),
                 },
             )
 
@@ -131,6 +139,23 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
             for segment in segments
             if segment.text.strip()
         )
+        duration_seconds = result.duration_seconds or probe.duration_seconds
+        keyframes = ()
+        frame_evidence = None
+        if request.detected_content_type.startswith("video/"):
+            keyframes = extract_selected_video_keyframes(
+                request,
+                duration_seconds=duration_seconds,
+                max_frames=3,
+            )
+            if keyframes:
+                frame_evidence = analyze_video_keyframes(
+                    frames=keyframes,
+                    parser_name=self.name,
+                    enable_ocr=request.limits.enable_ocr,
+                    ocr_timeout_seconds=request.limits.subprocess_timeout_seconds,
+                )
+                elements = (*elements, *frame_evidence.elements)
         markdown = _limit_text(
             "\n".join(
                 [
@@ -142,7 +167,12 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
             request.limits.max_output_chars,
         )
         transcript_text = "\n".join(_segment_lines(segments))
-        duration_seconds = result.duration_seconds or probe.duration_seconds
+        transcript_json = _transcript_json_bytes(
+            request=request,
+            result=result,
+            segments=segments,
+            duration_seconds=duration_seconds,
+        )
         return ExtractionResult(
             status="succeeded",
             normalized_content_type=request.detected_content_type,
@@ -150,6 +180,11 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
             markdown=markdown,
             elements=elements,
             artifacts=(
+                media_manifest_artifact(
+                    request=request,
+                    probe=probe,
+                    parser_name=self.name,
+                ),
                 ExtractionArtifactCandidate(
                     artifact_type="transcript",
                     filename="transcript.txt",
@@ -157,23 +192,42 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                     content=transcript_text.encode("utf-8"),
                     metadata={
                         "parser": self.name,
-                        "segment_count": len(elements),
+                        "segment_count": len(segments),
                         "transcription_provider": result.provider_name,
                         "transcription_model": result.provider_model,
                     },
                 ),
+                ExtractionArtifactCandidate(
+                    artifact_type="transcript_json",
+                    filename="transcript.json",
+                    content_type="application/json",
+                    content=transcript_json,
+                    metadata={
+                        "parser": self.name,
+                        "segment_count": len(segments),
+                        "word_count": len(result.words),
+                        "transcription_provider": result.provider_name,
+                        "transcription_model": result.provider_model,
+                    },
+                ),
+                *(frame.to_artifact() for frame in keyframes),
+                *((frame_evidence.timeline_artifact,) if frame_evidence is not None else ()),
             ),
             technical_metadata={
                 "byte_size": request.byte_size,
                 "mime_detected": request.detected_content_type,
                 "duration_seconds": duration_seconds,
-                "segment_count": len(elements),
+                "segment_count": len(segments),
                 "transcript_status": "extracted",
                 "transcription_provider": result.provider_name,
                 "transcription_model": result.provider_model,
                 "transcription_provider_version": result.provider_version,
+                "transcript_json_status": "extracted",
+                "transcript_word_count": len(result.words),
+                "keyframe_status": "extracted" if keyframes else "not_applicable",
                 "output_chars": len(markdown),
-                **probe.metadata,
+                **(frame_evidence.metadata if frame_evidence is not None else {}),
+                **(probe.metadata or {}),
             },
             diagnostics={
                 "engine": self.name,
@@ -213,6 +267,56 @@ def _segment_lines(segments: tuple[SpeechTranscriptSegment, ...]) -> list[str]:
             f"{_format_timestamp_ms(end if end is not None else start or 0)}\n{text}"
         )
     return lines
+
+
+def _transcript_json_bytes(
+    *,
+    request: ExtractionRequest,
+    result: SpeechTranscriptionResult,
+    segments: tuple[SpeechTranscriptSegment, ...],
+    duration_seconds: float | None,
+) -> bytes:
+    payload = {
+        "schema_name": "memo_stack.transcript",
+        "schema_version": 1,
+        "asset_id": request.asset_id,
+        "filename": request.filename,
+        "content_type": request.detected_content_type,
+        "duration_seconds": duration_seconds,
+        "language": result.language,
+        "provider": {
+            "name": result.provider_name,
+            "model": result.provider_model,
+            "version": result.provider_version,
+            "diagnostics": result.diagnostics,
+        },
+        "text": result.text,
+        "segments": [_segment_payload(segment) for segment in segments],
+        "words": [_word_payload(word) for word in result.words],
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _segment_payload(segment: SpeechTranscriptSegment) -> dict[str, object]:
+    return {
+        "text": segment.text,
+        "start_ms": segment.start_ms,
+        "end_ms": segment.end_ms,
+        "confidence": segment.confidence,
+        "speaker": segment.speaker,
+        "metadata": segment.metadata,
+    }
+
+
+def _word_payload(word: SpeechTranscriptWord) -> dict[str, object]:
+    return {
+        "word": word.word,
+        "start_ms": word.start_ms,
+        "end_ms": word.end_ms,
+        "confidence": word.confidence,
+        "speaker": word.speaker,
+        "metadata": word.metadata,
+    }
 
 
 def _duration_to_ms(duration_seconds: float | None) -> int | None:

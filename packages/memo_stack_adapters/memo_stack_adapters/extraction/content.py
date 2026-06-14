@@ -26,9 +26,11 @@ from memo_stack_adapters.extraction.image_evidence import (
     read_image_metadata,
 )
 from memo_stack_adapters.extraction.media_tools import (
-    extract_first_video_keyframe,
+    extract_selected_video_keyframes,
+    media_manifest_artifact,
     probe_media_with_ffprobe,
 )
+from memo_stack_adapters.extraction.video_evidence import analyze_video_keyframes
 
 _TEXT_TYPES = {
     "text/plain",
@@ -62,13 +64,17 @@ _TIMED_TEXT_TYPES = {
     "text/vtt",
 }
 _AUDIO_TYPES = {
+    "audio/flac",
+    "audio/m4a",
     "audio/mpeg",
+    "audio/mpga",
     "audio/mp4",
+    "audio/ogg",
+    "audio/vnd.wave",
     "audio/wav",
     "audio/x-wav",
-    "audio/flac",
+    "audio/x-m4a",
     "audio/webm",
-    "audio/ogg",
 }
 _VIDEO_TYPES = {
     "video/mp4",
@@ -536,9 +542,21 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
                 },
             )
 
-        keyframe = None
+        keyframes = ()
+        frame_evidence = None
         if request.detected_content_type.startswith("video/"):
-            keyframe = extract_first_video_keyframe(request)
+            keyframes = extract_selected_video_keyframes(
+                request,
+                duration_seconds=probe.duration_seconds,
+                max_frames=3,
+            )
+            if keyframes:
+                frame_evidence = analyze_video_keyframes(
+                    frames=keyframes,
+                    parser_name=self.name,
+                    enable_ocr=request.limits.enable_ocr,
+                    ocr_timeout_seconds=request.limits.subprocess_timeout_seconds,
+                )
 
         lines = [
             f"# {request.filename.strip() or 'Media asset'}",
@@ -548,26 +566,36 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
             f"- Streams: {', '.join(probe.stream_summaries) or 'unknown'}",
             "- Transcript status: not configured in local extractor",
         ]
-        if keyframe is not None:
-            lines.append("- Keyframe status: extracted")
+        if keyframes:
+            lines.append(f"- Keyframes: {len(keyframes)} extracted")
         markdown = _limit_text("\n".join(lines), request.limits.max_output_chars)
-        artifacts = (keyframe,) if keyframe is not None else ()
+        artifacts = (
+            media_manifest_artifact(
+                request=request,
+                probe=probe,
+                parser_name=self.name,
+            ),
+            *(frame.to_artifact() for frame in keyframes),
+            *((frame_evidence.timeline_artifact,) if frame_evidence is not None else ()),
+        )
+        elements = [
+            ExtractedElement(
+                kind="media_metadata",
+                text=(
+                    f"Media asset {request.filename} "
+                    f"({request.detected_content_type}, "
+                    f"{_format_duration_seconds(probe.duration_seconds)})"
+                ),
+                metadata={"source": self.name, **(probe.metadata or {})},
+            ),
+            *((frame_evidence.elements) if frame_evidence is not None else ()),
+        ]
         return ExtractionResult(
             status="succeeded",
             normalized_content_type=request.detected_content_type,
             title=request.filename.strip() or "Media asset",
             markdown=markdown,
-            elements=(
-                ExtractedElement(
-                    kind="media_metadata",
-                    text=(
-                        f"Media asset {request.filename} "
-                        f"({request.detected_content_type}, "
-                        f"{_format_duration_seconds(probe.duration_seconds)})"
-                    ),
-                    metadata={"source": self.name, **probe.metadata},
-                ),
-            ),
+            elements=tuple(elements),
             artifacts=artifacts,
             technical_metadata={
                 "byte_size": request.byte_size,
@@ -575,9 +603,10 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
                 "duration_seconds": probe.duration_seconds,
                 "stream_count": len(probe.stream_summaries),
                 "transcript_status": "not_configured",
-                "keyframe_status": "extracted" if keyframe is not None else "not_applicable",
+                "keyframe_status": "extracted" if keyframes else "not_applicable",
                 "output_chars": len(markdown),
-                **probe.metadata,
+                **(frame_evidence.metadata if frame_evidence is not None else {}),
+                **(probe.metadata or {}),
             },
             diagnostics={"engine": self.name},
             parser_name=self.name,
@@ -683,6 +712,7 @@ def _extension_content_type(extension: str | None) -> str | None:
         "srt": "application/x-subrip",
         "vtt": "text/vtt",
         "mp3": "audio/mpeg",
+        "mpga": "audio/mpga",
         "m4a": "audio/mp4",
         "wav": "audio/wav",
         "flac": "audio/flac",

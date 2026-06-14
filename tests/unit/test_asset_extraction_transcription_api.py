@@ -1,4 +1,5 @@
 import asyncio
+import json
 import wave
 from io import BytesIO
 from pathlib import Path
@@ -132,8 +133,22 @@ def test_audio_asset_extraction_uses_api_first_transcription(
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
             "extracted_json",
             "markdown",
+            "media_manifest",
             "transcript",
+            "transcript_json",
         }
+        transcript_json_artifact = next(
+            item for item in extracted["artifacts"] if item["artifact_type"] == "transcript_json"
+        )
+        transcript_download = client.get(
+            f"/v1/extraction-artifacts/{transcript_json_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert transcript_download.status_code == 200, transcript_download.text
+        transcript_payload = json.loads(transcript_download.content.decode("utf-8"))
+        assert transcript_payload["schema_name"] == "memo_stack.transcript"
+        assert transcript_payload["segments"][0]["start_ms"] == 0
+        assert transcript_payload["segments"][0]["end_ms"] == 1000
 
         chunks = client.get(
             f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",

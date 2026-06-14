@@ -11,13 +11,20 @@ from memo_stack_core.ports.transcription import (
     SpeechTranscriptionRequest,
     SpeechTranscriptionResult,
     SpeechTranscriptSegment,
+    SpeechTranscriptWord,
 )
 
 _SUPPORTED_CONTENT_TYPES = {
+    "audio/flac",
+    "audio/m4a",
     "audio/mpeg",
+    "audio/mpga",
     "audio/mp4",
+    "audio/ogg",
+    "audio/vnd.wave",
     "audio/wav",
     "audio/x-wav",
+    "audio/x-m4a",
     "audio/webm",
     "video/mp4",
     "video/webm",
@@ -82,12 +89,16 @@ class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
             status="succeeded",
             text=text,
             segments=_response_segments(response),
+            words=_response_words(response),
             language=_response_language(response),
             duration_seconds=_response_duration_seconds(response),
             provider_name=self.provider_name,
             provider_model=self._model,
             provider_version=self.provider_version,
-            diagnostics={"response_format": "json"},
+            diagnostics={
+                **_request_diagnostics(self._model),
+                **_response_diagnostics(response),
+            },
         )
 
     def _request_kwargs(self, request: SpeechTranscriptionRequest) -> dict[str, object]:
@@ -96,10 +107,14 @@ class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
         kwargs: dict[str, object] = {
             "model": self._model,
             "file": file_obj,
-            "response_format": "json",
+            "response_format": _response_format_for_model(self._model),
         }
+        if _supports_segment_timestamps(self._model):
+            kwargs["timestamp_granularities"] = ["segment"]
+        if _requires_chunking_strategy(self._model):
+            kwargs["chunking_strategy"] = "auto"
         prompt = request.prompt or self._prompt
-        if prompt:
+        if prompt and not _requires_chunking_strategy(self._model):
             kwargs["prompt"] = prompt[:2000]
         return kwargs
 
@@ -133,10 +148,16 @@ def _safe_filename(filename: str, content_type: str) -> str:
     if "." in clean:
         return clean
     extension = {
+        "audio/flac": ".flac",
+        "audio/m4a": ".m4a",
         "audio/mpeg": ".mp3",
+        "audio/mpga": ".mpga",
         "audio/mp4": ".m4a",
+        "audio/ogg": ".ogg",
+        "audio/vnd.wave": ".wav",
         "audio/wav": ".wav",
         "audio/x-wav": ".wav",
+        "audio/x-m4a": ".m4a",
         "audio/webm": ".webm",
         "video/mp4": ".mp4",
         "video/webm": ".webm",
@@ -169,16 +190,42 @@ def _response_segments(response: Any) -> tuple[SpeechTranscriptSegment, ...]:
         start_ms = _seconds_to_ms(_raw_value(raw, "start"))
         end_ms = _seconds_to_ms(_raw_value(raw, "end"))
         speaker = _raw_value(raw, "speaker")
+        confidence = _confidence_from_segment(raw)
         segments.append(
             SpeechTranscriptSegment(
                 text=text.strip(),
                 start_ms=start_ms,
                 end_ms=end_ms,
+                confidence=confidence,
                 speaker=speaker if isinstance(speaker, str) else None,
-                metadata={"source": "provider_segment"},
+                metadata={
+                    "source": "provider_segment",
+                    **_segment_metadata(raw),
+                },
             )
         )
     return tuple(segments)
+
+
+def _response_words(response: Any) -> tuple[SpeechTranscriptWord, ...]:
+    raw_words = _raw_words(response)
+    words: list[SpeechTranscriptWord] = []
+    for raw in raw_words:
+        word = _raw_value(raw, "word")
+        if not isinstance(word, str) or not word.strip():
+            continue
+        speaker = _raw_value(raw, "speaker")
+        words.append(
+            SpeechTranscriptWord(
+                word=word.strip(),
+                start_ms=_seconds_to_ms(_raw_value(raw, "start")),
+                end_ms=_seconds_to_ms(_raw_value(raw, "end")),
+                confidence=_confidence_from_segment(raw),
+                speaker=speaker if isinstance(speaker, str) else None,
+                metadata={"source": "provider_word"},
+            )
+        )
+    return tuple(words)
 
 
 def _raw_segments(response: Any) -> list[object]:
@@ -186,6 +233,14 @@ def _raw_segments(response: Any) -> list[object]:
         value = response.get("segments")
         return value if isinstance(value, list) else []
     value = getattr(response, "segments", None)
+    return value if isinstance(value, list) else []
+
+
+def _raw_words(response: Any) -> list[object]:
+    if isinstance(response, dict):
+        value = response.get("words")
+        return value if isinstance(value, list) else []
+    value = getattr(response, "words", None)
     return value if isinstance(value, list) else []
 
 
@@ -199,6 +254,56 @@ def _response_duration_seconds(response: Any) -> float | None:
     if isinstance(value, int | float) and value > 0:
         return float(value)
     return None
+
+
+def _response_format_for_model(model: str) -> str:
+    normalized = model.strip().lower()
+    if "diarize" in normalized:
+        return "diarized_json"
+    if normalized == "whisper-1":
+        return "verbose_json"
+    return "json"
+
+
+def _supports_segment_timestamps(model: str) -> bool:
+    return model.strip().lower() == "whisper-1"
+
+
+def _requires_chunking_strategy(model: str) -> bool:
+    return "diarize" in model.strip().lower()
+
+
+def _request_diagnostics(model: str) -> dict[str, object]:
+    diagnostics: dict[str, object] = {"response_format": _response_format_for_model(model)}
+    if _supports_segment_timestamps(model):
+        diagnostics["timestamp_granularities"] = ["segment"]
+    if _requires_chunking_strategy(model):
+        diagnostics["chunking_strategy"] = "auto"
+    return diagnostics
+
+
+def _response_diagnostics(response: Any) -> dict[str, object]:
+    usage = _raw_value(response, "usage")
+    return {"usage": usage} if isinstance(usage, dict) else {}
+
+
+def _confidence_from_segment(raw: Any) -> float | None:
+    avg_logprob = _raw_value(raw, "avg_logprob")
+    if isinstance(avg_logprob, int | float):
+        return max(0.0, min(1.0, 1.0 + (float(avg_logprob) / 10.0)))
+    no_speech_prob = _raw_value(raw, "no_speech_prob")
+    if isinstance(no_speech_prob, int | float):
+        return max(0.0, min(1.0, 1.0 - float(no_speech_prob)))
+    return None
+
+
+def _segment_metadata(raw: Any) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    for key in ("id", "seek", "temperature", "avg_logprob", "compression_ratio", "no_speech_prob"):
+        value = _raw_value(raw, key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            metadata[key] = value
+    return metadata
 
 
 def _raw_value(raw: Any, key: str) -> object:

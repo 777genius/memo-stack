@@ -436,7 +436,7 @@ asset_extraction_artifacts
   id
   job_id
   asset_id
-  artifact_type: extracted_json | normalized_json | markdown | transcript | keyframe | table_html | image_regions | vision_json
+  artifact_type: extracted_json | normalized_json | markdown | transcript | transcript_json | media_manifest | keyframe | video_frame_timeline | table_html | image_regions | vision_json
   storage_backend
   storage_key
   sha256_hex
