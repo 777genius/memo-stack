@@ -15,6 +15,7 @@ from memo_stack_core.domain.entities import (
     MemoryScope,
     MemorySpace,
     MemorySuggestion,
+    MemoryThread,
 )
 from memo_stack_core.domain.idempotency import IdempotencyRecord
 
@@ -64,6 +65,19 @@ class ScopeRepositoryPort(Protocol):
 
     async def get_memory_scope(self, memory_scope_id: str) -> MemoryScope | None:
         """Load a memory_scope by canonical id."""
+
+    async def get_thread(self, thread_id: str) -> MemoryThread | None:
+        """Load a thread by canonical id."""
+
+    async def list_threads(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        status: str | None,
+        limit: int,
+    ) -> list[MemoryThread]:
+        """List threads in a memory_scope."""
 
     async def save_memory_scope(self, memory_scope: MemoryScope) -> MemoryScope:
         """Persist a changed memory_scope aggregate."""

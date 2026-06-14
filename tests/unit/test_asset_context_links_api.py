@@ -185,6 +185,64 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert deleted_links.json()["data"][0]["id"] == link_id
 
 
+def test_context_link_suggestions_include_thread_anchor(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-call",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "thread-anchor-capture",
+                "text": "Alex call notes about frontend memory linking.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-call",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex call memory",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        candidates = suggestions.json()["data"]["candidates"]
+        thread_candidate = next(item for item in candidates if item["target_type"] == "thread")
+        assert thread_candidate["label"] == "alex-call"
+        assert thread_candidate["metadata"]["external_ref"] == "alex-call"
+        assert "same thread" in thread_candidate["reasons"]
+        assert "same_thread" in thread_candidate["metadata"]["reason_codes"]
+        assert thread_candidate["suggestion_id"]
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{thread_candidate['suggestion_id']}/review",
+            json={"action": "approve", "reason": "attached to source thread"},
+            headers=auth_headers(),
+        )
+
+    assert approved.status_code == 200, approved.text
+    approved_data = approved.json()["data"]
+    assert approved_data["duplicate_link"] is False
+    assert approved_data["suggestion"]["target_type"] == "thread"
+    assert approved_data["suggestion"]["review_reason"] == "attached to source thread"
+    assert approved_data["link"]["target_type"] == "thread"
+    assert approved_data["link"]["target_id"] == thread_candidate["target_id"]
+    assert approved_data["link"]["metadata"]["external_ref"] == "alex-call"
+
+
 def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         fact = client.post(
@@ -284,8 +342,10 @@ def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> N
     assert repeated.status_code == 200
     assert repeated.json()["data"]["candidates"][0]["suggestion_id"] == suggestion_id
     assert pending.status_code == 200
-    assert pending.json()["data"][0]["id"] == suggestion_id
-    assert pending.json()["data"][0]["status"] == "pending"
+    pending_suggestion = next(
+        item for item in pending.json()["data"] if item["id"] == suggestion_id
+    )
+    assert pending_suggestion["status"] == "pending"
     assert approved.status_code == 200
     assert approved.json()["data"]["suggestion"]["status"] == "approved"
     assert approved.json()["data"]["suggestion"]["review_reason"] == "reviewed by user"

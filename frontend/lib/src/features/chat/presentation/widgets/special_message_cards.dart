@@ -259,6 +259,7 @@ class _LinkSuggestionsCardState extends State<LinkSuggestionsCard> {
       'capture' => Icons.history_outlined,
       'asset' => Icons.attach_file,
       'suggestion' => Icons.rate_review_outlined,
+      'thread' => Icons.forum_outlined,
       _ => Icons.label_outline,
     };
   }

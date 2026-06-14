@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from memo_stack_core.domain.entities import MemoryScope, MemorySpace
+from memo_stack_core.domain.entities import MemoryScope, MemorySpace, MemoryThread
 from memo_stack_core.domain.errors import MemoryConflictError, MemoryNotFoundError
 from memo_stack_core.ports.repositories import (
     ResolvedScope,
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from memo_stack_adapters.postgres.mappers import (
     memory_scope_row_to_domain,
     space_row_to_domain,
+    thread_row_to_domain,
 )
 from memo_stack_adapters.postgres.models import (
     MemoryChunkRow,
@@ -120,6 +121,35 @@ class PostgresScopeRepository(ScopeRepositoryPort):
         if row is None:
             return None
         return memory_scope_row_to_domain(row)
+
+    async def get_thread(self, thread_id: str) -> MemoryThread | None:
+        row = await self._session.get(MemoryThreadRow, thread_id)
+        if row is None:
+            return None
+        return thread_row_to_domain(row)
+
+    async def list_threads(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        status: str | None,
+        limit: int,
+    ) -> list[MemoryThread]:
+        stmt = select(MemoryThreadRow).where(
+            MemoryThreadRow.space_id == space_id,
+            MemoryThreadRow.memory_scope_id == memory_scope_id,
+        )
+        if status is not None:
+            stmt = stmt.where(MemoryThreadRow.status == status)
+        rows = (
+            await self._session.execute(
+                stmt.order_by(MemoryThreadRow.updated_at.desc(), MemoryThreadRow.id.desc()).limit(
+                    limit
+                )
+            )
+        ).scalars()
+        return [thread_row_to_domain(row) for row in rows]
 
     async def save_memory_scope(self, memory_scope: MemoryScope) -> MemoryScope:
         row = await self._session.get(MemoryScopeRow, str(memory_scope.id))

@@ -39,6 +39,7 @@ _ALLOWED_ENDPOINT_STATUSES: dict[str, set[str]] = {
     "document": {"active"},
     "fact": {"active", "disputed", "superseded"},
     "suggestion": {"pending", "approved", "rejected"},
+    "thread": {"active"},
 }
 
 
@@ -203,6 +204,12 @@ class SuggestContextLinksUseCase:
                 status="stored",
                 limit=max(command.limit, 8),
             )
+            threads = await uow.scope.list_threads(
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                status="active",
+                limit=max(command.limit, 8),
+            )
 
         terms = _terms(query_text)
         candidates: list[ContextLinkCandidate] = []
@@ -319,6 +326,36 @@ class SuggestContextLinksUseCase:
                     },
                 )
             )
+        for thread in threads:
+            key = ("thread", str(thread.id))
+            if key in seen or _is_same_source(key, command):
+                continue
+            seen.add(key)
+            target_text = thread.external_ref.replace("-", " ")
+            score, reasons, matched_terms = _score_text_candidate(
+                query_terms=terms,
+                target_text=target_text,
+                updated_at=thread.updated_at,
+                now=self._clock.now(),
+                base=30,
+            )
+            if source_thread_id and str(thread.id) == source_thread_id:
+                score += 12
+                reasons.append("same thread")
+            candidates.append(
+                _candidate(
+                    target_type="thread",
+                    target_id=str(thread.id),
+                    label=thread.external_ref,
+                    preview=f"Thread {thread.external_ref}",
+                    score=score,
+                    reasons=reasons,
+                    metadata={
+                        "external_ref": thread.external_ref,
+                        "matched_terms": list(matched_terms),
+                    },
+                )
+            )
 
         ranked = sorted(
             candidates,
@@ -378,9 +415,7 @@ class SuggestContextLinksUseCase:
                 )
                 if existing is None:
                     suggestion = MemoryContextLinkSuggestion.create(
-                        suggestion_id=MemoryContextLinkSuggestionId(
-                            self._ids.new_id("ctxlinksug")
-                        ),
+                        suggestion_id=MemoryContextLinkSuggestionId(self._ids.new_id("ctxlinksug")),
                         space_id=command.space_id,
                         memory_scope_id=command.memory_scope_id,
                         source_type=command.source_type,
@@ -561,6 +596,8 @@ async def _load_endpoint(
         return await uow.facts.get_by_id(endpoint_id)
     if endpoint_type == "suggestion":
         return await uow.suggestions.get_by_id(endpoint_id)
+    if endpoint_type == "thread":
+        return await uow.scope.get_thread(endpoint_id)
     return None
 
 
@@ -672,9 +709,7 @@ def _candidate_metadata(
             metadata[str(key)] = value
         elif isinstance(value, (list, tuple)):
             cleaned = [
-                item
-                for item in value
-                if isinstance(item, (str, int, float, bool)) or item is None
+                item for item in value if isinstance(item, (str, int, float, bool)) or item is None
             ]
             if cleaned:
                 metadata[str(key)] = cleaned

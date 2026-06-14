@@ -47,6 +47,7 @@ from memo_stack_core.domain.entities import (
     MemorySpace,
     MemorySuggestion,
     MemorySuggestionId,
+    MemoryThread,
     SourceRef,
     SpaceId,
     SpeakerRole,
@@ -81,6 +82,7 @@ from memo_stack_adapters.postgres.models import (
     MemorySourceRefRow,
     MemorySpaceRow,
     MemorySuggestionRow,
+    MemoryThreadRow,
 )
 
 
@@ -169,6 +171,18 @@ def memory_scope_row_to_domain(row: MemoryScopeRow) -> MemoryScope:
         space_id=SpaceId(row.space_id),
         external_ref=row.external_ref,
         name=row.name,
+        status=LifecycleStatus(row.status),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def thread_row_to_domain(row: MemoryThreadRow) -> MemoryThread:
+    return MemoryThread(
+        id=ThreadId(row.id),
+        space_id=SpaceId(row.space_id),
+        memory_scope_id=MemoryScopeId(row.memory_scope_id),
+        external_ref=row.external_ref,
         status=LifecycleStatus(row.status),
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -382,9 +396,7 @@ def asset_extraction_job_row_to_domain(row: MemoryAssetExtractionJobRow) -> Asse
         retry_after_at=row.retry_after_at,
         cancellation_requested_at=row.cancellation_requested_at,
         retry_disposition=(
-            ExtractionRetryDisposition(row.retry_disposition)
-            if row.retry_disposition
-            else None
+            ExtractionRetryDisposition(row.retry_disposition) if row.retry_disposition else None
         ),
     )
 
