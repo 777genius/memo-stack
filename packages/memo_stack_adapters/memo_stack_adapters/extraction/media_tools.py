@@ -46,7 +46,7 @@ def probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
                 ],
                 check=False,
                 capture_output=True,
-                timeout=20,
+                timeout=_subprocess_timeout_seconds(request),
             )
     except (OSError, subprocess.TimeoutExpired):
         return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
@@ -88,7 +88,7 @@ def extract_first_video_keyframe(
                 ],
                 check=False,
                 capture_output=True,
-                timeout=30,
+                timeout=_subprocess_timeout_seconds(request),
             )
             if completed.returncode != 0:
                 return None
@@ -153,6 +153,10 @@ def _safe_suffix(filename: str) -> str:
         return ".bin"
     safe = "".join(ch for ch in extension if ch.isalnum())[:16]
     return f".{safe or 'bin'}"
+
+
+def _subprocess_timeout_seconds(request: ExtractionRequest) -> int:
+    return max(1, int(request.limits.subprocess_timeout_seconds))
 
 
 def _positive_float(value: object) -> float | None:

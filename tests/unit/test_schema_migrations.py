@@ -241,6 +241,10 @@ def test_create_schema_adds_asset_and_context_link_tables(tmp_path: Path) -> Non
                         index["name"]
                         for index in inspector.get_indexes("memory_asset_extraction_jobs")
                     },
+                    "asset_extraction_job_columns": {
+                        column["name"]
+                        for column in inspector.get_columns("memory_asset_extraction_jobs")
+                    },
                     "asset_extraction_artifact_indexes": {
                         index["name"]
                         for index in inspector.get_indexes("memory_asset_extraction_artifacts")
@@ -270,6 +274,15 @@ def test_create_schema_adds_asset_and_context_link_tables(tmp_path: Path) -> Non
     assert "ix_asset_extraction_jobs_asset_status" in result["asset_extraction_job_indexes"]
     assert "ix_asset_extraction_jobs_scope_status" in result["asset_extraction_job_indexes"]
     assert "uq_asset_extraction_jobs_active_profile" in result["asset_extraction_job_indexes"]
+    assert "ix_asset_extraction_jobs_running_lease" in result["asset_extraction_job_indexes"]
+    assert {
+        "lease_owner",
+        "lease_expires_at",
+        "heartbeat_at",
+        "retry_after_at",
+        "cancellation_requested_at",
+        "retry_disposition",
+    }.issubset(result["asset_extraction_job_columns"])
     assert "ix_asset_extraction_artifacts_job" in result["asset_extraction_artifact_indexes"]
     assert "ix_asset_extraction_artifacts_asset" in result["asset_extraction_artifact_indexes"]
     assert "uq_memory_context_link_active" in result["context_link_indexes"]

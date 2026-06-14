@@ -8,6 +8,7 @@ from memo_stack_core.application.dto import (
     BuildContextQuery,
     BuildMemoryDigestQuery,
     BuildMemoryInsightsQuery,
+    CancelAssetExtractionCommand,
     CaptureResult,
     ConsistencyMode,
     ConsolidateCaptureCommand,
@@ -103,6 +104,7 @@ from memo_stack_core.application.dto import (
     UsageSummaryResult,
 )
 from memo_stack_core.application.use_cases.asset_extractions import (
+    CancelAssetExtractionUseCase,
     GetAssetExtractionUseCase,
     ListAssetExtractionsUseCase,
     ReadExtractionArtifactBytesUseCase,
@@ -196,6 +198,8 @@ __all__ = [
     "BuildMemoryDigestUseCase",
     "BuildMemoryInsightsQuery",
     "BuildMemoryInsightsUseCase",
+    "CancelAssetExtractionCommand",
+    "CancelAssetExtractionUseCase",
     "CapabilitiesResult",
     "ConsistencyMode",
     "ContextBundle",

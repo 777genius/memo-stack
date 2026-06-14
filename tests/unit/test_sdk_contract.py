@@ -621,6 +621,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
     )
     client.get_asset_extraction("extract_1")
     client.retry_asset_extraction("extract_1")
+    client.cancel_asset_extraction("extract_1")
     assert client.download_extraction_artifact("artifact_1") == b"downloaded-bytes"
 
     assert [f"{method} {path}" for method, path, _params, _body, _content_type in seen] == [
@@ -633,6 +634,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
         "GET /v1/asset-extractions",
         "GET /v1/asset-extractions/extract_1",
         "POST /v1/asset-extractions/extract_1/retry",
+        "POST /v1/asset-extractions/extract_1/cancel",
         "GET /v1/extraction-artifacts/artifact_1/download",
     ]
     assert seen[0][2]["space_slug"] == "client-app"

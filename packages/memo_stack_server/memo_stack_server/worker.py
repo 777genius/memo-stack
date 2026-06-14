@@ -203,6 +203,7 @@ class OutboxWorker:
                 RunAssetExtractionCommand(
                     job_id=str(job.payload_json.get("job_id") or job.aggregate_id),
                     force=job.attempt_count > 0,
+                    worker_id=f"outbox:{job.id}",
                 )
             )
         else:

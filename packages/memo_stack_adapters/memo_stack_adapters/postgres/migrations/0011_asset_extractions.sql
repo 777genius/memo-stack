@@ -19,7 +19,13 @@ CREATE TABLE IF NOT EXISTS memory_asset_extraction_jobs (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+    lease_owner VARCHAR(120),
+    lease_expires_at TIMESTAMPTZ,
+    heartbeat_at TIMESTAMPTZ,
+    retry_after_at TIMESTAMPTZ,
+    cancellation_requested_at TIMESTAMPTZ,
+    retry_disposition VARCHAR(40)
 );
 
 CREATE INDEX IF NOT EXISTS ix_asset_extraction_jobs_asset_status
@@ -36,6 +42,9 @@ ON memory_asset_extraction_jobs(
     source_sha256_hex
 )
 WHERE status IN ('pending', 'running', 'succeeded');
+
+CREATE INDEX IF NOT EXISTS ix_asset_extraction_jobs_running_lease
+ON memory_asset_extraction_jobs(status, lease_expires_at, heartbeat_at);
 
 CREATE TABLE IF NOT EXISTS memory_asset_extraction_artifacts (
     id VARCHAR(80) PRIMARY KEY,

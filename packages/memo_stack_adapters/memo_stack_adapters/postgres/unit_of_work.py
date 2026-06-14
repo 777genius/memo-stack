@@ -82,6 +82,14 @@ _ADDITIVE_SCHEMA_COLUMNS = {
         ("review_reason", "VARCHAR(320)"),
         ("reviewed_at", "TIMESTAMPTZ"),
     ),
+    "memory_asset_extraction_jobs": (
+        ("lease_owner", "VARCHAR(120)"),
+        ("lease_expires_at", "TIMESTAMPTZ"),
+        ("heartbeat_at", "TIMESTAMPTZ"),
+        ("retry_after_at", "TIMESTAMPTZ"),
+        ("cancellation_requested_at", "TIMESTAMPTZ"),
+        ("retry_disposition", "VARCHAR(40)"),
+    ),
 }
 
 _LEGACY_PROFILE_ID_TABLES = (
@@ -315,6 +323,15 @@ def _ensure_additive_schema_columns(connection: Connection) -> None:
         for column_name, ddl in columns:
             if column_name not in existing_column_names:
                 connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+    if "memory_asset_extraction_jobs" in table_names:
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_asset_extraction_jobs_running_lease
+                ON memory_asset_extraction_jobs(status, lease_expires_at, heartbeat_at)
+                """
+            )
+        )
 
 
 def _ensure_document_thread_unique_indexes(connection: Connection) -> None:

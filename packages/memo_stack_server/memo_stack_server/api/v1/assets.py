@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from memo_stack_core.application import (
+    CancelAssetExtractionCommand,
     CreateAssetCommand,
     DeleteAssetCommand,
     GetAssetExtractionQuery,
@@ -274,6 +275,19 @@ async def retry_asset_extraction(
     return {"data": asset_extraction_to_response(result.job)}
 
 
+@router.post("/asset-extractions/{job_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+async def cancel_asset_extraction(
+    job_id: str,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    _ensure_extraction_enabled(container)
+    result = await container.cancel_asset_extraction.execute(
+        CancelAssetExtractionCommand(job_id=job_id)
+    )
+    return {"data": asset_extraction_to_response(result.job)}
+
+
 @router.get("/extraction-artifacts/{artifact_id}/download")
 async def download_extraction_artifact(
     artifact_id: str,
@@ -345,11 +359,27 @@ def asset_extraction_to_response(job: AssetExtractionJob) -> dict[str, Any]:
         "result_document_ids": list(job.result_document_ids),
         "metadata": _safe_metadata(job.metadata),
         "progress": _extraction_progress(job),
+        "execution": _extraction_execution(job),
         "usage": _extraction_usage(job),
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+    }
+
+
+def _extraction_execution(job: AssetExtractionJob) -> dict[str, Any]:
+    return {
+        "lease_owner": job.lease_owner,
+        "lease_expires_at": job.lease_expires_at.isoformat()
+        if job.lease_expires_at
+        else None,
+        "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
+        "retry_after_at": job.retry_after_at.isoformat() if job.retry_after_at else None,
+        "retry_disposition": job.retry_disposition.value if job.retry_disposition else None,
+        "cancellation_requested_at": job.cancellation_requested_at.isoformat()
+        if job.cancellation_requested_at
+        else None,
     }
 
 

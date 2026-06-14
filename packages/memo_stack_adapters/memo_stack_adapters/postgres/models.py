@@ -272,6 +272,16 @@ class MemoryAssetExtractionJobRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_after_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retry_disposition: Mapped[str | None] = mapped_column(String(40), nullable=True)
     __table_args__ = (
         Index("ix_asset_extraction_jobs_asset_status", "asset_id", "status", "created_at"),
         Index(
@@ -290,6 +300,12 @@ class MemoryAssetExtractionJobRow(Base):
             unique=True,
             sqlite_where=status.in_(("pending", "running", "succeeded")),
             postgresql_where=status.in_(("pending", "running", "succeeded")),
+        ),
+        Index(
+            "ix_asset_extraction_jobs_running_lease",
+            "status",
+            "lease_expires_at",
+            "heartbeat_at",
         ),
     )
 

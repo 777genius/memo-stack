@@ -59,6 +59,7 @@ from memo_stack_core.domain.extraction import (
     ExtractionArtifact,
     ExtractionArtifactId,
     ExtractionArtifactType,
+    ExtractionRetryDisposition,
 )
 
 from memo_stack_adapters.postgres.models import (
@@ -339,6 +340,12 @@ def asset_extraction_job_to_row(job: AssetExtractionJob) -> MemoryAssetExtractio
         updated_at=job.updated_at,
         started_at=job.started_at,
         finished_at=job.finished_at,
+        lease_owner=job.lease_owner,
+        lease_expires_at=job.lease_expires_at,
+        heartbeat_at=job.heartbeat_at,
+        retry_after_at=job.retry_after_at,
+        cancellation_requested_at=job.cancellation_requested_at,
+        retry_disposition=job.retry_disposition.value if job.retry_disposition else None,
     )
 
 
@@ -365,6 +372,16 @@ def asset_extraction_job_row_to_domain(row: MemoryAssetExtractionJobRow) -> Asse
         updated_at=row.updated_at,
         started_at=row.started_at,
         finished_at=row.finished_at,
+        lease_owner=row.lease_owner,
+        lease_expires_at=row.lease_expires_at,
+        heartbeat_at=row.heartbeat_at,
+        retry_after_at=row.retry_after_at,
+        cancellation_requested_at=row.cancellation_requested_at,
+        retry_disposition=(
+            ExtractionRetryDisposition(row.retry_disposition)
+            if row.retry_disposition
+            else None
+        ),
     )
 
 
@@ -392,6 +409,12 @@ def apply_asset_extraction_job_to_row(
     row.updated_at = job.updated_at
     row.started_at = job.started_at
     row.finished_at = job.finished_at
+    row.lease_owner = job.lease_owner
+    row.lease_expires_at = job.lease_expires_at
+    row.heartbeat_at = job.heartbeat_at
+    row.retry_after_at = job.retry_after_at
+    row.cancellation_requested_at = job.cancellation_requested_at
+    row.retry_disposition = job.retry_disposition.value if job.retry_disposition else None
 
 
 def extraction_artifact_to_row(artifact: ExtractionArtifact) -> MemoryAssetExtractionArtifactRow:

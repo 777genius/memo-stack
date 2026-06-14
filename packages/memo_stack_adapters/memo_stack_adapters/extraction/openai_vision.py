@@ -132,6 +132,22 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
             )
 
         image_metadata = read_image_metadata(request.content)
+        if (
+            image_metadata is not None
+            and image_metadata.width * image_metadata.height > request.limits.max_image_pixels
+        ):
+            return _fallback_unsupported(
+                request,
+                code="asset_extraction.vision_image_too_large",
+                message="Image pixel count exceeds vision extraction limit",
+                model_version=self._model,
+                metadata={
+                    "image_width": image_metadata.width,
+                    "image_height": image_metadata.height,
+                    "image_pixels": image_metadata.width * image_metadata.height,
+                    "max_image_pixels": request.limits.max_image_pixels,
+                },
+            )
         client = None
         try:
             client = self._client()
@@ -475,14 +491,18 @@ def _fallback_unsupported(
     code: str,
     message: str,
     model_version: str | None,
+    metadata: dict[str, object] | None = None,
 ) -> ExtractionResult:
+    technical_metadata = dict(metadata or {})
+    if model_version:
+        technical_metadata["vision_model"] = model_version
     result = _unsupported(
         request,
         parser_name=OpenAIVisionImageExtractionEngine.name,
         parser_version="responses-api",
         code=code,
         message=message,
-        metadata={"vision_model": model_version} if model_version else None,
+        metadata=technical_metadata or None,
     )
     return replace(result, diagnostics={**result.diagnostics, "fallback_allowed": True})
 

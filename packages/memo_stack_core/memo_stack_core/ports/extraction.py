@@ -31,6 +31,9 @@ class ExtractionLimits:
     max_media_seconds: int = 600
     max_output_chars: int = 500_000
     max_tables: int = 100
+    parser_timeout_seconds: float = 300
+    subprocess_timeout_seconds: float = 60
+    max_image_pixels: int = 50_000_000
     enable_ocr: bool = True
     enable_external_ai: bool = False
 

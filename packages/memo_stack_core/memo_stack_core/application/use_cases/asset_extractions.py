@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+from datetime import datetime, timedelta
 from hashlib import sha256
 from math import ceil
 
@@ -15,6 +17,7 @@ from memo_stack_core.application.asset_extraction_mapping import (
 from memo_stack_core.application.dto import (
     AssetExtractionResult,
     AssetExtractionsResult,
+    CancelAssetExtractionCommand,
     ExtractionArtifactBytesResult,
     GetAssetExtractionQuery,
     GetExtractionArtifactQuery,
@@ -39,6 +42,7 @@ from memo_stack_core.domain.extraction import (
     AssetExtractionStatus,
     ExtractionArtifact,
     ExtractionArtifactId,
+    ExtractionRetryDisposition,
 )
 from memo_stack_core.domain.usage import (
     USAGE_RECONCILIATION_SOURCE_TYPE,
@@ -65,6 +69,48 @@ from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _DEFAULT_PARSER_CONFIG_VERSION = "v1"
+_NON_RUNNABLE_EXTRACTION_STATUSES = {
+    AssetExtractionStatus.SUCCEEDED,
+    AssetExtractionStatus.UNSUPPORTED,
+    AssetExtractionStatus.CANCELED,
+    AssetExtractionStatus.STALE,
+}
+
+
+class ExtractionRetryPolicy:
+    def __init__(
+        self,
+        *,
+        max_attempts: int = 5,
+        base_delay_seconds: int = 30,
+        max_delay_seconds: int = 900,
+    ) -> None:
+        self.max_attempts = max(1, max_attempts)
+        self.base_delay_seconds = max(1, base_delay_seconds)
+        self.max_delay_seconds = max(self.base_delay_seconds, max_delay_seconds)
+
+    def disposition_for_code(self, code: str) -> ExtractionRetryDisposition:
+        if _is_permanent_error_code(code):
+            return ExtractionRetryDisposition.PERMANENT
+        return ExtractionRetryDisposition.RETRYABLE
+
+    def retry_after(
+        self,
+        *,
+        now: datetime,
+        attempt_count: int,
+        code: str,
+    ) -> datetime | None:
+        if attempt_count >= self.max_attempts:
+            return None
+        if self.disposition_for_code(code) != ExtractionRetryDisposition.RETRYABLE:
+            return None
+        exponent = max(0, attempt_count - 1)
+        delay_seconds = min(
+            self.max_delay_seconds,
+            self.base_delay_seconds * (2**exponent),
+        )
+        return now + timedelta(seconds=delay_seconds)
 
 
 class RequestAssetExtractionUseCase:
@@ -293,6 +339,22 @@ class RetryAssetExtractionUseCase:
         return AssetExtractionResult(job=saved, indexing_status="pending")
 
 
+class CancelAssetExtractionUseCase:
+    def __init__(self, *, uow_factory: UnitOfWorkFactoryPort, clock: ClockPort) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    async def execute(self, command: CancelAssetExtractionCommand) -> AssetExtractionResult:
+        async with self._uow_factory() as uow:
+            job = await uow.asset_extractions.get_by_id(command.job_id)
+            if job is None:
+                raise MemoryNotFoundError("Asset extraction job not found")
+            canceled = job.request_cancellation(now=self._clock.now())
+            saved = await uow.asset_extractions.save(canceled)
+            await uow.commit()
+        return AssetExtractionResult(job=saved, indexing_status=_indexing_status(saved.status))
+
+
 class RunAssetExtractionUseCase:
     def __init__(
         self,
@@ -306,6 +368,8 @@ class RunAssetExtractionUseCase:
         ids: IdGeneratorPort,
         limits: ExtractionLimits,
         artifact_storage_backend: str = "local",
+        execution_lease_seconds: int = 900,
+        retry_policy: ExtractionRetryPolicy | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._blob_storage = blob_storage
@@ -316,10 +380,12 @@ class RunAssetExtractionUseCase:
         self._ids = ids
         self._limits = limits
         self._artifact_storage_backend = artifact_storage_backend
+        self._execution_lease = timedelta(seconds=max(30, execution_lease_seconds))
+        self._retry_policy = retry_policy or ExtractionRetryPolicy()
 
     async def execute(self, command: RunAssetExtractionCommand) -> AssetExtractionResult:
         job = await self._mark_running(command)
-        if job.status == AssetExtractionStatus.SUCCEEDED:
+        if job.status in _NON_RUNNABLE_EXTRACTION_STATUSES:
             async with self._uow_factory() as uow:
                 artifacts = await uow.asset_extractions.list_artifacts(job_id=str(job.id))
             return AssetExtractionResult(
@@ -327,6 +393,9 @@ class RunAssetExtractionUseCase:
                 artifacts=tuple(artifacts),
                 indexing_status=_indexing_status(job.status),
             )
+        job = await self._cancel_if_requested(job)
+        if job.status == AssetExtractionStatus.CANCELED:
+            return AssetExtractionResult(job=job, indexing_status="canceled")
         async with self._uow_factory() as uow:
             asset = await uow.assets.get_by_id(str(job.asset_id))
         if asset is None or asset.status != AssetStatus.STORED:
@@ -339,12 +408,15 @@ class RunAssetExtractionUseCase:
 
         try:
             content = await self._blob_storage.read_bytes(storage_key=asset.storage_key)
-            await self._save_progress(
+            job = await self._save_progress(
                 job,
                 stage="detecting_type",
                 percent=20,
                 message="Detecting file type",
             )
+            job = await self._cancel_if_requested(job)
+            if job.status == AssetExtractionStatus.CANCELED:
+                return AssetExtractionResult(job=job, indexing_status="canceled")
             detection = await self._detector.detect(
                 FileTypeDetectionRequest(
                     filename=asset.filename,
@@ -352,12 +424,15 @@ class RunAssetExtractionUseCase:
                     content=content,
                 )
             )
-            await self._save_progress(
+            job = await self._save_progress(
                 job,
                 stage="extracting_content",
                 percent=45,
                 message="Extracting searchable content",
             )
+            job = await self._cancel_if_requested(job)
+            if job.status == AssetExtractionStatus.CANCELED:
+                return AssetExtractionResult(job=job, indexing_status="canceled")
             result = await self._extractor.extract(
                 ExtractionRequest(
                     job_id=str(job.id),
@@ -372,6 +447,9 @@ class RunAssetExtractionUseCase:
                     limits=self._limits,
                 )
             )
+            job = await self._cancel_if_requested(job)
+            if job.status == AssetExtractionStatus.CANCELED:
+                return AssetExtractionResult(job=job, indexing_status="canceled")
         except Exception as exc:
             failed = await self._mark_failed(
                 job,
@@ -434,18 +512,21 @@ class RunAssetExtractionUseCase:
                 ),
             )
         )
-        await self._save_progress(
+        job = await self._save_progress(
             job,
             stage="storing_artifacts",
             percent=80,
             message="Storing extracted evidence",
         )
+        job = await self._cancel_if_requested(job)
+        if job.status == AssetExtractionStatus.CANCELED:
+            return AssetExtractionResult(job=job, indexing_status="canceled")
         artifacts = await self._store_artifacts(
             job=job,
             result=result,
             markdown=extracted_text_value,
         )
-        await self._save_progress(
+        job = await self._save_progress(
             job,
             stage="indexing_memory",
             percent=90,
@@ -467,15 +548,21 @@ class RunAssetExtractionUseCase:
             job = await uow.asset_extractions.get_by_id(command.job_id)
             if job is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
-            if job.status == AssetExtractionStatus.SUCCEEDED:
+            if job.status in _NON_RUNNABLE_EXTRACTION_STATUSES:
                 return job
-            running = job.mark_running(now=self._clock.now())
+            now = self._clock.now()
+            running = job.mark_running(
+                now=now,
+                lease_owner=command.worker_id or f"asset-extraction:{command.job_id}",
+                lease_expires_at=now + self._execution_lease,
+            )
             running = running.with_metadata_updates(
-                now=self._clock.now(),
+                now=now,
                 metadata={
                     "processing_stage": "reading_asset",
                     "progress_percent": 10,
                     "progress_message": "Reading uploaded asset",
+                    "execution_lease_seconds": int(self._execution_lease.total_seconds()),
                 },
             )
             saved = await uow.asset_extractions.save(running)
@@ -489,23 +576,42 @@ class RunAssetExtractionUseCase:
         stage: str,
         percent: int,
         message: str,
-    ) -> None:
+    ) -> AssetExtractionJob:
         async with self._uow_factory() as uow:
             current = await uow.asset_extractions.get_by_id(str(job.id))
             if current is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
             if current.status != AssetExtractionStatus.RUNNING:
-                return
-            updated = current.with_metadata_updates(
-                now=self._clock.now(),
+                return current
+            now = self._clock.now()
+            updated = current.record_heartbeat(
+                now=now,
+                lease_expires_at=now + self._execution_lease,
                 metadata={
                     "processing_stage": stage,
                     "progress_percent": max(0, min(percent, 99)),
                     "progress_message": message,
                 },
             )
-            await uow.asset_extractions.save(updated)
+            saved = await uow.asset_extractions.save(updated)
             await uow.commit()
+        return saved
+
+    async def _cancel_if_requested(self, job: AssetExtractionJob) -> AssetExtractionJob:
+        async with self._uow_factory() as uow:
+            current = await uow.asset_extractions.get_by_id(str(job.id))
+            if current is None:
+                raise MemoryNotFoundError("Asset extraction job not found")
+            if current.cancellation_requested_at is None:
+                return current
+            canceled = current.mark_canceled(
+                now=self._clock.now(),
+                code="asset_extraction.canceled",
+                message="Extraction was canceled by request",
+            )
+            saved = await uow.asset_extractions.save(canceled)
+            await uow.commit()
+        return saved
 
     async def _store_artifacts(
         self,
@@ -532,46 +638,54 @@ class RunAssetExtractionUseCase:
             *result.artifacts,
         ]
         stored: list[ExtractionArtifact] = []
+        written_storage_keys: list[str] = []
         now = self._clock.now()
-        for candidate in candidates:
-            if not candidate.content:
-                continue
-            digest = sha256(candidate.content).hexdigest()
-            artifact = ExtractionArtifact.create(
-                artifact_id=ExtractionArtifactId(self._ids.new_id("artifact")),
-                job_id=job.id,
-                asset_id=job.asset_id,
-                artifact_type=candidate.artifact_type,
-                storage_backend=self._artifact_storage_backend,
-                storage_key=artifact_storage_key(
-                    space_id=str(job.space_id),
-                    memory_scope_id=str(job.memory_scope_id),
-                    job_id=str(job.id),
-                    digest=digest,
-                    filename=candidate.filename,
-                ),
-                sha256_hex=digest,
-                byte_size=len(candidate.content),
-                now=now,
-                metadata={
-                    "content_type": candidate.content_type,
-                    "filename": candidate.filename,
-                    **candidate.metadata,
-                },
-            )
-            await self._blob_storage.write_bytes(
-                storage_key=artifact.storage_key,
-                content=candidate.content,
-            )
-            stored.append(artifact)
-        if stored:
-            async with self._uow_factory() as uow:
-                persisted = []
-                for artifact in stored:
-                    persisted.append(await uow.asset_extractions.create_artifact(artifact))
-                await uow.commit()
-            return persisted
-        return []
+        try:
+            for candidate in candidates:
+                if not candidate.content:
+                    continue
+                digest = sha256(candidate.content).hexdigest()
+                artifact = ExtractionArtifact.create(
+                    artifact_id=ExtractionArtifactId(self._ids.new_id("artifact")),
+                    job_id=job.id,
+                    asset_id=job.asset_id,
+                    artifact_type=candidate.artifact_type,
+                    storage_backend=self._artifact_storage_backend,
+                    storage_key=artifact_storage_key(
+                        space_id=str(job.space_id),
+                        memory_scope_id=str(job.memory_scope_id),
+                        job_id=str(job.id),
+                        digest=digest,
+                        filename=candidate.filename,
+                    ),
+                    sha256_hex=digest,
+                    byte_size=len(candidate.content),
+                    now=now,
+                    metadata={
+                        "content_type": candidate.content_type,
+                        "filename": candidate.filename,
+                        **candidate.metadata,
+                    },
+                )
+                await self._blob_storage.write_bytes(
+                    storage_key=artifact.storage_key,
+                    content=candidate.content,
+                )
+                written_storage_keys.append(artifact.storage_key)
+                stored.append(artifact)
+            if stored:
+                async with self._uow_factory() as uow:
+                    persisted = []
+                    for artifact in stored:
+                        persisted.append(await uow.asset_extractions.create_artifact(artifact))
+                    await uow.commit()
+                return persisted
+            return []
+        except Exception:
+            for storage_key in written_storage_keys:
+                with suppress(Exception):
+                    await self._blob_storage.delete(storage_key=storage_key)
+            raise
 
     async def _mark_succeeded(
         self,
@@ -585,7 +699,12 @@ class RunAssetExtractionUseCase:
             if current is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
             if current.status != AssetExtractionStatus.RUNNING:
-                current = current.mark_running(now=self._clock.now())
+                now = self._clock.now()
+                current = current.mark_running(
+                    now=now,
+                    lease_owner=f"asset-extraction:{job.id}",
+                    lease_expires_at=now + self._execution_lease,
+                )
             succeeded = current.mark_succeeded(
                 now=self._clock.now(),
                 result_document_ids=result_document_ids,
@@ -725,11 +844,25 @@ class RunAssetExtractionUseCase:
             current = await uow.asset_extractions.get_by_id(str(job.id))
             if current is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
+            now = self._clock.now()
+            retry_disposition = self._retry_policy.disposition_for_code(code)
+            retry_after_at = self._retry_policy.retry_after(
+                now=now,
+                attempt_count=current.attempt_count,
+                code=code,
+            )
+            retry_metadata = {
+                "retry_disposition": retry_disposition.value,
+                "retry_after_at": retry_after_at.isoformat() if retry_after_at else None,
+                "retry_max_attempts": self._retry_policy.max_attempts,
+            }
             failed = current.mark_failed(
-                now=self._clock.now(),
+                now=now,
                 code=code,
                 message=message,
-                metadata=metadata,
+                metadata={**dict(metadata or {}), **retry_metadata},
+                retry_disposition=retry_disposition,
+                retry_after_at=retry_after_at,
             )
             saved = await uow.asset_extractions.save(failed)
             await uow.commit()
@@ -873,3 +1006,22 @@ def _safe_exception_code(exc: Exception) -> str:
 def _safe_exception_message(exc: Exception) -> str:
     text = str(exc).strip() or exc.__class__.__name__
     return text[:500]
+
+
+def _is_permanent_error_code(code: str) -> bool:
+    normalized = code.lower()
+    permanent_markers = (
+        "unsupported",
+        "too_long",
+        "too_large",
+        "encrypted",
+        "dependency_missing",
+        "not_installed",
+        "missing_api_key",
+        "external_ai_disabled",
+        "empty_text",
+        "empty_output",
+        "no_text",
+        "no_speech",
+    )
+    return any(marker in normalized for marker in permanent_markers)

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import time
 from dataclasses import dataclass
 
 from memo_stack_adapters.extraction.content import (
@@ -101,6 +102,22 @@ def test_docling_engine_ignores_standard_local_profile() -> None:
 
     assert supported.supported is False
     assert supported.reason == "parser_profile_not_docling"
+
+
+def test_docling_engine_timeout_returns_safe_unsupported_result() -> None:
+    engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _SlowDoclingConverter())
+    request = _request(
+        parser_profile="standard_docling",
+        detected_content_type="application/pdf",
+        content=b"%PDF slow fake bytes",
+        parser_timeout_seconds=0.001,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.docling_timeout"
+    assert result.technical_metadata["parser_timeout_seconds"] == 0.001
 
 
 def test_router_falls_back_from_docling_failure_to_pdf_text() -> None:
@@ -229,6 +246,45 @@ def test_openai_vision_engine_missing_key_allows_fallback() -> None:
     assert result.status == "unsupported"
     assert result.safe_error_code == "asset_extraction.vision_missing_api_key"
     assert result.diagnostics["fallback_allowed"] is True
+
+
+def test_openai_vision_engine_rejects_image_over_pixel_limit() -> None:
+    engine = OpenAIVisionImageExtractionEngine(
+        api_key=None,
+        model="gpt-4.1-mini",
+        client_factory=lambda: _FakeVisionClient(),
+    )
+    request = _request(
+        parser_profile="standard_vision",
+        detected_content_type="image/png",
+        content=_sample_png_bytes(),
+        filename="memory-screenshot.png",
+        enable_external_ai=True,
+        max_image_pixels=0,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.vision_image_too_large"
+    assert result.technical_metadata["max_image_pixels"] == 0
+
+
+def test_local_image_engine_rejects_image_over_pixel_limit() -> None:
+    engine = ImageMetadataExtractionEngine()
+    request = _request(
+        parser_profile="standard_local",
+        detected_content_type="image/png",
+        content=_sample_png_bytes(),
+        filename="memory-screenshot.png",
+        max_image_pixels=0,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.image_too_large"
+    assert result.technical_metadata["max_image_pixels"] == 0
 
 
 def test_openai_speech_transcription_adapter_transcribes_audio() -> None:
@@ -416,6 +472,9 @@ def _request(
     content: bytes,
     filename: str = "asset.pdf",
     enable_external_ai: bool = False,
+    parser_timeout_seconds: float = 300,
+    subprocess_timeout_seconds: int = 60,
+    max_image_pixels: int = 50_000_000,
 ) -> ExtractionRequest:
     return ExtractionRequest(
         job_id="extract_1",
@@ -429,6 +488,9 @@ def _request(
         parser_profile=parser_profile,
         limits=ExtractionLimits(
             max_bytes=10_000_000,
+            parser_timeout_seconds=parser_timeout_seconds,
+            subprocess_timeout_seconds=subprocess_timeout_seconds,
+            max_image_pixels=max_image_pixels,
             enable_external_ai=enable_external_ai,
         ),
     )
@@ -490,6 +552,12 @@ class _FakeDoclingConverter:
 class _FailingDoclingConverter:
     def convert(self, source_path: str) -> object:
         raise RuntimeError("docling failed")
+
+
+class _SlowDoclingConverter:
+    def convert(self, source_path: str, **kwargs) -> object:
+        time.sleep(0.05)
+        return _FakeDoclingConversion(document=_FakeDoclingDocument(), errors=[])
 
 
 @dataclass(frozen=True)

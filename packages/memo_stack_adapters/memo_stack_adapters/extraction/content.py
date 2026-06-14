@@ -320,12 +320,27 @@ class ImageMetadataExtractionEngine(ExtractionEngine):
                 code="asset_extraction.image_parse_failed",
                 message="Image could not be read locally",
             )
+        if image.width * image.height > request.limits.max_image_pixels:
+            return _unsupported(
+                request,
+                parser_name=self.name,
+                parser_version=self.version,
+                code="asset_extraction.image_too_large",
+                message="Image pixel count exceeds extraction limit",
+                metadata={
+                    "image_width": image.width,
+                    "image_height": image.height,
+                    "image_pixels": image.width * image.height,
+                    "max_image_pixels": request.limits.max_image_pixels,
+                },
+            )
 
         ocr_result = None
         if request.limits.enable_ocr:
             ocr_result = extract_tesseract_ocr_blocks(
                 content=request.content,
                 extension=_extension(request.filename),
+                timeout_seconds=request.limits.subprocess_timeout_seconds,
             )
         ocr_status = ocr_result.status if ocr_result is not None else "disabled"
         ocr_regions = ocr_result.regions if ocr_result is not None else ()

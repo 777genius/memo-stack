@@ -55,7 +55,21 @@ class DoclingDocumentExtractionEngine(ExtractionEngine):
         return SupportDecision(False, reason="docling_not_installed")
 
     async def extract(self, request: ExtractionRequest) -> ExtractionResult:
-        return await asyncio.to_thread(self._extract_sync, request)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._extract_sync, request),
+                timeout=max(0.001, float(request.limits.parser_timeout_seconds)),
+            )
+        except TimeoutError:
+            return _fallback_unsupported(
+                request,
+                code="asset_extraction.docling_timeout",
+                message="Docling document conversion timed out",
+                parser_version=_docling_version(),
+                metadata={
+                    "parser_timeout_seconds": request.limits.parser_timeout_seconds,
+                },
+            )
 
     def _extract_sync(self, request: ExtractionRequest) -> ExtractionResult:
         converter_factory = self._converter_factory or _load_docling_converter_factory()
@@ -216,6 +230,7 @@ def _fallback_unsupported(
     code: str,
     message: str,
     parser_version: str | None,
+    metadata: dict[str, object] | None = None,
 ) -> ExtractionResult:
     result = _unsupported(
         request,
@@ -223,6 +238,7 @@ def _fallback_unsupported(
         parser_version=parser_version,
         code=code,
         message=message,
+        metadata=metadata,
     )
     return replace(result, diagnostics={**result.diagnostics, "fallback_allowed": True})
 

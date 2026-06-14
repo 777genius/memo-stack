@@ -152,6 +152,9 @@ class MemoStackAssetsMixin:
     def retry_asset_extraction(self, job_id: str) -> dict[str, Any]:
         return self._request("POST", f"/v1/asset-extractions/{job_id}/retry")
 
+    def cancel_asset_extraction(self, job_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/v1/asset-extractions/{job_id}/cancel")
+
     def download_extraction_artifact(self, artifact_id: str) -> bytes:
         return self._request_bytes(
             "GET",

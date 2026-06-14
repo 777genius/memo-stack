@@ -205,6 +205,48 @@ def test_text_asset_extraction_indexes_document_chunks_and_artifacts(tmp_path: P
         assert b"quick capture attached to memory scopes" in downloaded.content
 
 
+def test_pending_asset_extraction_can_be_canceled_before_worker(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "cancel-me.txt",
+                "extract": "true",
+            },
+            content=b"This extraction should be canceled before the worker reads it.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        canceled = client.post(
+            f"/v1/asset-extractions/{extraction_id}/cancel",
+            headers=auth_headers(),
+        )
+        assert canceled.status_code == 202, canceled.text
+        canceled_data = canceled.json()["data"]
+        assert canceled_data["status"] == "canceled"
+        assert canceled_data["safe_error_code"] == "asset_extraction.canceled"
+        assert canceled_data["progress"]["terminal"] is True
+        assert canceled_data["execution"]["cancellation_requested_at"] is not None
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "canceled"
+        assert extracted["result_document_ids"] == []
+        assert extracted["artifacts"] == []
+
+
 def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> None:
     marker = "PDF_MEMORY_SCOPE_DECISION"
     with make_client(tmp_path) as client:

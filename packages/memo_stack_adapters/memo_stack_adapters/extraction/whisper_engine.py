@@ -63,7 +63,21 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
         return SupportDecision(False, reason="faster_whisper_not_installed")
 
     async def extract(self, request: ExtractionRequest) -> ExtractionResult:
-        return await asyncio.to_thread(self._extract_sync, request)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._extract_sync, request),
+                timeout=max(0.001, float(request.limits.parser_timeout_seconds)),
+            )
+        except TimeoutError:
+            return _fallback_unsupported(
+                request,
+                code="asset_extraction.asr_timeout",
+                message="Local ASR transcription timed out",
+                parser_version=_faster_whisper_version(),
+                metadata={
+                    "parser_timeout_seconds": request.limits.parser_timeout_seconds,
+                },
+            )
 
     def _extract_sync(self, request: ExtractionRequest) -> ExtractionResult:
         probe = probe_media_with_ffprobe(request)

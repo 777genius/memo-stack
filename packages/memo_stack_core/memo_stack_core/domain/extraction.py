@@ -29,6 +29,11 @@ class AssetExtractionStatus(StrEnum):
     STALE = "stale"
 
 
+class ExtractionRetryDisposition(StrEnum):
+    RETRYABLE = "retryable"
+    PERMANENT = "permanent"
+
+
 class ExtractionArtifactType(StrEnum):
     EXTRACTED_JSON = "extracted_json"
     NORMALIZED_JSON = "normalized_json"
@@ -63,6 +68,12 @@ class AssetExtractionJob:
     updated_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    retry_after_at: datetime | None = None
+    cancellation_requested_at: datetime | None = None
+    retry_disposition: ExtractionRetryDisposition | None = None
 
     @classmethod
     def create(
@@ -104,10 +115,17 @@ class AssetExtractionJob:
             updated_at=now,
         )
 
-    def mark_running(self, *, now: datetime) -> AssetExtractionJob:
+    def mark_running(
+        self,
+        *,
+        now: datetime,
+        lease_owner: str | None = None,
+        lease_expires_at: datetime | None = None,
+    ) -> AssetExtractionJob:
         if self.status in {
             AssetExtractionStatus.SUCCEEDED,
             AssetExtractionStatus.CANCELED,
+            AssetExtractionStatus.UNSUPPORTED,
         }:
             raise MemoryValidationError("Asset extraction job cannot run from current status")
         return replace(
@@ -118,6 +136,12 @@ class AssetExtractionJob:
             safe_error_message=None,
             started_at=now,
             finished_at=None,
+            lease_owner=_optional(lease_owner, max_chars=120),
+            lease_expires_at=lease_expires_at,
+            heartbeat_at=now,
+            retry_after_at=None,
+            retry_disposition=None,
+            cancellation_requested_at=None,
             updated_at=now,
         )
 
@@ -130,6 +154,51 @@ class AssetExtractionJob:
         return replace(
             self,
             metadata=_safe_metadata({**dict(self.metadata), **dict(metadata)}),
+            updated_at=now,
+        )
+
+    def record_heartbeat(
+        self,
+        *,
+        now: datetime,
+        lease_expires_at: datetime | None = None,
+        metadata: Mapping[str, object] | None = None,
+    ) -> AssetExtractionJob:
+        if self.status != AssetExtractionStatus.RUNNING:
+            raise MemoryValidationError("Only running extraction jobs can heartbeat")
+        return replace(
+            self,
+            heartbeat_at=now,
+            lease_expires_at=lease_expires_at or self.lease_expires_at,
+            metadata=_safe_metadata({**dict(self.metadata), **dict(metadata or {})}),
+            updated_at=now,
+        )
+
+    def request_cancellation(self, *, now: datetime) -> AssetExtractionJob:
+        if self.status in {
+            AssetExtractionStatus.SUCCEEDED,
+            AssetExtractionStatus.FAILED,
+            AssetExtractionStatus.UNSUPPORTED,
+            AssetExtractionStatus.CANCELED,
+            AssetExtractionStatus.STALE,
+        }:
+            return self
+        if self.status == AssetExtractionStatus.PENDING:
+            return self.mark_canceled(
+                now=now,
+                code="asset_extraction.canceled",
+                message="Extraction was canceled before worker execution",
+            )
+        return replace(
+            self,
+            cancellation_requested_at=now,
+            metadata=_safe_metadata(
+                {
+                    **dict(self.metadata),
+                    "processing_stage": "cancel_requested",
+                    "progress_message": "Cancellation requested",
+                }
+            ),
             updated_at=now,
         )
 
@@ -165,6 +234,12 @@ class AssetExtractionJob:
             ),
             safe_error_code=None,
             safe_error_message=None,
+            lease_owner=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            retry_after_at=None,
+            retry_disposition=None,
+            cancellation_requested_at=None,
             finished_at=now,
             updated_at=now,
         )
@@ -176,6 +251,8 @@ class AssetExtractionJob:
         code: str,
         message: str,
         metadata: Mapping[str, object] | None = None,
+        retry_disposition: ExtractionRetryDisposition = ExtractionRetryDisposition.RETRYABLE,
+        retry_after_at: datetime | None = None,
     ) -> AssetExtractionJob:
         if self.status == AssetExtractionStatus.SUCCEEDED:
             raise MemoryValidationError("Succeeded extraction job cannot fail")
@@ -193,6 +270,11 @@ class AssetExtractionJob:
                     "progress_message": "Extraction failed",
                 }
             ),
+            lease_owner=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            retry_after_at=retry_after_at,
+            retry_disposition=retry_disposition,
             finished_at=now,
             updated_at=now,
         )
@@ -221,6 +303,46 @@ class AssetExtractionJob:
                     "progress_message": "Asset type is unsupported",
                 }
             ),
+            lease_owner=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            retry_after_at=None,
+            retry_disposition=ExtractionRetryDisposition.PERMANENT,
+            cancellation_requested_at=None,
+            finished_at=now,
+            updated_at=now,
+        )
+
+    def mark_canceled(
+        self,
+        *,
+        now: datetime,
+        code: str,
+        message: str,
+        metadata: Mapping[str, object] | None = None,
+    ) -> AssetExtractionJob:
+        if self.status == AssetExtractionStatus.SUCCEEDED:
+            raise MemoryValidationError("Succeeded extraction job cannot be canceled")
+        return replace(
+            self,
+            status=AssetExtractionStatus.CANCELED,
+            safe_error_code=_required(code, "safe_error_code", max_chars=120),
+            safe_error_message=_optional(message, max_chars=MAX_EXTRACTION_ERROR_CHARS),
+            metadata=_safe_metadata(
+                {
+                    **dict(self.metadata),
+                    **dict(metadata or {}),
+                    "processing_stage": "canceled",
+                    "progress_percent": 100,
+                    "progress_message": "Extraction canceled",
+                }
+            ),
+            lease_owner=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            retry_after_at=None,
+            retry_disposition=ExtractionRetryDisposition.PERMANENT,
+            cancellation_requested_at=now,
             finished_at=now,
             updated_at=now,
         )
@@ -237,6 +359,12 @@ class AssetExtractionJob:
             safe_error_message=None,
             started_at=None,
             finished_at=None,
+            lease_owner=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            retry_after_at=None,
+            cancellation_requested_at=None,
+            retry_disposition=None,
             updated_at=now,
         )
 

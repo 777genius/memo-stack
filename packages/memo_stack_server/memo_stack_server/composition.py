@@ -24,6 +24,7 @@ from memo_stack_core.application import (
     BuildContextUseCase,
     BuildMemoryDigestUseCase,
     BuildMemoryInsightsUseCase,
+    CancelAssetExtractionUseCase,
     ConsolidateCaptureUseCase,
     CreateAssetUseCase,
     CreateContextLinkUseCase,
@@ -155,6 +156,7 @@ class Container:
     list_asset_extractions: ListAssetExtractionsUseCase
     read_extraction_artifact_bytes: ReadExtractionArtifactBytesUseCase
     retry_asset_extraction: RetryAssetExtractionUseCase
+    cancel_asset_extraction: CancelAssetExtractionUseCase
     run_asset_extraction: RunAssetExtractionUseCase
     suggest_context_links: SuggestContextLinksUseCase
     create_context_link: CreateContextLinkUseCase
@@ -321,6 +323,9 @@ def build_container(settings: Settings | None = None) -> Container:
         max_media_seconds=resolved_settings.extraction_max_media_seconds,
         max_output_chars=resolved_settings.extraction_max_output_chars,
         max_tables=resolved_settings.extraction_max_tables,
+        parser_timeout_seconds=resolved_settings.extraction_parser_timeout_seconds,
+        subprocess_timeout_seconds=resolved_settings.extraction_subprocess_timeout_seconds,
+        max_image_pixels=resolved_settings.extraction_max_image_pixels,
         enable_ocr=resolved_settings.extraction_ocr_enabled,
         enable_external_ai=resolved_settings.extraction_external_ai_enabled,
     )
@@ -342,6 +347,10 @@ def build_container(settings: Settings | None = None) -> Container:
         uow_factory=uow_factory,
         clock=clock,
     )
+    cancel_asset_extraction = CancelAssetExtractionUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+    )
     run_asset_extraction = RunAssetExtractionUseCase(
         uow_factory=uow_factory,
         blob_storage=blob_storage,
@@ -360,6 +369,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         ids=ids,
         limits=extraction_limits,
+        execution_lease_seconds=resolved_settings.extraction_execution_lease_seconds,
     )
     get_document = GetDocumentUseCase(uow_factory=uow_factory)
     list_document_chunks = ListDocumentChunksUseCase(uow_factory=uow_factory)
@@ -475,6 +485,7 @@ def build_container(settings: Settings | None = None) -> Container:
         list_asset_extractions=list_asset_extractions,
         read_extraction_artifact_bytes=read_extraction_artifact_bytes,
         retry_asset_extraction=retry_asset_extraction,
+        cancel_asset_extraction=cancel_asset_extraction,
         run_asset_extraction=run_asset_extraction,
         suggest_context_links=suggest_context_links,
         create_context_link=create_context_link,

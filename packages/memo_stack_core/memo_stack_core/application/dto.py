@@ -117,6 +117,7 @@ class RequestAssetExtractionCommand:
 class RunAssetExtractionCommand:
     job_id: str
     force: bool = False
+    worker_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,11 @@ class GetExtractionArtifactQuery:
 
 @dataclass(frozen=True)
 class RetryAssetExtractionCommand:
+    job_id: str
+
+
+@dataclass(frozen=True)
+class CancelAssetExtractionCommand:
     job_id: str
 
 
