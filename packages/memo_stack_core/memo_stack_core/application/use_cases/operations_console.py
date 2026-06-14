@@ -119,6 +119,33 @@ def _diagnostics(
                 "no visible candidate matched the source text strongly enough, the source "
                 "was not persisted, or an active link already exists."
             ),
+            "no_suggestion_reasons": (
+                {
+                    "code": "no_visible_same_scope_candidate",
+                    "label": (
+                        "No visible same-scope memory matched the source text "
+                        "strongly enough."
+                    ),
+                },
+                {
+                    "code": "source_not_persisted",
+                    "label": (
+                        "The source capture or asset may not be persisted with a "
+                        "stable id yet."
+                    ),
+                },
+                {
+                    "code": "already_linked",
+                    "label": "An active link may already exist, so duplicates are hidden.",
+                },
+                {
+                    "code": "not_pending",
+                    "label": (
+                        "Suggestions that were approved, rejected, expired, or "
+                        "superseded are outside the pending queue."
+                    ),
+                },
+            ),
         },
         "extraction_observability": {
             "stored_fields": (

@@ -328,15 +328,51 @@ class _LinksTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (suggestions.isEmpty) {
       final note = _noSuggestionNote(console);
+      final reasons = _noSuggestionReasons(console);
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            note,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                note,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              if (reasons.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final reason in reasons)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            reason,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
           ),
         ),
       );
@@ -837,6 +873,21 @@ String _noSuggestionNote(MemoryOperationsConsole? console) {
     if (note != null && note.isNotEmpty) return note;
   }
   return 'No pending links. New suggestions appear after saved captures or files are matched to visible same-scope memories.';
+}
+
+List<String> _noSuggestionReasons(MemoryOperationsConsole? console) {
+  final explainability = console?.diagnostics['link_suggestion_explainability'];
+  if (explainability is! Map) return const <String>[];
+  final raw = explainability['no_suggestion_reasons'];
+  if (raw is! List) return const <String>[];
+  return raw
+      .map((item) {
+        if (item is Map) return item['label']?.toString().trim() ?? '';
+        return item.toString().trim();
+      })
+      .where((item) => item.isNotEmpty)
+      .take(4)
+      .toList(growable: false);
 }
 
 String _timeLabel(DateTime value) {

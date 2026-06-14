@@ -380,6 +380,15 @@ def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path)
         assert data["diagnostics"]["extraction_retryable_count"] == 1
         assert data["diagnostics"]["link_suggestion_pending_count"] >= 1
         assert "no_suggestion_note" in data["diagnostics"]["link_suggestion_explainability"]
+        no_suggestion_reasons = data["diagnostics"]["link_suggestion_explainability"][
+            "no_suggestion_reasons"
+        ]
+        assert [item["code"] for item in no_suggestion_reasons] == [
+            "no_visible_same_scope_candidate",
+            "source_not_persisted",
+            "already_linked",
+            "not_pending",
+        ]
         assert data["extraction_jobs"][0]["id"] == extraction_id
         assert data["extraction_jobs"][0]["execution"]["cancellation_requested_at"]
         saved_suggestion = next(

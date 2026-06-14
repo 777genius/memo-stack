@@ -247,6 +247,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No pending links'), findsOneWidget);
+    expect(find.textContaining('No visible same-scope memory'), findsOneWidget);
   });
 
   testWidgets('sidebar reviews pending context link suggestions', (
@@ -812,6 +813,17 @@ class _UxFakeChatRepository implements ChatRepository {
       diagnostics: const <String, dynamic>{
         'link_suggestion_explainability': {
           'no_suggestion_note': 'No pending links',
+          'no_suggestion_reasons': [
+            {
+              'code': 'no_visible_same_scope_candidate',
+              'label':
+                  'No visible same-scope memory matched the source text strongly enough.',
+            },
+            {
+              'code': 'already_linked',
+              'label': 'An active link may already exist.',
+            },
+          ],
         },
       },
     );
