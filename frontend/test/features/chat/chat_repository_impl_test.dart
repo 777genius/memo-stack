@@ -171,6 +171,7 @@ void main() {
         ['asset-1'],
         <String>[],
       ]);
+      expect(rest.suggestPersistValues, [true, true]);
 
       await sub.cancel();
       await repo.dispose();
@@ -376,6 +377,7 @@ class _SuggestionFailingRestClient extends BackendRestClient {
   int uploadCount = 0;
   int captureCount = 0;
   final captureAssetIds = <List<String>>[];
+  final suggestPersistValues = <bool>[];
 
   @override
   Future<Map<String, dynamic>> uploadBytes(
@@ -415,7 +417,9 @@ class _SuggestionFailingRestClient extends BackendRestClient {
     required String text,
     required String sourceType,
     required String sourceId,
+    bool persist = false,
   }) async {
+    suggestPersistValues.add(persist);
     throw DioException(
       requestOptions: RequestOptions(path: '/v1/link-suggestions'),
       type: DioExceptionType.connectionError,

@@ -190,6 +190,39 @@ void main() {
     );
   });
 
+  testWidgets('sidebar reviews pending context link suggestions', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshContextLinkSuggestions();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('context_link_review_panel')),
+        findsOneWidget);
+    expect(find.text('Q3 roadmap'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('context_link_suggestion_approve_ctxlinksug_1'),
+      ),
+    );
+    await tester.pump();
+
+    expect(repo.reviewedSuggestions, ['ctxlinksug-1:approve']);
+    expect(store.contextLinkSuggestions, isEmpty);
+  });
+
   testWidgets('sidebar opens extraction artifact through file opener service', (
     tester,
   ) async {
@@ -521,8 +554,11 @@ class _UxFakeChatRepository implements ChatRepository {
   List<AssetExtractionJob> extractions = const <AssetExtractionJob>[];
   List<MemoryCapture> captures = const <MemoryCapture>[];
   List<MemoryContextLink> contextLinks = const <MemoryContextLink>[];
+  List<MemoryContextLinkSuggestion> contextLinkSuggestions =
+      const <MemoryContextLinkSuggestion>[];
   int listExtractionCalls = 0;
   final downloadedArtifactIds = <String>[];
+  final reviewedSuggestions = <String>[];
   final Map<String, MemoryScope> scopesByRef = {
     'default': _scope('scope-default', 'default', 'Default'),
   };
@@ -711,6 +747,51 @@ class _UxFakeChatRepository implements ChatRepository {
         .take(limit)
         .toList(growable: false);
   }
+
+  @override
+  Future<List<MemoryContextLinkSuggestion>> listContextLinkSuggestions({
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    return contextLinkSuggestions
+        .where((item) => item.status == status)
+        .take(limit)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<MemoryContextLinkSuggestion> reviewContextLinkSuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+  }) async {
+    reviewedSuggestions.add('$suggestionId:$action');
+    final suggestion = contextLinkSuggestions.firstWhere(
+      (item) => item.id == suggestionId,
+    );
+    contextLinkSuggestions = contextLinkSuggestions
+        .where((item) => item.id != suggestionId)
+        .toList(growable: false);
+    return MemoryContextLinkSuggestion.fromMap({
+      'id': suggestion.id,
+      'space_id': suggestion.spaceId,
+      'memory_scope_id': suggestion.memoryScopeId,
+      'source_type': suggestion.sourceType,
+      'source_id': suggestion.sourceId,
+      'target_type': suggestion.targetType,
+      'target_id': suggestion.targetId,
+      'relation_type': suggestion.relationType,
+      'confidence': suggestion.confidence,
+      'reason': suggestion.reason,
+      'score': suggestion.score,
+      'status': action == 'approve' ? 'approved' : 'rejected',
+      'metadata': suggestion.metadata,
+      'created_at': suggestion.createdAt.toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+      'reviewed_at': DateTime.now().toIso8601String(),
+      'review_reason': reason,
+    });
+  }
 }
 
 class _OpenRequest {
@@ -812,6 +893,30 @@ MemoryContextLink _link(String id, {required String sourceId}) {
     'created_at': now.toIso8601String(),
     'updated_at': now.toIso8601String(),
   });
+}
+
+MemoryContextLinkSuggestion _suggestion(String id) {
+  final now = DateTime.now();
+  return MemoryContextLinkSuggestion(
+    id: id,
+    spaceId: 'space-1',
+    memoryScopeId: 'scope-default',
+    sourceType: 'capture',
+    sourceId: 'capture-1',
+    targetType: 'fact',
+    targetId: 'fact-1',
+    relationType: 'related_to',
+    confidence: 'high',
+    reason: 'matching text',
+    score: 88,
+    status: 'pending',
+    metadata: const {
+      'target_label': 'Q3 roadmap',
+      'target_preview': 'Alex confirmed Q3 rollout.',
+    },
+    createdAt: now,
+    updatedAt: now,
+  );
 }
 
 AssetExtractionJob _job({

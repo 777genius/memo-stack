@@ -251,6 +251,7 @@ class BackendRestClient {
     required String text,
     required String sourceType,
     required String sourceId,
+    bool persist = false,
   }) async {
     final resp = await _dio.post<Map<String, dynamic>>(
       '/v1/link-suggestions',
@@ -262,6 +263,7 @@ class BackendRestClient {
         'source_type': sourceType,
         'source_id': sourceId,
         'limit': 10,
+        'persist': persist,
       },
     );
     final data = _data(resp.data);
@@ -299,6 +301,45 @@ class BackendRestClient {
       },
     );
     return _data(resp.data);
+  }
+
+  Future<List<Map<String, dynamic>>> listContextLinkSuggestions({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    final resp = await _dio.get<Map<String, dynamic>>(
+      '/v1/context-link-suggestions',
+      queryParameters: {
+        'space_slug': spaceSlug,
+        'memory_scope_external_ref': memoryScopeExternalRef,
+        'status': status,
+        'limit': limit,
+      },
+    );
+    return _listData(resp.data);
+  }
+
+  Future<Map<String, dynamic>> reviewContextLinkSuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+  }) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/context-link-suggestions/$suggestionId/review',
+      data: {
+        'action': action,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+    final data = _data(resp.data);
+    final suggestion = data['suggestion'];
+    if (suggestion is Map<String, dynamic>) return suggestion;
+    if (suggestion is Map) {
+      return suggestion.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const <String, dynamic>{};
   }
 
   Future<List<Map<String, dynamic>>> listContextLinks({

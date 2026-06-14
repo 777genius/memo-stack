@@ -172,6 +172,16 @@ abstract class ChatStoreBase with Store {
   @observable
   String? memoryCaptureError;
 
+  final ObservableList<MemoryContextLinkSuggestion> contextLinkSuggestions =
+      ObservableList.of([]);
+
+  final Observable<bool> contextLinkSuggestionsLoading = Observable(false);
+
+  final Observable<String?> contextLinkSuggestionError = Observable(null);
+
+  final ObservableMap<String, bool> contextLinkSuggestionReviewing =
+      ObservableMap.of({});
+
   final ObservableMap<String, ObservableList<ChatMessage>> _messagesByChat =
       ObservableMap.of({});
 
@@ -222,6 +232,7 @@ abstract class ChatStoreBase with Store {
     } finally {
       await refreshAssetExtractions();
       await refreshMemoryCaptures();
+      await refreshContextLinkSuggestions(showLoading: false);
     }
   }
 
@@ -275,19 +286,31 @@ abstract class ChatStoreBase with Store {
     final reasons = (candidate['reasons'] is List)
         ? (candidate['reasons'] as List).map((item) => item.toString()).toList()
         : const <String>[];
-    final confidence =
-        candidate['tier']?.toString() == 'likely' ? 'high' : 'medium';
+    final reason = reasons.isEmpty ? 'selected by user' : reasons.join(', ');
+    final suggestionId = candidate['suggestion_id']?.toString() ?? '';
     try {
-      await repo.createContextLink(
-        sourceType: sourceType,
-        sourceId: sourceId,
-        targetType: targetType,
-        targetId: targetId,
-        relationType: 'related_to',
-        confidence: confidence,
-        reason: reasons.isEmpty ? 'selected by user' : reasons.join(', '),
-      );
+      if (suggestionId.isNotEmpty) {
+        await repo.reviewContextLinkSuggestion(
+          suggestionId: suggestionId,
+          action: 'approve',
+          reason: reason,
+        );
+        _removeContextLinkSuggestion(suggestionId);
+      } else {
+        final confidence =
+            candidate['tier']?.toString() == 'likely' ? 'high' : 'medium';
+        await repo.createContextLink(
+          sourceType: sourceType,
+          sourceId: sourceId,
+          targetType: targetType,
+          targetId: targetId,
+          relationType: 'related_to',
+          confidence: confidence,
+          reason: reason,
+        );
+      }
       unawaited(refreshMemoryCaptures(showLoading: false));
+      unawaited(refreshContextLinkSuggestions(showLoading: false));
     } catch (e) {
       _appendMessageTo(
         activeChatId,
@@ -349,6 +372,7 @@ abstract class ChatStoreBase with Store {
     }
     await refreshAssetExtractions();
     await refreshMemoryCaptures();
+    await refreshContextLinkSuggestions();
   }
 
   @action
@@ -412,6 +436,65 @@ abstract class ChatStoreBase with Store {
       if (showLoading && !_disposed) {
         memoryCapturesLoading = false;
       }
+    }
+  }
+
+  Future<void> refreshContextLinkSuggestions({bool showLoading = true}) async {
+    if (_disposed) return;
+    if (showLoading) {
+      runInAction(() => contextLinkSuggestionsLoading.value = true);
+    }
+    runInAction(() => contextLinkSuggestionError.value = null);
+    try {
+      final suggestions = await repo.listContextLinkSuggestions(limit: 20);
+      if (_disposed) return;
+      runInAction(() {
+        contextLinkSuggestions
+          ..clear()
+          ..addAll(suggestions.where((item) => item.isPending));
+      });
+    } catch (e) {
+      if (_disposed) return;
+      runInAction(() {
+        contextLinkSuggestionError.value = 'Link suggestions unavailable: $e';
+      });
+    } finally {
+      if (showLoading && !_disposed) {
+        runInAction(() => contextLinkSuggestionsLoading.value = false);
+      }
+    }
+  }
+
+  Future<void> reviewContextLinkSuggestion(
+    MemoryContextLinkSuggestion suggestion, {
+    required bool approve,
+  }) async {
+    final action = approve ? 'approve' : 'reject';
+    runInAction(() {
+      contextLinkSuggestionReviewing[suggestion.id] = true;
+      contextLinkSuggestionError.value = null;
+    });
+    try {
+      final reviewed = await repo.reviewContextLinkSuggestion(
+        suggestionId: suggestion.id,
+        action: action,
+        reason: approve ? 'accepted from review inbox' : 'rejected from inbox',
+      );
+      runInAction(() {
+        _removeContextLinkSuggestion(suggestion.id);
+        if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
+      });
+      if (approve) {
+        unawaited(refreshMemoryCaptures(showLoading: false));
+      }
+    } catch (e) {
+      runInAction(() {
+        contextLinkSuggestionError.value = 'Review failed: $e';
+      });
+    } finally {
+      runInAction(() {
+        contextLinkSuggestionReviewing.remove(suggestion.id);
+      });
     }
   }
 
@@ -610,6 +693,7 @@ abstract class ChatStoreBase with Store {
     } catch (_) {}
     unawaited(refreshAssetExtractions());
     unawaited(refreshMemoryCaptures());
+    unawaited(refreshContextLinkSuggestions());
     return id;
   }
 
@@ -655,6 +739,7 @@ abstract class ChatStoreBase with Store {
     _restoreContext(id, loaded);
     await refreshAssetExtractions();
     await refreshMemoryCaptures();
+    await refreshContextLinkSuggestions();
   }
 
   @action
@@ -697,6 +782,7 @@ abstract class ChatStoreBase with Store {
         _resetAssetExtractionsForScopeSwitch();
         unawaited(refreshAssetExtractions());
         unawaited(refreshMemoryCaptures());
+        unawaited(refreshContextLinkSuggestions());
       } else {
         final nid = createNewChat();
         activeChatId = nid;
@@ -708,6 +794,7 @@ abstract class ChatStoreBase with Store {
         _resetAssetExtractionsForScopeSwitch();
         unawaited(refreshAssetExtractions());
         unawaited(refreshMemoryCaptures());
+        unawaited(refreshContextLinkSuggestions());
       }
     }
   }
@@ -877,6 +964,20 @@ abstract class ChatStoreBase with Store {
     _scheduleAssetExtractionPollingIfNeeded();
   }
 
+  void _upsertContextLinkSuggestion(MemoryContextLinkSuggestion suggestion) {
+    final idx =
+        contextLinkSuggestions.indexWhere((item) => item.id == suggestion.id);
+    if (idx >= 0) {
+      contextLinkSuggestions[idx] = suggestion;
+    } else {
+      contextLinkSuggestions.insert(0, suggestion);
+    }
+  }
+
+  void _removeContextLinkSuggestion(String suggestionId) {
+    contextLinkSuggestions.removeWhere((item) => item.id == suggestionId);
+  }
+
   void _scheduleAssetExtractionPollingIfNeeded() {
     _assetExtractionPollTimer?.cancel();
     _assetExtractionPollTimer = null;
@@ -895,6 +996,10 @@ abstract class ChatStoreBase with Store {
     memoryCaptures = ObservableList.of([]);
     memoryCaptureError = null;
     memoryCapturesLoading = false;
+    contextLinkSuggestions.clear();
+    contextLinkSuggestionError.value = null;
+    contextLinkSuggestionsLoading.value = false;
+    contextLinkSuggestionReviewing.clear();
   }
 
   void _replaceMemoryScope(String oldRef, MemoryScope scope) {

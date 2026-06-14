@@ -71,6 +71,15 @@ abstract class ChatRepository {
     required String sourceId,
     int limit = 50,
   });
+  Future<List<MemoryContextLinkSuggestion>> listContextLinkSuggestions({
+    String status = 'pending',
+    int limit = 50,
+  });
+  Future<MemoryContextLinkSuggestion> reviewContextLinkSuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+  });
 }
 
 abstract class ConversationStateRepository {

@@ -254,6 +254,7 @@ class ChatRepositoryImpl
           text: task,
           sourceType: 'capture',
           sourceId: captureId,
+          persist: true,
         );
       } catch (e) {
         suggestionError = e;
@@ -361,6 +362,36 @@ class ChatRepositoryImpl
       kind: 'system',
       text: 'Linked to $targetType.',
     ));
+  }
+
+  @override
+  Future<List<MemoryContextLinkSuggestion>> listContextLinkSuggestions({
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    final rows = await _rest.listContextLinkSuggestions(
+      spaceSlug: _spaceSlugGetter(),
+      memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
+      status: status,
+      limit: limit,
+    );
+    return rows
+        .map(MemoryContextLinkSuggestion.fromMap)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<MemoryContextLinkSuggestion> reviewContextLinkSuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+  }) async {
+    final row = await _rest.reviewContextLinkSuggestion(
+      suggestionId: suggestionId,
+      action: action,
+      reason: reason,
+    );
+    return MemoryContextLinkSuggestion.fromMap(row);
   }
 
   @override

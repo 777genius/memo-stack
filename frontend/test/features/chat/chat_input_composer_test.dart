@@ -214,6 +214,23 @@ class _RecordingChatRepository implements ChatRepository {
   }) async {
     return const <MemoryContextLink>[];
   }
+
+  @override
+  Future<List<MemoryContextLinkSuggestion>> listContextLinkSuggestions({
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    return const <MemoryContextLinkSuggestion>[];
+  }
+
+  @override
+  Future<MemoryContextLinkSuggestion> reviewContextLinkSuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+  }) async {
+    throw UnimplementedError();
+  }
 }
 
 MemoryScope _scope({String? id, String? externalRef, String? name}) {
