@@ -22,6 +22,7 @@
     memory_scopes: [],
     facts: [],
     suggestions: [],
+    contextLinkSuggestions: [],
     nodes: [],
     edges: [],
     selectedNodeId: null,
@@ -74,6 +75,7 @@
       "adapterStatus",
       "factCount",
       "suggestionCount",
+      "linkSuggestionCount",
       "sourceCount",
       "pendingCount",
       "lastRefresh",
@@ -196,13 +198,15 @@
       state.health = health;
       state.capabilities = capabilities;
       await refreshSpacesAndMemoryScopes();
-      const [facts, suggestions, diagnostics] = await Promise.all([
+      const [facts, suggestions, contextLinkSuggestions, diagnostics] = await Promise.all([
         fetchFacts(),
         fetchSuggestions(),
+        fetchContextLinkSuggestions(),
         apiGet("/v1/diagnostics/adapters").catch(() => null),
       ]);
       state.facts = facts;
       state.suggestions = suggestions;
+      state.contextLinkSuggestions = contextLinkSuggestions;
       state.adapterDiagnostics = diagnostics ? diagnostics.data : null;
       state.lastRefreshAt = new Date();
       renderAll();
@@ -279,6 +283,28 @@
     return (response.data || []).sort(compareUpdatedDesc);
   }
 
+  async function fetchContextLinkSuggestions() {
+    const statuses = ["pending", "approved", "rejected", "expired"];
+    const batches = await Promise.all(
+      statuses.map((status) =>
+        apiGet("/v1/context-link-suggestions", {
+          params: {
+            ...scopeParams(),
+            status,
+            limit: "200",
+          },
+        }).catch(() => ({ data: [] })),
+      ),
+    );
+    const byId = new Map();
+    for (const batch of batches) {
+      for (const suggestion of batch.data || []) {
+        byId.set(suggestion.id, suggestion);
+      }
+    }
+    return [...byId.values()].sort(compareUpdatedDesc);
+  }
+
   async function buildDigest() {
     readSettingsFromInputs();
     saveSettings();
@@ -352,6 +378,26 @@
       await apiJson(`/v1/suggestions/${encodeURIComponent(suggestionId)}/${action}`, {
         method: "POST",
         body: { reason: reason || `Reviewed in Memo Stack Browser` },
+      });
+      await refreshAll();
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
+  async function reviewContextLinkSuggestion(action, suggestionId) {
+    const reason = window.prompt(`${action} link reason`, `Reviewed in Memo Stack Browser`);
+    if (reason === null) {
+      return;
+    }
+    setError("");
+    try {
+      await apiJson(`/v1/context-link-suggestions/${encodeURIComponent(suggestionId)}/review`, {
+        method: "POST",
+        body: {
+          action,
+          reason: reason || `Reviewed in Memo Stack Browser`,
+        },
       });
       await refreshAll();
     } catch (error) {
@@ -462,12 +508,19 @@
         sourceIds.add(sourceKey(ref));
       }
     }
+    for (const suggestion of state.contextLinkSuggestions) {
+      sourceIds.add(`${suggestion.source_type}:${suggestion.source_id}`);
+    }
     setText(els.factCount, String(state.facts.length));
     setText(els.suggestionCount, String(state.suggestions.length));
+    setText(els.linkSuggestionCount, String(state.contextLinkSuggestions.length));
     setText(els.sourceCount, String(sourceIds.size));
     setText(
       els.pendingCount,
-      String(state.suggestions.filter((suggestion) => suggestion.status === "pending").length),
+      String(
+        state.suggestions.filter((suggestion) => suggestion.status === "pending").length +
+          state.contextLinkSuggestions.filter((suggestion) => suggestion.status === "pending").length,
+      ),
     );
     setText(els.lastRefresh, state.lastRefreshAt ? formatShortTime(state.lastRefreshAt) : "Never");
   }
@@ -490,6 +543,11 @@
         item: suggestion,
         updated_at: suggestion.updated_at,
       })),
+      ...state.contextLinkSuggestions.map((suggestion) => ({
+        type: "context_link_suggestion",
+        item: suggestion,
+        updated_at: suggestion.updated_at,
+      })),
     ].sort(compareUpdatedDesc);
 
     for (const memory of memoryItems) {
@@ -503,15 +561,20 @@
       visibleMemory.push(memory);
       if (memory.type === "fact") {
         addFactGraph(graph, memory.item, relationNodes);
-      } else {
+      } else if (memory.type === "suggestion") {
         addSuggestionGraph(graph, memory.item, relationNodes);
+      } else {
+        addContextLinkSuggestionGraph(graph, memory.item, relationNodes);
       }
     }
     if (visibleMemory.length < GRAPH_NODE_LIMIT) {
       state.graphTruncated = false;
     }
 
-    if (typeFilter !== "all" && !["fact", "suggestion"].includes(typeFilter)) {
+    if (
+      typeFilter !== "all" &&
+      !["fact", "suggestion", "context_link_suggestion"].includes(typeFilter)
+    ) {
       for (const node of [...graph.nodes.values()]) {
         if (node.type !== typeFilter && !relationNodes.has(node.id)) {
           graph.nodes.delete(node.id);
@@ -587,6 +650,74 @@
     for (const ref of suggestion.source_refs || []) {
       addSourceRelation(graph, nodeId, ref, relationNodes);
     }
+  }
+
+  function addContextLinkSuggestionGraph(graph, suggestion, relationNodes) {
+    const nodeId = `context_link_suggestion:${suggestion.id}`;
+    const targetLabel = suggestion.metadata?.target_label || suggestion.target_type;
+    addNode(graph, {
+      id: nodeId,
+      type: "context_link_suggestion",
+      status: suggestion.status,
+      label: compactLabel(`${suggestion.source_type} -> ${targetLabel}`),
+      text: suggestion.reason,
+      data: suggestion,
+      degree: 0,
+    });
+    addRelation(
+      graph,
+      nodeId,
+      `status:${suggestion.status}`,
+      "status",
+      suggestion.status,
+      relationNodes,
+    );
+    addRelation(
+      graph,
+      nodeId,
+      `relation:${suggestion.relation_type}`,
+      "kind",
+      suggestion.relation_type,
+      relationNodes,
+    );
+    const sourceNodeId = contextObjectNodeId(suggestion.source_type, suggestion.source_id);
+    const targetNodeId = contextObjectNodeId(suggestion.target_type, suggestion.target_id);
+    addContextObjectNode(graph, sourceNodeId, suggestion.source_type, suggestion.source_id, "source");
+    addContextObjectNode(
+      graph,
+      targetNodeId,
+      suggestion.target_type,
+      suggestion.target_id,
+      "target",
+      suggestion.metadata?.target_label,
+    );
+    addEdge(graph, nodeId, sourceNodeId, "source", false);
+    addEdge(graph, nodeId, targetNodeId, "target", true);
+    for (const reason of arrayOf(suggestion.metadata?.reasons)) {
+      addRelation(graph, nodeId, `reason:${reason}`, "kind", reason, relationNodes);
+    }
+  }
+
+  function contextObjectNodeId(objectType, objectId) {
+    if (objectType === "fact") {
+      return `fact:${objectId}`;
+    }
+    return `context-object:${objectType}:${objectId}`;
+  }
+
+  function addContextObjectNode(graph, nodeId, objectType, objectId, roleLabel, displayLabel = "") {
+    if (graph.nodes.has(nodeId)) {
+      return;
+    }
+    addNode(graph, {
+      id: nodeId,
+      type: objectType || "source",
+      status: roleLabel,
+      label: compactLabel(displayLabel || `${objectType}:${shortId(objectId)}`),
+      text: `${objectType}:${objectId}`,
+      data: { id: objectId, type: objectType, role: roleLabel },
+      degree: 0,
+    });
   }
 
   function addSourceRelation(graph, fromNodeId, ref, relationNodes) {
@@ -718,7 +849,12 @@
     for (const [index, node] of nodes.entries()) {
       if (!state.nodePositions.has(node.id)) {
         const angle = (hashCode(node.id) % 6283) / 1000;
-        const ring = node.type === "fact" || node.type === "suggestion" ? 1 : 0.62;
+        const ring =
+          node.type === "fact" ||
+          node.type === "suggestion" ||
+          node.type === "context_link_suggestion"
+            ? 1
+            : 0.62;
         state.nodePositions.set(node.id, {
           x: center.x + Math.cos(angle + index * 0.17) * radiusX * ring,
           y: center.y + Math.sin(angle + index * 0.17) * radiusY * ring,
@@ -836,6 +972,9 @@
     if (node.type === "fact" || node.type === "suggestion") {
       panel.append(sourceSection(node.data?.source_refs || []));
     }
+    if (node.type === "context_link_suggestion") {
+      panel.append(contextLinkSuggestionSection(node.data));
+    }
     if (node.type === "suggestion" && node.data?.status === "pending") {
       const actions = document.createElement("div");
       actions.className = "action-row";
@@ -846,6 +985,54 @@
       );
       panel.append(actions);
     }
+    if (node.type === "context_link_suggestion" && node.data?.status === "pending") {
+      const actions = document.createElement("div");
+      actions.className = "action-row two-actions";
+      actions.append(
+        actionButton(
+          "Approve",
+          () => reviewContextLinkSuggestion("approve", node.data.id),
+          "primary-button",
+        ),
+        actionButton("Reject", () => reviewContextLinkSuggestion("reject", node.data.id)),
+      );
+      panel.append(actions);
+    }
+  }
+
+  function contextLinkSuggestionSection(suggestion) {
+    const section = document.createElement("section");
+    section.className = "source-list";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Link";
+    section.append(heading);
+    section.append(
+      keyValueItem("Source", `${suggestion.source_type}:${suggestion.source_id}`),
+      keyValueItem("Target", `${suggestion.target_type}:${suggestion.target_id}`),
+      keyValueItem("Relation", suggestion.relation_type),
+      keyValueItem("Reason", suggestion.reason),
+      keyValueItem("Target preview", suggestion.metadata?.target_preview || ""),
+    );
+    const reasons = [
+      ...arrayOf(suggestion.metadata?.reasons),
+      ...arrayOf(suggestion.metadata?.reason_codes),
+    ];
+    if (reasons.length) {
+      section.append(keyValueItem("Why", reasons.join(", ")));
+    }
+    const matchedTerms = arrayOf(suggestion.metadata?.matched_terms);
+    if (matchedTerms.length) {
+      section.append(keyValueItem("Matched", matchedTerms.join(", ")));
+    }
+    return section;
+  }
+
+  function keyValueItem(title, text) {
+    return listItem({
+      title,
+      text,
+    });
   }
 
   function sourceSection(sourceRefs) {
@@ -874,9 +1061,37 @@
 
   function renderSuggestionList() {
     els.suggestionList.replaceChildren();
-    if (!state.suggestions.length) {
-      els.suggestionList.append(emptyItem("No suggestions."));
+    if (!state.contextLinkSuggestions.length && !state.suggestions.length) {
+      els.suggestionList.append(emptyItem("No review items."));
       return;
+    }
+    if (state.contextLinkSuggestions.length) {
+      els.suggestionList.append(sectionLabel("Link reviews"));
+    }
+    for (const suggestion of state.contextLinkSuggestions.slice(0, 160)) {
+      const item = listItem({
+        title: `${suggestion.source_type} -> ${suggestion.target_type} / ${suggestion.status}`,
+        text: suggestion.metadata?.target_preview || suggestion.reason,
+        meta: `${scoreLabel(suggestion.score)} ${formatDate(suggestion.updated_at)}`,
+        onClick: () => selectNode(`context_link_suggestion:${suggestion.id}`),
+      });
+      if (suggestion.status === "pending") {
+        const actions = document.createElement("div");
+        actions.className = "action-row two-actions";
+        actions.append(
+          actionButton(
+            "Approve",
+            () => reviewContextLinkSuggestion("approve", suggestion.id),
+            "primary-button",
+          ),
+          actionButton("Reject", () => reviewContextLinkSuggestion("reject", suggestion.id)),
+        );
+        item.append(actions);
+      }
+      els.suggestionList.append(item);
+    }
+    if (state.suggestions.length) {
+      els.suggestionList.append(sectionLabel("Fact suggestions"));
     }
     for (const suggestion of state.suggestions.slice(0, 160)) {
       const item = listItem({
@@ -914,6 +1129,14 @@
         text: suggestion.candidate_text,
         updated_at: suggestion.updated_at,
       })),
+      ...state.contextLinkSuggestions.map((suggestion) => ({
+        id: `context_link_suggestion:${suggestion.id}`,
+        title: `link review / ${suggestion.status}`,
+        text: `${suggestion.source_type}:${shortId(suggestion.source_id)} -> ${suggestion.target_type}:${shortId(
+          suggestion.target_id,
+        )}`,
+        updated_at: suggestion.updated_at,
+      })),
     ].sort(compareUpdatedDesc);
     if (!items.length) {
       els.timelineList.append(emptyItem("No timeline entries."));
@@ -933,6 +1156,7 @@
 
   function preferredNode() {
     return (
+      state.nodes.find((node) => node.type === "context_link_suggestion" && node.status === "pending") ||
       state.nodes.find((node) => node.type === "suggestion" && node.status === "pending") ||
       state.nodes.find((node) => node.type === "fact") ||
       state.nodes[0]
@@ -940,7 +1164,11 @@
   }
 
   function memoryMatchesFilters(memory, search, typeFilter, statusFilter) {
-    if (typeFilter !== "all" && memory.type !== typeFilter && ["fact", "suggestion"].includes(typeFilter)) {
+    if (
+      typeFilter !== "all" &&
+      memory.type !== typeFilter &&
+      ["fact", "suggestion", "context_link_suggestion"].includes(typeFilter)
+    ) {
       return false;
     }
     const status = memory.item.status || "";
@@ -956,7 +1184,17 @@
       memory.item.kind,
       memory.item.status,
       memory.item.operation,
+      memory.item.source_type,
+      memory.item.source_id,
+      memory.item.target_type,
+      memory.item.target_id,
+      memory.item.reason,
+      memory.item.relation_type,
+      memory.item.metadata?.target_label,
+      memory.item.metadata?.target_preview,
       ...(memory.item.tags || []),
+      ...arrayOf(memory.item.metadata?.reasons),
+      ...arrayOf(memory.item.metadata?.matched_terms),
       ...(memory.item.source_refs || []).map((ref) => `${ref.source_type}:${ref.source_id}`),
     ]
       .filter(Boolean)
@@ -971,6 +1209,9 @@
     }
     if (node.type === "suggestion") {
       return `Suggestion ${node.data?.id || ""}`.trim();
+    }
+    if (node.type === "context_link_suggestion") {
+      return `Link review ${node.data?.id || ""}`.trim();
     }
     return `${node.type}: ${node.text}`;
   }
@@ -997,6 +1238,27 @@
       }
       return "#7c3aed";
     }
+    if (node.type === "context_link_suggestion") {
+      if (node.status === "pending") {
+        return "#0e7490";
+      }
+      if (node.status === "approved") {
+        return "#16835f";
+      }
+      if (node.status === "rejected") {
+        return "#8b96a8";
+      }
+      return "#64738a";
+    }
+    if (node.type === "anchor" || node.type === "thread") {
+      return "#7c3aed";
+    }
+    if (node.type === "document" || node.type === "chunk") {
+      return "#2563eb";
+    }
+    if (node.type === "asset" || node.type === "capture") {
+      return "#0e7490";
+    }
     if (node.type === "source") {
       return "#0e7490";
     }
@@ -1013,10 +1275,10 @@
   }
 
   function statusClass(status) {
-    if (status === "active" || status === "approved") {
+    if (status === "active" || status === "approved" || status === "target") {
       return "green";
     }
-    if (status === "pending") {
+    if (status === "pending" || status === "source") {
       return "orange";
     }
     if (status === "deleted" || status === "rejected") {
@@ -1067,6 +1329,13 @@
     return item;
   }
 
+  function sectionLabel(text) {
+    const element = document.createElement("div");
+    element.className = "section-label";
+    element.textContent = text;
+    return element;
+  }
+
   function emptyItem(text) {
     const item = document.createElement("div");
     item.className = "empty-state";
@@ -1079,6 +1348,11 @@
     element.className = className ? `pill ${className}` : "pill";
     element.textContent = text || "n/a";
     return element;
+  }
+
+  function shortId(value) {
+    const text = String(value || "");
+    return text.length > 12 ? text.slice(0, 8) : text;
   }
 
   function actionButton(text, handler, className = "") {
@@ -1148,6 +1422,10 @@
 
   function scoreLabel(score) {
     return typeof score === "number" ? score.toFixed(2) : "n/a";
+  }
+
+  function arrayOf(value) {
+    return Array.isArray(value) ? value : [];
   }
 
   function safeDetail(detail) {

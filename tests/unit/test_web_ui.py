@@ -30,9 +30,12 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "Bearer " not in index.text
     assert css.status_code == 200
     assert "graph-panel" in css.text
+    assert "section-label" in css.text
     assert js.status_code == 200
     assert "localStorage" in js.text
     assert "Authorization" in js.text
+    assert "/v1/context-link-suggestions" in js.text
+    assert "reviewContextLinkSuggestion" in js.text
     assert "/ui/" not in openapi.text
 
 

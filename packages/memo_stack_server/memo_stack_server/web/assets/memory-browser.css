@@ -174,7 +174,7 @@ select:focus {
 
 .metrics-band {
   display: grid;
-  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
   gap: 1px;
   background: var(--border);
   border-bottom: 1px solid var(--border);
@@ -384,6 +384,10 @@ select:focus {
   margin-top: 12px;
 }
 
+.action-row.two-actions {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .list-item {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -402,6 +406,14 @@ select:focus {
 .list-item-title {
   font-weight: 720;
   margin-bottom: 5px;
+}
+
+.section-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .list-item-text {
