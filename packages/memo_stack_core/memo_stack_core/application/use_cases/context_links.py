@@ -177,14 +177,14 @@ class SuggestContextLinksUseCase:
             facts = await uow.facts.find_active(
                 space_id=str(command.space_id),
                 memory_scope_ids=(str(command.memory_scope_id),),
-                thread_id=source_thread_id,
+                thread_id=None,
                 query=query_text,
                 limit=max(command.limit * 3, 12),
             )
             recent_facts = await uow.facts.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
-                thread_id=source_thread_id,
+                thread_id=None,
                 status="active",
                 limit=max(command.limit, 8),
             )
@@ -207,21 +207,21 @@ class SuggestContextLinksUseCase:
             assets = await uow.assets.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
-                thread_id=source_thread_id,
+                thread_id=None,
                 status="stored",
                 limit=max(command.limit, 8),
             )
             documents = await uow.documents.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
-                thread_id=source_thread_id,
+                thread_id=None,
                 status="active",
                 limit=max(command.limit, 8),
             )
             chunks = await uow.chunks.keyword_search(
                 space_id=str(command.space_id),
                 memory_scope_ids=(str(command.memory_scope_id),),
-                thread_id=source_thread_id,
+                thread_id=None,
                 query=query_text,
                 limit=max(command.limit * 2, 12),
             )
@@ -283,6 +283,8 @@ class SuggestContextLinksUseCase:
             if observed is not None:
                 score += observed.score_boost
                 reasons.append(observed.reason)
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="anchor",
@@ -317,6 +319,8 @@ class SuggestContextLinksUseCase:
                 reasons.append("same thread")
             if fact.category:
                 reasons.append(f"category:{fact.category}")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="fact",
@@ -344,6 +348,11 @@ class SuggestContextLinksUseCase:
                 now=self._clock.now(),
                 base=36,
             )
+            if capture.thread_id and str(capture.thread_id) == source_thread_id:
+                score += 12
+                reasons.append("same thread")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="capture",
@@ -370,6 +379,8 @@ class SuggestContextLinksUseCase:
                 now=self._clock.now(),
                 base=42,
             )
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="suggestion",
@@ -397,6 +408,11 @@ class SuggestContextLinksUseCase:
                 now=self._clock.now(),
                 base=34,
             )
+            if asset.thread_id and str(asset.thread_id) == source_thread_id:
+                score += 8
+                reasons.append("same thread")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="asset",
@@ -428,6 +444,8 @@ class SuggestContextLinksUseCase:
             if document.thread_id and str(document.thread_id) == source_thread_id:
                 score += 8
                 reasons.append("same thread")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="document",
@@ -459,6 +477,8 @@ class SuggestContextLinksUseCase:
             if chunk.thread_id and str(chunk.thread_id) == source_thread_id:
                 score += 8
                 reasons.append("same thread")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="chunk",
@@ -495,6 +515,8 @@ class SuggestContextLinksUseCase:
             if source_thread_id and str(thread.id) == source_thread_id:
                 score += 12
                 reasons.append("same thread")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
             candidates.append(
                 _candidate(
                     target_type="thread",
@@ -857,6 +879,22 @@ def _score_text_candidate(
     if not reasons:
         reasons.append("recent context")
     return min(score, 99.0), reasons, hits
+
+
+def _has_link_signal(*, matched_terms: tuple[str, ...], reasons: list[str]) -> bool:
+    if matched_terms:
+        return True
+    return any(
+        reason
+        in {
+            "same thread",
+            "explicit project reference",
+            "known project/tool reference",
+            "event phrase",
+            "person name",
+        }
+        for reason in reasons
+    )
 
 
 def _candidate(

@@ -652,6 +652,235 @@ def test_context_linking_quality_golden_empty_scope_returns_no_candidates(
     assert payload["diagnostics"]["candidate_count"] == 0
 
 
+def test_context_linking_quality_golden_unrelated_existing_memory_returns_no_candidates(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        unrelated = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "unrelated-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "billing-launch",
+                "text": "Billing Portal launch checklist uses Stripe invoices and tax copy.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "billing"}],
+                "tags": ["billing", "stripe"],
+            },
+            headers=auth_headers({"Idempotency-Key": "unrelated-linking-quality-fact"}),
+        )
+        assert unrelated.status_code == 201, unrelated.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "unrelated-linking-quality",
+                "memory_scope_external_ref": "default",
+                "text": "Plant watering schedule kitchen humidity reminder.",
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert suggestions.status_code == 200, suggestions.text
+    payload = suggestions.json()["data"]
+    assert payload["candidates"] == []
+    assert payload["diagnostics"]["candidate_count"] == 0
+
+
+def test_context_linking_quality_golden_links_files_documents_and_chunks(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "file-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-files",
+                "text": (
+                    "Alex said Project Atlas screenshot evidence should stay linked "
+                    "to the Qdrant chunk memory document."
+                ),
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "atlas-file-fact"}],
+                "tags": ["project-atlas", "screenshot", "qdrant"],
+            },
+            headers=auth_headers({"Idempotency-Key": "file-linking-quality-fact"}),
+        )
+        asset = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "file-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-files",
+                "filename": "project-atlas-screenshot.png",
+            },
+            content=b"fake screenshot bytes",
+            headers=auth_headers({"Content-Type": "image/png"}),
+        )
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_slug": "file-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-files",
+                "title": "Project Atlas screenshot memory notes",
+                "text": (
+                    "Alex Project Atlas screenshot evidence says Qdrant chunk memory "
+                    "must attach to uploaded files."
+                ),
+                "source_type": "document",
+                "source_external_id": "project-atlas-screenshot-notes",
+            },
+            headers=auth_headers({"Idempotency-Key": "file-linking-quality-doc"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "file-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-files",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "file-linking-quality-capture",
+                "text": (
+                    "Screenshot from Alex for Project Atlas file memory should link "
+                    "to uploaded file, document and exact Qdrant chunk."
+                ),
+                "source_authority": "user_statement",
+                "evidence_refs": [
+                    {"source_type": "asset", "source_id": asset.json()["data"]["id"]}
+                ],
+            },
+            headers=auth_headers(),
+        )
+        assert fact.status_code == 201, fact.text
+        assert asset.status_code == 201, asset.text
+        assert document.status_code == 201, document.text
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "file-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-files",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": (
+                    "Alex Project Atlas screenshot uploaded file document exact "
+                    "Qdrant chunk memory"
+                ),
+                "persist": True,
+                "limit": 20,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        candidates = suggestions.json()["data"]["candidates"]
+        target_types = {item["target_type"] for item in candidates}
+        assert {"asset", "document", "chunk", "fact"}.issubset(target_types)
+        assert any(
+            item["target_type"] == "asset"
+            and item["target_id"] == asset.json()["data"]["id"]
+            for item in candidates
+        )
+        assert any(
+            item["target_type"] == "document"
+            and item["target_id"] == document.json()["data"]["id"]
+            for item in candidates
+        )
+
+        chunk_candidate = next(item for item in candidates if item["target_type"] == "chunk")
+        approved = client.post(
+            f"/v1/context-link-suggestions/{chunk_candidate['suggestion_id']}/review",
+            json={"action": "approve", "reason": "linked to exact chunk evidence"},
+            headers=auth_headers(),
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["data"]["link"]["target_type"] == "chunk"
+        assert (
+            approved.json()["data"]["link"]["metadata"]["document_id"]
+            == document.json()["data"]["id"]
+        )
+
+
+def test_context_linking_quality_golden_links_temporal_thread_and_event_anchor(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "temporal-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-chat-hour-ago",
+                "text": "Chat with Alex an hour ago confirmed Project Atlas billing cutoff.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "alex-hour-chat"}],
+                "tags": ["alex", "project-atlas", "billing"],
+            },
+            headers=auth_headers({"Idempotency-Key": "temporal-linking-quality-fact"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "temporal-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quick-save",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "temporal-linking-quality-capture",
+                "text": (
+                    "Attach this billing cutoff note to the chat with Alex an hour ago "
+                    "for Project Atlas."
+                ),
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert fact.status_code == 201, fact.text
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "temporal-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quick-save",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Project Atlas billing cutoff chat with Alex an hour ago",
+                "persist": True,
+                "limit": 16,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        candidates = suggestions.json()["data"]["candidates"]
+        assert any(
+            item["target_type"] == "thread"
+            and item["metadata"]["external_ref"] == "alex-chat-hour-ago"
+            for item in candidates
+        )
+        assert any(
+            item["target_type"] == "anchor"
+            and item["metadata"]["anchor_kind"] == "event"
+            and item["metadata"]["normalized_key"] in {"chat an hour ago", "chat hour ago"}
+            for item in candidates
+        )
+        assert any(
+            item["target_type"] == "fact"
+            and item["target_id"] == fact.json()["data"]["id"]
+            for item in candidates
+        )
+
+
 def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         upload = client.post(
