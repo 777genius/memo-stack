@@ -16,6 +16,7 @@ x-memo-stack-server-common: &memo-stack-server-common
 
 x-memo-stack-server-base-env: &memo-stack-server-base-env
   MEMORY_DEPLOY_PROFILE: local
+  PYTHONPATH: /app/packages/memo_stack_core:/app/packages/memo_stack_server:/app/packages/memo_stack_adapters:/app/packages/memo_stack_sdk:/app/packages/memo_stack_mcp:/app/packages/memo_stack_cli:/app/packages/memo_stack_obsidian
   MEMORY_DATABASE_URL: postgresql+asyncpg://memo_stack:memo_stack@memo_stack_postgres:5432/memo_stack
   MEMORY_AUTO_CREATE_SCHEMA: "true"
   MEMORY_HOST: 0.0.0.0
