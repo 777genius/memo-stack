@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend/src/app/debug/marionette_e2e_extensions.dart';
 import 'package:frontend/src/features/chat/application/services/attachment_upload_models.dart';
 import 'package:frontend/src/features/chat/application/services/attachment_upload_service.dart';
 import 'package:frontend/src/features/chat/application/services/open_chat_attachment.dart';
@@ -107,6 +109,7 @@ class AppRoot extends StatelessWidget {
       darkTheme: dark,
       themeMode: themeStore.mode,
       builder: (context, child) {
+        final appChild = child ?? const SizedBox.shrink();
         return MultiProvider(
           providers: [
             Provider(create: (_) => BackendRestClient()),
@@ -161,7 +164,9 @@ class AppRoot extends StatelessWidget {
               dispose: (_, store) => store.dispose(),
             ),
           ],
-          child: child ?? const SizedBox.shrink(),
+          child: kDebugMode
+              ? MemoStackMarionetteE2eBridge(child: appChild)
+              : appChild,
         );
       },
       home: const ColoredBox(
