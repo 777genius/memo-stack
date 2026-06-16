@@ -70,8 +70,9 @@ memory scope and thread isolation, document chunk recall, prompt-injection evide
 and tiny token-budget safety. Reports are redacted and contain case ids,
 item ids, gates and aggregate metrics, not raw memory text.
 `semantic-linking-golden` specifically checks context-link suggestion quality:
-specific target ranking against a similar distractor, person/project anchor
-suggestions, review approval, and the no-candidate path for unrelated captures.
+specific target ranking against a similar distractor, event-like call linking
+against a recent chat distractor, person/project anchor suggestions, review
+approval, and the no-candidate path for unrelated captures.
 
 Fresh full-provider canary with isolated Docker volumes:
 

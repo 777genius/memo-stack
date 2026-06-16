@@ -87,6 +87,7 @@ Implemented API surface:
 - `/v1/digest` for source-bound Memory Digest reports;
 - `/v1/thread-memory/status`, `/v1/thread-memory` delete for thread-scoped cleanup;
 - `/v1/suggestions` create/list/approve/reject/expire for review-gated memory;
+- `/v1/link-suggestions`, `/v1/context-link-suggestions`, `/v1/context-links` for reviewable memory relations and status-filtered review history;
 - `/v1/diagnostics/adapters`, `/outbox`, `/memory-scope/{memory_scope_id}` with production-safe metadata only;
 - optional client-compatible `/api/v1/interview-memory/ingest`, `/context`, session status and delete routes when `MEMORY_LEGACY_CLIENT_ENABLED=true`.
 
@@ -95,7 +96,7 @@ Local browser UI:
 - open `http://127.0.0.1:7788/ui/` after the server starts;
 - enter the service token from local config, for example `~/.memo-stack/.env`;
 - browse graph nodes for facts, suggestions, sources, kinds, tags and statuses;
-- review pending suggestions with approve/reject/expire actions;
+- review pending suggestions and relation suggestions with approve/reject/edit actions;
 - build source-bound digest and recall results through the existing `/v1` API;
 - disable with `MEMORY_UI_ENABLED=false`.
 

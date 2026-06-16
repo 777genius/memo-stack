@@ -33,6 +33,16 @@ def test_openapi_contains_stable_v1_fields() -> None:
     assert "/v1/memory-browser" in paths
     assert "/v1/export/graph.json" in paths
     assert "/v1/export/memory_scope-snapshot/preview" in paths
+    context_link_query_params = {
+        item["name"] for item in paths["/v1/context-links"]["get"]["parameters"]
+    }
+    context_link_suggestion_query_params = {
+        item["name"] for item in paths["/v1/context-link-suggestions"]["get"]["parameters"]
+    }
+    assert {"status", "statuses", "limit"}.issubset(context_link_query_params)
+    assert {"status", "statuses", "limit"}.issubset(
+        context_link_suggestion_query_params
+    )
 
     schemas = body["components"]["schemas"]
     assert set(schemas["RememberFactRequest"]["required"]) == {"text", "source_refs"}
