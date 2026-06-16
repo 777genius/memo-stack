@@ -502,6 +502,11 @@ class ReviewContextLinkSuggestionCommand:
     suggestion_id: str
     action: str
     reason: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    relation_type: str | None = None
+    confidence: str | None = None
+    link_reason: str | None = None
 
 
 @dataclass(frozen=True)

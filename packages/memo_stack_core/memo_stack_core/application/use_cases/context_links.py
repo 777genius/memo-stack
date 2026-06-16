@@ -21,6 +21,7 @@ from memo_stack_core.application.dto import (
     SuggestContextLinksCommand,
 )
 from memo_stack_core.domain.assets import (
+    ContextLinkSuggestionStatus,
     MemoryContextLink,
     MemoryContextLinkId,
     MemoryContextLinkSuggestion,
@@ -713,13 +714,38 @@ class ReviewContextLinkSuggestionUseCase:
             suggestion = await uow.context_link_suggestions.get_by_id(command.suggestion_id)
             if suggestion is None:
                 raise MemoryNotFoundError("Context link suggestion not found")
+            if (
+                suggestion.status != ContextLinkSuggestionStatus.PENDING
+                and _has_approval_override(command)
+            ):
+                raise MemoryValidationError(
+                    "Context link suggestion overrides require pending suggestion"
+                )
 
             if normalized_action == "reject":
+                if _has_approval_override(command):
+                    raise MemoryValidationError(
+                        "Context link suggestion overrides require approve action"
+                    )
                 saved = await uow.context_link_suggestions.save(
                     suggestion.reject(now=now, reason=command.reason)
                 )
                 await uow.commit()
                 return ContextLinkSuggestionResult(suggestion=saved)
+
+            target_type, target_id = _review_target(suggestion, command)
+            relation_type = (command.relation_type or suggestion.relation_type).strip()
+            confidence = (command.confidence or suggestion.confidence).strip()
+            link_reason = (command.link_reason or command.reason or suggestion.reason).strip()
+            override_metadata = _review_override_metadata(
+                suggestion=suggestion,
+                target_type=target_type,
+                target_id=target_id,
+                relation_type=relation_type,
+                confidence=confidence,
+                link_reason=link_reason,
+                link_reason_overridden=command.link_reason is not None,
+            )
 
             await _assert_endpoint_visible(
                 uow,
@@ -731,8 +757,8 @@ class ReviewContextLinkSuggestionUseCase:
             )
             await _assert_endpoint_visible(
                 uow,
-                endpoint_type=suggestion.target_type,
-                endpoint_id=suggestion.target_id,
+                endpoint_type=target_type,
+                endpoint_id=target_id,
                 space_id=str(suggestion.space_id),
                 memory_scope_id=str(suggestion.memory_scope_id),
                 role="target",
@@ -742,9 +768,9 @@ class ReviewContextLinkSuggestionUseCase:
                 memory_scope_id=str(suggestion.memory_scope_id),
                 source_type=suggestion.source_type,
                 source_id=suggestion.source_id,
-                target_type=suggestion.target_type,
-                target_id=suggestion.target_id,
-                relation_type=suggestion.relation_type,
+                target_type=target_type,
+                target_id=target_id,
+                relation_type=relation_type,
             )
             duplicate_link = existing_link is not None
             link = existing_link
@@ -755,14 +781,15 @@ class ReviewContextLinkSuggestionUseCase:
                     memory_scope_id=suggestion.memory_scope_id,
                     source_type=suggestion.source_type,
                     source_id=suggestion.source_id,
-                    target_type=suggestion.target_type,
-                    target_id=suggestion.target_id,
-                    relation_type=suggestion.relation_type,
-                    confidence=suggestion.confidence,
-                    reason=command.reason or suggestion.reason,
+                    target_type=target_type,
+                    target_id=target_id,
+                    relation_type=relation_type,
+                    confidence=confidence,
+                    reason=link_reason,
                     metadata={
                         **dict(suggestion.metadata),
                         "approved_from_suggestion_id": str(suggestion.id),
+                        **override_metadata,
                     },
                     now=now,
                 )
@@ -776,6 +803,58 @@ class ReviewContextLinkSuggestionUseCase:
             link=link,
             duplicate_link=duplicate_link,
         )
+
+
+def _has_approval_override(command: ReviewContextLinkSuggestionCommand) -> bool:
+    return any(
+        value is not None
+        for value in (
+            command.target_type,
+            command.target_id,
+            command.relation_type,
+            command.confidence,
+            command.link_reason,
+        )
+    )
+
+
+def _review_target(
+    suggestion: MemoryContextLinkSuggestion,
+    command: ReviewContextLinkSuggestionCommand,
+) -> tuple[str, str]:
+    target_type = command.target_type.strip() if command.target_type is not None else ""
+    target_id = command.target_id.strip() if command.target_id is not None else ""
+    if bool(target_type) != bool(target_id):
+        raise MemoryValidationError("Context link override target requires type and id")
+    if target_type and target_id:
+        return target_type, target_id
+    return suggestion.target_type, suggestion.target_id
+
+
+def _review_override_metadata(
+    *,
+    suggestion: MemoryContextLinkSuggestion,
+    target_type: str,
+    target_id: str,
+    relation_type: str,
+    confidence: str,
+    link_reason: str,
+    link_reason_overridden: bool,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    if (
+        target_type != suggestion.target_type
+        or target_id != suggestion.target_id
+        or relation_type != suggestion.relation_type
+        or confidence != suggestion.confidence
+        or (link_reason_overridden and link_reason != suggestion.reason)
+    ):
+        metadata["approved_override"] = True
+        metadata["original_target_type"] = suggestion.target_type
+        metadata["original_target_id"] = suggestion.target_id
+        metadata["original_relation_type"] = suggestion.relation_type
+        metadata["original_confidence"] = suggestion.confidence
+    return metadata
 
 
 async def _assert_endpoint_visible(

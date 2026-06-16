@@ -69,6 +69,11 @@ class ReviewContextLinkSuggestionRequest(BaseModel):
 
     action: str = Field(min_length=1, max_length=16)
     reason: str | None = Field(default=None, max_length=320)
+    target_type: str | None = Field(default=None, min_length=1, max_length=80)
+    target_id: str | None = Field(default=None, min_length=1, max_length=160)
+    relation_type: str | None = Field(default=None, min_length=1, max_length=80)
+    confidence: str | None = Field(default=None, min_length=1, max_length=40)
+    link_reason: str | None = Field(default=None, min_length=1, max_length=320)
 
 
 @router.post("/link-suggestions")
@@ -243,6 +248,11 @@ async def review_context_link_suggestion(
             suggestion_id=context_link_suggestion_id,
             action=request.action,
             reason=request.reason,
+            target_type=request.target_type,
+            target_id=request.target_id,
+            relation_type=request.relation_type,
+            confidence=request.confidence,
+            link_reason=request.link_reason,
         )
     )
     return {

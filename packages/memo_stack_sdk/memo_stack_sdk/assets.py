@@ -266,9 +266,24 @@ class MemoStackAssetsMixin:
         *,
         action: str,
         reason: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
+        confidence: str | None = None,
+        link_reason: str | None = None,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
             f"/v1/context-link-suggestions/{suggestion_id}/review",
-            json=_payloads.without_none({"action": action, "reason": reason}),
+            json=_payloads.without_none(
+                {
+                    "action": action,
+                    "reason": reason,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "relation_type": relation_type,
+                    "confidence": confidence,
+                    "link_reason": link_reason,
+                }
+            ),
         )

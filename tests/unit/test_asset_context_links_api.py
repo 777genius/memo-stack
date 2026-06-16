@@ -434,11 +434,107 @@ def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> N
     assert approved.json()["data"]["suggestion"]["reviewed_at"]
     assert approved.json()["data"]["link"]["target_id"] == fact.json()["data"]["id"]
     assert approved.json()["data"]["link"]["reason"] == "reviewed by user"
+    assert "approved_override" not in approved.json()["data"]["link"]["metadata"]
     assert approved.json()["data"]["duplicate_link"] is False
     assert approve_again.status_code == 200
     assert approve_again.json()["data"]["duplicate_link"] is True
     assert links.status_code == 200
     assert links.json()["data"][0]["target_id"] == fact.json()["data"]["id"]
+
+
+def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        suggested_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "override-link-review",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-source",
+                "text": "Project Atlas screenshot belongs to Alex review evidence.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "suggested"}],
+                "tags": ["atlas", "alex"],
+            },
+            headers=auth_headers({"Idempotency-Key": "override-link-review-suggested"}),
+        )
+        override_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "override-link-review",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-source",
+                "text": "Project Atlas final decision should be the approved link target.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "override"}],
+                "tags": ["atlas", "decision"],
+            },
+            headers=auth_headers({"Idempotency-Key": "override-link-review-target"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "override-link-review",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-source",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "override-link-review-capture",
+                "text": "Attach this screenshot to Alex Project Atlas review evidence.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert suggested_fact.status_code == 201, suggested_fact.text
+        assert override_fact.status_code == 201, override_fact.text
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "override-link-review",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-source",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex Project Atlas screenshot review evidence",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        fact_candidate = next(
+            item
+            for item in suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "fact"
+        )
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{fact_candidate['suggestion_id']}/review",
+            json={
+                "action": "approve",
+                "reason": "reviewer corrected target",
+                "target_type": "fact",
+                "target_id": override_fact.json()["data"]["id"],
+                "relation_type": "supports",
+                "confidence": "high",
+                "link_reason": "approved corrected target",
+            },
+            headers=auth_headers(),
+        )
+
+    assert approved.status_code == 200, approved.text
+    payload = approved.json()["data"]
+    assert payload["suggestion"]["status"] == "approved"
+    assert payload["suggestion"]["target_id"] == fact_candidate["target_id"]
+    assert payload["link"]["target_id"] == override_fact.json()["data"]["id"]
+    assert payload["link"]["relation_type"] == "supports"
+    assert payload["link"]["confidence"] == "high"
+    assert payload["link"]["reason"] == "approved corrected target"
+    assert payload["link"]["metadata"]["approved_override"] is True
+    assert payload["link"]["metadata"]["original_target_id"] == fact_candidate["target_id"]
 
 
 def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Path) -> None:

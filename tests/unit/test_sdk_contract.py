@@ -693,6 +693,11 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "ctxlinksug_1",
         action="approve",
         reason="user accepted",
+        target_type="fact",
+        target_id="fact_2",
+        relation_type="supports",
+        confidence="high",
+        link_reason="corrected target",
     )
 
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
@@ -718,7 +723,15 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "status": "pending",
         "limit": "50",
     }
-    assert seen[2][3] == {"action": "approve", "reason": "user accepted"}
+    assert seen[2][3] == {
+        "action": "approve",
+        "reason": "user accepted",
+        "target_type": "fact",
+        "target_id": "fact_2",
+        "relation_type": "supports",
+        "confidence": "high",
+        "link_reason": "corrected target",
+    }
 
 
 def test_sdk_supports_typed_scope_dtos() -> None:

@@ -373,10 +373,25 @@ select:focus {
 }
 
 .source-list,
+.edit-form,
 .action-row,
 .list-stack {
   display: grid;
   gap: 8px;
+}
+
+.edit-form {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.edit-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .action-row {

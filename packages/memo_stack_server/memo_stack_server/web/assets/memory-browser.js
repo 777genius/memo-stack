@@ -385,19 +385,27 @@
     }
   }
 
-  async function reviewContextLinkSuggestion(action, suggestionId) {
-    const reason = window.prompt(`${action} link reason`, `Reviewed in Memo Stack Browser`);
-    if (reason === null) {
-      return;
+  async function reviewContextLinkSuggestion(action, suggestionId, overrides = {}) {
+    let reason = overrides.reason;
+    if (!Object.hasOwn(overrides, "reason")) {
+      reason = window.prompt(`${action} link reason`, `Reviewed in Memo Stack Browser`);
+      if (reason === null) {
+        return;
+      }
     }
     setError("");
     try {
       await apiJson(`/v1/context-link-suggestions/${encodeURIComponent(suggestionId)}/review`, {
         method: "POST",
-        body: {
+        body: withoutEmpty({
           action,
           reason: reason || `Reviewed in Memo Stack Browser`,
-        },
+          target_type: overrides.target_type,
+          target_id: overrides.target_id,
+          relation_type: overrides.relation_type,
+          confidence: overrides.confidence,
+          link_reason: overrides.link_reason,
+        }),
       });
       await refreshAll();
     } catch (error) {
@@ -997,6 +1005,7 @@
         actionButton("Reject", () => reviewContextLinkSuggestion("reject", node.data.id)),
       );
       panel.append(actions);
+      panel.append(contextLinkEditForm(node.data));
     }
   }
 
@@ -1033,6 +1042,70 @@
       title,
       text,
     });
+  }
+
+  function contextLinkEditForm(suggestion) {
+    const form = document.createElement("section");
+    form.className = "edit-form";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Edit target";
+    const targetType = formInput("Target type", suggestion.target_type);
+    const targetId = formInput("Target id", suggestion.target_id);
+    const relationType = formInput("Relation", suggestion.relation_type);
+    const confidence = formSelect("Confidence", ["low", "medium", "high"], suggestion.confidence);
+    const linkReason = formInput("Link reason", suggestion.reason);
+    const reviewNote = formInput("Review note", "approved with edited target");
+    const submit = actionButton(
+      "Approve With Edits",
+      () =>
+        reviewContextLinkSuggestion("approve", suggestion.id, {
+          reason: reviewNote.input.value.trim() || "approved with edited target",
+          target_type: targetType.input.value.trim(),
+          target_id: targetId.input.value.trim(),
+          relation_type: relationType.input.value.trim(),
+          confidence: confidence.input.value,
+          link_reason: linkReason.input.value.trim(),
+        }),
+      "primary-button",
+    );
+    form.append(
+      heading,
+      targetType.element,
+      targetId.element,
+      relationType.element,
+      confidence.element,
+      linkReason.element,
+      reviewNote.element,
+      submit,
+    );
+    return form;
+  }
+
+  function formInput(labelText, value) {
+    const label = document.createElement("label");
+    const span = document.createElement("span");
+    span.textContent = labelText;
+    const input = document.createElement("input");
+    input.value = value || "";
+    label.append(span, input);
+    return { element: label, input };
+  }
+
+  function formSelect(labelText, values, selected) {
+    const label = document.createElement("label");
+    const span = document.createElement("span");
+    span.textContent = labelText;
+    const input = document.createElement("select");
+    for (const value of values) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      option.selected = value === selected;
+      input.append(option);
+    }
+    label.append(span, input);
+    return { element: label, input };
   }
 
   function sourceSection(sourceRefs) {
@@ -1426,6 +1499,12 @@
 
   function arrayOf(value) {
     return Array.isArray(value) ? value : [];
+  }
+
+  function withoutEmpty(payload) {
+    return Object.fromEntries(
+      Object.entries(payload).filter(([_key, value]) => value !== undefined && value !== null && value !== ""),
+    );
   }
 
   function safeDetail(detail) {
