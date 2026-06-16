@@ -31,12 +31,16 @@
     spaces: [],
     memory_scopes: [],
     facts: [],
+    episodes: [],
+    documents: [],
+    chunks: [],
     suggestions: [],
     anchors: [],
     anchorMergeSuggestions: [],
     contextLinkSuggestions: [],
     contextLinks: [],
     operationsConsole: null,
+    memoryBrowser: null,
     nodes: [],
     edges: [],
     selectedNodeId: null,
@@ -241,6 +245,7 @@
         contextLinkSuggestions,
         contextLinks,
         operationsConsole,
+        memoryBrowser,
         diagnostics,
       ] = await Promise.all([
         fetchFacts(),
@@ -250,15 +255,20 @@
         fetchContextLinkSuggestions(),
         fetchContextLinks(),
         fetchOperationsConsole(),
+        fetchMemoryBrowser(),
         apiGet("/v1/diagnostics/adapters").catch(() => null),
       ]);
       state.facts = facts;
+      state.episodes = sortBrowserItems(memoryBrowser?.episodes);
+      state.documents = sortBrowserItems(memoryBrowser?.documents);
+      state.chunks = sortBrowserItems(memoryBrowser?.chunks);
       state.suggestions = suggestions;
       state.anchors = anchors;
       state.anchorMergeSuggestions = anchorMergeSuggestions;
       state.contextLinkSuggestions = contextLinkSuggestions;
       state.contextLinks = contextLinks;
       state.operationsConsole = operationsConsole;
+      state.memoryBrowser = memoryBrowser;
       state.adapterDiagnostics = diagnostics ? diagnostics.data : null;
       state.lastRefreshAt = new Date();
       renderAll();
@@ -397,6 +407,20 @@
       },
     }).catch(() => ({ data: null }));
     return response.data || null;
+  }
+
+  async function fetchMemoryBrowser() {
+    const response = await apiGet("/v1/memory-browser", {
+      params: {
+        ...scopeParams(),
+        limit: "200",
+      },
+    }).catch(() => ({ data: null }));
+    return response.data || null;
+  }
+
+  function sortBrowserItems(items) {
+    return [...(items || [])].sort(compareUpdatedDesc);
   }
 
   async function buildDigest() {
@@ -960,6 +984,21 @@
     const statusFilter = els.statusFilter.value;
     const memoryItems = [
       ...state.facts.map((fact) => ({ type: "fact", item: fact, updated_at: fact.updated_at })),
+      ...state.episodes.map((episode) => ({
+        type: "episode",
+        item: episode,
+        updated_at: episode.occurred_at || episode.created_at,
+      })),
+      ...state.documents.map((documentItem) => ({
+        type: "document",
+        item: documentItem,
+        updated_at: documentItem.updated_at || documentItem.created_at,
+      })),
+      ...state.chunks.map((chunk) => ({
+        type: "chunk",
+        item: chunk,
+        updated_at: chunk.updated_at || chunk.created_at,
+      })),
       ...state.suggestions.map((suggestion) => ({
         type: "suggestion",
         item: suggestion,
@@ -993,6 +1032,12 @@
       visibleMemory.push(memory);
       if (memory.type === "fact") {
         addFactGraph(graph, memory.item, relationNodes);
+      } else if (memory.type === "episode") {
+        addEpisodeGraph(graph, memory.item, relationNodes);
+      } else if (memory.type === "document") {
+        addDocumentGraph(graph, memory.item, relationNodes);
+      } else if (memory.type === "chunk") {
+        addChunkGraph(graph, memory.item, relationNodes);
       } else if (memory.type === "suggestion") {
         addSuggestionGraph(graph, memory.item, relationNodes);
       } else if (memory.type === "anchor") {
@@ -1009,7 +1054,16 @@
 
     if (
       typeFilter !== "all" &&
-      !["fact", "suggestion", "anchor", "context_link_suggestion", "context_link"].includes(typeFilter)
+      ![
+        "fact",
+        "episode",
+        "document",
+        "chunk",
+        "suggestion",
+        "anchor",
+        "context_link_suggestion",
+        "context_link",
+      ].includes(typeFilter)
     ) {
       for (const node of [...graph.nodes.values()]) {
         if (node.type !== typeFilter && !relationNodes.has(node.id)) {
@@ -1042,6 +1096,67 @@
     }
     for (const ref of fact.source_refs || []) {
       addSourceRelation(graph, nodeId, ref, relationNodes);
+    }
+  }
+
+  function addEpisodeGraph(graph, episode, relationNodes) {
+    const nodeId = `episode:${episode.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "episode",
+      status: episode.status,
+      label: compactLabel(episode.text || episode.source_external_id),
+      text: episode.text,
+      data: episode,
+      degree: 0,
+    });
+    addRelation(graph, nodeId, `source_type:${episode.source_type}`, "source", episode.source_type, relationNodes);
+    addRelation(graph, nodeId, `thread:${episode.thread_id}`, "thread", episode.thread_id, relationNodes);
+  }
+
+  function addDocumentGraph(graph, documentItem, relationNodes) {
+    const nodeId = `document:${documentItem.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "document",
+      status: documentItem.status,
+      label: compactLabel(documentItem.title || documentItem.source_external_id),
+      text: `${documentItem.title || "Document"}\n${documentItem.source_external_id || ""}`,
+      data: documentItem,
+      degree: 0,
+    });
+    addRelation(
+      graph,
+      nodeId,
+      `source_type:${documentItem.source_type}`,
+      "source",
+      documentItem.source_type,
+      relationNodes,
+    );
+    if (documentItem.thread_id) {
+      addRelation(graph, nodeId, `thread:${documentItem.thread_id}`, "thread", documentItem.thread_id, relationNodes);
+    }
+  }
+
+  function addChunkGraph(graph, chunk, relationNodes) {
+    const nodeId = `chunk:${chunk.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "chunk",
+      status: chunk.status,
+      label: compactLabel(chunk.text),
+      text: chunk.text,
+      data: chunk,
+      degree: 0,
+    });
+    addRelation(graph, nodeId, `kind:${chunk.kind}`, "kind", chunk.kind, relationNodes);
+    if (chunk.document_id) {
+      ensureContextObjectNode(graph, "document", chunk.document_id, "document");
+      addEdge(graph, nodeId, `document:${chunk.document_id}`, "document", true);
+    }
+    if (chunk.episode_id) {
+      ensureContextObjectNode(graph, "episode", chunk.episode_id, "episode");
+      addEdge(graph, nodeId, `episode:${chunk.episode_id}`, "episode", true);
     }
   }
 
@@ -1196,6 +1311,22 @@
       type: objectType || "source",
       status: roleLabel,
       label: compactLabel(displayLabel || `${objectType}:${shortId(objectId)}`),
+      text: `${objectType}:${objectId}`,
+      data: { id: objectId, type: objectType, role: roleLabel },
+      degree: 0,
+    });
+  }
+
+  function ensureContextObjectNode(graph, objectType, objectId, roleLabel) {
+    const nodeId = `${objectType}:${objectId}`;
+    if (graph.nodes.has(nodeId)) {
+      return;
+    }
+    addNode(graph, {
+      id: nodeId,
+      type: objectType,
+      status: roleLabel,
+      label: compactLabel(`${objectType}:${shortId(objectId)}`),
       text: `${objectType}:${objectId}`,
       data: { id: objectId, type: objectType, role: roleLabel },
       degree: 0,
@@ -1447,6 +1578,9 @@
     }
     if (node.data?.confidence) {
       meta.append(pill(`confidence ${node.data.confidence}`));
+    }
+    if (node.data?.source_type) {
+      meta.append(pill(node.data.source_type));
     }
     const text = document.createElement("div");
     text.className = "text-block";
@@ -1913,6 +2047,24 @@
         text: fact.text,
         updated_at: fact.updated_at,
       })),
+      ...state.episodes.map((episode) => ({
+        id: `episode:${episode.id}`,
+        title: `episode / ${episode.status}`,
+        text: episode.text,
+        updated_at: episode.occurred_at || episode.created_at,
+      })),
+      ...state.documents.map((documentItem) => ({
+        id: `document:${documentItem.id}`,
+        title: `document / ${documentItem.status}`,
+        text: documentItem.title || documentItem.source_external_id,
+        updated_at: documentItem.updated_at || documentItem.created_at,
+      })),
+      ...state.chunks.map((chunk) => ({
+        id: `chunk:${chunk.id}`,
+        title: `chunk / ${chunk.status}`,
+        text: chunk.text,
+        updated_at: chunk.updated_at || chunk.created_at,
+      })),
       ...state.suggestions.map((suggestion) => ({
         id: `suggestion:${suggestion.id}`,
         title: `suggestion / ${suggestion.status}`,
@@ -1973,7 +2125,16 @@
     if (
       typeFilter !== "all" &&
       memory.type !== typeFilter &&
-      ["fact", "suggestion", "anchor", "context_link_suggestion", "context_link"].includes(typeFilter)
+      [
+        "fact",
+        "episode",
+        "document",
+        "chunk",
+        "suggestion",
+        "anchor",
+        "context_link_suggestion",
+        "context_link",
+      ].includes(typeFilter)
     ) {
       return false;
     }
@@ -1986,6 +2147,7 @@
     }
     const haystack = [
       memory.item.text,
+      memory.item.title,
       memory.item.candidate_text,
       memory.item.kind,
       memory.item.label,
@@ -1994,6 +2156,7 @@
       memory.item.status,
       memory.item.operation,
       memory.item.source_type,
+      memory.item.source_external_id,
       memory.item.source_id,
       memory.item.target_type,
       memory.item.target_id,
@@ -2016,6 +2179,15 @@
   function nodeTitle(node) {
     if (node.type === "fact") {
       return `Fact ${node.data?.id || ""}`.trim();
+    }
+    if (node.type === "episode") {
+      return `Episode ${node.data?.source_external_id || node.data?.id || ""}`.trim();
+    }
+    if (node.type === "document") {
+      return `Document ${node.data?.title || node.data?.id || ""}`.trim();
+    }
+    if (node.type === "chunk") {
+      return `Chunk ${node.data?.id || ""}`.trim();
     }
     if (node.type === "suggestion") {
       return `Suggestion ${node.data?.id || ""}`.trim();
@@ -2083,6 +2255,9 @@
         return "#c76b14";
       }
       return "#16835f";
+    }
+    if (node.type === "episode") {
+      return "#c76b14";
     }
     if (node.type === "thread") {
       return "#7c3aed";
@@ -2229,8 +2404,24 @@
   }
 
   function compareUpdatedDesc(a, b) {
-    const aTime = Date.parse(a.updated_at || a.item?.updated_at || 0);
-    const bTime = Date.parse(b.updated_at || b.item?.updated_at || 0);
+    const aTime = Date.parse(
+      a.updated_at ||
+        a.item?.updated_at ||
+        a.occurred_at ||
+        a.item?.occurred_at ||
+        a.created_at ||
+        a.item?.created_at ||
+        0,
+    );
+    const bTime = Date.parse(
+      b.updated_at ||
+        b.item?.updated_at ||
+        b.occurred_at ||
+        b.item?.occurred_at ||
+        b.created_at ||
+        b.item?.created_at ||
+        0,
+    );
     return bTime - aTime;
   }
 
