@@ -250,6 +250,104 @@ def test_context_link_suggestions_batch_review_applies_mixed_actions(
     )
 
 
+def test_context_link_suggestions_batch_review_honors_continue_on_error(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-review",
+                "text": "Alex Project Atlas review links should survive batch failures.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "batch-failure"}],
+                "tags": ["alex", "atlas"],
+            },
+            headers=auth_headers({"Idempotency-Key": "review-history-batch-failure-fact"}),
+        )
+        assert fact.status_code == 201, fact.text
+        capture = _create_capture(
+            client,
+            source_event_id="batch-failure-link-source",
+            text="Batch failure Project Atlas capture from Alex review.",
+        )
+        suggestion_id = _persist_first_suggestion(
+            client,
+            source_id=capture.json()["data"]["id"],
+            text="Alex Project Atlas batch failure capture",
+        )
+
+        stopped = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={
+                "items": [
+                    {
+                        "suggestion_id": "ctxlinksug_missing",
+                        "action": "approve",
+                    },
+                    {
+                        "suggestion_id": suggestion_id,
+                        "action": "reject",
+                    },
+                ],
+                "continue_on_error": False,
+            },
+            headers=auth_headers(),
+        )
+        still_pending = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "status": "pending",
+                "limit": "10",
+            },
+            headers=auth_headers(),
+        )
+        continued = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={
+                "items": [
+                    {
+                        "suggestion_id": "ctxlinksug_missing",
+                        "action": "approve",
+                    },
+                    {
+                        "suggestion_id": suggestion_id,
+                        "action": "reject",
+                        "reason": "continued after missing suggestion",
+                    },
+                ],
+                "continue_on_error": True,
+            },
+            headers=auth_headers(),
+        )
+
+    assert stopped.status_code == 200, stopped.text
+    stopped_data = stopped.json()["data"]
+    assert stopped_data["applied"] == 0
+    assert stopped_data["failed"] == 1
+    assert stopped_data["stopped"] is True
+    assert len(stopped_data["results"]) == 1
+    assert stopped_data["results"][0]["error_code"] == "memory.not_found"
+    assert still_pending.status_code == 200, still_pending.text
+    assert suggestion_id in {item["id"] for item in still_pending.json()["data"]}
+    assert continued.status_code == 200, continued.text
+    continued_data = continued.json()["data"]
+    assert continued_data["applied"] == 1
+    assert continued_data["failed"] == 1
+    assert continued_data["stopped"] is False
+    assert [item["status"] for item in continued_data["results"]] == ["failed", "applied"]
+    assert continued_data["results"][1]["suggestion"]["status"] == "rejected"
+    assert continued_data["results"][1]["suggestion"]["review_reason"] == (
+        "continued after missing suggestion"
+    )
+
+
 def _create_capture(
     client: TestClient,
     *,
