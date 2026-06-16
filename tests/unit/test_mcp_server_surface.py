@@ -102,6 +102,10 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_review_suggestions_batch",
             "memory_reject_suggestion",
             "memory_expire_suggestion",
+            "memory_list_context_links",
+            "memory_list_context_link_suggestions",
+            "memory_review_context_link_suggestion",
+            "memory_review_context_link_suggestions_batch",
             "memory_ingest_document",
         }
         for tool in tools:
@@ -235,6 +239,31 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "reject",
             "expire",
         }
+        context_links = next(tool for tool in tools if tool.name == "memory_list_context_links")
+        assert context_links.annotations.readOnlyHint is True
+        assert set(context_links.inputSchema["properties"]["status"]["anyOf"][0]["enum"]) == {
+            "active",
+            "deleted",
+        }
+        context_link_suggestions = next(
+            tool for tool in tools if tool.name == "memory_list_context_link_suggestions"
+        )
+        assert context_link_suggestions.annotations.readOnlyHint is True
+        assert "candidate relations" in context_link_suggestions.description
+        context_link_review = next(
+            tool for tool in tools if tool.name == "memory_review_context_link_suggestion"
+        )
+        assert set(context_link_review.inputSchema["properties"]["action"]["enum"]) == {
+            "approve",
+            "reject",
+            "expire",
+        }
+        context_link_batch = next(
+            tool
+            for tool in tools
+            if tool.name == "memory_review_context_link_suggestions_batch"
+        )
+        assert context_link_batch.inputSchema["properties"]["items"]["maxItems"] == 50
         captures = next(tool for tool in tools if tool.name == "memory_list_captures")
         assert captures.annotations.readOnlyHint is True
         assert "raw hook payloads" in captures.description

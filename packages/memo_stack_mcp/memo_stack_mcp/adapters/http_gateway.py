@@ -495,6 +495,98 @@ class HttpMemoryGateway:
             json=_without_none({"reason": reason}),
         )
 
+    async def list_context_links(
+        self,
+        *,
+        scope: MemoryScope,
+        source_type: str | None,
+        source_id: str | None,
+        status: str | None,
+        statuses: str | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/context-links",
+            params=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "status": status,
+                    "statuses": statuses,
+                    "limit": limit,
+                }
+            ),
+        )
+
+    async def list_context_link_suggestions(
+        self,
+        *,
+        scope: MemoryScope,
+        source_type: str | None,
+        source_id: str | None,
+        status: str | None,
+        statuses: str | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/context-link-suggestions",
+            params=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "status": status,
+                    "statuses": statuses,
+                    "limit": limit,
+                }
+            ),
+        )
+
+    async def review_context_link_suggestion(
+        self,
+        *,
+        suggestion_id: str,
+        action: str,
+        reason: str | None,
+        target_type: str | None,
+        target_id: str | None,
+        relation_type: str | None,
+        confidence: str | None,
+        link_reason: str | None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/v1/context-link-suggestions/{suggestion_id}/review",
+            json=_without_none(
+                {
+                    "action": action,
+                    "reason": reason,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "relation_type": relation_type,
+                    "confidence": confidence,
+                    "link_reason": link_reason,
+                }
+            ),
+        )
+
+    async def review_context_link_suggestions_batch(
+        self,
+        *,
+        items: list[dict[str, Any]],
+        continue_on_error: bool,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/context-link-suggestions/review-batch",
+            json={"items": items, "continue_on_error": continue_on_error},
+        )
+
     async def list_captures(
         self,
         *,

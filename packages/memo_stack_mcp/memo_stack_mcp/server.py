@@ -14,6 +14,13 @@ from memo_stack_mcp.application.obsidian import ObsidianMcpService
 from memo_stack_mcp.application.prepare import ObsidianPrepareMcpService
 from memo_stack_mcp.application.service import MEMORY_USAGE_GUIDE, MemoryToolService
 from memo_stack_mcp.config import McpTransport, MemoryMcpSettings, load_settings
+from memo_stack_mcp.domain.context_links import (
+    MemoryContextLinkListResponse,
+    MemoryContextLinkReviewBatchItemInput,
+    MemoryContextLinkSuggestionListResponse,
+    MemoryReviewContextLinkSuggestionResponse,
+    MemoryReviewContextLinksBatchResponse,
+)
 from memo_stack_mcp.domain.models import (
     MemoryCaptureListResponse,
     MemoryCaptureMutationResponse,
@@ -64,6 +71,9 @@ FactRelationType = Literal[
 FactRelationStatus = Literal["active", "deleted"]
 SuggestionStatus = Literal["pending", "approved", "rejected", "expired"]
 SuggestionOperation = Literal["add", "update", "delete", "review"]
+ContextLinkStatus = Literal["active", "deleted"]
+ContextLinkSuggestionStatus = Literal["pending", "approved", "rejected", "expired"]
+ContextLinkReviewAction = Literal["approve", "reject", "expire"]
 CaptureStatus = Literal["accepted", "rejected", "redacted", "purged"]
 CaptureConsolidationStatus = Literal[
     "not_required",
@@ -1599,6 +1609,171 @@ def create_mcp_server(
         return _tool_response(
             await tool_service.expire_suggestion(suggestion_id=suggestion_id, reason=reason),
             MemoryReviewSuggestionResponse,
+        )
+
+    @mcp.tool(
+        name="memory_list_context_links",
+        title="List Context Links",
+        description=(
+            "List approved context links between captures, assets, facts, documents, chunks, "
+            "threads, or anchors in one MemoryScope. Use this to inspect what saved evidence "
+            "is already connected to before proposing more links."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_list_context_links(
+        space_slug: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        memory_scope_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        source_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
+        source_id: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        status: Annotated[ContextLinkStatus | None, Field(default="active")] = "active",
+        statuses: Annotated[
+            list[ContextLinkStatus] | None,
+            Field(default=None, max_length=4, description="Optional multi-status filter."),
+        ] = None,
+        limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
+    ) -> Annotated[CallToolResult, MemoryContextLinkListResponse]:
+        return _tool_response(
+            await tool_service.list_context_links(
+                space_slug=space_slug,
+                memory_scope_external_ref=memory_scope_external_ref,
+                source_type=source_type,
+                source_id=source_id,
+                status=status,
+                statuses=statuses,
+                limit=limit,
+            ),
+            MemoryContextLinkListResponse,
+        )
+
+    @mcp.tool(
+        name="memory_list_context_link_suggestions",
+        title="List Context Link Suggestions",
+        description=(
+            "List pending or reviewed context-link suggestions. Use this after capture/file "
+            "ingestion or link suggestion generation to show the user candidate relations "
+            "with reasons before approving them."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_list_context_link_suggestions(
+        space_slug: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        memory_scope_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        source_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
+        source_id: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        status: Annotated[ContextLinkSuggestionStatus | None, Field(default="pending")] = "pending",
+        statuses: Annotated[
+            list[ContextLinkSuggestionStatus] | None,
+            Field(default=None, max_length=8, description="Optional multi-status filter."),
+        ] = None,
+        limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
+    ) -> Annotated[CallToolResult, MemoryContextLinkSuggestionListResponse]:
+        return _tool_response(
+            await tool_service.list_context_link_suggestions(
+                space_slug=space_slug,
+                memory_scope_external_ref=memory_scope_external_ref,
+                source_type=source_type,
+                source_id=source_id,
+                status=status,
+                statuses=statuses,
+                limit=limit,
+            ),
+            MemoryContextLinkSuggestionListResponse,
+        )
+
+    @mcp.tool(
+        name="memory_review_context_link_suggestion",
+        title="Review Context Link Suggestion",
+        description=(
+            "Approve, reject, or expire one context-link suggestion by suggestion_id. Approval "
+            "creates a canonical context link; optional target/relation fields let the reviewer "
+            "correct the suggested relation before saving it."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_review_context_link_suggestion(
+        suggestion_id: Annotated[str, Field(min_length=1, max_length=160)],
+        action: Annotated[
+            ContextLinkReviewAction,
+            Field(description="Review action: approve, reject, or expire."),
+        ],
+        reason: Annotated[str | None, Field(default=None, max_length=320)] = None,
+        target_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
+        target_id: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        relation_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
+        confidence: Annotated[ConfidenceValue | None, Field(default=None)] = None,
+        link_reason: Annotated[str | None, Field(default=None, min_length=1, max_length=320)] = None,
+    ) -> Annotated[CallToolResult, MemoryReviewContextLinkSuggestionResponse]:
+        return _tool_response(
+            await tool_service.review_context_link_suggestion(
+                suggestion_id=suggestion_id,
+                action=action,
+                reason=reason,
+                target_type=target_type,
+                target_id=target_id,
+                relation_type=relation_type,
+                confidence=confidence,
+                link_reason=link_reason,
+            ),
+            MemoryReviewContextLinkSuggestionResponse,
+        )
+
+    @mcp.tool(
+        name="memory_review_context_link_suggestions_batch",
+        title="Review Context Link Suggestions Batch",
+        description=(
+            "Approve, reject, or expire multiple context-link suggestions in one bounded batch. "
+            "Use after memory_list_context_link_suggestions when the user reviews several "
+            "relations at once. Results are per-item and can continue after failures."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_review_context_link_suggestions_batch(
+        items: Annotated[
+            list[MemoryContextLinkReviewBatchItemInput],
+            Field(min_length=1, max_length=50, description="Context-link reviews to apply."),
+        ],
+        continue_on_error: Annotated[
+            bool,
+            Field(default=False, description="Continue after item-level failures."),
+        ] = False,
+    ) -> Annotated[CallToolResult, MemoryReviewContextLinksBatchResponse]:
+        return _tool_response(
+            await tool_service.review_context_link_suggestions_batch(
+                items=[item.model_dump(exclude_none=True) for item in items],
+                continue_on_error=continue_on_error,
+            ),
+            MemoryReviewContextLinksBatchResponse,
         )
 
     @mcp.tool(

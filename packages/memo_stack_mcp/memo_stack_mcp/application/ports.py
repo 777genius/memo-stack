@@ -222,6 +222,48 @@ class MemoryGatewayPort(Protocol):
         reason: str | None,
     ) -> dict[str, Any]: ...
 
+    async def list_context_links(
+        self,
+        *,
+        scope: MemoryScope,
+        source_type: str | None,
+        source_id: str | None,
+        status: str | None,
+        statuses: str | None,
+        limit: int,
+    ) -> dict[str, Any]: ...
+
+    async def list_context_link_suggestions(
+        self,
+        *,
+        scope: MemoryScope,
+        source_type: str | None,
+        source_id: str | None,
+        status: str | None,
+        statuses: str | None,
+        limit: int,
+    ) -> dict[str, Any]: ...
+
+    async def review_context_link_suggestion(
+        self,
+        *,
+        suggestion_id: str,
+        action: str,
+        reason: str | None,
+        target_type: str | None,
+        target_id: str | None,
+        relation_type: str | None,
+        confidence: str | None,
+        link_reason: str | None,
+    ) -> dict[str, Any]: ...
+
+    async def review_context_link_suggestions_batch(
+        self,
+        *,
+        items: list[dict[str, Any]],
+        continue_on_error: bool,
+    ) -> dict[str, Any]: ...
+
     async def list_captures(
         self,
         *,
