@@ -193,6 +193,19 @@ class MemoryGatewayPort(Protocol):
         limit: int,
     ) -> dict[str, Any]: ...
 
+    async def get_memory_browser(
+        self,
+        *,
+        scope: MemoryScope,
+        limit: int,
+        thread_status: str | None,
+        capture_status: str | None,
+        asset_status: str | None,
+        anchor_status: str | None,
+        link_status: str | None,
+        suggestion_status: str | None,
+    ) -> dict[str, Any]: ...
+
     async def approve_suggestion(
         self,
         *,

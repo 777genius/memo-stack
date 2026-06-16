@@ -35,6 +35,9 @@ from memo_stack_mcp.application.service_constants import (
     FACT_RELATION_STATUSES,
     FACT_RELATION_TYPES,
     FACT_STATUSES,
+    MEMORY_BROWSER_ANCHOR_STATUSES,
+    MEMORY_BROWSER_ASSET_STATUSES,
+    MEMORY_BROWSER_THREAD_STATUSES,
     MEMORY_KINDS,
     MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES,
     SUGGESTION_OPERATIONS,
@@ -583,6 +586,59 @@ class MemoryToolService(
                 cursor=cursor,
             )
             return self._ok("Facts listed.", data=payload.get("data", payload))
+
+        return await self._guard(action)
+
+    async def browse_scope(
+        self,
+        *,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        limit: int = 50,
+        thread_status: str | None = "active",
+        capture_status: str | None = None,
+        asset_status: str | None = "stored",
+        anchor_status: str | None = "active",
+        link_status: str | None = None,
+        suggestion_status: str | None = None,
+    ) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            _ensure_optional_choice(
+                "thread_status",
+                thread_status,
+                MEMORY_BROWSER_THREAD_STATUSES,
+            )
+            _ensure_optional_choice("capture_status", capture_status, CAPTURE_STATUSES)
+            _ensure_optional_choice("asset_status", asset_status, MEMORY_BROWSER_ASSET_STATUSES)
+            _ensure_optional_choice("anchor_status", anchor_status, MEMORY_BROWSER_ANCHOR_STATUSES)
+            _ensure_optional_choice("link_status", link_status, CONTEXT_LINK_STATUSES)
+            _ensure_optional_choice(
+                "suggestion_status",
+                suggestion_status,
+                CONTEXT_LINK_SUGGESTION_STATUSES,
+            )
+            effective_limit, warnings = clamp_int(
+                name="limit",
+                value=limit,
+                minimum=1,
+                maximum=200,
+            )
+            payload = await self._gateway.get_memory_browser(
+                scope=self._scope(space_slug, memory_scope_external_ref, None),
+                limit=effective_limit,
+                thread_status=thread_status,
+                capture_status=capture_status,
+                asset_status=asset_status,
+                anchor_status=anchor_status,
+                link_status=link_status,
+                suggestion_status=suggestion_status,
+            )
+            return self._ok(
+                "Memory scope browser read model loaded.",
+                data=payload.get("data", payload),
+                side_effects=[],
+                warnings=warnings,
+            )
 
         return await self._guard(action)
 
@@ -2100,3 +2156,8 @@ class MemoryToolService(
         if possible_conflict is not None:
             return ("conflict", possible_conflict)
         return None
+
+
+def _ensure_optional_choice(name: str, value: str | None, allowed: set[str]) -> None:
+    if value is not None:
+        ensure_choice(name, value, allowed)

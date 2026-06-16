@@ -95,6 +95,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_suggest_facts_batch",
             "memory_propose_updates",
             "memory_list_suggestions",
+            "memory_browse_scope",
             "memory_list_captures",
             "memory_consolidate_capture",
             "memory_approve_suggestion",
@@ -250,6 +251,14 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         context_links = next(tool for tool in tools if tool.name == "memory_list_context_links")
         assert context_links.annotations.readOnlyHint is True
         assert set(context_links.inputSchema["properties"]["status"]["anyOf"][0]["enum"]) == {
+            "active",
+            "deleted",
+        }
+        browse = next(tool for tool in tools if tool.name == "memory_browse_scope")
+        assert browse.annotations.readOnlyHint is True
+        assert "browser snapshot" in browse.description
+        assert browse.inputSchema["properties"]["limit"]["maximum"] == 200
+        assert set(browse.inputSchema["properties"]["link_status"]["anyOf"][0]["enum"]) == {
             "active",
             "deleted",
         }

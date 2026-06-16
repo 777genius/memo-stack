@@ -22,6 +22,7 @@ from memo_stack_mcp.domain.context_links import (
     MemoryReviewContextLinksBatchResponse,
     MemorySuggestContextLinksResponse,
 )
+from memo_stack_mcp.domain.memory_browser import MemoryBrowserResponse
 from memo_stack_mcp.domain.models import (
     MemoryCaptureListResponse,
     MemoryCaptureMutationResponse,
@@ -76,6 +77,9 @@ ContextLinkStatus = Literal["active", "deleted"]
 ContextLinkSuggestionStatus = Literal["pending", "approved", "rejected", "expired"]
 ContextLinkReviewAction = Literal["approve", "reject", "expire"]
 CaptureStatus = Literal["accepted", "rejected", "redacted", "purged"]
+MemoryBrowserThreadStatus = Literal["active", "deleted"]
+MemoryBrowserAssetStatus = Literal["stored", "deleted"]
+MemoryBrowserAnchorStatus = Literal["active", "deleted"]
 CaptureConsolidationStatus = Literal[
     "not_required",
     "pending",
@@ -1660,6 +1664,64 @@ def create_mcp_server(
                 persist=persist,
             ),
             MemorySuggestContextLinksResponse,
+        )
+
+    @mcp.tool(
+        name="memory_browse_scope",
+        title="Browse Memory Scope",
+        description=(
+            "Load a read-only browser snapshot for one MemoryScope: threads, captures, assets, "
+            "semantic anchors, approved context links, pending or reviewed link suggestions, "
+            "stats, and diagnostics. Use this when the user wants to navigate what has been "
+            "saved in a project/scope or inspect review state before approving links."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_browse_scope(
+        space_slug: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        memory_scope_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
+        thread_status: Annotated[
+            MemoryBrowserThreadStatus | None,
+            Field(default="active"),
+        ] = "active",
+        capture_status: Annotated[CaptureStatus | None, Field(default=None)] = None,
+        asset_status: Annotated[
+            MemoryBrowserAssetStatus | None,
+            Field(default="stored"),
+        ] = "stored",
+        anchor_status: Annotated[
+            MemoryBrowserAnchorStatus | None,
+            Field(default="active"),
+        ] = "active",
+        link_status: Annotated[ContextLinkStatus | None, Field(default=None)] = None,
+        suggestion_status: Annotated[
+            ContextLinkSuggestionStatus | None,
+            Field(default=None),
+        ] = None,
+    ) -> Annotated[CallToolResult, MemoryBrowserResponse]:
+        return _tool_response(
+            await tool_service.browse_scope(
+                space_slug=space_slug,
+                memory_scope_external_ref=memory_scope_external_ref,
+                limit=limit,
+                thread_status=thread_status,
+                capture_status=capture_status,
+                asset_status=asset_status,
+                anchor_status=anchor_status,
+                link_status=link_status,
+                suggestion_status=suggestion_status,
+            ),
+            MemoryBrowserResponse,
         )
 
     @mcp.tool(

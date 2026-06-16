@@ -495,6 +495,36 @@ class HttpMemoryGateway:
             json=_without_none({"reason": reason}),
         )
 
+    async def get_memory_browser(
+        self,
+        *,
+        scope: MemoryScope,
+        limit: int,
+        thread_status: str | None,
+        capture_status: str | None,
+        asset_status: str | None,
+        anchor_status: str | None,
+        link_status: str | None,
+        suggestion_status: str | None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/memory-browser",
+            params=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
+                    "limit": limit,
+                    "thread_status": thread_status,
+                    "capture_status": capture_status,
+                    "asset_status": asset_status,
+                    "anchor_status": anchor_status,
+                    "link_status": link_status,
+                    "suggestion_status": suggestion_status,
+                }
+            ),
+        )
+
     async def suggest_context_links(
         self,
         *,
