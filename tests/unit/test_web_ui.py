@@ -27,6 +27,8 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert index.status_code == 200
     assert "Memo Stack Browser" in index.text
     assert "memory-browser.js" in index.text
+    assert "Operations" in index.text
+    assert "operationsList" in index.text
     assert "Bearer " not in index.text
     assert css.status_code == 200
     assert "graph-panel" in css.text
@@ -72,6 +74,10 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "Delete Link" in js.text
     assert "deleteContextLink" in js.text
     assert '["active", "deleted"]' in js.text
+    assert "/v1/operations-console" in js.text
+    assert "/retry" in js.text
+    assert "/cancel" in js.text
+    assert "renderOperations" in js.text
     assert "/ui/" not in openapi.text
 
 
