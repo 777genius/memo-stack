@@ -20,6 +20,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
         index = client.get("/ui/")
         css = client.get("/ui/assets/memory-browser.css")
         js = client.get("/ui/assets/memory-browser.js")
+        operations_js = client.get("/ui/assets/memory-browser-operations.js")
         openapi = client.get("/openapi.json")
 
     assert redirect.status_code in {307, 308}
@@ -27,6 +28,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert index.status_code == 200
     assert "Memo Stack Browser" in index.text
     assert "memory-browser.js" in index.text
+    assert "memory-browser-operations.js" in index.text
     assert "Operations" in index.text
     assert "operationsList" in index.text
     assert "Bearer " not in index.text
@@ -34,8 +36,10 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "graph-panel" in css.text
     assert "section-label" in css.text
     assert js.status_code == 200
+    assert operations_js.status_code == 200
     assert "localStorage" in js.text
     assert "Authorization" in js.text
+    assert "memoStackBrowser" in js.text
     assert "anchorCount" in index.text
     assert "Create Anchor" in index.text
     assert "Backfill Anchors" in index.text
@@ -75,9 +79,10 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "deleteContextLink" in js.text
     assert '["active", "deleted"]' in js.text
     assert "/v1/operations-console" in js.text
-    assert "/retry" in js.text
-    assert "/cancel" in js.text
-    assert "renderOperations" in js.text
+    assert "/retry" in operations_js.text
+    assert "/cancel" in operations_js.text
+    assert "renderOperations" in operations_js.text
+    assert "memoStackOperations" in operations_js.text
     assert "/ui/" not in openapi.text
 
 
