@@ -44,6 +44,33 @@ from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort, UnitOfWork
 
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _MAX_CANDIDATE_PREVIEW = 220
+_LINK_STOP_TERMS = {
+    "about",
+    "after",
+    "again",
+    "ago",
+    "and",
+    "from",
+    "hour",
+    "last",
+    "note",
+    "screenshot",
+    "that",
+    "the",
+    "this",
+    "with",
+    "week",
+    "what",
+    "when",
+    "where",
+    "which",
+    "когда",
+    "неделю",
+    "про",
+    "скриншот",
+    "что",
+    "час",
+}
 _ALLOWED_ENDPOINT_STATUSES: dict[str, set[str]] = {
     "anchor": {"active"},
     "asset": {"stored"},
@@ -1002,7 +1029,7 @@ def _terms(text: str) -> tuple[str, ...]:
     seen: dict[str, None] = {}
     for raw in _TERM_PATTERN.findall(text.lower()):
         term = raw.strip("._-:/#")
-        if len(term) >= 3 and term not in seen:
+        if len(term) >= 3 and term not in _LINK_STOP_TERMS and term not in seen:
             seen[term] = None
     return tuple(seen)
 
@@ -1020,7 +1047,7 @@ def _score_text_candidate(
     lowered = target_text.lower()
     hits = tuple(term for term in query_terms if term in lowered)
     if hits:
-        score += min(28.0, 9.0 * len(hits))
+        score += min(48.0, 8.0 * len(hits))
         reasons.append("matching text")
     age_hours = _age_hours(updated_at, now)
     if age_hours <= 1:
