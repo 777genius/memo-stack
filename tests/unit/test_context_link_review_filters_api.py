@@ -348,6 +348,43 @@ def test_context_link_suggestions_batch_review_honors_continue_on_error(
     )
 
 
+def test_context_link_suggestions_batch_review_validates_request_shape(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        empty = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={"items": []},
+            headers=auth_headers(),
+        )
+        too_many = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={
+                "items": [
+                    {"suggestion_id": f"ctxlinksug_{index}", "action": "reject"}
+                    for index in range(51)
+                ]
+            },
+            headers=auth_headers(),
+        )
+        invalid_action = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={
+                "items": [
+                    {"suggestion_id": "ctxlinksug_invalid_action", "action": "archive"}
+                ]
+            },
+            headers=auth_headers(),
+        )
+
+    assert empty.status_code == 400, empty.text
+    assert too_many.status_code == 400, too_many.text
+    assert invalid_action.status_code == 400, invalid_action.text
+    assert empty.json()["error"]["code"] == "memory.validation"
+    assert too_many.json()["error"]["code"] == "memory.validation"
+    assert invalid_action.json()["error"]["code"] == "memory.validation"
+
+
 def _create_capture(
     client: TestClient,
     *,
