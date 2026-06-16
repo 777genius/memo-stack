@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import timedelta
 from hashlib import sha256
-from math import ceil
 
 from memo_stack_core.application.asset_extraction_mapping import (
     ASSET_EXTRACTION_SOURCE_TYPE,
@@ -28,6 +27,20 @@ from memo_stack_core.application.dto import (
     RunAssetExtractionCommand,
 )
 from memo_stack_core.application.normalize import content_hash
+from memo_stack_core.application.use_cases.asset_extraction_support import (
+    NON_RUNNABLE_EXTRACTION_STATUSES,
+    ExtractionRetryPolicy,
+    actual_media_analysis_seconds,
+    asset_extract_event,
+    estimated_media_analysis_seconds,
+    indexing_status,
+    parser_config_hash,
+    positive_int,
+    safe_exception_code,
+    safe_exception_message,
+    usage_idempotency_key,
+    usage_reconciliation_idempotency_key,
+)
 from memo_stack_core.domain.assets import AssetStatus
 from memo_stack_core.domain.errors import (
     MemoryInfrastructureError,
@@ -35,14 +48,12 @@ from memo_stack_core.domain.errors import (
     MemoryQuotaExceededError,
     MemoryValidationError,
 )
-from memo_stack_core.domain.events import OutboxEvent
 from memo_stack_core.domain.extraction import (
     AssetExtractionJob,
     AssetExtractionJobId,
     AssetExtractionStatus,
     ExtractionArtifact,
     ExtractionArtifactId,
-    ExtractionRetryDisposition,
 )
 from memo_stack_core.domain.usage import (
     USAGE_RECONCILIATION_SOURCE_TYPE,
@@ -68,50 +79,6 @@ from memo_stack_core.ports.extraction import (
 from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
-_DEFAULT_PARSER_CONFIG_VERSION = "v1"
-_NON_RUNNABLE_EXTRACTION_STATUSES = {
-    AssetExtractionStatus.SUCCEEDED,
-    AssetExtractionStatus.UNSUPPORTED,
-    AssetExtractionStatus.CANCELED,
-    AssetExtractionStatus.STALE,
-}
-
-
-class ExtractionRetryPolicy:
-    def __init__(
-        self,
-        *,
-        max_attempts: int = 5,
-        base_delay_seconds: int = 30,
-        max_delay_seconds: int = 900,
-    ) -> None:
-        self.max_attempts = max(1, max_attempts)
-        self.base_delay_seconds = max(1, base_delay_seconds)
-        self.max_delay_seconds = max(self.base_delay_seconds, max_delay_seconds)
-
-    def disposition_for_code(self, code: str) -> ExtractionRetryDisposition:
-        if _is_permanent_error_code(code):
-            return ExtractionRetryDisposition.PERMANENT
-        return ExtractionRetryDisposition.RETRYABLE
-
-    def retry_after(
-        self,
-        *,
-        now: datetime,
-        attempt_count: int,
-        code: str,
-    ) -> datetime | None:
-        if attempt_count >= self.max_attempts:
-            return None
-        if self.disposition_for_code(code) != ExtractionRetryDisposition.RETRYABLE:
-            return None
-        exponent = max(0, attempt_count - 1)
-        delay_seconds = min(
-            self.max_delay_seconds,
-            self.base_delay_seconds * (2**exponent),
-        )
-        return now + timedelta(seconds=delay_seconds)
-
 
 class RequestAssetExtractionUseCase:
     def __init__(
@@ -135,7 +102,7 @@ class RequestAssetExtractionUseCase:
         parser_profile = (command.parser_profile or self._default_parser_profile).strip()
         if not parser_profile:
             raise MemoryValidationError("Parser profile is required")
-        parser_config_hash = _parser_config_hash(parser_profile)
+        parser_config_hash_value = parser_config_hash(parser_profile)
         async with self._uow_factory() as uow:
             asset = await uow.assets.get_by_id(command.asset_id)
             if asset is None or asset.status != AssetStatus.STORED:
@@ -143,7 +110,7 @@ class RequestAssetExtractionUseCase:
             existing = await uow.asset_extractions.find_active_for_asset_profile(
                 asset_id=str(asset.id),
                 parser_profile=parser_profile,
-                parser_config_hash=parser_config_hash,
+                parser_config_hash=parser_config_hash_value,
                 source_sha256_hex=asset.sha256_hex,
             )
             if existing is not None:
@@ -152,12 +119,12 @@ class RequestAssetExtractionUseCase:
                     job=existing,
                     artifacts=tuple(artifacts),
                     duplicate=True,
-                    indexing_status=_indexing_status(existing.status),
+                    indexing_status=indexing_status(existing.status),
                 )
 
             now = self._clock.now()
             window = UsageWindow.calendar_month_for(now)
-            estimated_media_seconds = _estimated_media_analysis_seconds(
+            estimated_media_seconds = estimated_media_analysis_seconds(
                 asset,
                 default_unknown_media_seconds=self._default_unknown_media_seconds,
             )
@@ -188,7 +155,7 @@ class RequestAssetExtractionUseCase:
                 memory_scope_id=asset.memory_scope_id,
                 thread_id=asset.thread_id,
                 parser_profile=parser_profile,
-                parser_config_hash=parser_config_hash,
+                parser_config_hash=parser_config_hash_value,
                 source_sha256_hex=asset.sha256_hex,
                 now=now,
                 metadata={
@@ -220,10 +187,10 @@ class RequestAssetExtractionUseCase:
             )
             saved = await uow.asset_extractions.create(job)
             if estimated_media_seconds > 0:
-                usage_key = _usage_idempotency_key(
+                usage_key = usage_idempotency_key(
                     asset_id=str(asset.id),
                     parser_profile=parser_profile,
-                    parser_config_hash=parser_config_hash,
+                    parser_config_hash=parser_config_hash_value,
                     source_sha256_hex=asset.sha256_hex,
                 )
                 existing_usage = await uow.usage.find_by_idempotency_key(usage_key)
@@ -250,7 +217,7 @@ class RequestAssetExtractionUseCase:
                             },
                         )
                     )
-            await uow.outbox.enqueue(_asset_extract_event(saved))
+            await uow.outbox.enqueue(asset_extract_event(saved))
             await uow.commit()
         return AssetExtractionResult(job=saved, indexing_status="pending")
 
@@ -268,7 +235,7 @@ class GetAssetExtractionUseCase:
         return AssetExtractionResult(
             job=job,
             artifacts=tuple(artifacts),
-            indexing_status=_indexing_status(job.status),
+            indexing_status=indexing_status(job.status),
         )
 
 
@@ -334,7 +301,7 @@ class RetryAssetExtractionUseCase:
                 raise MemoryNotFoundError("Asset extraction job not found")
             retried = job.reset_for_retry(now=self._clock.now())
             saved = await uow.asset_extractions.save(retried)
-            await uow.outbox.enqueue(_asset_extract_event(saved))
+            await uow.outbox.enqueue(asset_extract_event(saved))
             await uow.commit()
         return AssetExtractionResult(job=saved, indexing_status="pending")
 
@@ -352,7 +319,7 @@ class CancelAssetExtractionUseCase:
             canceled = job.request_cancellation(now=self._clock.now())
             saved = await uow.asset_extractions.save(canceled)
             await uow.commit()
-        return AssetExtractionResult(job=saved, indexing_status=_indexing_status(saved.status))
+        return AssetExtractionResult(job=saved, indexing_status=indexing_status(saved.status))
 
 
 class RunAssetExtractionUseCase:
@@ -385,13 +352,13 @@ class RunAssetExtractionUseCase:
 
     async def execute(self, command: RunAssetExtractionCommand) -> AssetExtractionResult:
         job = await self._mark_running(command)
-        if job.status in _NON_RUNNABLE_EXTRACTION_STATUSES:
+        if job.status in NON_RUNNABLE_EXTRACTION_STATUSES:
             async with self._uow_factory() as uow:
                 artifacts = await uow.asset_extractions.list_artifacts(job_id=str(job.id))
             return AssetExtractionResult(
                 job=job,
                 artifacts=tuple(artifacts),
-                indexing_status=_indexing_status(job.status),
+                indexing_status=indexing_status(job.status),
             )
         job = await self._cancel_if_requested(job)
         if job.status == AssetExtractionStatus.CANCELED:
@@ -453,8 +420,8 @@ class RunAssetExtractionUseCase:
         except Exception as exc:
             failed = await self._mark_failed(
                 job,
-                code=_safe_exception_code(exc),
-                message=_safe_exception_message(exc),
+                code=safe_exception_code(exc),
+                message=safe_exception_message(exc),
             )
             raise MemoryInfrastructureError("Asset extraction failed") from exc
 
@@ -548,7 +515,7 @@ class RunAssetExtractionUseCase:
             job = await uow.asset_extractions.get_by_id(command.job_id)
             if job is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
-            if job.status in _NON_RUNNABLE_EXTRACTION_STATUSES:
+            if job.status in NON_RUNNABLE_EXTRACTION_STATUSES:
                 return job
             now = self._clock.now()
             running = job.mark_running(
@@ -568,7 +535,6 @@ class RunAssetExtractionUseCase:
             saved = await uow.asset_extractions.save(running)
             await uow.commit()
         return saved
-
     async def _save_progress(
         self,
         job: AssetExtractionJob,
@@ -728,10 +694,10 @@ class RunAssetExtractionUseCase:
         *,
         result: ExtractionResult,
     ) -> AssetExtractionJob:
-        actual_seconds = _actual_media_analysis_seconds(result)
+        actual_seconds = actual_media_analysis_seconds(result)
         if actual_seconds is None:
             return job
-        reserved_seconds = _positive_int(
+        reserved_seconds = positive_int(
             job.metadata.get("usage_media_analysis_seconds_requested")
         )
         if reserved_seconds is None or reserved_seconds <= 0:
@@ -745,7 +711,7 @@ class RunAssetExtractionUseCase:
         }
 
         window = UsageWindow.calendar_month_for(self._clock.now())
-        key = _usage_reconciliation_idempotency_key(
+        key = usage_reconciliation_idempotency_key(
             job_id=str(job.id),
             actual_seconds=actual_seconds,
         )
@@ -867,161 +833,3 @@ class RunAssetExtractionUseCase:
             saved = await uow.asset_extractions.save(failed)
             await uow.commit()
         return saved
-
-
-def _asset_extract_event(job: AssetExtractionJob) -> OutboxEvent:
-    return OutboxEvent(
-        event_type="asset.extract",
-        aggregate_type="asset_extraction_job",
-        aggregate_id=str(job.id),
-        workload_class="extraction",
-        fairness_key=f"{job.space_id}:{job.memory_scope_id}",
-        payload={
-            "job_id": str(job.id),
-            "asset_id": str(job.asset_id),
-            "parser_profile": job.parser_profile,
-        },
-    )
-
-
-def _parser_config_hash(parser_profile: str) -> str:
-    raw = f"{parser_profile}:{_DEFAULT_PARSER_CONFIG_VERSION}"
-    return sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _usage_idempotency_key(
-    *,
-    asset_id: str,
-    parser_profile: str,
-    parser_config_hash: str,
-    source_sha256_hex: str,
-) -> str:
-    return (
-        "asset_extraction_media:"
-        f"{asset_id}:{parser_profile}:{parser_config_hash}:{source_sha256_hex}"
-    )
-
-
-def _usage_reconciliation_idempotency_key(*, job_id: str, actual_seconds: int) -> str:
-    return f"asset_extraction_media_reconcile:{job_id}:{actual_seconds}"
-
-
-def _estimated_media_analysis_seconds(
-    asset,
-    *,
-    default_unknown_media_seconds: int,
-) -> int:
-    content_type = asset.content_type.lower()
-    if not (content_type.startswith("audio/") or content_type.startswith("video/")):
-        return 0
-    for key in (
-        "media_duration_seconds",
-        "estimated_media_seconds",
-        "duration_seconds",
-    ):
-        parsed = _positive_int(asset.metadata.get(key))
-        if parsed is not None:
-            return parsed
-    return default_unknown_media_seconds
-
-
-def _actual_media_analysis_seconds(result: ExtractionResult) -> int | None:
-    if result.status == "unsupported":
-        return 0
-    if result.status != "succeeded":
-        return None
-
-    metadata = result.technical_metadata
-    for key in (
-        "usage_media_analysis_seconds_actual",
-        "media_analysis_seconds_actual",
-        "media_duration_seconds",
-        "duration_seconds",
-        "estimated_media_seconds",
-    ):
-        parsed = _positive_duration_seconds(metadata.get(key))
-        if parsed is not None:
-            return parsed
-
-    duration_ms = _positive_number(metadata.get("duration_ms"))
-    if duration_ms is not None:
-        return max(1, int(ceil(duration_ms / 1000)))
-    return None
-
-
-def _positive_duration_seconds(value: object) -> int | None:
-    number = _positive_number(value)
-    if number is None:
-        return None
-    return max(1, int(ceil(number)))
-
-
-def _positive_number(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        number = float(value)
-        return number if number > 0 else None
-    if isinstance(value, str):
-        try:
-            number = float(value.strip())
-        except ValueError:
-            return None
-        return number if number > 0 else None
-    return None
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        number = int(value)
-        return number if number > 0 else None
-    if isinstance(value, str):
-        try:
-            number = int(float(value.strip()))
-        except ValueError:
-            return None
-        return number if number > 0 else None
-    return None
-
-
-def _indexing_status(status: AssetExtractionStatus) -> str:
-    return {
-        AssetExtractionStatus.PENDING: "pending",
-        AssetExtractionStatus.RUNNING: "running",
-        AssetExtractionStatus.SUCCEEDED: "indexed_or_pending",
-        AssetExtractionStatus.FAILED: "failed",
-        AssetExtractionStatus.UNSUPPORTED: "unsupported",
-        AssetExtractionStatus.CANCELED: "canceled",
-        AssetExtractionStatus.STALE: "stale",
-    }[status]
-
-
-def _safe_exception_code(exc: Exception) -> str:
-    name = exc.__class__.__name__.lower()
-    return f"asset_extraction.{name[:80]}"
-
-
-def _safe_exception_message(exc: Exception) -> str:
-    text = str(exc).strip() or exc.__class__.__name__
-    return text[:500]
-
-
-def _is_permanent_error_code(code: str) -> bool:
-    normalized = code.lower()
-    permanent_markers = (
-        "unsupported",
-        "too_long",
-        "too_large",
-        "encrypted",
-        "dependency_missing",
-        "not_installed",
-        "missing_api_key",
-        "external_ai_disabled",
-        "empty_text",
-        "empty_output",
-        "no_text",
-        "no_speech",
-    )
-    return any(marker in normalized for marker in permanent_markers)

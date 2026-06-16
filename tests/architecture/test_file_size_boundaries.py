@@ -21,7 +21,6 @@ LEGACY_OVER_MAX_ALLOWLIST: set[str] = set()
 IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     *LEGACY_OVER_MAX_ALLOWLIST,
     "packages/memo_stack_core/memo_stack_core/application/dto.py",
-    "packages/memo_stack_core/memo_stack_core/application/use_cases/asset_extractions.py",
     "packages/memo_stack_core/memo_stack_core/domain/entities.py",
     "packages/memo_stack_mcp/memo_stack_mcp/agent_behavior_bench.py",
     "scripts/clean_full_smoke.py",
