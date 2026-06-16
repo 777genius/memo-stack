@@ -727,6 +727,25 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         confidence="high",
         link_reason="corrected target",
     )
+    client.review_context_link_suggestions_batch(
+        [
+            {
+                "suggestion_id": "ctxlinksug_2",
+                "action": "approve",
+                "target_type": "fact",
+                "target_id": "fact_4",
+                "relation_type": "supports",
+                "confidence": "medium",
+                "link_reason": "batch corrected target",
+            },
+            {
+                "suggestion_id": "ctxlinksug_3",
+                "action": "reject",
+                "reason": "not related",
+            },
+        ],
+        continue_on_error=True,
+    )
 
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
         "POST /v1/link-suggestions",
@@ -736,6 +755,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "PATCH /v1/context-links/ctxlink_1",
         "DELETE /v1/context-links/ctxlink_1",
         "POST /v1/context-link-suggestions/ctxlinksug_1/review",
+        "POST /v1/context-link-suggestions/review-batch",
     ]
     assert seen[0][3] == {
         "space_slug": "client-app",
@@ -790,6 +810,25 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "relation_type": "supports",
         "confidence": "high",
         "link_reason": "corrected target",
+    }
+    assert seen[7][3] == {
+        "items": [
+            {
+                "suggestion_id": "ctxlinksug_2",
+                "action": "approve",
+                "target_type": "fact",
+                "target_id": "fact_4",
+                "relation_type": "supports",
+                "confidence": "medium",
+                "link_reason": "batch corrected target",
+            },
+            {
+                "suggestion_id": "ctxlinksug_3",
+                "action": "reject",
+                "reason": "not related",
+            },
+        ],
+        "continue_on_error": True,
     }
 
 

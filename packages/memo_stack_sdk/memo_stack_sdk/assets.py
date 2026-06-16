@@ -394,3 +394,15 @@ class MemoStackAssetsMixin:
                 }
             ),
         )
+
+    def review_context_link_suggestions_batch(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        continue_on_error: bool = False,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/context-link-suggestions/review-batch",
+            json={"items": items, "continue_on_error": continue_on_error},
+        )
