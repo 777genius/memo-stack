@@ -478,6 +478,21 @@
     }
   }
 
+  async function deleteContextLink(linkId) {
+    if (!window.confirm("Delete this context link?")) {
+      return;
+    }
+    setError("");
+    try {
+      await apiJson(`/v1/context-links/${encodeURIComponent(linkId)}`, {
+        method: "DELETE",
+      });
+      await refreshAll();
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
   function apiUrl(path, params = {}) {
     const base = state.apiBase || window.location.origin;
     const url = new URL(path, base.endsWith("/") ? base : `${base}/`);
@@ -1090,6 +1105,12 @@
     }
     if (node.type === "context_link") {
       panel.append(contextLinkSection(node.data));
+    }
+    if (node.type === "context_link" && node.data?.status === "active") {
+      const actions = document.createElement("div");
+      actions.className = "action-row one-action";
+      actions.append(actionButton("Delete Link", () => deleteContextLink(node.data.id)));
+      panel.append(actions);
     }
     if (node.type === "suggestion" && node.data?.status === "pending") {
       const actions = document.createElement("div");

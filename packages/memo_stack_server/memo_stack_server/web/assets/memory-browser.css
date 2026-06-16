@@ -403,6 +403,10 @@ select:focus {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.action-row.one-action {
+  grid-template-columns: 1fr;
+}
+
 .list-item {
   border: 1px solid var(--border);
   border-radius: 8px;

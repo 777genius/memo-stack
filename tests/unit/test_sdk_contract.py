@@ -707,6 +707,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         status="active",
         limit=25,
     )
+    client.delete_context_link("ctxlink_1")
     client.review_context_link_suggestion(
         "ctxlinksug_1",
         action="approve",
@@ -723,6 +724,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "GET /v1/context-link-suggestions",
         "POST /v1/context-links",
         "GET /v1/context-links",
+        "DELETE /v1/context-links/ctxlink_1",
         "POST /v1/context-link-suggestions/ctxlinksug_1/review",
     ]
     assert seen[0][3] == {
@@ -761,7 +763,8 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "status": "active",
         "limit": "25",
     }
-    assert seen[4][3] == {
+    assert seen[4][3] == {}
+    assert seen[5][3] == {
         "action": "approve",
         "reason": "user accepted",
         "target_type": "fact",

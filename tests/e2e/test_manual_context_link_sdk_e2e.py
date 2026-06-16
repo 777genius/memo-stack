@@ -64,8 +64,19 @@ def test_manual_context_link_sdk_e2e(tmp_path: Path) -> None:
             memory_scope_external_ref="default",
             status="active",
         )
-
         link = created["data"]
+        deleted = client.delete_context_link(link["id"])
+        active_after_delete = client.list_context_links(
+            space_slug="manual-link-e2e",
+            memory_scope_external_ref="default",
+            status="active",
+        )
+        deleted_links = client.list_context_links(
+            space_slug="manual-link-e2e",
+            memory_scope_external_ref="default",
+            status="deleted",
+        )
+
         assert link["duplicate"] is False
         assert link["source_id"] == capture["data"]["id"]
         assert link["target_id"] == fact["data"]["id"]
@@ -75,3 +86,7 @@ def test_manual_context_link_sdk_e2e(tmp_path: Path) -> None:
         assert duplicate["data"]["duplicate"] is True
         assert duplicate["data"]["id"] == link["id"]
         assert [item["id"] for item in listed["data"]] == [link["id"]]
+        assert deleted["data"]["id"] == link["id"]
+        assert deleted["data"]["status"] == "deleted"
+        assert active_after_delete["data"] == []
+        assert [item["id"] for item in deleted_links["data"]] == [link["id"]]

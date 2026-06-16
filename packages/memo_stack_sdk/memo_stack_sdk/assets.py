@@ -301,6 +301,9 @@ class MemoStackAssetsMixin:
             ),
         )
 
+    def delete_context_link(self, context_link_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/v1/context-links/{context_link_id}")
+
     def list_context_link_suggestions(
         self,
         *,
