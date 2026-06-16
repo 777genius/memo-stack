@@ -49,6 +49,7 @@ from memo_stack_server.eval_constants import (
     PROMPT_CONTRACT_SUITE,
     PUBLIC_MEMORY_BENCHMARK_SUITE,
     QUALITY_GOLDEN_SUITE,
+    SEMANTIC_LINKING_GOLDEN_SUITE,
     SMALL_GOLDEN_SUITE,
 )
 from memo_stack_server.top_evidence_policy import (
@@ -195,6 +196,7 @@ def build_memory_quality_scorecard(
         "canonical_recall_precision": _scorecard_canonical_recall_precision(suite_results),
         "longitudinal_memory": _scorecard_longitudinal_memory(suite_results),
         "auto_memory_admission": _scorecard_auto_memory_admission(suite_results),
+        "semantic_linking": _scorecard_semantic_linking(suite_results),
         "graph_native_recall": _scorecard_graph_native_recall(suite_results),
         "scope_and_safety": _scorecard_scope_and_safety(suite_results),
         "prompt_context_contract": _scorecard_prompt_context_contract(suite_results),
@@ -372,6 +374,19 @@ def _scorecard_graph_native_recall(
         "canonical_only_graph_skip_count": (metrics.get("canonical_only_graph_skip_count") == 1),
     }
     return _scorecard_capability("graph_native_recall", checks)
+
+
+def _scorecard_semantic_linking(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    metrics = _scorecard_result_metrics(suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE))
+    checks = {
+        "ranking_accuracy": metrics.get("ranking_accuracy") == 1.0,
+        "anchor_recall_rate": metrics.get("anchor_recall_rate") == 1.0,
+        "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
+        "false_positive_count": metrics.get("false_positive_count") == 0,
+    }
+    return _scorecard_capability("semantic_linking", checks)
 
 
 def _scorecard_scope_and_safety(
@@ -1399,6 +1414,7 @@ def _scorecard_metrics(
     suite_results: Mapping[str, dict[str, object]],
 ) -> dict[str, object]:
     quality = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
+    semantic = _scorecard_result_metrics(suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE))
     long = _scorecard_result_metrics(suite_results.get(LONG_MEMORY_GOLDEN_SUITE))
     auto = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
     graph = _scorecard_result_metrics(suite_results.get(GRAPH_NATIVE_GOLDEN_SUITE))
@@ -1419,6 +1435,10 @@ def _scorecard_metrics(
             "extraction_admission_accuracy",
             0.0,
         ),
+        "semantic_linking_ranking_accuracy": semantic.get("ranking_accuracy", 0.0),
+        "semantic_linking_anchor_recall_rate": semantic.get("anchor_recall_rate", 0.0),
+        "semantic_linking_review_approval_rate": semantic.get("review_approval_rate", 0.0),
+        "semantic_linking_false_positive_count": semantic.get("false_positive_count", 0),
         "graph_recall_rate": graph.get("graph_recall_rate", 0.0),
         "graph_hydration_rate": graph.get("graph_hydration_rate", 0.0),
         "safety_leak_count": _scorecard_safety_leak_count(suite_results),

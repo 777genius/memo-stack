@@ -282,6 +282,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert report_names == {
         "small-golden.json",
         "quality-golden.json",
+        "semantic-linking-golden.json",
         "long-memory-golden.json",
         "auto-memory-golden.json",
         "graph-native-golden.json",
@@ -304,6 +305,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert manifest["expected_git_commit"] is None
     assert manifest["policy"]["minimum_maturity_score_10"] == 9.0
     assert "auto-memory-golden" in manifest["policy"]["required_suites"]
+    assert "semantic-linking-golden" in manifest["policy"]["required_suites"]
     reports_by_name = {item["relative_path"]: item["report"] for item in manifest["artifacts"]}
     assert reports_by_name["small-golden.json"]["suite"] == "small-golden"
     assert reports_by_name["small-golden.json"]["ok"] is True
@@ -313,6 +315,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     assert artifact_names == {
         "small-golden.json",
         "quality-golden.json",
+        "semantic-linking-golden.json",
         "long-memory-golden.json",
         "auto-memory-golden.json",
         "graph-native-golden.json",

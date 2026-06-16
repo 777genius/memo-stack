@@ -25,6 +25,7 @@ from memo_stack_server.eval import (
     MEMORY_QUALITY_SCORECARD_SUITE,
     PROMPT_CONTRACT_SUITE,
     QUALITY_GOLDEN_SUITE,
+    SEMANTIC_LINKING_GOLDEN_SUITE,
     SMALL_GOLDEN_SUITE,
     memory_quality_scorecard_policy_snapshot,
     run_auto_memory_golden,
@@ -33,6 +34,7 @@ from memo_stack_server.eval import (
     run_memory_quality_scorecard,
     run_prompt_snapshots,
     run_quality_golden,
+    run_semantic_linking_golden,
     run_small_golden,
 )
 from memo_stack_server.top_evidence_policy import (
@@ -63,6 +65,11 @@ DETERMINISTIC_EVIDENCE_SUITES: tuple[EvidenceSuite, ...] = (
         QUALITY_GOLDEN_SUITE,
         "quality-golden.json",
         lambda report_out: run_quality_golden(report_out=report_out),
+    ),
+    EvidenceSuite(
+        SEMANTIC_LINKING_GOLDEN_SUITE,
+        "semantic-linking-golden.json",
+        lambda report_out: run_semantic_linking_golden(report_out=report_out),
     ),
     EvidenceSuite(
         LONG_MEMORY_GOLDEN_SUITE,

@@ -358,6 +358,7 @@ def run_memory_quality_scorecard(
         results = {
             SMALL_GOLDEN_SUITE: run_small_golden(),
             QUALITY_GOLDEN_SUITE: run_quality_golden(),
+            SEMANTIC_LINKING_GOLDEN_SUITE: run_semantic_linking_golden(),
             LONG_MEMORY_GOLDEN_SUITE: run_long_memory_golden(),
             AUTO_MEMORY_GOLDEN_SUITE: run_auto_memory_golden(),
             GRAPH_NATIVE_GOLDEN_SUITE: run_graph_native_golden(),

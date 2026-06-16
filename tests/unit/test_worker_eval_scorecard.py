@@ -52,6 +52,25 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             },
             "failures": [],
         },
+        "semantic-linking-golden": {
+            "suite": "semantic-linking-golden",
+            "ok": True,
+            "status": "ok",
+            "metrics": {
+                "case_count": 2,
+                "ranking_accuracy": 1.0,
+                "anchor_recall_rate": 1.0,
+                "review_approval_rate": 1.0,
+                "false_positive_count": 0,
+            },
+            "checks": {
+                "top_fact_beats_distractor": True,
+                "person_and_project_anchors_suggested": True,
+                "top_suggestion_approves_to_link": True,
+                "unrelated_capture_has_no_candidates": True,
+            },
+            "failures": [],
+        },
         "long-memory-golden": {
             "suite": "long-memory-golden",
             "ok": True,
@@ -395,6 +414,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["capabilities"]["canonical_recall_precision"]["ok"] is True
     assert result["capabilities"]["longitudinal_memory"]["ok"] is True
     assert result["capabilities"]["auto_memory_admission"]["ok"] is True
+    assert result["capabilities"]["semantic_linking"]["ok"] is True
     assert result["capabilities"]["graph_native_recall"]["ok"] is True
     assert result["capabilities"]["scope_and_safety"]["ok"] is True
     assert result["capabilities"]["prompt_context_contract"]["ok"] is True
@@ -417,6 +437,8 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     policy = memory_quality_scorecard_policy_snapshot(require_top_evidence=True)
 
     assert policy["require_top_evidence"] is True
+    assert "semantic-linking-golden" in policy["required_suites"]
+    assert policy["min_case_counts"]["semantic-linking-golden"] == 2
     assert policy["full_provider"]["required_adapters"] == [
         "qdrant",
         "graphiti",
