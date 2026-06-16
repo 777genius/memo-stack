@@ -193,6 +193,56 @@ class MemoryContextLink:
             return self
         return replace(self, status=LifecycleStatus.DELETED, updated_at=now)
 
+    def update_details(
+        self,
+        *,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
+        confidence: str | None = None,
+        reason: str | None = None,
+        metadata: Mapping[str, object] | None = None,
+        now: datetime,
+    ) -> MemoryContextLink:
+        if self.status != LifecycleStatus.ACTIVE:
+            raise MemoryValidationError("Only active context links can be updated")
+        safe_source_type = self.source_type if source_type is None else source_type.strip()
+        safe_source_id = self.source_id if source_id is None else source_id.strip()
+        safe_target_type = self.target_type if target_type is None else target_type.strip()
+        safe_target_id = self.target_id if target_id is None else target_id.strip()
+        safe_relation_type = self.relation_type if relation_type is None else relation_type.strip()
+        safe_confidence = self.confidence if confidence is None else confidence.strip()
+        safe_reason = self.reason if reason is None else reason.strip()
+        if not safe_source_type or not safe_source_id:
+            raise MemoryValidationError("Context link source is required")
+        if not safe_target_type or not safe_target_id:
+            raise MemoryValidationError("Context link target is required")
+        if safe_source_type == safe_target_type and safe_source_id == safe_target_id:
+            raise MemoryValidationError("Context link requires two distinct objects")
+        if not safe_relation_type:
+            raise MemoryValidationError("Context link relation_type is required")
+        if safe_confidence not in {"low", "medium", "high"}:
+            raise MemoryValidationError("Context link confidence is invalid")
+        if not safe_reason:
+            raise MemoryValidationError("Context link reason is required")
+        return replace(
+            self,
+            source_type=safe_source_type,
+            source_id=safe_source_id,
+            target_type=safe_target_type,
+            target_id=safe_target_id,
+            relation_type=safe_relation_type,
+            confidence=safe_confidence,
+            reason=safe_reason[:320],
+            metadata={
+                **dict(self.metadata),
+                **_safe_metadata(metadata, max_keys=MAX_CONTEXT_LINK_METADATA_KEYS),
+            },
+            updated_at=now,
+        )
+
 
 @dataclass(frozen=True)
 class MemoryContextLinkSuggestion:

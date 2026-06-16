@@ -459,6 +459,19 @@ class DeleteContextLinkCommand:
 
 
 @dataclass(frozen=True)
+class UpdateContextLinkCommand:
+    context_link_id: str
+    source_type: str | None = None
+    source_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    relation_type: str | None = None
+    confidence: str | None = None
+    reason: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class ContextLinkResult:
     link: MemoryContextLink
     duplicate: bool = False

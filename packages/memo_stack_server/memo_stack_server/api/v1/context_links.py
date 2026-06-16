@@ -12,6 +12,7 @@ from memo_stack_core.application import (
     ListContextLinkSuggestionsQuery,
     ReviewContextLinkSuggestionCommand,
     SuggestContextLinksCommand,
+    UpdateContextLinkCommand,
 )
 from memo_stack_core.domain.assets import MemoryContextLink, MemoryContextLinkSuggestion
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,6 +75,19 @@ class ReviewContextLinkSuggestionRequest(BaseModel):
     relation_type: str | None = Field(default=None, min_length=1, max_length=80)
     confidence: str | None = Field(default=None, min_length=1, max_length=40)
     link_reason: str | None = Field(default=None, min_length=1, max_length=320)
+
+
+class UpdateContextLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: str | None = Field(default=None, min_length=1, max_length=80)
+    source_id: str | None = Field(default=None, min_length=1, max_length=160)
+    target_type: str | None = Field(default=None, min_length=1, max_length=80)
+    target_id: str | None = Field(default=None, min_length=1, max_length=160)
+    relation_type: str | None = Field(default=None, min_length=1, max_length=80)
+    confidence: str | None = Field(default=None, min_length=1, max_length=40)
+    reason: str | None = Field(default=None, min_length=1, max_length=320)
+    metadata: dict[str, Any] | None = None
 
 
 @router.post("/link-suggestions")
@@ -234,6 +248,29 @@ async def list_context_link_suggestions(
         )
     )
     return {"data": [context_link_suggestion_to_response(item) for item in suggestions]}
+
+
+@router.patch("/context-links/{context_link_id}")
+async def update_context_link(
+    context_link_id: str,
+    request: UpdateContextLinkRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    result = await container.update_context_link.execute(
+        UpdateContextLinkCommand(
+            context_link_id=context_link_id,
+            source_type=request.source_type,
+            source_id=request.source_id,
+            target_type=request.target_type,
+            target_id=request.target_id,
+            relation_type=request.relation_type,
+            confidence=request.confidence,
+            reason=request.reason,
+            metadata=request.metadata,
+        )
+    )
+    return {"data": context_link_to_response(result.link)}
 
 
 @router.post("/context-link-suggestions/{context_link_suggestion_id}/review")

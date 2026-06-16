@@ -127,6 +127,7 @@ from memo_stack_core.application.dto import (
     SuggestionResult,
     UnlinkFactRelationCommand,
     UpdateAnchorCommand,
+    UpdateContextLinkCommand,
     UpdateFactCommand,
     UpdateMemoryScopeCommand,
     UsageSummaryQuery,
@@ -171,6 +172,7 @@ from memo_stack_core.application.use_cases.context_links import (
     ListContextLinksUseCase,
     ReviewContextLinkSuggestionUseCase,
     SuggestContextLinksUseCase,
+    UpdateContextLinkUseCase,
 )
 from memo_stack_core.application.use_cases.delete_document import DeleteDocumentUseCase
 from memo_stack_core.application.use_cases.delete_thread_memory import DeleteThreadMemoryUseCase
@@ -443,6 +445,8 @@ __all__ = [
     "UpdateFactCommand",
     "UpdateAnchorCommand",
     "UpdateAnchorUseCase",
+    "UpdateContextLinkCommand",
+    "UpdateContextLinkUseCase",
     "UpdateFactUseCase",
     "UpdateMemoryScopeCommand",
     "UpdateMemoryScopeUseCase",

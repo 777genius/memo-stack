@@ -707,6 +707,15 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         status="active",
         limit=25,
     )
+    client.update_context_link(
+        "ctxlink_1",
+        target_type="fact",
+        target_id="fact_3",
+        relation_type="supports",
+        confidence="medium",
+        reason="manual reviewer corrected link",
+        metadata={"updated_from": "sdk_contract"},
+    )
     client.delete_context_link("ctxlink_1")
     client.review_context_link_suggestion(
         "ctxlinksug_1",
@@ -724,6 +733,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "GET /v1/context-link-suggestions",
         "POST /v1/context-links",
         "GET /v1/context-links",
+        "PATCH /v1/context-links/ctxlink_1",
         "DELETE /v1/context-links/ctxlink_1",
         "POST /v1/context-link-suggestions/ctxlinksug_1/review",
     ]
@@ -763,8 +773,16 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "status": "active",
         "limit": "25",
     }
-    assert seen[4][3] == {}
-    assert seen[5][3] == {
+    assert seen[4][3] == {
+        "target_type": "fact",
+        "target_id": "fact_3",
+        "relation_type": "supports",
+        "confidence": "medium",
+        "reason": "manual reviewer corrected link",
+        "metadata": {"updated_from": "sdk_contract"},
+    }
+    assert seen[5][3] == {}
+    assert seen[6][3] == {
         "action": "approve",
         "reason": "user accepted",
         "target_type": "fact",

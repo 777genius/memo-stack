@@ -22,6 +22,15 @@ def test_manual_context_link_sdk_e2e(tmp_path: Path) -> None:
             source_refs=[{"source_type": "manual", "source_id": "manual-link-target"}],
             idempotency_key="manual-context-link-target",
         )
+        corrected_fact = client.remember_fact(
+            space_slug="manual-link-e2e",
+            memory_scope_external_ref="default",
+            thread_external_ref="review",
+            text="Project Atlas corrected target for a manual memory link.",
+            kind="note",
+            source_refs=[{"source_type": "manual", "source_id": "manual-link-corrected"}],
+            idempotency_key="manual-context-link-corrected",
+        )
         capture = client.create_capture(
             space_slug="manual-link-e2e",
             memory_scope_external_ref="default",
@@ -65,6 +74,15 @@ def test_manual_context_link_sdk_e2e(tmp_path: Path) -> None:
             status="active",
         )
         link = created["data"]
+        updated = client.update_context_link(
+            link["id"],
+            target_type="fact",
+            target_id=corrected_fact["data"]["id"],
+            relation_type="supports",
+            confidence="medium",
+            reason="manual reviewer corrected canonical target",
+            metadata={"updated_from": "sdk_e2e"},
+        )
         deleted = client.delete_context_link(link["id"])
         active_after_delete = client.list_context_links(
             space_slug="manual-link-e2e",
@@ -83,6 +101,12 @@ def test_manual_context_link_sdk_e2e(tmp_path: Path) -> None:
         assert link["relation_type"] == "supports"
         assert link["confidence"] == "high"
         assert link["metadata"]["created_from"] == "sdk_e2e"
+        assert updated["data"]["id"] == link["id"]
+        assert updated["data"]["target_id"] == corrected_fact["data"]["id"]
+        assert updated["data"]["confidence"] == "medium"
+        assert updated["data"]["reason"] == "manual reviewer corrected canonical target"
+        assert updated["data"]["metadata"]["updated_from"] == "sdk_e2e"
+        assert updated["data"]["metadata"]["last_edit_source"] == "manual"
         assert duplicate["data"]["duplicate"] is True
         assert duplicate["data"]["id"] == link["id"]
         assert [item["id"] for item in listed["data"]] == [link["id"]]

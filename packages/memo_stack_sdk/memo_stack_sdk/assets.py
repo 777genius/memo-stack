@@ -304,6 +304,36 @@ class MemoStackAssetsMixin:
     def delete_context_link(self, context_link_id: str) -> dict[str, Any]:
         return self._request("DELETE", f"/v1/context-links/{context_link_id}")
 
+    def update_context_link(
+        self,
+        context_link_id: str,
+        *,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
+        confidence: str | None = None,
+        reason: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "PATCH",
+            f"/v1/context-links/{context_link_id}",
+            json=_payloads.without_none(
+                {
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "relation_type": relation_type,
+                    "confidence": confidence,
+                    "reason": reason,
+                    "metadata": metadata,
+                }
+            ),
+        )
+
     def list_context_link_suggestions(
         self,
         *,

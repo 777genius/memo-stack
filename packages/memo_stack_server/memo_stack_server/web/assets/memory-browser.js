@@ -727,6 +727,57 @@
     }
   }
 
+  async function editContextLink(link) {
+    const sourceType = window.prompt("source type", link.source_type || "");
+    if (sourceType === null) {
+      return;
+    }
+    const sourceId = window.prompt("source id", link.source_id || "");
+    if (sourceId === null) {
+      return;
+    }
+    const targetType = window.prompt("target type", link.target_type || "");
+    if (targetType === null) {
+      return;
+    }
+    const targetId = window.prompt("target id", link.target_id || "");
+    if (targetId === null) {
+      return;
+    }
+    const relationType = window.prompt("relation", link.relation_type || "related_to");
+    if (relationType === null) {
+      return;
+    }
+    const confidence = window.prompt("confidence: low, medium or high", link.confidence || "medium");
+    if (confidence === null) {
+      return;
+    }
+    const reason = window.prompt("reason", link.reason || "manual reviewer link");
+    if (reason === null) {
+      return;
+    }
+    setError("");
+    try {
+      await apiJson(`/v1/context-links/${encodeURIComponent(link.id)}`, {
+        method: "PATCH",
+        body: withoutEmpty({
+          source_type: sourceType.trim(),
+          source_id: sourceId.trim(),
+          target_type: targetType.trim(),
+          target_id: targetId.trim(),
+          relation_type: relationType.trim(),
+          confidence: confidence.trim(),
+          reason: reason.trim(),
+          metadata: { edited_from: "memory_browser_manual" },
+        }),
+      });
+      await refreshAll();
+      selectNode(`context_link:${link.id}`);
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
   async function deleteContextLink(linkId) {
     if (!window.confirm("Delete this context link?")) {
       return;
@@ -1398,8 +1449,11 @@
     }
     if (node.type === "context_link" && node.data?.status === "active") {
       const actions = document.createElement("div");
-      actions.className = "action-row one-action";
-      actions.append(actionButton("Delete Link", () => deleteContextLink(node.data.id)));
+      actions.className = "action-row";
+      actions.append(
+        actionButton("Edit Link", () => editContextLink(node.data), "primary-button"),
+        actionButton("Delete Link", () => deleteContextLink(node.data.id)),
+      );
       panel.append(actions);
     }
     if (node.type === "suggestion" && node.data?.status === "pending") {
@@ -1486,8 +1540,10 @@
       keyValueItem("Source", `${link.source_type}:${link.source_id}`),
       keyValueItem("Target", `${link.target_type}:${link.target_id}`),
       keyValueItem("Relation", link.relation_type),
+      keyValueItem("Confidence", link.confidence),
       keyValueItem("Reason", link.reason),
       keyValueItem("Created", formatDate(link.created_at)),
+      keyValueItem("Updated", formatDate(link.updated_at)),
     );
     if (link.metadata?.approved_from_suggestion_id) {
       section.append(

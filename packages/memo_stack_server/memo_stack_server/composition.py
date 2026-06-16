@@ -95,6 +95,7 @@ from memo_stack_core.application import (
     SuggestContextLinksUseCase,
     UnlinkFactRelationUseCase,
     UpdateAnchorUseCase,
+    UpdateContextLinkUseCase,
     UpdateFactUseCase,
     UpdateMemoryScopeUseCase,
 )
@@ -193,6 +194,7 @@ class Container:
     list_context_links: ListContextLinksUseCase
     list_context_link_suggestions: ListContextLinkSuggestionsUseCase
     review_context_link_suggestion: ReviewContextLinkSuggestionUseCase
+    update_context_link: UpdateContextLinkUseCase
     delete_context_link: DeleteContextLinkUseCase
     update_fact: UpdateFactUseCase
     forget_fact: ForgetFactUseCase
@@ -354,6 +356,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         ids=ids,
     )
+    update_context_link = UpdateContextLinkUseCase(uow_factory=uow_factory, clock=clock)
     delete_context_link = DeleteContextLinkUseCase(uow_factory=uow_factory, clock=clock)
     update_fact = UpdateFactUseCase(uow_factory=uow_factory, clock=clock)
     forget_fact = ForgetFactUseCase(uow_factory=uow_factory, clock=clock)
@@ -570,6 +573,7 @@ def build_container(settings: Settings | None = None) -> Container:
         list_context_links=list_context_links,
         list_context_link_suggestions=list_context_link_suggestions,
         review_context_link_suggestion=review_context_link_suggestion,
+        update_context_link=update_context_link,
         delete_context_link=delete_context_link,
         update_fact=update_fact,
         forget_fact=forget_fact,

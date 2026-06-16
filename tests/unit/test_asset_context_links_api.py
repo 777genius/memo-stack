@@ -50,6 +50,20 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
             },
             headers=auth_headers({"Idempotency-Key": "alex-fact"}),
         )
+        second_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-call",
+                "text": "Project Atlas screenshot evidence should support the capture workflow.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "atlas-workflow"}],
+                "category": "project_context",
+                "tags": ["atlas", "workflow"],
+            },
+            headers=auth_headers({"Idempotency-Key": "atlas-workflow-fact"}),
+        )
         upload = client.post(
             "/v1/assets",
             params={
@@ -118,6 +132,18 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
             },
             headers=auth_headers(),
         )
+        updated_link = client.patch(
+            f"/v1/context-links/{link.json()['data']['id']}",
+            json={
+                "target_type": "fact",
+                "target_id": second_fact.json()["data"]["id"],
+                "relation_type": "supports",
+                "confidence": "medium",
+                "reason": "reviewer corrected target fact",
+                "metadata": {"updated_from": "api_test"},
+            },
+            headers=auth_headers(),
+        )
         listed_links = client.get(
             "/v1/context-links",
             params={
@@ -128,9 +154,39 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
             },
             headers=auth_headers(),
         )
+        second_link = client.post(
+            "/v1/context-links",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "target_type": "fact",
+                "target_id": fact.json()["data"]["id"],
+                "relation_type": "supports",
+                "confidence": "low",
+                "reason": "secondary reviewer link for conflict coverage",
+            },
+            headers=auth_headers(),
+        )
+        conflicting_update = client.patch(
+            f"/v1/context-links/{second_link.json()['data']['id']}",
+            json={
+                "target_type": "fact",
+                "target_id": second_fact.json()["data"]["id"],
+                "relation_type": "supports",
+                "confidence": "medium",
+                "reason": "would duplicate the corrected link",
+            },
+            headers=auth_headers(),
+        )
         link_id = link.json()["data"]["id"]
         deleted_link = client.delete(
             f"/v1/context-links/{link_id}",
+            headers=auth_headers(),
+        )
+        deleted_second_link = client.delete(
+            f"/v1/context-links/{second_link.json()['data']['id']}",
             headers=auth_headers(),
         )
         active_links_after_delete = client.get(
@@ -157,6 +213,7 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
         )
 
     assert fact.status_code == 201
+    assert second_fact.status_code == 201
     assert upload.status_code == 201
     assert upload.json()["data"]["duplicate"] is False
     assert upload.json()["data"]["content_type"] == "image/png"
@@ -175,14 +232,28 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert {"alex", "frontend", "capture"}.issubset(set(candidate["metadata"]["matched_terms"]))
     assert link.status_code == 200
     assert link.json()["data"]["duplicate"] is False
+    assert updated_link.status_code == 200
+    updated_data = updated_link.json()["data"]
+    assert updated_data["target_id"] == second_fact.json()["data"]["id"]
+    assert updated_data["relation_type"] == "supports"
+    assert updated_data["confidence"] == "medium"
+    assert updated_data["reason"] == "reviewer corrected target fact"
+    assert updated_data["metadata"]["updated_from"] == "api_test"
+    assert updated_data["metadata"]["last_edit_source"] == "manual"
     assert listed_links.status_code == 200
-    assert listed_links.json()["data"][0]["target_id"] == fact.json()["data"]["id"]
+    assert listed_links.json()["data"][0]["target_id"] == second_fact.json()["data"]["id"]
+    assert second_link.status_code == 200
+    assert second_link.json()["data"]["duplicate"] is False
+    assert conflicting_update.status_code == 409
     assert deleted_link.status_code == 200
     assert deleted_link.json()["data"]["status"] == "deleted"
+    assert deleted_second_link.status_code == 200
+    assert deleted_second_link.json()["data"]["status"] == "deleted"
     assert active_links_after_delete.status_code == 200
     assert active_links_after_delete.json()["data"] == []
     assert deleted_links.status_code == 200
-    assert deleted_links.json()["data"][0]["id"] == link_id
+    deleted_link_ids = {item["id"] for item in deleted_links.json()["data"]}
+    assert {link_id, second_link.json()["data"]["id"]}.issubset(deleted_link_ids)
 
 
 def test_context_link_suggestions_include_thread_anchor(tmp_path: Path) -> None:
