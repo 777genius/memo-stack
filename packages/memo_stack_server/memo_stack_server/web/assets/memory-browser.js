@@ -459,6 +459,46 @@
     }
   }
 
+  async function splitAnchorAlias(anchor) {
+    const aliases = anchor.aliases || [];
+    const defaultAlias = aliases[0] || anchor.label || "";
+    const alias = window.prompt("alias to split", defaultAlias);
+    if (alias === null) {
+      return;
+    }
+    const cleanAlias = alias.trim();
+    if (!cleanAlias) {
+      setError("Anchor split requires an alias.");
+      return;
+    }
+    const newLabel = window.prompt("new anchor label", cleanAlias);
+    if (newLabel === null) {
+      return;
+    }
+    const reason = window.prompt("split reason", "split alias in Memo Stack Browser");
+    if (reason === null) {
+      return;
+    }
+    setError("");
+    try {
+      const response = await apiJson(`/v1/anchors/${encodeURIComponent(anchor.id)}/split`, {
+        method: "POST",
+        body: withoutEmpty({
+          alias: cleanAlias,
+          new_label: newLabel.trim(),
+          reason: reason || "split alias in Memo Stack Browser",
+        }),
+      });
+      await refreshAll();
+      const splitAnchorId = response.data?.id;
+      if (splitAnchorId) {
+        selectNode(`anchor:${splitAnchorId}`);
+      }
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
   async function runRecall() {
     readSettingsFromInputs();
     saveSettings();
@@ -1233,6 +1273,12 @@
     }
     if (node.type === "anchor") {
       panel.append(anchorSection(node.data));
+    }
+    if (node.type === "anchor" && node.data?.status === "active" && (node.data?.aliases || []).length) {
+      const actions = document.createElement("div");
+      actions.className = "action-row one-action";
+      actions.append(actionButton("Split Alias", () => splitAnchorAlias(node.data)));
+      panel.append(actions);
     }
     if (node.type === "context_link_suggestion") {
       panel.append(contextLinkSuggestionSection(node.data));

@@ -42,6 +42,9 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "backfillAnchors" in js.text
     assert "mergeAnchorSuggestion" in js.text
     assert "Anchor merge reviews" in js.text
+    assert "splitAnchorAlias" in js.text
+    assert "Split Alias" in js.text
+    assert "/split" in js.text
     assert "contextLinkCount" in index.text
     assert "context_link" in index.text
     assert "/v1/context-links" in js.text
