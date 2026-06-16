@@ -35,6 +35,13 @@ MEMORY_USAGE_GUIDE = """Memo Stack MCP usage guide:
 - Use memory_review_suggestions_batch after memory_list_suggestions or memory_digest when the
   user asks to review several pending suggestions. Keep batches small, inspect per-item failures,
   and set continue_on_error only when the user accepts partial success.
+- Use memory_suggest_context_links when saved evidence, captures, files, facts, documents, chunks,
+  threads, or anchors need to be connected. Use persist=false for ranking only; persist=true
+  creates pending link suggestions, not canonical links.
+- Use memory_list_context_link_suggestions before approving relation suggestions, then
+  memory_review_context_link_suggestion or memory_review_context_link_suggestions_batch after
+  the user accepts, rejects, or corrects the proposed relations. Use memory_list_context_links
+  to inspect already-approved evidence links.
 - Proposals are mutating memory actions too. Before memory_propose_updates, search or load
   existing memory when a candidate may duplicate, update, forget, or conflict with a target.
 - If the user explicitly asks to remember, save, update, forget, or ingest memory, memory_status is
