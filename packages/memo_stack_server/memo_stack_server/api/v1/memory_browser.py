@@ -17,7 +17,7 @@ from memo_stack_server.api.v1.context_links import (
     context_link_suggestion_to_response,
     context_link_to_response,
 )
-from memo_stack_server.api.v1.documents import document_to_response
+from memo_stack_server.api.v1.documents import chunk_to_response, document_to_response
 from memo_stack_server.api.v1.facts import fact_to_response
 from memo_stack_server.api.v1.scope_resolution import resolve_existing_single_scope
 from memo_stack_server.api.v1.spaces_memory_scopes import memory_scope_to_response
@@ -39,6 +39,7 @@ async def get_memory_browser(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     fact_status: Annotated[str | None, Query(max_length=40)] = "active",
     document_status: Annotated[str | None, Query(max_length=40)] = "active",
+    chunk_status: Annotated[str | None, Query(max_length=40)] = "active",
     extraction_status: Annotated[str | None, Query(max_length=40)] = None,
     thread_status: Annotated[str | None, Query(max_length=40)] = "active",
     capture_status: Annotated[str | None, Query(max_length=40)] = None,
@@ -66,6 +67,7 @@ async def get_memory_browser(
             limit=limit,
             fact_status=fact_status,
             document_status=document_status,
+            chunk_status=chunk_status,
             extraction_status=extraction_status,
             thread_status=thread_status,
             capture_status=capture_status,
@@ -81,6 +83,7 @@ async def get_memory_browser(
             "memory_scope": memory_scope_to_response(result.memory_scope),
             "facts": [fact_to_response(fact) for fact in result.facts],
             "documents": [document_to_response(document) for document in result.documents],
+            "chunks": [chunk_to_response(chunk) for chunk in result.chunks],
             "extraction_jobs": [
                 asset_extraction_to_response(job) for job in result.extraction_jobs
             ],
@@ -117,6 +120,7 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
         "memory_scope": None,
         "facts": [],
         "documents": [],
+        "chunks": [],
         "extraction_jobs": [],
         "threads": [],
         "captures": [],
@@ -127,6 +131,7 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
         "stats": {
             "facts": 0,
             "documents": 0,
+            "chunks": 0,
             "extraction_jobs": 0,
             "threads": 0,
             "captures": 0,

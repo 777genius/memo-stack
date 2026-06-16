@@ -673,6 +673,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
         "limit": "30",
         "fact_status": "active",
         "document_status": "active",
+        "chunk_status": "active",
         "extraction_status": "pending",
         "thread_status": "active",
         "asset_status": "stored",

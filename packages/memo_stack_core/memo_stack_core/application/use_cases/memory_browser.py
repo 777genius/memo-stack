@@ -41,6 +41,13 @@ class BuildMemoryBrowserUseCase:
                 status=query.document_status,
                 limit=limit,
             )
+            chunks = await uow.chunks.list_for_scope(
+                space_id=space_id,
+                memory_scope_id=memory_scope_id,
+                thread_id=None,
+                status=query.chunk_status,
+                limit=limit,
+            )
             extraction_jobs = await uow.asset_extractions.list_for_scope(
                 space_id=space_id,
                 memory_scope_id=memory_scope_id,
@@ -91,6 +98,7 @@ class BuildMemoryBrowserUseCase:
         stats = {
             "facts": len(facts),
             "documents": len(documents),
+            "chunks": len(chunks),
             "extraction_jobs": len(extraction_jobs),
             "threads": len(threads),
             "captures": len(captures),
@@ -110,6 +118,7 @@ class BuildMemoryBrowserUseCase:
             memory_scope=memory_scope,
             facts=tuple(facts),
             documents=tuple(documents),
+            chunks=tuple(chunks),
             extraction_jobs=tuple(extraction_jobs),
             threads=tuple(threads),
             captures=tuple(captures),
@@ -124,6 +133,7 @@ class BuildMemoryBrowserUseCase:
                 "statuses": {
                     "fact": query.fact_status,
                     "document": query.document_status,
+                    "chunk": query.chunk_status,
                     "extraction": query.extraction_status,
                     "thread": query.thread_status,
                     "capture": query.capture_status,

@@ -308,6 +308,35 @@ class PostgresChunkRepository(ChunkRepositoryPort):
         self._session.add(chunk_to_row(chunk))
         return UpsertChunkResult(chunk_id=str(chunk.id), duplicate=False)
 
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        thread_id: str | None,
+        status: str | None,
+        limit: int,
+    ) -> list[MemoryChunk]:
+        conditions = [
+            MemoryChunkRow.space_id == space_id,
+            MemoryChunkRow.memory_scope_id == memory_scope_id,
+        ]
+        if thread_id is not None:
+            conditions.append(
+                or_(MemoryChunkRow.thread_id == thread_id, MemoryChunkRow.thread_id.is_(None))
+            )
+        if status is not None:
+            conditions.append(MemoryChunkRow.status == status)
+        rows = (
+            await self._session.execute(
+                select(MemoryChunkRow)
+                .where(*conditions)
+                .order_by(MemoryChunkRow.updated_at.desc(), MemoryChunkRow.id.desc())
+                .limit(limit)
+            )
+        ).scalars()
+        return [chunk_row_to_domain(row) for row in rows]
+
     async def hydrate_visible_chunks(
         self,
         *,

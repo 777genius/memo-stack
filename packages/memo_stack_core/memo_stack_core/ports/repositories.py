@@ -333,6 +333,17 @@ class ChunkRepositoryPort(Protocol):
     async def upsert(self, chunk: MemoryChunk) -> UpsertChunkResult:
         """Persist a chunk, returning duplicate=true on same source hash."""
 
+    async def list_for_scope(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        thread_id: str | None,
+        status: str | None,
+        limit: int,
+    ) -> list[MemoryChunk]:
+        """List chunks for a single scope."""
+
     async def hydrate_visible_chunks(
         self,
         *,

@@ -272,6 +272,10 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "active",
             "deleted",
         }
+        assert set(browse.inputSchema["properties"]["chunk_status"]["anyOf"][0]["enum"]) == {
+            "active",
+            "deleted",
+        }
         assert set(browse.inputSchema["properties"]["extraction_status"]["anyOf"][0]["enum"]) == {
             "pending",
             "running",

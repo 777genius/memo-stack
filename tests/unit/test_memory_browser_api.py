@@ -159,6 +159,11 @@ def test_memory_browser_returns_scope_threads_evidence_anchors_and_links(
     assert data["memory_scope"]["external_ref"] == "project-atlas"
     assert {item["id"] for item in data["facts"]} == {fact.json()["data"]["id"]}
     assert {item["id"] for item in data["documents"]} == {document.json()["data"]["id"]}
+    assert {item["document_id"] for item in data["chunks"]} == {document.json()["data"]["id"]}
+    assert (
+        data["chunks"][0]["text"]
+        == "Project Atlas document memory should appear in the browser."
+    )
     assert {item["id"] for item in data["extraction_jobs"]} == {extraction_id}
     assert {item["external_ref"] for item in data["threads"]} == {"alex-call"}
     assert {item["id"] for item in data["captures"]} == {capture.json()["data"]["id"]}
@@ -169,7 +174,9 @@ def test_memory_browser_returns_scope_threads_evidence_anchors_and_links(
     assert data["context_link_suggestions"]
     assert data["stats"]["facts"] == 1
     assert data["stats"]["documents"] == 1
+    assert data["stats"]["chunks"] == 1
     assert data["stats"]["extraction_jobs"] == 1
     assert data["stats"]["threads"] == 1
     assert data["stats"]["active_context_links"] == 1
     assert data["diagnostics"]["browser_version"] == "memory-browser-v1"
+    assert data["diagnostics"]["statuses"]["chunk"] == "active"

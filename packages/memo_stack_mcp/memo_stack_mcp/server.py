@@ -79,6 +79,7 @@ ContextLinkReviewAction = Literal["approve", "reject", "expire"]
 CaptureStatus = Literal["accepted", "rejected", "redacted", "purged"]
 MemoryBrowserThreadStatus = Literal["active", "deleted"]
 MemoryBrowserDocumentStatus = Literal["active", "deleted"]
+MemoryBrowserChunkStatus = Literal["active", "deleted"]
 MemoryBrowserExtractionStatus = Literal[
     "pending",
     "running",
@@ -1681,7 +1682,8 @@ def create_mcp_server(
         title="Browse Memory Scope",
         description=(
             "Load a read-only browser snapshot for one MemoryScope: durable facts, documents, "
-            "asset extraction jobs, threads, captures, assets, semantic anchors, approved "
+            "document chunks, asset extraction jobs, threads, captures, assets, semantic "
+            "anchors, approved "
             "context links, pending or reviewed link suggestions, stats, and diagnostics. Use "
             "this when the user wants to navigate what has been saved in a project/scope or "
             "inspect review state before approving links."
@@ -1704,6 +1706,10 @@ def create_mcp_server(
         fact_status: Annotated[FactStatus | None, Field(default="active")] = "active",
         document_status: Annotated[
             MemoryBrowserDocumentStatus | None,
+            Field(default="active"),
+        ] = "active",
+        chunk_status: Annotated[
+            MemoryBrowserChunkStatus | None,
             Field(default="active"),
         ] = "active",
         extraction_status: Annotated[
@@ -1736,6 +1742,7 @@ def create_mcp_server(
                 limit=limit,
                 fact_status=fact_status,
                 document_status=document_status,
+                chunk_status=chunk_status,
                 extraction_status=extraction_status,
                 thread_status=thread_status,
                 capture_status=capture_status,
