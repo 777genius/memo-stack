@@ -84,4 +84,4 @@ def _git_output(*args: str, cwd: Path | None = None) -> str | None:
         )
     except (OSError, subprocess.CalledProcessError):
         return None
-    return completed.stdout.strip() or None
+    return completed.stdout.strip()

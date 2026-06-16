@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from memo_stack_core import reporting
 from memo_stack_core.reporting import build_report_provenance, with_report_provenance
 
 
@@ -24,6 +25,12 @@ def test_build_report_provenance_is_safe_and_reproducible(tmp_path: Path) -> Non
     assert provenance["git"]["dirty"] is None
     assert provenance["runtime"]["python_version"]
     assert provenance["runtime"]["platform"]
+
+
+def test_git_dirty_distinguishes_clean_worktree_from_unavailable_git(monkeypatch) -> None:
+    monkeypatch.setattr(reporting, "_git_output", lambda *_, cwd=None: "")
+
+    assert reporting.git_dirty() is False
 
 
 def test_with_report_provenance_does_not_mutate_source_report(tmp_path: Path) -> None:
