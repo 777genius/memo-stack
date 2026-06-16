@@ -61,6 +61,7 @@ Quality gates:
 make memo-stack-test-quality
 make memo-stack-plugin-test
 .venv/bin/python -m memo_stack_server.eval run --suite quality-golden
+.venv/bin/python -m memo_stack_server.eval run --suite semantic-linking-golden
 ```
 
 `quality-golden` is the prompt-impacting memory benchmark. It checks recall,
@@ -68,6 +69,9 @@ precision, stale update filtering, delete filtering, restricted-memory hiding,
 memory scope and thread isolation, document chunk recall, prompt-injection evidence rendering
 and tiny token-budget safety. Reports are redacted and contain case ids,
 item ids, gates and aggregate metrics, not raw memory text.
+`semantic-linking-golden` specifically checks context-link suggestion quality:
+specific target ranking against a similar distractor, person/project anchor
+suggestions, review approval, and the no-candidate path for unrelated captures.
 
 Fresh full-provider canary with isolated Docker volumes:
 

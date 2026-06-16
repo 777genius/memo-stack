@@ -60,6 +60,7 @@ from memo_stack_server.eval_constants import (
     PROMPT_CONTRACT_SUITE,
     PUBLIC_MEMORY_BENCHMARK_SUITE,
     QUALITY_GOLDEN_SUITE,
+    SEMANTIC_LINKING_GOLDEN_SUITE,
     SMALL_GOLDEN_SUITE,
 )
 from memo_stack_server.eval_fixtures import (
@@ -80,6 +81,7 @@ from memo_stack_server.eval_scorecard import (
     build_memory_quality_scorecard,
     memory_quality_scorecard_policy_snapshot,
 )
+from memo_stack_server.eval_semantic_linking import run_semantic_linking_golden
 from memo_stack_server.eval_types import (  # noqa: F401
     EvalCase,
     EvalCaseResult,
@@ -106,10 +108,12 @@ __all__ = (
     "PROMPT_CONTRACT_SUITE",
     "PUBLIC_MEMORY_BENCHMARK_SUITE",
     "QUALITY_GOLDEN_SUITE",
+    "SEMANTIC_LINKING_GOLDEN_SUITE",
     "SMALL_GOLDEN_SUITE",
     "build_memory_quality_scorecard",
     "build_prompt_contract_snapshot",
     "memory_quality_scorecard_policy_snapshot",
+    "run_semantic_linking_golden",
 )
 
 
@@ -1269,6 +1273,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 auth_token=_eval_auth_token_from_env() if args.api_url else None,
                 report_out=args.report_out,
             )
+        elif args.suite == SEMANTIC_LINKING_GOLDEN_SUITE:
+            result = run_semantic_linking_golden(
+                api_url=args.api_url,
+                auth_token=_eval_auth_token_from_env() if args.api_url else None,
+                report_out=args.report_out,
+            )
         elif args.suite == LONG_MEMORY_GOLDEN_SUITE:
             result = run_long_memory_golden(
                 api_url=args.api_url,
@@ -1292,7 +1302,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 f"Unsupported eval suite: {args.suite}. "
                 "Supported: "
                 f"{SMALL_GOLDEN_SUITE}, {QUALITY_GOLDEN_SUITE}, "
-                f"{LONG_MEMORY_GOLDEN_SUITE}, {AUTO_MEMORY_GOLDEN_SUITE}, "
+                f"{SEMANTIC_LINKING_GOLDEN_SUITE}, {LONG_MEMORY_GOLDEN_SUITE}, "
+                f"{AUTO_MEMORY_GOLDEN_SUITE}, "
                 f"{GRAPH_NATIVE_GOLDEN_SUITE}"
             )
     elif args.command == "snapshots":

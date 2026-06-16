@@ -32,6 +32,7 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
         in makefile
     )
     assert "$(PYTHON) -m memo_stack_server eval run --suite quality-golden" in makefile
+    assert "$(PYTHON) -m memo_stack_server eval run --suite semantic-linking-golden" in makefile
     assert "$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden" in makefile
     assert "$(PYTHON) -m pytest tests/e2e" in makefile
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
@@ -80,6 +81,7 @@ def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
     eval_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-eval"))
 
     assert "$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden" in eval_recipe
+    assert "$(PYTHON) -m memo_stack_server eval run --suite semantic-linking-golden" in eval_recipe
     assert ".PHONY: memo-stack-graph-native-eval" in makefile
     assert "$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden" in eval_recipe
     assert (

@@ -7,6 +7,7 @@ from pathlib import Path
 PROMPT_CONTRACT_SUITE = "prompt-contract"
 SMALL_GOLDEN_SUITE = "small-golden"
 QUALITY_GOLDEN_SUITE = "quality-golden"
+SEMANTIC_LINKING_GOLDEN_SUITE = "semantic-linking-golden"
 LONG_MEMORY_GOLDEN_SUITE = "long-memory-golden"
 AUTO_MEMORY_GOLDEN_SUITE = "auto-memory-golden"
 GRAPH_NATIVE_GOLDEN_SUITE = "graph-native-golden"

@@ -33,6 +33,7 @@ from memo_stack_server.eval import (
     run_graph_native_golden,
     run_long_memory_golden,
     run_quality_golden,
+    run_semantic_linking_golden,
     run_small_golden,
 )
 from memo_stack_server.main import create_app
@@ -1093,6 +1094,25 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert "QUALITY_FACT_MODEL_CURRENT" not in report_text
     assert "QUALITY_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
+
+
+def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
+    report = tmp_path / "semantic-linking-golden-report.json"
+    result = run_semantic_linking_golden(report_out=report)
+    report_text = report.read_text(encoding="utf-8")
+    payload = json.loads(report_text)
+
+    assert result["ok"] is True
+    assert result["status"] == "ok"
+    assert result["suite"] == "semantic-linking-golden"
+    assert result["checks"]["top_fact_beats_distractor"] is True
+    assert result["checks"]["person_and_project_anchors_suggested"] is True
+    assert result["checks"]["top_suggestion_approves_to_link"] is True
+    assert result["checks"]["unrelated_capture_has_no_candidates"] is True
+    assert result["metrics"]["false_positive_count"] == 0
+    assert payload["suite"] == "semantic-linking-golden"
+    assert "Project Atlas" not in report_text
+    assert "invoice threshold" not in report_text
 
 
 def test_long_memory_golden_eval_passes() -> None:
