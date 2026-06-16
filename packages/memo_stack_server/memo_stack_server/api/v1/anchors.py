@@ -9,6 +9,7 @@ from memo_stack_core.application import (
     AnchorMergeCandidate,
     AnchorMergeSuggestionsQuery,
     BackfillAnchorsCommand,
+    CreateAnchorCommand,
     ListAnchorsQuery,
     MergeAnchorsCommand,
     SplitAnchorCommand,
@@ -39,6 +40,14 @@ class AnchorScopeRequest(BaseModel):
 
 class BackfillAnchorsRequest(AnchorScopeRequest):
     limit_per_source: int = Field(default=100, ge=1, le=500)
+
+
+class CreateAnchorRequest(AnchorScopeRequest):
+    kind: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=240)
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+    description: str | None = Field(default=None, max_length=500)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class MergeAnchorsRequest(BaseModel):
@@ -89,6 +98,38 @@ async def list_anchors(
         )
     )
     return {"data": [anchor_to_response(anchor) for anchor in result.anchors]}
+
+
+@router.post("/anchors")
+async def create_anchor(
+    request: CreateAnchorRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    scope = await resolve_existing_single_scope(
+        container,
+        space_id=request.space_id,
+        memory_scope_id=request.memory_scope_id,
+        thread_id=None,
+        space_slug=request.space_slug,
+        memory_scope_external_ref=request.memory_scope_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
+    if scope is None:
+        return {"data": None, "scope_not_found": True}
+    result = await container.create_anchor.execute(
+        CreateAnchorCommand(
+            space_id=scope.space_id,
+            memory_scope_id=scope.memory_scope_id,
+            kind=request.kind,
+            label=request.label,
+            aliases=tuple(request.aliases),
+            description=request.description,
+            metadata=request.metadata,
+        )
+    )
+    return {"data": anchor_to_response(result.anchor)}
 
 
 @router.get("/anchors/merge-suggestions")

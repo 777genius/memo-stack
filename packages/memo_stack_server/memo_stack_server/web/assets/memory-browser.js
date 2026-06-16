@@ -82,6 +82,7 @@
       "fitButton",
       "buildDigestButton",
       "runRecallButton",
+      "createAnchorButton",
       "backfillAnchorsButton",
       "scopeSummary",
       "liveStatus",
@@ -123,6 +124,7 @@
     });
     els.buildDigestButton.addEventListener("click", () => void buildDigest());
     els.runRecallButton.addEventListener("click", () => void runRecall());
+    els.createAnchorButton.addEventListener("click", () => void createAnchor());
     els.backfillAnchorsButton.addEventListener("click", () => void backfillAnchors());
     els.graphSearchInput.addEventListener("input", renderAll);
     els.typeFilter.addEventListener("change", renderAll);
@@ -438,6 +440,53 @@
     }
   }
 
+  async function createAnchor() {
+    readSettingsFromInputs();
+    saveSettings();
+    const kind = window.prompt("anchor kind: person, event or project", "person");
+    if (kind === null) {
+      return;
+    }
+    const label = window.prompt("anchor label", "");
+    if (label === null) {
+      return;
+    }
+    const cleanLabel = label.trim();
+    if (!cleanLabel) {
+      setError("Anchor label is required.");
+      return;
+    }
+    const aliasesInput = window.prompt("aliases, comma separated", "");
+    if (aliasesInput === null) {
+      return;
+    }
+    const description = window.prompt("description", "");
+    if (description === null) {
+      return;
+    }
+    setError("");
+    try {
+      const response = await apiJson("/v1/anchors", {
+        method: "POST",
+        body: withoutEmpty({
+          ...scopeBody(),
+          kind: kind.trim(),
+          label: cleanLabel,
+          aliases: splitCsv(aliasesInput),
+          description: description.trim(),
+          metadata: { ui_created: true },
+        }),
+      });
+      await refreshAll();
+      const anchorId = response.data?.id;
+      if (anchorId) {
+        selectNode(`anchor:${anchorId}`);
+      }
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
   async function mergeAnchorSuggestion(candidate) {
     const reason = window.prompt("merge reason", "same anchor confirmed in Memo Stack Browser");
     if (reason === null) {
@@ -461,7 +510,9 @@
 
   async function splitAnchorAlias(anchor) {
     const aliases = anchor.aliases || [];
-    const defaultAlias = aliases[0] || anchor.label || "";
+    const defaultAlias =
+      aliases.find((item) => item.toLowerCase() !== String(anchor.label || "").toLowerCase()) ||
+      "";
     const alias = window.prompt("alias to split", defaultAlias);
     if (alias === null) {
       return;
@@ -1988,6 +2039,13 @@
 
   function arrayOf(value) {
     return Array.isArray(value) ? value : [];
+  }
+
+  function splitCsv(value) {
+    return String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 
   function withoutEmpty(payload) {

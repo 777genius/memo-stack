@@ -8,6 +8,41 @@ import memo_stack_sdk._payloads as _payloads
 
 
 class MemoStackAnchorsMixin:
+    def create_anchor(
+        self,
+        *,
+        kind: str,
+        label: str,
+        aliases: list[str] | None = None,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/anchors",
+            json=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=None,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=None,
+                    ),
+                    "kind": kind,
+                    "label": label,
+                    "aliases": aliases or [],
+                    "description": description,
+                    "metadata": metadata or {},
+                }
+            ),
+        )
+
     def list_anchors(
         self,
         *,

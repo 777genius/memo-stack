@@ -342,6 +342,17 @@ class ListAnchorsQuery:
 
 
 @dataclass(frozen=True)
+class CreateAnchorCommand:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    kind: str
+    label: str
+    aliases: tuple[str, ...] = ()
+    description: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class AnchorResult:
     anchor: MemoryAnchor
 

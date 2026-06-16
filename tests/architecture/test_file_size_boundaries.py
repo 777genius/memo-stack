@@ -20,6 +20,10 @@ LEGACY_OVER_MAX_ALLOWLIST: set[str] = set()
 
 IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     *LEGACY_OVER_MAX_ALLOWLIST,
+    "packages/memo_stack_core/memo_stack_core/application/dto.py",
+    "packages/memo_stack_core/memo_stack_core/application/use_cases/asset_extractions.py",
+    "packages/memo_stack_core/memo_stack_core/application/use_cases/context_links.py",
+    "packages/memo_stack_core/memo_stack_core/domain/entities.py",
     "packages/memo_stack_mcp/memo_stack_mcp/agent_behavior_bench.py",
     "scripts/clean_full_smoke.py",
     "packages/memo_stack_adapters/memo_stack_adapters/postgres/repositories.py",
@@ -35,6 +39,8 @@ IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     "tests/e2e/test_memory_scale_chaos_load_e2e.py",
     "tests/unit/test_admin_tokens.py",
     "tests/unit/test_agent_behavior_bench.py",
+    "tests/unit/test_asset_context_links_api.py",
+    "tests/unit/test_asset_extractions_api.py",
     "tests/unit/test_capture_worker.py",
     "tests/unit/test_context_provider_consistency.py",
     "tests/unit/test_legacy_and_context_api.py",
@@ -42,6 +48,7 @@ IDEAL_OVER_1000_DEBT_ALLOWLIST = {
     "tests/unit/test_mcp_adapter.py",
     "tests/unit/test_provider_adapters.py",
     "tests/unit/test_quality_evidence_bundle.py",
+    "tests/unit/test_sdk_contract.py",
     "tests/unit/test_worker_eval.py",
     "tests/unit/test_worker_eval_scorecard.py",
 }

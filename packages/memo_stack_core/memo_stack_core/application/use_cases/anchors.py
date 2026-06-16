@@ -21,6 +21,7 @@ from memo_stack_core.application.dto import (
     AnchorsResult,
     BackfillAnchorsCommand,
     BackfillAnchorsResult,
+    CreateAnchorCommand,
     ListAnchorsQuery,
     MergeAnchorsCommand,
     SplitAnchorCommand,
@@ -29,6 +30,7 @@ from memo_stack_core.domain.entities import (
     LifecycleStatus,
     MemoryAnchor,
     MemoryAnchorId,
+    MemoryAnchorKind,
     MemoryScopeId,
     SpaceId,
 )
@@ -54,6 +56,75 @@ class ListAnchorsUseCase:
                 limit=query.limit,
             )
         return AnchorsResult(anchors=tuple(anchors))
+
+
+class CreateAnchorUseCase:
+    def __init__(
+        self,
+        *,
+        uow_factory: UnitOfWorkFactoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+        self._ids = ids
+
+    async def execute(self, command: CreateAnchorCommand) -> AnchorResult:
+        label = command.label.strip()
+        if not label:
+            raise MemoryValidationError("Anchor label is required")
+        try:
+            kind = MemoryAnchorKind(command.kind.strip().lower())
+        except ValueError as exc:
+            supported = ", ".join(item.value for item in MemoryAnchorKind)
+            raise MemoryValidationError(
+                f"Unsupported anchor kind. Supported kinds: {supported}"
+            ) from exc
+        normalized_key = normalize_anchor_key(label)
+        if not normalized_key:
+            raise MemoryValidationError("Anchor normalized key is required")
+        now = self._clock.now()
+        metadata = {
+            **dict(command.metadata or {}),
+            "resolver_version": _ANCHOR_RESOLVER_VERSION,
+            "creation_source": "manual",
+            "canonical_key": canonical_anchor_key(label),
+        }
+        async with self._uow_factory() as uow:
+            existing = await uow.anchors.find_active_by_key(
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                kind=kind.value,
+                normalized_key=normalized_key,
+            )
+            if existing is not None:
+                anchor = await uow.anchors.save(
+                    existing.update_details(
+                        label=label,
+                        aliases=command.aliases,
+                        description=command.description,
+                        metadata=metadata,
+                        now=now,
+                    )
+                )
+            else:
+                anchor = await uow.anchors.create(
+                    MemoryAnchor.create(
+                        anchor_id=MemoryAnchorId(self._ids.new_id("anchor")),
+                        space_id=command.space_id,
+                        memory_scope_id=command.memory_scope_id,
+                        kind=kind,
+                        normalized_key=normalized_key,
+                        label=label,
+                        aliases=command.aliases,
+                        description=command.description,
+                        metadata=metadata,
+                        now=now,
+                    )
+                )
+            await uow.commit()
+        return AnchorResult(anchor=anchor)
 
 
 class SuggestAnchorMergesUseCase:

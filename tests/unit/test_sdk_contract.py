@@ -789,6 +789,14 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
         transport=httpx.MockTransport(handler),
     )
 
+    client.create_anchor(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        kind="person",
+        label="Alex",
+        aliases=["Alexander"],
+        description="Canonical person anchor.",
+    )
     client.list_anchors(
         space_slug="client-app",
         memory_scope_external_ref="default",
@@ -811,35 +819,45 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
     client.split_anchor("anchor_target", alias="Alex", new_label="Alexander", reason="split alias")
 
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
+        "POST /v1/anchors",
         "GET /v1/anchors",
         "POST /v1/anchors/backfill",
         "GET /v1/anchors/merge-suggestions",
         "POST /v1/anchors/anchor_source/merge",
         "POST /v1/anchors/anchor_target/split",
     ]
-    assert seen[0][2] == {
+    assert seen[0][3] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "kind": "person",
+        "label": "Alex",
+        "aliases": ["Alexander"],
+        "description": "Canonical person anchor.",
+        "metadata": {},
+    }
+    assert seen[1][2] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
         "kind": "person",
         "status": "active",
         "limit": "25",
     }
-    assert seen[1][3] == {
+    assert seen[2][3] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
         "limit_per_source": 20,
     }
-    assert seen[2][2] == {
+    assert seen[3][2] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
         "kind": "person",
         "limit": "10",
     }
-    assert seen[3][3] == {
+    assert seen[4][3] == {
         "target_anchor_id": "anchor_target",
         "reason": "same person",
     }
-    assert seen[4][3] == {
+    assert seen[5][3] == {
         "alias": "Alex",
         "new_label": "Alexander",
         "reason": "split alias",

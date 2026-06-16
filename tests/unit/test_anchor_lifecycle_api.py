@@ -65,6 +65,43 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
         )
         assert fact.status_code == 201, fact.text
 
+        manual_anchor = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-lifecycle",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "label": "Atlas",
+                "aliases": ["Project Atlas"],
+                "description": "Manual project anchor created by reviewer.",
+            },
+            headers=auth_headers(),
+        )
+        assert manual_anchor.status_code == 200, manual_anchor.text
+        manual_anchor_data = manual_anchor.json()["data"]
+        assert manual_anchor_data["kind"] == "project"
+        assert manual_anchor_data["normalized_key"] == "atlas"
+        assert "Project Atlas" in manual_anchor_data["aliases"]
+        assert manual_anchor_data["metadata"]["creation_source"] == "manual"
+
+        manual_anchor_duplicate = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-lifecycle",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "label": "Atlas",
+                "aliases": ["Atlas roadmap"],
+                "description": "Updated manual project anchor.",
+            },
+            headers=auth_headers(),
+        )
+        assert manual_anchor_duplicate.status_code == 200, manual_anchor_duplicate.text
+        duplicate_data = manual_anchor_duplicate.json()["data"]
+        assert duplicate_data["id"] == manual_anchor_data["id"]
+        assert "Atlas roadmap" in duplicate_data["aliases"]
+        assert duplicate_data["description"] == "Updated manual project anchor."
+
         document = client.post(
             "/v1/documents",
             json={

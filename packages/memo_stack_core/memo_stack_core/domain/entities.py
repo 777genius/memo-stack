@@ -491,6 +491,31 @@ class MemoryAnchor:
             updated_at=now,
         )
 
+    def update_details(
+        self,
+        *,
+        label: str | None = None,
+        aliases: tuple[str, ...] = (),
+        description: str | None = None,
+        metadata: Mapping[str, object] | None = None,
+        now: datetime,
+    ) -> MemoryAnchor:
+        if self.status != LifecycleStatus.ACTIVE:
+            raise MemoryValidationError("Only active memory anchors can be updated")
+        next_label = self.label if label is None or not label.strip() else label.strip()[:240]
+        return replace(
+            self,
+            label=next_label,
+            aliases=_unique_aliases((next_label, *self.aliases, *aliases)),
+            description=(
+                self.description
+                if description is None
+                else description.strip()[:500] if description.strip() else None
+            ),
+            metadata={**dict(self.metadata), **dict(metadata or {})},
+            updated_at=now,
+        )
+
     def merge_source(
         self,
         *,

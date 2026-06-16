@@ -34,6 +34,24 @@ def test_anchor_lifecycle_sdk_e2e(tmp_path: Path) -> None:
             source_refs=[{"source_type": "manual", "source_id": "anchor-sdk-e2e-fact"}],
             idempotency_key="anchor-sdk-e2e-fact",
         )
+        manual_anchor = client.create_anchor(
+            space_slug="anchor-sdk-e2e",
+            memory_scope_external_ref="default",
+            kind="project",
+            label="Atlas",
+            aliases=["Project Atlas"],
+            description="Manual project anchor created in sdk e2e.",
+        )
+        manual_anchor_duplicate = client.create_anchor(
+            space_slug="anchor-sdk-e2e",
+            memory_scope_external_ref="default",
+            kind="project",
+            label="Atlas",
+            aliases=["Atlas roadmap"],
+            description="Updated manual project anchor in sdk e2e.",
+        )
+        assert manual_anchor_duplicate["data"]["id"] == manual_anchor["data"]["id"]
+        assert "Atlas roadmap" in manual_anchor_duplicate["data"]["aliases"]
 
         backfill = client.backfill_anchors(
             space_slug="anchor-sdk-e2e",

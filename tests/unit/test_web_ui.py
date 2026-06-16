@@ -35,9 +35,12 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "localStorage" in js.text
     assert "Authorization" in js.text
     assert "anchorCount" in index.text
+    assert "Create Anchor" in index.text
     assert "Backfill Anchors" in index.text
     assert '<option value="anchor">Anchors</option>' in index.text
     assert "/v1/anchors" in js.text
+    assert "createAnchor" in js.text
+    assert "splitCsv" in js.text
     assert "/v1/anchors/merge-suggestions" in js.text
     assert "backfillAnchors" in js.text
     assert "mergeAnchorSuggestion" in js.text

@@ -27,6 +27,7 @@ from memo_stack_core.application.dto import (
     ContextLinkResult,
     ContextLinkSuggestionResult,
     ContextLinkSuggestionsResult,
+    CreateAnchorCommand,
     CreateAssetCommand,
     CreateContextLinkCommand,
     CreateMemoryScopeCommand,
@@ -133,6 +134,7 @@ from memo_stack_core.application.dto import (
 )
 from memo_stack_core.application.use_cases.anchors import (
     BackfillAnchorsUseCase,
+    CreateAnchorUseCase,
     ListAnchorsUseCase,
     MergeAnchorsUseCase,
     SplitAnchorUseCase,
@@ -272,6 +274,8 @@ __all__ = [
     "CaptureResult",
     "ConsolidateCaptureCommand",
     "ConsolidateCaptureUseCase",
+    "CreateAnchorCommand",
+    "CreateAnchorUseCase",
     "CreateAssetCommand",
     "CreateAssetUseCase",
     "CreateContextLinkCommand",

@@ -30,6 +30,7 @@ from memo_stack_core.application import (
     CancelAssetExtractionUseCase,
     CheckSpaceAccessUseCase,
     ConsolidateCaptureUseCase,
+    CreateAnchorUseCase,
     CreateAssetUseCase,
     CreateContextLinkUseCase,
     CreateMemoryScopeUseCase,
@@ -177,6 +178,7 @@ class Container:
     retry_asset_extraction: RetryAssetExtractionUseCase
     cancel_asset_extraction: CancelAssetExtractionUseCase
     run_asset_extraction: RunAssetExtractionUseCase
+    create_anchor: CreateAnchorUseCase
     list_anchors: ListAnchorsUseCase
     suggest_anchor_merges: SuggestAnchorMergesUseCase
     merge_anchors: MergeAnchorsUseCase
@@ -414,6 +416,7 @@ def build_container(settings: Settings | None = None) -> Container:
         limits=extraction_limits,
         execution_lease_seconds=resolved_settings.extraction_execution_lease_seconds,
     )
+    create_anchor = CreateAnchorUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     list_anchors = ListAnchorsUseCase(uow_factory=uow_factory)
     suggest_anchor_merges = SuggestAnchorMergesUseCase(uow_factory=uow_factory)
     merge_anchors = MergeAnchorsUseCase(uow_factory=uow_factory, clock=clock)
@@ -548,6 +551,7 @@ def build_container(settings: Settings | None = None) -> Container:
         retry_asset_extraction=retry_asset_extraction,
         cancel_asset_extraction=cancel_asset_extraction,
         run_asset_extraction=run_asset_extraction,
+        create_anchor=create_anchor,
         list_anchors=list_anchors,
         suggest_anchor_merges=suggest_anchor_merges,
         merge_anchors=merge_anchors,
