@@ -140,6 +140,89 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["supports_legacy_client_routes"] is False
 
 
+def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'media-capabilities.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            extraction_default_profile="media_api",
+            extraction_external_ai_enabled=True,
+            extraction_max_bytes=123_456,
+            extraction_max_pages=7,
+            extraction_max_media_seconds=42,
+            extraction_max_output_chars=10_000,
+            extraction_max_tables=3,
+            extraction_ocr_enabled=False,
+            extraction_vision_model="gpt-4.1-mini",
+            extraction_vision_detail="low",
+            transcription_provider="openai",
+            transcription_openai_model="gpt-4o-transcribe",
+            openai_api_key="sk-capabilities-secret",
+            plan_media_analysis_seconds_per_month=3_600,
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/capabilities")
+
+    assert response.status_code == 200
+    body = response.json()
+    extraction = body["extraction"]
+    assert extraction["default_profile"] == "media_api"
+    assert extraction["external_provider_egress"] is True
+    assert extraction["optional_extras"]["vision"]["configured"] is True
+    assert extraction["optional_extras"]["vision"]["model"] == "gpt-4.1-mini"
+    assert extraction["optional_extras"]["vision"]["detail"] == "low"
+    assert extraction["optional_extras"]["transcription_api"]["configured"] is True
+    assert extraction["optional_extras"]["transcription_api"]["provider"] == "openai"
+    assert (
+        extraction["optional_extras"]["transcription_api"]["model"]
+        == "gpt-4o-transcribe"
+    )
+    assert extraction["limits"] == {
+        "max_bytes": 123_456,
+        "max_pages": 7,
+        "max_media_seconds": 42,
+        "max_output_chars": 10_000,
+        "max_tables": 3,
+        "ocr_enabled": False,
+    }
+    assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == 3_600
+    assert "sk-capabilities-secret" not in response.text
+
+
+def test_capabilities_keep_transcription_disabled_when_provider_is_disabled(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'disabled-asr-capabilities.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            extraction_default_profile="media_api",
+            extraction_external_ai_enabled=True,
+            transcription_provider="disabled",
+            openai_api_key="sk-unused-transcription-secret",
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/capabilities")
+
+    assert response.status_code == 200
+    extraction = response.json()["extraction"]
+    assert extraction["external_provider_egress"] is True
+    assert extraction["optional_extras"]["vision"]["configured"] is True
+    assert extraction["optional_extras"]["transcription_api"]["configured"] is False
+    assert extraction["optional_extras"]["transcription_api"]["provider"] == "disabled"
+    assert "sk-unused-transcription-secret" not in response.text
+
+
 def test_capabilities_show_capture_disabled_when_policy_is_manual_only(tmp_path: Path) -> None:
     app = create_app(
         Settings(
