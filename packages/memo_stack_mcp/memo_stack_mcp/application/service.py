@@ -595,6 +595,7 @@ class MemoryToolService(
         space_slug: str | None = None,
         memory_scope_external_ref: str | None = None,
         limit: int = 50,
+        fact_status: str | None = "active",
         thread_status: str | None = "active",
         capture_status: str | None = None,
         asset_status: str | None = "stored",
@@ -603,6 +604,7 @@ class MemoryToolService(
         suggestion_status: str | None = None,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
+            _ensure_optional_choice("fact_status", fact_status, FACT_STATUSES)
             _ensure_optional_choice(
                 "thread_status",
                 thread_status,
@@ -626,6 +628,7 @@ class MemoryToolService(
             payload = await self._gateway.get_memory_browser(
                 scope=self._scope(space_slug, memory_scope_external_ref, None),
                 limit=effective_limit,
+                fact_status=fact_status,
                 thread_status=thread_status,
                 capture_status=capture_status,
                 asset_status=asset_status,

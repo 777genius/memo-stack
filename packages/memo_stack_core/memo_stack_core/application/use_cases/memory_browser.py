@@ -27,6 +27,13 @@ class BuildMemoryBrowserUseCase:
             if memory_scope is None or str(memory_scope.space_id) != space_id:
                 raise MemoryNotFoundError("MemoryScope not found")
 
+            facts = await uow.facts.list_for_scope(
+                space_id=space_id,
+                memory_scope_id=memory_scope_id,
+                thread_id=None,
+                status=query.fact_status,
+                limit=limit,
+            )
             threads = await uow.scope.list_threads(
                 space_id=space_id,
                 memory_scope_id=memory_scope_id,
@@ -68,6 +75,7 @@ class BuildMemoryBrowserUseCase:
             )
 
         stats = {
+            "facts": len(facts),
             "threads": len(threads),
             "captures": len(captures),
             "assets": len(assets),
@@ -84,6 +92,7 @@ class BuildMemoryBrowserUseCase:
         return MemoryBrowserResult(
             generated_at=self._clock.now(),
             memory_scope=memory_scope,
+            facts=tuple(facts),
             threads=tuple(threads),
             captures=tuple(captures),
             assets=tuple(assets),
@@ -95,6 +104,7 @@ class BuildMemoryBrowserUseCase:
                 "browser_version": "memory-browser-v1",
                 "limit": limit,
                 "statuses": {
+                    "fact": query.fact_status,
                     "thread": query.thread_status,
                     "capture": query.capture_status,
                     "asset": query.asset_status,

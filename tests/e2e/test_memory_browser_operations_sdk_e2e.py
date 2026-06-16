@@ -84,6 +84,7 @@ def test_memory_browser_and_operations_console_sdk_e2e(tmp_path: Path) -> None:
             space_slug="browser-ops-sdk-e2e",
             memory_scope_external_ref="project-atlas",
             limit=100,
+            fact_status="active",
             link_status="active",
             suggestion_status="approved",
         )
@@ -104,6 +105,7 @@ def test_memory_browser_and_operations_console_sdk_e2e(tmp_path: Path) -> None:
 
     data = browser["data"]
     assert data["memory_scope"]["external_ref"] == "project-atlas"
+    assert {item["id"] for item in data["facts"]} == {fact["data"]["id"]}
     assert {item["external_ref"] for item in data["threads"]} == {"alex-call"}
     assert {item["id"] for item in data["captures"]} == {capture["data"]["id"]}
     assert {item["id"] for item in data["assets"]} == {asset["data"]["id"]}
@@ -113,6 +115,7 @@ def test_memory_browser_and_operations_console_sdk_e2e(tmp_path: Path) -> None:
     }
     assert any(item["label"] == "Alex" for item in data["anchors"])
     assert any(item["label"] == "Atlas" for item in data["anchors"])
+    assert data["stats"]["facts"] == 1
     assert data["stats"]["active_context_links"] == 1
     assert data["stats"]["pending_context_link_suggestions"] == 0
     assert data["diagnostics"]["browser_version"] == "memory-browser-v1"

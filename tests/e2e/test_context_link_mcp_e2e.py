@@ -69,6 +69,7 @@ def test_context_link_review_mcp_service_e2e(tmp_path: Path) -> None:
     assert result["links"]["data"]["items"][0]["target_id"] == fact["data"]["id"]
     assert result["history"]["data"]["items"][0]["status"] in {"approved", "rejected"}
     assert result["browser"]["data"]["memory_scope"]["external_ref"] == "default"
+    assert fact["data"]["id"] in {item["id"] for item in result["browser"]["data"]["facts"]}
     assert result["browser"]["data"]["stats"]["active_context_links"] == 1
     assert result["browser"]["data"]["context_links"][0]["target_id"] == fact["data"]["id"]
     assert result["browser"]["data"]["diagnostics"]["browser_version"] == "memory-browser-v1"
@@ -147,6 +148,7 @@ async def _review_links_with_mcp_service(
     )
     browser = await service.browse_scope(
         limit=20,
+        fact_status="active",
         link_status="active",
         suggestion_status="approved",
     )

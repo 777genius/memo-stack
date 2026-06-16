@@ -262,6 +262,12 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "active",
             "deleted",
         }
+        assert set(browse.inputSchema["properties"]["fact_status"]["anyOf"][0]["enum"]) == {
+            "active",
+            "superseded",
+            "disputed",
+            "deleted",
+        }
         context_link_suggestions = next(
             tool for tool in tools if tool.name == "memory_list_context_link_suggestions"
         )
