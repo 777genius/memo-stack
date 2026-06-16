@@ -184,6 +184,45 @@ class MemoStackAssetsMixin:
             ),
         )
 
+    def get_memory_browser(
+        self,
+        *,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        limit: int = 50,
+        thread_status: str | None = "active",
+        capture_status: str | None = None,
+        asset_status: str | None = "stored",
+        anchor_status: str | None = "active",
+        link_status: str | None = None,
+        suggestion_status: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/v1/memory-browser",
+            params=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=None,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=None,
+                    ),
+                    "limit": limit,
+                    "thread_status": thread_status,
+                    "capture_status": capture_status,
+                    "asset_status": asset_status,
+                    "anchor_status": anchor_status,
+                    "link_status": link_status,
+                    "suggestion_status": suggestion_status,
+                }
+            ),
+        )
+
     def download_extraction_artifact(self, artifact_id: str) -> bytes:
         return self._request_bytes(
             "GET",
