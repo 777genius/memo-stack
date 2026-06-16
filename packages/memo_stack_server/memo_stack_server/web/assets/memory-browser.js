@@ -727,49 +727,26 @@
     }
   }
 
-  async function editContextLink(link) {
-    const sourceType = window.prompt("source type", link.source_type || "");
-    if (sourceType === null) {
-      return;
-    }
-    const sourceId = window.prompt("source id", link.source_id || "");
-    if (sourceId === null) {
-      return;
-    }
-    const targetType = window.prompt("target type", link.target_type || "");
-    if (targetType === null) {
-      return;
-    }
-    const targetId = window.prompt("target id", link.target_id || "");
-    if (targetId === null) {
-      return;
-    }
-    const relationType = window.prompt("relation", link.relation_type || "related_to");
-    if (relationType === null) {
-      return;
-    }
-    const confidence = window.prompt("confidence: low, medium or high", link.confidence || "medium");
-    if (confidence === null) {
-      return;
-    }
-    const reason = window.prompt("reason", link.reason || "manual reviewer link");
-    if (reason === null) {
+  async function editContextLink(link, payload) {
+    const body = withoutEmpty({
+      source_type: payload.source_type,
+      source_id: payload.source_id,
+      target_type: payload.target_type,
+      target_id: payload.target_id,
+      relation_type: payload.relation_type,
+      confidence: payload.confidence,
+      reason: payload.reason,
+      metadata: { edited_from: "memory_browser_manual" },
+    });
+    if (!body.source_type || !body.source_id || !body.target_type || !body.target_id || !body.reason) {
+      setError("Link edit requires source, target, and reason.");
       return;
     }
     setError("");
     try {
       await apiJson(`/v1/context-links/${encodeURIComponent(link.id)}`, {
         method: "PATCH",
-        body: withoutEmpty({
-          source_type: sourceType.trim(),
-          source_id: sourceId.trim(),
-          target_type: targetType.trim(),
-          target_id: targetId.trim(),
-          relation_type: relationType.trim(),
-          confidence: confidence.trim(),
-          reason: reason.trim(),
-          metadata: { edited_from: "memory_browser_manual" },
-        }),
+        body,
       });
       await refreshAll();
       selectNode(`context_link:${link.id}`);
@@ -1449,12 +1426,9 @@
     }
     if (node.type === "context_link" && node.data?.status === "active") {
       const actions = document.createElement("div");
-      actions.className = "action-row";
-      actions.append(
-        actionButton("Edit Link", () => editContextLink(node.data), "primary-button"),
-        actionButton("Delete Link", () => deleteContextLink(node.data.id)),
-      );
-      panel.append(actions);
+      actions.className = "action-row one-action";
+      actions.append(actionButton("Delete Link", () => deleteContextLink(node.data.id)));
+      panel.append(actions, activeContextLinkEditForm(node.data));
     }
     if (node.type === "suggestion" && node.data?.status === "pending") {
       const actions = document.createElement("div");
@@ -1550,7 +1524,20 @@
         keyValueItem("Approved from", String(link.metadata.approved_from_suggestion_id)),
       );
     }
+    const editEvents = arrayOf(link.metadata?.edit_events).filter(
+      (event) => event && typeof event === "object",
+    );
+    if (editEvents.length) {
+      section.append(
+        keyValueItem("Edit history", editEvents.slice(-3).map(formatContextLinkEditEvent).join("\n")),
+      );
+    }
     return section;
+  }
+
+  function formatContextLinkEditEvent(event) {
+    const changed = arrayOf(event.changed_fields).join(", ") || "metadata";
+    return `${formatDate(event.edited_at)} ${event.source || "manual"}: ${changed}`;
   }
 
   function keyValueItem(title, text) {
@@ -1594,6 +1581,56 @@
       linkReason.element,
       reviewNote.element,
       submit,
+    );
+    return form;
+  }
+
+  function activeContextLinkEditForm(link) {
+    const form = document.createElement("section");
+    form.className = "edit-form";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Edit Link";
+    const sourceType = formSelect("Source type", CONTEXT_ENDPOINT_TYPES, link.source_type);
+    const sourceId = formInput("Source id", link.source_id);
+    const targetType = formSelect("Target type", CONTEXT_ENDPOINT_TYPES, link.target_type);
+    const targetId = formInput("Target id", link.target_id);
+    const relationType = formInput("Relation", link.relation_type);
+    const confidence = formSelect("Confidence", ["low", "medium", "high"], link.confidence);
+    const reason = formInput("Reason", link.reason);
+    const useSelectedSource = actionButton("Use Selected Source", () => {
+      applyEndpointToForm(selectedContextEndpoint(), sourceType.input, sourceId.input);
+    });
+    const useSelectedTarget = actionButton("Use Selected Target", () => {
+      applyEndpointToForm(selectedContextEndpoint(), targetType.input, targetId.input);
+    });
+    const submit = actionButton(
+      "Save Link",
+      () =>
+        editContextLink(link, {
+          source_type: sourceType.input.value.trim(),
+          source_id: sourceId.input.value.trim(),
+          target_type: targetType.input.value.trim(),
+          target_id: targetId.input.value.trim(),
+          relation_type: relationType.input.value.trim(),
+          confidence: confidence.input.value,
+          reason: reason.input.value.trim(),
+        }),
+      "primary-button",
+    );
+    const actions = document.createElement("div");
+    actions.className = "action-row";
+    actions.append(useSelectedSource, useSelectedTarget, submit);
+    form.append(
+      heading,
+      sourceType.element,
+      sourceId.element,
+      targetType.element,
+      targetId.element,
+      relationType.element,
+      confidence.element,
+      reason.element,
+      actions,
     );
     return form;
   }

@@ -27,6 +27,7 @@ MAX_ASSET_STORAGE_KEY_CHARS = 500
 MAX_ASSET_METADATA_KEYS = 80
 MAX_CONTEXT_LINK_METADATA_KEYS = 80
 MAX_CONTEXT_LINK_REVIEW_REASON_CHARS = 320
+MAX_CONTEXT_LINK_AUDIT_EVENTS = 20
 
 
 class AssetStatus(StrEnum):
@@ -227,6 +228,54 @@ class MemoryContextLink:
             raise MemoryValidationError("Context link confidence is invalid")
         if not safe_reason:
             raise MemoryValidationError("Context link reason is required")
+        changed_fields = _context_link_changed_fields(
+            before={
+                "source_type": self.source_type,
+                "source_id": self.source_id,
+                "target_type": self.target_type,
+                "target_id": self.target_id,
+                "relation_type": self.relation_type,
+                "confidence": self.confidence,
+                "reason": self.reason,
+            },
+            after={
+                "source_type": safe_source_type,
+                "source_id": safe_source_id,
+                "target_type": safe_target_type,
+                "target_id": safe_target_id,
+                "relation_type": safe_relation_type,
+                "confidence": safe_confidence,
+                "reason": safe_reason[:320],
+            },
+        )
+        safe_metadata = _safe_metadata(metadata, max_keys=MAX_CONTEXT_LINK_METADATA_KEYS)
+        edit_source = str(safe_metadata.get("last_edit_source") or "manual")[:80]
+        next_metadata = _append_context_link_audit(
+            {**dict(self.metadata), **safe_metadata},
+            event={
+                "edited_at": now.isoformat(),
+                "source": edit_source,
+                "changed_fields": changed_fields,
+                "previous": {
+                    "source_type": self.source_type,
+                    "source_id": self.source_id,
+                    "target_type": self.target_type,
+                    "target_id": self.target_id,
+                    "relation_type": self.relation_type,
+                    "confidence": self.confidence,
+                    "reason": self.reason,
+                },
+                "next": {
+                    "source_type": safe_source_type,
+                    "source_id": safe_source_id,
+                    "target_type": safe_target_type,
+                    "target_id": safe_target_id,
+                    "relation_type": safe_relation_type,
+                    "confidence": safe_confidence,
+                    "reason": safe_reason[:320],
+                },
+            },
+        )
         return replace(
             self,
             source_type=safe_source_type,
@@ -236,10 +285,7 @@ class MemoryContextLink:
             relation_type=safe_relation_type,
             confidence=safe_confidence,
             reason=safe_reason[:320],
-            metadata={
-                **dict(self.metadata),
-                **_safe_metadata(metadata, max_keys=MAX_CONTEXT_LINK_METADATA_KEYS),
-            },
+            metadata=next_metadata,
             updated_at=now,
         )
 
@@ -403,6 +449,31 @@ def _safe_metadata(
             if items:
                 safe[key_text] = items
     return safe
+
+
+def _context_link_changed_fields(
+    *,
+    before: Mapping[str, object],
+    after: Mapping[str, object],
+) -> list[str]:
+    return [key for key, value in after.items() if before.get(key) != value]
+
+
+def _append_context_link_audit(
+    metadata: Mapping[str, object],
+    *,
+    event: Mapping[str, object],
+) -> dict[str, object]:
+    next_metadata = dict(metadata)
+    existing = metadata.get("edit_events")
+    events = (
+        [item for item in existing if isinstance(item, Mapping)]
+        if isinstance(existing, list)
+        else []
+    )
+    events.append(dict(event))
+    next_metadata["edit_events"] = events[-MAX_CONTEXT_LINK_AUDIT_EVENTS:]
+    return next_metadata
 
 
 def _optional_text(value: str | None, *, max_chars: int) -> str | None:

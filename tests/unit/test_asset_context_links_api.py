@@ -240,6 +240,16 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert updated_data["reason"] == "reviewer corrected target fact"
     assert updated_data["metadata"]["updated_from"] == "api_test"
     assert updated_data["metadata"]["last_edit_source"] == "manual"
+    edit_event = updated_data["metadata"]["edit_events"][-1]
+    assert edit_event["source"] == "manual"
+    assert set(edit_event["changed_fields"]) == {
+        "target_id",
+        "relation_type",
+        "confidence",
+        "reason",
+    }
+    assert edit_event["previous"]["target_id"] == fact.json()["data"]["id"]
+    assert edit_event["next"]["target_id"] == second_fact.json()["data"]["id"]
     assert listed_links.status_code == 200
     assert listed_links.json()["data"][0]["target_id"] == second_fact.json()["data"]["id"]
     assert second_link.status_code == 200

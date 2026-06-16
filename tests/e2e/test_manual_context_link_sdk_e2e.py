@@ -107,6 +107,13 @@ def test_manual_context_link_sdk_e2e(tmp_path: Path) -> None:
         assert updated["data"]["reason"] == "manual reviewer corrected canonical target"
         assert updated["data"]["metadata"]["updated_from"] == "sdk_e2e"
         assert updated["data"]["metadata"]["last_edit_source"] == "manual"
+        edit_event = updated["data"]["metadata"]["edit_events"][-1]
+        assert edit_event["source"] == "manual"
+        assert edit_event["previous"]["target_id"] == fact["data"]["id"]
+        assert edit_event["next"]["target_id"] == corrected_fact["data"]["id"]
+        assert {"target_id", "confidence", "reason"}.issubset(
+            set(edit_event["changed_fields"])
+        )
         assert duplicate["data"]["duplicate"] is True
         assert duplicate["data"]["id"] == link["id"]
         assert [item["id"] for item in listed["data"]] == [link["id"]]

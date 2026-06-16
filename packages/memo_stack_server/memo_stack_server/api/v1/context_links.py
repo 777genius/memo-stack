@@ -364,6 +364,14 @@ def _safe_metadata(metadata: Any) -> dict[str, Any]:
         key_text = str(key)
         if isinstance(value, (str, int, float, bool, type(None))):
             safe[key_text] = value
+        elif key_text == "edit_events" and isinstance(value, list):
+            events: list[dict[str, Any]] = []
+            for item in value[-20:]:
+                event = _safe_context_link_edit_event(item)
+                if event is not None:
+                    events.append(event)
+            if events:
+                safe[key_text] = events
         elif isinstance(value, list):
             items = [
                 item
@@ -373,3 +381,36 @@ def _safe_metadata(metadata: Any) -> dict[str, Any]:
             if items:
                 safe[key_text] = items
     return safe
+
+
+def _safe_context_link_edit_event(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    event: dict[str, Any] = {}
+    for key in ("edited_at", "source"):
+        raw = value.get(key)
+        if isinstance(raw, str) and raw:
+            event[key] = raw[:160]
+    changed_fields = value.get("changed_fields")
+    if isinstance(changed_fields, list):
+        event["changed_fields"] = [
+            str(item)[:80] for item in changed_fields[:20] if isinstance(item, str)
+        ]
+    for key in ("previous", "next"):
+        raw = value.get(key)
+        if isinstance(raw, dict):
+            event[key] = _safe_context_link_snapshot(raw)
+    return event or None
+
+
+def _safe_context_link_snapshot(value: dict[str, Any]) -> dict[str, str]:
+    allowed = {
+        "source_type",
+        "source_id",
+        "target_type",
+        "target_id",
+        "relation_type",
+        "confidence",
+        "reason",
+    }
+    return {key: str(value[key])[:320] for key in allowed if isinstance(value.get(key), str)}
