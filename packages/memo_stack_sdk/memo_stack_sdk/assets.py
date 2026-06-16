@@ -260,6 +260,47 @@ class MemoStackAssetsMixin:
             ),
         )
 
+    def create_context_link(
+        self,
+        *,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        reason: str,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        relation_type: str = "related_to",
+        confidence: str = "medium",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/v1/context-links",
+            json=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=None,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=None,
+                    ),
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "relation_type": relation_type,
+                    "confidence": confidence,
+                    "reason": reason,
+                    "metadata": metadata,
+                }
+            ),
+        )
+
     def list_context_link_suggestions(
         self,
         *,

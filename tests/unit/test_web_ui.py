@@ -40,6 +40,10 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "/v1/context-link-suggestions" in js.text
     assert "reviewContextLinkSuggestion" in js.text
     assert "Approve With Edits" in js.text
+    assert "Manual Link" in js.text
+    assert "Create Link" in js.text
+    assert "Use Selected Source" in js.text
+    assert "createManualContextLink" in js.text
     assert "/ui/" not in openapi.text
 
 

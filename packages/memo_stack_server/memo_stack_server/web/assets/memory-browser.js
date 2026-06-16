@@ -4,6 +4,16 @@
   const SETTINGS_KEY = "memoStack.browser.settings.v1";
   const GRAPH_NODE_LIMIT = 320;
   const POLL_MS = 5000;
+  const CONTEXT_ENDPOINT_TYPES = [
+    "anchor",
+    "asset",
+    "capture",
+    "chunk",
+    "document",
+    "fact",
+    "suggestion",
+    "thread",
+  ];
 
   const defaults = {
     apiBase: "",
@@ -423,6 +433,46 @@
         }),
       });
       await refreshAll();
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
+  async function createManualContextLink(payload) {
+    const body = withoutEmpty({
+      ...scopeBody(),
+      source_type: payload.source_type,
+      source_id: payload.source_id,
+      target_type: payload.target_type,
+      target_id: payload.target_id,
+      relation_type: payload.relation_type || "related_to",
+      confidence: payload.confidence || "medium",
+      reason: payload.reason,
+      metadata: {
+        created_from: "memory_browser_manual",
+      },
+    });
+    if (
+      !body.source_type ||
+      !body.source_id ||
+      !body.target_type ||
+      !body.target_id ||
+      !body.reason
+    ) {
+      setError("Manual link requires source, target, and reason.");
+      return;
+    }
+    setError("");
+    try {
+      const response = await apiJson("/v1/context-links", {
+        method: "POST",
+        body,
+      });
+      await refreshAll();
+      const linkId = response.data?.id;
+      if (linkId) {
+        selectNode(`context_link:${linkId}`);
+      }
     } catch (error) {
       setError(error.message);
     }
@@ -1162,6 +1212,82 @@
     return form;
   }
 
+  function manualContextLinkForm() {
+    const form = document.createElement("section");
+    form.className = "edit-form manual-link-form";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Manual Link";
+    const sourceType = formSelect("Source type", CONTEXT_ENDPOINT_TYPES, "capture");
+    const sourceId = formInput("Source id", "");
+    const targetType = formSelect("Target type", CONTEXT_ENDPOINT_TYPES, "fact");
+    const targetId = formInput("Target id", "");
+    const relationType = formInput("Relation", "related_to");
+    const confidence = formSelect("Confidence", ["low", "medium", "high"], "medium");
+    const reason = formInput("Reason", "manual reviewer link");
+    const useSelectedSource = actionButton("Use Selected Source", () => {
+      applyEndpointToForm(selectedContextEndpoint(), sourceType.input, sourceId.input);
+    });
+    const useSelectedTarget = actionButton("Use Selected Target", () => {
+      applyEndpointToForm(selectedContextEndpoint(), targetType.input, targetId.input);
+    });
+    const submit = actionButton(
+      "Create Link",
+      () =>
+        createManualContextLink({
+          source_type: sourceType.input.value.trim(),
+          source_id: sourceId.input.value.trim(),
+          target_type: targetType.input.value.trim(),
+          target_id: targetId.input.value.trim(),
+          relation_type: relationType.input.value.trim(),
+          confidence: confidence.input.value,
+          reason: reason.input.value.trim(),
+        }),
+      "primary-button",
+    );
+    const actions = document.createElement("div");
+    actions.className = "action-row";
+    actions.append(useSelectedSource, useSelectedTarget, submit);
+    form.append(
+      heading,
+      sourceType.element,
+      sourceId.element,
+      targetType.element,
+      targetId.element,
+      relationType.element,
+      confidence.element,
+      reason.element,
+      actions,
+    );
+    return form;
+  }
+
+  function selectedContextEndpoint() {
+    const node = state.nodes.find((candidate) => candidate.id === state.selectedNodeId);
+    if (!node) {
+      return null;
+    }
+    if (!CONTEXT_ENDPOINT_TYPES.includes(node.type)) {
+      return null;
+    }
+    const type = node.data?.type || node.type;
+    const id = node.data?.id;
+    if (!type || !id || !CONTEXT_ENDPOINT_TYPES.includes(type)) {
+      return null;
+    }
+    return { type, id };
+  }
+
+  function applyEndpointToForm(endpoint, typeInput, idInput) {
+    if (!endpoint) {
+      setError("Selected node cannot be used as a context link endpoint.");
+      return;
+    }
+    typeInput.value = endpoint.type;
+    idInput.value = endpoint.id;
+    setError("");
+  }
+
   function formInput(labelText, value) {
     const label = document.createElement("label");
     const span = document.createElement("span");
@@ -1214,6 +1340,7 @@
 
   function renderSuggestionList() {
     els.suggestionList.replaceChildren();
+    els.suggestionList.append(manualContextLinkForm());
     if (!state.contextLinkSuggestions.length && !state.suggestions.length) {
       els.suggestionList.append(emptyItem("No review items."));
       return;

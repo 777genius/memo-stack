@@ -689,6 +689,18 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         source_type="capture",
         source_id="cap_1",
     )
+    client.create_context_link(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        source_type="capture",
+        source_id="cap_1",
+        target_type="fact",
+        target_id="fact_2",
+        relation_type="supports",
+        confidence="high",
+        reason="manual reviewer link",
+        metadata={"created_from": "memory_browser_manual"},
+    )
     client.list_context_links(
         space_slug="client-app",
         memory_scope_external_ref="default",
@@ -709,6 +721,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
         "POST /v1/link-suggestions",
         "GET /v1/context-link-suggestions",
+        "POST /v1/context-links",
         "GET /v1/context-links",
         "POST /v1/context-link-suggestions/ctxlinksug_1/review",
     ]
@@ -730,13 +743,25 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "status": "pending",
         "limit": "50",
     }
-    assert seen[2][2] == {
+    assert seen[2][3] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "source_type": "capture",
+        "source_id": "cap_1",
+        "target_type": "fact",
+        "target_id": "fact_2",
+        "relation_type": "supports",
+        "confidence": "high",
+        "reason": "manual reviewer link",
+        "metadata": {"created_from": "memory_browser_manual"},
+    }
+    assert seen[3][2] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
         "status": "active",
         "limit": "25",
     }
-    assert seen[3][3] == {
+    assert seen[4][3] == {
         "action": "approve",
         "reason": "user accepted",
         "target_type": "fact",
