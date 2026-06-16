@@ -320,14 +320,25 @@
   }
 
   async function fetchContextLinks() {
-    const response = await apiGet("/v1/context-links", {
-      params: {
-        ...scopeParams(),
-        status: "active",
-        limit: "200",
-      },
-    });
-    return (response.data || []).sort(compareUpdatedDesc);
+    const statuses = ["active", "deleted"];
+    const batches = await Promise.all(
+      statuses.map((status) =>
+        apiGet("/v1/context-links", {
+          params: {
+            ...scopeParams(),
+            status,
+            limit: "200",
+          },
+        }),
+      ),
+    );
+    const byId = new Map();
+    for (const response of batches) {
+      for (const link of response.data || []) {
+        byId.set(link.id, link);
+      }
+    }
+    return [...byId.values()].sort(compareUpdatedDesc);
   }
 
   async function buildDigest() {
@@ -599,13 +610,14 @@
     for (const suggestion of state.contextLinkSuggestions) {
       sourceIds.add(`${suggestion.source_type}:${suggestion.source_id}`);
     }
-    for (const link of state.contextLinks) {
+    const activeContextLinks = state.contextLinks.filter((link) => link.status === "active");
+    for (const link of activeContextLinks) {
       sourceIds.add(`${link.source_type}:${link.source_id}`);
     }
     setText(els.factCount, String(state.facts.length));
     setText(els.suggestionCount, String(state.suggestions.length));
     setText(els.linkSuggestionCount, String(state.contextLinkSuggestions.length));
-    setText(els.contextLinkCount, String(state.contextLinks.length));
+    setText(els.contextLinkCount, String(activeContextLinks.length));
     setText(els.sourceCount, String(sourceIds.size));
     setText(
       els.pendingCount,
