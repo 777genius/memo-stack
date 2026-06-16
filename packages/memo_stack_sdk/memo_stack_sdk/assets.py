@@ -237,8 +237,10 @@ class MemoStackAssetsMixin:
         source_type: str | None = None,
         source_id: str | None = None,
         status: str | None = "active",
+        statuses: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
+        status_param = status if statuses is None else None
         return self._request(
             "GET",
             "/v1/context-links",
@@ -254,7 +256,8 @@ class MemoStackAssetsMixin:
                     ),
                     "source_type": source_type,
                     "source_id": source_id,
-                    "status": status,
+                    "status": status_param,
+                    "statuses": statuses,
                     "limit": limit,
                 }
             ),
@@ -344,8 +347,10 @@ class MemoStackAssetsMixin:
         source_type: str | None = None,
         source_id: str | None = None,
         status: str | None = "pending",
+        statuses: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
+        status_param = status if statuses is None else None
         return self._request(
             "GET",
             "/v1/context-link-suggestions",
@@ -361,7 +366,8 @@ class MemoStackAssetsMixin:
                     ),
                     "source_type": source_type,
                     "source_id": source_id,
-                    "status": status,
+                    "status": status_param,
+                    "statuses": statuses,
                     "limit": limit,
                 }
             ),

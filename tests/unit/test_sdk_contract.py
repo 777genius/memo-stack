@@ -832,6 +832,56 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
     }
 
 
+def test_sdk_supports_context_link_statuses_filters() -> None:
+    seen: list[tuple[str, str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, dict(request.url.params)))
+        return httpx.Response(200, json={"data": []})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.list_context_links(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        statuses="active,deleted",
+        limit=20,
+    )
+    client.list_context_link_suggestions(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        statuses="approved,rejected",
+        limit=30,
+    )
+
+    assert seen == [
+        (
+            "GET",
+            "/v1/context-links",
+            {
+                "space_slug": "client-app",
+                "memory_scope_external_ref": "default",
+                "statuses": "active,deleted",
+                "limit": "20",
+            },
+        ),
+        (
+            "GET",
+            "/v1/context-link-suggestions",
+            {
+                "space_slug": "client-app",
+                "memory_scope_external_ref": "default",
+                "statuses": "approved,rejected",
+                "limit": "30",
+            },
+        ),
+    ]
+
+
 def test_sdk_supports_anchor_lifecycle_contract() -> None:
     seen: list[tuple[str, str, dict[str, str], dict[str, object]]] = []
 
