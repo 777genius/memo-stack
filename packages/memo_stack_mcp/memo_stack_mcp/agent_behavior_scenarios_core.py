@@ -393,6 +393,63 @@ def default_scenarios() -> tuple[AgentBenchScenario, ...]:
             ),
         ),
         AgentBenchScenario(
+            id="context_link_review",
+            category="context_link",
+            user_prompt=(
+                "Search memory first. Then connect saved capture {link_capture.id} to the "
+                "existing canonical fact {link_target.id}. Use review-gated context-link "
+                "suggestions: suggest links with persist=true, inspect the pending suggestion, "
+                "and approve the exact supports relation to the fact. Do not create a new fact "
+                "or document. Capture note: {marker}: Alex screenshot belongs to Project Atlas "
+                "memory browser review."
+            ),
+            setup_actions=(
+                {
+                    "action": "remember_fact",
+                    "store_as": "link_target",
+                    "text": "{marker}: Project Atlas memory browser review is the canonical "
+                    "target for Alex screenshot evidence.",
+                    "kind": "note",
+                },
+                {
+                    "action": "remember_fact",
+                    "store_as": "link_decoy",
+                    "text": "{marker}: Project Atlas roadmap planning is unrelated to the "
+                    "screenshot review evidence.",
+                    "kind": "note",
+                },
+                {
+                    "action": "create_capture",
+                    "store_as": "link_capture",
+                    "thread_external_ref": "context-link-review",
+                    "source_event_id": "{marker}:context-link-capture",
+                    "text": "{marker}: Alex screenshot belongs to Project Atlas memory browser "
+                    "review.",
+                },
+            ),
+            expected_tools=(
+                "memory_search",
+                "memory_suggest_context_links",
+                "memory_list_context_link_suggestions",
+                "memory_review_context_link_suggestion|memory_review_context_link_suggestions_batch",
+            ),
+            forbidden_tools=(
+                "memory_remember_fact",
+                "memory_propose_updates",
+                "memory_update_fact",
+                "memory_ingest_document",
+            ),
+            required_memory_checks=(
+                {
+                    "type": "context_link_contains",
+                    "source_type": "capture",
+                    "source_id": "{link_capture.id}",
+                    "contains": ["{link_target.id}", "supports", "approved"],
+                    "not_contains": ["{link_decoy.id}"],
+                },
+            ),
+        ),
+        AgentBenchScenario(
             id="memory_as_evidence",
             category="answer",
             user_prompt=(

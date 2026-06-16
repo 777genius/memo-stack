@@ -21,6 +21,9 @@ WRITE_TOOLS = {
     "memory_reject_suggestion",
     "memory_expire_suggestion",
     "memory_ingest_document",
+    "memory_suggest_context_links",
+    "memory_review_context_link_suggestion",
+    "memory_review_context_link_suggestions_batch",
 }
 
 READ_BEFORE_WRITE_TOOLS = {
@@ -30,6 +33,8 @@ READ_BEFORE_WRITE_TOOLS = {
     "memory_related_facts",
     "memory_list_fact_relations",
     "memory_list_fact_versions",
+    "memory_list_context_links",
+    "memory_list_context_link_suggestions",
 }
 
 DIRECT_WRITE_TOOLS = {

@@ -329,8 +329,13 @@ class AgentBenchRunner:
                 "first. In memory_propose_updates, set user_confirmed=true only for explicit "
                 "confirmed durable current facts from the user. Keep user_confirmed=false for "
                 "uncertain claims, guesses, rumors, auto-memory, inferred facts, and anything "
-                "that needs review. For project-specific, user-specific, current-decision, or "
-                "remembered-context questions, call memory_search before answering; "
+                "that needs review. When saved evidence or captures need to be connected to facts, documents, "
+                "threads, or anchors, search or inspect existing links first, then use "
+                "memory_suggest_context_links with persist=true, inspect suggestions with "
+                "memory_list_context_link_suggestions, and approve only user-confirmed "
+                "relations with memory_review_context_link_suggestion or the batch review tool. "
+                "For project-specific, user-specific, current-decision, or remembered-context "
+                "questions, call memory_search before answering; "
                 "memory_status only checks readiness and is not "
                 "retrieval. For update/forget, use a concrete fact_id and current version from "
                 "memory results. Do not send secrets, credentials, passwords, raw tokens, or text "
@@ -1005,6 +1010,23 @@ async def _run_setup_action(
         }
         response = await client.post("/v1/documents", json=payload)
         return _setup_response_data(response, env=env)
+    if action_name == "create_capture":
+        payload = {
+            "space_slug": action.get("space_slug") or default_space_slug,
+            "memory_scope_external_ref": action.get("memory_scope_external_ref")
+            or default_memory_scope_ref,
+            "thread_external_ref": action.get("thread_external_ref"),
+            "source_agent": action.get("source_agent", "agent-behavior-bench"),
+            "source_kind": action.get("source_kind", "manual"),
+            "event_type": action.get("event_type", "BenchmarkCapture"),
+            "actor_role": action.get("actor_role", "user"),
+            "source_event_id": action.get("source_event_id")
+            or f"agent-bench:{time.time_ns()}",
+            "text": action["text"],
+            "source_authority": action.get("source_authority", "user_statement"),
+        }
+        response = await client.post("/v1/captures", json=payload)
+        return _setup_response_data(response, env=env)
     raise AgentBenchFailure(f"Unknown setup action: {_redact_text(action_name, env=env)}")
 
 
@@ -1081,6 +1103,42 @@ async def _run_memory_checks(
             output = "\n".join(
                 (
                     _tool_result_raw_output(search_result, max_chars=8000),
+                    _tool_result_raw_output(suggestions_result, max_chars=8000),
+                )
+            )
+            passed, failures = _check_text(
+                text=output,
+                contains=check.get("contains", []),
+                not_contains=check.get("not_contains", []),
+            )
+            checks.append(_check_report(check, passed=passed, failures=failures, env=env))
+            continue
+        if check_type == "context_link_contains":
+            links_result = await session.call_tool(
+                "memory_list_context_links",
+                {
+                    "space_slug": check.get("space_slug"),
+                    "memory_scope_external_ref": check.get("memory_scope_external_ref"),
+                    "source_type": check.get("source_type"),
+                    "source_id": check.get("source_id"),
+                    "status": check.get("status", "active"),
+                    "limit": int(check.get("limit", 50)),
+                },
+            )
+            suggestions_result = await session.call_tool(
+                "memory_list_context_link_suggestions",
+                {
+                    "space_slug": check.get("space_slug"),
+                    "memory_scope_external_ref": check.get("memory_scope_external_ref"),
+                    "source_type": check.get("source_type"),
+                    "source_id": check.get("source_id"),
+                    "statuses": check.get("suggestion_statuses", ["approved", "rejected"]),
+                    "limit": int(check.get("limit", 50)),
+                },
+            )
+            output = "\n".join(
+                (
+                    _tool_result_raw_output(links_result, max_chars=8000),
                     _tool_result_raw_output(suggestions_result, max_chars=8000),
                 )
             )

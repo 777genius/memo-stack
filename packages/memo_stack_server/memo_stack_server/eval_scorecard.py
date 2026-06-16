@@ -1270,11 +1270,10 @@ def _scorecard_agent_behavior_required_checks(
         checks["canonical_scenario_ids_present"] = (
             scenario_evidence.get("missing_canonical_id_count") == 0
         )
-        checks["scenario_report_count_min_41"] = (
+        scenario_count_floor = AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS["scenario_count"]
+        checks[f"scenario_report_count_min_{scenario_count_floor}"] = (
             scenario_count is not None
-            and scenario_count >= AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS[
-                "scenario_count"
-            ]
+            and scenario_count >= scenario_count_floor
         )
         checks["scenario_report_count_matches_metric"] = (
             scenario_count is not None

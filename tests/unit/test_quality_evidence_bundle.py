@@ -86,7 +86,7 @@ def _minimal_agent_behavior_report(
         "ok": True,
         "scenario_set": "all",
         "metrics": {
-            "scenario_count": 41,
+            "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
             "tool_choice_accuracy": 1.0,
             "search_before_write_rate": 1.0,
             "update_vs_duplicate_rate": 1.0,
@@ -153,7 +153,7 @@ def _agent_behavior_scenario_reports() -> list[dict[str, object]]:
         scenarios.append(
             _agent_behavior_scenario_report(len(scenarios), tags=("live_session",))
         )
-    while len(scenarios) < 41:
+    while len(scenarios) < len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS):
         scenarios.append(_agent_behavior_scenario_report(len(scenarios), tags=("core",)))
     return scenarios
 
@@ -393,7 +393,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                         suite="memory_mcp_agent_behavior",
                     ),
                     "metrics": {
-                        "scenario_count": 41,
+                        "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
                         "tool_choice_accuracy": 1.0,
                         "search_before_write_rate": 1.0,
                         "update_vs_duplicate_rate": 1.0,
@@ -878,7 +878,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                     suite="memory_mcp_agent_behavior",
                 ),
                 "metrics": {
-                    "scenario_count": 41,
+                    "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
                     "tool_choice_accuracy": 1.0,
                     "search_before_write_rate": 1.0,
                     "update_vs_duplicate_rate": 1.0,

@@ -28,6 +28,7 @@ AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS = (
     "remember_later_ambiguous",
     "tool_overuse_guard",
     "multi_turn_correction",
+    "context_link_review",
     "memory_as_evidence",
     "real_noisy_transcript_update",
     "real_paraphrase_duplicate",

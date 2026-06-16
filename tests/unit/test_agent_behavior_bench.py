@@ -126,6 +126,53 @@ class MemoryCheckSession:
         return FakeToolResult({"ok": False}, is_error=True)
 
 
+class ContextLinkMemoryCheckSession:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> FakeToolResult:
+        self.calls.append((name, arguments))
+        if name == "memory_list_context_links":
+            return FakeToolResult(
+                {
+                    "ok": True,
+                    "data": {
+                        "items": [
+                            {
+                                "id": "ctx_1",
+                                "source_type": "capture",
+                                "source_id": "cap_1",
+                                "target_type": "fact",
+                                "target_id": "fact_1",
+                                "relation_type": "supports",
+                                "status": "active",
+                            }
+                        ]
+                    },
+                }
+            )
+        if name == "memory_list_context_link_suggestions":
+            return FakeToolResult(
+                {
+                    "ok": True,
+                    "data": {
+                        "items": [
+                            {
+                                "id": "cls_1",
+                                "source_type": "capture",
+                                "source_id": "cap_1",
+                                "target_type": "fact",
+                                "target_id": "fact_1",
+                                "relation_type": "supports",
+                                "status": "approved",
+                            }
+                        ]
+                    },
+                }
+            )
+        return FakeToolResult({"ok": False}, is_error=True)
+
+
 class SecretMemoryCheckSession:
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> FakeToolResult:
         if name == "memory_search":
@@ -259,6 +306,14 @@ def test_scenario_sets_include_realistic_adversarial_cases() -> None:
         "transcript_secret_tool_output_no_memory_write",
     }.issubset(transcript_ids)
     assert all("transcript_corpus" in scenario.tags for scenario in transcript)
+    context_link = next(scenario for scenario in core if scenario.id == "context_link_review")
+    assert context_link.category == "context_link"
+    assert "memory_suggest_context_links" in context_link.expected_tools
+    assert "memory_list_context_link_suggestions" in context_link.expected_tools
+    assert any(
+        check.get("type") == "context_link_contains"
+        for check in context_link.required_memory_checks
+    )
 
 
 def test_external_transcript_corpus_directory_adds_scenarios(monkeypatch, tmp_path) -> None:
@@ -1048,6 +1103,44 @@ def test_evaluator_catches_missing_search_before_write() -> None:
     }
 
 
+def test_evaluator_catches_context_link_write_before_read() -> None:
+    scenario = AgentBenchScenario(
+        id="context_link_without_read",
+        category="context_link",
+        user_prompt="Connect this capture to memory.",
+        expected_tools=("memory_suggest_context_links",),
+    )
+    result = ScenarioRunResult(
+        scenario_id="context_link_without_read",
+        category="context_link",
+        critical=True,
+        final_answer="Created link suggestions.",
+        tool_calls=[
+            ToolTrace(
+                name="memory_suggest_context_links",
+                arguments={
+                    "source_type": "capture",
+                    "source_id": "cap_1",
+                    "text": "Project Atlas screenshot",
+                    "persist": True,
+                },
+                is_error=False,
+                output='{"ok":true}',
+            )
+        ],
+    )
+
+    failures = _evaluate_tool_contract(scenario, result)
+
+    assert failures == [
+        {
+            "code": "agent_bench.search_before_write_missing",
+            "message": "A memory write was attempted before a memory read.",
+            "severity": "behavior",
+        }
+    ]
+
+
 def test_evaluator_catches_status_only_memory_action() -> None:
     scenario = AgentBenchScenario(
         id="status_only",
@@ -1457,6 +1550,68 @@ def test_memory_contains_check_accepts_pending_suggestion() -> None:
                 "failures": [],
                 "leak_metric": None,
             }
+        ]
+
+    asyncio.run(run())
+
+
+def test_context_link_check_accepts_approved_link_and_review_history() -> None:
+    async def run() -> None:
+        session = ContextLinkMemoryCheckSession()
+        checks = await _run_memory_checks(
+            session=session,  # type: ignore[arg-type]
+            scenario=AgentBenchScenario(
+                id="context_link_check",
+                category="context_link",
+                user_prompt="",
+                required_memory_checks=(
+                    {
+                        "type": "context_link_contains",
+                        "source_type": "capture",
+                        "source_id": "cap_1",
+                        "contains": ["fact_1", "supports", "approved"],
+                        "not_contains": ["fact_decoy"],
+                    },
+                ),
+            ),
+            template_values={},
+            final_answer="",
+            env={},
+        )
+
+        assert checks == [
+            {
+                "type": "context_link_contains",
+                "passed": True,
+                "effective_passed": True,
+                "optional": False,
+                "failures": [],
+                "leak_metric": None,
+            }
+        ]
+        assert session.calls == [
+            (
+                "memory_list_context_links",
+                {
+                    "space_slug": None,
+                    "memory_scope_external_ref": None,
+                    "source_type": "capture",
+                    "source_id": "cap_1",
+                    "status": "active",
+                    "limit": 50,
+                },
+            ),
+            (
+                "memory_list_context_link_suggestions",
+                {
+                    "space_slug": None,
+                    "memory_scope_external_ref": None,
+                    "source_type": "capture",
+                    "source_id": "cap_1",
+                    "statuses": ["approved", "rejected"],
+                    "limit": 50,
+                },
+            ),
         ]
 
     asyncio.run(run())

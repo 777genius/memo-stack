@@ -226,7 +226,7 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
         "scenario_set": "all",
         "model": "gpt-5.4-mini",
         "metrics": {
-            "scenario_count": 41,
+            "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
             "tool_choice_accuracy": 1.0,
             "search_before_write_rate": 1.0,
             "update_vs_duplicate_rate": 1.0,
@@ -296,7 +296,7 @@ def _agent_live_smoke_report() -> dict[str, Any]:
 
 def _agent_behavior_scenario_reports(
     *,
-    scenario_count: int = 41,
+    scenario_count: int = len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
     live_session_count: int = 11,
     transcript_corpus_count: int = 5,
     adversarial_count: int = 9,
@@ -457,7 +457,7 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     ]
     assert policy["agent_behavior"]["top_evidence_required_scenario_set"] == "all"
     assert policy["agent_behavior"]["top_evidence_required_case_count_floors"] == {
-        "scenario_count": 41,
+        "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
         "live_session_case_count": 11,
         "transcript_corpus_case_count": 5,
         "adversarial_case_count": 9,
@@ -585,7 +585,7 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     assert evidence["agent_behavior_benchmark"]["metrics"]["tool_choice_accuracy"] == 1.0
     assert evidence["agent_behavior_benchmark"]["scenario_evidence"] == {
         "present": True,
-        "scenario_count": 41,
+        "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
         "tag_counts": {
             "live_session": 11,
             "transcript_corpus": 5,
@@ -1022,12 +1022,13 @@ def test_memory_quality_scorecard_requires_all_agent_scenarios_for_top_evidence(
 def test_memory_quality_scorecard_requires_nonzero_agent_case_counts_for_top_evidence() -> None:
     suite_results = _scorecard_fixture_results()
     agent_behavior = _agent_behavior_benchmark_report()
-    agent_behavior["metrics"]["scenario_count"] = 40
+    weak_scenario_count = len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS) - 2
+    agent_behavior["metrics"]["scenario_count"] = weak_scenario_count
     agent_behavior["metrics"]["live_session_case_count"] = 10
     agent_behavior["metrics"]["transcript_corpus_case_count"] = 4
     agent_behavior["metrics"]["adversarial_case_count"] = 8
     agent_behavior["scenarios"] = _agent_behavior_scenario_reports(
-        scenario_count=40,
+        scenario_count=weak_scenario_count,
         live_session_count=10,
         transcript_corpus_count=4,
         adversarial_count=8,
@@ -1044,8 +1045,8 @@ def test_memory_quality_scorecard_requires_nonzero_agent_case_counts_for_top_evi
         "adversarial_case_count_min_9",
         "canonical_scenario_ids_present",
         "live_session_case_count_min_11",
-        "scenario_count_min_41",
-        "scenario_report_count_min_41",
+        f"scenario_count_min_{len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS)}",
+        f"scenario_report_count_min_{len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS)}",
         "transcript_corpus_case_count_min_5",
     ]
 
@@ -1082,7 +1083,7 @@ def test_memory_quality_scorecard_requires_agent_scenario_reports_for_top_eviden
         "canonical_scenario_ids_present",
         "live_session_scenario_report_count_matches_metric",
         "scenario_report_count_matches_metric",
-        "scenario_report_count_min_41",
+        f"scenario_report_count_min_{len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS)}",
         "transcript_corpus_scenario_report_count_matches_metric",
     ]
 
@@ -1129,7 +1130,7 @@ def test_memory_quality_scorecard_rejects_malformed_agent_scenario_reports() -> 
     assert result["ok"] is False
     assert evidence["agent_behavior_benchmark"]["scenario_evidence"] == {
         "present": True,
-        "scenario_count": 41,
+        "scenario_count": len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
         "tag_counts": {
             "live_session": 11,
             "transcript_corpus": 5,
