@@ -37,6 +37,7 @@ from memo_stack_mcp.application.service_constants import (
     FACT_STATUSES,
     MEMORY_BROWSER_ANCHOR_STATUSES,
     MEMORY_BROWSER_ASSET_STATUSES,
+    MEMORY_BROWSER_DOCUMENT_STATUSES,
     MEMORY_BROWSER_THREAD_STATUSES,
     MEMORY_KINDS,
     MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES,
@@ -596,6 +597,7 @@ class MemoryToolService(
         memory_scope_external_ref: str | None = None,
         limit: int = 50,
         fact_status: str | None = "active",
+        document_status: str | None = "active",
         thread_status: str | None = "active",
         capture_status: str | None = None,
         asset_status: str | None = "stored",
@@ -605,6 +607,11 @@ class MemoryToolService(
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
             _ensure_optional_choice("fact_status", fact_status, FACT_STATUSES)
+            _ensure_optional_choice(
+                "document_status",
+                document_status,
+                MEMORY_BROWSER_DOCUMENT_STATUSES,
+            )
             _ensure_optional_choice(
                 "thread_status",
                 thread_status,
@@ -629,6 +636,7 @@ class MemoryToolService(
                 scope=self._scope(space_slug, memory_scope_external_ref, None),
                 limit=effective_limit,
                 fact_status=fact_status,
+                document_status=document_status,
                 thread_status=thread_status,
                 capture_status=capture_status,
                 asset_status=asset_status,

@@ -262,6 +262,7 @@ class MemoryBrowserQuery:
     memory_scope_id: MemoryScopeId
     limit: int = 50
     fact_status: str | None = "active"
+    document_status: str | None = "active"
     thread_status: str | None = "active"
     capture_status: str | None = None
     asset_status: str | None = "stored"
@@ -275,6 +276,7 @@ class MemoryBrowserResult:
     generated_at: datetime
     memory_scope: MemoryScope
     facts: tuple[MemoryFact, ...]
+    documents: tuple[MemoryDocument, ...]
     threads: tuple[MemoryThread, ...]
     captures: tuple[CanonicalCapture, ...]
     assets: tuple[MemoryAsset, ...]

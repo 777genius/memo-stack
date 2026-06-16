@@ -15,6 +15,7 @@ class MemoryBrowserData(McpDataModel):
     generated_at: str | None = None
     memory_scope: JsonBrowserObject | None = None
     facts: list[JsonBrowserObject] = Field(default_factory=list)
+    documents: list[JsonBrowserObject] = Field(default_factory=list)
     threads: list[JsonBrowserObject] = Field(default_factory=list)
     captures: list[JsonBrowserObject] = Field(default_factory=list)
     assets: list[JsonBrowserObject] = Field(default_factory=list)

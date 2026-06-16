@@ -17,6 +17,7 @@ from memo_stack_server.api.v1.context_links import (
     context_link_suggestion_to_response,
     context_link_to_response,
 )
+from memo_stack_server.api.v1.documents import document_to_response
 from memo_stack_server.api.v1.facts import fact_to_response
 from memo_stack_server.api.v1.scope_resolution import resolve_existing_single_scope
 from memo_stack_server.api.v1.spaces_memory_scopes import memory_scope_to_response
@@ -37,6 +38,7 @@ async def get_memory_browser(
     memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     fact_status: Annotated[str | None, Query(max_length=40)] = "active",
+    document_status: Annotated[str | None, Query(max_length=40)] = "active",
     thread_status: Annotated[str | None, Query(max_length=40)] = "active",
     capture_status: Annotated[str | None, Query(max_length=40)] = None,
     asset_status: Annotated[str | None, Query(max_length=40)] = "stored",
@@ -62,6 +64,7 @@ async def get_memory_browser(
             memory_scope_id=scope.memory_scope_id,
             limit=limit,
             fact_status=fact_status,
+            document_status=document_status,
             thread_status=thread_status,
             capture_status=capture_status,
             asset_status=asset_status,
@@ -75,6 +78,7 @@ async def get_memory_browser(
             "generated_at": result.generated_at.isoformat(),
             "memory_scope": memory_scope_to_response(result.memory_scope),
             "facts": [fact_to_response(fact) for fact in result.facts],
+            "documents": [document_to_response(document) for document in result.documents],
             "threads": [thread_to_response(thread) for thread in result.threads],
             "captures": [capture_to_response(capture) for capture in result.captures],
             "assets": [asset_to_response(asset) for asset in result.assets],
@@ -107,6 +111,7 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
         "generated_at": None,
         "memory_scope": None,
         "facts": [],
+        "documents": [],
         "threads": [],
         "captures": [],
         "assets": [],
@@ -115,6 +120,7 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
         "context_link_suggestions": [],
         "stats": {
             "facts": 0,
+            "documents": 0,
             "threads": 0,
             "captures": 0,
             "assets": 0,

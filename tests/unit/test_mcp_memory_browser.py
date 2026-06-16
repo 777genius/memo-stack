@@ -24,6 +24,7 @@ class MemoryBrowserGateway:
                     "external_ref": kwargs["scope"].memory_scope_external_ref,
                 },
                 "facts": [{"id": "fact_1", "text": "Alex confirmed Project Atlas."}],
+                "documents": [{"id": "doc_1", "title": "Project Atlas notes"}],
                 "threads": [{"id": "thread_1", "external_ref": "alex-call"}],
                 "captures": [{"id": "cap_1", "evidence_refs": [{"source_id": "asset_1"}]}],
                 "assets": [{"id": "asset_1", "filename": "atlas.png"}],
@@ -52,6 +53,7 @@ def test_service_browses_memory_scope_with_bounded_filters() -> None:
         assert result["ok"] is True
         assert result["data"]["memory_scope"]["external_ref"] == "project-atlas"
         assert result["data"]["facts"][0]["id"] == "fact_1"
+        assert result["data"]["documents"][0]["id"] == "doc_1"
         assert result["data"]["stats"]["active_context_links"] == 1
         assert result["diagnostics"]["warnings"] == ["limit_clamped_to_max"]
         call_name, payload = gateway.calls[0]
@@ -60,6 +62,7 @@ def test_service_browses_memory_scope_with_bounded_filters() -> None:
         assert payload["scope"].memory_scope_external_ref == "project-atlas"
         assert payload["limit"] == 200
         assert payload["fact_status"] == "active"
+        assert payload["document_status"] == "active"
         assert payload["thread_status"] == "active"
         assert payload["asset_status"] == "stored"
         assert payload["anchor_status"] == "active"
@@ -92,6 +95,7 @@ def test_http_gateway_requests_memory_browser_read_model() -> None:
             ),
             limit=25,
             fact_status="active",
+            document_status="active",
             thread_status="active",
             capture_status=None,
             asset_status="stored",
@@ -113,6 +117,7 @@ def test_http_gateway_requests_memory_browser_read_model() -> None:
                 "memory_scope_external_ref": "project-atlas",
                 "limit": "25",
                 "fact_status": "active",
+                "document_status": "active",
                 "thread_status": "active",
                 "asset_status": "stored",
                 "anchor_status": "active",

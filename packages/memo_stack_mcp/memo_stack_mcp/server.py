@@ -78,6 +78,7 @@ ContextLinkSuggestionStatus = Literal["pending", "approved", "rejected", "expire
 ContextLinkReviewAction = Literal["approve", "reject", "expire"]
 CaptureStatus = Literal["accepted", "rejected", "redacted", "purged"]
 MemoryBrowserThreadStatus = Literal["active", "deleted"]
+MemoryBrowserDocumentStatus = Literal["active", "deleted"]
 MemoryBrowserAssetStatus = Literal["stored", "deleted"]
 MemoryBrowserAnchorStatus = Literal["active", "deleted"]
 CaptureConsolidationStatus = Literal[
@@ -1670,10 +1671,11 @@ def create_mcp_server(
         name="memory_browse_scope",
         title="Browse Memory Scope",
         description=(
-            "Load a read-only browser snapshot for one MemoryScope: durable facts, threads, "
-            "captures, assets, semantic anchors, approved context links, pending or reviewed "
-            "link suggestions, stats, and diagnostics. Use this when the user wants to navigate "
-            "what has been saved in a project/scope or inspect review state before approving links."
+            "Load a read-only browser snapshot for one MemoryScope: durable facts, documents, "
+            "threads, captures, assets, semantic anchors, approved context links, pending or "
+            "reviewed link suggestions, stats, and diagnostics. Use this when the user wants to "
+            "navigate what has been saved in a project/scope or inspect review state before "
+            "approving links."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
@@ -1691,6 +1693,10 @@ def create_mcp_server(
         ] = None,
         limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
         fact_status: Annotated[FactStatus | None, Field(default="active")] = "active",
+        document_status: Annotated[
+            MemoryBrowserDocumentStatus | None,
+            Field(default="active"),
+        ] = "active",
         thread_status: Annotated[
             MemoryBrowserThreadStatus | None,
             Field(default="active"),
@@ -1716,6 +1722,7 @@ def create_mcp_server(
                 memory_scope_external_ref=memory_scope_external_ref,
                 limit=limit,
                 fact_status=fact_status,
+                document_status=document_status,
                 thread_status=thread_status,
                 capture_status=capture_status,
                 asset_status=asset_status,

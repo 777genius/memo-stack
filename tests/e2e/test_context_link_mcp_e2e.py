@@ -27,6 +27,16 @@ def test_context_link_review_mcp_service_e2e(tmp_path: Path) -> None:
             tags=["alex", "atlas", "review"],
             idempotency_key="context-link-mcp-target",
         )
+        document = client.ingest_document(
+            space_slug="context-link-mcp-e2e",
+            memory_scope_external_ref="default",
+            thread_external_ref="review",
+            title="Project Atlas screenshot review notes",
+            text="Alex Project Atlas screenshot review flow should appear as a document.",
+            source_type="document",
+            source_external_id="context-link-mcp-document",
+            idempotency_key="context-link-mcp-document",
+        )
         client.remember_fact(
             space_slug="context-link-mcp-e2e",
             memory_scope_external_ref="default",
@@ -70,6 +80,9 @@ def test_context_link_review_mcp_service_e2e(tmp_path: Path) -> None:
     assert result["history"]["data"]["items"][0]["status"] in {"approved", "rejected"}
     assert result["browser"]["data"]["memory_scope"]["external_ref"] == "default"
     assert fact["data"]["id"] in {item["id"] for item in result["browser"]["data"]["facts"]}
+    assert document["data"]["id"] in {
+        item["id"] for item in result["browser"]["data"]["documents"]
+    }
     assert result["browser"]["data"]["stats"]["active_context_links"] == 1
     assert result["browser"]["data"]["context_links"][0]["target_id"] == fact["data"]["id"]
     assert result["browser"]["data"]["diagnostics"]["browser_version"] == "memory-browser-v1"
@@ -149,6 +162,7 @@ async def _review_links_with_mcp_service(
     browser = await service.browse_scope(
         limit=20,
         fact_status="active",
+        document_status="active",
         link_status="active",
         suggestion_status="approved",
     )
