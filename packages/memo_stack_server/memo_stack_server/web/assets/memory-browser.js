@@ -349,47 +349,25 @@
   }
 
   async function fetchContextLinkSuggestions() {
-    const statuses = ["pending", "approved", "rejected", "expired"];
-    const batches = await Promise.all(
-      statuses.map((status) =>
-        apiGet("/v1/context-link-suggestions", {
-          params: {
-            ...scopeParams(),
-            status,
-            limit: "200",
-          },
-        }).catch(() => ({ data: [] })),
-      ),
-    );
-    const byId = new Map();
-    for (const batch of batches) {
-      for (const suggestion of batch.data || []) {
-        byId.set(suggestion.id, suggestion);
-      }
-    }
-    return [...byId.values()].sort(compareUpdatedDesc);
+    const response = await apiGet("/v1/context-link-suggestions", {
+      params: {
+        ...scopeParams(),
+        statuses: "pending,approved,rejected,expired",
+        limit: "200",
+      },
+    }).catch(() => ({ data: [] }));
+    return (response.data || []).sort(compareUpdatedDesc);
   }
 
   async function fetchContextLinks() {
-    const statuses = ["active", "deleted"];
-    const batches = await Promise.all(
-      statuses.map((status) =>
-        apiGet("/v1/context-links", {
-          params: {
-            ...scopeParams(),
-            status,
-            limit: "200",
-          },
-        }),
-      ),
-    );
-    const byId = new Map();
-    for (const response of batches) {
-      for (const link of response.data || []) {
-        byId.set(link.id, link);
-      }
-    }
-    return [...byId.values()].sort(compareUpdatedDesc);
+    const response = await apiGet("/v1/context-links", {
+      params: {
+        ...scopeParams(),
+        statuses: "active,deleted",
+        limit: "200",
+      },
+    });
+    return (response.data || []).sort(compareUpdatedDesc);
   }
 
   async function buildDigest() {

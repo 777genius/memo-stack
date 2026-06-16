@@ -156,6 +156,7 @@ class ListContextLinksUseCase:
                     memory_scope_id=str(query.memory_scope_id),
                     status=query.status,
                     limit=query.limit,
+                    statuses=query.statuses,
                 )
             if query.source_type is None or query.source_id is None:
                 raise MemoryValidationError("Context link source requires type and id")
@@ -166,6 +167,7 @@ class ListContextLinksUseCase:
                 source_id=query.source_id,
                 status=query.status,
                 limit=query.limit,
+                statuses=query.statuses,
             )
 
 
@@ -790,6 +792,7 @@ class ListContextLinkSuggestionsUseCase:
                 limit=query.limit,
                 source_type=query.source_type,
                 source_id=query.source_id,
+                statuses=query.statuses,
             )
 
 

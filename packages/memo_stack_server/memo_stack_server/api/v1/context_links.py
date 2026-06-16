@@ -186,6 +186,7 @@ async def list_context_links(
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
     memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "active",
+    statuses_filter: Annotated[str | None, Query(alias="statuses", max_length=240)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, Any]:
     scope = await resolve_existing_single_scope(
@@ -206,7 +207,8 @@ async def list_context_links(
             memory_scope_id=scope.memory_scope_id,
             source_type=source_type,
             source_id=source_id,
-            status=status_filter,
+            status=None,
+            statuses=_normalize_status_filter(status_filter, statuses_filter),
             limit=limit,
         )
     )
@@ -223,6 +225,7 @@ async def list_context_link_suggestions(
     source_type: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     source_id: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "pending",
+    statuses_filter: Annotated[str | None, Query(alias="statuses", max_length=240)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, Any]:
     scope = await resolve_existing_single_scope(
@@ -241,7 +244,8 @@ async def list_context_link_suggestions(
         ListContextLinkSuggestionsQuery(
             space_id=scope.space_id,
             memory_scope_id=scope.memory_scope_id,
-            status=status_filter,
+            status=None,
+            statuses=_normalize_status_filter(status_filter, statuses_filter),
             source_type=source_type,
             source_id=source_id,
             limit=limit,
@@ -381,6 +385,23 @@ def _safe_metadata(metadata: Any) -> dict[str, Any]:
             if items:
                 safe[key_text] = items
     return safe
+
+
+def _normalize_status_filter(
+    status_filter: str | None,
+    statuses_filter: str | None,
+) -> tuple[str, ...] | None:
+    raw_values = statuses_filter.split(",") if statuses_filter is not None else [status_filter]
+    values: list[str] = []
+    for raw_value in raw_values:
+        value = (raw_value or "").strip().lower()
+        if not value:
+            continue
+        if value in {"all", "*"}:
+            return None
+        if value not in values:
+            values.append(value)
+    return tuple(values) if values else None
 
 
 def _safe_context_link_edit_event(value: Any) -> dict[str, Any] | None:

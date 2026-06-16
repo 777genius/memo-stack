@@ -96,6 +96,7 @@ class ContextLinkRepositoryPort(Protocol):
         source_id: str,
         status: str | None,
         limit: int,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLink]:
         """List links from one source object."""
 
@@ -106,6 +107,7 @@ class ContextLinkRepositoryPort(Protocol):
         memory_scope_id: str,
         status: str | None,
         limit: int,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLink]:
         """List relation history for one memory scope."""
 
@@ -151,6 +153,7 @@ class ContextLinkSuggestionRepositoryPort(Protocol):
         limit: int,
         source_type: str | None = None,
         source_id: str | None = None,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLinkSuggestion]:
         """List context link suggestions in a scope."""
 

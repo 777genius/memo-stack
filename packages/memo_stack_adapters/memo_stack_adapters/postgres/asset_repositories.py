@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from memo_stack_core.domain.assets import (
     MemoryAsset,
@@ -387,6 +388,7 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
         source_id: str,
         status: str | None,
         limit: int,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLink]:
         conditions = [
             MemoryContextLinkRow.space_id == space_id,
@@ -394,8 +396,7 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
             MemoryContextLinkRow.source_type == source_type,
             MemoryContextLinkRow.source_id == source_id,
         ]
-        if status:
-            conditions.append(MemoryContextLinkRow.status == status)
+        conditions.extend(_status_conditions(MemoryContextLinkRow.status, status, statuses))
         rows = (
             await self._session.execute(
                 select(MemoryContextLinkRow)
@@ -413,13 +414,13 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
         memory_scope_id: str,
         status: str | None,
         limit: int,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLink]:
         conditions = [
             MemoryContextLinkRow.space_id == space_id,
             MemoryContextLinkRow.memory_scope_id == memory_scope_id,
         ]
-        if status:
-            conditions.append(MemoryContextLinkRow.status == status)
+        conditions.extend(_status_conditions(MemoryContextLinkRow.status, status, statuses))
         rows = (
             await self._session.execute(
                 select(MemoryContextLinkRow)
@@ -503,13 +504,15 @@ class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPor
         limit: int,
         source_type: str | None = None,
         source_id: str | None = None,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLinkSuggestion]:
         conditions = [
             MemoryContextLinkSuggestionRow.space_id == space_id,
             MemoryContextLinkSuggestionRow.memory_scope_id == memory_scope_id,
         ]
-        if status:
-            conditions.append(MemoryContextLinkSuggestionRow.status == status)
+        conditions.extend(
+            _status_conditions(MemoryContextLinkSuggestionRow.status, status, statuses)
+        )
         if source_type:
             conditions.append(MemoryContextLinkSuggestionRow.source_type == source_type)
         if source_id:
@@ -547,3 +550,14 @@ class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPor
             )
         ).all()
         return {str(status): int(count) for status, count in rows}
+
+
+def _status_conditions(
+    column: Any,
+    status: str | None,
+    statuses: tuple[str, ...] | None,
+) -> list[Any]:
+    if statuses is not None:
+        values = tuple(dict.fromkeys(value for value in statuses if value))
+        return [column.in_(values)] if values else []
+    return [column == status] if status else []

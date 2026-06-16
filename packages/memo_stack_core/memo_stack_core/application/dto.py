@@ -492,6 +492,7 @@ class ListContextLinksQuery:
     limit: int
     source_type: str | None = None
     source_id: str | None = None
+    statuses: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -534,6 +535,7 @@ class ListContextLinkSuggestionsQuery:
     limit: int
     source_type: str | None = None
     source_id: str | None = None
+    statuses: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
