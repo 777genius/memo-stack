@@ -118,6 +118,15 @@ class ListContextLinksUseCase:
 
     async def execute(self, query: ListContextLinksQuery) -> list[MemoryContextLink]:
         async with self._uow_factory() as uow:
+            if query.source_type is None and query.source_id is None:
+                return await uow.context_links.list_for_scope(
+                    space_id=str(query.space_id),
+                    memory_scope_id=str(query.memory_scope_id),
+                    status=query.status,
+                    limit=query.limit,
+                )
+            if query.source_type is None or query.source_id is None:
+                raise MemoryValidationError("Context link source requires type and id")
             return await uow.context_links.list_for_source(
                 space_id=str(query.space_id),
                 memory_scope_id=str(query.memory_scope_id),

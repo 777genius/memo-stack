@@ -23,6 +23,7 @@
     facts: [],
     suggestions: [],
     contextLinkSuggestions: [],
+    contextLinks: [],
     nodes: [],
     edges: [],
     selectedNodeId: null,
@@ -76,6 +77,7 @@
       "factCount",
       "suggestionCount",
       "linkSuggestionCount",
+      "contextLinkCount",
       "sourceCount",
       "pendingCount",
       "lastRefresh",
@@ -198,15 +200,17 @@
       state.health = health;
       state.capabilities = capabilities;
       await refreshSpacesAndMemoryScopes();
-      const [facts, suggestions, contextLinkSuggestions, diagnostics] = await Promise.all([
+      const [facts, suggestions, contextLinkSuggestions, contextLinks, diagnostics] = await Promise.all([
         fetchFacts(),
         fetchSuggestions(),
         fetchContextLinkSuggestions(),
+        fetchContextLinks(),
         apiGet("/v1/diagnostics/adapters").catch(() => null),
       ]);
       state.facts = facts;
       state.suggestions = suggestions;
       state.contextLinkSuggestions = contextLinkSuggestions;
+      state.contextLinks = contextLinks;
       state.adapterDiagnostics = diagnostics ? diagnostics.data : null;
       state.lastRefreshAt = new Date();
       renderAll();
@@ -303,6 +307,17 @@
       }
     }
     return [...byId.values()].sort(compareUpdatedDesc);
+  }
+
+  async function fetchContextLinks() {
+    const response = await apiGet("/v1/context-links", {
+      params: {
+        ...scopeParams(),
+        status: "active",
+        limit: "200",
+      },
+    });
+    return (response.data || []).sort(compareUpdatedDesc);
   }
 
   async function buildDigest() {
@@ -519,9 +534,13 @@
     for (const suggestion of state.contextLinkSuggestions) {
       sourceIds.add(`${suggestion.source_type}:${suggestion.source_id}`);
     }
+    for (const link of state.contextLinks) {
+      sourceIds.add(`${link.source_type}:${link.source_id}`);
+    }
     setText(els.factCount, String(state.facts.length));
     setText(els.suggestionCount, String(state.suggestions.length));
     setText(els.linkSuggestionCount, String(state.contextLinkSuggestions.length));
+    setText(els.contextLinkCount, String(state.contextLinks.length));
     setText(els.sourceCount, String(sourceIds.size));
     setText(
       els.pendingCount,
@@ -556,6 +575,11 @@
         item: suggestion,
         updated_at: suggestion.updated_at,
       })),
+      ...state.contextLinks.map((link) => ({
+        type: "context_link",
+        item: link,
+        updated_at: link.updated_at,
+      })),
     ].sort(compareUpdatedDesc);
 
     for (const memory of memoryItems) {
@@ -571,8 +595,10 @@
         addFactGraph(graph, memory.item, relationNodes);
       } else if (memory.type === "suggestion") {
         addSuggestionGraph(graph, memory.item, relationNodes);
-      } else {
+      } else if (memory.type === "context_link_suggestion") {
         addContextLinkSuggestionGraph(graph, memory.item, relationNodes);
+      } else {
+        addContextLinkGraph(graph, memory.item, relationNodes);
       }
     }
     if (visibleMemory.length < GRAPH_NODE_LIMIT) {
@@ -581,7 +607,7 @@
 
     if (
       typeFilter !== "all" &&
-      !["fact", "suggestion", "context_link_suggestion"].includes(typeFilter)
+      !["fact", "suggestion", "context_link_suggestion", "context_link"].includes(typeFilter)
     ) {
       for (const node of [...graph.nodes.values()]) {
         if (node.type !== typeFilter && !relationNodes.has(node.id)) {
@@ -704,6 +730,34 @@
     for (const reason of arrayOf(suggestion.metadata?.reasons)) {
       addRelation(graph, nodeId, `reason:${reason}`, "kind", reason, relationNodes);
     }
+  }
+
+  function addContextLinkGraph(graph, link, relationNodes) {
+    const nodeId = `context_link:${link.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "context_link",
+      status: link.status,
+      label: compactLabel(`${link.source_type} -> ${link.target_type}`),
+      text: link.reason,
+      data: link,
+      degree: 0,
+    });
+    addRelation(graph, nodeId, `status:${link.status}`, "status", link.status, relationNodes);
+    addRelation(
+      graph,
+      nodeId,
+      `relation:${link.relation_type}`,
+      "kind",
+      link.relation_type,
+      relationNodes,
+    );
+    const sourceNodeId = contextObjectNodeId(link.source_type, link.source_id);
+    const targetNodeId = contextObjectNodeId(link.target_type, link.target_id);
+    addContextObjectNode(graph, sourceNodeId, link.source_type, link.source_id, "source");
+    addContextObjectNode(graph, targetNodeId, link.target_type, link.target_id, "target");
+    addEdge(graph, nodeId, sourceNodeId, "source", false);
+    addEdge(graph, nodeId, targetNodeId, "target", true);
   }
 
   function contextObjectNodeId(objectType, objectId) {
@@ -860,7 +914,8 @@
         const ring =
           node.type === "fact" ||
           node.type === "suggestion" ||
-          node.type === "context_link_suggestion"
+          node.type === "context_link_suggestion" ||
+          node.type === "context_link"
             ? 1
             : 0.62;
         state.nodePositions.set(node.id, {
@@ -983,6 +1038,9 @@
     if (node.type === "context_link_suggestion") {
       panel.append(contextLinkSuggestionSection(node.data));
     }
+    if (node.type === "context_link") {
+      panel.append(contextLinkSection(node.data));
+    }
     if (node.type === "suggestion" && node.data?.status === "pending") {
       const actions = document.createElement("div");
       actions.className = "action-row";
@@ -1033,6 +1091,28 @@
     const matchedTerms = arrayOf(suggestion.metadata?.matched_terms);
     if (matchedTerms.length) {
       section.append(keyValueItem("Matched", matchedTerms.join(", ")));
+    }
+    return section;
+  }
+
+  function contextLinkSection(link) {
+    const section = document.createElement("section");
+    section.className = "source-list";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Link";
+    section.append(heading);
+    section.append(
+      keyValueItem("Source", `${link.source_type}:${link.source_id}`),
+      keyValueItem("Target", `${link.target_type}:${link.target_id}`),
+      keyValueItem("Relation", link.relation_type),
+      keyValueItem("Reason", link.reason),
+      keyValueItem("Created", formatDate(link.created_at)),
+    );
+    if (link.metadata?.approved_from_suggestion_id) {
+      section.append(
+        keyValueItem("Approved from", String(link.metadata.approved_from_suggestion_id)),
+      );
     }
     return section;
   }
@@ -1210,6 +1290,14 @@
         )}`,
         updated_at: suggestion.updated_at,
       })),
+      ...state.contextLinks.map((link) => ({
+        id: `context_link:${link.id}`,
+        title: `link / ${link.status}`,
+        text: `${link.source_type}:${shortId(link.source_id)} -> ${link.target_type}:${shortId(
+          link.target_id,
+        )}`,
+        updated_at: link.updated_at,
+      })),
     ].sort(compareUpdatedDesc);
     if (!items.length) {
       els.timelineList.append(emptyItem("No timeline entries."));
@@ -1230,6 +1318,7 @@
   function preferredNode() {
     return (
       state.nodes.find((node) => node.type === "context_link_suggestion" && node.status === "pending") ||
+      state.nodes.find((node) => node.type === "context_link" && node.status === "active") ||
       state.nodes.find((node) => node.type === "suggestion" && node.status === "pending") ||
       state.nodes.find((node) => node.type === "fact") ||
       state.nodes[0]
@@ -1240,7 +1329,7 @@
     if (
       typeFilter !== "all" &&
       memory.type !== typeFilter &&
-      ["fact", "suggestion", "context_link_suggestion"].includes(typeFilter)
+      ["fact", "suggestion", "context_link_suggestion", "context_link"].includes(typeFilter)
     ) {
       return false;
     }
@@ -1286,6 +1375,9 @@
     if (node.type === "context_link_suggestion") {
       return `Link review ${node.data?.id || ""}`.trim();
     }
+    if (node.type === "context_link") {
+      return `Link ${node.data?.id || ""}`.trim();
+    }
     return `${node.type}: ${node.text}`;
   }
 
@@ -1322,6 +1414,9 @@
         return "#8b96a8";
       }
       return "#64738a";
+    }
+    if (node.type === "context_link") {
+      return node.status === "active" ? "#16835f" : "#64738a";
     }
     if (node.type === "anchor" || node.type === "thread") {
       return "#7c3aed";

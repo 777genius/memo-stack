@@ -449,10 +449,10 @@ class ContextLinkSuggestionResult:
 class ListContextLinksQuery:
     space_id: SpaceId
     memory_scope_id: MemoryScopeId
-    source_type: str
-    source_id: str
     status: str | None
     limit: int
+    source_type: str | None = None
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)

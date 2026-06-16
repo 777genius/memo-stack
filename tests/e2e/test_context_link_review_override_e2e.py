@@ -118,3 +118,13 @@ def test_context_link_review_override_e2e(tmp_path: Path) -> None:
         assert [item["target_id"] for item in listed.json()["data"]] == [
             override_fact.json()["data"]["id"]
         ]
+
+        scope_links = client.get(
+            "/v1/context-links",
+            params={
+                "space_slug": "context-link-override-e2e",
+                "memory_scope_external_ref": "default",
+            },
+        )
+        assert scope_links.status_code == 200, scope_links.text
+        assert [item["id"] for item in scope_links.json()["data"]] == [link["id"]]

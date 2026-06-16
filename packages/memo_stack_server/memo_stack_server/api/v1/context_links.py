@@ -165,8 +165,8 @@ async def create_context_link(
 @router.get("/context-links")
 async def list_context_links(
     container: Annotated[Container, Depends(get_container)],
-    source_type: Annotated[str, Query(min_length=1, max_length=80)],
-    source_id: Annotated[str, Query(min_length=1, max_length=160)],
+    source_type: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    source_id: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
     space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,

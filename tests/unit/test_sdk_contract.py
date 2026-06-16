@@ -689,6 +689,12 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         source_type="capture",
         source_id="cap_1",
     )
+    client.list_context_links(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        status="active",
+        limit=25,
+    )
     client.review_context_link_suggestion(
         "ctxlinksug_1",
         action="approve",
@@ -703,6 +709,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
         "POST /v1/link-suggestions",
         "GET /v1/context-link-suggestions",
+        "GET /v1/context-links",
         "POST /v1/context-link-suggestions/ctxlinksug_1/review",
     ]
     assert seen[0][3] == {
@@ -723,7 +730,13 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "status": "pending",
         "limit": "50",
     }
-    assert seen[2][3] == {
+    assert seen[2][2] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "status": "active",
+        "limit": "25",
+    }
+    assert seen[3][3] == {
         "action": "approve",
         "reason": "user accepted",
         "target_type": "fact",

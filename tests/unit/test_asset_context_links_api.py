@@ -524,6 +524,14 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
             },
             headers=auth_headers(),
         )
+        scope_links = client.get(
+            "/v1/context-links",
+            params={
+                "space_slug": "override-link-review",
+                "memory_scope_external_ref": "default",
+            },
+            headers=auth_headers(),
+        )
 
     assert approved.status_code == 200, approved.text
     payload = approved.json()["data"]
@@ -535,6 +543,8 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
     assert payload["link"]["reason"] == "approved corrected target"
     assert payload["link"]["metadata"]["approved_override"] is True
     assert payload["link"]["metadata"]["original_target_id"] == fact_candidate["target_id"]
+    assert scope_links.status_code == 200, scope_links.text
+    assert [item["id"] for item in scope_links.json()["data"]] == [payload["link"]["id"]]
 
 
 def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Path) -> None:

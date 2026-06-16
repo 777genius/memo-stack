@@ -34,6 +34,9 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert js.status_code == 200
     assert "localStorage" in js.text
     assert "Authorization" in js.text
+    assert "contextLinkCount" in index.text
+    assert "context_link" in index.text
+    assert "/v1/context-links" in js.text
     assert "/v1/context-link-suggestions" in js.text
     assert "reviewContextLinkSuggestion" in js.text
     assert "Approve With Edits" in js.text
