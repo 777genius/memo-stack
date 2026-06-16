@@ -665,6 +665,48 @@
     }
   }
 
+  async function reviewPendingContextLinkSuggestionsBatch(action) {
+    const pending = state.contextLinkSuggestions.filter((suggestion) => suggestion.status === "pending");
+    const batch = pending.slice(0, 50);
+    if (!batch.length) {
+      setError("No pending link reviews.");
+      return;
+    }
+    const reason = window.prompt(
+      `${action} ${batch.length} pending link reviews`,
+      `Batch reviewed in Memo Stack Browser`,
+    );
+    if (reason === null) {
+      return;
+    }
+    const label = action === "approve" ? "Approve" : "Reject";
+    if (!window.confirm(`${label} ${batch.length} pending link reviews?`)) {
+      return;
+    }
+    setError("");
+    try {
+      const response = await apiJson("/v1/context-link-suggestions/review-batch", {
+        method: "POST",
+        body: {
+          items: batch.map((suggestion) => ({
+            suggestion_id: suggestion.id,
+            action,
+            reason: reason || "Batch reviewed in Memo Stack Browser",
+          })),
+          continue_on_error: true,
+        },
+      });
+      const result = response.data || {};
+      await refreshAll({ silent: true });
+      const suffix = pending.length > batch.length ? `, ${pending.length - batch.length} left` : "";
+      setError(
+        `Batch link review: ${result.applied || 0} applied, ${result.failed || 0} failed${suffix}.`,
+      );
+    } catch (error) {
+      setError(error.message);
+    }
+  }
+
   async function createManualContextLink(payload) {
     const body = withoutEmpty({
       ...scopeBody(),
@@ -1766,6 +1808,25 @@
     }
     if (state.contextLinkSuggestions.length) {
       els.suggestionList.append(sectionLabel("Link reviews"));
+      const pendingLinkReviews = state.contextLinkSuggestions.filter(
+        (suggestion) => suggestion.status === "pending",
+      );
+      if (pendingLinkReviews.length) {
+        const batchActions = document.createElement("div");
+        batchActions.className = "action-row two-actions";
+        batchActions.append(
+          actionButton(
+            `Approve Pending (${Math.min(pendingLinkReviews.length, 50)})`,
+            () => reviewPendingContextLinkSuggestionsBatch("approve"),
+            "primary-button",
+          ),
+          actionButton(
+            `Reject Pending (${Math.min(pendingLinkReviews.length, 50)})`,
+            () => reviewPendingContextLinkSuggestionsBatch("reject"),
+          ),
+        );
+        els.suggestionList.append(batchActions);
+      }
     }
     for (const suggestion of state.contextLinkSuggestions.slice(0, 160)) {
       const item = listItem({

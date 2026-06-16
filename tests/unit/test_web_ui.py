@@ -56,7 +56,10 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "context_link" in index.text
     assert "/v1/context-links" in js.text
     assert "/v1/context-link-suggestions" in js.text
+    assert "/v1/context-link-suggestions/review-batch" in js.text
     assert "reviewContextLinkSuggestion" in js.text
+    assert "reviewPendingContextLinkSuggestionsBatch" in js.text
+    assert "Approve Pending" in js.text
     assert "Approve With Edits" in js.text
     assert "Manual Link" in js.text
     assert "Create Link" in js.text
