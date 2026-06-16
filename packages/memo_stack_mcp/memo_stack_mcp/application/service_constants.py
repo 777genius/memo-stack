@@ -19,6 +19,15 @@ SUGGESTION_STATUSES = {"pending", "approved", "rejected", "expired"}
 SUGGESTION_OPERATIONS = {"add", "update", "delete", "review"}
 MEMORY_BROWSER_THREAD_STATUSES = {"active", "deleted"}
 MEMORY_BROWSER_DOCUMENT_STATUSES = {"active", "deleted"}
+MEMORY_BROWSER_EXTRACTION_STATUSES = {
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "unsupported",
+    "canceled",
+    "stale",
+}
 MEMORY_BROWSER_ASSET_STATUSES = {"stored", "deleted"}
 MEMORY_BROWSER_ANCHOR_STATUSES = {"active", "deleted"}
 CAPTURE_STATUSES = {"accepted", "rejected", "redacted", "purged"}

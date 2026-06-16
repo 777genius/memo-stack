@@ -38,6 +38,7 @@ from memo_stack_mcp.application.service_constants import (
     MEMORY_BROWSER_ANCHOR_STATUSES,
     MEMORY_BROWSER_ASSET_STATUSES,
     MEMORY_BROWSER_DOCUMENT_STATUSES,
+    MEMORY_BROWSER_EXTRACTION_STATUSES,
     MEMORY_BROWSER_THREAD_STATUSES,
     MEMORY_KINDS,
     MEMORY_SCOPE_SNAPSHOT_MERGE_STRATEGIES,
@@ -598,6 +599,7 @@ class MemoryToolService(
         limit: int = 50,
         fact_status: str | None = "active",
         document_status: str | None = "active",
+        extraction_status: str | None = None,
         thread_status: str | None = "active",
         capture_status: str | None = None,
         asset_status: str | None = "stored",
@@ -611,6 +613,11 @@ class MemoryToolService(
                 "document_status",
                 document_status,
                 MEMORY_BROWSER_DOCUMENT_STATUSES,
+            )
+            _ensure_optional_choice(
+                "extraction_status",
+                extraction_status,
+                MEMORY_BROWSER_EXTRACTION_STATUSES,
             )
             _ensure_optional_choice(
                 "thread_status",
@@ -637,6 +644,7 @@ class MemoryToolService(
                 limit=effective_limit,
                 fact_status=fact_status,
                 document_status=document_status,
+                extraction_status=extraction_status,
                 thread_status=thread_status,
                 capture_status=capture_status,
                 asset_status=asset_status,

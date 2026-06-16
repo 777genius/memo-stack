@@ -71,11 +71,13 @@ def test_memory_browser_returns_scope_threads_evidence_anchors_and_links(
                 "memory_scope_external_ref": "project-atlas",
                 "thread_external_ref": "alex-call",
                 "filename": "atlas.png",
+                "extract": True,
             },
             content=b"fake image bytes",
             headers=auth_headers({"Content-Type": "image/png"}),
         )
         assert asset.status_code == 201, asset.text
+        extraction_id = asset.json()["data"]["extraction"]["id"]
 
         capture = client.post(
             "/v1/captures",
@@ -157,6 +159,7 @@ def test_memory_browser_returns_scope_threads_evidence_anchors_and_links(
     assert data["memory_scope"]["external_ref"] == "project-atlas"
     assert {item["id"] for item in data["facts"]} == {fact.json()["data"]["id"]}
     assert {item["id"] for item in data["documents"]} == {document.json()["data"]["id"]}
+    assert {item["id"] for item in data["extraction_jobs"]} == {extraction_id}
     assert {item["external_ref"] for item in data["threads"]} == {"alex-call"}
     assert {item["id"] for item in data["captures"]} == {capture.json()["data"]["id"]}
     assert {item["id"] for item in data["assets"]} == {asset.json()["data"]["id"]}
@@ -166,6 +169,7 @@ def test_memory_browser_returns_scope_threads_evidence_anchors_and_links(
     assert data["context_link_suggestions"]
     assert data["stats"]["facts"] == 1
     assert data["stats"]["documents"] == 1
+    assert data["stats"]["extraction_jobs"] == 1
     assert data["stats"]["threads"] == 1
     assert data["stats"]["active_context_links"] == 1
     assert data["diagnostics"]["browser_version"] == "memory-browser-v1"

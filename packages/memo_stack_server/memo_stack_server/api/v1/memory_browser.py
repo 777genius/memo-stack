@@ -11,7 +11,7 @@ from memo_stack_core.domain.entities import MemoryThread
 from memo_stack_server.api.auth import require_service_token
 from memo_stack_server.api.dependencies import get_container
 from memo_stack_server.api.v1.anchors import anchor_to_response
-from memo_stack_server.api.v1.assets import asset_to_response
+from memo_stack_server.api.v1.assets import asset_extraction_to_response, asset_to_response
 from memo_stack_server.api.v1.captures import capture_to_response
 from memo_stack_server.api.v1.context_links import (
     context_link_suggestion_to_response,
@@ -39,6 +39,7 @@ async def get_memory_browser(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     fact_status: Annotated[str | None, Query(max_length=40)] = "active",
     document_status: Annotated[str | None, Query(max_length=40)] = "active",
+    extraction_status: Annotated[str | None, Query(max_length=40)] = None,
     thread_status: Annotated[str | None, Query(max_length=40)] = "active",
     capture_status: Annotated[str | None, Query(max_length=40)] = None,
     asset_status: Annotated[str | None, Query(max_length=40)] = "stored",
@@ -65,6 +66,7 @@ async def get_memory_browser(
             limit=limit,
             fact_status=fact_status,
             document_status=document_status,
+            extraction_status=extraction_status,
             thread_status=thread_status,
             capture_status=capture_status,
             asset_status=asset_status,
@@ -79,6 +81,9 @@ async def get_memory_browser(
             "memory_scope": memory_scope_to_response(result.memory_scope),
             "facts": [fact_to_response(fact) for fact in result.facts],
             "documents": [document_to_response(document) for document in result.documents],
+            "extraction_jobs": [
+                asset_extraction_to_response(job) for job in result.extraction_jobs
+            ],
             "threads": [thread_to_response(thread) for thread in result.threads],
             "captures": [capture_to_response(capture) for capture in result.captures],
             "assets": [asset_to_response(asset) for asset in result.assets],
@@ -112,6 +117,7 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
         "memory_scope": None,
         "facts": [],
         "documents": [],
+        "extraction_jobs": [],
         "threads": [],
         "captures": [],
         "assets": [],
@@ -121,6 +127,7 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
         "stats": {
             "facts": 0,
             "documents": 0,
+            "extraction_jobs": 0,
             "threads": 0,
             "captures": 0,
             "assets": 0,

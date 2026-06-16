@@ -79,6 +79,15 @@ ContextLinkReviewAction = Literal["approve", "reject", "expire"]
 CaptureStatus = Literal["accepted", "rejected", "redacted", "purged"]
 MemoryBrowserThreadStatus = Literal["active", "deleted"]
 MemoryBrowserDocumentStatus = Literal["active", "deleted"]
+MemoryBrowserExtractionStatus = Literal[
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "unsupported",
+    "canceled",
+    "stale",
+]
 MemoryBrowserAssetStatus = Literal["stored", "deleted"]
 MemoryBrowserAnchorStatus = Literal["active", "deleted"]
 CaptureConsolidationStatus = Literal[
@@ -1672,10 +1681,10 @@ def create_mcp_server(
         title="Browse Memory Scope",
         description=(
             "Load a read-only browser snapshot for one MemoryScope: durable facts, documents, "
-            "threads, captures, assets, semantic anchors, approved context links, pending or "
-            "reviewed link suggestions, stats, and diagnostics. Use this when the user wants to "
-            "navigate what has been saved in a project/scope or inspect review state before "
-            "approving links."
+            "asset extraction jobs, threads, captures, assets, semantic anchors, approved "
+            "context links, pending or reviewed link suggestions, stats, and diagnostics. Use "
+            "this when the user wants to navigate what has been saved in a project/scope or "
+            "inspect review state before approving links."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
@@ -1697,6 +1706,10 @@ def create_mcp_server(
             MemoryBrowserDocumentStatus | None,
             Field(default="active"),
         ] = "active",
+        extraction_status: Annotated[
+            MemoryBrowserExtractionStatus | None,
+            Field(default=None),
+        ] = None,
         thread_status: Annotated[
             MemoryBrowserThreadStatus | None,
             Field(default="active"),
@@ -1723,6 +1736,7 @@ def create_mcp_server(
                 limit=limit,
                 fact_status=fact_status,
                 document_status=document_status,
+                extraction_status=extraction_status,
                 thread_status=thread_status,
                 capture_status=capture_status,
                 asset_status=asset_status,

@@ -632,6 +632,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
         memory_scope_external_ref="default",
         limit=30,
         link_status="active",
+        extraction_status="pending",
         suggestion_status="approved",
     )
     assert client.download_extraction_artifact("artifact_1") == b"downloaded-bytes"
@@ -672,6 +673,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
         "limit": "30",
         "fact_status": "active",
         "document_status": "active",
+        "extraction_status": "pending",
         "thread_status": "active",
         "asset_status": "stored",
         "anchor_status": "active",
