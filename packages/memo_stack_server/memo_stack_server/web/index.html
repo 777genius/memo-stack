@@ -53,6 +53,7 @@
         <div><strong id="suggestionCount">0</strong><span>Suggestions</span></div>
         <div><strong id="linkSuggestionCount">0</strong><span>Link Reviews</span></div>
         <div><strong id="contextLinkCount">0</strong><span>Links</span></div>
+        <div><strong id="anchorCount">0</strong><span>Anchors</span></div>
         <div><strong id="sourceCount">0</strong><span>Sources</span></div>
         <div><strong id="pendingCount">0</strong><span>Pending</span></div>
         <div><strong id="lastRefresh">Never</strong><span>Updated</span></div>
@@ -68,6 +69,7 @@
               <option value="suggestion">Suggestions</option>
               <option value="context_link_suggestion">Link Reviews</option>
               <option value="context_link">Links</option>
+              <option value="anchor">Anchors</option>
               <option value="source">Sources</option>
               <option value="tag">Tags</option>
               <option value="kind">Kinds</option>
@@ -108,6 +110,9 @@
           </section>
 
           <section class="tab-panel" id="suggestionsPanel">
+            <div class="panel-actions one-action">
+              <button id="backfillAnchorsButton" type="button">Backfill Anchors</button>
+            </div>
             <div id="suggestionList" class="list-stack"></div>
           </section>
 

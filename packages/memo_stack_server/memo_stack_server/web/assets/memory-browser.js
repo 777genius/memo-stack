@@ -32,6 +32,7 @@
     memory_scopes: [],
     facts: [],
     suggestions: [],
+    anchors: [],
     contextLinkSuggestions: [],
     contextLinks: [],
     nodes: [],
@@ -80,6 +81,7 @@
       "fitButton",
       "buildDigestButton",
       "runRecallButton",
+      "backfillAnchorsButton",
       "scopeSummary",
       "liveStatus",
       "serverStatus",
@@ -88,6 +90,7 @@
       "suggestionCount",
       "linkSuggestionCount",
       "contextLinkCount",
+      "anchorCount",
       "sourceCount",
       "pendingCount",
       "lastRefresh",
@@ -119,6 +122,7 @@
     });
     els.buildDigestButton.addEventListener("click", () => void buildDigest());
     els.runRecallButton.addEventListener("click", () => void runRecall());
+    els.backfillAnchorsButton.addEventListener("click", () => void backfillAnchors());
     els.graphSearchInput.addEventListener("input", renderAll);
     els.typeFilter.addEventListener("change", renderAll);
     els.statusFilter.addEventListener("change", renderAll);
@@ -210,15 +214,17 @@
       state.health = health;
       state.capabilities = capabilities;
       await refreshSpacesAndMemoryScopes();
-      const [facts, suggestions, contextLinkSuggestions, contextLinks, diagnostics] = await Promise.all([
+      const [facts, suggestions, anchors, contextLinkSuggestions, contextLinks, diagnostics] = await Promise.all([
         fetchFacts(),
         fetchSuggestions(),
+        fetchAnchors(),
         fetchContextLinkSuggestions(),
         fetchContextLinks(),
         apiGet("/v1/diagnostics/adapters").catch(() => null),
       ]);
       state.facts = facts;
       state.suggestions = suggestions;
+      state.anchors = anchors;
       state.contextLinkSuggestions = contextLinkSuggestions;
       state.contextLinks = contextLinks;
       state.adapterDiagnostics = diagnostics ? diagnostics.data : null;
@@ -297,6 +303,28 @@
     return (response.data || []).sort(compareUpdatedDesc);
   }
 
+  async function fetchAnchors() {
+    const statuses = ["active", "deleted"];
+    const batches = await Promise.all(
+      statuses.map((status) =>
+        apiGet("/v1/anchors", {
+          params: {
+            ...scopeParams(),
+            status,
+            limit: "500",
+          },
+        }).catch(() => ({ data: [] })),
+      ),
+    );
+    const byId = new Map();
+    for (const batch of batches) {
+      for (const anchor of batch.data || []) {
+        byId.set(anchor.id, anchor);
+      }
+    }
+    return [...byId.values()].sort(compareUpdatedDesc);
+  }
+
   async function fetchContextLinkSuggestions() {
     const statuses = ["pending", "approved", "rejected", "expired"];
     const batches = await Promise.all(
@@ -363,6 +391,28 @@
       setText(els.digestOutput, data.rendered_markdown || "Digest is empty.");
     } catch (error) {
       setText(els.digestOutput, "Digest failed.");
+      setError(error.message);
+    }
+  }
+
+  async function backfillAnchors() {
+    readSettingsFromInputs();
+    saveSettings();
+    setError("");
+    try {
+      await apiJson("/v1/anchors/backfill", {
+        method: "POST",
+        body: {
+          ...scopeBody(),
+          limit_per_source: 100,
+        },
+      });
+      await refreshAll();
+      const firstAnchor = state.anchors.find((anchor) => anchor.status === "active");
+      if (firstAnchor) {
+        selectNode(`anchor:${firstAnchor.id}`);
+      }
+    } catch (error) {
       setError(error.message);
     }
   }
@@ -611,6 +661,7 @@
       sourceIds.add(`${suggestion.source_type}:${suggestion.source_id}`);
     }
     const activeContextLinks = state.contextLinks.filter((link) => link.status === "active");
+    const activeAnchors = state.anchors.filter((anchor) => anchor.status === "active");
     for (const link of activeContextLinks) {
       sourceIds.add(`${link.source_type}:${link.source_id}`);
     }
@@ -618,6 +669,7 @@
     setText(els.suggestionCount, String(state.suggestions.length));
     setText(els.linkSuggestionCount, String(state.contextLinkSuggestions.length));
     setText(els.contextLinkCount, String(activeContextLinks.length));
+    setText(els.anchorCount, String(activeAnchors.length));
     setText(els.sourceCount, String(sourceIds.size));
     setText(
       els.pendingCount,
@@ -647,6 +699,11 @@
         item: suggestion,
         updated_at: suggestion.updated_at,
       })),
+      ...state.anchors.map((anchor) => ({
+        type: "anchor",
+        item: anchor,
+        updated_at: anchor.updated_at,
+      })),
       ...state.contextLinkSuggestions.map((suggestion) => ({
         type: "context_link_suggestion",
         item: suggestion,
@@ -672,6 +729,8 @@
         addFactGraph(graph, memory.item, relationNodes);
       } else if (memory.type === "suggestion") {
         addSuggestionGraph(graph, memory.item, relationNodes);
+      } else if (memory.type === "anchor") {
+        addAnchorGraph(graph, memory.item, relationNodes);
       } else if (memory.type === "context_link_suggestion") {
         addContextLinkSuggestionGraph(graph, memory.item, relationNodes);
       } else {
@@ -684,7 +743,7 @@
 
     if (
       typeFilter !== "all" &&
-      !["fact", "suggestion", "context_link_suggestion", "context_link"].includes(typeFilter)
+      !["fact", "suggestion", "anchor", "context_link_suggestion", "context_link"].includes(typeFilter)
     ) {
       for (const node of [...graph.nodes.values()]) {
         if (node.type !== typeFilter && !relationNodes.has(node.id)) {
@@ -760,6 +819,24 @@
     }
     for (const ref of suggestion.source_refs || []) {
       addSourceRelation(graph, nodeId, ref, relationNodes);
+    }
+  }
+
+  function addAnchorGraph(graph, anchor, relationNodes) {
+    const nodeId = `anchor:${anchor.id}`;
+    addNode(graph, {
+      id: nodeId,
+      type: "anchor",
+      status: anchor.status,
+      label: compactLabel(`${anchor.kind}: ${anchor.label}`),
+      text: anchor.description || anchor.label,
+      data: anchor,
+      degree: 0,
+    });
+    addRelation(graph, nodeId, `status:${anchor.status}`, "status", anchor.status, relationNodes);
+    addRelation(graph, nodeId, `kind:${anchor.kind}`, "kind", anchor.kind, relationNodes);
+    for (const alias of anchor.aliases || []) {
+      addRelation(graph, nodeId, `alias:${anchor.kind}:${alias}`, "alias", alias, relationNodes);
     }
   }
 
@@ -1112,6 +1189,9 @@
     if (node.type === "fact" || node.type === "suggestion") {
       panel.append(sourceSection(node.data?.source_refs || []));
     }
+    if (node.type === "anchor") {
+      panel.append(anchorSection(node.data));
+    }
     if (node.type === "context_link_suggestion") {
       panel.append(contextLinkSuggestionSection(node.data));
     }
@@ -1175,6 +1255,25 @@
     if (matchedTerms.length) {
       section.append(keyValueItem("Matched", matchedTerms.join(", ")));
     }
+    return section;
+  }
+
+  function anchorSection(anchor) {
+    const section = document.createElement("section");
+    section.className = "source-list";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Anchor";
+    const metadataReason = anchor.metadata?.reason || anchor.metadata?.canonical_key || "";
+    section.append(heading);
+    section.append(
+      keyValueItem("Kind", anchor.kind),
+      keyValueItem("Key", anchor.normalized_key),
+      keyValueItem("Aliases", (anchor.aliases || []).join(", ") || "none"),
+      keyValueItem("Description", anchor.description || ""),
+      keyValueItem("Metadata", metadataReason),
+      keyValueItem("Updated", formatDate(anchor.updated_at)),
+    );
     return section;
   }
 
@@ -1442,6 +1541,12 @@
         text: suggestion.candidate_text,
         updated_at: suggestion.updated_at,
       })),
+      ...state.anchors.map((anchor) => ({
+        id: `anchor:${anchor.id}`,
+        title: `anchor / ${anchor.status}`,
+        text: `${anchor.kind}: ${anchor.label}`,
+        updated_at: anchor.updated_at,
+      })),
       ...state.contextLinkSuggestions.map((suggestion) => ({
         id: `context_link_suggestion:${suggestion.id}`,
         title: `link review / ${suggestion.status}`,
@@ -1479,6 +1584,7 @@
     return (
       state.nodes.find((node) => node.type === "context_link_suggestion" && node.status === "pending") ||
       state.nodes.find((node) => node.type === "context_link" && node.status === "active") ||
+      state.nodes.find((node) => node.type === "anchor" && node.status === "active") ||
       state.nodes.find((node) => node.type === "suggestion" && node.status === "pending") ||
       state.nodes.find((node) => node.type === "fact") ||
       state.nodes[0]
@@ -1489,7 +1595,7 @@
     if (
       typeFilter !== "all" &&
       memory.type !== typeFilter &&
-      ["fact", "suggestion", "context_link_suggestion", "context_link"].includes(typeFilter)
+      ["fact", "suggestion", "anchor", "context_link_suggestion", "context_link"].includes(typeFilter)
     ) {
       return false;
     }
@@ -1504,6 +1610,9 @@
       memory.item.text,
       memory.item.candidate_text,
       memory.item.kind,
+      memory.item.label,
+      memory.item.normalized_key,
+      memory.item.description,
       memory.item.status,
       memory.item.operation,
       memory.item.source_type,
@@ -1515,6 +1624,7 @@
       memory.item.metadata?.target_label,
       memory.item.metadata?.target_preview,
       ...(memory.item.tags || []),
+      ...(memory.item.aliases || []),
       ...arrayOf(memory.item.metadata?.reasons),
       ...arrayOf(memory.item.metadata?.matched_terms),
       ...(memory.item.source_refs || []).map((ref) => `${ref.source_type}:${ref.source_id}`),
@@ -1531,6 +1641,9 @@
     }
     if (node.type === "suggestion") {
       return `Suggestion ${node.data?.id || ""}`.trim();
+    }
+    if (node.type === "anchor") {
+      return `Anchor ${node.data?.label || node.data?.id || ""}`.trim();
     }
     if (node.type === "context_link_suggestion") {
       return `Link review ${node.data?.id || ""}`.trim();
@@ -1578,7 +1691,22 @@
     if (node.type === "context_link") {
       return node.status === "active" ? "#16835f" : "#64738a";
     }
-    if (node.type === "anchor" || node.type === "thread") {
+    if (node.type === "anchor") {
+      if (node.status === "deleted") {
+        return "#8b96a8";
+      }
+      if (node.data?.kind === "person") {
+        return "#7c3aed";
+      }
+      if (node.data?.kind === "project") {
+        return "#0e7490";
+      }
+      if (node.data?.kind === "event") {
+        return "#c76b14";
+      }
+      return "#16835f";
+    }
+    if (node.type === "thread") {
       return "#7c3aed";
     }
     if (node.type === "document" || node.type === "chunk") {

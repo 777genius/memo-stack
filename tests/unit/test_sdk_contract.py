@@ -775,6 +775,77 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
     }
 
 
+def test_sdk_supports_anchor_lifecycle_contract() -> None:
+    seen: list[tuple[str, str, dict[str, str], dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, request.url.path, dict(request.url.params), body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.list_anchors(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        kind="person",
+        status="active",
+        limit=25,
+    )
+    client.backfill_anchors(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        limit_per_source=20,
+    )
+    client.list_anchor_merge_suggestions(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        kind="person",
+        limit=10,
+    )
+    client.merge_anchor("anchor_source", target_anchor_id="anchor_target", reason="same person")
+    client.split_anchor("anchor_target", alias="Alex", new_label="Alexander", reason="split alias")
+
+    assert [f"{method} {path}" for method, path, _params, _body in seen] == [
+        "GET /v1/anchors",
+        "POST /v1/anchors/backfill",
+        "GET /v1/anchors/merge-suggestions",
+        "POST /v1/anchors/anchor_source/merge",
+        "POST /v1/anchors/anchor_target/split",
+    ]
+    assert seen[0][2] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "kind": "person",
+        "status": "active",
+        "limit": "25",
+    }
+    assert seen[1][3] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "limit_per_source": 20,
+    }
+    assert seen[2][2] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "kind": "person",
+        "limit": "10",
+    }
+    assert seen[3][3] == {
+        "target_anchor_id": "anchor_target",
+        "reason": "same person",
+    }
+    assert seen[4][3] == {
+        "alias": "Alex",
+        "new_label": "Alexander",
+        "reason": "split alias",
+    }
+
+
 def test_sdk_supports_typed_scope_dtos() -> None:
     seen: list[tuple[str, dict[str, object]]] = []
 

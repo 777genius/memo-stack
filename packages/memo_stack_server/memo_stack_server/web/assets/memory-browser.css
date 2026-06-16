@@ -174,7 +174,7 @@ select:focus {
 
 .metrics-band {
   display: grid;
-  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  grid-template-columns: repeat(8, minmax(92px, 1fr));
   gap: 1px;
   background: var(--border);
   border-bottom: 1px solid var(--border);
@@ -317,6 +317,10 @@ select:focus {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.panel-actions.one-action {
+  grid-template-columns: 1fr;
 }
 
 .detail-title {

@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 import memo_stack_sdk._payloads as _payloads
+from memo_stack_sdk.anchors import MemoStackAnchorsMixin
 from memo_stack_sdk.assets import MemoStackAssetsMixin
 from memo_stack_sdk.scopes import MemoryScope, ReadScope
 from memo_stack_sdk.thread_memory import MemoStackThreadMemoryMixin
@@ -29,7 +30,7 @@ class MemoStackError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class MemoStackClient(MemoStackAssetsMixin, MemoStackThreadMemoryMixin):
+class MemoStackClient(MemoStackAnchorsMixin, MemoStackAssetsMixin, MemoStackThreadMemoryMixin):
     base_url: str = "http://127.0.0.1:7788"
     token: str | None = None
     timeout: float = 10.0
