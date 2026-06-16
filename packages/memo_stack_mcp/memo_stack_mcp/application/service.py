@@ -10,18 +10,18 @@ from memo_stack_core.application.semantic_dedupe import (
     looks_equivalent_fact,
 )
 
-from memo_stack_mcp.application.normalization import (
-    normalize_optional_label as _normalize_optional_label,
-)
-from memo_stack_mcp.application.normalization import (
-    normalize_tool_tags as _normalize_tool_tags,
-)
 from memo_stack_mcp.application.context_link_review import (
     CONTEXT_LINK_STATUSES,
     CONTEXT_LINK_SUGGESTION_STATUSES,
     normalize_context_link_review_batch_items,
     normalize_context_link_review_item,
     status_filter_payload,
+)
+from memo_stack_mcp.application.normalization import (
+    normalize_optional_label as _normalize_optional_label,
+)
+from memo_stack_mcp.application.normalization import (
+    normalize_tool_tags as _normalize_tool_tags,
 )
 from memo_stack_mcp.application.policy import MemoryPolicyService
 from memo_stack_mcp.application.ports import MemoryGatewayPort

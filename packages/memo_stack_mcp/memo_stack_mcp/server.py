@@ -18,8 +18,8 @@ from memo_stack_mcp.domain.context_links import (
     MemoryContextLinkListResponse,
     MemoryContextLinkReviewBatchItemInput,
     MemoryContextLinkSuggestionListResponse,
-    MemoryReviewContextLinkSuggestionResponse,
     MemoryReviewContextLinksBatchResponse,
+    MemoryReviewContextLinkSuggestionResponse,
     MemorySuggestContextLinksResponse,
 )
 from memo_stack_mcp.domain.memory_browser import MemoryBrowserResponse
@@ -1860,9 +1860,15 @@ def create_mcp_server(
         reason: Annotated[str | None, Field(default=None, max_length=320)] = None,
         target_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
         target_id: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
-        relation_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
+        relation_type: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=80),
+        ] = None,
         confidence: Annotated[ConfidenceValue | None, Field(default=None)] = None,
-        link_reason: Annotated[str | None, Field(default=None, min_length=1, max_length=320)] = None,
+        link_reason: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=320),
+        ] = None,
     ) -> Annotated[CallToolResult, MemoryReviewContextLinkSuggestionResponse]:
         return _tool_response(
             await tool_service.review_context_link_suggestion(
