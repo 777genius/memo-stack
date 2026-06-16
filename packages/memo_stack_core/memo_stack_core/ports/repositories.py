@@ -278,6 +278,9 @@ class EpisodeRepositoryPort(Protocol):
     async def create(self, episode: MemoryEpisode) -> MemoryEpisode:
         """Persist a canonical transcript/interview episode."""
 
+    async def get_by_id(self, episode_id: str) -> MemoryEpisode | None:
+        """Load a canonical episode."""
+
     async def list_for_scope(
         self,
         *,

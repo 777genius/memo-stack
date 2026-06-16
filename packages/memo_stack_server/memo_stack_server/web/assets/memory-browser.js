@@ -10,6 +10,7 @@
     "capture",
     "chunk",
     "document",
+    "episode",
     "fact",
     "suggestion",
     "thread",

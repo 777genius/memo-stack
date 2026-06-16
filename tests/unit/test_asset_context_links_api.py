@@ -324,6 +324,84 @@ def test_context_link_suggestions_include_thread_anchor(tmp_path: Path) -> None:
     assert approved_data["link"]["metadata"]["external_ref"] == "alex-call"
 
 
+def test_context_link_suggestions_include_episode_target(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        episode = client.post(
+            "/v1/episodes",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-call",
+                "source_type": "transcript",
+                "source_external_id": "alex-call-last-week",
+                "text": "Alex call episode confirmed frontend memory linking decisions.",
+                "speaker": "user",
+            },
+            headers=auth_headers(),
+        )
+        assert episode.status_code == 200, episode.text
+        episode_id = episode.json()["data"]["episode_id"]
+
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-call",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "episode-link-capture",
+                "text": "Attach this screenshot to the Alex call memory linking episode.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-call",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex call memory linking episode",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        candidates = suggestions.json()["data"]["candidates"]
+        episode_candidate = next(
+            item
+            for item in candidates
+            if item["target_type"] == "episode" and item["target_id"] == episode_id
+        )
+        assert episode_candidate["label"] == "transcript - alex-call-last-week"
+        assert episode_candidate["metadata"]["source_external_id"] == "alex-call-last-week"
+        assert episode_candidate["metadata"]["thread_id"]
+        assert "same_thread" in episode_candidate["metadata"]["reason_codes"]
+        assert episode_candidate["suggestion_id"]
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{episode_candidate['suggestion_id']}/review",
+            json={"action": "approve", "reason": "linked to prior call episode"},
+            headers=auth_headers(),
+        )
+
+    assert approved.status_code == 200, approved.text
+    approved_data = approved.json()["data"]
+    assert approved_data["duplicate_link"] is False
+    assert approved_data["suggestion"]["target_type"] == "episode"
+    assert approved_data["suggestion"]["review_reason"] == "linked to prior call episode"
+    assert approved_data["link"]["target_type"] == "episode"
+    assert approved_data["link"]["target_id"] == episode_id
+    assert approved_data["link"]["metadata"]["source_external_id"] == "alex-call-last-week"
+
+
 def test_context_link_suggestions_include_document_and_chunk_targets(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         document = client.post(

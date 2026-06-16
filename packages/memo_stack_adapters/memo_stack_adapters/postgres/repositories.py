@@ -72,6 +72,10 @@ class PostgresEpisodeRepository(EpisodeRepositoryPort):
         self._session.add(episode_to_row(episode))
         return episode
 
+    async def get_by_id(self, episode_id: str) -> MemoryEpisode | None:
+        row = await self._session.get(MemoryEpisodeRow, episode_id)
+        return episode_row_to_domain(row) if row is not None else None
+
     async def list_for_scope(
         self,
         *,

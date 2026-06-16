@@ -11,6 +11,7 @@ _ALLOWED_ENDPOINT_STATUSES: dict[str, set[str]] = {
     "capture": {"accepted"},
     "chunk": {"active"},
     "document": {"active"},
+    "episode": {"active"},
     "fact": {"active", "disputed", "superseded"},
     "suggestion": {"pending", "approved", "rejected"},
     "thread": {"active"},
@@ -57,6 +58,8 @@ async def _load_endpoint(
         return await uow.chunks.get_by_id(endpoint_id)
     if endpoint_type == "document":
         return await uow.documents.get_by_id(endpoint_id)
+    if endpoint_type == "episode":
+        return await uow.episodes.get_by_id(endpoint_id)
     if endpoint_type == "fact":
         return await uow.facts.get_by_id(endpoint_id)
     if endpoint_type == "suggestion":

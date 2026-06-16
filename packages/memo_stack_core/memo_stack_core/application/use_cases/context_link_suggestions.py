@@ -88,6 +88,11 @@ class SuggestContextLinksUseCase:
                     query_text = _join_text(query_text, capture.text)
                     if capture.thread_id:
                         source_thread_id = str(capture.thread_id)
+            if command.source_type == "episode" and command.source_id:
+                episode = await uow.episodes.get_by_id(command.source_id)
+                if episode is not None and _same_scope(episode, command):
+                    query_text = _join_text(query_text, episode.text)
+                    source_thread_id = str(episode.thread_id)
             facts = await uow.facts.find_active(
                 space_id=str(command.space_id),
                 memory_scope_ids=(str(command.memory_scope_id),),
@@ -96,6 +101,13 @@ class SuggestContextLinksUseCase:
                 limit=max(command.limit * 3, 12),
             )
             recent_facts = await uow.facts.list_for_scope(
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                thread_id=None,
+                status="active",
+                limit=max(command.limit, 8),
+            )
+            episodes = await uow.episodes.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 thread_id=None,
@@ -246,6 +258,52 @@ class SuggestContextLinksUseCase:
                     metadata={
                         "version": fact.version,
                         "tags": list(fact.tags),
+                        "matched_terms": list(matched_terms),
+                    },
+                )
+            )
+        for episode in episodes:
+            key = ("episode", str(episode.id))
+            if key in seen or _is_same_source(key, command):
+                continue
+            seen.add(key)
+            target_text = " ".join(
+                part
+                for part in (
+                    episode.text,
+                    episode.source_type,
+                    episode.source_external_id,
+                    episode.speaker.value,
+                )
+                if part
+            )
+            score, reasons, matched_terms = _score_text_candidate(
+                query_terms=terms,
+                target_text=target_text,
+                updated_at=episode.occurred_at,
+                now=self._clock.now(),
+                base=44,
+            )
+            if str(episode.thread_id) == source_thread_id:
+                score += 12
+                reasons.append("same thread")
+            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+                continue
+            candidates.append(
+                _candidate(
+                    target_type="episode",
+                    target_id=str(episode.id),
+                    label=_episode_label(episode),
+                    preview=episode.text,
+                    score=score,
+                    reasons=reasons,
+                    metadata={
+                        "source_type": episode.source_type,
+                        "source_external_id": episode.source_external_id,
+                        "thread_id": str(episode.thread_id),
+                        "speaker": episode.speaker.value,
+                        "trust_level": episode.trust_level.value,
+                        "occurred_at": episode.occurred_at.isoformat(),
                         "matched_terms": list(matched_terms),
                     },
                 )
@@ -686,6 +744,12 @@ def _chunk_label(chunk: MemoryChunk) -> str:
     if isinstance(sequence, int):
         return f"{kind} #{sequence}{suffix}"
     return f"{kind}{suffix}"
+
+
+def _episode_label(episode: object) -> str:
+    source = str(getattr(episode, "source_external_id", "")).strip()
+    source_type = str(getattr(episode, "source_type", "")).strip()
+    return " - ".join(part for part in (source_type, source) if part) or "episode"
 
 
 def _confidence_for_candidate(candidate: ContextLinkCandidate) -> str:
