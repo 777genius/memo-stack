@@ -222,6 +222,17 @@ class MemoryGatewayPort(Protocol):
         reason: str | None,
     ) -> dict[str, Any]: ...
 
+    async def suggest_context_links(
+        self,
+        *,
+        scope: MemoryScope,
+        text: str,
+        source_type: str | None,
+        source_id: str | None,
+        limit: int,
+        persist: bool,
+    ) -> dict[str, Any]: ...
+
     async def list_context_links(
         self,
         *,

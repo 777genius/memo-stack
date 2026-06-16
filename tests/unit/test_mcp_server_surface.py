@@ -102,6 +102,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "memory_review_suggestions_batch",
             "memory_reject_suggestion",
             "memory_expire_suggestion",
+            "memory_suggest_context_links",
             "memory_list_context_links",
             "memory_list_context_link_suggestions",
             "memory_review_context_link_suggestion",
@@ -239,6 +240,13 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
             "reject",
             "expire",
         }
+        suggest_context_links = next(
+            tool for tool in tools if tool.name == "memory_suggest_context_links"
+        )
+        assert suggest_context_links.annotations.readOnlyHint is False
+        assert suggest_context_links.inputSchema["properties"]["limit"]["maximum"] == 30
+        assert "persist=true" in suggest_context_links.description
+        assert "does not create canonical links" in suggest_context_links.description
         context_links = next(tool for tool in tools if tool.name == "memory_list_context_links")
         assert context_links.annotations.readOnlyHint is True
         assert set(context_links.inputSchema["properties"]["status"]["anyOf"][0]["enum"]) == {

@@ -1209,6 +1209,59 @@ class MemoryToolService(
 
         return await self._guard(run)
 
+    async def suggest_context_links(
+        self,
+        *,
+        text: str = "",
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        thread_external_ref: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        limit: int = 10,
+        persist: bool = False,
+    ) -> dict[str, Any]:
+        async def run() -> dict[str, Any]:
+            ensure_bool("persist", persist)
+            if contains_sensitive_value(text):
+                raise MemoryGatewayError(
+                    status_code=403,
+                    code="memo_stack_mcp.policy.secret_detected",
+                    message="Context-link suggestion text contains a credential-like value",
+                    retryable=False,
+                )
+            effective_limit, warnings = clamp_int(
+                name="limit",
+                value=limit,
+                minimum=1,
+                maximum=30,
+            )
+            scope = self._scope(space_slug, memory_scope_external_ref, thread_external_ref)
+            policy = self._decide_policy(
+                operation=MemoryPolicyOperation.SUGGEST,
+                text=text or f"{source_type or 'source'}:{source_id or 'unknown'}",
+                source_type=source_type,
+            )
+            payload = await self._gateway.suggest_context_links(
+                scope=scope,
+                text=text,
+                source_type=source_type,
+                source_id=source_id,
+                limit=effective_limit,
+                persist=persist,
+            )
+            return self._ok(
+                "Context-link candidates suggested for review."
+                if persist
+                else "Context-link candidates suggested.",
+                data=payload.get("data", payload),
+                policy=self._policy_payload(policy),
+                side_effects=["created_context_link_suggestions"] if persist else [],
+                warnings=list(policy.warnings) + warnings,
+            )
+
+        return await self._guard(run)
+
     async def list_context_links(
         self,
         *,

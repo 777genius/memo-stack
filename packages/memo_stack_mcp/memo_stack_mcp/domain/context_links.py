@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import Field
 
@@ -40,6 +40,24 @@ class MemoryContextLinkListData(McpDataModel):
 
 class MemoryContextLinkSuggestionListData(McpDataModel):
     items: list[MemoryContextLinkSuggestionData] = Field(default_factory=list)
+
+
+class MemoryContextLinkCandidateData(McpDataModel):
+    target_type: str | None = None
+    target_id: str | None = None
+    label: str | None = None
+    preview: str | None = None
+    score: float | None = None
+    tier: str | None = None
+    reasons: list[str] = Field(default_factory=list)
+    suggestion_id: str | None = None
+    status: str | None = None
+    metadata: dict[str, ContextLinkMetadataValue] = Field(default_factory=dict)
+
+
+class MemorySuggestContextLinksData(McpDataModel):
+    candidates: list[MemoryContextLinkCandidateData] = Field(default_factory=list)
+    diagnostics: dict[str, ContextLinkMetadataValue] = Field(default_factory=dict)
 
 
 class MemoryReviewContextLinkSuggestionData(McpDataModel):
@@ -80,6 +98,10 @@ class MemoryContextLinkListResponse(McpToolResponse):
 
 class MemoryContextLinkSuggestionListResponse(McpToolResponse):
     data: MemoryContextLinkSuggestionListData | None = None
+
+
+class MemorySuggestContextLinksResponse(McpToolResponse):
+    data: MemorySuggestContextLinksData | None = None
 
 
 class MemoryReviewContextLinkSuggestionResponse(McpToolResponse):

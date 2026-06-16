@@ -15,6 +15,27 @@ class ContextLinkGateway:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
+    async def suggest_context_links(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("suggest_context_links", kwargs))
+        return {
+            "data": {
+                "candidates": [
+                    {
+                        "target_type": "fact",
+                        "target_id": "fact_1",
+                        "label": "Project Atlas",
+                        "preview": "Alex Project Atlas review flow",
+                        "score": 0.9,
+                        "tier": "strong",
+                        "reasons": ["matched terms"],
+                        "suggestion_id": "cls_1" if kwargs["persist"] else None,
+                        "status": "pending" if kwargs["persist"] else None,
+                    }
+                ],
+                "diagnostics": {"persisted": kwargs["persist"]},
+            }
+        }
+
     async def list_context_links(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("list_context_links", kwargs))
         return {
@@ -98,6 +119,56 @@ class ContextLinkGateway:
                 ],
             }
         }
+
+
+def test_service_suggests_context_links_with_persisted_review_queue() -> None:
+    async def run() -> None:
+        gateway = ContextLinkGateway()
+        service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+
+        result = await service.suggest_context_links(
+            space_slug="team",
+            memory_scope_external_ref="scope",
+            thread_external_ref="thread-1",
+            source_type="capture",
+            source_id="cap_1",
+            text="Alex Project Atlas screenshot review flow",
+            limit=100,
+            persist=True,
+        )
+
+        assert result["ok"] is True
+        assert result["data"]["candidates"][0]["suggestion_id"] == "cls_1"
+        assert result["diagnostics"]["side_effects"] == ["created_context_link_suggestions"]
+        assert result["diagnostics"]["warnings"] == ["limit_clamped_to_max"]
+        call_name, payload = gateway.calls[0]
+        assert call_name == "suggest_context_links"
+        assert payload["scope"].space_slug == "team"
+        assert payload["scope"].memory_scope_external_ref == "scope"
+        assert payload["scope"].thread_external_ref == "thread-1"
+        assert payload["source_type"] == "capture"
+        assert payload["source_id"] == "cap_1"
+        assert payload["limit"] == 30
+        assert payload["persist"] is True
+
+    asyncio.run(run())
+
+
+def test_service_suggest_context_links_rejects_secret_text() -> None:
+    async def run() -> None:
+        gateway = ContextLinkGateway()
+        service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
+
+        result = await service.suggest_context_links(
+            text="api key sk-test-secret-token should not be linked",
+            persist=True,
+        )
+
+        assert result["ok"] is False
+        assert result["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
+        assert gateway.calls == []
+
+    asyncio.run(run())
 
 
 def test_service_lists_context_links_with_bounded_status_filters() -> None:
@@ -197,6 +268,7 @@ def test_mcp_context_link_tool_schema_is_bounded_and_typed() -> None:
         )
         tools = await server.list_tools()
 
+        suggest = next(tool for tool in tools if tool.name == "memory_suggest_context_links")
         list_links = next(tool for tool in tools if tool.name == "memory_list_context_links")
         list_suggestions = next(
             tool for tool in tools if tool.name == "memory_list_context_link_suggestions"
@@ -210,6 +282,9 @@ def test_mcp_context_link_tool_schema_is_bounded_and_typed() -> None:
             if tool.name == "memory_review_context_link_suggestions_batch"
         )
 
+        assert suggest.annotations.readOnlyHint is False
+        assert suggest.inputSchema["properties"]["limit"]["maximum"] == 30
+        assert "pending link suggestions" in suggest.description
         assert list_links.annotations.readOnlyHint is True
         assert list_suggestions.annotations.readOnlyHint is True
         assert review.annotations.readOnlyHint is False
@@ -249,6 +324,22 @@ def test_http_gateway_context_link_review_contract() -> None:
             statuses="approved,rejected",
             limit=20,
         )
+        await gateway.suggest_context_links(
+            scope=type(
+                "Scope",
+                (),
+                {
+                    "space_slug": "team",
+                    "memory_scope_external_ref": "scope",
+                    "thread_external_ref": "thread",
+                },
+            )(),
+            text="Alex screenshot",
+            source_type="capture",
+            source_id="cap_1",
+            limit=5,
+            persist=True,
+        )
         await gateway.review_context_link_suggestions_batch(
             items=[{"suggestion_id": "cls_1", "action": "reject"}],
             continue_on_error=True,
@@ -263,6 +354,20 @@ def test_http_gateway_context_link_review_contract() -> None:
         "source_id=cap_1&statuses=approved%2Crejected&limit=20"
     )
     assert seen[1] == {
+        "method": "POST",
+        "url": "http://memory.test/v1/link-suggestions",
+        "body": {
+            "space_slug": "team",
+            "memory_scope_external_ref": "scope",
+            "thread_external_ref": "thread",
+            "text": "Alex screenshot",
+            "source_type": "capture",
+            "source_id": "cap_1",
+            "limit": 5,
+            "persist": True,
+        },
+    }
+    assert seen[2] == {
         "method": "POST",
         "url": "http://memory.test/v1/context-link-suggestions/review-batch",
         "body": {

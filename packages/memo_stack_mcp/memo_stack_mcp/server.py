@@ -20,6 +20,7 @@ from memo_stack_mcp.domain.context_links import (
     MemoryContextLinkSuggestionListResponse,
     MemoryReviewContextLinkSuggestionResponse,
     MemoryReviewContextLinksBatchResponse,
+    MemorySuggestContextLinksResponse,
 )
 from memo_stack_mcp.domain.models import (
     MemoryCaptureListResponse,
@@ -1609,6 +1610,56 @@ def create_mcp_server(
         return _tool_response(
             await tool_service.expire_suggestion(suggestion_id=suggestion_id, reason=reason),
             MemoryReviewSuggestionResponse,
+        )
+
+    @mcp.tool(
+        name="memory_suggest_context_links",
+        title="Suggest Context Links",
+        description=(
+            "Suggest candidate context links for a capture, asset, fact, document, chunk, "
+            "thread, or free text. Use persist=false for read-only candidate ranking. Use "
+            "persist=true only when the user wants pending link suggestions saved for later "
+            "review; this does not create canonical links until review approval."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+        structured_output=True,
+    )
+    async def memory_suggest_context_links(
+        text: Annotated[str, Field(default="", max_length=20_000)] = "",
+        space_slug: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        memory_scope_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        thread_external_ref: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=160),
+        ] = None,
+        source_type: Annotated[str | None, Field(default=None, min_length=1, max_length=80)] = None,
+        source_id: Annotated[str | None, Field(default=None, min_length=1, max_length=160)] = None,
+        limit: Annotated[int, Field(default=10, ge=1, le=30)] = 10,
+        persist: Annotated[
+            bool,
+            Field(default=False, description="Create pending suggestions for review."),
+        ] = False,
+    ) -> Annotated[CallToolResult, MemorySuggestContextLinksResponse]:
+        return _tool_response(
+            await tool_service.suggest_context_links(
+                text=text,
+                space_slug=space_slug,
+                memory_scope_external_ref=memory_scope_external_ref,
+                thread_external_ref=thread_external_ref,
+                source_type=source_type,
+                source_id=source_id,
+                limit=limit,
+                persist=persist,
+            ),
+            MemorySuggestContextLinksResponse,
         )
 
     @mcp.tool(

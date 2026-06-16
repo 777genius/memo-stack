@@ -49,38 +49,18 @@ def test_context_link_review_mcp_service_e2e(tmp_path: Path) -> None:
             text="Save Alex Project Atlas screenshot for memory browser review flow.",
             source_authority="user_statement",
         )
-        suggestions = client.suggest_context_links(
-            space_slug="context-link-mcp-e2e",
-            memory_scope_external_ref="default",
-            thread_external_ref="review",
-            source_type="capture",
-            source_id=capture["data"]["id"],
-            text="Alex Project Atlas screenshot memory browser review flow",
-            persist=True,
-            limit=8,
-        )
-        accepted = next(
-            item
-            for item in suggestions["data"]["candidates"]
-            if item["target_type"] == "fact" and item["target_id"] == fact["data"]["id"]
-        )
-        rejected = next(
-            item
-            for item in suggestions["data"]["candidates"]
-            if item["suggestion_id"] != accepted["suggestion_id"]
-        )
-
         result = asyncio.run(
             _review_links_with_mcp_service(
                 base_url=server.base_url,
                 token=server.token,
                 source_id=capture["data"]["id"],
-                accepted_suggestion_id=accepted["suggestion_id"],
-                rejected_suggestion_id=rejected["suggestion_id"],
                 target_fact_id=fact["data"]["id"],
             )
         )
 
+    assert result["suggested"]["diagnostics"]["side_effects"] == [
+        "created_context_link_suggestions"
+    ]
     assert result["listed_pending"] >= 2
     assert result["reviewed"]["data"]["applied"] == 2
     assert result["reviewed"]["diagnostics"]["side_effects"] == [
@@ -95,8 +75,6 @@ async def _review_links_with_mcp_service(
     base_url: str,
     token: str,
     source_id: str,
-    accepted_suggestion_id: str,
-    rejected_suggestion_id: str,
     target_fact_id: str,
 ) -> dict[str, object]:
     service = MemoryToolService(
@@ -110,6 +88,24 @@ async def _review_links_with_mcp_service(
             default_memory_scope_external_ref="default",
         ),
     )
+    suggested = await service.suggest_context_links(
+        thread_external_ref="review",
+        source_type="capture",
+        source_id=source_id,
+        text="Alex Project Atlas screenshot memory browser review flow",
+        persist=True,
+        limit=8,
+    )
+    accepted = next(
+        item
+        for item in suggested["data"]["candidates"]
+        if item["target_type"] == "fact" and item["target_id"] == target_fact_id
+    )
+    rejected = next(
+        item
+        for item in suggested["data"]["candidates"]
+        if item["suggestion_id"] != accepted["suggestion_id"]
+    )
     pending = await service.list_context_link_suggestions(
         source_type="capture",
         source_id=source_id,
@@ -118,7 +114,7 @@ async def _review_links_with_mcp_service(
     reviewed = await service.review_context_link_suggestions_batch(
         items=[
             {
-                "suggestion_id": accepted_suggestion_id,
+                "suggestion_id": accepted["suggestion_id"],
                 "action": "approve",
                 "target_type": "fact",
                 "target_id": target_fact_id,
@@ -127,7 +123,7 @@ async def _review_links_with_mcp_service(
                 "link_reason": "mcp reviewer selected exact fact target",
             },
             {
-                "suggestion_id": rejected_suggestion_id,
+                "suggestion_id": rejected["suggestion_id"],
                 "action": "reject",
                 "reason": "mcp reviewer rejected lower priority target",
             },
@@ -146,6 +142,7 @@ async def _review_links_with_mcp_service(
         limit=20,
     )
     return {
+        "suggested": suggested,
         "listed_pending": len(pending["data"]["items"]),
         "reviewed": reviewed,
         "links": links,

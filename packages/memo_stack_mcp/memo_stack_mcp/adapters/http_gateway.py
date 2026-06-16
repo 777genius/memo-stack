@@ -495,6 +495,33 @@ class HttpMemoryGateway:
             json=_without_none({"reason": reason}),
         )
 
+    async def suggest_context_links(
+        self,
+        *,
+        scope: MemoryScope,
+        text: str,
+        source_type: str | None,
+        source_id: str | None,
+        limit: int,
+        persist: bool,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/link-suggestions",
+            json=_without_none(
+                {
+                    "space_slug": scope.space_slug,
+                    "memory_scope_external_ref": scope.memory_scope_external_ref,
+                    "thread_external_ref": scope.thread_external_ref,
+                    "text": text,
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "limit": limit,
+                    "persist": persist,
+                }
+            ),
+        )
+
     async def list_context_links(
         self,
         *,
