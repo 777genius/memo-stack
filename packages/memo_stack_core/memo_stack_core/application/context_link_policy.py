@@ -13,6 +13,7 @@ MAX_SUGGESTIONS_PER_SOURCE = 10
 MIN_REVIEW_SCORE = 40.0
 MIN_STRONG_SIGNAL_REVIEW_SCORE = 55.0
 AUTO_APPROVE_ELIGIBLE_SCORE = 92.0
+MAX_POLICY_CANDIDATES_CONSIDERED = 120
 MAX_DENIED_DIAGNOSTIC_ITEMS = 8
 MAX_REASON_CODES = 12
 MAX_DENIED_DIAGNOSTIC_TEXT_CHARS = 160
@@ -65,8 +66,9 @@ def apply_context_link_policy(
     needs_review_count = 0
     denied_reason_counts: dict[str, int] = {}
     denied_candidates: list[dict[str, object]] = []
+    candidate_pool = candidates[:MAX_POLICY_CANDIDATES_CONSIDERED]
 
-    for candidate in candidates:
+    for candidate in candidate_pool:
         decision = decide_context_link_candidate(candidate)
         if decision.outcome == "deny":
             denied_count += 1
@@ -99,7 +101,10 @@ def apply_context_link_policy(
         candidates=tuple(accepted),
         diagnostics={
             "link_policy_version": POLICY_VERSION,
-            "link_policy_candidates_considered": len(candidates),
+            "link_policy_candidates_received": len(candidates),
+            "link_policy_candidates_considered": len(candidate_pool),
+            "link_policy_candidate_considered_cap": MAX_POLICY_CANDIDATES_CONSIDERED,
+            "link_policy_candidates_truncated": len(candidate_pool) < len(candidates),
             "link_policy_candidates_returned": len(accepted),
             "link_policy_denied_count": denied_count,
             "link_policy_duplicate_suppressed_count": duplicate_count,

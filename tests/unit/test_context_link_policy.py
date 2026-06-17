@@ -1,4 +1,6 @@
 from memo_stack_core.application.context_link_policy import (
+    MAX_DENIED_DIAGNOSTIC_ITEMS,
+    MAX_POLICY_CANDIDATES_CONSIDERED,
     MAX_REASON_CODES,
     MAX_SUGGESTIONS_PER_SOURCE,
     apply_context_link_policy,
@@ -123,6 +125,35 @@ def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
     assert first_metadata["review_gate"] == "required"
     assert first_metadata["auto_approve_eligible"] is True
     assert first_metadata["policy_confidence"] == "high"
+
+
+def test_policy_caps_candidates_considered_before_review_decisions() -> None:
+    candidates = tuple(
+        _candidate(
+            target_id=f"denied_{index}",
+            score=39,
+            reason_codes=["recent_context"],
+        )
+        for index in range(MAX_POLICY_CANDIDATES_CONSIDERED + 25)
+    )
+
+    result = apply_context_link_policy(candidates, limit=10, persist=True)
+
+    assert result.candidates == ()
+    assert result.diagnostics["link_policy_candidates_received"] == (
+        MAX_POLICY_CANDIDATES_CONSIDERED + 25
+    )
+    assert (
+        result.diagnostics["link_policy_candidates_considered"]
+        == MAX_POLICY_CANDIDATES_CONSIDERED
+    )
+    assert result.diagnostics["link_policy_candidate_considered_cap"] == (
+        MAX_POLICY_CANDIDATES_CONSIDERED
+    )
+    assert result.diagnostics["link_policy_candidates_truncated"] is True
+    assert result.diagnostics["link_policy_denied_count"] == MAX_POLICY_CANDIDATES_CONSIDERED
+    assert len(result.diagnostics["link_policy_denied_candidates"]) == MAX_DENIED_DIAGNOSTIC_ITEMS
+    assert f"denied_{MAX_POLICY_CANDIDATES_CONSIDERED + 24}" not in repr(result.diagnostics)
 
 
 def test_policy_normalizes_reason_codes_without_raw_text_or_secrets() -> None:
