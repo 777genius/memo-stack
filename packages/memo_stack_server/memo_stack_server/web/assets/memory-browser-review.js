@@ -10,7 +10,18 @@
     renderSuggestionList,
     reviewRelationMatches,
     reviewTargetMatches,
+    visiblePendingContextLinkReviews,
   };
+
+  const FOCUSABLE_SELECTOR = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+  let previousModalFocus = null;
 
   function browser() {
     return window.memoStackBrowser;
@@ -25,8 +36,15 @@
       }
     });
     window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !els.reviewModal.hidden) {
+      if (els.reviewModal.hidden) {
+        return;
+      }
+      if (event.key === "Escape") {
         closeReviewModal();
+        return;
+      }
+      if (event.key === "Tab") {
+        trapModalFocus(event);
       }
     });
   }
@@ -56,14 +74,7 @@
           (candidate) => reviewStatusMatches(candidate, "pending") && reviewTargetMatches(candidate),
         )
       : [];
-    const linkReviews = reviewTypeMatches("link")
-      ? state.contextLinkSuggestions.filter(
-          (suggestion) =>
-            reviewStatusMatches(suggestion, suggestion.status) &&
-            reviewRelationMatches(suggestion) &&
-            reviewTargetMatches(suggestion),
-        )
-      : [];
+    const linkReviews = visibleContextLinkReviews();
     const factReviews = reviewTypeMatches("fact") && !relationScoped
       ? state.suggestions.filter(
           (suggestion) => reviewStatusMatches(suggestion, suggestion.status) && reviewTargetMatches(suggestion),
@@ -94,9 +105,7 @@
     }
     if (linkReviews.length) {
       els.suggestionList.append(sectionLabel("Link reviews"));
-      const pendingLinkReviews = linkReviews.filter(
-        (suggestion) => suggestion.status === "pending",
-      );
+      const pendingLinkReviews = visiblePendingContextLinkReviews();
       if (pendingLinkReviews.length) {
         const batchActions = document.createElement("div");
         batchActions.className = "action-row two-actions";
@@ -174,6 +183,9 @@
 
   function openReviewModal(title, ...content) {
     const { els } = browser();
+    if (!els.reviewModal.contains(document.activeElement)) {
+      previousModalFocus = document.activeElement;
+    }
     els.reviewModalTitle.textContent = title || "Review details";
     els.reviewModalBody.replaceChildren();
     for (const child of content.flat()) {
@@ -182,16 +194,29 @@
       }
     }
     els.reviewModal.hidden = false;
+    els.reviewModal.setAttribute("role", "dialog");
+    els.reviewModal.setAttribute("aria-modal", "true");
+    window.setTimeout(() => focusFirstModalControl(), 0);
   }
 
   function closeReviewModal() {
     const { els } = browser();
     els.reviewModal.hidden = true;
     els.reviewModalBody.replaceChildren();
+    if (previousModalFocus && typeof previousModalFocus.focus === "function") {
+      previousModalFocus.focus();
+    }
+    previousModalFocus = null;
   }
 
   function openContextLinkReviewModal(suggestion) {
-    const { actionButton, contextLinkEditForm, reviewContextLinkSuggestion, shortId } = browser();
+    const {
+      actionButton,
+      contextLinkEditForm,
+      formatContextLinkReviewAudit,
+      reviewContextLinkSuggestion,
+      shortId,
+    } = browser();
     const grid = document.createElement("div");
     grid.className = "review-grid";
     grid.append(
@@ -204,6 +229,19 @@
       ),
     );
     const content = [contextLinkSuggestionSection(suggestion), grid];
+    const audit = formatContextLinkReviewAudit(suggestion.review_audit);
+    if (audit) {
+      const history = document.createElement("section");
+      history.className = "source-list";
+      const heading = document.createElement("h3");
+      heading.className = "detail-title";
+      heading.textContent = "Review history";
+      const body = document.createElement("div");
+      body.className = "text-block";
+      body.textContent = audit;
+      history.append(heading, body);
+      content.push(history);
+    }
     if (suggestion.status === "pending") {
       const actions = document.createElement("div");
       actions.className = "action-row two-actions";
@@ -357,6 +395,22 @@
     return selected === "all" || selected === type;
   }
 
+  function visibleContextLinkReviews() {
+    if (!reviewTypeMatches("link")) {
+      return [];
+    }
+    return browser().state.contextLinkSuggestions.filter(
+      (suggestion) =>
+        reviewStatusMatches(suggestion, suggestion.status) &&
+        reviewRelationMatches(suggestion) &&
+        reviewTargetMatches(suggestion),
+    );
+  }
+
+  function visiblePendingContextLinkReviews() {
+    return visibleContextLinkReviews().filter((suggestion) => suggestion.status === "pending");
+  }
+
   function reviewStatusMatches(item, fallbackStatus) {
     const selected = browser().state.reviewStatusFilter || "pending";
     if (selected === "all") {
@@ -481,5 +535,39 @@
   function contextObjectEvidenceRefs(object) {
     const { arrayOf } = browser();
     return [...arrayOf(object.source_refs), ...arrayOf(object.evidence_refs)];
+  }
+
+  function focusableModalElements() {
+    const { els } = browser();
+    return [...els.reviewModal.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+      (element) => element.getClientRects().length > 0,
+    );
+  }
+
+  function focusFirstModalControl() {
+    const { els } = browser();
+    const first = focusableModalElements()[0] || els.reviewModalClose;
+    if (first && typeof first.focus === "function") {
+      first.focus();
+    }
+  }
+
+  function trapModalFocus(event) {
+    const focusable = focusableModalElements();
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+      return;
+    }
+    if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 })();

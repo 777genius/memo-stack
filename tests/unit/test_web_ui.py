@@ -85,13 +85,19 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "reviewStatusMatches" in review_js.text
     assert "reviewRelationMatches" in review_js.text
     assert "reviewTargetMatches" in review_js.text
+    assert "visiblePendingContextLinkReviews" in review_js.text
     assert "openContextLinkReviewModal" in review_js.text
     assert "openAnchorMergeReviewModal" in review_js.text
     assert "openFactSuggestionReviewModal" in review_js.text
     assert "Source evidence" in review_js.text
     assert "Target preview" in review_js.text
+    assert "Review history" in js.text
+    assert "Review history" in review_js.text
+    assert "formatContextLinkReviewAudit" in js.text
+    assert "trapModalFocus" in review_js.text
     assert "modal-overlay" in css.text
     assert "review-grid" in css.text
+    assert "white-space: pre-wrap" in css.text
     assert "Edit Link" in js.text
     assert "Save Link" in js.text
     assert "Edit history" in js.text

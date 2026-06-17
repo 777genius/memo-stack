@@ -78,6 +78,7 @@
     keyValueItem: (...args) => keyValueItem(...args),
     sourceSection: (...args) => sourceSection(...args),
     contextLinkEditForm: (...args) => contextLinkEditForm(...args),
+    formatContextLinkReviewAudit: (...args) => formatContextLinkReviewAudit(...args),
     manualContextLinkForm: (...args) => manualContextLinkForm(...args),
     reviewSuggestion: (...args) => reviewSuggestion(...args),
     reviewContextLinkSuggestion: (...args) => reviewContextLinkSuggestion(...args),
@@ -782,12 +783,7 @@
   }
 
   async function reviewPendingContextLinkSuggestionsBatch(action) {
-    const pending = state.contextLinkSuggestions.filter(
-      (suggestion) =>
-        suggestion.status === "pending" &&
-        window.memoStackReview.reviewRelationMatches(suggestion) &&
-        window.memoStackReview.reviewTargetMatches(suggestion),
-    );
+    const pending = window.memoStackReview.visiblePendingContextLinkReviews();
     const batch = pending.slice(0, 50);
     if (!batch.length) {
       setError("No pending link reviews.");
@@ -1730,6 +1726,10 @@
       keyValueItem("Target preview", suggestion.metadata?.target_preview || ""),
       keyValueItem("Updated", formatDate(suggestion.updated_at)),
     );
+    const reviewAudit = formatContextLinkReviewAudit(suggestion.review_audit);
+    if (reviewAudit) {
+      section.append(keyValueItem("Review history", reviewAudit));
+    }
     const reasons = [
       ...arrayOf(suggestion.metadata?.reasons),
       ...arrayOf(suggestion.metadata?.reason_codes),
@@ -1801,6 +1801,22 @@
   function formatContextLinkEditEvent(event) {
     const changed = arrayOf(event.changed_fields).join(", ") || "metadata";
     return `${formatDate(event.edited_at)} ${event.source || "manual"}: ${changed}`;
+  }
+
+  function formatContextLinkReviewAudit(audit) {
+    const events = arrayOf(audit?.events).filter((event) => event && typeof event === "object");
+    if (!events.length) {
+      return "";
+    }
+    return events
+      .slice(-5)
+      .map((event) => {
+        const when = formatDate(event.reviewed_at) || "reviewed";
+        const action = event.action || event.new_status || "review";
+        const reason = event.reason ? ` - ${event.reason}` : "";
+        return `${when} ${action}${reason}`;
+      })
+      .join("\n");
   }
 
   function keyValueItem(title, text) {
@@ -2361,9 +2377,19 @@
     if (className) {
       button.className = className;
     }
-    button.addEventListener("click", (event) => {
+    button.addEventListener("click", async (event) => {
       event.stopPropagation();
-      void handler();
+      if (button.disabled) {
+        return;
+      }
+      button.disabled = true;
+      try {
+        await handler();
+      } finally {
+        if (button.isConnected) {
+          button.disabled = false;
+        }
+      }
     });
     return button;
   }
