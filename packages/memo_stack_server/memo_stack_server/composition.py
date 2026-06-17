@@ -337,7 +337,11 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     get_asset = GetAssetUseCase(uow_factory=uow_factory)
     list_assets = ListAssetsUseCase(uow_factory=uow_factory)
-    delete_asset = DeleteAssetUseCase(uow_factory=uow_factory, clock=clock)
+    delete_asset = DeleteAssetUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        blob_storage=blob_storage,
+    )
     read_asset_bytes = ReadAssetBytesUseCase(
         uow_factory=uow_factory,
         blob_storage=blob_storage,

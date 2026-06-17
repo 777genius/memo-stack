@@ -39,6 +39,13 @@ def auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
     return headers
 
 
+def stored_blob_files(asset_storage_dir: Path) -> list[Path]:
+    return sorted(
+        (path for path in asset_storage_dir.rglob("*") if path.is_file()),
+        key=lambda path: str(path),
+    )
+
+
 def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         fact = client.post(
@@ -1850,6 +1857,7 @@ def test_asset_upload_rejects_invalid_content_length(tmp_path: Path) -> None:
 
 
 def test_asset_delete_soft_deletes_and_blocks_reads(tmp_path: Path) -> None:
+    asset_storage_dir = tmp_path / "assets"
     with make_client(tmp_path, extraction_enabled=True) as client:
         upload = client.post(
             "/v1/assets",
@@ -1900,6 +1908,57 @@ def test_asset_delete_soft_deletes_and_blocks_reads(tmp_path: Path) -> None:
     assert deleted_list.json()["data"][0]["id"] == asset_id
     assert download.status_code == 404
     assert extraction.status_code == 404
+    assert stored_blob_files(asset_storage_dir) == []
+
+
+def test_asset_delete_retains_shared_blob_until_last_reference(tmp_path: Path) -> None:
+    asset_storage_dir = tmp_path / "assets"
+    content = b"shared blob bytes"
+    with make_client(tmp_path, extraction_enabled=True) as client:
+        first = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-a",
+                "filename": "shared.txt",
+            },
+            content=content,
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        second = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-b",
+                "filename": "shared.txt",
+            },
+            content=content,
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        first_id = first.json()["data"]["id"]
+        second_id = second.json()["data"]["id"]
+        first_delete = client.delete(f"/v1/assets/{first_id}", headers=auth_headers())
+        second_download = client.get(f"/v1/assets/{second_id}/download", headers=auth_headers())
+        files_after_first_delete = stored_blob_files(asset_storage_dir)
+        second_delete = client.delete(f"/v1/assets/{second_id}", headers=auth_headers())
+        second_download_after_delete = client.get(
+            f"/v1/assets/{second_id}/download",
+            headers=auth_headers(),
+        )
+
+    assert first_id != second_id
+    assert first_delete.status_code == 200
+    assert second_download.status_code == 200
+    assert second_download.content == content
+    assert files_after_first_delete != []
+    assert second_delete.status_code == 200
+    assert second_download_after_delete.status_code == 404
+    assert stored_blob_files(asset_storage_dir) == []
 
 
 def test_scoped_tokens_can_only_access_assets_and_links_in_their_memory_scope(

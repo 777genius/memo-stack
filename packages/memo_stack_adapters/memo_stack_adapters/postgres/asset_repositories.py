@@ -100,6 +100,23 @@ class PostgresAssetRepository(AssetRepositoryPort):
         ).scalar_one_or_none()
         return asset_row_to_domain(row) if row is not None else None
 
+    async def has_stored_with_storage_key(
+        self,
+        *,
+        storage_key: str,
+        excluding_asset_id: str | None = None,
+    ) -> bool:
+        conditions = [
+            MemoryAssetRow.storage_key == storage_key,
+            MemoryAssetRow.status == "stored",
+        ]
+        if excluding_asset_id is not None:
+            conditions.append(MemoryAssetRow.id != excluding_asset_id)
+        row = (
+            await self._session.execute(select(MemoryAssetRow.id).where(*conditions).limit(1))
+        ).scalar_one_or_none()
+        return row is not None
+
     async def list_for_scope(
         self,
         *,

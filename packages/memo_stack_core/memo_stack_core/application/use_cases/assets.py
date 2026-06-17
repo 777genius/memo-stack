@@ -136,18 +136,28 @@ class DeleteAssetUseCase:
         *,
         uow_factory: UnitOfWorkFactoryPort,
         clock: ClockPort,
+        blob_storage: BlobStoragePort,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
+        self._blob_storage = blob_storage
 
     async def execute(self, command: DeleteAssetCommand) -> AssetResult:
         now = self._clock.now()
+        should_delete_blob = False
         async with self._uow_factory() as uow:
             asset = await uow.assets.get_by_id(command.asset_id)
             if asset is None:
                 raise MemoryNotFoundError("Asset not found")
+            storage_key = asset.storage_key
             saved = await uow.assets.save(asset.delete(now=now))
+            should_delete_blob = not await uow.assets.has_stored_with_storage_key(
+                storage_key=storage_key,
+                excluding_asset_id=str(asset.id),
+            )
             await uow.commit()
+        if should_delete_blob:
+            await self._blob_storage.delete(storage_key=storage_key)
         return AssetResult(asset=saved)
 
 

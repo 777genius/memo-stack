@@ -50,6 +50,14 @@ class AssetRepositoryPort(Protocol):
     ) -> MemoryAsset | None:
         """Find a stored asset duplicate in the same scope."""
 
+    async def has_stored_with_storage_key(
+        self,
+        *,
+        storage_key: str,
+        excluding_asset_id: str | None = None,
+    ) -> bool:
+        """Check whether a stored asset still references a blob storage key."""
+
     async def list_for_scope(
         self,
         *,
