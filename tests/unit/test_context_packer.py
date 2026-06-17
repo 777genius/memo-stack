@@ -491,6 +491,39 @@ def test_context_packer_returns_normalized_item_diagnostics() -> None:
     assert len(diagnostics["provenance"]["steps"]) == 8
 
 
+def test_context_diagnostics_keep_selected_retrieval_source_when_sources_are_noisy() -> None:
+    secret = "Bearer sk-proj-secretvalue1234567890"
+    result = ContextPacker().pack(
+        bundle_id="ctx_noisy_sources",
+        items=(
+            ContextItem(
+                item_id="chunk_noisy_sources",
+                item_type="chunk",
+                text="Noisy provider source diagnostics",
+                score=0.9,
+                source_refs=(SourceRef(source_type="document", source_id="doc"),),
+                diagnostics={
+                    "memory_scope_id": "memory_scope_default",
+                    "retrieval_source": "keyword_chunks",
+                    "retrieval_sources": [
+                        secret,
+                        *(f"provider_noise_{index}" for index in range(20)),
+                    ],
+                },
+            ),
+        ),
+        token_budget=512,
+    )
+
+    diagnostics = result.bundle.items[0].diagnostics or {}
+    serialized = repr(diagnostics["retrieval_sources"])
+    assert diagnostics["retrieval_source"] == "keyword_chunks"
+    assert diagnostics["retrieval_sources"][0] == "keyword_chunks"
+    assert len(diagnostics["retrieval_sources"]) == 8
+    assert "[redacted]" not in serialized
+    assert "sk-proj-secretvalue1234567890" not in serialized
+
+
 def test_context_policy_thread_visibility() -> None:
     assert thread_is_visible(None, "thread-1") is True
     assert thread_is_visible("thread-1", "thread-1") is True

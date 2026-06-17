@@ -129,12 +129,12 @@ def normalize_context_bundle_diagnostics(
 def diagnostic_retrieval_sources(diagnostics: object) -> tuple[str, ...]:
     raw = _as_dict(diagnostics)
     values: list[str] = []
-    raw_sources = raw.get("retrieval_sources")
-    if isinstance(raw_sources, (list, tuple)):
-        values.extend(_safe_retrieval_source(value) or "" for value in raw_sources)
     raw_source = _safe_retrieval_source(raw.get("retrieval_source"))
     if raw_source:
         values.append(raw_source)
+    raw_sources = raw.get("retrieval_sources")
+    if isinstance(raw_sources, (list, tuple)):
+        values.extend(_safe_retrieval_source(value) or "" for value in raw_sources)
     return _ordered_unique(tuple(value for value in values if value))
 
 
@@ -264,6 +264,8 @@ def _safe_retrieval_source(value: object) -> str | None:
     if value is None:
         return None
     text = safe_metadata_text(str(value), limit=_MAX_DIAGNOSTIC_KEY_CHARS).strip()
+    if "[redacted]" in text:
+        return None
     return text or None
 
 
