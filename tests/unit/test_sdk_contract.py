@@ -616,6 +616,8 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         token_budget=512,
         max_facts=4,
         max_chunks=6,
+        consistency_mode="canonical_only",
+        max_conflicting_suggestions=2,
     )
     client.search(
         space_slug="client-app",
@@ -624,6 +626,8 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         token_budget=1024,
         max_facts=8,
         max_chunks=10,
+        consistency_mode="best_effort",
+        max_conflicting_suggestions=3,
     )
 
     assert [f"{method} {path}" for method, path, _body in seen] == [
@@ -636,7 +640,11 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     assert "space_id" not in seen[0][2]
     assert seen[1][2]["max_facts"] == 4
     assert seen[1][2]["max_chunks"] == 6
+    assert seen[1][2]["consistency_mode"] == "canonical_only"
+    assert seen[1][2]["max_conflicting_suggestions"] == 2
     assert seen[2][2]["memory_scope_external_refs"] == ["default", "candidate"]
+    assert seen[2][2]["consistency_mode"] == "best_effort"
+    assert seen[2][2]["max_conflicting_suggestions"] == 3
     assert "memory_scope_ids" not in seen[2][2]
 
 

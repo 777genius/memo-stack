@@ -67,6 +67,8 @@ def context_body(
     token_budget: int,
     max_facts: int,
     max_chunks: int,
+    consistency_mode: str | None = None,
+    max_conflicting_suggestions: int | None = None,
     category: str | None = None,
     tags_any: list[str] | None = None,
     tags_all: list[str] | None = None,
@@ -85,9 +87,11 @@ def context_body(
         {
             **payload,
             "query": query,
+            "consistency_mode": consistency_mode,
             "token_budget": token_budget,
             "max_facts": max_facts,
             "max_chunks": max_chunks,
+            "max_conflicting_suggestions": max_conflicting_suggestions,
             "category": category,
             "tags_any": tags_any or None,
             "tags_all": tags_all or None,
@@ -109,6 +113,8 @@ def context_scope_body(
     token_budget: int,
     max_facts: int,
     max_chunks: int,
+    consistency_mode: str | None = None,
+    max_conflicting_suggestions: int | None = None,
 ) -> dict[str, Any]:
     return without_none(
         {
@@ -122,9 +128,11 @@ def context_scope_body(
                 thread_external_ref=thread_external_ref,
             ),
             "query": query,
+            "consistency_mode": consistency_mode,
             "token_budget": token_budget,
             "max_facts": max_facts,
             "max_chunks": max_chunks,
+            "max_conflicting_suggestions": max_conflicting_suggestions,
         }
     )
 
