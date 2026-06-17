@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from math import log
 
@@ -42,19 +42,69 @@ _LINK_STOP_TERMS = {
     "that",
     "the",
     "this",
+    "today",
     "with",
     "week",
     "what",
     "when",
     "where",
     "which",
+    "yesterday",
+    "вчера",
     "когда",
+    "назад",
     "неделю",
+    "неделе",
+    "прошлой",
+    "прошлую",
     "про",
     "скриншот",
+    "сегодня",
     "что",
     "час",
 }
+_TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] = (
+    (
+        "hour_ago",
+        re.compile(
+            r"\b(?:an?\s+hour\s+ago|1\s+hour\s+ago|last\s+hour|"
+            r"(?:около\s+)?час(?:а|ов)?\s+назад)\b",
+            re.IGNORECASE,
+        ),
+        0.0,
+        2.5,
+    ),
+    (
+        "today",
+        re.compile(r"\b(?:today|сегодня)\b", re.IGNORECASE),
+        0.0,
+        30.0,
+    ),
+    (
+        "yesterday",
+        re.compile(r"\b(?:yesterday|вчера)\b", re.IGNORECASE),
+        18.0,
+        54.0,
+    ),
+    (
+        "last_week",
+        re.compile(
+            r"\b(?:last\s+week|(?:a\s+)?week\s+ago|1\s+week\s+ago|"
+            r"на\s+прошлой\s+неделе|прошл(?:ой|ую)\s+недел[юе]|"
+            r"недел[юи]\s+назад)\b",
+            re.IGNORECASE,
+        ),
+        24.0,
+        24.0 * 10,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class _TemporalHint:
+    code: str
+    min_hours: float
+    max_hours: float
 
 
 class SuggestContextLinksUseCase:
@@ -177,6 +227,10 @@ class SuggestContextLinksUseCase:
                 await uow.commit()
 
         terms = _terms(query_text)
+        temporal_hints = _temporal_hints(query_text)
+        now = self._clock.now()
+        if temporal_hints:
+            diagnostics["temporal_hints"] = [hint.code for hint in temporal_hints]
         observed_by_key = {
             (anchor.kind.value, anchor.normalized_key): anchor
             for anchor in extract_observed_anchors(query_text)
@@ -200,9 +254,10 @@ class SuggestContextLinksUseCase:
             )
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=target_text,
                 updated_at=anchor.updated_at,
-                now=self._clock.now(),
+                now=now,
                 base=26,
             )
             observed = observed_by_key.get((anchor.kind.value, anchor.normalized_key))
@@ -235,9 +290,10 @@ class SuggestContextLinksUseCase:
             seen.add(key)
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=fact.text,
                 updated_at=fact.updated_at,
-                now=self._clock.now(),
+                now=now,
                 base=52,
             )
             if fact.thread_id and str(fact.thread_id) == source_thread_id:
@@ -279,9 +335,10 @@ class SuggestContextLinksUseCase:
             )
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=target_text,
                 updated_at=episode.occurred_at,
-                now=self._clock.now(),
+                now=now,
                 base=44,
             )
             if str(episode.thread_id) == source_thread_id:
@@ -315,9 +372,10 @@ class SuggestContextLinksUseCase:
             seen.add(key)
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=capture.text,
                 updated_at=capture.created_at,
-                now=self._clock.now(),
+                now=now,
                 base=36,
             )
             if capture.thread_id and str(capture.thread_id) == source_thread_id:
@@ -346,9 +404,10 @@ class SuggestContextLinksUseCase:
             seen.add(key)
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=suggestion.candidate_text,
                 updated_at=suggestion.created_at,
-                now=self._clock.now(),
+                now=now,
                 base=42,
             )
             if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
@@ -375,9 +434,10 @@ class SuggestContextLinksUseCase:
             target_text = f"{asset.filename} {asset.content_type}"
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=target_text,
                 updated_at=asset.created_at,
-                now=self._clock.now(),
+                now=now,
                 base=34,
             )
             if asset.thread_id and str(asset.thread_id) == source_thread_id:
@@ -408,9 +468,10 @@ class SuggestContextLinksUseCase:
             target_text = f"{document.title} {document.source_type} {document.source_external_id}"
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=target_text,
                 updated_at=document.updated_at,
-                now=self._clock.now(),
+                now=now,
                 base=38,
             )
             if document.thread_id and str(document.thread_id) == source_thread_id:
@@ -441,9 +502,10 @@ class SuggestContextLinksUseCase:
             seen.add(key)
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=chunk.text,
                 updated_at=chunk.updated_at,
-                now=self._clock.now(),
+                now=now,
                 base=46,
             )
             if chunk.thread_id and str(chunk.thread_id) == source_thread_id:
@@ -479,9 +541,10 @@ class SuggestContextLinksUseCase:
             target_text = thread.external_ref.replace("-", " ")
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
+                temporal_hints=temporal_hints,
                 target_text=target_text,
                 updated_at=thread.updated_at,
-                now=self._clock.now(),
+                now=now,
                 base=30,
             )
             if source_thread_id and str(thread.id) == source_thread_id:
@@ -663,6 +726,7 @@ def _terms(text: str) -> tuple[str, ...]:
 def _score_text_candidate(
     *,
     query_terms: tuple[str, ...],
+    temporal_hints: tuple[_TemporalHint, ...],
     target_text: str,
     updated_at: datetime,
     now: datetime,
@@ -675,7 +739,11 @@ def _score_text_candidate(
     if hits:
         score += min(48.0, 8.0 * len(hits))
         reasons.append("matching text")
-    age_hours = _age_hours(updated_at, now)
+    relative_age_hours = _relative_age_hours(updated_at, now)
+    if _matches_temporal_hint(temporal_hints, relative_age_hours):
+        score += 6 if hits else 22
+        reasons.append("temporal intent match")
+    age_hours = max(relative_age_hours, 0.0)
     if age_hours <= 1:
         score += 18
         reasons.append("recent activity")
@@ -701,9 +769,25 @@ def _has_link_signal(*, matched_terms: tuple[str, ...], reasons: list[str]) -> b
             "known project/tool reference",
             "event phrase",
             "person name",
+            "temporal intent match",
         }
         for reason in reasons
     )
+
+
+def _temporal_hints(text: str) -> tuple[_TemporalHint, ...]:
+    hints: list[_TemporalHint] = []
+    seen: set[str] = set()
+    for code, pattern, min_hours, max_hours in _TEMPORAL_HINT_PATTERNS:
+        if code in seen or not pattern.search(text):
+            continue
+        seen.add(code)
+        hints.append(_TemporalHint(code=code, min_hours=min_hours, max_hours=max_hours))
+    return tuple(hints)
+
+
+def _matches_temporal_hint(hints: tuple[_TemporalHint, ...], age_hours: float) -> bool:
+    return any(hint.min_hours <= age_hours <= hint.max_hours for hint in hints)
 
 
 def _candidate(
@@ -792,6 +876,8 @@ def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
             codes.append("recent_activity")
         elif reason == "near in time":
             codes.append("temporal_proximity")
+        elif reason == "temporal intent match":
+            codes.append("temporal_intent_match")
         elif reason == "same thread":
             codes.append("same_thread")
         elif reason.startswith("category:"):
@@ -812,11 +898,15 @@ def _tier(score: float) -> str:
 
 
 def _age_hours(value: datetime, now: datetime) -> float:
+    return max(_relative_age_hours(value, now), 0.0)
+
+
+def _relative_age_hours(value: datetime, now: datetime) -> float:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     if now.tzinfo is None:
         now = now.replace(tzinfo=UTC)
-    return max((now - value).total_seconds() / 3600, 0.0)
+    return (now - value).total_seconds() / 3600
 
 
 def _is_same_source(
