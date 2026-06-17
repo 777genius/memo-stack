@@ -160,6 +160,18 @@ class MemoryContextLinkSuggestion extends Equatable {
     return preview == null || preview.isEmpty ? reason : preview;
   }
 
+  String? get policyDecision {
+    final value = metadata['policy_decision']?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  String? get reviewGate {
+    final value = metadata['review_gate']?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  bool get autoApproveEligible => metadata['auto_approve_eligible'] == true;
+
   bool get isPending => status == 'pending';
 
   @override

@@ -634,6 +634,7 @@ class _SuggestionActions extends StatelessWidget {
       builder: (_) {
         final busy =
             store.contextLinkSuggestionReviewing[suggestion.id] == true;
+        final canReview = suggestion.isPending && !busy;
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -643,34 +644,36 @@ class _SuggestionActions extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            IconButton(
-              key: ValueKey(
-                'memory_operations_approve_${sidebarKeyPart(suggestion.id)}',
+            if (suggestion.isPending) ...[
+              IconButton(
+                key: ValueKey(
+                  'memory_operations_approve_${sidebarKeyPart(suggestion.id)}',
+                ),
+                tooltip: 'Approve link',
+                visualDensity: VisualDensity.compact,
+                onPressed: canReview
+                    ? () => store.reviewContextLinkSuggestion(
+                          suggestion,
+                          approve: true,
+                        )
+                    : null,
+                icon: const Icon(Icons.check_circle_outline, size: 18),
               ),
-              tooltip: 'Approve link',
-              visualDensity: VisualDensity.compact,
-              onPressed: busy
-                  ? null
-                  : () => store.reviewContextLinkSuggestion(
-                        suggestion,
-                        approve: true,
-                      ),
-              icon: const Icon(Icons.check_circle_outline, size: 18),
-            ),
-            IconButton(
-              key: ValueKey(
-                'memory_operations_reject_${sidebarKeyPart(suggestion.id)}',
+              IconButton(
+                key: ValueKey(
+                  'memory_operations_reject_${sidebarKeyPart(suggestion.id)}',
+                ),
+                tooltip: 'Reject link',
+                visualDensity: VisualDensity.compact,
+                onPressed: canReview
+                    ? () => store.reviewContextLinkSuggestion(
+                          suggestion,
+                          approve: false,
+                        )
+                    : null,
+                icon: const Icon(Icons.cancel_outlined, size: 18),
               ),
-              tooltip: 'Reject link',
-              visualDensity: VisualDensity.compact,
-              onPressed: busy
-                  ? null
-                  : () => store.reviewContextLinkSuggestion(
-                        suggestion,
-                        approve: false,
-                      ),
-              icon: const Icon(Icons.cancel_outlined, size: 18),
-            ),
+            ],
           ],
         );
       },

@@ -79,7 +79,8 @@ class ContextLinkReviewPanel extends StatelessWidget {
                       key: const ValueKey('context_link_review_refresh_button'),
                       tooltip: 'Refresh suggested links',
                       visualDensity: VisualDensity.compact,
-                      onPressed: store.refreshContextLinkSuggestions,
+                      onPressed:
+                          loading ? null : store.refreshContextLinkSuggestions,
                       icon: Icon(
                         Icons.refresh,
                         size: 18,
@@ -125,6 +126,8 @@ class ContextLinkReviewPanel extends StatelessWidget {
 void showContextLinkReviewDialog(BuildContext context, ChatStore store) {
   showDialog<void>(
     context: context,
+    requestFocus: true,
+    traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
     builder: (_) => _ContextLinkReviewDialog(store: store),
   );
 }
@@ -343,18 +346,19 @@ class _SuggestionActions extends StatelessWidget {
       builder: (_) {
         final busy =
             store.contextLinkSuggestionReviewing[suggestion.id] == true;
+        final canReview = suggestion.isPending && !busy;
         final approve = IconButton(
           key: ValueKey(
             'context_link_suggestion_approve_${sidebarKeyPart(suggestion.id)}',
           ),
           tooltip: 'Approve link',
           visualDensity: VisualDensity.compact,
-          onPressed: busy
-              ? null
-              : () => store.reviewContextLinkSuggestion(
+          onPressed: canReview
+              ? () => store.reviewContextLinkSuggestion(
                     suggestion,
                     approve: true,
-                  ),
+                  )
+              : null,
           icon: const Icon(Icons.check_circle_outline, size: 18),
         );
         final reject = IconButton(
@@ -363,18 +367,18 @@ class _SuggestionActions extends StatelessWidget {
           ),
           tooltip: 'Reject link',
           visualDensity: VisualDensity.compact,
-          onPressed: busy
-              ? null
-              : () => store.reviewContextLinkSuggestion(
+          onPressed: canReview
+              ? () => store.reviewContextLinkSuggestion(
                     suggestion,
                     approve: false,
-                  ),
+                  )
+              : null,
           icon: const Icon(Icons.cancel_outlined, size: 18),
         );
         if (!expanded) {
           return Row(
             mainAxisSize: MainAxisSize.min,
-            children: [approve, reject],
+            children: suggestion.isPending ? [approve, reject] : const [],
           );
         }
         return Row(
@@ -386,8 +390,7 @@ class _SuggestionActions extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            approve,
-            reject,
+            if (suggestion.isPending) ...[approve, reject],
           ],
         );
       },

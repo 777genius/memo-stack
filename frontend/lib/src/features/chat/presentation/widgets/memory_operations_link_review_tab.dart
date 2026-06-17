@@ -192,6 +192,8 @@ class _SuggestionTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final matchedTerms = _metadataList(suggestion.metadata['matched_terms']);
     final reasonCodes = _metadataList(suggestion.metadata['reason_codes']);
+    final policyCodes =
+        _metadataList(suggestion.metadata['policy_reason_codes']);
     return Container(
       key: ValueKey('memory_operations_suggestion_${_keyPart(suggestion.id)}'),
       padding: const EdgeInsets.all(10),
@@ -242,6 +244,16 @@ class _SuggestionTile extends StatelessWidget {
               if (reasonCodes.isNotEmpty)
                 _DetailChip(
                   label: 'codes: ${reasonCodes.take(3).join(', ')}',
+                ),
+              if (suggestion.policyDecision != null)
+                _DetailChip(label: 'policy: ${suggestion.policyDecision}'),
+              if (suggestion.reviewGate != null)
+                _DetailChip(label: 'gate: ${suggestion.reviewGate}'),
+              if (suggestion.autoApproveEligible)
+                const _DetailChip(label: 'auto eligible'),
+              if (policyCodes.isNotEmpty)
+                _DetailChip(
+                  label: 'policy codes: ${policyCodes.take(3).join(', ')}',
                 ),
               if (suggestion.anchorKind != null)
                 _DetailChip(label: 'anchor: ${suggestion.anchorKind}'),
@@ -318,6 +330,7 @@ class _SuggestionActions extends StatelessWidget {
       builder: (_) {
         final busy =
             store.contextLinkSuggestionReviewing[suggestion.id] == true;
+        final canReview = suggestion.isPending && !busy;
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -336,17 +349,18 @@ class _SuggestionActions extends StatelessWidget {
               onPressed: () => _showEvidenceDialog(context, suggestion),
               icon: const Icon(Icons.manage_search_outlined, size: 18),
             ),
-            IconButton(
-              key: ValueKey(
-                'memory_operations_edit_${_keyPart(suggestion.id)}',
+            if (suggestion.isPending)
+              IconButton(
+                key: ValueKey(
+                  'memory_operations_edit_${_keyPart(suggestion.id)}',
+                ),
+                tooltip: 'Edit link',
+                visualDensity: VisualDensity.compact,
+                onPressed: canReview
+                    ? () => _showManualLinkDialog(context, store, suggestion)
+                    : null,
+                icon: const Icon(Icons.edit_outlined, size: 18),
               ),
-              tooltip: 'Edit link',
-              visualDensity: VisualDensity.compact,
-              onPressed: busy
-                  ? null
-                  : () => _showManualLinkDialog(context, store, suggestion),
-              icon: const Icon(Icons.edit_outlined, size: 18),
-            ),
             if (suggestion.isPending) ...[
               IconButton(
                 key: ValueKey(
@@ -354,12 +368,12 @@ class _SuggestionActions extends StatelessWidget {
                 ),
                 tooltip: 'Approve link',
                 visualDensity: VisualDensity.compact,
-                onPressed: busy
-                    ? null
-                    : () => store.reviewContextLinkSuggestion(
+                onPressed: canReview
+                    ? () => store.reviewContextLinkSuggestion(
                           suggestion,
                           approve: true,
-                        ),
+                        )
+                    : null,
                 icon: const Icon(Icons.check_circle_outline, size: 18),
               ),
               IconButton(
@@ -368,12 +382,12 @@ class _SuggestionActions extends StatelessWidget {
                 ),
                 tooltip: 'Reject link',
                 visualDensity: VisualDensity.compact,
-                onPressed: busy
-                    ? null
-                    : () => store.reviewContextLinkSuggestion(
+                onPressed: canReview
+                    ? () => store.reviewContextLinkSuggestion(
                           suggestion,
                           approve: false,
-                        ),
+                        )
+                    : null,
                 icon: const Icon(Icons.cancel_outlined, size: 18),
               ),
             ],

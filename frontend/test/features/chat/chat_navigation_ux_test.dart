@@ -325,6 +325,14 @@ void main() {
       find.byKey(const ValueKey('memory_operations_approve_ctxlinksug_1')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey('memory_operations_edit_ctxlinksug_1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('memory_operations_evidence_ctxlinksug_1')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('operations console filters review history by status and type', (
@@ -332,7 +340,18 @@ void main() {
   ) async {
     final repo = _UxFakeChatRepository();
     repo.contextLinkSuggestions = [
-      _suggestion('ctxlinksug-pending'),
+      _suggestion(
+        'ctxlinksug-pending',
+        metadata: const {
+          'target_label': 'Q3 roadmap',
+          'target_preview': 'Alex confirmed Q3 rollout.',
+          'matched_terms': ['alex', 'q3'],
+          'policy_decision': 'needs_review',
+          'review_gate': 'required',
+          'auto_approve_eligible': true,
+          'policy_reason_codes': ['score_threshold_met', 'text_match'],
+        },
+      ),
       _suggestion(
         'ctxlinksug-anchor',
         status: 'rejected',
@@ -380,6 +399,13 @@ void main() {
     expect(find.text('Pending 1'), findsOneWidget);
     expect(find.text('Rejected 1'), findsOneWidget);
     expect(find.text('person anchor 1'), findsOneWidget);
+    expect(find.textContaining('policy: needs_review'), findsOneWidget);
+    expect(find.textContaining('gate: required'), findsOneWidget);
+    expect(find.text('auto eligible'), findsOneWidget);
+    expect(
+      find.textContaining('policy codes: score_threshold_met, text_match'),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('memory_link_status_filter_rejected')),
