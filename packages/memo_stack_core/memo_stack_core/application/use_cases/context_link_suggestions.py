@@ -13,6 +13,11 @@ from memo_stack_core.application.dto import (
     ContextLinkSuggestionsResult,
     SuggestContextLinksCommand,
 )
+from memo_stack_core.application.observed_anchor_resolution import (
+    find_active_by_observed_canonical_key,
+    preferred_observed_label,
+    should_promote_observed_key,
+)
 from memo_stack_core.application.use_cases.context_link_visibility import (
     assert_context_link_endpoint_visible,
 )
@@ -663,6 +668,13 @@ class SuggestContextLinksUseCase:
                 kind=observed.kind.value,
                 normalized_key=observed.normalized_key,
             )
+            if existing is None:
+                existing = await find_active_by_observed_canonical_key(
+                    uow,
+                    observed=observed,
+                    space_id=command.space_id,
+                    memory_scope_id=command.memory_scope_id,
+                )
             metadata = {
                 **observed.metadata,
                 "last_observed_source_type": command.source_type,
@@ -670,14 +682,23 @@ class SuggestContextLinksUseCase:
                 "resolver_version": "context-link-rule-v1",
             }
             if existing is not None:
-                saved = await uow.anchors.save(
-                    existing.merge_observation(
+                merged = (
+                    existing.update_details(
+                        normalized_key=observed.normalized_key,
                         label=observed.label,
                         aliases=observed.aliases,
                         metadata=metadata,
                         now=now,
                     )
+                    if should_promote_observed_key(existing, observed)
+                    else existing.merge_observation(
+                        label=preferred_observed_label(existing, observed),
+                        aliases=observed.aliases,
+                        metadata=metadata,
+                        now=now,
+                    )
                 )
+                saved = await uow.anchors.save(merged)
             else:
                 saved = await uow.anchors.create(
                     MemoryAnchor.create(

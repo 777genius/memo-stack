@@ -899,6 +899,95 @@ def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Pa
         assert review_data["link"]["metadata"]["anchor_kind"] == "person"
 
 
+def test_persisted_context_link_suggestions_merge_observed_anchor_case_variants(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        first_capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-alex",
+                "text": "Алекс подтвердил Project Atlas.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        second_capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-aleksom",
+                "text": "Час назад я переписывался с Алексом по Project Atlas.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert first_capture.status_code == 201, first_capture.text
+        assert second_capture.status_code == 201, second_capture.text
+
+        first_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_type": "capture",
+                "source_id": first_capture.json()["data"]["id"],
+                "text": "Алекс Project Atlas",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+        second_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_type": "capture",
+                "source_id": second_capture.json()["data"]["id"],
+                "text": "Час назад переписывался с Алексом Project Atlas",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+        assert first_suggestions.status_code == 200, first_suggestions.text
+        assert second_suggestions.status_code == 200, second_suggestions.text
+
+        anchors = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "kind": "person",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+        assert anchors.status_code == 200, anchors.text
+        person_anchors = anchors.json()["data"]
+        assert len(person_anchors) == 1
+        assert person_anchors[0]["normalized_key"] == "алекс"
+        assert person_anchors[0]["label"] == "Алекс"
+        assert {"Алекс", "Алексом"}.issubset(set(person_anchors[0]["aliases"]))
+        assert person_anchors[0]["metadata"]["canonical_key"] == "aleks"
+
+
 def test_context_linking_quality_golden_handles_people_events_projects_and_decoys(
     tmp_path: Path,
 ) -> None:
