@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 from memo_stack_core.domain.entities import (
+    MAX_SOURCE_REFS_PER_ITEM,
     FactStatus,
     MemoryFact,
     MemoryFactId,
@@ -24,6 +25,42 @@ def test_active_fact_requires_source_refs() -> None:
             source_refs=(),
             now=datetime(2026, 5, 25, tzinfo=UTC),
         )
+
+
+def test_fact_source_refs_are_deduplicated_and_capped() -> None:
+    refs = (
+        SourceRef(source_type="manual", source_id="source_0"),
+        *tuple(
+            SourceRef(source_type="manual", source_id=f"source_{index}")
+            for index in range(MAX_SOURCE_REFS_PER_ITEM + 5)
+        ),
+    )
+    fact = MemoryFact.create(
+        fact_id=MemoryFactId("fact_many_refs"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
+        text="Facts keep bounded source refs.",
+        kind=MemoryKind.NOTE,
+        source_refs=refs,
+        now=datetime(2026, 5, 25, tzinfo=UTC),
+    )
+
+    updated = fact.update(
+        expected_version=1,
+        text="Facts still keep bounded source refs.",
+        source_refs=tuple(
+            SourceRef(source_type="manual", source_id=f"updated_{index}")
+            for index in range(MAX_SOURCE_REFS_PER_ITEM + 5)
+        ),
+        reason="bounded refs",
+        now=datetime(2026, 5, 26, tzinfo=UTC),
+    )
+
+    assert len(fact.source_refs) == MAX_SOURCE_REFS_PER_ITEM
+    assert fact.source_refs[0].source_id == "source_0"
+    assert fact.source_refs[-1].source_id == f"source_{MAX_SOURCE_REFS_PER_ITEM - 1}"
+    assert len(updated.source_refs) == MAX_SOURCE_REFS_PER_ITEM
+    assert updated.source_refs[-1].source_id == f"updated_{MAX_SOURCE_REFS_PER_ITEM - 1}"
 
 
 def test_update_requires_expected_version() -> None:

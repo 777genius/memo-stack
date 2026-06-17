@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from memo_stack_core.application import CreateSuggestionCommand, CreateSuggestionUseCase
 from memo_stack_core.domain.entities import (
+    MAX_SOURCE_REFS_PER_ITEM,
     Confidence,
     MemoryKind,
     MemoryScopeId,
@@ -17,6 +18,31 @@ from memo_stack_core.domain.errors import MemoryConflictError
 
 def test_create_suggestion_recovers_existing_pending_after_commit_conflict() -> None:
     asyncio.run(_run_commit_conflict_recovery())
+
+
+def test_suggestion_source_refs_are_deduplicated_and_capped() -> None:
+    suggestion = MemorySuggestion.create(
+        suggestion_id=MemorySuggestionId("sug_many_refs"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
+        candidate_text="Suggestion keeps bounded source refs.",
+        kind=MemoryKind.NOTE,
+        source_refs=(
+            SourceRef(source_type="manual", source_id="source_0"),
+            *tuple(
+                SourceRef(source_type="manual", source_id=f"source_{index}")
+                for index in range(MAX_SOURCE_REFS_PER_ITEM + 5)
+            ),
+        ),
+        confidence=Confidence.MEDIUM,
+        trust_level=TrustLevel.MEDIUM,
+        safe_reason="review",
+        now=_NOW,
+    )
+
+    assert len(suggestion.source_refs) == MAX_SOURCE_REFS_PER_ITEM
+    assert suggestion.source_refs[0].source_id == "source_0"
+    assert suggestion.source_refs[-1].source_id == f"source_{MAX_SOURCE_REFS_PER_ITEM - 1}"
 
 
 async def _run_commit_conflict_recovery() -> None:

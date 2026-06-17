@@ -11,7 +11,7 @@ from memo_stack_core.application.context_diagnostics import (
     normalize_context_item_diagnostics,
 )
 from memo_stack_core.application.dto import ContextItem
-from memo_stack_core.domain.entities import SourceRef
+from memo_stack_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, SourceRef
 
 
 def dedupe_rank_items(items: tuple[ContextItem, ...]) -> tuple[ContextItem, ...]:
@@ -75,6 +75,8 @@ def _merge_source_refs(
             continue
         seen.add(key)
         refs.append(ref)
+        if len(refs) >= MAX_SOURCE_REFS_PER_ITEM:
+            break
     return tuple(refs)
 
 

@@ -39,3 +39,54 @@ def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:
     assert "api_key" not in diagnostics
     assert "SECRET_VALUE_SHOULD_NOT_LEAK" not in str(diagnostics)
 
+
+def test_context_bundle_retrieval_sources_use_stable_priority_order() -> None:
+    keyword = ContextItem(
+        item_id="chunk_keyword",
+        item_type="chunk",
+        text="Keyword item.",
+        score=0.8,
+        source_refs=(),
+        diagnostics={"retrieval_source": "keyword_chunks"},
+    )
+    vector = ContextItem(
+        item_id="chunk_vector",
+        item_type="chunk",
+        text="Vector item.",
+        score=0.7,
+        source_refs=(),
+        diagnostics={"retrieval_source": "vector_chunks"},
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {"context_assembly_version": "context-v2-hybrid-explainable"},
+        items=(keyword, vector),
+    )
+
+    assert diagnostics["retrieval_sources_used"] == ["vector_chunks", "keyword_chunks"]
+
+
+def test_context_bundle_retrieval_sources_prioritize_rag_over_keyword() -> None:
+    keyword = ContextItem(
+        item_id="chunk_keyword",
+        item_type="chunk",
+        text="Keyword item.",
+        score=0.9,
+        source_refs=(),
+        diagnostics={"retrieval_source": "keyword_chunks"},
+    )
+    rag = ContextItem(
+        item_id="chunk_rag",
+        item_type="chunk",
+        text="RAG item.",
+        score=0.8,
+        source_refs=(),
+        diagnostics={"retrieval_source": "rag_recall"},
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {"context_assembly_version": "context-v2-hybrid-explainable"},
+        items=(keyword, rag),
+    )
+
+    assert diagnostics["retrieval_sources_used"] == ["rag_recall", "keyword_chunks"]

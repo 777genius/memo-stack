@@ -46,6 +46,15 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "pending_conflict_suggestions_considered": 0,
     "hybrid_items_used": 0,
 }
+_RETRIEVAL_SOURCE_PRIORITY = {
+    "vector_chunks": 0,
+    "rag_recall": 1,
+    "keyword_chunks": 2,
+    "graph_hydrated": 3,
+    "temporal_supersedes_relation": 4,
+    "pending_conflict_suggestion": 5,
+    "postgres_facts": 6,
+}
 
 
 def context_rank_key(item: ContextItem) -> tuple[float, str, str, str, int, int, str, str]:
@@ -152,29 +161,28 @@ def merge_context_diagnostics(
     primary_raw = _as_dict(primary)
     secondary_raw = _as_dict(secondary)
     merged = safe_diagnostic_mapping({**secondary_raw, **primary_raw})
-    selected_source = _safe_retrieval_source(primary_raw.get("retrieval_source")) or (
-        retrieval_sources[0] if retrieval_sources else None
-    )
+    prioritized_sources = _prioritized_retrieval_sources(retrieval_sources)
+    selected_source = prioritized_sources[0] if prioritized_sources else None
     if selected_source:
         merged["retrieval_source"] = selected_source
-    merged["retrieval_sources"] = list(retrieval_sources)
+    merged["retrieval_sources"] = list(prioritized_sources)
     merged["merged_candidate_count"] = _candidate_count(primary_raw) + _candidate_count(
         secondary_raw
     )
-    merged["ranking_reason"] = ranking_reason_for(retrieval_sources)
+    merged["ranking_reason"] = ranking_reason_for(prioritized_sources)
     merged["score_signals"] = {
         **safe_score_signals(secondary_raw.get("score_signals")),
         **safe_score_signals(primary_raw.get("score_signals")),
         "dedupe_primary_score": round(primary_score, 4),
         "dedupe_secondary_score": round(secondary_score, 4),
-        "hybrid_source_count": len(retrieval_sources),
+        "hybrid_source_count": len(prioritized_sources),
         "hybrid_boost": round(hybrid_boost, 4),
         "source_ref_count": source_ref_count,
     }
     merged["provenance"] = {
         **safe_diagnostic_mapping(secondary_raw.get("provenance")),
         **safe_diagnostic_mapping(primary_raw.get("provenance")),
-        "retrieval_sources": list(retrieval_sources),
+        "retrieval_sources": list(prioritized_sources),
         "source_ref_count": source_ref_count,
         "selected_retrieval_source": selected_source or "unknown",
     }
@@ -272,11 +280,25 @@ def _candidate_count(diagnostics: dict[str, Any]) -> int:
 
 
 def _bundle_retrieval_sources(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
-    return _ordered_unique(
+    sources = _ordered_unique(
         tuple(
             source
             for item in items
             for source in diagnostic_retrieval_sources(item.diagnostics)
+        )
+    )
+    return _prioritized_retrieval_sources(sources)
+
+
+def _prioritized_retrieval_sources(sources: tuple[str, ...]) -> tuple[str, ...]:
+    indexed = {source: index for index, source in enumerate(sources)}
+    return tuple(
+        sorted(
+            sources,
+            key=lambda source: (
+                _RETRIEVAL_SOURCE_PRIORITY.get(source, 10_000),
+                indexed[source],
+            ),
         )
     )
 

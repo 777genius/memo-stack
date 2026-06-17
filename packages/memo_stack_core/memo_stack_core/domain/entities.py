@@ -27,6 +27,7 @@ MemoryChunkId = NewType("MemoryChunkId", str)
 MemorySuggestionId = NewType("MemorySuggestionId", str)
 MemoryAnchorId = NewType("MemoryAnchorId", str)
 
+MAX_SOURCE_REFS_PER_ITEM = 20
 _AUDIT_SECRET_MARKERS = (
     "api_key",
     "apikey",
@@ -737,7 +738,11 @@ def _source_ref_key(ref: SourceRef) -> tuple[object, ...]:
     )
 
 
-def _unique_source_refs(values: tuple[SourceRef, ...], *, limit: int = 20) -> tuple[SourceRef, ...]:
+def _unique_source_refs(
+    values: tuple[SourceRef, ...],
+    *,
+    limit: int = MAX_SOURCE_REFS_PER_ITEM,
+) -> tuple[SourceRef, ...]:
     seen: set[tuple[object, ...]] = set()
     refs: list[SourceRef] = []
     for ref in values:
@@ -886,7 +891,7 @@ class MemoryFact:
             thread_id=thread_id,
             text=text.strip(),
             kind=kind,
-            source_refs=source_refs,
+            source_refs=_unique_source_refs(source_refs),
             status=FactStatus.ACTIVE,
             version=1,
             confidence=confidence,
@@ -928,7 +933,7 @@ class MemoryFact:
         return replace(
             self,
             text=text.strip(),
-            source_refs=source_refs,
+            source_refs=_unique_source_refs(source_refs),
             version=self.version + 1,
             category=self.category if category is None else category,
             tags=next_tags,
@@ -1313,7 +1318,7 @@ class MemorySuggestion:
             kind=kind,
             operation=operation,
             status=SuggestionStatus.PENDING,
-            source_refs=source_refs,
+            source_refs=_unique_source_refs(source_refs),
             confidence=confidence,
             trust_level=trust_level,
             safe_reason=safe_reason.strip(),

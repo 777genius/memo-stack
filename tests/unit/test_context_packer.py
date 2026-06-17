@@ -2,7 +2,7 @@ from memo_stack_core.application.context_packer import ContextPacker
 from memo_stack_core.application.context_policy import thread_is_visible
 from memo_stack_core.application.context_ranking import dedupe_rank_items
 from memo_stack_core.application.dto import ContextItem
-from memo_stack_core.domain.entities import SourceRef
+from memo_stack_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, SourceRef
 
 
 def test_context_packer_keeps_memory_scope_sections_and_caps_chunks_per_source() -> None:
@@ -248,6 +248,44 @@ def test_multi_memory_scope_dedupe_preserves_source_refs() -> None:
         SourceRef(source_type="document", source_id="memory_scope-b-doc", chunk_id="chunk_1"),
         shared_ref,
         SourceRef(source_type="document", source_id="memory_scope-a-doc", chunk_id="chunk_1"),
+    )
+
+
+def test_context_dedupe_caps_merged_source_refs() -> None:
+    primary_refs = tuple(
+        SourceRef(source_type="manual", source_id=f"primary_{index}")
+        for index in range(MAX_SOURCE_REFS_PER_ITEM)
+    )
+    secondary_refs = tuple(
+        SourceRef(source_type="manual", source_id=f"secondary_{index}")
+        for index in range(MAX_SOURCE_REFS_PER_ITEM)
+    )
+
+    result = dedupe_rank_items(
+        (
+            ContextItem(
+                item_id="fact_many_refs",
+                item_type="fact",
+                text="Merged refs primary",
+                score=0.9,
+                source_refs=primary_refs,
+                diagnostics={"retrieval_source": "canonical_facts"},
+            ),
+            ContextItem(
+                item_id="fact_many_refs",
+                item_type="fact",
+                text="Merged refs secondary",
+                score=0.8,
+                source_refs=secondary_refs,
+                diagnostics={"retrieval_source": "graph_facts"},
+            ),
+        )
+    )
+
+    assert len(result[0].source_refs) == MAX_SOURCE_REFS_PER_ITEM
+    assert result[0].source_refs == primary_refs
+    assert result[0].diagnostics["score_signals"]["source_ref_count"] == (
+        MAX_SOURCE_REFS_PER_ITEM
     )
 
 
