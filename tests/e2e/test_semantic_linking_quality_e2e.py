@@ -237,19 +237,64 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
         assert unrelated.status_code == 200, unrelated.text
         assert unrelated.json()["data"]["candidates"] == []
 
+        cross_scope_fact = _remember_fact(
+            client,
+            space_slug="semantic-linking-quality-private",
+            text=(
+                "Project Zephyr private renewal memo names Casey as owner for "
+                "the vendor risk exception."
+            ),
+            source_id="zephyr-private-renewal",
+        )
+        cross_scope_capture = _capture(
+            client,
+            space_slug="semantic-linking-quality-query",
+            source_event_id="zephyr-cross-scope-capture",
+            text=(
+                "Project Zephyr private renewal memo names Casey as owner for "
+                "the vendor risk exception."
+            ),
+        )
+        cross_scope_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality-query",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": cross_scope_capture["id"],
+                "text": "Project Zephyr private renewal Casey vendor risk exception",
+                "persist": True,
+                "limit": 8,
+            },
+        )
+        assert cross_scope_suggestions.status_code == 200, cross_scope_suggestions.text
+        cross_scope_fact_candidates = [
+            item
+            for item in cross_scope_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "fact"
+        ]
+        assert cross_scope_fact
+        assert cross_scope_fact_candidates == []
 
-def _remember_fact(client: httpx.Client, *, text: str, source_id: str) -> dict[str, object]:
+
+def _remember_fact(
+    client: httpx.Client,
+    *,
+    text: str,
+    source_id: str,
+    space_slug: str = "semantic-linking-quality",
+) -> dict[str, object]:
     response = client.post(
         "/v1/facts",
         json={
-            "space_slug": "semantic-linking-quality",
+            "space_slug": space_slug,
             "memory_scope_external_ref": "default",
             "thread_external_ref": "quality-review",
             "text": text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": source_id}],
         },
-        headers={"Idempotency-Key": f"semantic-linking-quality-{source_id}"},
+        headers={"Idempotency-Key": f"{space_slug}-{source_id}"},
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]
@@ -261,11 +306,12 @@ def _capture(
     source_event_id: str,
     text: str,
     thread_external_ref: str | None = None,
+    space_slug: str = "semantic-linking-quality",
 ) -> dict[str, object]:
     response = client.post(
         "/v1/captures",
         json={
-            "space_slug": "semantic-linking-quality",
+            "space_slug": space_slug,
             "memory_scope_external_ref": "default",
             "thread_external_ref": thread_external_ref,
             "source_agent": "memo-frontend",
