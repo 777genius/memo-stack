@@ -9,6 +9,18 @@ import 'package:frontend/src/features/chat/domain/repositories/attachment_upload
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 
 void main() {
+  group('AttachmentUploadDraft', () {
+    test('detects image files by MIME when filename has no extension', () {
+      final draft = AttachmentUploadDraft.file(
+        name: 'clipboard-upload',
+        bytes: [1, 2, 3],
+        mime: 'image/png',
+      );
+
+      expect(draft.isImage, isTrue);
+    });
+  });
+
   group('AttachmentUploadService', () {
     test('rejects files above backend upload limit before network', () async {
       final repo = _RecordingUploadRepository();

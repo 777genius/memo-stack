@@ -31,7 +31,7 @@ class AttachmentUploadDraft {
       name: _safeName(name),
       bytes: Uint8List.fromList(bytes),
       mime: mime,
-      isImage: _isImageName(name),
+      isImage: _isImageName(name) || _isImageMime(mime),
       source: source,
     );
   }
@@ -86,4 +86,9 @@ bool _isImageName(String name) {
       lower.endsWith('.webp') ||
       lower.endsWith('.gif') ||
       lower.endsWith('.bmp');
+}
+
+bool _isImageMime(String? mime) {
+  final lower = mime?.trim().toLowerCase();
+  return lower != null && lower.startsWith('image/');
 }
