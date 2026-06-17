@@ -390,7 +390,14 @@ def test_audio_asset_extraction_provider_failure_falls_back_to_media_metadata(
         assert extracted["parser_profile"] == "media_api"
         assert extracted["parser_name"] == "media_metadata"
         assert extracted["safe_error_code"] is None
-        assert extracted["metadata"]["transcript_status"] == "not_configured"
+        assert extracted["metadata"]["degraded_fallback"] is True
+        assert extracted["metadata"]["transcript_status"] == "failed"
+        assert (
+            extracted["metadata"]["transcript_error_code"]
+            == "asset_extraction.transcription_provider_error"
+        )
+        assert extracted["metadata"]["transcription_provider"] == "openai_transcription"
+        assert extracted["metadata"]["transcription_model"] == "gpt-4o-mini-transcribe"
         assert extracted["metadata"]["duration_seconds"] > 0
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
             "extracted_json",

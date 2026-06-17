@@ -499,9 +499,11 @@ def test_speech_transcription_engine_disabled_egress_falls_back_to_media_metadat
 
     result = asyncio.run(router.extract(request))
 
-    assert result.status == "succeeded"
     assert result.parser_name == "fallback_media"
     assert result.diagnostics["speech_transcription_fallback"] is True
+    metadata = result.technical_metadata
+    assert metadata["transcript_status"] == "disabled"
+    assert metadata["transcript_error_code"].endswith("transcription_external_ai_disabled")
 
 
 def test_speech_transcription_router_falls_back_when_provider_upload_is_too_large() -> None:
@@ -537,10 +539,12 @@ def test_speech_transcription_router_falls_back_when_provider_upload_is_too_larg
     result = asyncio.run(router.extract(request))
 
     assert provider_called is False
-    assert result.status == "succeeded"
     assert result.parser_name == "fallback_media"
     assert result.diagnostics["speech_transcription_fallback"] is True
     assert result.diagnostics["speech_transcription_support"] is True
+    metadata = result.technical_metadata
+    assert metadata["transcript_status"] == "skipped"
+    assert metadata["transcript_error_code"] == "asset_extraction.transcription_file_too_large"
 
 
 def test_faster_whisper_engine_extracts_transcript_artifact() -> None:

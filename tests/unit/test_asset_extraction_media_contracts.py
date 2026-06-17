@@ -88,7 +88,12 @@ def test_media_api_without_external_ai_falls_back_to_local_media_metadata(
         assert extracted["parser_profile"] == "media_api"
         assert extracted["parser_name"] == "media_metadata"
         assert extracted["safe_error_code"] is None
-        assert extracted["metadata"]["transcript_status"] == "not_configured"
+        assert extracted["metadata"]["degraded_fallback"] is True
+        assert extracted["metadata"]["transcript_status"] == "disabled"
+        assert (
+            extracted["metadata"]["transcript_error_code"]
+            == "asset_extraction.transcription_external_ai_disabled"
+        )
         assert extracted["metadata"]["duration_seconds"] > 0
         assert extracted["progress"]["terminal"] is True
         assert extracted["execution"]["retry_after_at"] is None

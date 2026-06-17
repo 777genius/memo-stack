@@ -19,6 +19,7 @@ from memo_stack_core.ports.extraction import (
     FileTypeDetectorPort,
 )
 
+from memo_stack_adapters.extraction.fallback_context import merge_fallback_context
 from memo_stack_adapters.extraction.image_evidence import (
     extract_tesseract_ocr_blocks,
     full_image_region,
@@ -161,6 +162,8 @@ class StandardExtractionRouter(ContentExtractionPort):
                 fallback_result = _merge_diagnostics(result, diagnostics)
                 diagnostics[f"{engine.name}_fallback"] = True
                 continue
+            if fallback_result is not None and result.status == "succeeded":
+                result = merge_fallback_context(result, fallback_result)
             return _merge_diagnostics(result, diagnostics)
         if fallback_result is not None:
             return fallback_result
