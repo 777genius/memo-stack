@@ -66,6 +66,8 @@ from memo_stack_core.ports.clock import ClockPort
 from memo_stack_core.ports.ids import IdGeneratorPort
 from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort, UnitOfWorkPort
 
+MAX_CONTEXT_LINK_SUGGESTION_LIMIT = 30
+
 
 class SuggestContextLinksUseCase:
     def __init__(
@@ -86,6 +88,11 @@ class SuggestContextLinksUseCase:
             "source_type": command.source_type,
             "source_id": command.source_id,
         }
+        effective_limit = _bounded_suggestion_limit(command.limit)
+        diagnostics["requested_limit"] = command.limit
+        diagnostics["effective_limit"] = effective_limit
+        if effective_limit != command.limit:
+            diagnostics["limit_clamped"] = True
         if command.persist and (not command.source_type or not command.source_id):
             raise MemoryValidationError(
                 "Persisted context link suggestions require source_type and source_id"
@@ -108,28 +115,28 @@ class SuggestContextLinksUseCase:
                 memory_scope_ids=(str(command.memory_scope_id),),
                 thread_id=None,
                 query=query_text,
-                limit=max(command.limit * 3, 12),
+                limit=max(effective_limit * 3, 12),
             )
             recent_facts = await uow.facts.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 thread_id=None,
                 status="active",
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             episodes = await uow.episodes.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 thread_id=None,
                 status="active",
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             captures = await uow.captures.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 status="accepted",
                 consolidation_status=None,
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             suggestions = await uow.suggestions.list_for_scope(
                 space_id=str(command.space_id),
@@ -138,41 +145,41 @@ class SuggestContextLinksUseCase:
                 operation=None,
                 category=None,
                 tag=None,
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             assets = await uow.assets.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 thread_id=None,
                 status="stored",
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             documents = await uow.documents.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 thread_id=None,
                 status="active",
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             chunks = await uow.chunks.keyword_search(
                 space_id=str(command.space_id),
                 memory_scope_ids=(str(command.memory_scope_id),),
                 thread_id=None,
                 query=query_text,
-                limit=max(command.limit * 2, 12),
+                limit=max(effective_limit * 2, 12),
             )
             threads = await uow.scope.list_threads(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 status="active",
-                limit=max(command.limit, 8),
+                limit=max(effective_limit, 8),
             )
             anchors = await uow.anchors.list_for_scope(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
                 kind=None,
                 status="active",
-                limit=max(command.limit * 3, 24),
+                limit=max(effective_limit * 3, 24),
             )
             if command.persist:
                 observed_anchors = await self._upsert_observed_anchors(
@@ -535,7 +542,7 @@ class SuggestContextLinksUseCase:
         diagnostics["candidate_count_before_policy"] = len(ranked)
         policy_result = apply_context_link_policy(
             tuple(ranked),
-            limit=command.limit,
+            limit=effective_limit,
             persist=command.persist,
         )
         ranked = list(policy_result.candidates)
@@ -736,3 +743,7 @@ def _same_scope(entity: object, command: SuggestContextLinksCommand) -> bool:
 
 def _join_text(left: str, right: str) -> str:
     return " ".join(part for part in (left.strip(), right.strip()) if part)
+
+
+def _bounded_suggestion_limit(limit: int) -> int:
+    return min(max(1, limit), MAX_CONTEXT_LINK_SUGGESTION_LIMIT)
