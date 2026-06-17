@@ -73,6 +73,7 @@ def build_snapshot_manifest(
             "documents": _list_count(snapshot.get("documents")),
             "episodes": _list_count(snapshot.get("episodes")),
             "chunks": _list_count(snapshot.get("chunks")),
+            "captures": _list_count(snapshot.get("captures")),
             "relations": _list_count(snapshot.get("relations")),
             "source_refs": _list_count(snapshot.get("source_refs")),
         },

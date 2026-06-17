@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from memo_stack_core.memory_scope_snapshots import verify_snapshot_manifest_payload
-from memo_stack_server.config import DeployProfile, Settings
+from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
 
 
@@ -16,6 +16,7 @@ def make_client(tmp_path: Path) -> TestClient:
             qdrant_enabled=False,
             graphiti_enabled=False,
             embeddings_enabled=False,
+            capture_mode=CaptureMode.SUGGEST,
         )
     )
     return TestClient(app)
@@ -75,6 +76,27 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
                 "text": "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots.",
                 "speaker": "user",
                 "trust_level": "high",
+            },
+            headers=auth_headers(),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "thread_external_ref": "snapshot-thread",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "SnapshotCapture",
+                "actor_role": "user",
+                "text": "SNAPSHOT_CAPTURE_MARKER: quick capture survives snapshots.",
+                "source_authority": "user_statement",
+                "evidence_refs": [
+                    {"source_type": "fact", "source_id": created.json()["data"]["id"]},
+                    {"source_type": "episode", "source_id": episode.json()["data"]["episode_id"]},
+                ],
+                "idempotency_key": "snapshot-capture",
+                "consolidate": False,
             },
             headers=auth_headers(),
         )
@@ -158,15 +180,18 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert target.status_code == 201
     assert relation.status_code == 201
     assert episode.status_code == 200
+    assert capture.status_code == 201
     assert exported.status_code == 200
     assert exported.json()["counts"]["facts"] == 2
     assert exported.json()["counts"]["episodes"] == 1
     assert exported.json()["counts"]["chunks"] == 1
+    assert exported.json()["counts"]["captures"] == 1
     assert exported.json()["counts"]["relations"] == 1
-    assert snapshot["schema_version"] == 3
+    assert snapshot["schema_version"] == 4
     assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
     assert manifest["counts"]["episodes"] == 1
     assert manifest["counts"]["chunks"] == 1
+    assert manifest["counts"]["captures"] == 1
     assert manifest["counts"]["relations"] == 1
     assert manifest["snapshot_sha256"]
     assert verify_snapshot_manifest_payload(snapshot=snapshot, manifest=manifest)["ok"] is True
@@ -179,6 +204,10 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
         snapshot["episodes"][0]["text"]
         == "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots."
     )
+    assert (
+        snapshot["captures"][0]["text_redacted"]
+        == "SNAPSHOT_CAPTURE_MARKER: quick capture survives snapshots."
+    )
     assert snapshot["chunks"][0]["episode_id"] == snapshot["episodes"][0]["id"]
     assert snapshot["relations"][0]["relation_type"] == "supports"
     assert dry_run.status_code == 200
@@ -187,17 +216,20 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert dry_run.json()["data"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["would_import"]["episodes"] == 1
     assert dry_run.json()["data"]["would_import"]["chunks"] == 1
+    assert dry_run.json()["data"]["would_import"]["captures"] == 1
     assert dry_run.json()["data"]["would_import"]["relations"] == 1
     assert dry_run.json()["data"]["preview"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["preview"]["would_import"]["episodes"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["chunks"] == 1
+    assert dry_run.json()["data"]["preview"]["would_import"]["captures"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["relations"] == 1
     assert refused.status_code == 400
     assert imported.status_code == 200
     assert imported.json()["data"]["merge_strategy"] == "create_new_memory_scope"
     assert imported.json()["data"]["imported"]["episodes"] == 1
     assert imported.json()["data"]["imported"]["chunks"] == 1
+    assert imported.json()["data"]["imported"]["captures"] == 1
     assert imported.json()["data"]["imported"]["relations"] == 1
     assert restored.status_code == 200
     assert restored_source["id"] != created.json()["data"]["id"]
@@ -206,11 +238,19 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     browser_data = restored_browser.json()["data"]
     assert len(browser_data["episodes"]) == 1
     assert len(browser_data["chunks"]) == 1
+    assert len(browser_data["captures"]) == 1
     assert (
         browser_data["episodes"][0]["text"]
         == "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots."
     )
     assert browser_data["chunks"][0]["episode_id"] == browser_data["episodes"][0]["id"]
+    restored_capture = browser_data["captures"][0]
+    assert restored_capture["id"] != capture.json()["data"]["id"]
+    assert restored_capture["text_preview"] == (
+        "SNAPSHOT_CAPTURE_MARKER: quick capture survives snapshots."
+    )
+    assert restored_capture["evidence_refs"][0]["source_id"] == restored_source["id"]
+    assert restored_capture["evidence_refs"][1]["source_id"] == browser_data["episodes"][0]["id"]
     restored_relation = restored_relations.json()["data"]["items"][0]
     assert restored_relation["relation"]["relation_type"] == "supports"
     assert restored_relation["relation"]["source_fact_id"] == restored_source["id"]
@@ -223,7 +263,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
 
 def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
-        client.post(
+        fact = client.post(
             "/v1/facts",
             json={
                 "space_slug": "agents",
@@ -231,6 +271,25 @@ def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path:
                 "text": "SNAPSHOT_API_CONFLICT_MARKER: conflict preview is explicit.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "snapshot-conflict"}],
+            },
+            headers=auth_headers(),
+        )
+        client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "SnapshotConflictCapture",
+                "actor_role": "user",
+                "text": "SNAPSHOT_API_CAPTURE_CONFLICT: conflict preview includes captures.",
+                "source_authority": "user_statement",
+                "evidence_refs": [
+                    {"source_type": "fact", "source_id": fact.json()["data"]["id"]}
+                ],
+                "idempotency_key": "snapshot-conflict-capture",
+                "consolidate": False,
             },
             headers=auth_headers(),
         )
@@ -274,11 +333,13 @@ def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path:
     assert preview_response.status_code == 200
     assert data["status"] == "conflict"
     assert preview_data["status"] == "conflict"
-    assert data["conflict_count"] == 1
-    assert preview["conflict_count"] == 1
+    assert data["conflict_count"] == 2
+    assert preview["conflict_count"] == 2
     assert preview["conflicts"]["facts"] == [exported.json()["data"]["facts"][0]["id"]]
+    assert preview["conflicts"]["captures"] == [exported.json()["data"]["captures"][0]["id"]]
     assert preview_data["preview"] == preview
     assert preview["would_import"]["facts"] == 1
+    assert preview["would_import"]["captures"] == 0
     assert "conflicts_block_import" in preview["warnings"]
 
 

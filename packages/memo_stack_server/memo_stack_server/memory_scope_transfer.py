@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from memo_stack_adapters.postgres.models import (
+    MemoryCaptureRow,
     MemoryChunkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
@@ -35,6 +36,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
 from memo_stack_server.memory_scope_transfer_records import (
     bounded_optional_text as _bounded_optional_text,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    capture_from_json as _capture_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    capture_to_json as _capture_to_json,
 )
 from memo_stack_server.memory_scope_transfer_records import (
     chunk_from_json as _chunk_from_json,
@@ -74,9 +81,30 @@ from memo_stack_server.memory_scope_transfer_relations import (
     relation_to_json,
     remap_relation,
 )
+from memo_stack_server.memory_scope_transfer_remap import (
+    episode_source_thread_id as _episode_source_thread_id,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_capture as _remap_capture,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_chunk as _remap_chunk,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_document as _remap_document,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_episode as _remap_episode,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_fact as _remap_fact,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_source_ref as _remap_source_ref,
+)
 
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}
+SCHEMA_VERSION = 4
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4}
 SUPPORTED_MERGE_STRATEGIES = {
     "fail_on_conflict",
     "skip_existing",
@@ -111,6 +139,7 @@ async def export_memory_scope(
         "documents": counts["documents"],
         "episodes": counts["episodes"],
         "chunks": counts["chunks"],
+        "captures": counts["captures"],
         "relations": counts["relations"],
         "redacted": redacted,
     }
@@ -180,6 +209,18 @@ async def export_memory_scope_payload(
                 )
             ).scalars()
         )
+        captures = list(
+            (
+                await session.execute(
+                    select(MemoryCaptureRow)
+                    .where(
+                        MemoryCaptureRow.space_id == space.id,
+                        MemoryCaptureRow.memory_scope_id == memory_scope.id,
+                    )
+                    .order_by(MemoryCaptureRow.created_at, MemoryCaptureRow.id)
+                )
+            ).scalars()
+        )
         fact_ids = [fact.id for fact in facts]
         source_refs = []
         relations = []
@@ -216,6 +257,7 @@ async def export_memory_scope_payload(
         "documents": [_document_to_json(document) for document in documents],
         "episodes": [_episode_to_json(episode, redacted=redacted) for episode in episodes],
         "chunks": [_chunk_to_json(chunk, redacted=redacted) for chunk in chunks],
+        "captures": [_capture_to_json(capture, redacted=redacted) for capture in captures],
         "relations": [relation_to_json(relation) for relation in relations],
         "source_refs": [_source_ref_to_json(ref, redacted=redacted) for ref in source_refs],
         "exported_at": datetime.now(UTC).isoformat(),
@@ -229,6 +271,7 @@ async def export_memory_scope_payload(
             "documents": len(documents),
             "episodes": len(episodes),
             "chunks": len(chunks),
+            "captures": len(captures),
             "relations": len(relations),
             "source_refs": len(source_refs),
         },
@@ -279,6 +322,7 @@ async def import_memory_scope_payload(
     documents = list(payload.get("documents", []))
     episodes = list(payload.get("episodes", []))
     chunks = list(payload.get("chunks", []))
+    captures = list(payload.get("captures", []))
     relations = list(payload.get("relations", []))
     source_refs = list(payload.get("source_refs", []))
     if not dry_run and _contains_redacted_memory(
@@ -286,6 +330,7 @@ async def import_memory_scope_payload(
         facts=facts,
         episodes=episodes,
         chunks=chunks,
+        captures=captures,
     ):
         return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
 
@@ -297,6 +342,7 @@ async def import_memory_scope_payload(
         document_id_map: dict[str, str] = {}
         episode_id_map: dict[str, str] = {}
         chunk_id_map: dict[str, str] = {}
+        capture_id_map: dict[str, str] = {}
         relation_id_map: dict[str, str] = {}
         thread_id_map: dict[str, str] = {}
 
@@ -320,6 +366,9 @@ async def import_memory_scope_payload(
                 "episode", episodes, target_memory_scope_id, import_batch_id
             )
             chunk_id_map = _build_id_map("chunk", chunks, target_memory_scope_id, import_batch_id)
+            capture_id_map = _build_id_map(
+                "capture", captures, target_memory_scope_id, import_batch_id
+            )
             relation_id_map = _build_id_map(
                 "relation", relations, target_memory_scope_id, import_batch_id
             )
@@ -346,6 +395,7 @@ async def import_memory_scope_payload(
                 documents=documents,
                 episodes=episodes,
                 chunks=chunks,
+                captures=captures,
                 relations=relations,
             )
         )
@@ -371,6 +421,7 @@ async def import_memory_scope_payload(
                 documents=documents,
                 episodes=episodes,
                 chunks=chunks,
+                captures=captures,
                 relations=relations,
             )
             result: dict[str, object] = {
@@ -381,6 +432,7 @@ async def import_memory_scope_payload(
                     documents=documents,
                     episodes=episodes,
                     chunks=chunks,
+                    captures=captures,
                     relations=relations,
                     source_refs=source_refs,
                     skipped=skipped,
@@ -403,6 +455,7 @@ async def import_memory_scope_payload(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            captures=captures,
             relations=relations,
         )
         if merge_strategy == "supersede_matching_facts":
@@ -504,6 +557,25 @@ async def import_memory_scope_payload(
                     payload={"chunk_id": str(mapped["id"])},
                 )
             )
+        for capture in captures:
+            if str(capture["id"]) in skipped["captures"]:
+                continue
+            mapped = _remap_capture(
+                capture,
+                fact_id_map=fact_id_map,
+                document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
+                chunk_id_map=chunk_id_map,
+                capture_id_map=capture_id_map,
+            )
+            session.add(
+                _capture_from_json(
+                    mapped,
+                    space_id=space_id,
+                    memory_scope_id=target_memory_scope_id,
+                    now=now,
+                )
+            )
         imported_refs_by_fact: set[str] = set()
         for ref in source_refs:
             if str(ref["fact_id"]) in skipped["facts"]:
@@ -582,6 +654,7 @@ async def import_memory_scope_payload(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            captures=captures,
             relations=relations,
             source_refs=source_refs,
             skipped=skipped,
@@ -798,96 +871,9 @@ async def _ensure_import_threads(
         )
 
 
-def _remap_fact(item: dict[str, Any], *, fact_id_map: dict[str, str]) -> dict[str, Any]:
-    fact_id = str(item["id"])
-    if fact_id not in fact_id_map:
-        return item
-    return {**item, "id": fact_id_map[fact_id]}
-
-
-def _remap_document(
-    item: dict[str, Any],
-    *,
-    document_id_map: dict[str, str],
-) -> dict[str, Any]:
-    document_id = str(item["id"])
-    if document_id not in document_id_map:
-        return item
-    return {**item, "id": document_id_map[document_id]}
-
-
-def _remap_episode(
-    item: dict[str, Any],
-    *,
-    episode_id_map: dict[str, str],
-    thread_id_map: dict[str, str],
-) -> dict[str, Any]:
-    episode_id = str(item["id"])
-    source_thread_id = _episode_source_thread_id(item)
-    return {
-        **item,
-        "id": episode_id_map.get(episode_id, episode_id),
-        "thread_id": thread_id_map.get(source_thread_id, source_thread_id),
-    }
-
-
-def _remap_chunk(
-    item: dict[str, Any],
-    *,
-    document_id_map: dict[str, str],
-    episode_id_map: dict[str, str],
-    chunk_id_map: dict[str, str],
-    thread_id_map: dict[str, str],
-) -> dict[str, Any]:
-    chunk_id = str(item["id"])
-    document_id = item.get("document_id")
-    episode_id = item.get("episode_id")
-    thread_id = item.get("thread_id")
-    mapped_thread_id = None
-    if episode_id is not None and thread_id is not None:
-        mapped_thread_id = thread_id_map.get(str(thread_id), str(thread_id))
-    return {
-        **item,
-        "id": chunk_id_map.get(chunk_id, chunk_id),
-        "thread_id": mapped_thread_id,
-        "document_id": (
-            document_id_map.get(str(document_id), str(document_id))
-            if document_id is not None
-            else None
-        ),
-        "episode_id": (
-            episode_id_map.get(str(episode_id), str(episode_id))
-            if episode_id is not None
-            else None
-        ),
-    }
-
-
-def _remap_source_ref(
-    item: dict[str, Any],
-    *,
-    fact_id_map: dict[str, str],
-    chunk_id_map: dict[str, str],
-    skipped_chunk_ids: set[str],
-) -> dict[str, Any]:
-    chunk_id = item.get("chunk_id")
-    mapped_chunk_id = None
-    if chunk_id is not None and str(chunk_id) not in skipped_chunk_ids:
-        mapped_chunk_id = chunk_id_map.get(str(chunk_id), str(chunk_id))
-    return {
-        **item,
-        "fact_id": fact_id_map.get(str(item["fact_id"]), str(item["fact_id"])),
-        "chunk_id": mapped_chunk_id,
-    }
-
-
 def _stable_id(prefix: str, *parts: str) -> str:
     digest = sha256("\u241f".join(parts).encode("utf-8")).hexdigest()[:24]
     return f"{prefix}_{digest}"
-
-
-def _episode_source_thread_id(item: dict[str, Any]) -> str:
-    return str(item.get("thread_id") or item["id"])
 
 
 def _import_thread_external_ref(source_thread_id: str, target_thread_id: str) -> str:

@@ -1496,6 +1496,7 @@ def test_import_memory_scope_enqueues_projection_reindex_events(
         "documents": 1,
         "episodes": 0,
         "chunks": 1,
+        "captures": 0,
         "relations": 0,
         "source_refs": 1,
     }
@@ -1630,6 +1631,7 @@ def test_import_memory_scope_drops_thread_ids_without_thread_transfer(
         "documents": 1,
         "episodes": 0,
         "chunks": 1,
+        "captures": 0,
         "relations": 0,
         "source_refs": 1,
     }
@@ -1781,6 +1783,7 @@ def test_import_memory_scope_transfers_episode_chunks_with_import_thread(
         "documents": 0,
         "episodes": 1,
         "chunks": 1,
+        "captures": 0,
         "relations": 0,
         "source_refs": 1,
     }
@@ -1938,6 +1941,7 @@ def test_import_memory_scope_skips_episode_chunks_without_episode_transfer(
         "documents": 0,
         "episodes": 0,
         "chunks": 0,
+        "captures": 0,
         "relations": 0,
         "source_refs": 0,
     }

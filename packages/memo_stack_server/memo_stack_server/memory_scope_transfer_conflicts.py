@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from memo_stack_adapters.postgres.models import (
+    MemoryCaptureRow,
     MemoryChunkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
@@ -24,6 +25,7 @@ async def memory_scope_snapshot_conflicts(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    captures: list[dict[str, Any]],
     relations: list[dict[str, Any]],
 ) -> list[str]:
     conflicts: list[str] = []
@@ -31,12 +33,14 @@ async def memory_scope_snapshot_conflicts(
     document_ids = [str(item["id"]) for item in documents]
     episode_ids = [str(item["id"]) for item in episodes]
     chunk_ids = [str(item["id"]) for item in chunks]
+    capture_ids = [str(item["id"]) for item in captures]
     relation_ids = [str(item["id"]) for item in relations]
     for model, ids in (
         (MemoryFactRow, fact_ids),
         (MemoryDocumentRow, document_ids),
         (MemoryEpisodeRow, episode_ids),
         (MemoryChunkRow, chunk_ids),
+        (MemoryCaptureRow, capture_ids),
         (MemoryFactRelationRow, relation_ids),
     ):
         if not ids:
@@ -57,6 +61,13 @@ async def memory_scope_snapshot_conflicts(
             space_id=space_id,
             memory_scope_id=memory_scope_id,
             chunks=chunks,
+        )
+    )
+    conflicts.extend(
+        await _capture_idempotency_conflicts(
+            session,
+            space_id=space_id,
+            captures=captures,
         )
     )
     conflicts.extend(
@@ -127,6 +138,34 @@ async def _chunk_hash_conflicts(
         by_hash[str(source_hash)]
         for row_id, source_hash in rows
         if str(row_id) != by_hash[str(source_hash)]
+    ]
+
+
+async def _capture_idempotency_conflicts(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    captures: list[dict[str, Any]],
+) -> list[str]:
+    by_key = {
+        str(item.get("idempotency_key")): str(item["id"])
+        for item in captures
+        if item.get("idempotency_key")
+    }
+    if not by_key:
+        return []
+    rows = (
+        await session.execute(
+            select(MemoryCaptureRow.id, MemoryCaptureRow.idempotency_key).where(
+                MemoryCaptureRow.space_id == space_id,
+                MemoryCaptureRow.idempotency_key.in_(by_key),
+            )
+        )
+    ).all()
+    return [
+        by_key[str(idempotency_key)]
+        for row_id, idempotency_key in rows
+        if str(row_id) != by_key[str(idempotency_key)]
     ]
 
 

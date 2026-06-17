@@ -14,6 +14,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
             {"id": "chunk_episode_keep", "episode_id": "episode_keep"},
             {"id": "chunk_orphan", "document_id": "missing_doc"},
         ],
+        "captures": [{"id": "capture_keep"}, {"id": "capture_conflict"}],
         "relations": [
             {
                 "id": "relation_keep",
@@ -32,7 +33,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     skip_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
         merge_strategy="skip_existing",
-        conflict_ids={"fact_conflict", "doc_conflict"},
+        conflict_ids={"fact_conflict", "doc_conflict", "capture_conflict"},
     )
     supersede_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
@@ -45,16 +46,19 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "documents": 1,
         "episodes": 1,
         "chunks": 3,
+        "captures": 2,
         "relations": 1,
         "source_refs": 3,
     }
     assert skip_preview["conflicts"]["facts"] == ["fact_conflict"]
     assert skip_preview["conflicts"]["documents"] == ["doc_conflict"]
+    assert skip_preview["conflicts"]["captures"] == ["capture_conflict"]
     assert skip_preview["would_skip"] == {
         "facts": 1,
         "documents": 1,
         "episodes": 0,
         "chunks": 2,
+        "captures": 1,
         "relations": 1,
         "source_refs": 2,
     }
@@ -63,6 +67,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "documents": 0,
         "episodes": 1,
         "chunks": 1,
+        "captures": 1,
         "relations": 0,
         "source_refs": 1,
     }
