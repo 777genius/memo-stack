@@ -239,6 +239,16 @@ def test_makefile_has_prod_confidence_gate_with_cleanup() -> None:
     assert "memo-stack-agent-live-smoke-agents-strict" not in recipe
 
 
+def test_makefile_secret_scan_covers_openai_service_account_keys() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-secret-scan"))
+
+    assert "rg -n -P" in recipe
+    assert r"\bsk-(?!ant-)[A-Za-z0-9_-]{40,}\b" in recipe
+    assert "(proj-)?" not in recipe
+    assert "-g '!frontend/test/**'" in recipe
+
+
 def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-prod-confidence-strict"))
