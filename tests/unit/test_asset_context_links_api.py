@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -1307,6 +1308,44 @@ def test_context_linking_quality_golden_links_last_week_intent_without_text_matc
         assert "temporal_intent_match" in fact_candidate["metadata"]["reason_codes"]
         assert fact_candidate["suggestion_id"]
         assert thread_candidate["suggestion_id"]
+
+
+def test_context_link_suggestions_redact_public_diagnostics(tmp_path: Path) -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "diagnostic-redaction-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-review",
+                "text": "Project Atlas uses safe context links.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "safe-fact"}],
+                "tags": ["atlas"],
+            },
+            headers=auth_headers({"Idempotency-Key": "diagnostic-redaction-linking-fact"}),
+        )
+        assert fact.status_code == 201, fact.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "diagnostic-redaction-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-review",
+                "source_type": "capture",
+                "source_id": raw_secret,
+                "text": f"Project Atlas token={raw_secret}",
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert suggestions.status_code == 200, suggestions.text
+    rendered = json.dumps(suggestions.json(), sort_keys=True)
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
 
 
 def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path) -> None:

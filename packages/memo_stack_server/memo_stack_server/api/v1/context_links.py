@@ -155,7 +155,7 @@ async def suggest_context_links(
                 }
                 for item in result.candidates
             ],
-            "diagnostics": result.diagnostics,
+            "diagnostics": safe_public_metadata(result.diagnostics),
         }
     }
 
