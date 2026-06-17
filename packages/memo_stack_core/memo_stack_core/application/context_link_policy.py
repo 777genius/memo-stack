@@ -9,11 +9,24 @@ from memo_stack_core.application.dto import ContextLinkCandidate
 POLICY_VERSION = "context-link-policy-v1"
 MAX_SUGGESTIONS_PER_SOURCE = 10
 MIN_REVIEW_SCORE = 40.0
+MIN_STRONG_SIGNAL_REVIEW_SCORE = 55.0
 AUTO_APPROVE_ELIGIBLE_SCORE = 92.0
 MAX_DENIED_DIAGNOSTIC_ITEMS = 8
 
 _AUTO_APPROVE_TARGET_TYPES = frozenset({"anchor", "fact", "episode", "document", "chunk"})
 _REVIEW_BLOCKED_TARGET_TYPES = frozenset({"suggestion"})
+_STRONG_REVIEW_SIGNAL_CODES = frozenset(
+    {
+        "text_match",
+        "temporal_intent_match",
+        "explicit_project_reference",
+        "known_project_tool_reference",
+        "event_phrase",
+        "person_name",
+        "organization_reference",
+        "rule_signal",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -173,6 +186,12 @@ def _deny_reason_codes(
         codes.append("missing_reason_codes")
     if reason_codes == ("recent_context",):
         codes.append("recent_context_only")
+    if (
+        MIN_REVIEW_SCORE <= candidate.score < MIN_STRONG_SIGNAL_REVIEW_SCORE
+        and reason_codes
+        and not _STRONG_REVIEW_SIGNAL_CODES.intersection(reason_codes)
+    ):
+        codes.append("weak_signal_below_review_threshold")
     return tuple(codes)
 
 

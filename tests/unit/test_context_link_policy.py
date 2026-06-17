@@ -44,6 +44,34 @@ def test_policy_denies_weak_recent_only_candidate() -> None:
     ]
 
 
+def test_policy_denies_low_score_without_strong_link_signal() -> None:
+    candidate = _candidate(target_id="weak-thread", score=54.9, reason_codes=["same_thread"])
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "deny"
+    assert decision.reason_codes == ("weak_signal_below_review_threshold",)
+    assert result.candidates == ()
+    assert result.diagnostics["link_policy_denied_reason_counts"] == {
+        "weak_signal_below_review_threshold": 1
+    }
+
+
+def test_policy_allows_low_score_with_strong_temporal_signal_for_review() -> None:
+    candidate = _candidate(
+        target_id="temporal",
+        score=45.0,
+        reason_codes=["temporal_intent_match"],
+    )
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "needs_review"
+    assert decision.requires_review is True
+    assert result.candidates[0].target_id == "temporal"
+    assert result.candidates[0].metadata["policy_decision"] == "needs_review"
+
+
 def test_policy_marks_strong_text_match_as_auto_approve_eligible_but_review_gated() -> None:
     decision = decide_context_link_candidate(_candidate(target_id="strong", score=94))
 
