@@ -63,6 +63,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "temporal_intent_recall": 1.0,
                 "document_chunk_linking_accuracy": 1.0,
                 "anchor_recall_rate": 1.0,
+                "anchor_disambiguation_rate": 1.0,
                 "review_approval_rate": 1.0,
                 "false_positive_count": 0,
             },
@@ -72,6 +73,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "temporal_intent_links_recent_fact_without_text_match": True,
                 "document_chunk_evidence_suggested": True,
                 "person_and_project_anchors_suggested": True,
+                "same_name_person_project_anchors_separate": True,
                 "top_suggestion_approves_to_link": True,
                 "unrelated_capture_has_no_candidates": True,
             },
@@ -1423,6 +1425,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
             "temporal_intent_recall": 0.0,
             "document_chunk_linking_accuracy": 0.0,
             "anchor_recall_rate": 0.5,
+            "anchor_disambiguation_rate": 0.0,
             "review_approval_rate": 0.0,
             "false_positive_count": 1,
         }
@@ -1433,6 +1436,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["ok"] is False
     assert result["capabilities"]["semantic_linking"]["ok"] is False
     assert result["capabilities"]["semantic_linking"]["failed_checks"] == [
+        "anchor_disambiguation_rate",
         "anchor_recall_rate",
         "document_chunk_linking_accuracy",
         "event_linking_accuracy",
@@ -1445,6 +1449,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["metrics"]["semantic_linking_event_linking_accuracy"] == 0.0
     assert result["metrics"]["semantic_linking_temporal_intent_recall"] == 0.0
     assert result["metrics"]["semantic_linking_document_chunk_linking_accuracy"] == 0.0
+    assert result["metrics"]["semantic_linking_anchor_disambiguation_rate"] == 0.0
     assert result["metrics"]["semantic_linking_false_positive_count"] == 1
     assert result["gates"]["all_capabilities_ok"] is False
 

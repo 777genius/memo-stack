@@ -79,6 +79,34 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
         assert ("person", "alex") in anchor_labels
         assert ("project", "atlas") in anchor_labels
 
+        same_name_capture = _capture(
+            client,
+            source_event_id="same-name-anchor-capture",
+            text="Alex wrote that Project Alex is a separate workspace.",
+            thread_external_ref="quality-review",
+        )
+        same_name_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quality-review",
+                "source_type": "capture",
+                "source_id": same_name_capture["id"],
+                "text": "Alex wrote that Project Alex is a separate workspace",
+                "persist": True,
+                "limit": 8,
+            },
+        )
+        assert same_name_suggestions.status_code == 200, same_name_suggestions.text
+        same_name_anchor_labels = {
+            (item["metadata"].get("anchor_kind"), item["metadata"].get("normalized_key"))
+            for item in same_name_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "anchor"
+        }
+        assert ("person", "alex") in same_name_anchor_labels
+        assert ("project", "alex") in same_name_anchor_labels
+
         approved = client.post(
             f"/v1/context-link-suggestions/{fact_candidates[0]['suggestion_id']}/review",
             json={"action": "approve", "reason": "quality golden accepted top target"},

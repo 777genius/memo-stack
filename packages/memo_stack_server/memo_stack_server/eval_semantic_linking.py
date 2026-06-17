@@ -163,6 +163,41 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             "anchor_keys": sorted(required_anchor_keys),
         }
     )
+    same_name_capture = _capture(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_event_id="same-name-anchor-capture",
+        text="Alex wrote that Project Alex is a separate workspace.",
+        thread_external_ref="quality-review",
+    )
+    same_name_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_id=str(same_name_capture.get("id", "")),
+        text="Alex wrote that Project Alex is a separate workspace",
+        thread_external_ref="quality-review",
+    )
+    same_name_anchor_keys = {
+        (
+            item.get("metadata", {}).get("anchor_kind"),
+            item.get("metadata", {}).get("normalized_key"),
+        )
+        for item in same_name_suggestions.get("candidates", [])
+        if item.get("target_type") == "anchor"
+    }
+    checks["same_name_person_project_anchors_separate"] = {
+        ("person", "alex"),
+        ("project", "alex"),
+    }.issubset(same_name_anchor_keys)
+    cases.append(
+        {
+            "case_id": "same_name_person_project_anchors_separate",
+            "ok": checks["same_name_person_project_anchors_separate"],
+            "anchor_keys": sorted(same_name_anchor_keys),
+        }
+    )
     if not checks["top_fact_beats_distractor"]:
         failures.append(
             _failure(
@@ -178,6 +213,14 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
                 "anchor_evidence_confidence_and_observed_at_exposed",
                 "anchor_quality",
                 "anchors_missing_review_evidence_or_confidence",
+            )
+        )
+    if not checks["same_name_person_project_anchors_separate"]:
+        failures.append(
+            _failure(
+                "same_name_person_project_anchors_separate",
+                "anchor_disambiguation",
+                "same_normalized_person_and_project_not_kept_separate",
             )
         )
 
@@ -615,6 +658,9 @@ def _report(
             1.0 if checks.get("document_chunk_evidence_suggested") else 0.0
         ),
         "anchor_recall_rate": 1.0 if checks.get("person_and_project_anchors_suggested") else 0.0,
+        "anchor_disambiguation_rate": (
+            1.0 if checks.get("same_name_person_project_anchors_separate") else 0.0
+        ),
         "anchor_review_evidence_rate": (
             1.0
             if checks.get("anchor_evidence_confidence_and_observed_at_exposed")
@@ -630,6 +676,7 @@ def _report(
         "temporal_intent_recall": metrics["temporal_intent_recall"] == 1.0,
         "document_chunk_linking_accuracy": metrics["document_chunk_linking_accuracy"] == 1.0,
         "anchor_recall_rate": metrics["anchor_recall_rate"] == 1.0,
+        "anchor_disambiguation_rate": metrics["anchor_disambiguation_rate"] == 1.0,
         "anchor_review_evidence_rate": metrics["anchor_review_evidence_rate"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,

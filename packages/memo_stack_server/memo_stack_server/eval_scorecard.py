@@ -373,6 +373,7 @@ def _scorecard_semantic_linking(
         "temporal_intent_recall": metrics.get("temporal_intent_recall") == 1.0,
         "document_chunk_linking_accuracy": (metrics.get("document_chunk_linking_accuracy") == 1.0),
         "anchor_recall_rate": metrics.get("anchor_recall_rate") == 1.0,
+        "anchor_disambiguation_rate": metrics.get("anchor_disambiguation_rate") == 1.0,
         "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
         "false_positive_count": metrics.get("false_positive_count") == 0,
     }
@@ -1397,6 +1398,10 @@ def _scorecard_metrics(
             0.0,
         ),
         "semantic_linking_anchor_recall_rate": semantic.get("anchor_recall_rate", 0.0),
+        "semantic_linking_anchor_disambiguation_rate": semantic.get(
+            "anchor_disambiguation_rate",
+            0.0,
+        ),
         "semantic_linking_review_approval_rate": semantic.get("review_approval_rate", 0.0),
         "semantic_linking_false_positive_count": semantic.get("false_positive_count", 0),
         "graph_recall_rate": graph.get("graph_recall_rate", 0.0),
