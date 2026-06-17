@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -6,7 +7,11 @@ import pytest
 from memo_stack_adapters.extraction import content as content_module
 from memo_stack_adapters.extraction import transcription_engine as transcription_engine_module
 from memo_stack_adapters.extraction.content import MediaMetadataExtractionEngine
-from memo_stack_adapters.extraction.media_tools import MediaProbeResult, VideoKeyframe
+from memo_stack_adapters.extraction.media_tools import (
+    MediaProbeResult,
+    VideoKeyframe,
+    _selected_keyframe_windows_ms,
+)
 from memo_stack_adapters.extraction.transcription.openai_adapter import (
     OpenAISpeechTranscriptionAdapter,
 )
@@ -108,6 +113,48 @@ def test_media_metadata_engine_emits_video_keyframe_timeline(
         "media_metadata",
         "video_keyframe",
     ]
+
+
+def test_selected_keyframe_windows_cover_video_duration() -> None:
+    assert _selected_keyframe_windows_ms(
+        (0.0, 4.0, 7.5),
+        duration_seconds=8.0,
+    ) == ((0, 2000), (2000, 5750), (5750, 8000))
+    assert _selected_keyframe_windows_ms(
+        (1.25,),
+        duration_seconds=None,
+    ) == ((1250, 1250),)
+
+
+def test_video_frame_evidence_preserves_frame_time_range() -> None:
+    frame = VideoKeyframe(
+        filename="keyframe-0001.png",
+        content=_sample_png_bytes(),
+        content_type="image/png",
+        time_start_ms=1000,
+        time_end_ms=2500,
+        metadata={
+            "selected_at_ms": 1250,
+            "time_start_ms": 1000,
+            "time_end_ms": 2500,
+            "frame_index": 1,
+            "selection": "sampled_keyframe",
+        },
+    )
+
+    evidence = transcription_engine_module.analyze_video_keyframes(
+        frames=(frame,),
+        parser_name="test_video_parser",
+        enable_ocr=False,
+        ocr_timeout_seconds=1,
+    )
+
+    payload = json.loads(evidence.timeline_artifact.content.decode("utf-8"))
+    assert payload["frames"][0]["selected_at_ms"] == 1250
+    assert payload["frames"][0]["time_start_ms"] == 1000
+    assert payload["frames"][0]["time_end_ms"] == 2500
+    assert evidence.elements[0].time_start_ms == 1000
+    assert evidence.elements[0].time_end_ms == 2500
 
 
 def _request(
@@ -239,3 +286,12 @@ class _FakeTranscriptionClient:
 
     async def aclose(self) -> None:
         return None
+
+
+def _sample_png_bytes() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+        b"\x00\x00\x00\x0cIDATx\x9cc```\x00\x00\x00\x04"
+        b"\x00\x01\xf6\x178U\x00\x00\x00\x00IEND\xaeB`\x82"
+    )

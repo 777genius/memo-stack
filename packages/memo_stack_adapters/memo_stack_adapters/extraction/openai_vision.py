@@ -13,6 +13,11 @@ from memo_stack_core.ports.extraction import (
     ExtractionRequest,
     ExtractionResult,
 )
+from memo_stack_core.ports.vision import (
+    ImageVisionPort,
+    ImageVisionRequest,
+    ImageVisionResult,
+)
 
 from memo_stack_adapters.extraction.content import (
     _IMAGE_TYPES,
@@ -99,12 +104,21 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
         detail: str = "high",
         client_factory: Callable[[], Any] | None = None,
         max_output_tokens: int = 1200,
+        vision: ImageVisionPort | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._detail = detail
         self._client_factory = client_factory
         self._max_output_tokens = max_output_tokens
+        adapter_client_factory = self._client if (api_key or client_factory is not None) else None
+        self._vision = vision or OpenAIImageVisionAdapter(
+            api_key=api_key,
+            model=model,
+            detail=detail,
+            client_factory=adapter_client_factory,
+            max_output_tokens=max_output_tokens,
+        )
 
     async def supports(self, request: ExtractionRequest) -> SupportDecision:
         if not _profile_wants_vision(request.parser_profile):
@@ -123,14 +137,6 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                 message="External AI image understanding is disabled",
                 model_version=self._model,
             )
-        if not self._api_key and self._client_factory is None:
-            return _fallback_unsupported(
-                request,
-                code="asset_extraction.vision_missing_api_key",
-                message="OpenAI API key is missing for image understanding",
-                model_version=self._model,
-            )
-
         image_metadata = read_image_metadata(request.content)
         if (
             image_metadata is not None
@@ -147,6 +153,147 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                     "image_pixels": image_metadata.width * image_metadata.height,
                     "max_image_pixels": request.limits.max_image_pixels,
                 },
+            )
+        vision_result = await self._vision.analyze(
+            ImageVisionRequest(
+                job_id=request.job_id,
+                asset_id=request.asset_id,
+                filename=request.filename,
+                content_type=request.detected_content_type,
+                byte_size=request.byte_size,
+                sha256_hex=request.sha256_hex,
+                content=request.content,
+                max_output_chars=request.limits.max_output_chars,
+            )
+        )
+        if vision_result.status != "succeeded":
+            return _fallback_unsupported(
+                request,
+                code=vision_result.safe_error_code or "asset_extraction.vision_failed",
+                message=vision_result.safe_error_message or "Image understanding failed",
+                model_version=vision_result.provider_model or self._model,
+                metadata={
+                    "vision_provider": vision_result.provider_name,
+                    "vision_model": vision_result.provider_model,
+                    **vision_result.diagnostics,
+                },
+            )
+
+        payload = vision_result.payload
+        payload_status = vision_result.payload_status
+        markdown = _limit_text(
+            _vision_markdown(payload=payload, fallback=str(payload.get("summary") or "")),
+            request.limits.max_output_chars,
+        )
+        provider_model = vision_result.provider_model or self._model
+        regions = _vision_regions(
+            payload=payload,
+            image_metadata=image_metadata,
+            parser_name=self.name,
+            model=provider_model,
+        )
+        summary_element = _vision_summary_element(
+            payload=payload,
+            markdown=markdown,
+            image_metadata=image_metadata,
+            parser_name=self.name,
+            model=provider_model,
+        )
+        artifacts = [
+            json_artifact(
+                artifact_type="vision_json",
+                filename="vision.json",
+                payload=payload,
+                parser_name=self.name,
+                metadata={
+                    "vision_provider": vision_result.provider_name,
+                    "vision_model": provider_model,
+                    "vision_json_status": payload_status,
+                    "vision_region_count": len(regions),
+                },
+            )
+        ]
+        if image_metadata is not None:
+            artifacts.append(
+                image_regions_artifact(
+                    filename="vision-regions.json",
+                    parser_name=self.name,
+                    image=image_metadata,
+                    regions=(summary_element, *regions),
+                    metadata={
+                        "vision_provider": vision_result.provider_name,
+                        "vision_model": provider_model,
+                        "vision_json_status": payload_status,
+                        "vision_region_count": len(regions),
+                    },
+                )
+            )
+
+        return ExtractionResult(
+            status="succeeded",
+            normalized_content_type=request.detected_content_type,
+            title=request.filename.strip() or "Image understanding",
+            markdown=markdown,
+            elements=(
+                summary_element.to_element(parser_name=self.name),
+                *(region.to_element(parser_name=self.name) for region in regions),
+            ),
+            artifacts=tuple(artifacts),
+            technical_metadata={
+                "byte_size": request.byte_size,
+                "mime_detected": request.detected_content_type,
+                "vision_status": "extracted",
+                "vision_provider": vision_result.provider_name,
+                "vision_model": provider_model,
+                "vision_provider_version": vision_result.provider_version,
+                "vision_detail": self._detail,
+                "vision_prompt_policy": "image_text_is_untrusted_evidence",
+                "vision_json_status": payload_status,
+                "vision_region_count": len(regions),
+                "visible_text_count": len(payload.get("visible_text", ())),
+                "suggested_tag_count": len(payload.get("suggested_tags", ())),
+                "screenshot_ui_summary_chars": len(str(payload.get("screenshot_ui_summary") or "")),
+                "output_chars": len(markdown),
+                **(image_metadata.as_metadata() if image_metadata is not None else {}),
+            },
+            diagnostics={"engine": self.name},
+            parser_name=self.name,
+            parser_version=vision_result.provider_version or "image-vision-port",
+            model_version=provider_model,
+        )
+
+    def _client(self) -> Any:
+        if self._client_factory is not None:
+            return self._client_factory()
+        from openai import AsyncOpenAI
+
+        return AsyncOpenAI(api_key=self._api_key)
+
+
+class OpenAIImageVisionAdapter(ImageVisionPort):
+    provider_name = "openai_vision"
+    provider_version = "responses-api"
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        model: str,
+        detail: str = "high",
+        client_factory: Callable[[], Any] | None = None,
+        max_output_tokens: int = 1200,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._detail = detail
+        self._client_factory = client_factory
+        self._max_output_tokens = max_output_tokens
+
+    async def analyze(self, request: ImageVisionRequest) -> ImageVisionResult:
+        if not self._api_key and self._client_factory is None:
+            return self._unsupported(
+                code="asset_extraction.vision_missing_api_key",
+                message="OpenAI API key is missing for image understanding",
             )
         client = None
         try:
@@ -172,98 +319,27 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
             )
             raw_output = _response_output_text(response)
         except Exception:
-            return _fallback_unsupported(
-                request,
+            return self._unsupported(
                 code="asset_extraction.vision_provider_error",
                 message="OpenAI image understanding failed",
-                model_version=self._model,
             )
         finally:
             await _close_client(client)
 
         if not raw_output.strip():
-            return _fallback_unsupported(
-                request,
+            return self._unsupported(
                 code="asset_extraction.vision_empty_output",
                 message="OpenAI image understanding returned no searchable text",
-                model_version=self._model,
             )
-
         payload, payload_status = _vision_payload(raw_output)
-        markdown = _limit_text(
-            _vision_markdown(payload=payload, fallback=raw_output),
-            request.limits.max_output_chars,
-        )
-        regions = _vision_regions(
-            payload=payload,
-            image_metadata=image_metadata,
-            parser_name=self.name,
-            model=self._model,
-        )
-        summary_element = _vision_summary_element(
-            payload=payload,
-            markdown=markdown,
-            image_metadata=image_metadata,
-            parser_name=self.name,
-            model=self._model,
-        )
-        artifacts = [
-            json_artifact(
-                artifact_type="vision_json",
-                filename="vision.json",
-                payload=payload,
-                parser_name=self.name,
-                metadata={
-                    "vision_model": self._model,
-                    "vision_json_status": payload_status,
-                    "vision_region_count": len(regions),
-                },
-            )
-        ]
-        if image_metadata is not None:
-            artifacts.append(
-                image_regions_artifact(
-                    filename="vision-regions.json",
-                    parser_name=self.name,
-                    image=image_metadata,
-                    regions=(summary_element, *regions),
-                    metadata={
-                        "vision_model": self._model,
-                        "vision_json_status": payload_status,
-                        "vision_region_count": len(regions),
-                    },
-                )
-            )
-
-        return ExtractionResult(
+        return ImageVisionResult(
             status="succeeded",
-            normalized_content_type=request.detected_content_type,
-            title=request.filename.strip() or "Image understanding",
-            markdown=markdown,
-            elements=(
-                summary_element.to_element(parser_name=self.name),
-                *(region.to_element(parser_name=self.name) for region in regions),
-            ),
-            artifacts=tuple(artifacts),
-            technical_metadata={
-                "byte_size": request.byte_size,
-                "mime_detected": request.detected_content_type,
-                "vision_status": "extracted",
-                "vision_model": self._model,
-                "vision_detail": self._detail,
-                "vision_prompt_policy": "image_text_is_untrusted_evidence",
-                "vision_json_status": payload_status,
-                "vision_region_count": len(regions),
-                "visible_text_count": len(payload.get("visible_text", ())),
-                "suggested_tag_count": len(payload.get("suggested_tags", ())),
-                "screenshot_ui_summary_chars": len(str(payload.get("screenshot_ui_summary") or "")),
-                "output_chars": len(markdown),
-                **(image_metadata.as_metadata() if image_metadata is not None else {}),
-            },
-            diagnostics={"engine": self.name},
-            parser_name=self.name,
-            parser_version="responses-api",
-            model_version=self._model,
+            payload=payload,
+            payload_status=payload_status,
+            provider_name=self.provider_name,
+            provider_model=self._model,
+            provider_version=self.provider_version,
+            diagnostics={"detail": self._detail},
         )
 
     def _client(self) -> Any:
@@ -273,15 +349,26 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
 
         return AsyncOpenAI(api_key=self._api_key)
 
+    def _unsupported(self, *, code: str, message: str) -> ImageVisionResult:
+        return ImageVisionResult(
+            status="unsupported",
+            provider_name=self.provider_name,
+            provider_model=self._model,
+            provider_version=self.provider_version,
+            diagnostics={"detail": self._detail},
+            safe_error_code=code,
+            safe_error_message=message,
+        )
+
 
 def _profile_wants_vision(parser_profile: str) -> bool:
     normalized = parser_profile.strip().lower()
     return normalized in _VISION_PROFILES or normalized.startswith(("vision:", "openai_vision:"))
 
 
-def _data_url(request: ExtractionRequest) -> str:
+def _data_url(request: ImageVisionRequest) -> str:
     encoded = base64.b64encode(request.content).decode("ascii")
-    return f"data:{request.detected_content_type};base64,{encoded}"
+    return f"data:{request.content_type};base64,{encoded}"
 
 
 def _structured_text_config() -> dict[str, object]:

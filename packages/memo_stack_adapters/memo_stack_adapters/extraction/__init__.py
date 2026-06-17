@@ -12,7 +12,10 @@ from memo_stack_adapters.extraction.content import (
 from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
 from memo_stack_adapters.extraction.factory import build_standard_extractor
 from memo_stack_adapters.extraction.openai_json import OpenAIJsonMemoryExtractor
-from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from memo_stack_adapters.extraction.openai_vision import (
+    OpenAIImageVisionAdapter,
+    OpenAIVisionImageExtractionEngine,
+)
 from memo_stack_adapters.extraction.transcription import OpenAISpeechTranscriptionAdapter
 from memo_stack_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
 from memo_stack_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
@@ -21,6 +24,7 @@ __all__ = [
     "DoclingDocumentExtractionEngine",
     "FasterWhisperTranscriptionEngine",
     "OpenAIJsonMemoryExtractor",
+    "OpenAIImageVisionAdapter",
     "OpenAISpeechTranscriptionAdapter",
     "OpenAIVisionImageExtractionEngine",
     "ImageMetadataExtractionEngine",

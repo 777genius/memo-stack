@@ -1314,6 +1314,21 @@ def test_video_asset_extraction_stores_keyframe_artifact(tmp_path: Path) -> None
         assert {"extracted_json", "keyframe", "markdown", "media_manifest"}.issubset(artifact_types)
         assert "video_frame_timeline" in artifact_types
         assert extracted["metadata"]["video_keyframe_count"] >= 1
+        timeline_artifact = next(
+            item
+            for item in extracted["artifacts"]
+            if item["artifact_type"] == "video_frame_timeline"
+        )
+        timeline = client.get(
+            f"/v1/extraction-artifacts/{timeline_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert timeline.status_code == 200, timeline.text
+        timeline_payload = json.loads(timeline.content.decode("utf-8"))
+        first_frame = timeline_payload["frames"][0]
+        assert first_frame["selection"] == "sampled_keyframe"
+        assert first_frame["time_start_ms"] <= first_frame["selected_at_ms"]
+        assert first_frame["time_end_ms"] >= first_frame["selected_at_ms"]
 
 
 def test_asset_extraction_request_is_idempotent_before_and_after_worker(

@@ -41,6 +41,8 @@ def analyze_video_keyframes(
             **frame.metadata,
             "filename": frame.filename,
             "content_type": frame.content_type,
+            "time_start_ms": frame.time_start_ms,
+            "time_end_ms": _frame_time_end_ms(frame),
         }
         if image is not None:
             frame_metadata.update(image.as_metadata())
@@ -55,7 +57,7 @@ def analyze_video_keyframes(
                     ),
                 ).to_element(parser_name=parser_name)
             )
-            elements[-1] = _with_time(elements[-1], time_start_ms=frame.time_start_ms)
+            elements[-1] = _with_frame_time(elements[-1], frame=frame)
         ocr_status = "disabled"
         ocr_text_preview = ""
         ocr_block_count = 0
@@ -72,7 +74,7 @@ def analyze_video_keyframes(
                 ocr_extracted_count += 1
             for region in ocr.regions:
                 element = region.to_element(parser_name=parser_name)
-                elements.append(_with_time(element, time_start_ms=frame.time_start_ms))
+                elements.append(_with_frame_time(element, frame=frame))
         frame_payloads.append(
             {
                 **frame_metadata,
@@ -110,14 +112,18 @@ def analyze_video_keyframes(
     )
 
 
-def _with_time(element: ExtractedElement, *, time_start_ms: int) -> ExtractedElement:
+def _with_frame_time(element: ExtractedElement, *, frame: VideoKeyframe) -> ExtractedElement:
     return ExtractedElement(
         kind=element.kind,
         text=element.text,
         page_number=element.page_number,
-        time_start_ms=time_start_ms,
-        time_end_ms=time_start_ms,
+        time_start_ms=frame.time_start_ms,
+        time_end_ms=_frame_time_end_ms(frame),
         bbox=element.bbox,
         confidence=element.confidence,
         metadata=element.metadata,
     )
+
+
+def _frame_time_end_ms(frame: VideoKeyframe) -> int:
+    return frame.time_end_ms if frame.time_end_ms is not None else frame.time_start_ms

@@ -55,6 +55,7 @@ class VideoKeyframe:
     content_type: str
     time_start_ms: int
     metadata: dict[str, object]
+    time_end_ms: int | None = None
 
     def to_artifact(self) -> ExtractionArtifactCandidate:
         return ExtractionArtifactCandidate(
@@ -62,7 +63,13 @@ class VideoKeyframe:
             filename=self.filename,
             content_type=self.content_type,
             content=self.content,
-            metadata=self.metadata,
+            metadata={
+                **self.metadata,
+                "time_start_ms": self.time_start_ms,
+                "time_end_ms": self.time_end_ms
+                if self.time_end_ms is not None
+                else self.time_start_ms,
+            },
         )
 
 
@@ -124,12 +131,19 @@ def extract_selected_video_keyframes(
         with tempfile.NamedTemporaryFile(suffix=_safe_suffix(request.filename)) as input_file:
             input_file.write(request.content)
             input_file.flush()
+            windows = _selected_keyframe_windows_ms(
+                timestamps,
+                duration_seconds=duration_seconds,
+            )
             for index, timestamp_seconds in enumerate(timestamps, start=1):
+                time_start_ms, time_end_ms = windows[index - 1]
                 frame = _extract_one_keyframe(
                     request=request,
                     input_path=input_file.name,
                     index=index,
                     timestamp_seconds=timestamp_seconds,
+                    time_start_ms=time_start_ms,
+                    time_end_ms=time_end_ms,
                 )
                 if frame is not None:
                     frames.append(frame)
@@ -184,6 +198,8 @@ def _extract_one_keyframe(
     input_path: str,
     index: int,
     timestamp_seconds: float,
+    time_start_ms: int,
+    time_end_ms: int,
 ) -> VideoKeyframe | None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -213,14 +229,17 @@ def _extract_one_keyframe(
         content = output_file.read()
     if not content:
         return None
-    time_start_ms = int(round(timestamp_seconds * 1000))
+    selected_at_ms = int(round(timestamp_seconds * 1000))
     return VideoKeyframe(
         filename=f"keyframe-{index:04d}.jpg",
         content=content,
         content_type="image/jpeg",
         time_start_ms=time_start_ms,
+        time_end_ms=time_end_ms,
         metadata={
+            "selected_at_ms": selected_at_ms,
             "time_start_ms": time_start_ms,
+            "time_end_ms": time_end_ms,
             "parser": "ffmpeg",
             "frame_index": index,
             "selection": "sampled_keyframe",
@@ -315,6 +334,32 @@ def _selected_keyframe_seconds(
         if len(selected) >= max_frames:
             break
     return tuple(selected)
+
+
+def _selected_keyframe_windows_ms(
+    timestamps: tuple[float, ...],
+    *,
+    duration_seconds: float | None,
+) -> tuple[tuple[int, int], ...]:
+    if not timestamps:
+        return ()
+    if duration_seconds is None or duration_seconds <= 0:
+        return tuple((_seconds_to_ms(value), _seconds_to_ms(value)) for value in timestamps)
+    windows: list[tuple[int, int]] = []
+    last_index = len(timestamps) - 1
+    for index, timestamp in enumerate(timestamps):
+        start_seconds = 0.0 if index == 0 else (timestamps[index - 1] + timestamp) / 2
+        end_seconds = (
+            duration_seconds if index == last_index else (timestamp + timestamps[index + 1]) / 2
+        )
+        start_ms = _seconds_to_ms(start_seconds)
+        end_ms = max(start_ms, _seconds_to_ms(end_seconds))
+        windows.append((start_ms, end_ms))
+    return tuple(windows)
+
+
+def _seconds_to_ms(value: float) -> int:
+    return int(round(max(0.0, value) * 1000))
 
 
 def _format_ffmpeg_seconds(value: float) -> str:
