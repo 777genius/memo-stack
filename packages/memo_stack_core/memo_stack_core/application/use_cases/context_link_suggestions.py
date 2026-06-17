@@ -17,6 +17,7 @@ from memo_stack_core.application.use_cases.context_link_visibility import (
     assert_context_link_endpoint_visible,
 )
 from memo_stack_core.domain.assets import (
+    ContextLinkSuggestionStatus,
     MemoryContextLinkSuggestion,
     MemoryContextLinkSuggestionId,
 )
@@ -706,6 +707,8 @@ class SuggestContextLinksUseCase:
         now = self._clock.now()
         persisted: list[ContextLinkCandidate] = []
         skipped_existing_links = 0
+        skipped_reviewed_suggestions = 0
+        skipped_reviewed_by_status: dict[str, int] = {}
         async with self._uow_factory() as uow:
             await assert_context_link_endpoint_visible(
                 uow,
@@ -728,7 +731,7 @@ class SuggestContextLinksUseCase:
                 if existing_link is not None:
                     skipped_existing_links += 1
                     continue
-                existing = await uow.context_link_suggestions.find_pending(
+                existing = await uow.context_link_suggestions.find_latest_for_pair(
                     space_id=str(command.space_id),
                     memory_scope_id=str(command.memory_scope_id),
                     source_type=command.source_type,
@@ -737,6 +740,16 @@ class SuggestContextLinksUseCase:
                     target_id=candidate.target_id,
                     relation_type="related_to",
                 )
+                if existing is not None and existing.status in {
+                    ContextLinkSuggestionStatus.APPROVED,
+                    ContextLinkSuggestionStatus.REJECTED,
+                }:
+                    skipped_reviewed_suggestions += 1
+                    status = existing.status.value
+                    skipped_reviewed_by_status[status] = (
+                        skipped_reviewed_by_status.get(status, 0) + 1
+                    )
+                    continue
                 if existing is None:
                     suggestion = MemoryContextLinkSuggestion.create(
                         suggestion_id=MemoryContextLinkSuggestionId(self._ids.new_id("ctxlinksug")),
@@ -766,6 +779,8 @@ class SuggestContextLinksUseCase:
             await uow.commit()
         diagnostics["persisted_count"] = len(persisted)
         diagnostics["skipped_existing_link_count"] = skipped_existing_links
+        diagnostics["skipped_reviewed_suggestion_count"] = skipped_reviewed_suggestions
+        diagnostics["skipped_reviewed_suggestion_status_counts"] = skipped_reviewed_by_status
         return persisted
 
 

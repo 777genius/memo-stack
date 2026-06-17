@@ -606,6 +606,99 @@ def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> N
     assert links.json()["data"][0]["target_id"] == fact.json()["data"]["id"]
 
 
+def test_rejected_context_link_suggestion_is_not_recreated(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "text": "Alex Project Atlas screenshot evidence belongs to the reviewed fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "alex-review"}],
+                "tags": ["alex", "atlas", "screenshot"],
+            },
+            headers=auth_headers({"Idempotency-Key": "rejected-link-fact"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "rejected-link-capture",
+                "text": "Save Alex Project Atlas screenshot evidence.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert fact.status_code == 201, fact.text
+        assert capture.status_code == 201, capture.text
+
+        payload = {
+            "space_slug": "quick-capture",
+            "memory_scope_external_ref": "default",
+            "thread_external_ref": "review-thread",
+            "source_type": "capture",
+            "source_id": capture.json()["data"]["id"],
+            "text": "Alex Project Atlas screenshot evidence",
+            "persist": True,
+            "limit": 8,
+        }
+        suggestions = client.post("/v1/link-suggestions", json=payload, headers=auth_headers())
+        assert suggestions.status_code == 200, suggestions.text
+        fact_candidate = next(
+            item
+            for item in suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
+        )
+        rejected = client.post(
+            f"/v1/context-link-suggestions/{fact_candidate['suggestion_id']}/review",
+            json={"action": "reject", "reason": "not relevant after review"},
+            headers=auth_headers(),
+        )
+        assert rejected.status_code == 200, rejected.text
+
+        repeated = client.post("/v1/link-suggestions", json=payload, headers=auth_headers())
+        assert repeated.status_code == 200, repeated.text
+        repeated_data = repeated.json()["data"]
+        assert all(
+            item["target_id"] != fact.json()["data"]["id"]
+            for item in repeated_data["candidates"]
+            if item["target_type"] == "fact"
+        )
+        assert repeated_data["diagnostics"]["skipped_reviewed_suggestion_count"] >= 1
+        assert (
+            repeated_data["diagnostics"]["skipped_reviewed_suggestion_status_counts"]["rejected"]
+            >= 1
+        )
+
+        history = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "status": "all",
+            },
+            headers=auth_headers(),
+        )
+        assert history.status_code == 200, history.text
+        same_pair = [
+            item
+            for item in history.json()["data"]
+            if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
+        ]
+        assert len(same_pair) == 1
+        assert same_pair[0]["status"] == "rejected"
+
+
 def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         suggested_fact = client.post(
@@ -696,6 +789,20 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
             },
             headers=auth_headers(),
         )
+        repeated = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "override-link-review",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-source",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex Project Atlas screenshot review evidence",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
 
     assert approved.status_code == 200, approved.text
     payload = approved.json()["data"]
@@ -709,6 +816,16 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
     assert payload["link"]["metadata"]["original_target_id"] == fact_candidate["target_id"]
     assert scope_links.status_code == 200, scope_links.text
     assert [item["id"] for item in scope_links.json()["data"]] == [payload["link"]["id"]]
+    assert repeated.status_code == 200, repeated.text
+    repeated_data = repeated.json()["data"]
+    assert all(
+        item["target_id"] != fact_candidate["target_id"]
+        for item in repeated_data["candidates"]
+        if item["target_type"] == "fact"
+    )
+    assert (
+        repeated_data["diagnostics"]["skipped_reviewed_suggestion_status_counts"]["approved"] >= 1
+    )
 
 
 def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Path) -> None:
@@ -1041,8 +1158,7 @@ def test_context_linking_quality_golden_links_files_documents_and_chunks(
                 "source_type": "capture",
                 "source_id": capture.json()["data"]["id"],
                 "text": (
-                    "Alex Project Atlas screenshot uploaded file document exact "
-                    "Qdrant chunk memory"
+                    "Alex Project Atlas screenshot uploaded file document exact Qdrant chunk memory"
                 ),
                 "persist": True,
                 "limit": 20,
@@ -1054,13 +1170,11 @@ def test_context_linking_quality_golden_links_files_documents_and_chunks(
         target_types = {item["target_type"] for item in candidates}
         assert {"asset", "document", "chunk", "fact"}.issubset(target_types)
         assert any(
-            item["target_type"] == "asset"
-            and item["target_id"] == asset.json()["data"]["id"]
+            item["target_type"] == "asset" and item["target_id"] == asset.json()["data"]["id"]
             for item in candidates
         )
         assert any(
-            item["target_type"] == "document"
-            and item["target_id"] == document.json()["data"]["id"]
+            item["target_type"] == "document" and item["target_id"] == document.json()["data"]["id"]
             for item in candidates
         )
 
@@ -1145,8 +1259,7 @@ def test_context_linking_quality_golden_links_temporal_thread_and_event_anchor(
             for item in candidates
         )
         assert any(
-            item["target_type"] == "fact"
-            and item["target_id"] == fact.json()["data"]["id"]
+            item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
             for item in candidates
         )
 
@@ -1209,8 +1322,7 @@ def test_context_linking_quality_golden_links_temporal_intent_without_text_match
         fact_candidate = next(
             item
             for item in candidates
-            if item["target_type"] == "fact"
-            and item["target_id"] == fact.json()["data"]["id"]
+            if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
         )
         thread_candidate = next(
             item
@@ -1293,8 +1405,7 @@ def test_context_linking_quality_golden_links_last_week_intent_without_text_matc
         fact_candidate = next(
             item
             for item in candidates
-            if item["target_type"] == "fact"
-            and item["target_id"] == fact.json()["data"]["id"]
+            if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
         )
         thread_candidate = next(
             item
@@ -1377,8 +1488,7 @@ def test_context_linking_quality_golden_links_numeric_hours_intent_without_text_
         fact_candidate = next(
             item
             for item in candidates
-            if item["target_type"] == "fact"
-            and item["target_id"] == fact.json()["data"]["id"]
+            if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
         )
         thread_candidate = next(
             item

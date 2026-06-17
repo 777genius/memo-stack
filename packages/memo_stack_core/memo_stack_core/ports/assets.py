@@ -144,6 +144,19 @@ class ContextLinkSuggestionRepositoryPort(Protocol):
     ) -> MemoryContextLinkSuggestion | None:
         """Find a pending suggestion for idempotent suggestion creation."""
 
+    async def find_latest_for_pair(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        """Find the latest suggestion for one source/target/relation pair."""
+
     async def list_for_scope(
         self,
         *,

@@ -495,6 +495,38 @@ class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPor
         ).scalar_one_or_none()
         return context_link_suggestion_row_to_domain(row) if row is not None else None
 
+    async def find_latest_for_pair(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        row = (
+            await self._session.execute(
+                select(MemoryContextLinkSuggestionRow)
+                .where(
+                    MemoryContextLinkSuggestionRow.space_id == space_id,
+                    MemoryContextLinkSuggestionRow.memory_scope_id == memory_scope_id,
+                    MemoryContextLinkSuggestionRow.source_type == source_type,
+                    MemoryContextLinkSuggestionRow.source_id == source_id,
+                    MemoryContextLinkSuggestionRow.target_type == target_type,
+                    MemoryContextLinkSuggestionRow.target_id == target_id,
+                    MemoryContextLinkSuggestionRow.relation_type == relation_type,
+                )
+                .order_by(
+                    MemoryContextLinkSuggestionRow.updated_at.desc(),
+                    MemoryContextLinkSuggestionRow.id.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return context_link_suggestion_row_to_domain(row) if row is not None else None
+
     async def list_for_scope(
         self,
         *,
