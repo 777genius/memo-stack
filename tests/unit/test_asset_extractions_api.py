@@ -463,6 +463,32 @@ def test_asset_extraction_marks_failed_and_cleans_blobs_on_artifact_storage_erro
             "markdown",
         }
 
+        browser = client.get(
+            "/v1/memory-browser",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+        assert browser.status_code == 200, browser.text
+        browser_data = browser.json()["data"]
+        matching_documents = [
+            item
+            for item in browser_data["documents"]
+            if item["source_type"] == "asset_extraction"
+            and item["source_external_id"] == extraction_id
+        ]
+        matching_chunks = [
+            item
+            for item in browser_data["chunks"]
+            if item["source_type"] == "asset_extraction"
+            and item["source_external_id"] == extraction_id
+        ]
+        assert len(matching_documents) == 1
+        assert len(matching_chunks) == 1
+
 
 def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> None:
     marker = "PDF_MEMORY_SCOPE_DECISION"
