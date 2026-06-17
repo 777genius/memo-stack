@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from memo_stack_core.application.context_diagnostics import (
+    context_rank_key,
+    normalize_context_item_diagnostics,
+)
 from memo_stack_core.application.dto import ContextBundle, ContextItem
 from memo_stack_core.application.normalize import estimate_tokens
 
@@ -34,6 +38,7 @@ class ContextPacker:
     ) -> PackResult:
         budget = max(64, token_budget)
         char_budget = max(len("\n".join(_HEADER_LINES)), max_rendered_chars)
+        normalized_items = tuple(normalize_context_item_diagnostics(item) for item in items)
         selected: list[ContextItem] = []
         selected_chunks_by_source: dict[str, int] = {}
         dropped_by_instruction_flag = 0
@@ -43,7 +48,7 @@ class ContextPacker:
         used_tokens = 0
         lines = list(_HEADER_LINES)
         current_memory_scope_id: str | None = None
-        for item in sorted(items, key=lambda value: value.score, reverse=True):
+        for item in sorted(normalized_items, key=context_rank_key):
             if item.is_instruction:
                 dropped_by_instruction_flag += 1
                 continue
@@ -83,7 +88,7 @@ class ContextPacker:
                 current_memory_scope_id = memory_scope_id
             lines.append(item_line)
 
-        dropped_count = len(items) - len(selected)
+        dropped_count = len(normalized_items) - len(selected)
         rendered_text = "\n".join(lines).strip()
         return PackResult(
             bundle=ContextBundle(

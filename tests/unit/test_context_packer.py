@@ -237,7 +237,13 @@ def test_multi_memory_scope_dedupe_preserves_source_refs() -> None:
 
     assert len(result) == 1
     assert result[0].text == "higher memory_scope duplicate"
-    assert result[0].diagnostics == {"memory_scope_id": "memory_scope_b"}
+    diagnostics = result[0].diagnostics or {}
+    assert diagnostics["memory_scope_id"] == "memory_scope_b"
+    assert diagnostics["retrieval_sources"] == []
+    assert diagnostics["ranking_reason"] == "matched without retrieval channel diagnostics"
+    assert diagnostics["merged_candidate_count"] == 2
+    assert diagnostics["score_signals"]["source_ref_count"] == 3
+    assert diagnostics["provenance"]["source_ref_count"] == 3
     assert result[0].source_refs == (
         SourceRef(source_type="document", source_id="memory_scope-b-doc", chunk_id="chunk_1"),
         shared_ref,
@@ -290,6 +296,112 @@ def test_context_ranking_merges_hybrid_retrieval_provenance() -> None:
         "vector_chunks",
         "keyword_chunks",
     ]
+
+
+def test_context_diagnostics_are_bounded_and_redacted_when_merged() -> None:
+    secret = "Bearer sk-proj-secretvalue1234567890"
+    noisy_sources = (secret, *(f"source_{index}" for index in range(20)))
+    low = ContextItem(
+        item_id="chunk_sensitive",
+        item_type="chunk",
+        text="low sensitive match",
+        score=0.5,
+        source_refs=(SourceRef(source_type="document", source_id="doc"),),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": list(noisy_sources),
+            "score_signals": {
+                "base_score": 0.5,
+                "api_token": secret,
+                "explanation": f"matched with {secret}",
+            },
+            "provenance": {
+                "trace": list(range(20)),
+                "secret": secret,
+                "source_url": "https://user:password@example.com/private",
+            },
+        },
+    )
+    high = ContextItem(
+        item_id="chunk_sensitive",
+        item_type="chunk",
+        text="high sensitive match",
+        score=0.7,
+        source_refs=(SourceRef(source_type="document", source_id="doc", chunk_id="chunk"),),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "vector_chunks",
+            "retrieval_sources": ["vector_chunks"],
+            "score_signals": {"base_score": 0.7},
+            "provenance": {"provider": "vector"},
+        },
+    )
+
+    result = dedupe_rank_items((low, high))
+
+    diagnostics = result[0].diagnostics or {}
+    serialized = repr(diagnostics)
+    assert len(diagnostics["retrieval_sources"]) == 8
+    assert len(diagnostics["ranking_reason"]) <= 240
+    assert "sk-proj-secretvalue1234567890" not in serialized
+    assert "Bearer sk-proj" not in serialized
+    assert "api_token" not in diagnostics["score_signals"]
+    assert diagnostics["score_signals"]["explanation"] == "matched with [redacted]"
+    assert len(diagnostics["provenance"]["trace"]) == 8
+    assert "secret" not in diagnostics["provenance"]
+    assert diagnostics["provenance"]["source_url"] == "https://[redacted]@example.com/private"
+
+
+def test_context_ranking_orders_tied_scores_deterministically() -> None:
+    item_b = ContextItem(
+        item_id="fact_b",
+        item_type="fact",
+        text="B",
+        score=0.8,
+        source_refs=(SourceRef(source_type="manual", source_id="b"),),
+    )
+    item_a = ContextItem(
+        item_id="fact_a",
+        item_type="fact",
+        text="A",
+        score=0.8,
+        source_refs=(SourceRef(source_type="manual", source_id="a"),),
+    )
+
+    result = dedupe_rank_items((item_b, item_a))
+
+    assert [item.item_id for item in result] == ["fact_a", "fact_b"]
+
+
+def test_context_packer_returns_normalized_item_diagnostics() -> None:
+    secret = "sk-proj-secretvalue1234567890"
+    result = ContextPacker().pack(
+        bundle_id="ctx_normalized_diagnostics",
+        items=(
+            ContextItem(
+                item_id="chunk_normalized",
+                item_type="chunk",
+                text="Normalized diagnostics",
+                score=0.9,
+                source_refs=(SourceRef(source_type="document", source_id="doc"),),
+                diagnostics={
+                    "memory_scope_id": "memory_scope_default",
+                    "retrieval_sources": [f"source_{index}" for index in range(12)],
+                    "ranking_reason": f"provider returned {secret}",
+                    "score_signals": {"score": 0.9, "token": secret},
+                    "provenance": {"steps": list(range(20))},
+                },
+            ),
+        ),
+        token_budget=512,
+    )
+
+    diagnostics = result.bundle.items[0].diagnostics or {}
+    assert len(diagnostics["retrieval_sources"]) == 8
+    assert diagnostics["ranking_reason"] == "provider returned [redacted]"
+    assert diagnostics["score_signals"] == {"score": 0.9}
+    assert len(diagnostics["provenance"]["steps"]) == 8
 
 
 def test_context_policy_thread_visibility() -> None:
