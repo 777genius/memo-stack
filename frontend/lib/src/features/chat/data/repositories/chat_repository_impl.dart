@@ -730,6 +730,25 @@ class ChatRepositoryImpl
   }
 
   @override
+  Future<MemoryBrowserAnchor> splitMemoryAnchor({
+    required String anchorId,
+    required String alias,
+    String? newLabel,
+    String reason = 'manual split',
+  }) async {
+    final row = await _rest.splitAnchor(
+      anchorId: anchorId,
+      alias: alias,
+      newLabel: newLabel,
+      reason: reason,
+    );
+    if ((row['id']?.toString().trim().isEmpty ?? true)) {
+      throw StateError('Memory anchor was not found for split');
+    }
+    return MemoryBrowserAnchor.fromMap(row);
+  }
+
+  @override
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     return _rest.downloadExtractionArtifact(artifactId);
   }

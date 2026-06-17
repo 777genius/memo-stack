@@ -93,6 +93,34 @@ void main() {
     expect(find.text('Related evidence'), findsOneWidget);
     expect(find.textContaining('capture - QuickCapture'), findsWidgets);
 
+    await tester
+        .tap(find.byKey(const ValueKey('memory_anchor_split_anchor_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_anchor_split_dialog')),
+        findsOneWidget);
+    expect(find.text('Split alias'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_split_label_field')),
+      'Alexander Carter',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_split_reason_field')),
+      'wrong person alias',
+    );
+    await tester
+        .tap(find.byKey(const ValueKey('memory_anchor_split_confirm_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.splitAnchors.single.anchorId, 'anchor-1');
+    expect(repo.splitAnchors.single.alias, 'A. Carter');
+    expect(repo.splitAnchors.single.newLabel, 'Alexander Carter');
+    expect(repo.splitAnchors.single.reason, 'wrong person alias');
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_browser_anchor_anchor_1')));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.byKey(const ValueKey('memory_anchor_edit_anchor_1')));
     await tester.pumpAndSettle();
 
@@ -207,6 +235,7 @@ class _BrowserRepo implements ChatRepository {
   final deletedAnchors = <_DeletedAnchor>[];
   final mergeSuggestions = <MemoryAnchorMergeSuggestion>[];
   final mergedAnchors = <_MergedAnchor>[];
+  final splitAnchors = <_SplitAnchor>[];
   final backfillRequests = <int>[];
   final _messages = StreamController<ChatMessage>.broadcast();
   final _usage = StreamController<CostUsage>.broadcast();
@@ -362,6 +391,37 @@ class _BrowserRepo implements ChatRepository {
   }
 
   @override
+  Future<MemoryBrowserAnchor> splitMemoryAnchor({
+    required String anchorId,
+    required String alias,
+    String? newLabel,
+    String reason = 'manual split',
+  }) async {
+    splitAnchors.add(
+      _SplitAnchor(
+        anchorId: anchorId,
+        alias: alias,
+        newLabel: newLabel,
+        reason: reason,
+      ),
+    );
+    return MemoryBrowserAnchor.fromMap({
+      'id': 'anchor-split',
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': 'person',
+      'normalized_key': (newLabel ?? alias).toLowerCase(),
+      'label': newLabel ?? alias,
+      'aliases': const <String>[],
+      'description': 'Split contact',
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:09:00Z',
+    });
+  }
+
+  @override
   Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {
     backfillRequests.add(limitPerSource);
   }
@@ -416,6 +476,20 @@ class _MergedAnchor {
   const _MergedAnchor({
     required this.sourceAnchorId,
     required this.targetAnchorId,
+    required this.reason,
+  });
+}
+
+class _SplitAnchor {
+  final String anchorId;
+  final String alias;
+  final String? newLabel;
+  final String reason;
+
+  const _SplitAnchor({
+    required this.anchorId,
+    required this.alias,
+    required this.newLabel,
     required this.reason,
   });
 }

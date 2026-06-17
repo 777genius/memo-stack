@@ -603,6 +603,51 @@ abstract class ChatStoreBase with Store {
     }
   }
 
+  Future<bool> splitMemoryAnchorAlias(
+    MemoryBrowserAnchor anchor, {
+    required String alias,
+    String? newLabel,
+    String reason = 'split alias in Memo Stack frontend',
+  }) async {
+    final cleanAlias = alias.trim();
+    final cleanLabel = newLabel?.trim();
+    final cleanReason = reason.trim().isEmpty
+        ? 'split alias in Memo Stack frontend'
+        : reason.trim();
+    if (cleanAlias.isEmpty) {
+      runInAction(() {
+        memoryBrowserError.value = 'Anchor split alias is required';
+      });
+      return false;
+    }
+    runInAction(() {
+      memoryBrowserLoading.value = true;
+      memoryBrowserError.value = null;
+    });
+    try {
+      await repo.splitMemoryAnchor(
+        anchorId: anchor.id,
+        alias: cleanAlias,
+        newLabel: cleanLabel == null || cleanLabel.isEmpty ? null : cleanLabel,
+        reason: cleanReason,
+      );
+      if (_disposed) return false;
+      await refreshMemoryBrowser(showLoading: false);
+      return true;
+    } catch (e) {
+      if (!_disposed) {
+        runInAction(() {
+          memoryBrowserError.value = 'Anchor split failed: $e';
+        });
+      }
+      return false;
+    } finally {
+      if (!_disposed) {
+        runInAction(() => memoryBrowserLoading.value = false);
+      }
+    }
+  }
+
   Future<bool> createMemoryAnchor({
     required String kind,
     required String label,

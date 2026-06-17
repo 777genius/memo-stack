@@ -700,6 +700,13 @@ class _AnchorBrowserItem extends StatelessWidget {
             Navigator.of(context).pop();
             _showDeleteDialog(context);
           },
+          onSplitAlias:
+              anchor.aliases.where((item) => item != anchor.label).isEmpty
+                  ? null
+                  : () {
+                      Navigator.of(context).pop();
+                      _showSplitDialog(context);
+                    },
         ),
       ),
     );
@@ -757,6 +764,148 @@ class _AnchorBrowserItem extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _showSplitDialog(BuildContext context) {
+    unawaited(
+      showDialog<bool>(
+        context: context,
+        builder: (_) => _AnchorSplitAliasDialog(anchor: anchor, store: store),
+      ),
+    );
+  }
+}
+
+class _AnchorSplitAliasDialog extends StatefulWidget {
+  final MemoryBrowserAnchor anchor;
+  final ChatStore store;
+
+  const _AnchorSplitAliasDialog({
+    required this.anchor,
+    required this.store,
+  });
+
+  @override
+  State<_AnchorSplitAliasDialog> createState() =>
+      _AnchorSplitAliasDialogState();
+}
+
+class _AnchorSplitAliasDialogState extends State<_AnchorSplitAliasDialog> {
+  late final List<String> _aliases;
+  late final TextEditingController _newLabel;
+  late final TextEditingController _reason;
+  late String _alias;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _aliases = widget.anchor.aliases
+        .where((item) => item.trim().isNotEmpty && item != widget.anchor.label)
+        .toSet()
+        .toList(growable: false);
+    _alias = _aliases.isEmpty ? '' : _aliases.first;
+    _newLabel = TextEditingController(text: _alias);
+    _reason = TextEditingController(text: 'split alias in Memo Stack frontend');
+  }
+
+  @override
+  void dispose() {
+    _newLabel.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const ValueKey('memory_anchor_split_dialog'),
+      title: const Text('Split alias'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              key: const ValueKey('memory_anchor_split_alias_field'),
+              initialValue: _alias.isEmpty ? null : _alias,
+              decoration: const InputDecoration(
+                labelText: 'Alias',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final alias in _aliases)
+                  DropdownMenuItem(value: alias, child: Text(alias)),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _alias = value;
+                        _newLabel.text = value;
+                      });
+                    },
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              key: const ValueKey('memory_anchor_split_label_field'),
+              controller: _newLabel,
+              enabled: !_saving,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'New label',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              key: const ValueKey('memory_anchor_split_reason_field'),
+              controller: _reason,
+              enabled: !_saving,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Reason',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('memory_anchor_split_confirm_button'),
+          onPressed: _saving || _alias.isEmpty ? null : _submit,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Split'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submit() async {
+    setState(() => _saving = true);
+    final ok = await widget.store.splitMemoryAnchorAlias(
+      widget.anchor,
+      alias: _alias,
+      newLabel: _newLabel.text,
+      reason: _reason.text,
+    );
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() => _saving = false);
   }
 }
 

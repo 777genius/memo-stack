@@ -93,6 +93,12 @@ abstract class ChatRepository {
     required String targetAnchorId,
     required String reason,
   });
+  Future<MemoryBrowserAnchor> splitMemoryAnchor({
+    required String anchorId,
+    required String alias,
+    String? newLabel,
+    String reason = 'manual split',
+  });
   Future<List<int>> downloadExtractionArtifact(String artifactId);
   Future<List<DocumentChunk>> listDocumentChunks(String documentId);
   Future<List<MemoryCapture>> listMemoryCaptures({int limit = 50});

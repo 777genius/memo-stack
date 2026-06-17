@@ -301,6 +301,24 @@ class BackendRestClient {
     return _data(resp.data);
   }
 
+  Future<Map<String, dynamic>> splitAnchor({
+    required String anchorId,
+    required String alias,
+    String? newLabel,
+    String reason = 'manual split',
+  }) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/anchors/$anchorId/split',
+      data: {
+        'alias': alias,
+        if (newLabel != null && newLabel.trim().isNotEmpty)
+          'new_label': newLabel.trim(),
+        'reason': reason,
+      },
+    );
+    return _data(resp.data);
+  }
+
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     final resp = await _dio.get<List<int>>(
       '/v1/extraction-artifacts/$artifactId/download',

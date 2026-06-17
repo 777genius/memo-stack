@@ -175,6 +175,12 @@ void main() {
         targetAnchorId: 'anchor-1',
         reason: 'duplicate person',
       );
+      final split = await repo.splitMemoryAnchor(
+        anchorId: 'anchor-1',
+        alias: 'A. Carter',
+        newLabel: 'Alexander Carter',
+        reason: 'wrong alias',
+      );
 
       expect(anchor.kind, 'project');
       expect(anchor.label, 'Project Atlas');
@@ -183,6 +189,7 @@ void main() {
       expect(mergeSuggestions.single.targetAnchor.id, 'anchor-1');
       expect(mergeSuggestions.single.confidence, 'high');
       expect(merged.id, 'anchor-1');
+      expect(split.label, 'Alexander Carter');
       expect(rest.createSpaceSlug, 'team-space');
       expect(rest.createMemoryScopeRef, 'project-atlas');
       expect(rest.createAliases, ['Atlas']);
@@ -201,6 +208,10 @@ void main() {
       expect(rest.mergeSourceAnchorId, 'anchor-dup');
       expect(rest.mergeTargetAnchorId, 'anchor-1');
       expect(rest.mergeReason, 'duplicate person');
+      expect(rest.splitAnchorId, 'anchor-1');
+      expect(rest.splitAlias, 'A. Carter');
+      expect(rest.splitNewLabel, 'Alexander Carter');
+      expect(rest.splitReason, 'wrong alias');
 
       await repo.dispose();
     });
@@ -269,6 +280,10 @@ class _AnchorRestClient extends BackendRestClient {
   String? mergeSourceAnchorId;
   String? mergeTargetAnchorId;
   String? mergeReason;
+  String? splitAnchorId;
+  String? splitAlias;
+  String? splitNewLabel;
+  String? splitReason;
 
   @override
   Future<Map<String, dynamic>> createAnchor({
@@ -393,6 +408,25 @@ class _AnchorRestClient extends BackendRestClient {
       kind: 'person',
       label: 'Alex',
       aliases: ['Alex Carter'],
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> splitAnchor({
+    required String anchorId,
+    required String alias,
+    String? newLabel,
+    String reason = 'manual split',
+  }) async {
+    splitAnchorId = anchorId;
+    splitAlias = alias;
+    splitNewLabel = newLabel;
+    splitReason = reason;
+    return _anchorRow(
+      id: 'anchor-split',
+      kind: 'person',
+      label: newLabel ?? alias,
+      aliases: const <String>[],
     );
   }
 }

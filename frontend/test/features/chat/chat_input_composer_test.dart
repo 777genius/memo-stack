@@ -298,6 +298,29 @@ class _RecordingChatRepository implements ChatRepository {
   }
 
   @override
+  Future<MemoryBrowserAnchor> splitMemoryAnchor({
+    required String anchorId,
+    required String alias,
+    String? newLabel,
+    String reason = 'manual split',
+  }) async {
+    return MemoryBrowserAnchor.fromMap({
+      'id': 'anchor-split',
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': 'person',
+      'normalized_key': (newLabel ?? alias).toLowerCase(),
+      'label': newLabel ?? alias,
+      'aliases': const <String>[],
+      'description': null,
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:05:00Z',
+    });
+  }
+
+  @override
   Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {}
 
   @override

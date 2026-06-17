@@ -9,6 +9,7 @@ class MemoryAnchorDetailDialog extends StatelessWidget {
   final MemoryBrowserSnapshot snapshot;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onSplitAlias;
 
   const MemoryAnchorDetailDialog({
     super.key,
@@ -16,6 +17,7 @@ class MemoryAnchorDetailDialog extends StatelessWidget {
     required this.snapshot,
     this.onEdit,
     this.onDelete,
+    this.onSplitAlias,
   });
 
   @override
@@ -92,6 +94,15 @@ class MemoryAnchorDetailDialog extends StatelessWidget {
                       onPressed: onDelete,
                       color: scheme.error,
                       icon: const Icon(Icons.delete_outline, size: 20),
+                    ),
+                  if (onSplitAlias != null)
+                    IconButton(
+                      key: ValueKey(
+                        'memory_anchor_split_${sidebarKeyPart(anchor.id)}',
+                      ),
+                      tooltip: 'Split alias',
+                      onPressed: onSplitAlias,
+                      icon: const Icon(Icons.alt_route_outlined, size: 20),
                     ),
                   IconButton(
                     tooltip: 'Close',
