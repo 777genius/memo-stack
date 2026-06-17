@@ -217,6 +217,37 @@ def test_sdk_sends_memory_insights_scope_and_limits() -> None:
     }
 
 
+def test_sdk_exports_graph_with_episode_limit() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"data": {"schema_version": "memo_stack.graph_export.v1"}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.export_graph(
+        space_slug="atlas",
+        memory_scope_external_ref="engineering",
+        thread_external_ref="meeting-1",
+        max_documents=7,
+        max_episodes=9,
+        max_chunks=11,
+    )
+
+    assert response == {"data": {"schema_version": "memo_stack.graph_export.v1"}}
+    assert seen["method"] == "GET"
+    assert (
+        seen["url"]
+        == "http://memory.test/v1/export/graph.json?space_slug=atlas&memory_scope_external_ref=engineering&thread_external_ref=meeting-1&include_deleted=false&include_restricted=false&max_facts=250&max_documents=7&max_episodes=9&max_chunks=11"
+    )
+
+
 def test_sdk_facade_accepts_additive_response_fields() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

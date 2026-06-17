@@ -1581,6 +1581,7 @@ class MemoryToolService(
         include_restricted: bool = False,
         max_facts: int = 250,
         max_documents: int = 100,
+        max_episodes: int = 100,
         max_chunks: int = 500,
     ) -> dict[str, Any]:
         async def action() -> dict[str, Any]:
@@ -1598,6 +1599,12 @@ class MemoryToolService(
                 minimum=0,
                 maximum=500,
             )
+            bounded_episodes, episode_warnings = clamp_int(
+                name="max_episodes",
+                value=max_episodes,
+                minimum=0,
+                maximum=500,
+            )
             bounded_chunks, chunk_warnings = clamp_int(
                 name="max_chunks",
                 value=max_chunks,
@@ -1611,6 +1618,7 @@ class MemoryToolService(
                 include_restricted=include_restricted,
                 max_facts=bounded_facts,
                 max_documents=bounded_documents,
+                max_episodes=bounded_episodes,
                 max_chunks=bounded_chunks,
             )
             return self._ok(
@@ -1618,7 +1626,7 @@ class MemoryToolService(
                 data=payload.get("data", payload),
                 scope=asdict(scope),
                 side_effects=[],
-                warnings=[*fact_warnings, *document_warnings, *chunk_warnings],
+                warnings=[*fact_warnings, *document_warnings, *episode_warnings, *chunk_warnings],
             )
 
         return await self._guard(action)

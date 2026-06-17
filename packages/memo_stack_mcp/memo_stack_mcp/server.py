@@ -569,6 +569,7 @@ def create_mcp_server(
         ] = False,
         max_facts: Annotated[int, Field(default=250, ge=0, le=1_000)] = 250,
         max_documents: Annotated[int, Field(default=100, ge=0, le=500)] = 100,
+        max_episodes: Annotated[int, Field(default=100, ge=0, le=500)] = 100,
         max_chunks: Annotated[int, Field(default=500, ge=0, le=2_000)] = 500,
     ) -> Annotated[CallToolResult, MemoryGraphExportResponse]:
         return _tool_response(
@@ -580,6 +581,7 @@ def create_mcp_server(
                 include_restricted=include_restricted,
                 max_facts=max_facts,
                 max_documents=max_documents,
+                max_episodes=max_episodes,
                 max_chunks=max_chunks,
             ),
             MemoryGraphExportResponse,

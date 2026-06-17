@@ -31,8 +31,9 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
         document = client.post(
             "/v1/documents",
             json={
-                "space_id": "space_client_app",
-                "memory_scope_id": "memory_scope_default",
+                "space_slug": "graph-export",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-graph-export",
                 "title": "ADR graph export",
                 "text": "\n".join(
                     [
@@ -57,8 +58,9 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
         fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_client_app",
-                "memory_scope_id": "memory_scope_default",
+                "space_slug": "graph-export",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-graph-export",
                 "text": "Canonical graph export must use Postgres as source of truth.",
                 "kind": "architecture_decision",
                 "source_refs": [
@@ -73,11 +75,43 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
             },
             headers=auth_headers(),
         )
+        episode = client.post(
+            "/v1/episodes",
+            json={
+                "space_slug": "graph-export",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-graph-export",
+                "source_type": "system_audio",
+                "source_external_id": "meeting-graph-export",
+                "text": "Episode graph export marker should become a first-class graph node.",
+                "speaker": "user",
+                "trust_level": "high",
+            },
+            headers=auth_headers(),
+        )
+        assert episode.status_code == 200, episode.text
+        episode_id = episode.json()["data"]["episode_id"]
+        episode_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "graph-export",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-graph-export",
+                "text": "Episode evidence must be exportable as canonical graph context.",
+                "kind": "note",
+                "source_refs": [
+                    {"source_type": "system_audio", "source_id": "meeting-graph-export"}
+                ],
+                "classification": "internal",
+            },
+            headers=auth_headers(),
+        )
         related_fact = client.post(
             "/v1/facts",
             json={
-                "space_id": "space_client_app",
-                "memory_scope_id": "memory_scope_default",
+                "space_slug": "graph-export",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-graph-export",
                 "text": "Graphiti remains a derived temporal graph adapter.",
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "graphiti-derived"}],
@@ -97,8 +131,9 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
         graph = client.get(
             "/v1/export/graph.json",
             params={
-                "space_id": "space_client_app",
-                "memory_scope_id": "memory_scope_default",
+                "space_slug": "graph-export",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "thread-graph-export",
             },
             headers=auth_headers(),
         )
@@ -106,25 +141,37 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
     assert document.status_code == 201
     assert chunks.status_code == 200
     assert fact.status_code == 201
+    assert episode_fact.status_code == 201
     assert related_fact.status_code == 201
     assert relation.status_code == 201
     assert graph.status_code == 200
     data = graph.json()["data"]
     node_ids = {node["id"] for node in data["nodes"]}
+    episode_chunk_nodes = [
+        node
+        for node in data["nodes"]
+        if node["type"] == "chunk" and node["data"].get("episode_id") == episode_id
+    ]
     edge_types = {edge["type"] for edge in data["edges"]}
     assert data["schema_version"] == "memo_stack.graph_export.v1"
-    assert data["counts"]["facts"] == 2
+    assert data["counts"]["facts"] == 3
     assert data["counts"]["documents"] == 1
-    assert data["counts"]["chunks"] == 2
+    assert data["counts"]["episodes"] == 1
+    assert data["counts"]["chunks"] == 3
     assert data["counts"]["relations"] == 1
     assert f"fact:{fact.json()['data']['id']}" in node_ids
+    assert f"fact:{episode_fact.json()['data']['id']}" in node_ids
     assert f"document:{document_id}" in node_ids
+    assert f"episode:{episode_id}" in node_ids
     assert f"chunk:{chunk_id}" in node_ids
+    assert len(episode_chunk_nodes) == 1
     assert {
         "contains_fact",
         "contains_document",
+        "contains_episode",
         "has_chunk",
         "evidenced_by_chunk",
+        "evidenced_by_episode",
         "supports",
     }.issubset(edge_types)
 

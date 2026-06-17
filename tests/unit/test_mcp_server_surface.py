@@ -188,6 +188,7 @@ def test_mcp_tool_annotations_are_closed_domain_and_typed() -> None:
         assert graph_export.annotations.readOnlyHint is True
         assert "graph.json" in graph_export.description
         assert "canonical" in graph_export.description.casefold()
+        assert graph_export.inputSchema["properties"]["max_episodes"]["default"] == 100
         snapshot_export = next(
             tool for tool in tools if tool.name == "memory_export_memory_scope_snapshot"
         )

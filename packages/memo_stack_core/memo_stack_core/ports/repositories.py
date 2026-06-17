@@ -347,6 +347,16 @@ class ChunkRepositoryPort(Protocol):
     async def upsert(self, chunk: MemoryChunk) -> UpsertChunkResult:
         """Persist a chunk, returning duplicate=true on same source hash."""
 
+    async def list_for_episode(
+        self,
+        episode_id: str,
+        *,
+        limit: int | None = None,
+        cursor_sequence: int | None = None,
+        cursor_id: str | None = None,
+    ) -> list[MemoryChunk]:
+        """List active chunks for an episode."""
+
     async def list_for_scope(
         self,
         *,

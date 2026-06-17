@@ -18,7 +18,14 @@ class GraphExportGateway:
                 "scope": {"space_id": "space_1", "memory_scope_id": "memory_scope_1"},
                 "nodes": [{"id": "fact:fact_1", "type": "fact", "label": "Fact", "data": {}}],
                 "edges": [],
-                "counts": {"facts": 1, "documents": 0, "chunks": 0, "nodes": 1, "edges": 0},
+                "counts": {
+                    "facts": 1,
+                    "documents": 0,
+                    "episodes": 0,
+                    "chunks": 0,
+                    "nodes": 1,
+                    "edges": 0,
+                },
                 "truncated": False,
                 "warnings": [],
             }
@@ -56,6 +63,7 @@ def test_memory_export_graph_clamps_large_limits() -> None:
         service.export_graph(
             max_facts=9_999,
             max_documents=9_999,
+            max_episodes=9_999,
             max_chunks=9_999,
         )
     )
@@ -65,8 +73,10 @@ def test_memory_export_graph_clamps_large_limits() -> None:
     assert parsed.diagnostics.warnings == [
         "max_facts_clamped_to_max",
         "max_documents_clamped_to_max",
+        "max_episodes_clamped_to_max",
         "max_chunks_clamped_to_max",
     ]
     assert gateway.calls[0]["max_facts"] == 1_000
     assert gateway.calls[0]["max_documents"] == 500
+    assert gateway.calls[0]["max_episodes"] == 500
     assert gateway.calls[0]["max_chunks"] == 2_000

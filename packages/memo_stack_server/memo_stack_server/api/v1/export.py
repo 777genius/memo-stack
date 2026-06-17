@@ -67,6 +67,7 @@ async def export_graph_json(
     include_restricted: Annotated[bool, Query()] = False,
     max_facts: Annotated[int, Query(ge=0, le=1_000)] = 250,
     max_documents: Annotated[int, Query(ge=0, le=500)] = 100,
+    max_episodes: Annotated[int, Query(ge=0, le=500)] = 100,
     max_chunks: Annotated[int, Query(ge=0, le=2_000)] = 500,
 ) -> dict[str, Any]:
     scope = await resolve_existing_single_scope(
@@ -86,7 +87,14 @@ async def export_graph_json(
                 "scope": {"scope_not_found": True},
                 "nodes": [],
                 "edges": [],
-                "counts": {"facts": 0, "documents": 0, "chunks": 0, "nodes": 0, "edges": 0},
+                "counts": {
+                    "facts": 0,
+                    "documents": 0,
+                    "episodes": 0,
+                    "chunks": 0,
+                    "nodes": 0,
+                    "edges": 0,
+                },
                 "truncated": False,
                 "warnings": ["scope_not_found"],
             }
@@ -100,6 +108,7 @@ async def export_graph_json(
             include_restricted=include_restricted,
             max_facts=max_facts,
             max_documents=max_documents,
+            max_episodes=max_episodes,
             max_chunks=max_chunks,
         )
     )

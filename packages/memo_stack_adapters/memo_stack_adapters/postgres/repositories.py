@@ -341,6 +341,35 @@ class PostgresChunkRepository(ChunkRepositoryPort):
         self._session.add(chunk_to_row(chunk))
         return UpsertChunkResult(chunk_id=str(chunk.id), duplicate=False)
 
+    async def list_for_episode(
+        self,
+        episode_id: str,
+        *,
+        limit: int | None = None,
+        cursor_sequence: int | None = None,
+        cursor_id: str | None = None,
+    ) -> list[MemoryChunk]:
+        conditions = [
+            MemoryChunkRow.episode_id == episode_id,
+            MemoryChunkRow.status == "active",
+        ]
+        if cursor_sequence is not None and cursor_id is not None:
+            conditions.append(
+                or_(
+                    MemoryChunkRow.sequence > cursor_sequence,
+                    (MemoryChunkRow.sequence == cursor_sequence) & (MemoryChunkRow.id > cursor_id),
+                )
+            )
+        statement = (
+            select(MemoryChunkRow)
+            .where(*conditions)
+            .order_by(MemoryChunkRow.sequence, MemoryChunkRow.id)
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        rows = (await self._session.execute(statement)).scalars()
+        return [chunk_row_to_domain(row) for row in rows]
+
     async def list_for_scope(
         self,
         *,

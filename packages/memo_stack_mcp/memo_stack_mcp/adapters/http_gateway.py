@@ -140,6 +140,7 @@ class HttpMemoryGateway:
         include_restricted: bool,
         max_facts: int,
         max_documents: int,
+        max_episodes: int,
         max_chunks: int,
     ) -> dict[str, Any]:
         return await self._request(
@@ -154,6 +155,7 @@ class HttpMemoryGateway:
                     "include_restricted": include_restricted,
                     "max_facts": max_facts,
                     "max_documents": max_documents,
+                    "max_episodes": max_episodes,
                     "max_chunks": max_chunks,
                 }
             ),

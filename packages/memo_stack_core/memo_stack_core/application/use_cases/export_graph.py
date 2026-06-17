@@ -17,6 +17,7 @@ from memo_stack_core.domain.entities import (
     LifecycleStatus,
     MemoryChunk,
     MemoryDocument,
+    MemoryEpisode,
     MemoryFact,
     MemoryFactRelation,
     SourceRef,
@@ -34,7 +35,7 @@ class ExportGraphUseCase:
 
     async def execute(self, query: ExportGraphQuery) -> GraphExportResult:
         fact_status = None if query.include_deleted else FactStatus.ACTIVE.value
-        document_status = None if query.include_deleted else LifecycleStatus.ACTIVE.value
+        lifecycle_status = None if query.include_deleted else LifecycleStatus.ACTIVE.value
         warnings: list[str] = []
         async with self._uow_factory() as uow:
             facts = await uow.facts.list_for_scope(
@@ -48,8 +49,15 @@ class ExportGraphUseCase:
                 space_id=str(query.space_id),
                 memory_scope_id=str(query.memory_scope_id),
                 thread_id=str(query.thread_id) if query.thread_id else None,
-                status=document_status,
+                status=lifecycle_status,
                 limit=query.max_documents + 1,
+            )
+            episodes = await uow.episodes.list_for_scope(
+                space_id=str(query.space_id),
+                memory_scope_id=str(query.memory_scope_id),
+                thread_id=str(query.thread_id) if query.thread_id else None,
+                status=lifecycle_status,
+                limit=query.max_episodes + 1,
             )
             facts, facts_truncated = _bounded(
                 _visible_facts(facts, include_restricted=query.include_restricted),
@@ -59,15 +67,18 @@ class ExportGraphUseCase:
                 _visible_documents(documents, include_restricted=query.include_restricted),
                 query.max_documents,
             )
-            chunks, chunks_truncated = await _load_document_chunks(
+            episodes, episodes_truncated = _bounded(episodes, query.max_episodes)
+            chunks, chunks_truncated = await _load_parent_chunks(
                 documents=documents,
+                episodes=episodes,
                 max_chunks=query.max_chunks,
                 include_restricted=query.include_restricted,
-                list_chunks=uow.documents.list_chunks,
+                list_document_chunks=uow.documents.list_chunks,
+                list_episode_chunks=uow.chunks.list_for_episode,
             )
             relations = await _load_fact_relations(
                 facts=facts,
-                status=None if query.include_deleted else LifecycleStatus.ACTIVE.value,
+                status=lifecycle_status,
                 list_relations=uow.fact_relations.list_for_fact,
             )
 
@@ -75,6 +86,8 @@ class ExportGraphUseCase:
             warnings.append("facts_truncated")
         if documents_truncated:
             warnings.append("documents_truncated")
+        if episodes_truncated:
+            warnings.append("episodes_truncated")
         if chunks_truncated:
             warnings.append("chunks_truncated")
 
@@ -84,9 +97,16 @@ class ExportGraphUseCase:
             thread_id=str(query.thread_id) if query.thread_id else None,
             facts=facts,
             documents=documents,
+            episodes=episodes,
             chunks=chunks,
         )
-        edges = _build_edges(facts=facts, documents=documents, chunks=chunks, relations=relations)
+        edges = _build_edges(
+            facts=facts,
+            documents=documents,
+            episodes=episodes,
+            chunks=chunks,
+            relations=relations,
+        )
         return GraphExportResult(
             schema_version=_SCHEMA_VERSION,
             scope={
@@ -99,12 +119,15 @@ class ExportGraphUseCase:
             counts={
                 "facts": len(facts),
                 "documents": len(documents),
+                "episodes": len(episodes),
                 "chunks": len(chunks),
                 "relations": len(relations),
                 "nodes": len(nodes),
                 "edges": len(edges),
             },
-            truncated=bool(facts_truncated or documents_truncated or chunks_truncated),
+            truncated=bool(
+                facts_truncated or documents_truncated or episodes_truncated or chunks_truncated
+            ),
             warnings=tuple(warnings),
         )
 
@@ -133,30 +156,58 @@ def _visible_documents(
     ]
 
 
-async def _load_document_chunks(
+async def _load_parent_chunks(
     *,
     documents: list[MemoryDocument],
+    episodes: list[MemoryEpisode],
     max_chunks: int,
     include_restricted: bool,
-    list_chunks: Callable[..., Awaitable[list[MemoryChunk]]],
+    list_document_chunks: Callable[..., Awaitable[list[MemoryChunk]]],
+    list_episode_chunks: Callable[..., Awaitable[list[MemoryChunk]]],
 ) -> tuple[list[MemoryChunk], bool]:
     chunks: list[MemoryChunk] = []
     truncated = False
     for document in documents:
-        remaining = max_chunks - len(chunks)
-        if remaining <= 0:
-            truncated = True
-            break
-        document_chunks = await list_chunks(str(document.id), limit=remaining + 1)
-        visible_chunks = [
-            chunk
-            for chunk in document_chunks
-            if include_restricted or chunk.classification != DataClassification.RESTRICTED.value
-        ]
-        if len(visible_chunks) > remaining:
-            truncated = True
-        chunks.extend(visible_chunks[:remaining])
+        parent_chunks, parent_truncated = await _load_visible_parent_chunks(
+            parent_id=str(document.id),
+            max_chunks=max_chunks,
+            loaded_chunks=chunks,
+            include_restricted=include_restricted,
+            list_chunks=list_document_chunks,
+        )
+        chunks.extend(parent_chunks)
+        truncated = truncated or parent_truncated
+    for episode in episodes:
+        parent_chunks, parent_truncated = await _load_visible_parent_chunks(
+            parent_id=str(episode.id),
+            max_chunks=max_chunks,
+            loaded_chunks=chunks,
+            include_restricted=include_restricted,
+            list_chunks=list_episode_chunks,
+        )
+        chunks.extend(parent_chunks)
+        truncated = truncated or parent_truncated
     return chunks, truncated
+
+
+async def _load_visible_parent_chunks(
+    *,
+    parent_id: str,
+    max_chunks: int,
+    loaded_chunks: list[MemoryChunk],
+    include_restricted: bool,
+    list_chunks: Callable[..., Awaitable[list[MemoryChunk]]],
+) -> tuple[list[MemoryChunk], bool]:
+    remaining = max_chunks - len(loaded_chunks)
+    if remaining <= 0:
+        return [], True
+    parent_chunks = await list_chunks(parent_id, limit=remaining + 1)
+    visible_chunks = [
+        chunk
+        for chunk in parent_chunks
+        if include_restricted or chunk.classification != DataClassification.RESTRICTED.value
+    ]
+    return visible_chunks[:remaining], len(visible_chunks) > remaining
 
 
 async def _load_fact_relations(
@@ -189,6 +240,7 @@ def _build_nodes(
     thread_id: str | None,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
+    episodes: list[MemoryEpisode],
     chunks: list[MemoryChunk],
 ) -> list[GraphExportNode]:
     nodes = [
@@ -201,6 +253,7 @@ def _build_nodes(
     ]
     nodes.extend(_fact_node(fact) for fact in facts)
     nodes.extend(_document_node(document) for document in documents)
+    nodes.extend(_episode_node(episode) for episode in episodes)
     nodes.extend(_chunk_node(chunk) for chunk in chunks)
     return nodes
 
@@ -245,6 +298,26 @@ def _document_node(document: MemoryDocument) -> GraphExportNode:
     )
 
 
+def _episode_node(episode: MemoryEpisode) -> GraphExportNode:
+    return GraphExportNode(
+        id=f"episode:{episode.id}",
+        type="episode",
+        label=_preview(episode.text),
+        data={
+            "id": str(episode.id),
+            "thread_id": str(episode.thread_id),
+            "source_type": episode.source_type,
+            "source_external_id": episode.source_external_id,
+            "speaker": episode.speaker.value,
+            "trust_level": episode.trust_level.value,
+            "status": episode.status.value,
+            "occurred_at": episode.occurred_at.isoformat(),
+            "created_at": episode.created_at.isoformat(),
+            "text_preview": _preview(episode.text),
+        },
+    )
+
+
 def _chunk_node(chunk: MemoryChunk) -> GraphExportNode:
     return GraphExportNode(
         id=f"chunk:{chunk.id}",
@@ -253,6 +326,7 @@ def _chunk_node(chunk: MemoryChunk) -> GraphExportNode:
         data={
             "id": str(chunk.id),
             "document_id": str(chunk.document_id) if chunk.document_id else None,
+            "episode_id": str(chunk.episode_id) if chunk.episode_id else None,
             "kind": chunk.kind.value,
             "node_kind": chunk.metadata.get("node_kind"),
             "heading": chunk.metadata.get("heading"),
@@ -267,23 +341,50 @@ def _build_edges(
     *,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
+    episodes: list[MemoryEpisode],
     chunks: list[MemoryChunk],
     relations: list[MemoryFactRelation],
 ) -> list[GraphExportEdge]:
     edges: list[GraphExportEdge] = []
-    memory_scope_id = (
-        str(facts[0].memory_scope_id if facts else documents[0].memory_scope_id)
-        if (facts or documents)
-        else None
+    memory_scope_id = _memory_scope_id_for_edges(
+        facts=facts,
+        documents=documents,
+        episodes=episodes,
+        chunks=chunks,
     )
     if memory_scope_id:
         edges.extend(
-            _scope_edges(memory_scope_id=memory_scope_id, facts=facts, documents=documents)
+            _scope_edges(
+                memory_scope_id=memory_scope_id,
+                facts=facts,
+                documents=documents,
+                episodes=episodes,
+            )
         )
-    edges.extend(_document_chunk_edges(chunks))
-    edges.extend(_fact_evidence_edges(facts=facts, documents=documents, chunks=chunks))
+    edges.extend(_parent_chunk_edges(chunks))
+    edges.extend(
+        _fact_evidence_edges(facts=facts, documents=documents, episodes=episodes, chunks=chunks)
+    )
     edges.extend(_fact_relation_edges(relations))
     return edges
+
+
+def _memory_scope_id_for_edges(
+    *,
+    facts: list[MemoryFact],
+    documents: list[MemoryDocument],
+    episodes: list[MemoryEpisode],
+    chunks: list[MemoryChunk],
+) -> str | None:
+    if facts:
+        return str(facts[0].memory_scope_id)
+    if documents:
+        return str(documents[0].memory_scope_id)
+    if episodes:
+        return str(episodes[0].memory_scope_id)
+    if chunks:
+        return str(chunks[0].memory_scope_id)
+    return None
 
 
 def _fact_relation_edges(relations: list[MemoryFactRelation]) -> list[GraphExportEdge]:
@@ -311,6 +412,7 @@ def _scope_edges(
     memory_scope_id: str,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
+    episodes: list[MemoryEpisode],
 ) -> list[GraphExportEdge]:
     edges = [
         _edge(
@@ -332,28 +434,46 @@ def _scope_edges(
         )
         for document in documents
     )
+    edges.extend(
+        _edge(
+            edge_id=f"memory_scope:{memory_scope_id}->episode:{episode.id}",
+            edge_type="contains_episode",
+            source=f"memory_scope:{memory_scope_id}",
+            target=f"episode:{episode.id}",
+            label="contains episode",
+        )
+        for episode in episodes
+    )
     return edges
 
 
-def _document_chunk_edges(chunks: list[MemoryChunk]) -> list[GraphExportEdge]:
-    return [
-        _edge(
-            edge_id=f"document:{chunk.document_id}->chunk:{chunk.id}",
-            edge_type="has_chunk",
-            source=f"document:{chunk.document_id}",
-            target=f"chunk:{chunk.id}",
-            label="has chunk",
-            data={"sequence": chunk.sequence},
+def _parent_chunk_edges(chunks: list[MemoryChunk]) -> list[GraphExportEdge]:
+    edges: list[GraphExportEdge] = []
+    for chunk in chunks:
+        if chunk.document_id is not None:
+            source = f"document:{chunk.document_id}"
+        elif chunk.episode_id is not None:
+            source = f"episode:{chunk.episode_id}"
+        else:
+            continue
+        edges.append(
+            _edge(
+                edge_id=f"{source}->chunk:{chunk.id}",
+                edge_type="has_chunk",
+                source=source,
+                target=f"chunk:{chunk.id}",
+                label="has chunk",
+                data={"sequence": chunk.sequence},
+            )
         )
-        for chunk in chunks
-        if chunk.document_id is not None
-    ]
+    return edges
 
 
 def _fact_evidence_edges(
     *,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
+    episodes: list[MemoryEpisode],
     chunks: list[MemoryChunk],
 ) -> list[GraphExportEdge]:
     chunk_ids = {str(chunk.id) for chunk in chunks}
@@ -361,7 +481,11 @@ def _fact_evidence_edges(
         (document.source_type, document.source_external_id): str(document.id)
         for document in documents
     }
+    episode_by_source = {
+        (episode.source_type, episode.source_external_id): str(episode.id) for episode in episodes
+    }
     document_ids = {str(document.id) for document in documents}
+    episode_ids = {str(episode.id) for episode in episodes}
     edges: list[GraphExportEdge] = []
     for fact in facts:
         for index, ref in enumerate(fact.source_refs):
@@ -388,6 +512,21 @@ def _fact_evidence_edges(
                         source=f"fact:{fact.id}",
                         target=f"document:{document_id}",
                         label="evidenced by document",
+                        data=_source_ref_data(ref),
+                    )
+                )
+                continue
+            episode_id = episode_by_source.get((ref.source_type, ref.source_id))
+            if ref.source_id in episode_ids:
+                episode_id = ref.source_id
+            if episode_id:
+                edges.append(
+                    _edge(
+                        edge_id=f"fact:{fact.id}->episode:{episode_id}:{index}",
+                        edge_type="evidenced_by_episode",
+                        source=f"fact:{fact.id}",
+                        target=f"episode:{episode_id}",
+                        label="evidenced by episode",
                         data=_source_ref_data(ref),
                     )
                 )

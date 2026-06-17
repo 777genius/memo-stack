@@ -820,6 +820,7 @@ class ExportGraphQuery:
     include_restricted: bool
     max_facts: int
     max_documents: int
+    max_episodes: int
     max_chunks: int
 
 

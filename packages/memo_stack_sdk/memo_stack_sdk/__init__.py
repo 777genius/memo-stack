@@ -10,6 +10,7 @@ import httpx
 import memo_stack_sdk._payloads as _payloads
 from memo_stack_sdk.anchors import MemoStackAnchorsMixin
 from memo_stack_sdk.assets import MemoStackAssetsMixin
+from memo_stack_sdk.export import MemoStackExportMixin
 from memo_stack_sdk.scopes import MemoryScope, ReadScope
 from memo_stack_sdk.thread_memory import MemoStackThreadMemoryMixin
 
@@ -30,7 +31,12 @@ class MemoStackError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class MemoStackClient(MemoStackAnchorsMixin, MemoStackAssetsMixin, MemoStackThreadMemoryMixin):
+class MemoStackClient(
+    MemoStackAnchorsMixin,
+    MemoStackAssetsMixin,
+    MemoStackExportMixin,
+    MemoStackThreadMemoryMixin,
+):
     base_url: str = "http://127.0.0.1:7788"
     token: str | None = None
     timeout: float = 10.0
@@ -301,71 +307,6 @@ class MemoStackClient(MemoStackAnchorsMixin, MemoStackAssetsMixin, MemoStackThre
                 "max_suggestions": max_suggestions,
                 "max_captures": max_captures,
                 "max_activity": max_activity,
-            },
-        )
-
-    def export_memory_scope_snapshot(
-        self,
-        *,
-        space_slug: str,
-        memory_scope_external_ref: str,
-        redacted: bool = False,
-    ) -> dict[str, Any]:
-        return self._request(
-            "GET",
-            "/v1/export/memory_scope-snapshot",
-            params={
-                "space_slug": space_slug,
-                "memory_scope_external_ref": memory_scope_external_ref,
-                "redacted": redacted,
-            },
-        )
-
-    def import_memory_scope_snapshot(
-        self,
-        *,
-        space_slug: str,
-        memory_scope_external_ref: str,
-        snapshot: dict[str, Any],
-        manifest: dict[str, Any] | None = None,
-        dry_run: bool = True,
-        merge_strategy: str = "fail_on_conflict",
-        confirmed: bool = False,
-        source_name: str = "sdk-memory_scope-snapshot",
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            "/v1/export/memory_scope-snapshot/import",
-            json={
-                "space_slug": space_slug,
-                "memory_scope_external_ref": memory_scope_external_ref,
-                "snapshot": snapshot,
-                "manifest": manifest,
-                "dry_run": dry_run,
-                "merge_strategy": merge_strategy,
-                "confirmed": confirmed,
-                "source_name": source_name,
-            },
-        )
-
-    def preview_memory_scope_snapshot_import(
-        self,
-        *,
-        space_slug: str,
-        memory_scope_external_ref: str,
-        snapshot: dict[str, Any],
-        manifest: dict[str, Any] | None = None,
-        merge_strategy: str = "fail_on_conflict",
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            "/v1/export/memory_scope-snapshot/preview",
-            json={
-                "space_slug": space_slug,
-                "memory_scope_external_ref": memory_scope_external_ref,
-                "snapshot": snapshot,
-                "manifest": manifest,
-                "merge_strategy": merge_strategy,
             },
         )
 
