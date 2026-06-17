@@ -204,6 +204,85 @@ void main() {
       );
       expect(store.contextLinkSuggestions, isEmpty);
     });
+
+    test('rejects context link suggestions from the active scope', () async {
+      final store = ChatStore(repo, null);
+      repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+
+      await store.refreshContextLinkSuggestions();
+      await store.reviewContextLinkSuggestion(
+        store.contextLinkSuggestions.single,
+        approve: false,
+      );
+
+      expect(repo.reviewedSuggestions, ['ctxlinksug-1:reject']);
+      expect(
+        repo.reviewedSuggestionReasons['ctxlinksug-1'],
+        'rejected by user from review queue',
+      );
+      expect(store.contextLinkSuggestions, isEmpty);
+      expect(store.contextLinkSuggestionError.value, isNull);
+    });
+
+    test('replaces pending suggestion with manual context link', () async {
+      final store = ChatStore(repo, null);
+      repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+
+      await store.refreshContextLinkSuggestions();
+      final ok = await store.createManualContextLinkFromSuggestion(
+        store.contextLinkSuggestions.single,
+        targetType: 'anchor',
+        targetId: 'anchor-alex',
+        relationType: 'mentions',
+        confidence: 'medium',
+        reason: 'Alex is the correct target',
+      );
+
+      expect(ok, true);
+      expect(repo.createdContextLinks, [
+        {
+          'source_type': 'capture',
+          'source_id': 'capture-1',
+          'target_type': 'anchor',
+          'target_id': 'anchor-alex',
+          'relation_type': 'mentions',
+          'confidence': 'medium',
+          'reason': 'Alex is the correct target',
+        },
+      ]);
+      expect(repo.reviewedSuggestions, ['ctxlinksug-1:reject']);
+      expect(
+        repo.reviewedSuggestionReasons['ctxlinksug-1'],
+        'replaced by manual link',
+      );
+      expect(store.contextLinkSuggestions, isEmpty);
+      expect(store.contextLinkSuggestionError.value, isNull);
+    });
+
+    test('keeps suggestion visible when manual context link fails', () async {
+      final store = ChatStore(repo, null);
+      repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+      repo.failCreateContextLink = true;
+
+      await store.refreshContextLinkSuggestions();
+      final ok = await store.createManualContextLinkFromSuggestion(
+        store.contextLinkSuggestions.single,
+        targetType: 'anchor',
+        targetId: 'anchor-alex',
+        relationType: 'mentions',
+        confidence: 'medium',
+        reason: 'Alex is the correct target',
+      );
+
+      expect(ok, false);
+      expect(repo.createdContextLinks, isEmpty);
+      expect(repo.reviewedSuggestions, isEmpty);
+      expect(store.contextLinkSuggestions.single.id, 'ctxlinksug-1');
+      expect(
+        store.contextLinkSuggestionError.value,
+        contains('Manual link failed'),
+      );
+    });
   });
 }
 
@@ -226,6 +305,7 @@ class _FakeChatRepository implements ChatRepository {
 
   bool respondApprovalResult = true;
   String activeMemoryScopeExternalRef = 'default';
+  bool failCreateContextLink = false;
   final Map<String, MemoryScope> scopesByRef = {
     'default': _scope('scope-default', 'default', 'Default'),
     'sales-crm': _scope('scope-sales-crm', 'sales-crm', 'Sales CRM'),
@@ -233,6 +313,7 @@ class _FakeChatRepository implements ChatRepository {
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
   final reviewedSuggestions = <String>[];
   final reviewedSuggestionReasons = <String, String?>{};
+  final createdContextLinks = <Map<String, String>>[];
 
   void emitMessage(ChatMessage message) {
     _messages.add(message);
@@ -338,7 +419,20 @@ class _FakeChatRepository implements ChatRepository {
     required String relationType,
     required String confidence,
     required String reason,
-  }) async {}
+  }) async {
+    if (failCreateContextLink) {
+      throw StateError('simulated create link failure');
+    }
+    createdContextLinks.add({
+      'source_type': sourceType,
+      'source_id': sourceId,
+      'target_type': targetType,
+      'target_id': targetId,
+      'relation_type': relationType,
+      'confidence': confidence,
+      'reason': reason,
+    });
+  }
 
   @override
   Future<String> uploadFile(

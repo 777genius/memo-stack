@@ -28,6 +28,9 @@ from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
 from memo_stack_server.doctor import run_doctor
 from memo_stack_server.eval import (
+    _execute_graph_native_golden,
+    _execute_long_memory_golden,
+    _execute_quality_golden,
     _execute_small_golden,
     run_auto_memory_golden,
     run_graph_native_golden,
@@ -35,6 +38,10 @@ from memo_stack_server.eval import (
     run_quality_golden,
     run_semantic_linking_golden,
     run_small_golden,
+)
+from memo_stack_server.eval_graph import (
+    EvalGraphMemoryAdapter,
+    _install_eval_graph_adapter,
 )
 from memo_stack_server.eval_semantic_linking import _execute_semantic_linking_golden
 from memo_stack_server.main import create_app
@@ -1279,6 +1286,45 @@ def test_graph_native_golden_eval_writes_redacted_report(tmp_path: Path) -> None
     assert payload["failures"] == []
     assert "GRAPH_NATIVE_EVAL_BETA_SECRET" not in report_text
     assert "GRAPH_NATIVE_EVAL_RESTRICTED_SECRET" not in report_text
+
+
+def test_heavy_golden_eval_suites_repeat_against_persistent_server(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'heavy-eval-repeatable.db'}",
+            auto_create_schema=True,
+            service_token="test-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+    graph = EvalGraphMemoryAdapter()
+    _install_eval_graph_adapter(app, graph)
+
+    with TestClient(app) as client:
+        results = (
+            _execute_quality_golden(client, auth_headers()),
+            _execute_quality_golden(client, auth_headers()),
+            _execute_long_memory_golden(client, auth_headers()),
+            _execute_long_memory_golden(client, auth_headers()),
+            _execute_graph_native_golden(client, auth_headers(), graph),
+            _execute_graph_native_golden(client, auth_headers(), graph),
+        )
+
+    assert all(result["ok"] is True for result in results)
+    assert all(result["failures"] == [] for result in results)
+    assert [result["suite"] for result in results] == [
+        "quality-golden",
+        "quality-golden",
+        "long-memory-golden",
+        "long-memory-golden",
+        "graph-native-golden",
+        "graph-native-golden",
+    ]
 
 
 def test_small_golden_eval_seed_preserves_scope_invariants(
