@@ -8,22 +8,28 @@ from datetime import UTC, datetime
 from math import log
 
 from memo_stack_core.application.dto import ContextLinkCandidate, SuggestContextLinksCommand
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 from memo_stack_core.domain.entities import MemoryChunk
 
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _MAX_CANDIDATE_PREVIEW = 220
+_MAX_QUERY_TERMS = 64
+_MAX_QUERY_TERM_CHARS = 80
 _LINK_STOP_TERMS = {
     "about",
     "after",
     "again",
     "ago",
     "and",
+    "authorization",
+    "bearer",
     "days",
     "from",
     "hour",
     "hours",
     "last",
     "note",
+    "redacted",
     "screenshot",
     "that",
     "the",
@@ -158,10 +164,12 @@ class TemporalHint:
 
 def terms(text: str) -> tuple[str, ...]:
     seen: dict[str, None] = {}
-    for raw in _TERM_PATTERN.findall(text.lower()):
-        term = raw.strip("._-:/#")
+    for raw in _TERM_PATTERN.findall(redact_sensitive_text(text).lower()):
+        term = raw.strip("._-:/#")[:_MAX_QUERY_TERM_CHARS]
         if len(term) >= 3 and term not in _LINK_STOP_TERMS and term not in seen:
             seen[term] = None
+            if len(seen) >= _MAX_QUERY_TERMS:
+                break
     return tuple(seen)
 
 
