@@ -6,13 +6,15 @@ from scripts.agent_transcript_corpus_redactor import redact_text, redact_transcr
 def test_redact_text_masks_common_agent_transcript_secrets() -> None:
     redacted, counts = redact_text(
         "Use password=bench-secret-value and Authorization: Bearer live-secret-token "
-        "with sk-proj-secretvalue1234567890, dev@example.com, "
+        "with sk-proj-secretvalue1234567890 and "
+        "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890, dev@example.com, "
         "and /Users/alice/dev/private/path."
     )
 
     assert "bench-secret-value" not in redacted
     assert "live-secret-token" not in redacted
     assert "sk-proj-secretvalue1234567890" not in redacted
+    assert "sk-svcacct" not in redacted
     assert "dev@example.com" not in redacted
     assert "/Users/alice" not in redacted
     assert "<redacted:secret>" in redacted
@@ -21,7 +23,7 @@ def test_redact_text_masks_common_agent_transcript_secrets() -> None:
     assert "/Users/<redacted:path>" in redacted
     assert counts["assignment_secret"] == 1
     assert counts["bearer_token"] == 1
-    assert counts["openai_key"] == 1
+    assert counts["openai_key"] == 2
     assert counts["email"] == 1
     assert counts["home_path"] == 1
 

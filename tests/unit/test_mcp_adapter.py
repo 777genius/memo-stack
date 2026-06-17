@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any
 
+import pytest
 from mcp.shared.version import LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
 from mcp_adapter_fakes import RecordingGateway
 from memo_stack_mcp.application.service import MemoryToolService
@@ -889,13 +890,20 @@ def test_service_write_mode_off_blocks_write_paths() -> None:
     asyncio.run(run())
 
 
-def test_service_secret_text_is_rejected_before_gateway() -> None:
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "sk-test-secret-token",
+        "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890",
+    ],
+)
+def test_service_secret_text_is_rejected_before_gateway(secret: str) -> None:
     async def run() -> None:
         gateway = RecordingGateway()
         service = MemoryToolService(gateway=gateway, settings=MemoryMcpSettings())
 
         result = await service.remember_fact(
-            text="Remember token sk-test-secret-token",
+            text=f"Remember token {secret}",
             source_type="manual",
             source_id="note-1",
         )

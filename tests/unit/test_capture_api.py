@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from memo_stack_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
 from memo_stack_server.main import create_app
@@ -143,13 +144,24 @@ def test_capture_only_mode_ignores_client_consolidate_request(tmp_path: Path) ->
     assert response.json()["data"]["created_suggestions"] == 0
 
 
-def test_capture_secret_is_redacted_or_rejected_before_storage(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("secret", "forbidden_fragment"),
+    [
+        ("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", "sk-proj"),
+        ("sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890", "sk-svcacct"),
+    ],
+)
+def test_capture_secret_is_redacted_or_rejected_before_storage(
+    tmp_path: Path,
+    secret: str,
+    forbidden_fragment: str,
+) -> None:
     with make_client(tmp_path) as client:
         response = client.post(
             "/v1/captures",
             json=capture_payload(
                 source_event_id="secret-event",
-                text="Remember: token=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890 must not leak",
+                text=f"Remember: token={secret} must not leak",
             ),
             headers=auth_headers(),
         )
@@ -160,7 +172,7 @@ def test_capture_secret_is_redacted_or_rejected_before_storage(tmp_path: Path) -
         )
 
     assert response.status_code == 201
-    assert "sk-proj" not in listed.text
+    assert forbidden_fragment not in listed.text
     assert "[redacted-secret]" in listed.text
 
 

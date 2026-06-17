@@ -16,6 +16,7 @@ from memo_stack_mcp.domain.models import (
     [
         "Bearer abcdefghijklmnopqrstuvwxyz123456",
         "sk-proj-abcdefghijklmnop",
+        "sk-svcacct-abcdefghijklmnopqrstuvwxyz123456",
         "sk-abcdefghijklmnop",
         "ghp_abcdefghijklmnop",
         "AKIA1234567890ABCDEF",

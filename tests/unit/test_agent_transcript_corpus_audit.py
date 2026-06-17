@@ -56,7 +56,7 @@ def test_corpus_audit_rejects_unredacted_secret_patterns(tmp_path) -> None:
         tmp_path / "unsafe.json",
         {
             "id": "unsafe",
-            "transcript": "assistant: password=bench-secret-leaked",
+            "transcript": "assistant: token=sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890",
             "expected_tools": ["memory_search"],
             "expected_answer_contains": ["anything"],
             "forbidden_contains": [],

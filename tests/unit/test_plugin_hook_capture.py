@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from memo_stack_mcp.plugin_hook import (
     HookEvent,
     HookGatewayError,
@@ -333,14 +334,24 @@ def test_hook_capture_skips_old_server_without_capture_endpoint() -> None:
     assert gateway.captures == []
 
 
-def test_hook_capture_skips_sensitive_input_without_leaking_value() -> None:
+@pytest.mark.parametrize(
+    ("prompt", "forbidden_fragment"),
+    [
+        ("Remember: token=sk-proj-abcdefghijklmnopqrstuvwxyz123456", "sk-proj"),
+        ("Remember: token=sk-svcacct-abcdefghijklmnopqrstuvwxyz123456", "sk-svcacct"),
+    ],
+)
+def test_hook_capture_skips_sensitive_input_without_leaking_value(
+    prompt: str,
+    forbidden_fragment: str,
+) -> None:
     gateway = FakeGateway()
     app = MemoryPluginHookApp(settings=settings(), gateway=gateway)
 
     result = app.run(
         HookEvent(
             name="UserPromptSubmit",
-            payload={"prompt": "Remember: token=sk-proj-abcdefghijklmnopqrstuvwxyz123456"},
+            payload={"prompt": prompt},
             raw_payload="",
             cwd="/tmp/project",
         )
@@ -349,8 +360,8 @@ def test_hook_capture_skips_sensitive_input_without_leaking_value() -> None:
     assert "Known project memory." in result.stdout
     assert gateway.captures == []
     assert gateway.queries == ["Remember: token=[redacted]"]
-    assert "sk-proj" not in result.stderr
-    assert "sk-proj" not in result.stdout
+    assert forbidden_fragment not in result.stderr
+    assert forbidden_fragment not in result.stdout
     assert "looks sensitive" in result.stderr
 
 
