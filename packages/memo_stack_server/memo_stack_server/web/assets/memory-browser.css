@@ -280,7 +280,7 @@ select:focus {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-bottom: 1px solid var(--border);
 }
 
@@ -321,6 +321,24 @@ select:focus {
 
 .panel-actions.one-action {
   grid-template-columns: 1fr;
+}
+
+.review-filters {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.review-filters label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-filters select {
+  width: 100%;
 }
 
 .detail-title {
@@ -407,6 +425,10 @@ select:focus {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.action-row.four-actions {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .action-row.one-action {
   grid-template-columns: 1fr;
 }
@@ -474,6 +496,67 @@ select:focus {
   display: none;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.review-modal {
+  width: min(980px, 100%);
+  max-height: min(86vh, 920px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.modal-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.review-modal .source-list,
+.review-modal .edit-form {
+  margin-top: 0;
+}
+
 @media (max-width: 1100px) {
   .controlbar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -489,6 +572,10 @@ select:focus {
 
   #graphSvg {
     min-height: 480px;
+  }
+
+  .review-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -510,5 +597,17 @@ select:focus {
 
   .tabs {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .review-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .action-row.four-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .modal-overlay {
+    padding: 12px;
   }
 }

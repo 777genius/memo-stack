@@ -22,6 +22,10 @@
     spaceSlug: "default",
     memoryScopeRef: "default",
     topic: "memory",
+    reviewStatusFilter: "pending",
+    reviewTypeFilter: "all",
+    reviewRelationFilter: "all",
+    reviewTargetFilter: "",
   };
 
   const state = {
@@ -60,12 +64,26 @@
     els,
     apiJson: (...args) => apiJson(...args),
     refreshAll: (...args) => refreshAll(...args),
+    renderSuggestionList: (...args) => renderSuggestionList(...args),
+    selectNode: (...args) => selectNode(...args),
     listItem: (...args) => listItem(...args),
     emptyItem: (...args) => emptyItem(...args),
     sectionLabel: (...args) => sectionLabel(...args),
     actionButton: (...args) => actionButton(...args),
     formatDate: (...args) => formatDate(...args),
     shortId: (...args) => shortId(...args),
+    scoreLabel: (...args) => scoreLabel(...args),
+    temporalWindowLabel: (...args) => temporalWindowLabel(...args),
+    arrayOf: (...args) => arrayOf(...args),
+    keyValueItem: (...args) => keyValueItem(...args),
+    sourceSection: (...args) => sourceSection(...args),
+    contextLinkEditForm: (...args) => contextLinkEditForm(...args),
+    manualContextLinkForm: (...args) => manualContextLinkForm(...args),
+    reviewSuggestion: (...args) => reviewSuggestion(...args),
+    reviewContextLinkSuggestion: (...args) => reviewContextLinkSuggestion(...args),
+    reviewPendingContextLinkSuggestionsBatch: (...args) =>
+      reviewPendingContextLinkSuggestionsBatch(...args),
+    mergeAnchorSuggestion: (...args) => mergeAnchorSuggestion(...args),
     setError: (...args) => setError(...args),
   };
 
@@ -97,6 +115,10 @@
       "graphSearchInput",
       "typeFilter",
       "statusFilter",
+      "reviewStatusFilter",
+      "reviewTypeFilter",
+      "reviewRelationFilter",
+      "reviewTargetFilter",
       "zoomInButton",
       "zoomOutButton",
       "fitButton",
@@ -126,6 +148,10 @@
       "errorOutput",
       "spacesList",
       "memory_scopesList",
+      "reviewModal",
+      "reviewModalTitle",
+      "reviewModalBody",
+      "reviewModalClose",
     ]) {
       els[id] = document.getElementById(id);
     }
@@ -150,6 +176,27 @@
     els.graphSearchInput.addEventListener("input", renderAll);
     els.typeFilter.addEventListener("change", renderAll);
     els.statusFilter.addEventListener("change", renderAll);
+    els.reviewStatusFilter.addEventListener("change", () => {
+      state.reviewStatusFilter = els.reviewStatusFilter.value;
+      saveSettings();
+      renderSuggestionList();
+    });
+    els.reviewTypeFilter.addEventListener("change", () => {
+      state.reviewTypeFilter = els.reviewTypeFilter.value;
+      saveSettings();
+      renderSuggestionList();
+    });
+    els.reviewRelationFilter.addEventListener("change", () => {
+      state.reviewRelationFilter = els.reviewRelationFilter.value;
+      saveSettings();
+      renderSuggestionList();
+    });
+    els.reviewTargetFilter.addEventListener("input", () => {
+      state.reviewTargetFilter = els.reviewTargetFilter.value.trim();
+      saveSettings();
+      renderSuggestionList();
+    });
+    window.memoStackReview.bindModalEvents();
     els.zoomInButton.addEventListener("click", () => {
       state.graphScale = Math.max(0.55, state.graphScale * 0.86);
       renderGraph();
@@ -196,6 +243,10 @@
         spaceSlug: state.spaceSlug,
         memoryScopeRef: state.memoryScopeRef,
         topic: state.topic,
+        reviewStatusFilter: state.reviewStatusFilter,
+        reviewTypeFilter: state.reviewTypeFilter,
+        reviewRelationFilter: state.reviewRelationFilter,
+        reviewTargetFilter: state.reviewTargetFilter,
       }),
     );
   }
@@ -206,6 +257,10 @@
     els.spaceInput.value = state.spaceSlug || defaults.spaceSlug;
     els.memory_scopeInput.value = state.memoryScopeRef || defaults.memoryScopeRef;
     els.topicInput.value = state.topic || defaults.topic;
+    els.reviewStatusFilter.value = state.reviewStatusFilter || defaults.reviewStatusFilter;
+    els.reviewTypeFilter.value = state.reviewTypeFilter || defaults.reviewTypeFilter;
+    els.reviewRelationFilter.value = state.reviewRelationFilter || defaults.reviewRelationFilter;
+    els.reviewTargetFilter.value = state.reviewTargetFilter || defaults.reviewTargetFilter;
   }
 
   function readSettingsFromInputs() {
@@ -214,6 +269,10 @@
     state.spaceSlug = els.spaceInput.value.trim() || defaults.spaceSlug;
     state.memoryScopeRef = els.memory_scopeInput.value.trim() || defaults.memoryScopeRef;
     state.topic = els.topicInput.value.trim() || defaults.topic;
+    state.reviewStatusFilter = els.reviewStatusFilter.value || defaults.reviewStatusFilter;
+    state.reviewTypeFilter = els.reviewTypeFilter.value || defaults.reviewTypeFilter;
+    state.reviewRelationFilter = els.reviewRelationFilter.value || defaults.reviewRelationFilter;
+    state.reviewTargetFilter = els.reviewTargetFilter.value.trim();
     updateScopeSummary();
   }
 
@@ -591,6 +650,7 @@
         },
       });
       await refreshAll();
+      window.memoStackReview.closeReviewModal();
       selectNode(`anchor:${candidate.target_anchor.id}`);
     } catch (error) {
       setError(error.message);
@@ -686,6 +746,7 @@
         body: { reason: reason || `Reviewed in Memo Stack Browser` },
       });
       await refreshAll();
+      window.memoStackReview.closeReviewModal();
     } catch (error) {
       setError(error.message);
     }
@@ -714,13 +775,19 @@
         }),
       });
       await refreshAll();
+      window.memoStackReview.closeReviewModal();
     } catch (error) {
       setError(error.message);
     }
   }
 
   async function reviewPendingContextLinkSuggestionsBatch(action) {
-    const pending = state.contextLinkSuggestions.filter((suggestion) => suggestion.status === "pending");
+    const pending = state.contextLinkSuggestions.filter(
+      (suggestion) =>
+        suggestion.status === "pending" &&
+        window.memoStackReview.reviewRelationMatches(suggestion) &&
+        window.memoStackReview.reviewTargetMatches(suggestion),
+    );
     const batch = pending.slice(0, 50);
     if (!batch.length) {
       setError("No pending link reviews.");
@@ -1220,6 +1287,9 @@
     for (const alias of anchor.aliases || []) {
       addRelation(graph, nodeId, `alias:${anchor.kind}:${alias}`, "alias", alias, relationNodes);
     }
+    for (const ref of anchor.evidence_refs || []) {
+      addSourceRelation(graph, nodeId, ref, relationNodes);
+    }
   }
 
   function addContextLinkSuggestionGraph(graph, suggestion, relationNodes) {
@@ -1592,6 +1662,7 @@
     }
     if (node.type === "anchor") {
       panel.append(anchorSection(node.data));
+      panel.append(sourceSection(node.data?.evidence_refs || []));
     }
     if (node.type === "anchor" && node.data?.status === "active" && (node.data?.aliases || []).length) {
       const actions = document.createElement("div");
@@ -1652,8 +1723,12 @@
       keyValueItem("Source", `${suggestion.source_type}:${suggestion.source_id}`),
       keyValueItem("Target", `${suggestion.target_type}:${suggestion.target_id}`),
       keyValueItem("Relation", suggestion.relation_type),
+      keyValueItem("Status", suggestion.status),
+      keyValueItem("Confidence", suggestion.confidence),
+      keyValueItem("Score", scoreLabel(suggestion.score)),
       keyValueItem("Reason", suggestion.reason),
       keyValueItem("Target preview", suggestion.metadata?.target_preview || ""),
+      keyValueItem("Updated", formatDate(suggestion.updated_at)),
     );
     const reasons = [
       ...arrayOf(suggestion.metadata?.reasons),
@@ -1682,6 +1757,9 @@
       keyValueItem("Key", anchor.normalized_key),
       keyValueItem("Aliases", (anchor.aliases || []).join(", ") || "none"),
       keyValueItem("Description", anchor.description || ""),
+      keyValueItem("Confidence", anchor.confidence || "medium"),
+      keyValueItem("Observed", formatDate(anchor.observed_at)),
+      keyValueItem("Validity", temporalWindowLabel(anchor.valid_from, anchor.valid_to)),
       keyValueItem("Metadata", metadataReason),
       keyValueItem("Updated", formatDate(anchor.updated_at)),
     );
@@ -1947,96 +2025,7 @@
   }
 
   function renderSuggestionList() {
-    els.suggestionList.replaceChildren();
-    els.suggestionList.append(manualContextLinkForm());
-    if (!state.anchorMergeSuggestions.length && !state.contextLinkSuggestions.length && !state.suggestions.length) {
-      els.suggestionList.append(emptyItem("No review items."));
-      return;
-    }
-    if (state.anchorMergeSuggestions.length) {
-      els.suggestionList.append(sectionLabel("Anchor merge reviews"));
-    }
-    for (const candidate of state.anchorMergeSuggestions.slice(0, 80)) {
-      const item = listItem({
-        title: `${candidate.source_anchor.label} -> ${candidate.target_anchor.label} / ${candidate.confidence}`,
-        text: (candidate.reasons || []).join(", ") || "possible duplicate anchor",
-        meta: `${scoreLabel(candidate.score)} ${candidate.source_anchor.kind}`,
-        onClick: () => selectNode(`anchor:${candidate.source_anchor.id}`),
-      });
-      const actions = document.createElement("div");
-      actions.className = "action-row one-action";
-      actions.append(
-        actionButton("Merge", () => mergeAnchorSuggestion(candidate), "primary-button"),
-      );
-      item.append(actions);
-      els.suggestionList.append(item);
-    }
-    if (state.contextLinkSuggestions.length) {
-      els.suggestionList.append(sectionLabel("Link reviews"));
-      const pendingLinkReviews = state.contextLinkSuggestions.filter(
-        (suggestion) => suggestion.status === "pending",
-      );
-      if (pendingLinkReviews.length) {
-        const batchActions = document.createElement("div");
-        batchActions.className = "action-row two-actions";
-        batchActions.append(
-          actionButton(
-            `Approve Pending (${Math.min(pendingLinkReviews.length, 50)})`,
-            () => reviewPendingContextLinkSuggestionsBatch("approve"),
-            "primary-button",
-          ),
-          actionButton(
-            `Reject Pending (${Math.min(pendingLinkReviews.length, 50)})`,
-            () => reviewPendingContextLinkSuggestionsBatch("reject"),
-          ),
-        );
-        els.suggestionList.append(batchActions);
-      }
-    }
-    for (const suggestion of state.contextLinkSuggestions.slice(0, 160)) {
-      const item = listItem({
-        title: `${suggestion.source_type} -> ${suggestion.target_type} / ${suggestion.status}`,
-        text: suggestion.metadata?.target_preview || suggestion.reason,
-        meta: `${scoreLabel(suggestion.score)} ${formatDate(suggestion.updated_at)}`,
-        onClick: () => selectNode(`context_link_suggestion:${suggestion.id}`),
-      });
-      if (suggestion.status === "pending") {
-        const actions = document.createElement("div");
-        actions.className = "action-row two-actions";
-        actions.append(
-          actionButton(
-            "Approve",
-            () => reviewContextLinkSuggestion("approve", suggestion.id),
-            "primary-button",
-          ),
-          actionButton("Reject", () => reviewContextLinkSuggestion("reject", suggestion.id)),
-        );
-        item.append(actions);
-      }
-      els.suggestionList.append(item);
-    }
-    if (state.suggestions.length) {
-      els.suggestionList.append(sectionLabel("Fact suggestions"));
-    }
-    for (const suggestion of state.suggestions.slice(0, 160)) {
-      const item = listItem({
-        title: `${suggestion.operation} / ${suggestion.status}`,
-        text: suggestion.candidate_text,
-        meta: formatDate(suggestion.updated_at),
-        onClick: () => selectNode(`suggestion:${suggestion.id}`),
-      });
-      if (suggestion.status === "pending") {
-        const actions = document.createElement("div");
-        actions.className = "action-row";
-        actions.append(
-          actionButton("Approve", () => reviewSuggestion("approve", suggestion.id), "primary-button"),
-          actionButton("Reject", () => reviewSuggestion("reject", suggestion.id)),
-          actionButton("Expire", () => reviewSuggestion("expire", suggestion.id)),
-        );
-        item.append(actions);
-      }
-      els.suggestionList.append(item);
-    }
+    window.memoStackReview.renderSuggestionList();
   }
 
   function renderTimeline() {
@@ -2444,6 +2433,13 @@
       hour: "2-digit",
       minute: "2-digit",
     }).format(new Date(value));
+  }
+
+  function temporalWindowLabel(validFrom, validTo) {
+    if (!validFrom && !validTo) {
+      return "open";
+    }
+    return `${formatDate(validFrom) || "open"} -> ${formatDate(validTo) || "open"}`;
   }
 
   function scoreLabel(score) {

@@ -20,6 +20,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
         index = client.get("/ui/")
         css = client.get("/ui/assets/memory-browser.css")
         js = client.get("/ui/assets/memory-browser.js")
+        review_js = client.get("/ui/assets/memory-browser-review.js")
         operations_js = client.get("/ui/assets/memory-browser-operations.js")
         openapi = client.get("/openapi.json")
 
@@ -28,6 +29,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert index.status_code == 200
     assert "Memo Stack Browser" in index.text
     assert "memory-browser.js" in index.text
+    assert "memory-browser-review.js" in index.text
     assert "memory-browser-operations.js" in index.text
     assert "Operations" in index.text
     assert "operationsList" in index.text
@@ -36,6 +38,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "graph-panel" in css.text
     assert "section-label" in css.text
     assert js.status_code == 200
+    assert review_js.status_code == 200
     assert operations_js.status_code == 200
     assert "localStorage" in js.text
     assert "Authorization" in js.text
@@ -54,10 +57,13 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "/v1/anchors/merge-suggestions" in js.text
     assert "backfillAnchors" in js.text
     assert "mergeAnchorSuggestion" in js.text
-    assert "Anchor merge reviews" in js.text
+    assert "Anchor merge reviews" in review_js.text
     assert "splitAnchorAlias" in js.text
     assert "Split Alias" in js.text
     assert "/split" in js.text
+    assert "evidence_refs" in js.text
+    assert "temporalWindowLabel" in js.text
+    assert "Validity" in js.text
     assert "contextLinkCount" in index.text
     assert "context_link" in index.text
     assert "/v1/context-links" in js.text
@@ -65,10 +71,27 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "/v1/context-link-suggestions/review-batch" in js.text
     assert "reviewContextLinkSuggestion" in js.text
     assert "reviewPendingContextLinkSuggestionsBatch" in js.text
-    assert "Approve Pending" in js.text
+    assert "Approve Pending" in review_js.text
     assert "Approve With Edits" in js.text
     assert "Manual Link" in js.text
     assert "Create Link" in js.text
+    assert "reviewStatusFilter" in index.text
+    assert "reviewTypeFilter" in index.text
+    assert "reviewRelationFilter" in index.text
+    assert "reviewTargetFilter" in index.text
+    assert "reviewModal" in index.text
+    assert "reviewModalBody" in index.text
+    assert "reviewTypeMatches" in review_js.text
+    assert "reviewStatusMatches" in review_js.text
+    assert "reviewRelationMatches" in review_js.text
+    assert "reviewTargetMatches" in review_js.text
+    assert "openContextLinkReviewModal" in review_js.text
+    assert "openAnchorMergeReviewModal" in review_js.text
+    assert "openFactSuggestionReviewModal" in review_js.text
+    assert "Source evidence" in review_js.text
+    assert "Target preview" in review_js.text
+    assert "modal-overlay" in css.text
+    assert "review-grid" in css.text
     assert "Edit Link" in js.text
     assert "Save Link" in js.text
     assert "Edit history" in js.text

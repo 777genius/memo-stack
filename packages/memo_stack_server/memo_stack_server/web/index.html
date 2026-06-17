@@ -118,6 +118,43 @@
               <button id="createAnchorButton" class="primary-button" type="button">Create Anchor</button>
               <button id="backfillAnchorsButton" type="button">Backfill Anchors</button>
             </div>
+            <div class="review-filters" aria-label="Review filters">
+              <label>
+                Status
+                <select id="reviewStatusFilter">
+                  <option value="pending">Pending</option>
+                  <option value="all">All</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </label>
+              <label>
+                Type
+                <select id="reviewTypeFilter">
+                  <option value="all">All</option>
+                  <option value="link">Links</option>
+                  <option value="fact">Facts</option>
+                  <option value="anchor_merge">Anchor Merges</option>
+                </select>
+              </label>
+              <label>
+                Relation
+                <select id="reviewRelationFilter">
+                  <option value="all">All</option>
+                  <option value="related_to">Related To</option>
+                  <option value="mentions">Mentions</option>
+                  <option value="supports">Supports</option>
+                  <option value="duplicates">Duplicates</option>
+                  <option value="contradicts">Contradicts</option>
+                  <option value="supersedes">Supersedes</option>
+                </select>
+              </label>
+              <label>
+                Target
+                <input id="reviewTargetFilter" type="search" placeholder="Target, reason, evidence" autocomplete="off" />
+              </label>
+            </div>
             <div id="suggestionList" class="list-stack"></div>
           </section>
 
@@ -135,7 +172,17 @@
         <span id="errorOutput"></span>
       </section>
     </main>
+    <div id="reviewModal" class="modal-overlay" hidden>
+      <section class="review-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+        <header class="modal-header">
+          <h2 id="reviewModalTitle">Review details</h2>
+          <button id="reviewModalClose" type="button">Close</button>
+        </header>
+        <div id="reviewModalBody" class="modal-body"></div>
+      </section>
+    </div>
     <script src="/ui/assets/memory-browser.js"></script>
+    <script src="/ui/assets/memory-browser-review.js"></script>
     <script src="/ui/assets/memory-browser-operations.js"></script>
   </body>
 </html>
