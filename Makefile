@@ -220,7 +220,7 @@ memo-stack-official-public-benchmark-canary:
 	$(PYTHON) scripts/official_public_benchmark_canary.py "$$@"
 
 .PHONY: memo-stack-test-quality
-memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
+memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval memo-stack-secret-scan
 
 .PHONY: memo-stack-secret-scan
 memo-stack-secret-scan:

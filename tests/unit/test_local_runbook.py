@@ -28,7 +28,8 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
         "memo_stack_extraction_worker"
     ) in makefile
     assert (
-        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
+        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all "
+        "memo-stack-eval memo-stack-secret-scan"
         in makefile
     )
     assert "$(PYTHON) -m memo_stack_server eval run --suite quality-golden" in makefile
@@ -199,7 +200,8 @@ def test_makefile_has_manual_prod_load_canary_target() -> None:
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in "\n".join(recipe)
     assert "MEMORY_OPENAI_API_KEY" in "\n".join(recipe)
     assert (
-        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
+        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all "
+        "memo-stack-eval memo-stack-secret-scan"
         in makefile
     )
     assert "memo-stack-test-quality: memo-stack-prod-load-canary" not in makefile
