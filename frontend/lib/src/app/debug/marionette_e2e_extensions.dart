@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:flutter/widgets.dart';
+import 'package:frontend/src/features/chat/application/services/attachment_upload_models.dart';
+import 'package:frontend/src/features/chat/application/services/attachment_upload_service.dart';
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
+import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_session.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
@@ -82,6 +85,10 @@ class _MemoStackMarionetteE2eBridgeState
     _register(
       'memoStack.submitCapture',
       (handler, params) => handler.submitCapture(params),
+    );
+    _register(
+      'memoStack.submitAttachmentCapture',
+      (handler, params) => handler.submitAttachmentCapture(params),
     );
     _register(
       'memoStack.reviewFirstPendingLinkSuggestion',
@@ -231,6 +238,50 @@ class MemoStackMarionetteE2eCommandHandler {
     await store.sendTask(_required(params, 'text'));
     await _refreshEvidence(store);
     return _state(store);
+  }
+
+  Future<Map<String, dynamic>> submitAttachmentCapture(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final scopeRef = _optional(params, 'memoryScopeExternalRef');
+    if (scopeRef != null) {
+      await _ensureMemoryScope(
+        store,
+        externalRef: scopeRef,
+        name: params['memoryScopeName'],
+      );
+    }
+    final threadId = _optional(params, 'threadId');
+    if (threadId != null) {
+      await store.setActiveChat(threadId);
+    } else if (_truthy(params['createThread']) ||
+        _optional(params, 'threadTitle') != null) {
+      store.createNewChat(
+        title: _optional(params, 'threadTitle'),
+        memoryScopeExternalRef: scopeRef,
+      );
+    }
+
+    final filename = _optional(params, 'filename') ?? 'memo-stack-e2e-note.txt';
+    final content = _attachmentBytes(params);
+    final uploadedAssetIds =
+        await AttachmentUploadService(repo: store.repo).uploadAll([
+      AttachmentUploadDraft.file(
+        name: filename,
+        bytes: content,
+        mime: _optional(params, 'mime') ?? 'text/plain',
+      ),
+    ]);
+    if (uploadedAssetIds.isEmpty) {
+      throw StateError('Attachment upload did not return an asset id');
+    }
+    await store.sendTask(_required(params, 'text'));
+    await _refreshEvidence(store);
+    return {
+      ..._state(store),
+      'uploadedAssetIds': uploadedAssetIds,
+    };
   }
 
   Future<Map<String, dynamic>> reviewFirstPendingLinkSuggestion(
@@ -460,6 +511,7 @@ class MemoStackMarionetteE2eCommandHandler {
       store.refreshOperationsConsole(showLoading: false),
       store.refreshMemoryBrowser(showLoading: false),
     ]);
+    await store.refreshAssetExtractions(showLoading: false);
   }
 
   Map<String, dynamic> _state(ChatStore store) {
@@ -506,6 +558,8 @@ class MemoStackMarionetteE2eCommandHandler {
           .where((item) => item.isPending)
           .map(_suggestionToMap)
           .toList(growable: false),
+      'assetExtractions':
+          store.assetExtractions.map(_extractionToMap).toList(growable: false),
       'memoryBrowserAnchors':
           browser?.anchors.map(_anchorToMap).toList(growable: false) ??
               const <Map<String, dynamic>>[],
@@ -601,6 +655,20 @@ Map<String, dynamic> _captureToMap(MemoryCapture capture) {
   };
 }
 
+Map<String, dynamic> _extractionToMap(AssetExtractionJob job) {
+  return {
+    'id': job.id,
+    'assetId': job.assetId,
+    'threadId': job.threadId,
+    'status': job.status,
+    'parserName': job.parserName,
+    'resultDocumentIds': job.resultDocumentIds,
+    'artifactTypes':
+        job.artifacts.map((artifact) => artifact.artifactType).toList(),
+    'progressPercent': job.progress.percent,
+  };
+}
+
 Map<String, dynamic> _suggestionToMap(MemoryContextLinkSuggestion suggestion) {
   return {
     'id': suggestion.id,
@@ -682,6 +750,16 @@ List<String> _listParam(Map<String, String> params, String key) {
       .where((item) => item.isNotEmpty)
       .toSet()
       .toList(growable: false);
+}
+
+List<int> _attachmentBytes(Map<String, String> params) {
+  final base64Value = _optional(params, 'contentBase64');
+  if (base64Value != null) {
+    return base64Decode(base64Value);
+  }
+  return utf8.encode(
+    _optional(params, 'content') ?? 'Memo Stack E2E attachment.',
+  );
 }
 
 int _intParam(

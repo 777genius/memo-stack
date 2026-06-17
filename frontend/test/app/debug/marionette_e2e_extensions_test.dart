@@ -56,6 +56,37 @@ void main() {
       expect(repo.lastTask, contains('Project Atlas'));
     });
 
+    test('submits an attachment capture with asset evidence', () async {
+      final result = await handler.submitAttachmentCapture({
+        'memoryScopeExternalRef': 'project-atlas',
+        'memoryScopeName': 'Project Atlas',
+        'threadTitle': 'Attachment evidence',
+        'filename': 'launch-note.txt',
+        'mime': 'text/plain',
+        'content': 'Attachment content for Project Atlas launch evidence.',
+        'text': 'Attachment note for Project Atlas launch.',
+      });
+
+      expect(result['uploadedAssetIds'], ['file-1']);
+      expect(result['captureCount'], 1);
+      expect(result['assetExtractionCount'], 1);
+      expect(repo.lastTask, contains('Attachment note'));
+      expect(repo.pendingUploads, isEmpty);
+
+      final latestCapture = result['latestCapture'] as Map<String, dynamic>;
+      expect(latestCapture['assetIds'], contains('file-1'));
+
+      final extractions = result['assetExtractions'] as List<dynamic>;
+      final extraction = extractions.single as Map<String, dynamic>;
+      expect(extraction['assetId'], 'file-1');
+      expect(extraction['threadId'], store.activeChatId);
+      expect(extraction['status'], 'succeeded');
+      expect(extraction['parserName'], 'fake_text_parser');
+      expect(extraction['progressPercent'], 100);
+      expect(extraction['resultDocumentIds'], ['doc-file-1']);
+      expect(extraction['artifactTypes'], contains('markdown'));
+    });
+
     test('reviews the first pending link suggestion', () async {
       await handler.submitCapture({
         'text': 'Alex confirmed the Project Atlas launch timing.',
@@ -192,6 +223,8 @@ class _FakeChatRepository implements ChatRepository {
   };
   final List<MemoryCapture> captures = <MemoryCapture>[];
   final List<MemoryBrowserAnchor> anchors = <MemoryBrowserAnchor>[];
+  final List<Map<String, String?>> pendingUploads = <Map<String, String?>>[];
+  final List<AssetExtractionJob> extractions = <AssetExtractionJob>[];
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
   List<MemoryAnchorMergeSuggestion> anchorMergeSuggestions = const [];
   final List<String> reviewedSuggestions = <String>[];
@@ -201,6 +234,8 @@ class _FakeChatRepository implements ChatRepository {
   String? lastTask;
   int _captureSeq = 0;
   int _anchorSeq = 0;
+  int _assetSeq = 0;
+  int _extractionSeq = 0;
 
   Future<void> close() async {
     await _messages.close();
@@ -238,6 +273,10 @@ class _FakeChatRepository implements ChatRepository {
       ),
     );
     final captureId = 'capture-${++_captureSeq}';
+    final assetIds = pendingUploads
+        .map((item) => item['fileId'])
+        .whereType<String>()
+        .toList(growable: false);
     captures.insert(
       0,
       _capture(
@@ -246,8 +285,10 @@ class _FakeChatRepository implements ChatRepository {
             scopesByRef[activeMemoryScopeExternalRef]?.id ?? 'scope-default',
         threadId: activeChatId,
         preview: task,
+        assetIds: assetIds,
       ),
     );
+    pendingUploads.clear();
     contextLinkSuggestions = [
       _suggestion('ctxlinksug-1', sourceId: captureId),
     ];
@@ -348,7 +389,28 @@ class _FakeChatRepository implements ChatRepository {
     int? batchSize,
     int? batchIndex,
   }) async {
-    return 'file-1';
+    final assetId = 'file-${++_assetSeq}';
+    final extractionId = 'extract-${++_extractionSeq}';
+    onProgress?.call(bytes.length, bytes.length);
+    pendingUploads.add({
+      'fileId': assetId,
+      'name': name,
+      'mime': mime,
+      'extractionId': extractionId,
+      'extractionStatus': 'succeeded',
+    });
+    extractions.insert(
+      0,
+      _extractionJob(
+        id: extractionId,
+        assetId: assetId,
+        memoryScopeId:
+            scopesByRef[activeMemoryScopeExternalRef]?.id ?? 'scope-default',
+        threadId: activeChatId,
+        filename: name,
+      ),
+    );
+    return assetId;
   }
 
   @override
@@ -359,12 +421,15 @@ class _FakeChatRepository implements ChatRepository {
     String? status,
     int limit = 50,
   }) async {
-    return const <AssetExtractionJob>[];
+    final filtered = status == null
+        ? extractions
+        : extractions.where((job) => job.status == status).toList();
+    return filtered.take(limit).toList(growable: false);
   }
 
   @override
   Future<AssetExtractionJob> getAssetExtraction(String jobId) async {
-    throw UnimplementedError();
+    return extractions.firstWhere((job) => job.id == jobId);
   }
 
   @override
@@ -389,7 +454,7 @@ class _FakeChatRepository implements ChatRepository {
         'pending':
             contextLinkSuggestions.where((item) => item.isPending).length,
       },
-      extractionJobs: const <AssetExtractionJob>[],
+      extractionJobs: extractions.take(limit).toList(growable: false),
       contextLinkSuggestions: contextLinkSuggestions.take(limit).toList(),
       diagnostics: const <String, dynamic>{},
     );
@@ -650,6 +715,7 @@ MemoryCapture _capture({
   required String memoryScopeId,
   required String? threadId,
   required String preview,
+  List<String> assetIds = const <String>[],
 }) {
   final now = DateTime.now();
   return MemoryCapture(
@@ -668,13 +734,93 @@ MemoryCapture _capture({
     sourceAuthority: 'user',
     sensitivity: 'medium',
     dataClassification: 'internal',
-    evidenceRefs: const <DocumentSourceRef>[],
-    metadata: const <String, dynamic>{},
+    evidenceRefs: assetIds.map(_assetRef).toList(growable: false),
+    metadata: assetIds.isEmpty
+        ? const <String, dynamic>{}
+        : <String, dynamic>{'asset_ids': assetIds},
     createdAt: now,
     updatedAt: now,
     occurredAt: now,
     lastErrorCode: null,
   );
+}
+
+DocumentSourceRef _assetRef(String assetId) {
+  return DocumentSourceRef(
+    sourceType: 'asset',
+    sourceId: assetId,
+    assetId: assetId,
+    kind: null,
+    pageNumber: null,
+    timeStartMs: null,
+    timeEndMs: null,
+    charStart: null,
+    charEnd: null,
+    chunkCharStart: null,
+    chunkCharEnd: null,
+    bbox: const <double>[],
+    confidence: null,
+    providerSource: null,
+    quotePreview: null,
+    raw: {
+      'source_type': 'asset',
+      'source_id': assetId,
+      'asset_id': assetId,
+    },
+  );
+}
+
+AssetExtractionJob _extractionJob({
+  required String id,
+  required String assetId,
+  required String memoryScopeId,
+  required String? threadId,
+  required String filename,
+}) {
+  final now = DateTime.now().toIso8601String();
+  return AssetExtractionJob.fromMap({
+    'id': id,
+    'asset_id': assetId,
+    'space_id': 'space-1',
+    'memory_scope_id': memoryScopeId,
+    'thread_id': threadId,
+    'parser_profile': 'standard_local',
+    'parser_config_hash': 'fake-parser-config',
+    'source_sha256_hex': 'fake-source-sha',
+    'status': 'succeeded',
+    'attempt_count': 1,
+    'parser_name': 'fake_text_parser',
+    'parser_version': '1',
+    'model_version': null,
+    'result_document_ids': ['doc-$assetId'],
+    'artifacts': [
+      {
+        'id': 'artifact-$assetId-markdown',
+        'job_id': id,
+        'asset_id': assetId,
+        'artifact_type': 'markdown',
+        'storage_backend': 'memory',
+        'storage_key': 'artifacts/$assetId/extracted.md',
+        'sha256_hex': 'fake-artifact-sha',
+        'byte_size': 64,
+        'metadata': {'filename': '$filename.md'},
+        'created_at': now,
+      },
+    ],
+    'metadata': {'filename': filename},
+    'progress': {
+      'stage': 'succeeded',
+      'percent': 100,
+      'message': 'Extraction complete',
+      'terminal': true,
+    },
+    'execution': const <String, dynamic>{},
+    'usage': const <String, dynamic>{},
+    'created_at': now,
+    'updated_at': now,
+    'started_at': now,
+    'finished_at': now,
+  });
 }
 
 MemoryContextLinkSuggestion _suggestion(

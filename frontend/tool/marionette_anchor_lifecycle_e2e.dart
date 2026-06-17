@@ -100,6 +100,7 @@ class MarionetteAnchorLifecycleRunner {
       );
 
       await _runCaptureLinkingFlow(memoStack, runMarker);
+      await _runAttachmentCaptureFlow(memoStack, runMarker);
       final anchorBaselineState =
           await memoStack.call('memoStack.e2eState', {});
       final anchorBaseline =
@@ -304,6 +305,56 @@ class MarionetteAnchorLifecycleRunner {
     );
   }
 
+  Future<void> _runAttachmentCaptureFlow(
+    MemoStackExtensionClient memoStack,
+    String runMarker,
+  ) async {
+    final captured = await memoStack.call(
+      'memoStack.submitAttachmentCapture',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'threadTitle': 'Attachment Capture Thread $runMarker',
+        'filename': 'attachment-$runMarker.txt',
+        'mime': 'text/plain',
+        'content': 'Attachment E2E $runMarker: Alex attached file evidence '
+            'for Project Capture Target $runMarker.',
+        'text': 'Attachment capture $runMarker should preserve file evidence.',
+      },
+    );
+    final uploadedAssetIds =
+        _list(captured['uploadedAssetIds']).map((item) => '$item').toList();
+    _expect(
+      uploadedAssetIds.length == 1,
+      'submitAttachmentCapture did not return exactly one uploaded asset id',
+    );
+    final assetId = uploadedAssetIds.single;
+    final latestCapture = _map(captured['latestCapture']);
+    final captureAssetIds =
+        _list(latestCapture['assetIds']).map((item) => '$item').toSet();
+    _expect(
+      captureAssetIds.contains(assetId),
+      'latest capture does not reference uploaded asset $assetId',
+    );
+
+    final extraction = await _waitForAssetExtraction(
+      memoStack,
+      assetId: assetId,
+    );
+    _expect(
+      _field(extraction, 'parserName') == 'simple_text',
+      'text attachment was not parsed by simple_text',
+    );
+    _expect(
+      _list(extraction['resultDocumentIds']).isNotEmpty,
+      'text attachment extraction did not create a document',
+    );
+    _expect(
+      _list(extraction['artifactTypes']).contains('markdown'),
+      'text attachment extraction did not create a markdown artifact',
+    );
+    _log('attachment capture linked asset $assetId to extracted document');
+  }
+
   Future<Map<String, dynamic>> _waitForPendingContextLinkSuggestion(
     MemoStackExtensionClient memoStack, {
     required String targetAnchorId,
@@ -323,6 +374,41 @@ class MarionetteAnchorLifecycleRunner {
     }
     throw StateError(
       'No pending context-link suggestion before timeout: $lastState',
+    );
+  }
+
+  Future<Map<String, dynamic>> _waitForAssetExtraction(
+    MemoStackExtensionClient memoStack, {
+    required String assetId,
+  }) async {
+    final deadline = DateTime.now().add(
+      Duration(seconds: config.callTimeout.inSeconds * 2),
+    );
+    Map<String, dynamic>? lastState;
+    Map<String, dynamic>? lastJob;
+    while (DateTime.now().isBefore(deadline)) {
+      lastState = await memoStack.call('memoStack.refresh', {});
+      for (final item in _list(lastState['assetExtractions'])) {
+        final job = _map(item);
+        if (_field(job, 'assetId') != assetId) continue;
+        lastJob = job;
+        final status = _field(job, 'status');
+        if (status == 'succeeded') {
+          return job;
+        }
+        if (status == 'failed' ||
+            status == 'unsupported' ||
+            status == 'canceled') {
+          throw StateError(
+            'Asset extraction reached terminal failure for $assetId: $job',
+          );
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    throw StateError(
+      'No succeeded asset extraction before timeout for $assetId: '
+      'lastJob=$lastJob lastState=$lastState',
     );
   }
 

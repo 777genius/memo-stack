@@ -77,7 +77,8 @@ approval, and the no-candidate path for unrelated captures.
 `memo-stack-frontend-marionette-memory-e2e` starts the Flutter debug app against
 the local Docker backend and validates the frontend memory save/review path
 through VM service extensions: create scope, save capture, approve a context-link
-suggestion, create/update/split anchors, merge duplicate anchors and cleanup.
+suggestion, upload attachment evidence, wait for asset extraction,
+create/update/split anchors, merge duplicate anchors and cleanup.
 
 Fresh full-provider canary with isolated Docker volumes:
 
