@@ -241,6 +241,34 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert "sk-capabilities-secret" not in response.text
 
 
+def test_adapter_diagnostics_include_extraction_policy_without_credentials(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'diagnostic-extraction.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            extraction_default_profile="standard_vision",
+            extraction_external_ai_enabled=True,
+            openai_api_key="sk-diagnostics-secret",
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/diagnostics/adapters")
+
+    assert response.status_code == 200
+    extraction = response.json()["data"]["extraction"]
+    assert extraction["default_profile"] == "standard_vision"
+    assert extraction["policy"]["schema_version"] == 2
+    assert extraction["policy"]["external_ai_allowed"] is True
+    assert extraction["providers"]["openai_vision"]["configured"] is True
+    profile_states = {profile["name"]: profile for profile in extraction["profiles_v2"]}
+    assert profile_states["standard_vision"]["memory_promotion"] == "review_required"
+    assert "sk-diagnostics-secret" not in response.text
+
+
 def test_capabilities_keep_transcription_disabled_when_provider_is_disabled(
     tmp_path: Path,
 ) -> None:

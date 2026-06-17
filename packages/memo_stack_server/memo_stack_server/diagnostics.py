@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from memo_stack_server.composition import Container
+from memo_stack_server.extraction_capabilities import build_extraction_capability_payload
 from memo_stack_server.pagination import cursor_int, decode_cursor, encode_cursor
 
 
@@ -30,6 +31,7 @@ async def adapter_diagnostics(container: Container) -> dict[str, Any]:
         "enabled_adapters": [
             adapter.name for adapter in capabilities.adapters if adapter.enabled and adapter.healthy
         ],
+        "extraction": build_extraction_capability_payload(container.settings),
         "policy_mode": capabilities.policy_mode,
         "deploy_profile": capabilities.deploy_profile,
     }
