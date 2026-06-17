@@ -249,6 +249,7 @@ def test_makefile_secret_scan_covers_provider_api_keys() -> None:
     assert r"sk-[A-Za-z0-9_-]{40,}" in recipe
     assert r"gh[pousr]_[A-Za-z0-9_]{12,}" in recipe
     assert r"AKIA[0-9A-Z]{12,}" in recipe
+    assert "-----BEGIN [A-Z ]*PRIVATE KEY-----" in recipe
     assert "(?!ant-)" not in recipe
     assert "(proj-)?" not in recipe
     assert "-g '!frontend/test/**'" in recipe

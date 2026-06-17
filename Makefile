@@ -225,7 +225,7 @@ memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
 
 .PHONY: memo-stack-secret-scan
 memo-stack-secret-scan:
-	@! rg -n -P '\b(?:sk-[A-Za-z0-9_-]{40,}|gh[pousr]_[A-Za-z0-9_]{12,}|AKIA[0-9A-Z]{12,})\b' . \
+	@! rg -n -P '(?:\b(?:sk-[A-Za-z0-9_-]{40,}|gh[pousr]_[A-Za-z0-9_]{12,}|AKIA[0-9A-Z]{12,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----)' . \
 		-g '!**/__pycache__/**' \
 		-g '!tests/**' \
 		-g '!frontend/test/**' \
