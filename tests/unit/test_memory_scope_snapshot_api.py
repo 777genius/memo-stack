@@ -1,11 +1,14 @@
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from memo_stack_adapters.postgres.models import MemoryContextLinkSuggestionRow
 from memo_stack_core.memory_scope_snapshots import verify_snapshot_manifest_payload
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
 from memo_stack_server.worker import OutboxWorker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -146,14 +149,51 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
             json={
                 "space_slug": "agents",
                 "memory_scope_external_ref": "source-memory_scope",
-                "text": "connect this saved capture to the snapshot episode evidence",
+                "thread_external_ref": "snapshot-thread",
+                "text": "snapshot thread memory",
                 "source_type": "capture",
                 "source_id": capture.json()["data"]["id"],
-                "limit": 1,
-                "persist": True,
+                "limit": 10,
+                "persist": False,
             },
             headers=auth_headers(),
         )
+        thread_candidate = next(
+            item
+            for item in link_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "thread"
+        )
+
+        async def persist_thread_suggestion() -> None:
+            now = datetime.now(UTC)
+            async with AsyncSession(client.app.state.container.engine) as session:
+                session.add(
+                    MemoryContextLinkSuggestionRow(
+                        id="ctxlinksug_snapshot_thread",
+                        space_id=created.json()["data"]["space_id"],
+                        memory_scope_id=created.json()["data"]["memory_scope_id"],
+                        source_type="capture",
+                        source_id=capture.json()["data"]["id"],
+                        target_type="thread",
+                        target_id=thread_candidate["target_id"],
+                        relation_type="related_to",
+                        confidence="high",
+                        reason="Snapshot capture belongs to the saved source thread.",
+                        score=92.0,
+                        status="pending",
+                        metadata_json={
+                            "external_ref": "snapshot-thread",
+                            "reason_codes": ["same_thread"],
+                        },
+                        created_at=now,
+                        updated_at=now,
+                        reviewed_at=None,
+                        review_reason=None,
+                    )
+                )
+                await session.commit()
+
+        asyncio.run(persist_thread_suggestion())
         context_link = client.post(
             "/v1/context-links",
             json={
@@ -297,14 +337,11 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert extraction.json()["data"]["status"] == "succeeded"
     assert capture.status_code == 201
     assert link_suggestions.status_code == 200
-    assert (
-        link_suggestions.json()["data"]["candidates"][0]["target_id"]
-        == episode.json()["data"]["episode_id"]
-    )
-    assert link_suggestions.json()["data"]["candidates"][0]["target_type"] == "episode"
+    assert thread_candidate["metadata"]["external_ref"] == "snapshot-thread"
     assert context_link.status_code == 200
     assert asset_context_link.status_code == 200
     assert exported.status_code == 200
+    assert exported.json()["counts"]["threads"] == 1
     assert exported.json()["counts"]["facts"] == 2
     assert exported.json()["counts"]["episodes"] == 1
     assert exported.json()["counts"]["documents"] == 1
@@ -319,8 +356,9 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert exported.json()["counts"]["context_links"] == 2
     assert exported.json()["counts"]["context_link_suggestions"] == 1
     assert exported.json()["counts"]["relations"] == 1
-    assert snapshot["schema_version"] == 8
+    assert snapshot["schema_version"] == 9
     assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
+    assert manifest["counts"]["threads"] == 1
     assert manifest["counts"]["episodes"] == 1
     assert manifest["counts"]["documents"] == 1
     assert manifest["counts"]["chunks"] == 2
@@ -336,6 +374,12 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert manifest["counts"]["relations"] == 1
     assert manifest["snapshot_sha256"]
     assert verify_snapshot_manifest_payload(snapshot=snapshot, manifest=manifest)["ok"] is True
+    assert snapshot["threads"][0]["external_ref"] == "snapshot-thread"
+    assert snapshot["episodes"][0]["thread_id"] == snapshot["threads"][0]["id"]
+    assert snapshot["documents"][0]["thread_id"] == snapshot["threads"][0]["id"]
+    assert snapshot["assets"][0]["thread_id"] == snapshot["threads"][0]["id"]
+    assert snapshot["asset_extraction_jobs"][0]["thread_id"] == snapshot["threads"][0]["id"]
+    assert snapshot["captures"][0]["thread_id"] == snapshot["threads"][0]["id"]
     assert (
         snapshot["facts"][0]["text"] == "SNAPSHOT_API_MARKER: memory_scope snapshots are portable."
     )
@@ -364,11 +408,13 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert snapshot["anchors"][0]["label"] == "Alex Snapshot"
     assert {item["target_type"] for item in snapshot["context_links"]} == {"anchor", "asset"}
     assert snapshot["context_link_suggestions"][0]["status"] == "pending"
-    assert snapshot["context_link_suggestions"][0]["target_type"] == "episode"
+    assert snapshot["context_link_suggestions"][0]["target_type"] == "thread"
+    assert snapshot["context_link_suggestions"][0]["target_id"] == snapshot["threads"][0]["id"]
     assert snapshot["relations"][0]["relation_type"] == "supports"
     assert dry_run.status_code == 200
     assert dry_run.json()["data"]["dry_run"] is True
     assert dry_run.json()["data"]["would_create_memory_scope"] is True
+    assert dry_run.json()["data"]["would_import"]["threads"] == 1
     assert dry_run.json()["data"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["would_import"]["episodes"] == 1
     assert dry_run.json()["data"]["would_import"]["documents"] == 1
@@ -382,6 +428,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert dry_run.json()["data"]["would_import"]["context_link_suggestions"] == 1
     assert dry_run.json()["data"]["would_import"]["relations"] == 1
     assert dry_run.json()["data"]["preview"]["would_create_memory_scope"] is True
+    assert dry_run.json()["data"]["preview"]["would_import"]["threads"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["preview"]["would_import"]["episodes"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["documents"] == 1
@@ -397,6 +444,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert refused.status_code == 400
     assert imported.status_code == 200
     assert imported.json()["data"]["merge_strategy"] == "create_new_memory_scope"
+    assert imported.json()["data"]["imported"]["threads"] == 1
     assert imported.json()["data"]["imported"]["episodes"] == 1
     assert imported.json()["data"]["imported"]["documents"] == 1
     assert imported.json()["data"]["imported"]["chunks"] == 2
@@ -413,6 +461,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_relations.status_code == 200
     assert restored_browser.status_code == 200
     browser_data = restored_browser_data
+    assert len(browser_data["threads"]) == 1
     assert len(browser_data["episodes"]) == 1
     assert len(browser_data["documents"]) == 1
     assert len(browser_data["chunks"]) == 2
@@ -437,6 +486,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     restored_asset = browser_data["assets"][0]
     restored_extraction_job = browser_data["extraction_jobs"][0]
     restored_anchor = browser_data["anchors"][0]
+    restored_thread = browser_data["threads"][0]
     restored_context_link = next(
         item for item in browser_data["context_links"] if item["target_type"] == "anchor"
     )
@@ -448,12 +498,16 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_asset["id"] != asset.json()["data"]["id"]
     assert restored_extraction_job["id"] != extraction_id
     assert restored_anchor["id"] != anchor.json()["data"]["id"]
+    assert restored_thread["id"] != snapshot["threads"][0]["id"]
+    assert restored_thread["external_ref"] == "snapshot-thread"
+    assert browser_data["episodes"][0]["thread_id"] == restored_thread["id"]
+    assert browser_data["documents"][0]["thread_id"] == restored_thread["id"]
+    assert restored_asset["thread_id"] == restored_thread["id"]
+    assert restored_extraction_job["thread_id"] == restored_thread["id"]
+    assert restored_capture["thread_id"] == restored_thread["id"]
     assert restored_context_link["id"] != context_link.json()["data"]["id"]
     assert restored_asset_context_link["id"] != asset_context_link.json()["data"]["id"]
-    assert (
-        restored_context_link_suggestion["id"]
-        != link_suggestions.json()["data"]["candidates"][0]["suggestion_id"]
-    )
+    assert restored_context_link_suggestion["id"] != "ctxlinksug_snapshot_thread"
     assert restored_capture["text_preview"] == (
         "SNAPSHOT_CAPTURE_MARKER: quick capture survives snapshots."
     )
@@ -475,7 +529,8 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_asset_context_link["source_id"] == restored_capture["id"]
     assert restored_asset_context_link["target_id"] == restored_asset["id"]
     assert restored_context_link_suggestion["source_id"] == restored_capture["id"]
-    assert restored_context_link_suggestion["target_id"] == browser_data["episodes"][0]["id"]
+    assert restored_context_link_suggestion["target_id"] == restored_thread["id"]
+    assert restored_context_link_suggestion["target_type"] == "thread"
     assert restored_context_link_suggestion["status"] == "pending"
     assert restored_asset_download.status_code == 200
     assert restored_asset_download.content == b"snapshot asset bytes"
@@ -487,6 +542,8 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_artifact_download.content == b"snapshot asset bytes"
     assert reviewed_restored_suggestion.status_code == 200
     assert reviewed_restored_suggestion.json()["data"]["suggestion"]["status"] == "approved"
+    assert reviewed_restored_suggestion.json()["data"]["link"]["target_type"] == "thread"
+    assert reviewed_restored_suggestion.json()["data"]["link"]["target_id"] == restored_thread["id"]
     assert reviewed_restored_suggestion.json()["data"]["duplicate_link"] is False
     restored_relation = restored_relations.json()["data"]["items"][0]
     assert restored_relation["relation"]["relation_type"] == "supports"

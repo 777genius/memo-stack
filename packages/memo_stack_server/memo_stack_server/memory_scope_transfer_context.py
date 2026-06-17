@@ -124,6 +124,7 @@ def remap_context_link_suggestion(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    thread_id_map: dict[str, str] | None = None,
     extraction_job_id_map: dict[str, str],
     extraction_artifact_id_map: dict[str, str],
 ) -> dict[str, Any]:
@@ -137,6 +138,7 @@ def remap_context_link_suggestion(
             source_type=source_type,
             source_id=str(item.get("source_id")),
             fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
             document_id_map=document_id_map,
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
@@ -150,6 +152,7 @@ def remap_context_link_suggestion(
             source_type=target_type,
             source_id=str(item.get("target_id")),
             fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
             document_id_map=document_id_map,
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
@@ -177,6 +180,7 @@ def import_context_records(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
     extraction_job_id_map: dict[str, str],
     extraction_artifact_id_map: dict[str, str],
     space_id: str,
@@ -196,6 +200,7 @@ def import_context_records(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
+            thread_id_map=thread_id_map,
             extraction_job_id_map=extraction_job_id_map,
             extraction_artifact_id_map=extraction_artifact_id_map,
         )
@@ -221,6 +226,7 @@ def import_context_records(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
+            thread_id_map=thread_id_map,
             extraction_job_id_map=extraction_job_id_map,
             extraction_artifact_id_map=extraction_artifact_id_map,
         )

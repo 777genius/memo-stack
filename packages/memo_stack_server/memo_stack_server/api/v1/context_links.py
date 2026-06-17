@@ -10,8 +10,8 @@ from memo_stack_core.application import (
     DeleteContextLinkCommand,
     ListContextLinksQuery,
     ListContextLinkSuggestionsQuery,
-    ReviewContextLinkSuggestionCommand,
     ReviewContextLinkSuggestionBatchItemCommand,
+    ReviewContextLinkSuggestionCommand,
     ReviewContextLinkSuggestionsBatchCommand,
     SuggestContextLinksCommand,
     UpdateContextLinkCommand,
@@ -451,9 +451,7 @@ def _safe_metadata(metadata: Any) -> dict[str, Any]:
                 safe[key_text] = events
         elif isinstance(value, list):
             items = [
-                item
-                for item in value[:20]
-                if isinstance(item, (str, int, float, bool, type(None)))
+                item for item in value[:20] if isinstance(item, (str, int, float, bool, type(None)))
             ]
             if items:
                 safe[key_text] = items

@@ -7,11 +7,18 @@ from typing import Any
 from memo_stack_server.memory_scope_transfer_records import bounded_optional_text
 
 
-def remap_fact(item: dict[str, Any], *, fact_id_map: dict[str, str]) -> dict[str, Any]:
+def remap_fact(
+    item: dict[str, Any],
+    *,
+    fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str] | None = None,
+) -> dict[str, Any]:
     fact_id = str(item["id"])
-    if fact_id not in fact_id_map:
-        return item
-    return {**item, "id": fact_id_map[fact_id]}
+    return {
+        **item,
+        "id": fact_id_map.get(fact_id, fact_id),
+        "thread_id": _remap_optional_thread_id(item.get("thread_id"), thread_id_map or {}),
+    }
 
 
 def remap_document(
@@ -19,12 +26,14 @@ def remap_document(
     *,
     document_id_map: dict[str, str],
     extraction_job_id_map: dict[str, str] | None = None,
+    thread_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     document_id = str(item["id"])
     extraction_job_id_map = extraction_job_id_map or {}
     return {
         **item,
         "id": document_id_map.get(document_id, document_id),
+        "thread_id": _remap_optional_thread_id(item.get("thread_id"), thread_id_map or {}),
         "source_external_id": _remap_source_external_id(
             source_type=str(item.get("source_type") or ""),
             source_external_id=str(item.get("source_external_id") or ""),
@@ -64,9 +73,7 @@ def remap_chunk(
     thread_id = item.get("thread_id")
     asset_id_map = asset_id_map or {}
     extraction_job_id_map = extraction_job_id_map or {}
-    mapped_thread_id = None
-    if episode_id is not None and thread_id is not None:
-        mapped_thread_id = thread_id_map.get(str(thread_id), str(thread_id))
+    mapped_thread_id = _remap_optional_thread_id(thread_id, thread_id_map)
     return {
         **item,
         "id": chunk_id_map.get(chunk_id, chunk_id),
@@ -77,9 +84,7 @@ def remap_chunk(
             else None
         ),
         "episode_id": (
-            episode_id_map.get(str(episode_id), str(episode_id))
-            if episode_id is not None
-            else None
+            episode_id_map.get(str(episode_id), str(episode_id)) if episode_id is not None else None
         ),
         "source_external_id": _remap_source_external_id(
             source_type=str(item.get("source_type") or ""),
@@ -133,6 +138,7 @@ def remap_capture(
     anchor_id_map: dict[str, str] | None = None,
     extraction_job_id_map: dict[str, str] | None = None,
     extraction_artifact_id_map: dict[str, str] | None = None,
+    thread_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     capture_id = str(item["id"])
     mapped_capture_id = capture_id_map.get(capture_id, capture_id)
@@ -140,6 +146,7 @@ def remap_capture(
     return {
         **item,
         "id": mapped_capture_id,
+        "thread_id": _remap_optional_thread_id(item.get("thread_id"), thread_id_map or {}),
         "idempotency_key": _remap_capture_idempotency_key(
             item,
             mapped_capture_id=mapped_capture_id,
@@ -152,6 +159,7 @@ def remap_capture(
         "evidence_refs": _remap_capture_evidence_refs(
             item.get("evidence_refs"),
             fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
             document_id_map=document_id_map,
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
@@ -186,6 +194,7 @@ def remap_context_link(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    thread_id_map: dict[str, str] | None = None,
     extraction_job_id_map: dict[str, str] | None = None,
     extraction_artifact_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -199,6 +208,7 @@ def remap_context_link(
             source_type=source_type,
             source_id=str(item.get("source_id")),
             fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
             document_id_map=document_id_map,
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
@@ -212,6 +222,7 @@ def remap_context_link(
             source_type=target_type,
             source_id=str(item.get("target_id")),
             fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
             document_id_map=document_id_map,
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
@@ -239,10 +250,17 @@ def _remap_capture_idempotency_key(
     return bounded_optional_text(f"imported-{mapped_capture_id}", 120) or mapped_capture_id
 
 
+def _remap_optional_thread_id(value: object, thread_id_map: dict[str, str]) -> str | None:
+    if value is None:
+        return None
+    return thread_id_map.get(str(value))
+
+
 def _remap_capture_evidence_refs(
     value: object,
     *,
     fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
     document_id_map: dict[str, str],
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
@@ -266,6 +284,7 @@ def _remap_capture_evidence_refs(
                 source_type=source_type,
                 source_id=str(source_id),
                 fact_id_map=fact_id_map,
+                thread_id_map=thread_id_map,
                 document_id_map=document_id_map,
                 episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
@@ -290,6 +309,7 @@ def _remap_evidence_source_id(
     source_type: str,
     source_id: str,
     fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
     document_id_map: dict[str, str],
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
@@ -303,6 +323,7 @@ def _remap_evidence_source_id(
         source_type=source_type,
         source_id=source_id,
         fact_id_map=fact_id_map,
+        thread_id_map=thread_id_map,
         document_id_map=document_id_map,
         episode_id_map=episode_id_map,
         chunk_id_map=chunk_id_map,
@@ -319,6 +340,7 @@ def remap_endpoint_id(
     source_type: str,
     source_id: str,
     fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str] | None = None,
     document_id_map: dict[str, str],
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
@@ -330,6 +352,8 @@ def remap_endpoint_id(
 ) -> str:
     if source_type == "fact":
         return fact_id_map.get(source_id, source_id)
+    if source_type == "thread":
+        return (thread_id_map or {}).get(source_id, source_id)
     if source_type == "document":
         return document_id_map.get(source_id, source_id)
     if source_type == "episode":

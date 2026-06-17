@@ -78,9 +78,41 @@ async def create_import_memory_scope(
     return row
 
 
+async def load_threads(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> list[MemoryThreadRow]:
+    return list(
+        (
+            await session.execute(
+                select(MemoryThreadRow)
+                .where(
+                    MemoryThreadRow.space_id == space_id,
+                    MemoryThreadRow.memory_scope_id == memory_scope_id,
+                )
+                .order_by(MemoryThreadRow.created_at, MemoryThreadRow.id)
+            )
+        ).scalars()
+    )
+
+
+def thread_to_json(row: MemoryThreadRow) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "external_ref": row.external_ref,
+        "status": row.status,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
 async def ensure_import_threads(
     session: AsyncSession,
     *,
+    threads: list[dict[str, Any]] | None = None,
+    skipped_thread_ids: set[str] | None = None,
     episodes: list[dict[str, Any]],
     skipped_episode_ids: set[str],
     thread_id_map: dict[str, str],
@@ -88,6 +120,18 @@ async def ensure_import_threads(
     memory_scope_id: str,
     now: datetime,
 ) -> None:
+    threads = threads or []
+    skipped_thread_ids = skipped_thread_ids or set()
+    imported_thread_ids = await _import_snapshot_threads(
+        session,
+        threads=threads,
+        skipped_thread_ids=skipped_thread_ids,
+        thread_id_map=thread_id_map,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        now=now,
+    )
+    thread_payload_ids = {str(thread["id"]) for thread in threads if thread.get("id") is not None}
     needed = {
         episode_source_thread_id(episode): thread_id_map.get(
             episode_source_thread_id(episode),
@@ -95,6 +139,12 @@ async def ensure_import_threads(
         )
         for episode in episodes
         if str(episode.get("id")) not in skipped_episode_ids
+        and episode_source_thread_id(episode) not in thread_payload_ids
+    }
+    needed = {
+        source_thread_id: target_thread_id
+        for source_thread_id, target_thread_id in needed.items()
+        if target_thread_id not in imported_thread_ids
     }
     if not needed:
         return
@@ -119,6 +169,53 @@ async def ensure_import_threads(
                 updated_at=now,
             )
         )
+
+
+async def _import_snapshot_threads(
+    session: AsyncSession,
+    *,
+    threads: list[dict[str, Any]],
+    skipped_thread_ids: set[str],
+    thread_id_map: dict[str, str],
+    space_id: str,
+    memory_scope_id: str,
+    now: datetime,
+) -> set[str]:
+    target_thread_ids = {
+        thread_id_map.get(str(thread["id"]), str(thread["id"]))
+        for thread in threads
+        if thread.get("id") is not None and str(thread["id"]) not in skipped_thread_ids
+    }
+    if not target_thread_ids:
+        return set()
+    existing = set(
+        (
+            await session.execute(
+                select(MemoryThreadRow.id).where(MemoryThreadRow.id.in_(target_thread_ids))
+            )
+        ).scalars()
+    )
+    imported: set[str] = set()
+    for thread in threads:
+        thread_id = str(thread["id"])
+        if thread_id in skipped_thread_ids:
+            continue
+        target_thread_id = thread_id_map.get(thread_id, thread_id)
+        imported.add(target_thread_id)
+        if target_thread_id in existing:
+            continue
+        session.add(
+            MemoryThreadRow(
+                id=target_thread_id,
+                space_id=space_id,
+                memory_scope_id=memory_scope_id,
+                external_ref=str(thread.get("external_ref") or thread_id)[:240],
+                status=str(thread.get("status", "active"))[:40],
+                created_at=_parse_dt(thread.get("created_at"), now),
+                updated_at=_parse_dt(thread.get("updated_at"), now),
+            )
+        )
+    return imported
 
 
 async def _next_import_memory_scope_ref(
@@ -155,3 +252,12 @@ async def _memory_scope_ref_exists(
         )
         is not None
     )
+
+
+def _parse_dt(value: object, fallback: datetime) -> datetime:
+    if not isinstance(value, str):
+        return fallback
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return fallback

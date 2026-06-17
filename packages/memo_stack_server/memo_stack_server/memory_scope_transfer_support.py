@@ -46,11 +46,14 @@ def build_id_map(
 def build_thread_id_map(
     *,
     episodes: list[dict[str, Any]],
+    threads: list[dict[str, Any]] | None = None,
     memory_scope_id: str,
     import_batch_id: str,
 ) -> dict[str, str]:
+    threads = threads or []
     source_thread_ids = sorted(
-        {
+        {str(thread["id"]) for thread in threads if thread.get("id") is not None}
+        | {
             episode_source_thread_id(episode)
             for episode in episodes
             if episode.get("id") is not None

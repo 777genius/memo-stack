@@ -11,6 +11,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryContextLinkSuggestionRow,
     MemoryScopeRow,
     MemorySpaceRow,
+    MemoryThreadRow,
 )
 from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,15 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
                             space_id="space_conflict",
                             external_ref="default",
                             name="Default",
+                            status="active",
+                            created_at=now,
+                            updated_at=now,
+                        ),
+                        MemoryThreadRow(
+                            id="thread_existing_daily",
+                            space_id="space_conflict",
+                            memory_scope_id="scope_conflict",
+                            external_ref="daily-standup",
                             status="active",
                             created_at=now,
                             updated_at=now,
@@ -131,6 +141,16 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
                     session,
                     space_id="space_conflict",
                     memory_scope_id="scope_conflict",
+                    threads=[
+                        {
+                            "id": "thread_snapshot_daily",
+                            "external_ref": "daily-standup",
+                        },
+                        {
+                            "id": "thread_snapshot_planning",
+                            "external_ref": "planning",
+                        },
+                    ],
                     facts=[],
                     documents=[],
                     episodes=[],
@@ -191,4 +211,5 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
     assert conflicts == [
         "anchor_snapshot_project_atlas",
         "context_link_suggestion_snapshot_pending",
+        "thread_snapshot_daily",
     ]

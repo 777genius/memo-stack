@@ -16,14 +16,15 @@ def test_docker_runtime_includes_multimodal_system_dependencies() -> None:
     assert '--index-url "$MEMO_STACK_TORCH_INDEX_URL" torch torchvision' in dockerfile
     assert "MEMO_STACK_EXTRAS: dev,qdrant,openai,graphiti,mcp,docling" in compose
     assert "MEMO_STACK_PREINSTALL_TORCH_CPU: ${MEMO_STACK_PREINSTALL_TORCH_CPU:-true}" in compose
-    assert "MEMO_STACK_TORCH_INDEX_URL: ${MEMO_STACK_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}" in compose
+    assert (
+        "MEMO_STACK_TORCH_INDEX_URL: "
+        "${MEMO_STACK_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}" in compose
+    )
     assert "pip install -e '.[dev,docling]'" in compose
     assert "pip install -e '.[dev,qdrant,openai,graphiti,docling]'" in compose
     assert "MEMORY_TRANSCRIPTION_PROVIDER: ${MEMORY_TRANSCRIPTION_PROVIDER:-disabled}" in compose
     assert (
-        compose.count(
-            "MEMORY_TRANSCRIPTION_PROVIDER: ${MEMORY_TRANSCRIPTION_PROVIDER:-openai}"
-        )
+        compose.count("MEMORY_TRANSCRIPTION_PROVIDER: ${MEMORY_TRANSCRIPTION_PROVIDER:-openai}")
         == 3
     )
     assert "MEMORY_TRANSCRIPTION_OPENAI_MODEL" in compose

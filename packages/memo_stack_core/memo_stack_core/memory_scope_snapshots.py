@@ -69,6 +69,7 @@ def build_snapshot_manifest(
         "redacted": redacted,
         "snapshot_schema_version": snapshot.get("schema_version"),
         "counts": {
+            "threads": _list_count(snapshot.get("threads")),
             "facts": _list_count(snapshot.get("facts")),
             "documents": _list_count(snapshot.get("documents")),
             "episodes": _list_count(snapshot.get("episodes")),

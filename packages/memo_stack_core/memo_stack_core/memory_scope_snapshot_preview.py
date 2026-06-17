@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 _RECORD_TYPES = (
+    "threads",
     "facts",
     "documents",
     "episodes",
@@ -27,6 +28,7 @@ def build_memory_scope_snapshot_import_preview(
     merge_strategy: str,
     conflict_ids: set[str],
 ) -> dict[str, Any]:
+    threads = _records(payload, "threads")
     facts = _records(payload, "facts")
     documents = _records(payload, "documents")
     episodes = _records(payload, "episodes")
@@ -45,6 +47,7 @@ def build_memory_scope_snapshot_import_preview(
     skipped = skipped_snapshot_ids(
         merge_strategy=merge_strategy,
         conflict_ids=conflict_ids,
+        threads=threads,
         facts=facts,
         documents=documents,
         episodes=episodes,
@@ -62,6 +65,7 @@ def build_memory_scope_snapshot_import_preview(
     )
     conflicts = _conflicts_by_type(
         conflict_ids=conflict_ids,
+        threads=threads,
         facts=facts,
         documents=documents,
         episodes=episodes,
@@ -80,6 +84,7 @@ def build_memory_scope_snapshot_import_preview(
     )
     return {
         "snapshot_counts": snapshot_counts(
+            threads=threads,
             facts=facts,
             documents=documents,
             episodes=episodes,
@@ -99,6 +104,7 @@ def build_memory_scope_snapshot_import_preview(
         "conflict_count": len(conflict_ids),
         "conflicts": {key: sorted(value) for key, value in conflicts.items()},
         "would_import": import_counts(
+            threads=threads,
             facts=facts,
             documents=documents,
             episodes=episodes,
@@ -115,6 +121,7 @@ def build_memory_scope_snapshot_import_preview(
             skipped=skipped,
         ),
         "would_skip": _skipped_counts(
+            threads=threads,
             facts=facts,
             documents=documents,
             episodes=episodes,
@@ -159,10 +166,13 @@ def snapshot_counts(
     context_links: list[dict[str, Any]],
     relations: list[dict[str, Any]],
     source_refs: list[dict[str, Any]],
+    threads: list[dict[str, Any]] | None = None,
     context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
+    threads = threads or []
     context_link_suggestions = context_link_suggestions or []
     return {
+        "threads": len(threads),
         "facts": len(facts),
         "documents": len(documents),
         "episodes": len(episodes),
@@ -197,14 +207,17 @@ def skipped_snapshot_ids(
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
+    threads: list[dict[str, Any]] | None = None,
     context_link_suggestions: list[dict[str, Any]] | None = None,
     relations: list[dict[str, Any]] | None = None,
 ) -> dict[str, set[str]]:
     relations = relations or []
+    threads = threads or []
     context_link_suggestions = context_link_suggestions or []
     asset_extraction_jobs = asset_extraction_jobs or []
     extraction_artifacts = extraction_artifacts or []
     extraction_artifact_blobs = extraction_artifact_blobs or []
+    thread_ids = _record_ids(threads)
     fact_ids = _record_ids(facts)
     document_ids = _record_ids(documents)
     episode_ids = _record_ids(episodes)
@@ -219,6 +232,7 @@ def skipped_snapshot_ids(
     context_link_ids = _record_ids(context_links)
     context_link_suggestion_ids = _record_ids(context_link_suggestions)
     relation_ids = _record_ids(relations)
+    skipped_threads = thread_ids & conflict_ids
     skipped_facts = fact_ids & conflict_ids if merge_strategy == "skip_existing" else set()
     skipped_documents = document_ids & conflict_ids
     skipped_episodes = episode_ids & conflict_ids
@@ -230,6 +244,54 @@ def skipped_snapshot_ids(
     skipped_anchors = anchor_ids & conflict_ids
     skipped_context_links = context_link_ids & conflict_ids
     skipped_context_link_suggestions = context_link_suggestion_ids & conflict_ids
+    if thread_ids:
+        skipped_facts.update(
+            str(fact["id"])
+            for fact in facts
+            if _thread_ref_skipped(fact, thread_ids=thread_ids, skipped_threads=skipped_threads)
+        )
+        skipped_documents.update(
+            str(document["id"])
+            for document in documents
+            if _thread_ref_skipped(
+                document,
+                thread_ids=thread_ids,
+                skipped_threads=skipped_threads,
+            )
+        )
+        skipped_episodes.update(
+            str(episode["id"])
+            for episode in episodes
+            if _thread_ref_skipped(
+                episode,
+                thread_ids=thread_ids,
+                skipped_threads=skipped_threads,
+            )
+        )
+        skipped_chunks.update(
+            str(chunk["id"])
+            for chunk in chunks
+            if _thread_ref_skipped(chunk, thread_ids=thread_ids, skipped_threads=skipped_threads)
+        )
+        skipped_assets.update(
+            str(asset["id"])
+            for asset in assets
+            if _thread_ref_skipped(asset, thread_ids=thread_ids, skipped_threads=skipped_threads)
+        )
+        skipped_asset_extraction_jobs.update(
+            str(job["id"])
+            for job in asset_extraction_jobs
+            if _thread_ref_skipped(job, thread_ids=thread_ids, skipped_threads=skipped_threads)
+        )
+        skipped_captures.update(
+            str(capture["id"])
+            for capture in captures
+            if _thread_ref_skipped(
+                capture,
+                thread_ids=thread_ids,
+                skipped_threads=skipped_threads,
+            )
+        )
     skipped_chunks.update(
         str(chunk["id"])
         for chunk in chunks
@@ -274,6 +336,7 @@ def skipped_snapshot_ids(
         if _context_link_endpoint_skipped(
             context_link,
             fact_ids=fact_ids,
+            thread_ids=thread_ids,
             document_ids=document_ids,
             episode_ids=episode_ids,
             chunk_ids=chunk_ids,
@@ -283,6 +346,7 @@ def skipped_snapshot_ids(
             capture_ids=capture_ids,
             anchor_ids=anchor_ids,
             skipped_facts=skipped_facts,
+            skipped_threads=skipped_threads,
             skipped_documents=skipped_documents,
             skipped_episodes=skipped_episodes,
             skipped_chunks=skipped_chunks,
@@ -299,6 +363,7 @@ def skipped_snapshot_ids(
         if _context_link_endpoint_skipped(
             suggestion,
             fact_ids=fact_ids,
+            thread_ids=thread_ids,
             document_ids=document_ids,
             episode_ids=episode_ids,
             chunk_ids=chunk_ids,
@@ -308,6 +373,7 @@ def skipped_snapshot_ids(
             capture_ids=capture_ids,
             anchor_ids=anchor_ids,
             skipped_facts=skipped_facts,
+            skipped_threads=skipped_threads,
             skipped_documents=skipped_documents,
             skipped_episodes=skipped_episodes,
             skipped_chunks=skipped_chunks,
@@ -329,6 +395,7 @@ def skipped_snapshot_ids(
         or str(relation["target_fact_id"]) in skipped_facts
     )
     return {
+        "threads": skipped_threads,
         "facts": skipped_facts,
         "documents": skipped_documents,
         "episodes": skipped_episodes,
@@ -346,6 +413,7 @@ def skipped_snapshot_ids(
 
 def import_counts(
     *,
+    threads: list[dict[str, Any]] | None = None,
     facts: list[dict[str, Any]],
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
@@ -362,9 +430,11 @@ def import_counts(
     context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     skipped_source_refs = _skipped_source_ref_indexes(source_refs=source_refs, skipped=skipped)
+    threads = threads or []
     relations = relations or []
     context_link_suggestions = context_link_suggestions or []
     return {
+        "threads": len(threads) - _count_skipped(threads, skipped.get("threads", set())),
         "facts": len(facts) - _count_skipped(facts, skipped["facts"]),
         "documents": len(documents) - _count_skipped(documents, skipped["documents"]),
         "episodes": len(episodes) - _count_skipped(episodes, skipped["episodes"]),
@@ -390,6 +460,7 @@ def import_counts(
 
 def _skipped_counts(
     *,
+    threads: list[dict[str, Any]] | None = None,
     facts: list[dict[str, Any]],
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
@@ -406,8 +477,10 @@ def _skipped_counts(
     context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     skipped_source_refs = _skipped_source_ref_indexes(source_refs=source_refs, skipped=skipped)
+    threads = threads or []
     context_link_suggestions = context_link_suggestions or []
     return {
+        "threads": _count_skipped(threads, skipped.get("threads", set())),
         "facts": _count_skipped(facts, skipped["facts"]),
         "documents": _count_skipped(documents, skipped["documents"]),
         "episodes": _count_skipped(episodes, skipped["episodes"]),
@@ -436,6 +509,7 @@ def _skipped_counts(
 def _conflicts_by_type(
     *,
     conflict_ids: set[str],
+    threads: list[dict[str, Any]] | None = None,
     facts: list[dict[str, Any]],
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
@@ -449,8 +523,10 @@ def _conflicts_by_type(
     relations: list[dict[str, Any]],
     context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, set[str]]:
+    threads = threads or []
     context_link_suggestions = context_link_suggestions or []
     conflicts = {
+        "threads": _record_ids(threads) & conflict_ids,
         "facts": _record_ids(facts) & conflict_ids,
         "documents": _record_ids(documents) & conflict_ids,
         "episodes": _record_ids(episodes) & conflict_ids,
@@ -479,6 +555,8 @@ def _preview_warnings(
     warnings: list[str] = []
     if payload.get("redacted") is True:
         warnings.append("redacted_snapshot_cannot_be_applied")
+    if skipped.get("threads"):
+        warnings.append("some_threads_will_be_skipped")
     if skipped["chunks"]:
         warnings.append("some_chunks_will_be_skipped")
     if skipped["assets"]:
@@ -520,10 +598,23 @@ def _chunk_parent_skipped(
     return True
 
 
+def _thread_ref_skipped(
+    item: dict[str, Any],
+    *,
+    thread_ids: set[str],
+    skipped_threads: set[str],
+) -> bool:
+    thread_id = item.get("thread_id")
+    return thread_id is not None and (
+        str(thread_id) not in thread_ids or str(thread_id) in skipped_threads
+    )
+
+
 def _context_link_endpoint_skipped(
     context_link: dict[str, Any],
     *,
     fact_ids: set[str],
+    thread_ids: set[str],
     document_ids: set[str],
     episode_ids: set[str],
     chunk_ids: set[str],
@@ -533,6 +624,7 @@ def _context_link_endpoint_skipped(
     capture_ids: set[str],
     anchor_ids: set[str],
     skipped_facts: set[str],
+    skipped_threads: set[str],
     skipped_documents: set[str],
     skipped_episodes: set[str],
     skipped_chunks: set[str],
@@ -546,6 +638,7 @@ def _context_link_endpoint_skipped(
         source_type=context_link.get("source_type"),
         source_id=context_link.get("source_id"),
         fact_ids=fact_ids,
+        thread_ids=thread_ids,
         document_ids=document_ids,
         episode_ids=episode_ids,
         chunk_ids=chunk_ids,
@@ -555,6 +648,7 @@ def _context_link_endpoint_skipped(
         capture_ids=capture_ids,
         anchor_ids=anchor_ids,
         skipped_facts=skipped_facts,
+        skipped_threads=skipped_threads,
         skipped_documents=skipped_documents,
         skipped_episodes=skipped_episodes,
         skipped_chunks=skipped_chunks,
@@ -567,6 +661,7 @@ def _context_link_endpoint_skipped(
         source_type=context_link.get("target_type"),
         source_id=context_link.get("target_id"),
         fact_ids=fact_ids,
+        thread_ids=thread_ids,
         document_ids=document_ids,
         episode_ids=episode_ids,
         chunk_ids=chunk_ids,
@@ -576,6 +671,7 @@ def _context_link_endpoint_skipped(
         capture_ids=capture_ids,
         anchor_ids=anchor_ids,
         skipped_facts=skipped_facts,
+        skipped_threads=skipped_threads,
         skipped_documents=skipped_documents,
         skipped_episodes=skipped_episodes,
         skipped_chunks=skipped_chunks,
@@ -592,6 +688,7 @@ def _endpoint_skipped(
     source_type: object,
     source_id: object,
     fact_ids: set[str],
+    thread_ids: set[str],
     document_ids: set[str],
     episode_ids: set[str],
     chunk_ids: set[str],
@@ -601,6 +698,7 @@ def _endpoint_skipped(
     capture_ids: set[str],
     anchor_ids: set[str],
     skipped_facts: set[str],
+    skipped_threads: set[str],
     skipped_documents: set[str],
     skipped_episodes: set[str],
     skipped_chunks: set[str],
@@ -614,6 +712,7 @@ def _endpoint_skipped(
         return True
     local_sets = {
         "fact": (fact_ids, skipped_facts),
+        "thread": (thread_ids, skipped_threads),
         "document": (document_ids, skipped_documents),
         "episode": (episode_ids, skipped_episodes),
         "chunk": (chunk_ids, skipped_chunks),

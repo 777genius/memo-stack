@@ -329,7 +329,8 @@ class AgentBenchRunner:
                 "first. In memory_propose_updates, set user_confirmed=true only for explicit "
                 "confirmed durable current facts from the user. Keep user_confirmed=false for "
                 "uncertain claims, guesses, rumors, auto-memory, inferred facts, and anything "
-                "that needs review. When saved evidence or captures need to be connected to facts, documents, "
+                "that needs review. When saved evidence or captures need to be connected to "
+                "facts, documents, "
                 "threads, or anchors, search or inspect existing links first, then use "
                 "memory_suggest_context_links with persist=true, inspect suggestions with "
                 "memory_list_context_link_suggestions, and approve only user-confirmed "
@@ -1020,8 +1021,7 @@ async def _run_setup_action(
             "source_kind": action.get("source_kind", "manual"),
             "event_type": action.get("event_type", "BenchmarkCapture"),
             "actor_role": action.get("actor_role", "user"),
-            "source_event_id": action.get("source_event_id")
-            or f"agent-bench:{time.time_ns()}",
+            "source_event_id": action.get("source_event_id") or f"agent-bench:{time.time_ns()}",
             "text": action["text"],
             "source_authority": action.get("source_authority", "user_statement"),
         }

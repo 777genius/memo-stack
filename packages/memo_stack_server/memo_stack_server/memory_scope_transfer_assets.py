@@ -78,9 +78,7 @@ def remap_asset(
     asset_id = str(item["id"])
     mapped_id = asset_id_map.get(asset_id, asset_id)
     thread_id = item.get("thread_id")
-    mapped_thread_id = (
-        thread_id_map.get(str(thread_id), str(thread_id)) if thread_id is not None else None
-    )
+    mapped_thread_id = thread_id_map.get(str(thread_id)) if thread_id is not None else None
     digest = str(item.get("sha256_hex") or "")
     filename = str(item.get("filename") or mapped_id)
     return {
@@ -136,9 +134,7 @@ async def asset_blobs_to_json(
 
 def asset_blob_by_id(asset_blobs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {
-        str(blob.get("asset_id")): blob
-        for blob in asset_blobs
-        if blob.get("asset_id") is not None
+        str(blob.get("asset_id")): blob for blob in asset_blobs if blob.get("asset_id") is not None
     }
 
 

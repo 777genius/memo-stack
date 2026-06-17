@@ -17,6 +17,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryEpisodeRow,
     MemoryFactRelationRow,
     MemoryFactRow,
+    MemoryThreadRow,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,7 @@ async def memory_scope_snapshot_conflicts(
     *,
     space_id: str,
     memory_scope_id: str,
+    threads: list[dict[str, Any]] | None = None,
     facts: list[dict[str, Any]],
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
@@ -40,8 +42,10 @@ async def memory_scope_snapshot_conflicts(
     relations: list[dict[str, Any]],
     context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> list[str]:
+    threads = threads or []
     context_link_suggestions = context_link_suggestions or []
     conflicts: list[str] = []
+    thread_ids = [str(item["id"]) for item in threads]
     fact_ids = [str(item["id"]) for item in facts]
     document_ids = [str(item["id"]) for item in documents]
     episode_ids = [str(item["id"]) for item in episodes]
@@ -55,6 +59,7 @@ async def memory_scope_snapshot_conflicts(
     context_link_suggestion_ids = [str(item["id"]) for item in context_link_suggestions]
     relation_ids = [str(item["id"]) for item in relations]
     for model, ids in (
+        (MemoryThreadRow, thread_ids),
         (MemoryFactRow, fact_ids),
         (MemoryDocumentRow, document_ids),
         (MemoryEpisodeRow, episode_ids),
@@ -72,6 +77,14 @@ async def memory_scope_snapshot_conflicts(
             continue
         result = await session.execute(select(model.id).where(model.id.in_(ids)))
         conflicts.extend(str(row_id) for row_id in result.scalars())
+    conflicts.extend(
+        await _thread_external_ref_conflicts(
+            session,
+            space_id=space_id,
+            memory_scope_id=memory_scope_id,
+            threads=threads,
+        )
+    )
     conflicts.extend(
         await _document_hash_conflicts(
             session,
@@ -144,6 +157,36 @@ async def memory_scope_snapshot_conflicts(
         )
     )
     return sorted(set(conflicts))
+
+
+async def _thread_external_ref_conflicts(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    threads: list[dict[str, Any]],
+) -> list[str]:
+    by_ref = {
+        str(item.get("external_ref")): str(item["id"])
+        for item in threads
+        if item.get("external_ref")
+    }
+    if not by_ref:
+        return []
+    rows = (
+        await session.execute(
+            select(MemoryThreadRow.id, MemoryThreadRow.external_ref).where(
+                MemoryThreadRow.space_id == space_id,
+                MemoryThreadRow.memory_scope_id == memory_scope_id,
+                MemoryThreadRow.external_ref.in_(by_ref),
+            )
+        )
+    ).all()
+    return [
+        by_ref[str(external_ref)]
+        for row_id, external_ref in rows
+        if str(row_id) != by_ref[str(external_ref)]
+    ]
 
 
 async def _document_hash_conflicts(
