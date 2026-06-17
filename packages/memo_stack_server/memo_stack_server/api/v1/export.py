@@ -127,6 +127,7 @@ async def export_memory_scope_snapshot(
         space_slug=space_slug,
         memory_scope_external_ref=memory_scope_external_ref,
         redacted=redacted,
+        blob_storage=container.blob_storage,
     )
     if result["status"] != "ok":
         return {"data": None, "status": result["status"]}
@@ -190,6 +191,7 @@ async def import_memory_scope_snapshot(
         dry_run=request.dry_run,
         merge_strategy=request.merge_strategy,
         source_name=request.source_name,
+        blob_storage=container.blob_storage,
     )
     return {"data": result}
 
@@ -221,6 +223,7 @@ async def preview_memory_scope_snapshot_import(
         dry_run=True,
         merge_strategy=request.merge_strategy,
         source_name="api-memory_scope-snapshot-preview",
+        blob_storage=container.blob_storage,
     )
     return {"data": result}
 

@@ -404,6 +404,7 @@ async def export_memory_scope_command(
             memory_scope_external_ref=memory_scope,
             out_path=Path(out),
             redacted=redacted,
+            blob_storage=container.blob_storage,
         )
     finally:
         await container.engine.dispose()
@@ -442,6 +443,7 @@ async def import_memory_scope_command(
             in_path=Path(file),
             dry_run=dry_run,
             merge_strategy=merge_strategy,
+            blob_storage=container.blob_storage,
         )
     finally:
         await container.engine.dispose()

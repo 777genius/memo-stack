@@ -5,7 +5,7 @@ from memo_stack_core.memory_scope_snapshot_preview import build_memory_scope_sna
 
 def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> None:
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "facts": [{"id": "fact_keep"}, {"id": "fact_conflict"}],
         "documents": [{"id": "doc_conflict"}],
         "episodes": [{"id": "episode_keep", "thread_id": "thread_keep"}],
@@ -14,6 +14,11 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
             {"id": "chunk_episode_keep", "episode_id": "episode_keep"},
             {"id": "chunk_orphan", "document_id": "missing_doc"},
         ],
+        "assets": [
+            {"id": "asset_keep", "status": "stored"},
+            {"id": "asset_missing_blob", "status": "stored"},
+        ],
+        "asset_blobs": [{"asset_id": "asset_keep"}],
         "captures": [{"id": "capture_keep"}, {"id": "capture_conflict"}],
         "anchors": [
             {"id": "anchor_keep", "kind": "person", "normalized_key": "alex"},
@@ -29,6 +34,14 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
                 "relation_type": "mentions",
             },
             {
+                "id": "context_link_asset_keep",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "asset",
+                "target_id": "asset_keep",
+                "relation_type": "mentions",
+            },
+            {
                 "id": "context_link_anchor_skip",
                 "source_type": "capture",
                 "source_id": "capture_keep",
@@ -37,9 +50,17 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
                 "relation_type": "mentions",
             },
             {
+                "id": "context_link_asset_skip",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "asset",
+                "target_id": "asset_missing_blob",
+                "relation_type": "mentions",
+            },
+            {
                 "id": "context_link_unsupported",
-                "source_type": "asset",
-                "source_id": "asset_missing",
+                "source_type": "thread",
+                "source_id": "thread_missing",
                 "target_type": "anchor",
                 "target_id": "anchor_keep",
                 "relation_type": "mentions",
@@ -76,9 +97,11 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "documents": 1,
         "episodes": 1,
         "chunks": 3,
+        "assets": 2,
+        "asset_blobs": 1,
         "captures": 2,
         "anchors": 2,
-        "context_links": 3,
+        "context_links": 5,
         "relations": 1,
         "source_refs": 3,
     }
@@ -91,9 +114,10 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "documents": 1,
         "episodes": 0,
         "chunks": 2,
+        "assets": 1,
         "captures": 1,
         "anchors": 1,
-        "context_links": 2,
+        "context_links": 3,
         "relations": 1,
         "source_refs": 2,
     }
@@ -102,13 +126,15 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "documents": 0,
         "episodes": 1,
         "chunks": 1,
+        "assets": 1,
         "captures": 1,
         "anchors": 1,
-        "context_links": 1,
+        "context_links": 2,
         "relations": 0,
         "source_refs": 1,
     }
     assert "some_chunks_will_be_skipped" in skip_preview["warnings"]
+    assert "some_assets_will_be_skipped" in skip_preview["warnings"]
     assert "some_relations_will_be_skipped" in skip_preview["warnings"]
     assert "some_context_links_will_be_skipped" in skip_preview["warnings"]
     assert supersede_preview["would_supersede"] == {

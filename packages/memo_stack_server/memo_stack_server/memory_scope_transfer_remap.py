@@ -98,6 +98,7 @@ def remap_capture(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str] | None = None,
     anchor_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     capture_id = str(item["id"])
@@ -122,6 +123,7 @@ def remap_capture(
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
             capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map or {},
             anchor_id_map=anchor_id_map or {},
         ),
     }
@@ -147,6 +149,7 @@ def remap_context_link(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
 ) -> dict[str, Any]:
     link_id = str(item["id"])
@@ -163,6 +166,7 @@ def remap_context_link(
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
             capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
         ),
         "target_id": remap_endpoint_id(
@@ -173,6 +177,7 @@ def remap_context_link(
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
             capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
         ),
     }
@@ -201,6 +206,7 @@ def _remap_capture_evidence_refs(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
 ) -> list[dict[str, object]]:
     if not isinstance(value, list):
@@ -221,6 +227,7 @@ def _remap_capture_evidence_refs(
                 episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
                 capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
                 anchor_id_map=anchor_id_map,
             )
         chunk_id = next_ref.get("chunk_id")
@@ -239,6 +246,7 @@ def _remap_evidence_source_id(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
 ) -> str:
     return remap_endpoint_id(
@@ -249,6 +257,7 @@ def _remap_evidence_source_id(
         episode_id_map=episode_id_map,
         chunk_id_map=chunk_id_map,
         capture_id_map=capture_id_map,
+        asset_id_map=asset_id_map,
         anchor_id_map=anchor_id_map,
     )
 
@@ -262,6 +271,7 @@ def remap_endpoint_id(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
 ) -> str:
     if source_type == "fact":
@@ -274,6 +284,8 @@ def remap_endpoint_id(
         return chunk_id_map.get(source_id, source_id)
     if source_type == "capture":
         return capture_id_map.get(source_id, source_id)
+    if source_type == "asset":
+        return asset_id_map.get(source_id, source_id)
     if source_type == "anchor":
         return anchor_id_map.get(source_id, source_id)
     return source_id

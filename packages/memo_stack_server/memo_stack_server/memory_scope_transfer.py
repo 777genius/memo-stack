@@ -13,6 +13,7 @@ from typing import Any
 
 from memo_stack_adapters.postgres.models import (
     MemoryAnchorRow,
+    MemoryAssetRow,
     MemoryCaptureRow,
     MemoryChunkRow,
     MemoryContextLinkRow,
@@ -20,9 +21,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryEpisodeRow,
     MemoryFactRelationRow,
     MemoryFactRow,
-    MemoryScopeRow,
     MemorySourceRefRow,
-    MemorySpaceRow,
     MemoryThreadRow,
 )
 from memo_stack_core.memory_scope_snapshot_preview import (
@@ -30,9 +29,25 @@ from memo_stack_core.memory_scope_snapshot_preview import (
     import_counts,
     skipped_snapshot_ids,
 )
+from memo_stack_core.ports.assets import BlobStoragePort
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from memo_stack_server.memory_scope_transfer_assets import (
+    MemoryScopeAssetBlobError,
+    asset_blob_by_id,
+    asset_blobs_to_json,
+    write_imported_asset_blob,
+)
+from memo_stack_server.memory_scope_transfer_assets import (
+    asset_from_json as _asset_from_json,
+)
+from memo_stack_server.memory_scope_transfer_assets import (
+    asset_to_json as _asset_to_json,
+)
+from memo_stack_server.memory_scope_transfer_assets import (
+    remap_asset as _remap_asset,
+)
 from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
 from memo_stack_server.memory_scope_transfer_records import (
     anchor_from_json as _anchor_from_json,
@@ -120,8 +135,11 @@ from memo_stack_server.memory_scope_transfer_remap import (
 from memo_stack_server.memory_scope_transfer_remap import (
     remap_source_ref as _remap_source_ref,
 )
-from memo_stack_server.memory_scope_transfer_support import (
-    bounded_external_ref as _bounded_external_ref,
+from memo_stack_server.memory_scope_transfer_scope import (
+    create_import_memory_scope as _create_import_memory_scope,
+)
+from memo_stack_server.memory_scope_transfer_scope import (
+    load_scope as _load_scope,
 )
 from memo_stack_server.memory_scope_transfer_support import (
     build_id_map as _build_id_map,
@@ -139,8 +157,8 @@ from memo_stack_server.memory_scope_transfer_support import (
     stable_id as _stable_id,
 )
 
-SCHEMA_VERSION = 5
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4, 5}
+SCHEMA_VERSION = 6
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4, 5, 6}
 SUPPORTED_MERGE_STRATEGIES = {
     "fail_on_conflict",
     "skip_existing",
@@ -156,12 +174,14 @@ async def export_memory_scope(
     memory_scope_external_ref: str,
     out_path: Path,
     redacted: bool,
+    blob_storage: BlobStoragePort | None = None,
 ) -> dict[str, object]:
     result = await export_memory_scope_payload(
         engine=engine,
         space_slug=space_slug,
         memory_scope_external_ref=memory_scope_external_ref,
         redacted=redacted,
+        blob_storage=blob_storage,
     )
     if result["status"] != "ok":
         return {"status": result["status"], "out": str(out_path)}
@@ -175,6 +195,8 @@ async def export_memory_scope(
         "documents": counts["documents"],
         "episodes": counts["episodes"],
         "chunks": counts["chunks"],
+        "assets": counts["assets"],
+        "asset_blobs": counts["asset_blobs"],
         "captures": counts["captures"],
         "anchors": counts["anchors"],
         "context_links": counts["context_links"],
@@ -189,6 +211,7 @@ async def export_memory_scope_payload(
     space_slug: str,
     memory_scope_external_ref: str,
     redacted: bool,
+    blob_storage: BlobStoragePort | None = None,
 ) -> dict[str, object]:
     async with AsyncSession(engine) as session:
         scope = await _load_scope(
@@ -244,6 +267,18 @@ async def export_memory_scope_payload(
                         MemoryChunkRow.memory_scope_id == memory_scope.id,
                     )
                     .order_by(MemoryChunkRow.created_at, MemoryChunkRow.id)
+                )
+            ).scalars()
+        )
+        assets = list(
+            (
+                await session.execute(
+                    select(MemoryAssetRow)
+                    .where(
+                        MemoryAssetRow.space_id == space.id,
+                        MemoryAssetRow.memory_scope_id == memory_scope.id,
+                    )
+                    .order_by(MemoryAssetRow.created_at, MemoryAssetRow.id)
                 )
             ).scalars()
         )
@@ -311,6 +346,15 @@ async def export_memory_scope_payload(
                 ).scalars()
             )
 
+    try:
+        asset_blobs = await asset_blobs_to_json(
+            assets=assets,
+            blob_storage=blob_storage,
+            redacted=redacted,
+        )
+    except MemoryScopeAssetBlobError as exc:
+        return {"status": "failed", "reason": exc.reason, "asset_id": exc.asset_id}
+
     payload = {
         "schema_version": SCHEMA_VERSION,
         "space": {"slug": space.slug, "id": space.id},
@@ -319,6 +363,8 @@ async def export_memory_scope_payload(
         "documents": [_document_to_json(document) for document in documents],
         "episodes": [_episode_to_json(episode, redacted=redacted) for episode in episodes],
         "chunks": [_chunk_to_json(chunk, redacted=redacted) for chunk in chunks],
+        "assets": [_asset_to_json(asset) for asset in assets],
+        "asset_blobs": asset_blobs,
         "captures": [_capture_to_json(capture, redacted=redacted) for capture in captures],
         "anchors": [_anchor_to_json(anchor) for anchor in anchors],
         "context_links": [_context_link_to_json(link) for link in context_links],
@@ -335,6 +381,8 @@ async def export_memory_scope_payload(
             "documents": len(documents),
             "episodes": len(episodes),
             "chunks": len(chunks),
+            "assets": len(assets),
+            "asset_blobs": len(asset_blobs),
             "captures": len(captures),
             "anchors": len(anchors),
             "context_links": len(context_links),
@@ -354,6 +402,7 @@ async def import_memory_scope(
     in_path: Path,
     dry_run: bool,
     merge_strategy: str,
+    blob_storage: BlobStoragePort | None = None,
 ) -> dict[str, object]:
     payload = json.loads(in_path.read_text(encoding="utf-8"))
     return await import_memory_scope_payload(
@@ -365,6 +414,7 @@ async def import_memory_scope(
         dry_run=dry_run,
         merge_strategy=merge_strategy,
         source_name=in_path.name,
+        blob_storage=blob_storage,
     )
 
 
@@ -378,6 +428,7 @@ async def import_memory_scope_payload(
     dry_run: bool,
     merge_strategy: str,
     source_name: str = "memory_scope-snapshot",
+    blob_storage: BlobStoragePort | None = None,
 ) -> dict[str, object]:
     if int(payload.get("schema_version", 0)) not in SUPPORTED_SCHEMA_VERSIONS:
         return {"status": "failed", "reason": "unsupported_schema_version"}
@@ -388,6 +439,9 @@ async def import_memory_scope_payload(
     documents = list(payload.get("documents", []))
     episodes = list(payload.get("episodes", []))
     chunks = list(payload.get("chunks", []))
+    assets = list(payload.get("assets", []))
+    asset_blobs = list(payload.get("asset_blobs", []))
+    asset_blob_map = asset_blob_by_id(asset_blobs)
     captures = list(payload.get("captures", []))
     anchors = list(payload.get("anchors", []))
     context_links = list(payload.get("context_links", []))
@@ -401,6 +455,8 @@ async def import_memory_scope_payload(
         captures=captures,
     ):
         return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
+    if not dry_run and payload.get("redacted") is True and assets:
+        return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
 
     async with AsyncSession(engine) as session:
         target_memory_scope_id = memory_scope_id
@@ -410,6 +466,7 @@ async def import_memory_scope_payload(
         document_id_map: dict[str, str] = {}
         episode_id_map: dict[str, str] = {}
         chunk_id_map: dict[str, str] = {}
+        asset_id_map: dict[str, str] = {}
         capture_id_map: dict[str, str] = {}
         anchor_id_map: dict[str, str] = {}
         context_link_id_map: dict[str, str] = {}
@@ -436,6 +493,7 @@ async def import_memory_scope_payload(
                 "episode", episodes, target_memory_scope_id, import_batch_id
             )
             chunk_id_map = _build_id_map("chunk", chunks, target_memory_scope_id, import_batch_id)
+            asset_id_map = _build_id_map("asset", assets, target_memory_scope_id, import_batch_id)
             capture_id_map = _build_id_map(
                 "capture", captures, target_memory_scope_id, import_batch_id
             )
@@ -471,6 +529,7 @@ async def import_memory_scope_payload(
                 documents=documents,
                 episodes=episodes,
                 chunks=chunks,
+                assets=assets,
                 captures=captures,
                 anchors=anchors,
                 context_links=context_links,
@@ -499,6 +558,8 @@ async def import_memory_scope_payload(
                 documents=documents,
                 episodes=episodes,
                 chunks=chunks,
+                assets=assets,
+                asset_blobs=asset_blobs,
                 captures=captures,
                 anchors=anchors,
                 context_links=context_links,
@@ -512,6 +573,7 @@ async def import_memory_scope_payload(
                     documents=documents,
                     episodes=episodes,
                     chunks=chunks,
+                    assets=assets,
                     captures=captures,
                     anchors=anchors,
                     context_links=context_links,
@@ -537,6 +599,8 @@ async def import_memory_scope_payload(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            assets=assets,
+            asset_blobs=asset_blobs,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -641,6 +705,42 @@ async def import_memory_scope_payload(
                     payload={"chunk_id": str(mapped["id"])},
                 )
             )
+        for asset in assets:
+            if str(asset["id"]) in skipped["assets"]:
+                continue
+            mapped = _remap_asset(
+                asset,
+                asset_id_map=asset_id_map,
+                thread_id_map=thread_id_map,
+                space_id=space_id,
+                memory_scope_id=target_memory_scope_id,
+            )
+            if str(mapped.get("status", "stored")) == "stored":
+                if blob_storage is None:
+                    return {"status": "failed", "reason": "asset_blob_storage_unavailable"}
+                blob = asset_blob_map.get(str(asset["id"]))
+                if blob is None:
+                    return {
+                        "status": "failed",
+                        "reason": "asset_blob_missing",
+                        "asset_id": str(asset["id"]),
+                    }
+                try:
+                    await write_imported_asset_blob(
+                        asset=mapped,
+                        blob=blob,
+                        blob_storage=blob_storage,
+                    )
+                except MemoryScopeAssetBlobError as exc:
+                    return {"status": "failed", "reason": exc.reason, "asset_id": exc.asset_id}
+            session.add(
+                _asset_from_json(
+                    mapped,
+                    space_id=space_id,
+                    memory_scope_id=target_memory_scope_id,
+                    now=now,
+                )
+            )
         for capture in captures:
             if str(capture["id"]) in skipped["captures"]:
                 continue
@@ -651,6 +751,7 @@ async def import_memory_scope_payload(
                 episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
                 capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
                 anchor_id_map=anchor_id_map,
             )
             session.add(
@@ -684,6 +785,7 @@ async def import_memory_scope_payload(
                 episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
                 capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
                 anchor_id_map=anchor_id_map,
             )
             session.add(
@@ -772,6 +874,7 @@ async def import_memory_scope_payload(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            assets=assets,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -784,36 +887,6 @@ async def import_memory_scope_payload(
     if created_memory_scope is not None:
         result["created_memory_scope"] = created_memory_scope
     return result
-
-
-async def _load_scope(
-    session: AsyncSession,
-    *,
-    space_slug: str,
-    memory_scope_external_ref: str,
-) -> tuple[MemorySpaceRow, MemoryScopeRow] | None:
-    space = (
-        await session.execute(
-            select(MemorySpaceRow).where(
-                MemorySpaceRow.slug == space_slug,
-                MemorySpaceRow.status == "active",
-            )
-        )
-    ).scalar_one_or_none()
-    if space is None:
-        return None
-    memory_scope = (
-        await session.execute(
-            select(MemoryScopeRow).where(
-                MemoryScopeRow.space_id == space.id,
-                MemoryScopeRow.external_ref == memory_scope_external_ref,
-                MemoryScopeRow.status == "active",
-            )
-        )
-    ).scalar_one_or_none()
-    if memory_scope is None:
-        return None
-    return space, memory_scope
 
 
 def _fact_conflict_ids(
@@ -843,73 +916,6 @@ async def _supersede_facts(
         row.status = "superseded"
         row.version += 1
         row.updated_at = now
-
-
-async def _create_import_memory_scope(
-    session: AsyncSession,
-    *,
-    space_id: str,
-    base_memory_scope_id: str,
-    now: datetime,
-) -> MemoryScopeRow:
-    base_memory_scope = await session.get(MemoryScopeRow, base_memory_scope_id)
-    if base_memory_scope is None:
-        msg = "Base memory_scope not found"
-        raise ValueError(msg)
-    external_ref = await _next_import_memory_scope_ref(
-        session,
-        space_id=space_id,
-        base_external_ref=base_memory_scope.external_ref,
-        now=now,
-    )
-    row = MemoryScopeRow(
-        id=_stable_id("memory_scope", space_id, external_ref),
-        space_id=space_id,
-        external_ref=external_ref,
-        name=f"{base_memory_scope.name} import",
-        status="active",
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(row)
-    await session.flush()
-    return row
-
-
-async def _next_import_memory_scope_ref(
-    session: AsyncSession,
-    *,
-    space_id: str,
-    base_external_ref: str,
-    now: datetime,
-) -> str:
-    base = _bounded_external_ref(
-        f"{base_external_ref}-import-{now.strftime('%Y%m%d%H%M%S')}",
-        suffix="",
-    )
-    candidate = base
-    suffix = 2
-    while await _memory_scope_ref_exists(session, space_id=space_id, external_ref=candidate):
-        candidate = _bounded_external_ref(base, suffix=f"-{suffix}")
-        suffix += 1
-    return candidate
-
-
-async def _memory_scope_ref_exists(
-    session: AsyncSession,
-    *,
-    space_id: str,
-    external_ref: str,
-) -> bool:
-    return (
-        await session.scalar(
-            select(MemoryScopeRow.id).where(
-                MemoryScopeRow.space_id == space_id,
-                MemoryScopeRow.external_ref == external_ref,
-            )
-        )
-        is not None
-    )
 
 
 async def _ensure_import_threads(

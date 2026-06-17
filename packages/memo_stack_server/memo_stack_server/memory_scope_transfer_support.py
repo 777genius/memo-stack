@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from hashlib import sha256
 from typing import Any
@@ -9,6 +10,9 @@ from typing import Any
 from memo_stack_adapters.postgres.models import MemoryOutboxRow
 
 from memo_stack_server.memory_scope_transfer_remap import episode_source_thread_id
+
+_MAX_FILENAME_CHARS = 240
+_SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def stable_id(prefix: str, *parts: str) -> str:
@@ -59,6 +63,11 @@ def import_thread_external_ref(source_thread_id: str, target_thread_id: str) -> 
     )
 
 
+def asset_storage_key(*, space_id: str, memory_scope_id: str, digest: str, filename: str) -> str:
+    safe_name = _safe_filename(filename)
+    return f"{space_id}/{memory_scope_id}/{digest[:2]}/{digest}/{safe_name}"
+
+
 def outbox(
     *,
     event_type: str,
@@ -83,3 +92,8 @@ def outbox(
         created_at=now,
         updated_at=now,
     )
+
+
+def _safe_filename(filename: str) -> str:
+    value = _SAFE_FILENAME_PATTERN.sub("_", filename.strip())[:_MAX_FILENAME_CHARS]
+    return value.strip("._") or "asset.bin"

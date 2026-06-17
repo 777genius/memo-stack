@@ -96,6 +96,7 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
                     documents=[],
                     episodes=[],
                     chunks=[],
+                    assets=[],
                     captures=[],
                     anchors=[
                         {

@@ -9,6 +9,7 @@ _RECORD_TYPES = (
     "documents",
     "episodes",
     "chunks",
+    "assets",
     "captures",
     "anchors",
     "context_links",
@@ -27,6 +28,8 @@ def build_memory_scope_snapshot_import_preview(
     documents = _records(payload, "documents")
     episodes = _records(payload, "episodes")
     chunks = _records(payload, "chunks")
+    assets = _records(payload, "assets")
+    asset_blobs = _records(payload, "asset_blobs")
     captures = _records(payload, "captures")
     anchors = _records(payload, "anchors")
     context_links = _records(payload, "context_links")
@@ -39,6 +42,8 @@ def build_memory_scope_snapshot_import_preview(
         documents=documents,
         episodes=episodes,
         chunks=chunks,
+        assets=assets,
+        asset_blobs=asset_blobs,
         captures=captures,
         anchors=anchors,
         context_links=context_links,
@@ -50,6 +55,7 @@ def build_memory_scope_snapshot_import_preview(
         documents=documents,
         episodes=episodes,
         chunks=chunks,
+        assets=assets,
         captures=captures,
         anchors=anchors,
         context_links=context_links,
@@ -64,6 +70,8 @@ def build_memory_scope_snapshot_import_preview(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            assets=assets,
+            asset_blobs=asset_blobs,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -77,6 +85,7 @@ def build_memory_scope_snapshot_import_preview(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            assets=assets,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -89,6 +98,7 @@ def build_memory_scope_snapshot_import_preview(
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            assets=assets,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -115,6 +125,8 @@ def snapshot_counts(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
+    asset_blobs: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -126,6 +138,8 @@ def snapshot_counts(
         "documents": len(documents),
         "episodes": len(episodes),
         "chunks": len(chunks),
+        "assets": len(assets),
+        "asset_blobs": len(asset_blobs),
         "captures": len(captures),
         "anchors": len(anchors),
         "context_links": len(context_links),
@@ -142,6 +156,8 @@ def skipped_snapshot_ids(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
+    asset_blobs: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -152,6 +168,8 @@ def skipped_snapshot_ids(
     document_ids = _record_ids(documents)
     episode_ids = _record_ids(episodes)
     chunk_ids = _record_ids(chunks)
+    asset_ids = _record_ids(assets)
+    asset_blob_asset_ids = _asset_blob_asset_ids(asset_blobs)
     capture_ids = _record_ids(captures)
     anchor_ids = _record_ids(anchors)
     context_link_ids = _record_ids(context_links)
@@ -160,6 +178,7 @@ def skipped_snapshot_ids(
     skipped_documents = document_ids & conflict_ids
     skipped_episodes = episode_ids & conflict_ids
     skipped_chunks = chunk_ids & conflict_ids
+    skipped_assets = asset_ids & conflict_ids
     skipped_captures = capture_ids & conflict_ids
     skipped_anchors = anchor_ids & conflict_ids
     skipped_context_links = context_link_ids & conflict_ids
@@ -174,6 +193,11 @@ def skipped_snapshot_ids(
             skipped_episodes=skipped_episodes,
         )
     )
+    skipped_assets.update(
+        str(asset["id"])
+        for asset in assets
+        if _asset_requires_blob(asset) and str(asset["id"]) not in asset_blob_asset_ids
+    )
     skipped_relations = relation_ids & conflict_ids
     skipped_context_links.update(
         str(context_link["id"])
@@ -184,12 +208,14 @@ def skipped_snapshot_ids(
             document_ids=document_ids,
             episode_ids=episode_ids,
             chunk_ids=chunk_ids,
+            asset_ids=asset_ids,
             capture_ids=capture_ids,
             anchor_ids=anchor_ids,
             skipped_facts=skipped_facts,
             skipped_documents=skipped_documents,
             skipped_episodes=skipped_episodes,
             skipped_chunks=skipped_chunks,
+            skipped_assets=skipped_assets,
             skipped_captures=skipped_captures,
             skipped_anchors=skipped_anchors,
         )
@@ -209,6 +235,7 @@ def skipped_snapshot_ids(
         "documents": skipped_documents,
         "episodes": skipped_episodes,
         "chunks": skipped_chunks,
+        "assets": skipped_assets,
         "captures": skipped_captures,
         "anchors": skipped_anchors,
         "context_links": skipped_context_links,
@@ -222,6 +249,7 @@ def import_counts(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -236,6 +264,7 @@ def import_counts(
         "documents": len(documents) - _count_skipped(documents, skipped["documents"]),
         "episodes": len(episodes) - _count_skipped(episodes, skipped["episodes"]),
         "chunks": len(chunks) - _count_skipped(chunks, skipped["chunks"]),
+        "assets": len(assets) - _count_skipped(assets, skipped["assets"]),
         "captures": len(captures) - _count_skipped(captures, skipped["captures"]),
         "anchors": len(anchors) - _count_skipped(anchors, skipped["anchors"]),
         "context_links": len(context_links)
@@ -251,6 +280,7 @@ def _skipped_counts(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -264,6 +294,7 @@ def _skipped_counts(
         "documents": _count_skipped(documents, skipped["documents"]),
         "episodes": _count_skipped(episodes, skipped["episodes"]),
         "chunks": _count_skipped(chunks, skipped["chunks"]),
+        "assets": _count_skipped(assets, skipped["assets"]),
         "captures": _count_skipped(captures, skipped["captures"]),
         "anchors": _count_skipped(anchors, skipped["anchors"]),
         "context_links": _count_skipped(context_links, skipped["context_links"]),
@@ -279,6 +310,7 @@ def _conflicts_by_type(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -289,6 +321,7 @@ def _conflicts_by_type(
         "documents": _record_ids(documents) & conflict_ids,
         "episodes": _record_ids(episodes) & conflict_ids,
         "chunks": _record_ids(chunks) & conflict_ids,
+        "assets": _record_ids(assets) & conflict_ids,
         "captures": _record_ids(captures) & conflict_ids,
         "anchors": _record_ids(anchors) & conflict_ids,
         "context_links": _record_ids(context_links) & conflict_ids,
@@ -311,6 +344,8 @@ def _preview_warnings(
         warnings.append("redacted_snapshot_cannot_be_applied")
     if skipped["chunks"]:
         warnings.append("some_chunks_will_be_skipped")
+    if skipped["assets"]:
+        warnings.append("some_assets_will_be_skipped")
     if skipped["relations"]:
         warnings.append("some_relations_will_be_skipped")
     if skipped["context_links"]:
@@ -349,12 +384,14 @@ def _context_link_endpoint_skipped(
     document_ids: set[str],
     episode_ids: set[str],
     chunk_ids: set[str],
+    asset_ids: set[str],
     capture_ids: set[str],
     anchor_ids: set[str],
     skipped_facts: set[str],
     skipped_documents: set[str],
     skipped_episodes: set[str],
     skipped_chunks: set[str],
+    skipped_assets: set[str],
     skipped_captures: set[str],
     skipped_anchors: set[str],
 ) -> bool:
@@ -365,12 +402,14 @@ def _context_link_endpoint_skipped(
         document_ids=document_ids,
         episode_ids=episode_ids,
         chunk_ids=chunk_ids,
+        asset_ids=asset_ids,
         capture_ids=capture_ids,
         anchor_ids=anchor_ids,
         skipped_facts=skipped_facts,
         skipped_documents=skipped_documents,
         skipped_episodes=skipped_episodes,
         skipped_chunks=skipped_chunks,
+        skipped_assets=skipped_assets,
         skipped_captures=skipped_captures,
         skipped_anchors=skipped_anchors,
     ) or _endpoint_skipped(
@@ -380,12 +419,14 @@ def _context_link_endpoint_skipped(
         document_ids=document_ids,
         episode_ids=episode_ids,
         chunk_ids=chunk_ids,
+        asset_ids=asset_ids,
         capture_ids=capture_ids,
         anchor_ids=anchor_ids,
         skipped_facts=skipped_facts,
         skipped_documents=skipped_documents,
         skipped_episodes=skipped_episodes,
         skipped_chunks=skipped_chunks,
+        skipped_assets=skipped_assets,
         skipped_captures=skipped_captures,
         skipped_anchors=skipped_anchors,
     )
@@ -399,12 +440,14 @@ def _endpoint_skipped(
     document_ids: set[str],
     episode_ids: set[str],
     chunk_ids: set[str],
+    asset_ids: set[str],
     capture_ids: set[str],
     anchor_ids: set[str],
     skipped_facts: set[str],
     skipped_documents: set[str],
     skipped_episodes: set[str],
     skipped_chunks: set[str],
+    skipped_assets: set[str],
     skipped_captures: set[str],
     skipped_anchors: set[str],
 ) -> bool:
@@ -415,6 +458,7 @@ def _endpoint_skipped(
         "document": (document_ids, skipped_documents),
         "episode": (episode_ids, skipped_episodes),
         "chunk": (chunk_ids, skipped_chunks),
+        "asset": (asset_ids, skipped_assets),
         "capture": (capture_ids, skipped_captures),
         "anchor": (anchor_ids, skipped_anchors),
     }
@@ -427,6 +471,14 @@ def _endpoint_skipped(
 
 def _record_ids(items: list[dict[str, Any]]) -> set[str]:
     return {str(item["id"]) for item in items if item.get("id") is not None}
+
+
+def _asset_blob_asset_ids(asset_blobs: list[dict[str, Any]]) -> set[str]:
+    return {str(item["asset_id"]) for item in asset_blobs if item.get("asset_id") is not None}
+
+
+def _asset_requires_blob(asset: dict[str, Any]) -> bool:
+    return str(asset.get("status", "stored")) == "stored"
 
 
 def _skipped_source_ref_indexes(

@@ -6,6 +6,7 @@ from typing import Any
 
 from memo_stack_adapters.postgres.models import (
     MemoryAnchorRow,
+    MemoryAssetRow,
     MemoryCaptureRow,
     MemoryChunkRow,
     MemoryContextLinkRow,
@@ -27,6 +28,7 @@ async def memory_scope_snapshot_conflicts(
     documents: list[dict[str, Any]],
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -37,6 +39,7 @@ async def memory_scope_snapshot_conflicts(
     document_ids = [str(item["id"]) for item in documents]
     episode_ids = [str(item["id"]) for item in episodes]
     chunk_ids = [str(item["id"]) for item in chunks]
+    asset_ids = [str(item["id"]) for item in assets]
     capture_ids = [str(item["id"]) for item in captures]
     anchor_ids = [str(item["id"]) for item in anchors]
     context_link_ids = [str(item["id"]) for item in context_links]
@@ -46,6 +49,7 @@ async def memory_scope_snapshot_conflicts(
         (MemoryDocumentRow, document_ids),
         (MemoryEpisodeRow, episode_ids),
         (MemoryChunkRow, chunk_ids),
+        (MemoryAssetRow, asset_ids),
         (MemoryCaptureRow, capture_ids),
         (MemoryAnchorRow, anchor_ids),
         (MemoryContextLinkRow, context_link_ids),
@@ -69,6 +73,14 @@ async def memory_scope_snapshot_conflicts(
             space_id=space_id,
             memory_scope_id=memory_scope_id,
             chunks=chunks,
+        )
+    )
+    conflicts.extend(
+        await _asset_hash_conflicts(
+            session,
+            space_id=space_id,
+            memory_scope_id=memory_scope_id,
+            assets=assets,
         )
     )
     conflicts.extend(
@@ -162,6 +174,37 @@ async def _chunk_hash_conflicts(
         by_hash[str(source_hash)]
         for row_id, source_hash in rows
         if str(row_id) != by_hash[str(source_hash)]
+    ]
+
+
+async def _asset_hash_conflicts(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    assets: list[dict[str, Any]],
+) -> list[str]:
+    by_hash = {
+        str(item.get("sha256_hex")): str(item["id"])
+        for item in assets
+        if item.get("sha256_hex") and str(item.get("status", "stored")) == "stored"
+    }
+    if not by_hash:
+        return []
+    rows = (
+        await session.execute(
+            select(MemoryAssetRow.id, MemoryAssetRow.sha256_hex).where(
+                MemoryAssetRow.space_id == space_id,
+                MemoryAssetRow.memory_scope_id == memory_scope_id,
+                MemoryAssetRow.status == "stored",
+                MemoryAssetRow.sha256_hex.in_(by_hash),
+            )
+        )
+    ).all()
+    return [
+        by_hash[str(sha256_hex)]
+        for row_id, sha256_hex in rows
+        if str(row_id) != by_hash[str(sha256_hex)]
     ]
 
 
