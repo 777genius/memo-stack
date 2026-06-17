@@ -14,7 +14,6 @@ from memo_stack_adapters.postgres.models import (
     MemoryAssetRow,
     MemoryCaptureRow,
     MemoryChunkRow,
-    MemoryContextLinkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
     MemoryFactRelationRow,
@@ -30,6 +29,7 @@ from memo_stack_core.ports.assets import BlobStoragePort
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from memo_stack_server import memory_scope_transfer_context as _context
 from memo_stack_server import memory_scope_transfer_extractions as _extractions
 from memo_stack_server.memory_scope_transfer_assets import (
     MemoryScopeAssetBlobError,
@@ -81,12 +81,6 @@ from memo_stack_server.memory_scope_transfer_records import (
     contains_redacted_memory as _contains_redacted_memory,
 )
 from memo_stack_server.memory_scope_transfer_records import (
-    context_link_from_json as _context_link_from_json,
-)
-from memo_stack_server.memory_scope_transfer_records import (
-    context_link_to_json as _context_link_to_json,
-)
-from memo_stack_server.memory_scope_transfer_records import (
     document_from_json as _document_from_json,
 )
 from memo_stack_server.memory_scope_transfer_records import (
@@ -125,9 +119,6 @@ from memo_stack_server.memory_scope_transfer_remap import (
     remap_chunk as _remap_chunk,
 )
 from memo_stack_server.memory_scope_transfer_remap import (
-    remap_context_link as _remap_context_link,
-)
-from memo_stack_server.memory_scope_transfer_remap import (
     remap_document as _remap_document,
 )
 from memo_stack_server.memory_scope_transfer_remap import (
@@ -164,8 +155,8 @@ from memo_stack_server.memory_scope_transfer_support import (
     stable_id as _stable_id,
 )
 
-SCHEMA_VERSION = 7
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4, 5, 6, 7}
+SCHEMA_VERSION = 8
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8}
 
 
 async def export_memory_scope(
@@ -204,6 +195,7 @@ async def export_memory_scope(
         "captures": counts["captures"],
         "anchors": counts["anchors"],
         "context_links": counts["context_links"],
+        "context_link_suggestions": counts["context_link_suggestions"],
         "relations": counts["relations"],
         "redacted": redacted,
     }
@@ -309,9 +301,7 @@ async def export_memory_scope_payload(
                     await session.execute(
                         select(MemoryAssetExtractionArtifactRow)
                         .where(
-                            MemoryAssetExtractionArtifactRow.job_id.in_(
-                                asset_extraction_job_ids
-                            )
+                            MemoryAssetExtractionArtifactRow.job_id.in_(asset_extraction_job_ids)
                         )
                         .order_by(
                             MemoryAssetExtractionArtifactRow.created_at,
@@ -344,17 +334,10 @@ async def export_memory_scope_payload(
                 )
             ).scalars()
         )
-        context_links = list(
-            (
-                await session.execute(
-                    select(MemoryContextLinkRow)
-                    .where(
-                        MemoryContextLinkRow.space_id == space.id,
-                        MemoryContextLinkRow.memory_scope_id == memory_scope.id,
-                    )
-                    .order_by(MemoryContextLinkRow.created_at, MemoryContextLinkRow.id)
-                )
-            ).scalars()
+        context_links, context_link_suggestions = await _context.load_context_records(
+            session,
+            space_id=space.id,
+            memory_scope_id=memory_scope.id,
         )
         fact_ids = [fact.id for fact in facts]
         source_refs = []
@@ -415,13 +398,16 @@ async def export_memory_scope_payload(
             _extractions.extraction_job_to_json(job) for job in asset_extraction_jobs
         ],
         "extraction_artifacts": [
-            _extractions.extraction_artifact_to_json(artifact)
-            for artifact in extraction_artifacts
+            _extractions.extraction_artifact_to_json(artifact) for artifact in extraction_artifacts
         ],
         "extraction_artifact_blobs": extraction_artifact_blobs,
         "captures": [_capture_to_json(capture, redacted=redacted) for capture in captures],
         "anchors": [_anchor_to_json(anchor) for anchor in anchors],
-        "context_links": [_context_link_to_json(link) for link in context_links],
+        "context_links": [_context.context_link_to_json(link) for link in context_links],
+        "context_link_suggestions": [
+            _context.context_link_suggestion_to_json(suggestion)
+            for suggestion in context_link_suggestions
+        ],
         "relations": [relation_to_json(relation) for relation in relations],
         "source_refs": [_source_ref_to_json(ref, redacted=redacted) for ref in source_refs],
         "exported_at": datetime.now(UTC).isoformat(),
@@ -443,6 +429,7 @@ async def export_memory_scope_payload(
             "captures": len(captures),
             "anchors": len(anchors),
             "context_links": len(context_links),
+            "context_link_suggestions": len(context_link_suggestions),
             "relations": len(relations),
             "source_refs": len(source_refs),
         },
@@ -508,6 +495,7 @@ async def import_memory_scope_payload(
     captures = list(payload.get("captures", []))
     anchors = list(payload.get("anchors", []))
     context_links = list(payload.get("context_links", []))
+    context_link_suggestions = list(payload.get("context_link_suggestions", []))
     relations = list(payload.get("relations", []))
     source_refs = list(payload.get("source_refs", []))
     if not dry_run and _contains_redacted_memory(
@@ -518,8 +506,10 @@ async def import_memory_scope_payload(
         captures=captures,
     ):
         return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
-    if not dry_run and payload.get("redacted") is True and (
-        assets or asset_extraction_jobs or extraction_artifacts
+    if (
+        not dry_run
+        and payload.get("redacted") is True
+        and (assets or asset_extraction_jobs or extraction_artifacts)
     ):
         return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
 
@@ -537,6 +527,7 @@ async def import_memory_scope_payload(
         capture_id_map: dict[str, str] = {}
         anchor_id_map: dict[str, str] = {}
         context_link_id_map: dict[str, str] = {}
+        context_link_suggestion_id_map: dict[str, str] = {}
         relation_id_map: dict[str, str] = {}
         thread_id_map: dict[str, str] = {}
 
@@ -582,6 +573,12 @@ async def import_memory_scope_payload(
             context_link_id_map = _build_id_map(
                 "context_link", context_links, target_memory_scope_id, import_batch_id
             )
+            context_link_suggestion_id_map = _build_id_map(
+                "context_link_suggestion",
+                context_link_suggestions,
+                target_memory_scope_id,
+                import_batch_id,
+            )
             relation_id_map = _build_id_map(
                 "relation", relations, target_memory_scope_id, import_batch_id
             )
@@ -614,6 +611,7 @@ async def import_memory_scope_payload(
                 captures=captures,
                 anchors=anchors,
                 context_links=context_links,
+                context_link_suggestions=context_link_suggestions,
                 relations=relations,
             )
         )
@@ -647,6 +645,7 @@ async def import_memory_scope_payload(
                 captures=captures,
                 anchors=anchors,
                 context_links=context_links,
+                context_link_suggestions=context_link_suggestions,
                 relations=relations,
             )
             result: dict[str, object] = {
@@ -663,6 +662,7 @@ async def import_memory_scope_payload(
                     captures=captures,
                     anchors=anchors,
                     context_links=context_links,
+                    context_link_suggestions=context_link_suggestions,
                     relations=relations,
                     source_refs=source_refs,
                     skipped=skipped,
@@ -691,6 +691,7 @@ async def import_memory_scope_payload(
             captures=captures,
             anchors=anchors,
             context_links=context_links,
+            context_link_suggestions=context_link_suggestions,
             relations=relations,
         )
         if merge_strategy == "supersede_matching_facts":
@@ -887,30 +888,26 @@ async def import_memory_scope_payload(
                     now=now,
                 )
             )
-        for context_link in context_links:
-            if str(context_link["id"]) in skipped["context_links"]:
-                continue
-            mapped = _remap_context_link(
-                context_link,
-                context_link_id_map=context_link_id_map,
-                fact_id_map=fact_id_map,
-                document_id_map=document_id_map,
-                episode_id_map=episode_id_map,
-                chunk_id_map=chunk_id_map,
-                capture_id_map=capture_id_map,
-                asset_id_map=asset_id_map,
-                anchor_id_map=anchor_id_map,
-                extraction_job_id_map=extraction_job_id_map,
-                extraction_artifact_id_map=extraction_artifact_id_map,
-            )
-            session.add(
-                _context_link_from_json(
-                    mapped,
-                    space_id=space_id,
-                    memory_scope_id=target_memory_scope_id,
-                    now=now,
-                )
-            )
+        _context.import_context_records(
+            session,
+            context_links=context_links,
+            context_link_suggestions=context_link_suggestions,
+            skipped=skipped,
+            context_link_id_map=context_link_id_map,
+            context_link_suggestion_id_map=context_link_suggestion_id_map,
+            fact_id_map=fact_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+            space_id=space_id,
+            memory_scope_id=target_memory_scope_id,
+            now=now,
+        )
         imported_refs_by_fact: set[str] = set()
         for ref in source_refs:
             if str(ref["fact_id"]) in skipped["facts"]:
@@ -989,6 +986,7 @@ async def import_memory_scope_payload(
             captures=captures,
             anchors=anchors,
             context_links=context_links,
+            context_link_suggestions=context_link_suggestions,
             relations=relations,
             source_refs=source_refs,
             skipped=skipped,

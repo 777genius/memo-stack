@@ -141,6 +141,19 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
             },
             headers=auth_headers(),
         )
+        link_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "text": "connect this saved capture to the snapshot episode evidence",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "limit": 1,
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
         context_link = client.post(
             "/v1/context-links",
             json={
@@ -266,6 +279,12 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
             f"/v1/extraction-artifacts/{restored_markdown_artifact['id']}/download",
             headers=auth_headers(),
         )
+        restored_suggestion_id = restored_browser_data["context_link_suggestions"][0]["id"]
+        reviewed_restored_suggestion = client.post(
+            f"/v1/context-link-suggestions/{restored_suggestion_id}/review",
+            json={"action": "approve", "reason": "restored suggestion review"},
+            headers=auth_headers(),
+        )
 
     assert created.status_code == 201
     assert target.status_code == 201
@@ -277,6 +296,12 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert extraction.status_code == 200
     assert extraction.json()["data"]["status"] == "succeeded"
     assert capture.status_code == 201
+    assert link_suggestions.status_code == 200
+    assert (
+        link_suggestions.json()["data"]["candidates"][0]["target_id"]
+        == episode.json()["data"]["episode_id"]
+    )
+    assert link_suggestions.json()["data"]["candidates"][0]["target_type"] == "episode"
     assert context_link.status_code == 200
     assert asset_context_link.status_code == 200
     assert exported.status_code == 200
@@ -292,8 +317,9 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert exported.json()["counts"]["captures"] == 1
     assert exported.json()["counts"]["anchors"] == 1
     assert exported.json()["counts"]["context_links"] == 2
+    assert exported.json()["counts"]["context_link_suggestions"] == 1
     assert exported.json()["counts"]["relations"] == 1
-    assert snapshot["schema_version"] == 7
+    assert snapshot["schema_version"] == 8
     assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
     assert manifest["counts"]["episodes"] == 1
     assert manifest["counts"]["documents"] == 1
@@ -306,6 +332,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert manifest["counts"]["captures"] == 1
     assert manifest["counts"]["anchors"] == 1
     assert manifest["counts"]["context_links"] == 2
+    assert manifest["counts"]["context_link_suggestions"] == 1
     assert manifest["counts"]["relations"] == 1
     assert manifest["snapshot_sha256"]
     assert verify_snapshot_manifest_payload(snapshot=snapshot, manifest=manifest)["ok"] is True
@@ -331,11 +358,13 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert snapshot["asset_blobs"][0]["asset_id"] == snapshot["assets"][0]["id"]
     assert snapshot["asset_extraction_jobs"][0]["id"] == extraction_id
     assert snapshot["asset_extraction_jobs"][0]["asset_id"] == snapshot["assets"][0]["id"]
-    assert {
-        item["artifact_id"] for item in snapshot["extraction_artifact_blobs"]
-    } == {item["id"] for item in snapshot["extraction_artifacts"]}
+    assert {item["artifact_id"] for item in snapshot["extraction_artifact_blobs"]} == {
+        item["id"] for item in snapshot["extraction_artifacts"]
+    }
     assert snapshot["anchors"][0]["label"] == "Alex Snapshot"
     assert {item["target_type"] for item in snapshot["context_links"]} == {"anchor", "asset"}
+    assert snapshot["context_link_suggestions"][0]["status"] == "pending"
+    assert snapshot["context_link_suggestions"][0]["target_type"] == "episode"
     assert snapshot["relations"][0]["relation_type"] == "supports"
     assert dry_run.status_code == 200
     assert dry_run.json()["data"]["dry_run"] is True
@@ -350,6 +379,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert dry_run.json()["data"]["would_import"]["captures"] == 1
     assert dry_run.json()["data"]["would_import"]["anchors"] == 1
     assert dry_run.json()["data"]["would_import"]["context_links"] == 2
+    assert dry_run.json()["data"]["would_import"]["context_link_suggestions"] == 1
     assert dry_run.json()["data"]["would_import"]["relations"] == 1
     assert dry_run.json()["data"]["preview"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 2
@@ -362,6 +392,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert dry_run.json()["data"]["preview"]["would_import"]["captures"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["anchors"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["context_links"] == 2
+    assert dry_run.json()["data"]["preview"]["would_import"]["context_link_suggestions"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["relations"] == 1
     assert refused.status_code == 400
     assert imported.status_code == 200
@@ -375,6 +406,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert imported.json()["data"]["imported"]["captures"] == 1
     assert imported.json()["data"]["imported"]["anchors"] == 1
     assert imported.json()["data"]["imported"]["context_links"] == 2
+    assert imported.json()["data"]["imported"]["context_link_suggestions"] == 1
     assert imported.json()["data"]["imported"]["relations"] == 1
     assert restored.status_code == 200
     assert restored_source["id"] != created.json()["data"]["id"]
@@ -389,6 +421,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert len(browser_data["captures"]) == 1
     assert len(browser_data["anchors"]) == 1
     assert len(browser_data["context_links"]) == 2
+    assert len(browser_data["context_link_suggestions"]) == 1
     assert (
         browser_data["episodes"][0]["text"]
         == "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots."
@@ -410,12 +443,17 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     restored_asset_context_link = next(
         item for item in browser_data["context_links"] if item["target_type"] == "asset"
     )
+    restored_context_link_suggestion = browser_data["context_link_suggestions"][0]
     assert restored_capture["id"] != capture.json()["data"]["id"]
     assert restored_asset["id"] != asset.json()["data"]["id"]
     assert restored_extraction_job["id"] != extraction_id
     assert restored_anchor["id"] != anchor.json()["data"]["id"]
     assert restored_context_link["id"] != context_link.json()["data"]["id"]
     assert restored_asset_context_link["id"] != asset_context_link.json()["data"]["id"]
+    assert (
+        restored_context_link_suggestion["id"]
+        != link_suggestions.json()["data"]["candidates"][0]["suggestion_id"]
+    )
     assert restored_capture["text_preview"] == (
         "SNAPSHOT_CAPTURE_MARKER: quick capture survives snapshots."
     )
@@ -428,8 +466,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_extraction_chunk["source_external_id"] == restored_extraction_job["id"]
     assert restored_extraction_chunk["metadata"]["asset_id"] == restored_asset["id"]
     assert (
-        restored_extraction_chunk["metadata"]["extraction_job_id"]
-        == restored_extraction_job["id"]
+        restored_extraction_chunk["metadata"]["extraction_job_id"] == restored_extraction_job["id"]
     )
     assert restored_extraction_chunk["source_refs"][0]["source_id"] == restored_extraction_job["id"]
     assert restored_extraction_chunk["source_refs"][0]["asset_id"] == restored_asset["id"]
@@ -437,6 +474,9 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_context_link["target_id"] == restored_anchor["id"]
     assert restored_asset_context_link["source_id"] == restored_capture["id"]
     assert restored_asset_context_link["target_id"] == restored_asset["id"]
+    assert restored_context_link_suggestion["source_id"] == restored_capture["id"]
+    assert restored_context_link_suggestion["target_id"] == browser_data["episodes"][0]["id"]
+    assert restored_context_link_suggestion["status"] == "pending"
     assert restored_asset_download.status_code == 200
     assert restored_asset_download.content == b"snapshot asset bytes"
     assert restored_extraction.status_code == 200
@@ -445,6 +485,9 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_markdown_artifact["job_id"] == restored_extraction_job["id"]
     assert restored_artifact_download.status_code == 200
     assert restored_artifact_download.content == b"snapshot asset bytes"
+    assert reviewed_restored_suggestion.status_code == 200
+    assert reviewed_restored_suggestion.json()["data"]["suggestion"]["status"] == "approved"
+    assert reviewed_restored_suggestion.json()["data"]["duplicate_link"] is False
     restored_relation = restored_relations.json()["data"]["items"][0]
     assert restored_relation["relation"]["relation_type"] == "supports"
     assert restored_relation["relation"]["source_fact_id"] == restored_source["id"]
@@ -479,9 +522,7 @@ def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path:
                 "actor_role": "user",
                 "text": "SNAPSHOT_API_CAPTURE_CONFLICT: conflict preview includes captures.",
                 "source_authority": "user_statement",
-                "evidence_refs": [
-                    {"source_type": "fact", "source_id": fact.json()["data"]["id"]}
-                ],
+                "evidence_refs": [{"source_type": "fact", "source_id": fact.json()["data"]["id"]}],
                 "idempotency_key": "snapshot-conflict-capture",
                 "consolidate": False,
             },

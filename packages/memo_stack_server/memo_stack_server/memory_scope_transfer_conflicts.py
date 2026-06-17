@@ -12,6 +12,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryCaptureRow,
     MemoryChunkRow,
     MemoryContextLinkRow,
+    MemoryContextLinkSuggestionRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
     MemoryFactRelationRow,
@@ -37,7 +38,9 @@ async def memory_scope_snapshot_conflicts(
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
     relations: list[dict[str, Any]],
+    context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> list[str]:
+    context_link_suggestions = context_link_suggestions or []
     conflicts: list[str] = []
     fact_ids = [str(item["id"]) for item in facts]
     document_ids = [str(item["id"]) for item in documents]
@@ -49,6 +52,7 @@ async def memory_scope_snapshot_conflicts(
     capture_ids = [str(item["id"]) for item in captures]
     anchor_ids = [str(item["id"]) for item in anchors]
     context_link_ids = [str(item["id"]) for item in context_links]
+    context_link_suggestion_ids = [str(item["id"]) for item in context_link_suggestions]
     relation_ids = [str(item["id"]) for item in relations]
     for model, ids in (
         (MemoryFactRow, fact_ids),
@@ -61,6 +65,7 @@ async def memory_scope_snapshot_conflicts(
         (MemoryCaptureRow, capture_ids),
         (MemoryAnchorRow, anchor_ids),
         (MemoryContextLinkRow, context_link_ids),
+        (MemoryContextLinkSuggestionRow, context_link_suggestion_ids),
         (MemoryFactRelationRow, relation_ids),
     ):
         if not ids:
@@ -120,6 +125,14 @@ async def memory_scope_snapshot_conflicts(
             space_id=space_id,
             memory_scope_id=memory_scope_id,
             context_links=context_links,
+        )
+    )
+    conflicts.extend(
+        await _context_link_suggestion_signature_conflicts(
+            session,
+            space_id=space_id,
+            memory_scope_id=memory_scope_id,
+            suggestions=context_link_suggestions,
         )
     )
     conflicts.extend(
@@ -261,15 +274,11 @@ async def _asset_extraction_job_signature_conflicts(
                 MemoryAssetExtractionJobRow.memory_scope_id == memory_scope_id,
                 MemoryAssetExtractionJobRow.status.in_(active_statuses),
                 MemoryAssetExtractionJobRow.asset_id.in_({key[0] for key in by_signature}),
-                MemoryAssetExtractionJobRow.parser_profile.in_(
-                    {key[1] for key in by_signature}
-                ),
+                MemoryAssetExtractionJobRow.parser_profile.in_({key[1] for key in by_signature}),
                 MemoryAssetExtractionJobRow.parser_config_hash.in_(
                     {key[2] for key in by_signature}
                 ),
-                MemoryAssetExtractionJobRow.source_sha256_hex.in_(
-                    {key[3] for key in by_signature}
-                ),
+                MemoryAssetExtractionJobRow.source_sha256_hex.in_({key[3] for key in by_signature}),
             )
         )
     ).all()
@@ -379,7 +388,9 @@ async def _context_link_signature_conflicts(
             str(item.get("relation_type", "related_to")),
         ): str(item["id"])
         for item in context_links
-        if item.get("source_type") and item.get("source_id") and item.get("target_type")
+        if item.get("source_type")
+        and item.get("source_id")
+        and item.get("target_type")
         and item.get("target_id")
     }
     if not by_signature:
@@ -398,6 +409,60 @@ async def _context_link_signature_conflicts(
                 MemoryContextLinkRow.memory_scope_id == memory_scope_id,
                 MemoryContextLinkRow.status == "active",
                 MemoryContextLinkRow.relation_type.in_(
+                    {signature[4] for signature in by_signature}
+                ),
+            )
+        )
+    ).all()
+    conflicts: list[str] = []
+    for row in rows:
+        row_id, source_type, source_id, target_type, target_id, relation_type = row
+        snapshot_id = by_signature.get(
+            (source_type, source_id, target_type, target_id, relation_type)
+        )
+        if snapshot_id is not None and str(row_id) != snapshot_id:
+            conflicts.append(snapshot_id)
+    return conflicts
+
+
+async def _context_link_suggestion_signature_conflicts(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    suggestions: list[dict[str, Any]],
+) -> list[str]:
+    by_signature = {
+        (
+            str(item.get("source_type")),
+            str(item.get("source_id")),
+            str(item.get("target_type")),
+            str(item.get("target_id")),
+            str(item.get("relation_type", "related_to")),
+        ): str(item["id"])
+        for item in suggestions
+        if str(item.get("status", "pending")) == "pending"
+        and item.get("source_type")
+        and item.get("source_id")
+        and item.get("target_type")
+        and item.get("target_id")
+    }
+    if not by_signature:
+        return []
+    rows = (
+        await session.execute(
+            select(
+                MemoryContextLinkSuggestionRow.id,
+                MemoryContextLinkSuggestionRow.source_type,
+                MemoryContextLinkSuggestionRow.source_id,
+                MemoryContextLinkSuggestionRow.target_type,
+                MemoryContextLinkSuggestionRow.target_id,
+                MemoryContextLinkSuggestionRow.relation_type,
+            ).where(
+                MemoryContextLinkSuggestionRow.space_id == space_id,
+                MemoryContextLinkSuggestionRow.memory_scope_id == memory_scope_id,
+                MemoryContextLinkSuggestionRow.status == "pending",
+                MemoryContextLinkSuggestionRow.relation_type.in_(
                     {signature[4] for signature in by_signature}
                 ),
             )

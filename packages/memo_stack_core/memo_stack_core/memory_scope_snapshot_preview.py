@@ -15,6 +15,7 @@ _RECORD_TYPES = (
     "captures",
     "anchors",
     "context_links",
+    "context_link_suggestions",
     "relations",
 )
 _COUNT_TYPES = (*_RECORD_TYPES, "asset_blobs", "extraction_artifact_blobs", "source_refs")
@@ -38,6 +39,7 @@ def build_memory_scope_snapshot_import_preview(
     captures = _records(payload, "captures")
     anchors = _records(payload, "anchors")
     context_links = _records(payload, "context_links")
+    context_link_suggestions = _records(payload, "context_link_suggestions")
     relations = _records(payload, "relations")
     source_refs = _records(payload, "source_refs")
     skipped = skipped_snapshot_ids(
@@ -55,6 +57,7 @@ def build_memory_scope_snapshot_import_preview(
         captures=captures,
         anchors=anchors,
         context_links=context_links,
+        context_link_suggestions=context_link_suggestions,
         relations=relations,
     )
     conflicts = _conflicts_by_type(
@@ -69,6 +72,7 @@ def build_memory_scope_snapshot_import_preview(
         captures=captures,
         anchors=anchors,
         context_links=context_links,
+        context_link_suggestions=context_link_suggestions,
         relations=relations,
     )
     superseded_fact_ids = (
@@ -88,6 +92,7 @@ def build_memory_scope_snapshot_import_preview(
             captures=captures,
             anchors=anchors,
             context_links=context_links,
+            context_link_suggestions=context_link_suggestions,
             relations=relations,
             source_refs=source_refs,
         ),
@@ -104,6 +109,7 @@ def build_memory_scope_snapshot_import_preview(
             captures=captures,
             anchors=anchors,
             context_links=context_links,
+            context_link_suggestions=context_link_suggestions,
             relations=relations,
             source_refs=source_refs,
             skipped=skipped,
@@ -119,6 +125,7 @@ def build_memory_scope_snapshot_import_preview(
             captures=captures,
             anchors=anchors,
             context_links=context_links,
+            context_link_suggestions=context_link_suggestions,
             relations=relations,
             source_refs=source_refs,
             skipped=skipped,
@@ -152,7 +159,9 @@ def snapshot_counts(
     context_links: list[dict[str, Any]],
     relations: list[dict[str, Any]],
     source_refs: list[dict[str, Any]],
+    context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
+    context_link_suggestions = context_link_suggestions or []
     return {
         "facts": len(facts),
         "documents": len(documents),
@@ -166,6 +175,7 @@ def snapshot_counts(
         "captures": len(captures),
         "anchors": len(anchors),
         "context_links": len(context_links),
+        "context_link_suggestions": len(context_link_suggestions),
         "relations": len(relations),
         "source_refs": len(source_refs),
     }
@@ -187,9 +197,11 @@ def skipped_snapshot_ids(
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
+    context_link_suggestions: list[dict[str, Any]] | None = None,
     relations: list[dict[str, Any]] | None = None,
 ) -> dict[str, set[str]]:
     relations = relations or []
+    context_link_suggestions = context_link_suggestions or []
     asset_extraction_jobs = asset_extraction_jobs or []
     extraction_artifacts = extraction_artifacts or []
     extraction_artifact_blobs = extraction_artifact_blobs or []
@@ -205,6 +217,7 @@ def skipped_snapshot_ids(
     capture_ids = _record_ids(captures)
     anchor_ids = _record_ids(anchors)
     context_link_ids = _record_ids(context_links)
+    context_link_suggestion_ids = _record_ids(context_link_suggestions)
     relation_ids = _record_ids(relations)
     skipped_facts = fact_ids & conflict_ids if merge_strategy == "skip_existing" else set()
     skipped_documents = document_ids & conflict_ids
@@ -216,6 +229,7 @@ def skipped_snapshot_ids(
     skipped_captures = capture_ids & conflict_ids
     skipped_anchors = anchor_ids & conflict_ids
     skipped_context_links = context_link_ids & conflict_ids
+    skipped_context_link_suggestions = context_link_suggestion_ids & conflict_ids
     skipped_chunks.update(
         str(chunk["id"])
         for chunk in chunks
@@ -279,6 +293,31 @@ def skipped_snapshot_ids(
             skipped_anchors=skipped_anchors,
         )
     )
+    skipped_context_link_suggestions.update(
+        str(suggestion["id"])
+        for suggestion in context_link_suggestions
+        if _context_link_endpoint_skipped(
+            suggestion,
+            fact_ids=fact_ids,
+            document_ids=document_ids,
+            episode_ids=episode_ids,
+            chunk_ids=chunk_ids,
+            asset_ids=asset_ids,
+            asset_extraction_job_ids=asset_extraction_job_ids,
+            extraction_artifact_ids=extraction_artifact_ids,
+            capture_ids=capture_ids,
+            anchor_ids=anchor_ids,
+            skipped_facts=skipped_facts,
+            skipped_documents=skipped_documents,
+            skipped_episodes=skipped_episodes,
+            skipped_chunks=skipped_chunks,
+            skipped_assets=skipped_assets,
+            skipped_asset_extraction_jobs=skipped_asset_extraction_jobs,
+            skipped_extraction_artifacts=skipped_extraction_artifacts,
+            skipped_captures=skipped_captures,
+            skipped_anchors=skipped_anchors,
+        )
+    )
     skipped_relations.update(
         str(relation["id"])
         for relation in relations
@@ -300,6 +339,7 @@ def skipped_snapshot_ids(
         "captures": skipped_captures,
         "anchors": skipped_anchors,
         "context_links": skipped_context_links,
+        "context_link_suggestions": skipped_context_link_suggestions,
         "relations": skipped_relations,
     }
 
@@ -319,9 +359,11 @@ def import_counts(
     source_refs: list[dict[str, Any]],
     skipped: dict[str, set[str]],
     relations: list[dict[str, Any]] | None = None,
+    context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     skipped_source_refs = _skipped_source_ref_indexes(source_refs=source_refs, skipped=skipped)
     relations = relations or []
+    context_link_suggestions = context_link_suggestions or []
     return {
         "facts": len(facts) - _count_skipped(facts, skipped["facts"]),
         "documents": len(documents) - _count_skipped(documents, skipped["documents"]),
@@ -336,6 +378,11 @@ def import_counts(
         "anchors": len(anchors) - _count_skipped(anchors, skipped["anchors"]),
         "context_links": len(context_links)
         - _count_skipped(context_links, skipped["context_links"]),
+        "context_link_suggestions": len(context_link_suggestions)
+        - _count_skipped(
+            context_link_suggestions,
+            skipped.get("context_link_suggestions", set()),
+        ),
         "relations": len(relations) - _count_skipped(relations, skipped["relations"]),
         "source_refs": len(source_refs) - len(skipped_source_refs),
     }
@@ -356,8 +403,10 @@ def _skipped_counts(
     relations: list[dict[str, Any]],
     source_refs: list[dict[str, Any]],
     skipped: dict[str, set[str]],
+    context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     skipped_source_refs = _skipped_source_ref_indexes(source_refs=source_refs, skipped=skipped)
+    context_link_suggestions = context_link_suggestions or []
     return {
         "facts": _count_skipped(facts, skipped["facts"]),
         "documents": _count_skipped(documents, skipped["documents"]),
@@ -375,6 +424,10 @@ def _skipped_counts(
         "captures": _count_skipped(captures, skipped["captures"]),
         "anchors": _count_skipped(anchors, skipped["anchors"]),
         "context_links": _count_skipped(context_links, skipped["context_links"]),
+        "context_link_suggestions": _count_skipped(
+            context_link_suggestions,
+            skipped.get("context_link_suggestions", set()),
+        ),
         "relations": _count_skipped(relations, skipped["relations"]),
         "source_refs": len(skipped_source_refs),
     }
@@ -394,7 +447,9 @@ def _conflicts_by_type(
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
     relations: list[dict[str, Any]],
+    context_link_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, set[str]]:
+    context_link_suggestions = context_link_suggestions or []
     conflicts = {
         "facts": _record_ids(facts) & conflict_ids,
         "documents": _record_ids(documents) & conflict_ids,
@@ -406,6 +461,7 @@ def _conflicts_by_type(
         "captures": _record_ids(captures) & conflict_ids,
         "anchors": _record_ids(anchors) & conflict_ids,
         "context_links": _record_ids(context_links) & conflict_ids,
+        "context_link_suggestions": _record_ids(context_link_suggestions) & conflict_ids,
         "relations": _record_ids(relations) & conflict_ids,
     }
     known = set().union(*conflicts.values())
@@ -435,6 +491,8 @@ def _preview_warnings(
         warnings.append("some_relations_will_be_skipped")
     if skipped["context_links"]:
         warnings.append("some_context_links_will_be_skipped")
+    if skipped.get("context_link_suggestions"):
+        warnings.append("some_context_link_suggestions_will_be_skipped")
     if conflict_ids and merge_strategy == "fail_on_conflict":
         warnings.append("conflicts_block_import")
     return warnings

@@ -96,6 +96,35 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
                 "relation_type": "mentions",
             },
         ],
+        "context_link_suggestions": [
+            {
+                "id": "context_link_suggestion_keep",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "anchor",
+                "target_id": "anchor_keep",
+                "relation_type": "related_to",
+                "status": "pending",
+            },
+            {
+                "id": "context_link_suggestion_conflict",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "anchor",
+                "target_id": "anchor_keep",
+                "relation_type": "related_to",
+                "status": "pending",
+            },
+            {
+                "id": "context_link_suggestion_anchor_skip",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "anchor",
+                "target_id": "anchor_conflict",
+                "relation_type": "related_to",
+                "status": "pending",
+            },
+        ],
         "relations": [
             {
                 "id": "relation_keep",
@@ -114,7 +143,13 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     skip_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
         merge_strategy="skip_existing",
-        conflict_ids={"fact_conflict", "doc_conflict", "capture_conflict", "anchor_conflict"},
+        conflict_ids={
+            "fact_conflict",
+            "doc_conflict",
+            "capture_conflict",
+            "anchor_conflict",
+            "context_link_suggestion_conflict",
+        },
     )
     supersede_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
@@ -135,6 +170,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "captures": 2,
         "anchors": 2,
         "context_links": 7,
+        "context_link_suggestions": 3,
         "relations": 1,
         "source_refs": 3,
     }
@@ -142,6 +178,9 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     assert skip_preview["conflicts"]["documents"] == ["doc_conflict"]
     assert skip_preview["conflicts"]["captures"] == ["capture_conflict"]
     assert skip_preview["conflicts"]["anchors"] == ["anchor_conflict"]
+    assert skip_preview["conflicts"]["context_link_suggestions"] == [
+        "context_link_suggestion_conflict"
+    ]
     assert skip_preview["would_skip"] == {
         "facts": 1,
         "documents": 1,
@@ -153,6 +192,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "captures": 1,
         "anchors": 1,
         "context_links": 3,
+        "context_link_suggestions": 2,
         "relations": 1,
         "source_refs": 2,
     }
@@ -167,6 +207,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "captures": 1,
         "anchors": 1,
         "context_links": 4,
+        "context_link_suggestions": 1,
         "relations": 0,
         "source_refs": 1,
     }
@@ -176,6 +217,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     assert "some_extraction_artifacts_will_be_skipped" in skip_preview["warnings"]
     assert "some_relations_will_be_skipped" in skip_preview["warnings"]
     assert "some_context_links_will_be_skipped" in skip_preview["warnings"]
+    assert "some_context_link_suggestions_will_be_skipped" in skip_preview["warnings"]
     assert supersede_preview["would_supersede"] == {
         "facts": 1,
         "fact_ids": ["fact_conflict"],

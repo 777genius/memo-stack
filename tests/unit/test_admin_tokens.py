@@ -1502,6 +1502,7 @@ def test_import_memory_scope_enqueues_projection_reindex_events(
         "captures": 0,
         "anchors": 0,
         "context_links": 0,
+        "context_link_suggestions": 0,
         "relations": 0,
         "source_refs": 1,
     }
@@ -1642,6 +1643,7 @@ def test_import_memory_scope_drops_thread_ids_without_thread_transfer(
         "captures": 0,
         "anchors": 0,
         "context_links": 0,
+        "context_link_suggestions": 0,
         "relations": 0,
         "source_refs": 1,
     }
@@ -1799,6 +1801,7 @@ def test_import_memory_scope_transfers_episode_chunks_with_import_thread(
         "captures": 0,
         "anchors": 0,
         "context_links": 0,
+        "context_link_suggestions": 0,
         "relations": 0,
         "source_refs": 1,
     }
@@ -1962,6 +1965,7 @@ def test_import_memory_scope_skips_episode_chunks_without_episode_transfer(
         "captures": 0,
         "anchors": 0,
         "context_links": 0,
+        "context_link_suggestions": 0,
         "relations": 0,
         "source_refs": 0,
     }

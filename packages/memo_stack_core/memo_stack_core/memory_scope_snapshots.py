@@ -77,12 +77,11 @@ def build_snapshot_manifest(
             "asset_blobs": _list_count(snapshot.get("asset_blobs")),
             "asset_extraction_jobs": _list_count(snapshot.get("asset_extraction_jobs")),
             "extraction_artifacts": _list_count(snapshot.get("extraction_artifacts")),
-            "extraction_artifact_blobs": _list_count(
-                snapshot.get("extraction_artifact_blobs")
-            ),
+            "extraction_artifact_blobs": _list_count(snapshot.get("extraction_artifact_blobs")),
             "captures": _list_count(snapshot.get("captures")),
             "anchors": _list_count(snapshot.get("anchors")),
             "context_links": _list_count(snapshot.get("context_links")),
+            "context_link_suggestions": _list_count(snapshot.get("context_link_suggestions")),
             "relations": _list_count(snapshot.get("relations")),
             "source_refs": _list_count(snapshot.get("source_refs")),
         },
@@ -166,10 +165,10 @@ def stable_snapshot_bytes(payload: dict[str, Any]) -> bytes:
 
 
 def stable_json_bytes(payload: dict[str, Any]) -> bytes:
-    return (
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
-        + "\n"
-    ).encode("utf-8")
+    return (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+
 
 def _list_count(value: object) -> int:
     return len(value) if isinstance(value, list) else 0

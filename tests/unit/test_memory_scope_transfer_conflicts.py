@@ -8,6 +8,7 @@ from memo_stack_adapters.postgres import build_async_engine, create_schema
 from memo_stack_adapters.postgres.models import (
     MemoryAnchorRow,
     MemoryContextLinkRow,
+    MemoryContextLinkSuggestionRow,
     MemoryScopeRow,
     MemorySpaceRow,
 )
@@ -84,6 +85,44 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
                             created_at=now,
                             updated_at=now,
                         ),
+                        MemoryContextLinkSuggestionRow(
+                            id="context_link_suggestion_existing_pending",
+                            space_id="space_conflict",
+                            memory_scope_id="scope_conflict",
+                            source_type="capture",
+                            source_id="capture_a",
+                            target_type="anchor",
+                            target_id="anchor_b",
+                            relation_type="related_to",
+                            confidence="medium",
+                            reason="Existing pending suggestion.",
+                            score=0.9,
+                            status="pending",
+                            metadata_json={},
+                            created_at=now,
+                            updated_at=now,
+                            reviewed_at=None,
+                            review_reason=None,
+                        ),
+                        MemoryContextLinkSuggestionRow(
+                            id="context_link_suggestion_existing_rejected",
+                            space_id="space_conflict",
+                            memory_scope_id="scope_conflict",
+                            source_type="capture",
+                            source_id="capture_c",
+                            target_type="anchor",
+                            target_id="anchor_c",
+                            relation_type="related_to",
+                            confidence="medium",
+                            reason="Existing rejected suggestion.",
+                            score=0.2,
+                            status="rejected",
+                            metadata_json={},
+                            created_at=now,
+                            updated_at=now,
+                            reviewed_at=now,
+                            review_reason="not relevant",
+                        ),
                     ]
                 )
                 await session.commit()
@@ -122,6 +161,26 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
                             "relation_type": "mentions",
                         }
                     ],
+                    context_link_suggestions=[
+                        {
+                            "id": "context_link_suggestion_snapshot_pending",
+                            "source_type": "capture",
+                            "source_id": "capture_a",
+                            "target_type": "anchor",
+                            "target_id": "anchor_b",
+                            "relation_type": "related_to",
+                            "status": "pending",
+                        },
+                        {
+                            "id": "context_link_suggestion_snapshot_rejected_history",
+                            "source_type": "capture",
+                            "source_id": "capture_c",
+                            "target_type": "anchor",
+                            "target_id": "anchor_c",
+                            "relation_type": "related_to",
+                            "status": "pending",
+                        },
+                    ],
                     relations=[],
                 )
         finally:
@@ -129,4 +188,7 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
 
     conflicts = asyncio.run(run())
 
-    assert conflicts == ["anchor_snapshot_project_atlas"]
+    assert conflicts == [
+        "anchor_snapshot_project_atlas",
+        "context_link_suggestion_snapshot_pending",
+    ]
