@@ -13,13 +13,17 @@ import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/data/datasources/backend_rest_client.dart';
 import 'package:frontend/src/features/chat/domain/entities/connection_status.dart';
 
 @LazySingleton(as: ChatRepository)
 class ChatRepositoryImpl
-    implements ChatRepository, ConversationStateRepository {
+    implements
+        ChatRepository,
+        ConversationStateRepository,
+        AttachmentUploadLimits {
   final BackendRestClient _rest;
   String Function() _spaceSlugGetter;
   String Function() _memoryScopeExternalRefGetter;
@@ -51,6 +55,7 @@ class ChatRepositoryImpl
   ConnectionStatus _lastWsStatus = ConnectionStatus.connecting;
   bool _lastHealthOk = false;
   ConnectionStatus? _lastEffectiveStatus;
+  int? _cachedMaxUploadBytes;
 
   String? _sessionId;
   String? _activeChatId;
@@ -785,6 +790,27 @@ class ChatRepositoryImpl
     return rows.map(MemoryContextLink.fromMap).toList(growable: false);
   }
 
+  @override
+  Future<int> maxUploadBytes() async {
+    final cached = _cachedMaxUploadBytes;
+    try {
+      final capabilities = await _rest.capabilities();
+      final maxBytes = _positiveNestedInt(
+            capabilities,
+            const ['limits', 'max_asset_upload_bytes'],
+          ) ??
+          _positiveNestedInt(
+            capabilities,
+            const ['extraction', 'limits', 'max_bytes'],
+          ) ??
+          AttachmentUploadDefaults.maxBytes;
+      _cachedMaxUploadBytes = maxBytes;
+      return maxBytes;
+    } catch (_) {
+      return cached ?? AttachmentUploadDefaults.maxBytes;
+    }
+  }
+
   void _emitEffectiveStatus() {
     ConnectionStatus eff;
     switch (_lastWsStatus) {
@@ -908,4 +934,19 @@ String _titleFromRef(String ref) {
       .where((part) => part.isNotEmpty)
       .map((part) => part[0].toUpperCase() + part.substring(1))
       .join(' ');
+}
+
+int? _positiveNestedInt(Map<String, dynamic> root, List<String> path) {
+  Object? cursor = root;
+  for (final key in path) {
+    if (cursor is! Map) return null;
+    cursor = cursor[key];
+  }
+  if (cursor is int && cursor > 0) return cursor;
+  if (cursor is num && cursor > 0) return cursor.toInt();
+  if (cursor is String) {
+    final parsed = int.tryParse(cursor);
+    if (parsed != null && parsed > 0) return parsed;
+  }
+  return null;
 }

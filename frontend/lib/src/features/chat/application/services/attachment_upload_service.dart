@@ -1,19 +1,22 @@
 import 'package:frontend/src/features/chat/application/services/attachment_upload_models.dart';
 import 'package:frontend/src/features/chat/application/services/image_attachment_preprocessor.dart';
+import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 
 class AttachmentUploadService {
-  static const int defaultMaxBytes = 25 * 1024 * 1024;
   static const int inlinePreviewMaxBytes = 2 * 1024 * 1024;
 
   final ChatRepository _repo;
-  final int _maxBytes;
+  final AttachmentUploadLimits? _limits;
+  final int _fallbackMaxBytes;
 
   const AttachmentUploadService({
     required ChatRepository repo,
-    int maxBytes = defaultMaxBytes,
+    AttachmentUploadLimits? limits,
+    int maxBytes = AttachmentUploadDefaults.maxBytes,
   })  : _repo = repo,
-        _maxBytes = maxBytes;
+        _limits = limits,
+        _fallbackMaxBytes = maxBytes;
 
   Future<List<String>> uploadAll(
     List<AttachmentUploadDraft> drafts, {
@@ -23,14 +26,15 @@ class AttachmentUploadService {
     final batchId = DateTime.now().microsecondsSinceEpoch.toString();
     final total = drafts.length;
     final uploaded = <String>[];
+    final maxBytes = await _maxBytes();
 
     for (var index = 0; index < drafts.length; index += 1) {
       final draft = drafts[index];
       final result = await _prepare(draft);
       final bytes = result.bytes;
-      if (bytes.length > _maxBytes) {
+      if (bytes.length > maxBytes) {
         progress?.start(draft.name, bytes.length);
-        progress?.fail(draft.name, 'too large');
+        progress?.fail(draft.name, _tooLargeMessage(bytes.length, maxBytes));
         continue;
       }
 
@@ -88,6 +92,33 @@ class AttachmentUploadService {
       mime: compressed.mime,
       previewBase64: await makePreviewBase64(compressed.bytes),
     );
+  }
+
+  Future<int> _maxBytes() async {
+    final limits = _limits;
+    if (limits == null) return _fallbackMaxBytes;
+    try {
+      final value = await limits.maxUploadBytes();
+      if (value > 0) return value;
+    } catch (_) {}
+    return _fallbackMaxBytes;
+  }
+
+  String _tooLargeMessage(int actualBytes, int maxBytes) {
+    return 'File is too large: ${_formatBytes(actualBytes)} exceeds '
+        '${_formatBytes(maxBytes)} upload limit';
+  }
+
+  String _formatBytes(int bytes) {
+    const mb = 1024 * 1024;
+    const kb = 1024;
+    if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(1)} KB';
+    }
+    return '$bytes B';
   }
 }
 

@@ -301,6 +301,7 @@ def build_container(settings: Settings | None = None) -> Container:
             "max_pending_suggestions_per_memory_scope": (
                 resolved_settings.max_pending_suggestions_per_memory_scope
             ),
+            "max_asset_upload_bytes": resolved_settings.max_asset_upload_bytes,
             "media_analysis_seconds_per_month": (product_plan.media_analysis_seconds_per_month),
         },
     )

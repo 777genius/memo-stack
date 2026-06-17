@@ -524,6 +524,11 @@ class BackendRestClient {
     return (resp.data as Map<String, dynamic>);
   }
 
+  Future<Map<String, dynamic>> capabilities() async {
+    final resp = await _dio.get<Map<String, dynamic>>('/v1/capabilities');
+    return resp.data ?? const <String, dynamic>{};
+  }
+
   Map<String, dynamic> _data(Map<String, dynamic>? response) {
     final data = response?['data'];
     if (data is Map<String, dynamic>) return data;

@@ -97,11 +97,10 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["limits"]["max_capture_text_chars"] == 20_000
     assert body["limits"]["max_pending_captures_per_memory_scope"] == 5_000
     assert body["limits"]["max_pending_suggestions_per_memory_scope"] == 500
+    assert body["limits"]["max_asset_upload_bytes"] == 25 * 1024 * 1024
     assert body["limits"]["media_analysis_seconds_per_month"] == 10 * 60 * 60
     assert body["plans"]["current"] == "free"
-    assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == (
-        10 * 60 * 60
-    )
+    assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == (10 * 60 * 60)
     assert body["extraction"]["enabled"] is True
     assert body["extraction"]["default_profile"] == "standard_local"
     assert body["extraction"]["profiles"] == [
@@ -118,9 +117,7 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["extraction"]["optional_extras"]["vision"]["configured"] is False
     assert body["extraction"]["optional_extras"]["vision"]["model"] == "gpt-4.1-mini"
     assert body["extraction"]["optional_extras"]["vision"]["detail"] == "high"
-    assert isinstance(
-        body["extraction"]["optional_extras"]["transcription_api"]["installed"], bool
-    )
+    assert isinstance(body["extraction"]["optional_extras"]["transcription_api"]["installed"], bool)
     assert body["extraction"]["optional_extras"]["transcription_api"]["configured"] is False
     assert body["extraction"]["optional_extras"]["transcription_api"]["provider"] == "openai"
     assert (
@@ -128,9 +125,7 @@ def test_capabilities_return_noop_adapters() -> None:
         == "gpt-4o-mini-transcribe"
     )
     assert (
-        body["extraction"]["optional_extras"]["transcription_api"][
-            "max_provider_upload_bytes"
-        ]
+        body["extraction"]["optional_extras"]["transcription_api"]["max_provider_upload_bytes"]
         == OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
     )
     assert isinstance(
@@ -160,6 +155,7 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
             embeddings_enabled=False,
             extraction_default_profile="media_api",
             extraction_external_ai_enabled=True,
+            max_asset_upload_bytes=77_777,
             extraction_max_bytes=123_456,
             extraction_max_pages=7,
             extraction_max_media_seconds=42,
@@ -188,14 +184,8 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["optional_extras"]["vision"]["detail"] == "low"
     assert extraction["optional_extras"]["transcription_api"]["configured"] is True
     assert extraction["optional_extras"]["transcription_api"]["provider"] == "openai"
-    assert (
-        extraction["optional_extras"]["transcription_api"]["model"]
-        == "gpt-4o-transcribe"
-    )
-    assert (
-        extraction["optional_extras"]["transcription_api"]["max_provider_upload_bytes"]
-        == 12_345
-    )
+    assert extraction["optional_extras"]["transcription_api"]["model"] == "gpt-4o-transcribe"
+    assert extraction["optional_extras"]["transcription_api"]["max_provider_upload_bytes"] == 12_345
     assert extraction["limits"] == {
         "max_bytes": 123_456,
         "max_pages": 7,
@@ -204,6 +194,7 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
         "max_tables": 3,
         "ocr_enabled": False,
     }
+    assert body["limits"]["max_asset_upload_bytes"] == 77_777
     assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == 3_600
     assert "sk-capabilities-secret" not in response.text
 

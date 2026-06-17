@@ -16,6 +16,7 @@ import 'package:frontend/src/features/chat/data/datasources/backend_rest_client.
 import 'package:frontend/src/features/chat/data/services/local_downloaded_file_opener.dart';
 import 'package:frontend/src/features/chat/data/services/pasteboard_clipboard_attachment_reader.dart';
 import 'package:frontend/src/features/chat/data/services/platform_attachment_file_picker.dart';
+import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/app/config/app_config.dart';
 import 'package:frontend/src/presentation/stores/theme_store.dart';
 import 'package:frontend/src/presentation/theme/app_theme.dart';
@@ -143,7 +144,12 @@ class AppRoot extends StatelessWidget {
               },
             ),
             ProxyProvider<ChatRepository, AttachmentUploadService>(
-              update: (_, repo, __) => AttachmentUploadService(repo: repo),
+              update: (_, repo, __) => AttachmentUploadService(
+                repo: repo,
+                limits: repo is AttachmentUploadLimits
+                    ? repo as AttachmentUploadLimits
+                    : null,
+              ),
             ),
             ProxyProvider2<ChatRepository, DownloadedFileOpener,
                 OpenExtractionArtifact>(

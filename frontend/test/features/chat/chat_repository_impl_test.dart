@@ -99,6 +99,20 @@ void main() {
       await repo.dispose();
     });
 
+    test('reads asset upload limit from capabilities with cached fallback',
+        () async {
+      final rest = _CapabilitiesRestClient();
+      final repo = ChatRepositoryImpl(rest);
+
+      expect(await repo.maxUploadBytes(), 12345);
+
+      rest.fail = true;
+      expect(await repo.maxUploadBytes(), 12345);
+      expect(rest.calls, 2);
+
+      await repo.dispose();
+    });
+
     test('listAssetExtractions hydrates artifacts for succeeded jobs',
         () async {
       final rest = _ExtractionListRestClient();
@@ -656,6 +670,29 @@ class _UploadRecordingRestClient extends BackendRestClient {
       'extraction': {
         'id': 'extract-1',
         'status': 'pending',
+      },
+    };
+  }
+}
+
+class _CapabilitiesRestClient extends BackendRestClient {
+  var calls = 0;
+  var fail = false;
+
+  @override
+  Future<Map<String, dynamic>> capabilities() async {
+    calls += 1;
+    if (fail) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/v1/capabilities'),
+        type: DioExceptionType.connectionError,
+        error: 'offline',
+      );
+    }
+    return {
+      'limits': {'max_asset_upload_bytes': '12345'},
+      'extraction': {
+        'limits': {'max_bytes': 999},
       },
     };
   }
