@@ -38,6 +38,7 @@ _TEMPORAL_PATTERN = re.compile(
 )
 _PERSON_STOP_WORDS = {
     "api",
+    "call",
     "e2e",
     "frontend",
     "backend",
@@ -46,6 +47,10 @@ _PERSON_STOP_WORDS = {
     "memo",
     "memory",
     "project",
+    "meeting",
+    "review",
+    "sync",
+    "demo",
     "chat",
     "message",
     "conversation",
@@ -71,6 +76,18 @@ _PERSON_STOP_WORDS = {
     "docling",
     "скриншот",
     "проект",
+    "час",
+    "часа",
+    "часов",
+    "неделя",
+    "неделю",
+    "вчера",
+    "сегодня",
+    "завтра",
+    "созвон",
+    "разговор",
+    "переписка",
+    "переписывался",
     "встреча",
     "звонок",
 }
@@ -214,7 +231,7 @@ def _append_anchor(
             metadata={
                 "extraction_reason": reason,
                 "extractor": "anchor-rule-v2",
-                "canonical_key": canonical_anchor_key(label),
+                "canonical_key": _canonical_key_for(kind, label),
             },
         )
     )
@@ -243,7 +260,11 @@ def _event_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for match in _EVENT_PATTERN.finditer(text):
         event = match.group(1).strip()
-        temporal = (match.group(2) or _nearby_temporal(text, match.end())).strip()
+        temporal = (
+            match.group(2)
+            or _nearby_temporal_after(text, match.end())
+            or _nearby_temporal_before(text, match.start())
+        ).strip()
         label = f"{event} {temporal}".strip()
         labels.append(label)
     return tuple(labels)
@@ -264,9 +285,16 @@ def _person_labels(text: str) -> tuple[str, ...]:
     return tuple(labels)
 
 
-def _nearby_temporal(text: str, start: int) -> str:
-    match = _TEMPORAL_PATTERN.search(text[start : start + 80])
+def _nearby_temporal_after(text: str, start: int) -> str:
+    tail = re.split(r"[.!?\n]", text[start : start + 80], maxsplit=1)[0]
+    match = _TEMPORAL_PATTERN.search(tail)
     return match.group(1) if match else ""
+
+
+def _nearby_temporal_before(text: str, end: int) -> str:
+    prefix = re.split(r"[.!?\n]", text[max(0, end - 80) : end])[-1]
+    matches = list(_TEMPORAL_PATTERN.finditer(prefix))
+    return matches[-1].group(1) if matches else ""
 
 
 def _is_project_qualified_person_match(text: str, start: int) -> bool:
@@ -282,6 +310,40 @@ def _is_probable_person_label(label: str) -> bool:
         return False
     first = normalized.split()[0]
     return first not in _PERSON_STOP_WORDS
+
+
+def _canonical_key_for(kind: MemoryAnchorKind, label: str) -> str:
+    if kind == MemoryAnchorKind.PERSON:
+        return _canonical_person_key(label)
+    return canonical_anchor_key(label)
+
+
+def _canonical_person_key(label: str) -> str:
+    normalized = normalize_anchor_key(label)
+    parts = [_normalize_cyrillic_person_case(part) for part in normalized.split()]
+    return " ".join(
+        part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks")
+        for part in parts
+        if part
+    )
+
+
+def _normalize_cyrillic_person_case(part: str) -> str:
+    if not re.search(r"[а-яё]", part, re.IGNORECASE):
+        return part
+    if len(part) <= 4:
+        return part
+    if part.endswith("ией"):
+        return f"{part[:-3]}ия"
+    if part.endswith("еем"):
+        return f"{part[:-3]}ей"
+    if part.endswith("ием"):
+        return f"{part[:-3]}ий"
+    if part.endswith("ой"):
+        return f"{part[:-2]}а"
+    if part.endswith(("ом", "ем")):
+        return part[:-2]
+    return part
 
 
 def _terms(text: str) -> tuple[str, ...]:

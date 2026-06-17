@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+import subprocess
 import wave
 from io import BytesIO
 from pathlib import Path
@@ -51,6 +52,32 @@ def sample_wav_bytes(seconds: int = 1) -> bytes:
     return buffer.getvalue()
 
 
+def sample_mp4_bytes(tmp_path: Path) -> bytes:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("ffmpeg is not available")
+    video_path = tmp_path / "product-demo.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=32x32:d=1",
+            "-pix_fmt",
+            "yuv420p",
+            str(video_path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=20,
+    )
+    return video_path.read_bytes()
+
+
 class _FakeTranscriptionResponse:
     text = "Alex discussed memory scopes from a voice note."
     language = "en"
@@ -78,6 +105,38 @@ class _FakeAudioClient:
 
 class _FakeTranscriptionClient:
     audio = _FakeAudioClient()
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FakeVideoTranscriptionResponse:
+    text = "Alex narrated the product demo while showing the memory review panel."
+    language = "en"
+    duration = 1.0
+    segments = [
+        {
+            "start": 0.0,
+            "end": 1.0,
+            "text": "Alex narrated the product demo while showing the memory review panel.",
+        }
+    ]
+
+
+class _FakeVideoAudioTranscriptions:
+    async def create(self, **kwargs: Any) -> _FakeVideoTranscriptionResponse:
+        assert kwargs["model"] == "gpt-4o-mini-transcribe"
+        assert kwargs["response_format"] == "json"
+        assert kwargs["file"].name == "product-demo.mp4"
+        return _FakeVideoTranscriptionResponse()
+
+
+class _FakeVideoAudioClient:
+    transcriptions = _FakeVideoAudioTranscriptions()
+
+
+class _FakeVideoTranscriptionClient:
+    audio = _FakeVideoAudioClient()
 
     async def aclose(self) -> None:
         return None
@@ -179,6 +238,107 @@ def test_audio_asset_extraction_uses_api_first_transcription(
         assert source_refs[0]["asset_id"] == upload.json()["data"]["id"]
         assert source_refs[0]["time_start_ms"] == 0
         assert source_refs[0]["time_end_ms"] == 1000
+
+
+def test_video_asset_extraction_uses_api_transcript_and_keyframes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if not shutil.which("ffprobe"):
+        pytest.skip("ffprobe is not available")
+
+    monkeypatch.setattr(
+        OpenAISpeechTranscriptionAdapter,
+        "_client",
+        lambda self: _FakeVideoTranscriptionClient(),
+    )
+    with make_client(
+        tmp_path,
+        extraction_external_ai_enabled=True,
+        extraction_default_profile="media_api",
+        openai_api_key="test-key",
+        transcription_provider="openai",
+        transcription_openai_model="gpt-4o-mini-transcribe",
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "screen-recordings",
+                "filename": "product-demo.mp4",
+                "extract": "true",
+                "estimated_media_seconds": 1,
+            },
+            content=sample_mp4_bytes(tmp_path),
+            headers=auth_headers({"Content-Type": "video/mp4"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["parser_name"] == "speech_transcription"
+        assert extracted["metadata"]["transcript_status"] == "extracted"
+        assert extracted["metadata"]["keyframe_status"] == "extracted"
+        assert extracted["metadata"]["video_keyframe_count"] >= 1
+        artifact_types = {item["artifact_type"] for item in extracted["artifacts"]}
+        assert {
+            "extracted_json",
+            "keyframe",
+            "markdown",
+            "media_manifest",
+            "transcript",
+            "transcript_json",
+            "video_frame_timeline",
+        }.issubset(artifact_types)
+
+        transcript_artifact = next(
+            item for item in extracted["artifacts"] if item["artifact_type"] == "transcript_json"
+        )
+        transcript_download = client.get(
+            f"/v1/extraction-artifacts/{transcript_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert transcript_download.status_code == 200, transcript_download.text
+        transcript_payload = json.loads(transcript_download.content.decode("utf-8"))
+        assert transcript_payload["schema_name"] == "memo_stack.transcript"
+        assert transcript_payload["segments"][0]["start_ms"] == 0
+        assert transcript_payload["segments"][0]["end_ms"] == 1000
+
+        timeline_artifact = next(
+            item
+            for item in extracted["artifacts"]
+            if item["artifact_type"] == "video_frame_timeline"
+        )
+        timeline_download = client.get(
+            f"/v1/extraction-artifacts/{timeline_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert timeline_download.status_code == 200, timeline_download.text
+        timeline_payload = json.loads(timeline_download.content.decode("utf-8"))
+        assert timeline_payload["schema_name"] == "memo_stack.video_frame_timeline"
+        assert timeline_payload["frames"]
+
+        chunks = client.get(
+            f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",
+            headers=auth_headers(),
+        )
+        assert chunks.status_code == 200, chunks.text
+        chunk_payload = chunks.json()["data"]
+        chunk_text = " ".join(item["text"] for item in chunk_payload)
+        assert "Alex narrated the product demo" in chunk_text
+        source_refs = [ref for chunk in chunk_payload for ref in chunk["source_refs"]]
+        assert any(ref.get("time_start_ms") == 0 for ref in source_refs)
+        assert any(ref.get("time_end_ms") == 1000 for ref in source_refs)
 
 
 def test_audio_asset_extraction_provider_failure_falls_back_to_media_metadata(

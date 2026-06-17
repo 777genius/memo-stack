@@ -29,6 +29,7 @@ _SUPPORTED_CONTENT_TYPES = {
     "video/mp4",
     "video/webm",
 }
+OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
@@ -62,6 +63,15 @@ class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
             return self._unsupported(
                 code="asset_extraction.transcription_missing_api_key",
                 message="OpenAI API key is missing for speech transcription",
+            )
+        if request.byte_size > OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES:
+            return self._unsupported(
+                code="asset_extraction.transcription_file_too_large",
+                message="Media exceeds OpenAI speech transcription upload limit",
+                diagnostics={
+                    "byte_size": request.byte_size,
+                    "max_provider_upload_bytes": OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+                },
             )
 
         client = None

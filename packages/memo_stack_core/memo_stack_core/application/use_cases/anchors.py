@@ -459,6 +459,13 @@ async def _upsert_observed_anchor(
         kind=observed.kind.value,
         normalized_key=observed.normalized_key,
     )
+    if existing is None:
+        existing = await _find_active_by_observed_canonical_key(
+            uow,
+            observed=observed,
+            space_id=space_id,
+            memory_scope_id=memory_scope_id,
+        )
     metadata = {
         **observed.metadata,
         "last_backfill_source_type": source_type,
@@ -466,14 +473,23 @@ async def _upsert_observed_anchor(
         "resolver_version": _ANCHOR_RESOLVER_VERSION,
     }
     if existing is not None:
-        saved = await uow.anchors.save(
-            existing.merge_observation(
+        merged = (
+            existing.update_details(
+                normalized_key=observed.normalized_key,
                 label=observed.label,
                 aliases=observed.aliases,
                 metadata=metadata,
                 now=now,
             )
+            if _should_promote_observed_key(existing, observed)
+            else existing.merge_observation(
+                label=_preferred_observed_label(existing, observed),
+                aliases=observed.aliases,
+                metadata=metadata,
+                now=now,
+            )
         )
+        saved = await uow.anchors.save(merged)
         return saved, False
     saved = await uow.anchors.create(
         MemoryAnchor.create(
@@ -490,6 +506,78 @@ async def _upsert_observed_anchor(
         )
     )
     return saved, True
+
+
+async def _find_active_by_observed_canonical_key(
+    uow: UnitOfWorkPort,
+    *,
+    observed: ObservedAnchor,
+    space_id: SpaceId,
+    memory_scope_id: MemoryScopeId,
+) -> MemoryAnchor | None:
+    observed_key = _observed_canonical_key(observed)
+    if not observed_key:
+        return None
+    anchors = await uow.anchors.list_for_scope(
+        space_id=str(space_id),
+        memory_scope_id=str(memory_scope_id),
+        kind=observed.kind.value,
+        status=LifecycleStatus.ACTIVE.value,
+        limit=500,
+    )
+    for anchor in anchors:
+        if observed_key in _canonical_anchor_keys(anchor) and _same_script_family(
+            anchor.label,
+            observed.label,
+        ):
+            return anchor
+    return None
+
+
+def _preferred_observed_label(anchor: MemoryAnchor, observed: ObservedAnchor) -> str | None:
+    observed_key = _observed_canonical_key(observed)
+    if (
+        observed_key
+        and observed_key in _canonical_anchor_keys(anchor)
+        and len(normalize_anchor_key(anchor.label)) <= len(normalize_anchor_key(observed.label))
+    ):
+        return None
+    return observed.label
+
+
+def _should_promote_observed_key(anchor: MemoryAnchor, observed: ObservedAnchor) -> bool:
+    observed_key = _observed_canonical_key(observed)
+    return bool(
+        observed_key
+        and observed_key in _canonical_anchor_keys(anchor)
+        and _same_script_family(anchor.label, observed.label)
+        and anchor.normalized_key != observed.normalized_key
+        and len(normalize_anchor_key(observed.label)) < len(normalize_anchor_key(anchor.label))
+    )
+
+
+def _observed_canonical_key(observed: ObservedAnchor) -> str | None:
+    value = observed.metadata.get("canonical_key")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _same_script_family(left: str, right: str) -> bool:
+    left_family = _script_family(left)
+    right_family = _script_family(right)
+    return left_family == right_family and left_family != "mixed"
+
+
+def _script_family(value: str) -> str:
+    normalized = normalize_anchor_key(value)
+    has_cyrillic = bool(any("а" <= char <= "я" or char == "ё" for char in normalized))
+    has_latin = bool(any("a" <= char <= "z" for char in normalized))
+    if has_cyrillic and has_latin:
+        return "mixed"
+    if has_cyrillic:
+        return "cyrillic"
+    if has_latin:
+        return "latin"
+    return "other"
 
 
 def _rank_merge_candidates(anchors: list[MemoryAnchor]) -> list[AnchorMergeCandidate]:

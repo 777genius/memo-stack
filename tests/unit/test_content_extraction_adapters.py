@@ -15,6 +15,7 @@ from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtract
 from memo_stack_adapters.extraction.image_evidence import parse_tesseract_tsv
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
 from memo_stack_adapters.extraction.transcription.openai_adapter import (
+    OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
     OpenAISpeechTranscriptionAdapter,
 )
 from memo_stack_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
@@ -320,6 +321,44 @@ def test_openai_speech_transcription_adapter_transcribes_audio() -> None:
     assert result.diagnostics["response_format"] == "json"
 
 
+def test_openai_speech_transcription_adapter_rejects_provider_upload_over_limit() -> None:
+    provider_called = False
+
+    def client_factory() -> _FakeTranscriptionClient:
+        nonlocal provider_called
+        provider_called = True
+        return _FakeTranscriptionClient()
+
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key=None,
+        model="gpt-4o-mini-transcribe",
+        client_factory=client_factory,
+    )
+
+    result = asyncio.run(
+        adapter.transcribe(
+            SpeechTranscriptionRequest(
+                job_id="extract_1",
+                asset_id="asset_1",
+                filename="voice-note.wav",
+                content_type="audio/wav",
+                byte_size=OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES + 1,
+                sha256_hex="0" * 64,
+                content=b"small test fixture",
+                max_output_chars=1000,
+            )
+        )
+    )
+
+    assert provider_called is False
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.transcription_file_too_large"
+    assert result.diagnostics == {
+        "byte_size": OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES + 1,
+        "max_provider_upload_bytes": OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+    }
+
+
 def test_openai_speech_transcription_adapter_requests_whisper_segment_timestamps() -> None:
     adapter = OpenAISpeechTranscriptionAdapter(
         api_key=None,
@@ -441,6 +480,44 @@ def test_speech_transcription_engine_disabled_egress_falls_back_to_media_metadat
     assert result.diagnostics["speech_transcription_fallback"] is True
 
 
+def test_speech_transcription_router_falls_back_when_provider_upload_is_too_large() -> None:
+    provider_called = False
+
+    def client_factory() -> _FakeTranscriptionClient:
+        nonlocal provider_called
+        provider_called = True
+        return _FakeTranscriptionClient()
+
+    router = StandardExtractionRouter(
+        engines=(
+            SpeechTranscriptionExtractionEngine(
+                transcription=OpenAISpeechTranscriptionAdapter(
+                    api_key=None,
+                    model="gpt-4o-mini-transcribe",
+                    client_factory=client_factory,
+                )
+            ),
+            _FallbackMediaEngine(),
+        )
+    )
+    request = _request(
+        parser_profile="media_api",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEsmall test fixture",
+        filename="voice-note.wav",
+        enable_external_ai=True,
+        byte_size=OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES + 1,
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert provider_called is False
+    assert result.status == "succeeded"
+    assert result.parser_name == "fallback_media"
+    assert result.diagnostics["speech_transcription_fallback"] is True
+    assert result.diagnostics["speech_transcription_support"] is True
+
+
 def test_faster_whisper_engine_extracts_transcript_artifact() -> None:
     engine = FasterWhisperTranscriptionEngine(
         model_factory=lambda model, device, compute_type: _FakeWhisperModel(
@@ -544,6 +621,7 @@ def _request(
     parser_timeout_seconds: float = 300,
     subprocess_timeout_seconds: int = 60,
     max_image_pixels: int = 50_000_000,
+    byte_size: int | None = None,
 ) -> ExtractionRequest:
     return ExtractionRequest(
         job_id="extract_1",
@@ -551,7 +629,7 @@ def _request(
         filename=filename,
         declared_content_type=detected_content_type,
         detected_content_type=detected_content_type,
-        byte_size=len(content),
+        byte_size=byte_size or len(content),
         sha256_hex="0" * 64,
         content=content,
         parser_profile=parser_profile,

@@ -264,3 +264,67 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
         )
         by_id = {item["id"]: item for item in active_after_split.json()["data"]}
         assert "Алекс" not in by_id[merged_anchor["id"]]["aliases"]
+
+
+def test_anchor_backfill_collapses_russian_person_case_variants(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-case-variants",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-aleksom",
+                "text": "Час назад я переписывался с Алексом по Project Atlas.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "anchor-case-variants",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "text": "Алекс подтвердил Project Atlas после переписки.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "fact-alex"}],
+            },
+            headers=auth_headers({"Idempotency-Key": "fact-alex-case-variant"}),
+        )
+        assert fact.status_code == 201, fact.text
+
+        backfill = client.post(
+            "/v1/anchors/backfill",
+            json={
+                "space_slug": "anchor-case-variants",
+                "memory_scope_external_ref": "default",
+                "limit_per_source": 20,
+            },
+            headers=auth_headers(),
+        )
+        assert backfill.status_code == 200, backfill.text
+
+        anchors = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-case-variants",
+                "memory_scope_external_ref": "default",
+                "kind": "person",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+        assert anchors.status_code == 200, anchors.text
+        person_anchors = anchors.json()["data"]
+        assert len(person_anchors) == 1
+        assert person_anchors[0]["normalized_key"] == "алекс"
+        assert person_anchors[0]["label"] == "Алекс"
+        assert {"Алекс", "Алексом"}.issubset(set(person_anchors[0]["aliases"]))
+        assert person_anchors[0]["metadata"]["canonical_key"] == "aleks"

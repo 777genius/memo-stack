@@ -33,3 +33,27 @@ def test_anchor_extraction_keeps_numeric_temporal_event_labels() -> None:
     keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
     assert ("event", "разговора 5 часов назад") in keys
     assert ("event", "chat 2 days ago") in keys
+
+
+def test_anchor_extraction_handles_russian_temporal_person_cases() -> None:
+    anchors = extract_observed_anchors(
+        "Час назад я переписывался с Алексом по Project Atlas. "
+        "Созвон с Марией вчера про backend."
+    )
+
+    person_keys = {
+        (anchor.normalized_key, anchor.metadata.get("canonical_key"))
+        for anchor in anchors
+        if anchor.kind.value == "person"
+    }
+    event_keys = {
+        anchor.normalized_key
+        for anchor in anchors
+        if anchor.kind.value == "event"
+    }
+    assert ("час", "chas") not in person_keys
+    assert ("созвон", "sozvon") not in person_keys
+    assert ("алексом", "aleks") in person_keys
+    assert ("марией", "mariya") in person_keys
+    assert "переписывался час назад" in event_keys
+    assert "созвон вчера" in event_keys
