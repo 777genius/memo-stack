@@ -6,12 +6,14 @@ from fastapi.testclient import TestClient
 from memo_stack_adapters.postgres.models import (
     MemoryChunkRow,
     MemoryDocumentRow,
+    MemoryEpisodeRow,
     MemoryFactRow,
     MemoryOutboxRow,
     MemoryScopeRow,
     MemoryServiceTokenRow,
     MemorySourceRefRow,
     MemorySpaceRow,
+    MemoryThreadRow,
 )
 from memo_stack_server.admin import (
     export_memory_scope_command,
@@ -1492,6 +1494,7 @@ def test_import_memory_scope_enqueues_projection_reindex_events(
     assert imported["imported"] == {
         "facts": 1,
         "documents": 1,
+        "episodes": 0,
         "chunks": 1,
         "relations": 0,
         "source_refs": 1,
@@ -1625,6 +1628,7 @@ def test_import_memory_scope_drops_thread_ids_without_thread_transfer(
     assert imported["imported"] == {
         "facts": 1,
         "documents": 1,
+        "episodes": 0,
         "chunks": 1,
         "relations": 0,
         "source_refs": 1,
@@ -1632,6 +1636,160 @@ def test_import_memory_scope_drops_thread_ids_without_thread_transfer(
     assert fact_thread_id is None
     assert document_thread_id is None
     assert chunk_thread_id is None
+
+
+def test_import_memory_scope_transfers_episode_chunks_with_import_thread(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "episode-import.db"
+    monkeypatch.setenv("MEMORY_DEPLOY_PROFILE", "test")
+    monkeypatch.setenv("MEMORY_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "root-token")
+    asyncio.run(upgrade())
+
+    fixture = tmp_path / "episode-memory_scope-import.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "space": {"slug": "source-space"},
+                "memory_scope": {"external_ref": "source-memory_scope"},
+                "facts": [
+                    {
+                        "id": "fact_imported_episode_ref",
+                        "thread_id": "thread_source_only",
+                        "kind": "preference",
+                        "text": "Imported episode chunks should remain evidence.",
+                        "status": "active",
+                        "confidence": "medium",
+                        "trust_level": "medium",
+                        "classification": "internal",
+                        "version": 1,
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "documents": [],
+                "episodes": [
+                    {
+                        "id": "episode_imported_ref",
+                        "thread_id": "thread_source_only",
+                        "source_type": "conversation",
+                        "source_external_id": "episode-imported-ref",
+                        "text": "Episode import transcript should survive snapshot transfer.",
+                        "speaker": "user",
+                        "trust_level": "high",
+                        "status": "active",
+                        "occurred_at": "2026-01-01T00:00:00+00:00",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "metadata_json": {"language": "en"},
+                    }
+                ],
+                "chunks": [
+                    {
+                        "id": "chunk_imported_episode_ref",
+                        "thread_id": "thread_source_only",
+                        "document_id": None,
+                        "episode_id": "episode_imported_ref",
+                        "source_type": "conversation",
+                        "source_external_id": "episode-imported-ref",
+                        "source_hash": "chunk-imported-episode-ref-hash",
+                        "kind": "episode_excerpt",
+                        "text": "Episode import transcript should survive snapshot transfer.",
+                        "normalized_text": (
+                            "episode import transcript should survive snapshot transfer."
+                        ),
+                        "status": "active",
+                        "sequence": 0,
+                        "char_start": 0,
+                        "char_end": 57,
+                        "token_estimate": 14,
+                        "classification": "internal",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                        "metadata_json": {"episode_id": "episode_imported_ref"},
+                    }
+                ],
+                "source_refs": [
+                    {
+                        "fact_id": "fact_imported_episode_ref",
+                        "fact_version": 1,
+                        "source_type": "import",
+                        "source_id": "fixture",
+                        "chunk_id": "chunk_imported_episode_ref",
+                        "quote_preview": "episode source ref",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    imported = asyncio.run(
+        import_memory_scope_command(
+            space="episode-import-space",
+            memory_scope="default",
+            file=str(fixture),
+            dry_run=False,
+            merge_strategy="fail_on_conflict",
+            confirmed=True,
+        )
+    )
+
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            auto_create_schema=True,
+            service_token="root-token",
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+        )
+    )
+
+    async def load_imported_rows() -> tuple[
+        MemoryEpisodeRow,
+        MemoryChunkRow,
+        MemoryThreadRow,
+        list[MemorySourceRefRow],
+    ]:
+        async with AsyncSession(app.state.container.engine) as session:
+            episode = await session.get(MemoryEpisodeRow, "episode_imported_ref")
+            chunk = await session.get(MemoryChunkRow, "chunk_imported_episode_ref")
+            refs = list(
+                (
+                    await session.execute(
+                        select(MemorySourceRefRow).where(
+                            MemorySourceRefRow.fact_id == "fact_imported_episode_ref"
+                        )
+                    )
+                ).scalars()
+            )
+            assert episode is not None
+            assert chunk is not None
+            thread = await session.get(MemoryThreadRow, episode.thread_id)
+            assert thread is not None
+            return episode, chunk, thread, refs
+
+    episode, chunk, thread, refs = asyncio.run(load_imported_rows())
+
+    assert imported["status"] == "ok"
+    assert imported["imported"] == {
+        "facts": 1,
+        "documents": 0,
+        "episodes": 1,
+        "chunks": 1,
+        "relations": 0,
+        "source_refs": 1,
+    }
+    assert episode.thread_id != "thread_source_only"
+    assert episode.thread_id == thread.id
+    assert thread.external_ref.startswith("imported-thread_source_only-")
+    assert chunk.thread_id == episode.thread_id
+    assert chunk.episode_id == episode.id
+    assert refs[0].chunk_id == chunk.id
 
 
 def test_import_memory_scope_skips_episode_chunks_without_episode_transfer(
@@ -1778,6 +1936,7 @@ def test_import_memory_scope_skips_episode_chunks_without_episode_transfer(
     assert imported["imported"] == {
         "facts": 1,
         "documents": 0,
+        "episodes": 0,
         "chunks": 0,
         "relations": 0,
         "source_refs": 0,

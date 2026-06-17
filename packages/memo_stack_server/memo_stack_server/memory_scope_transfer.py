@@ -15,12 +15,14 @@ from typing import Any
 from memo_stack_adapters.postgres.models import (
     MemoryChunkRow,
     MemoryDocumentRow,
+    MemoryEpisodeRow,
     MemoryFactRelationRow,
     MemoryFactRow,
     MemoryOutboxRow,
     MemoryScopeRow,
     MemorySourceRefRow,
     MemorySpaceRow,
+    MemoryThreadRow,
 )
 from memo_stack_core.memory_scope_snapshot_preview import (
     build_memory_scope_snapshot_import_preview,
@@ -31,14 +33,50 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
+from memo_stack_server.memory_scope_transfer_records import (
+    bounded_optional_text as _bounded_optional_text,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    chunk_from_json as _chunk_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    chunk_to_json as _chunk_to_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    contains_redacted_memory as _contains_redacted_memory,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    document_from_json as _document_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    document_to_json as _document_to_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    episode_from_json as _episode_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    episode_to_json as _episode_to_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    fact_from_json as _fact_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    fact_to_json as _fact_to_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    source_ref_from_json as _source_ref_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    source_ref_to_json as _source_ref_to_json,
+)
 from memo_stack_server.memory_scope_transfer_relations import (
     relation_from_json,
     relation_to_json,
     remap_relation,
 )
 
-SCHEMA_VERSION = 2
-SUPPORTED_SCHEMA_VERSIONS = {1, 2}
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}
 SUPPORTED_MERGE_STRATEGIES = {
     "fail_on_conflict",
     "skip_existing",
@@ -71,6 +109,7 @@ async def export_memory_scope(
         "out": str(out_path),
         "facts": counts["facts"],
         "documents": counts["documents"],
+        "episodes": counts["episodes"],
         "chunks": counts["chunks"],
         "relations": counts["relations"],
         "redacted": redacted,
@@ -114,6 +153,18 @@ async def export_memory_scope_payload(
                         MemoryDocumentRow.memory_scope_id == memory_scope.id,
                     )
                     .order_by(MemoryDocumentRow.created_at, MemoryDocumentRow.id)
+                )
+            ).scalars()
+        )
+        episodes = list(
+            (
+                await session.execute(
+                    select(MemoryEpisodeRow)
+                    .where(
+                        MemoryEpisodeRow.space_id == space.id,
+                        MemoryEpisodeRow.memory_scope_id == memory_scope.id,
+                    )
+                    .order_by(MemoryEpisodeRow.occurred_at, MemoryEpisodeRow.id)
                 )
             ).scalars()
         )
@@ -163,6 +214,7 @@ async def export_memory_scope_payload(
         "memory_scope": {"external_ref": memory_scope.external_ref, "id": memory_scope.id},
         "facts": [_fact_to_json(fact, redacted=redacted) for fact in facts],
         "documents": [_document_to_json(document) for document in documents],
+        "episodes": [_episode_to_json(episode, redacted=redacted) for episode in episodes],
         "chunks": [_chunk_to_json(chunk, redacted=redacted) for chunk in chunks],
         "relations": [relation_to_json(relation) for relation in relations],
         "source_refs": [_source_ref_to_json(ref, redacted=redacted) for ref in source_refs],
@@ -175,6 +227,7 @@ async def export_memory_scope_payload(
         "counts": {
             "facts": len(facts),
             "documents": len(documents),
+            "episodes": len(episodes),
             "chunks": len(chunks),
             "relations": len(relations),
             "source_refs": len(source_refs),
@@ -224,10 +277,16 @@ async def import_memory_scope_payload(
 
     facts = list(payload.get("facts", []))
     documents = list(payload.get("documents", []))
+    episodes = list(payload.get("episodes", []))
     chunks = list(payload.get("chunks", []))
     relations = list(payload.get("relations", []))
     source_refs = list(payload.get("source_refs", []))
-    if not dry_run and _contains_redacted_memory(payload, facts=facts, chunks=chunks):
+    if not dry_run and _contains_redacted_memory(
+        payload,
+        facts=facts,
+        episodes=episodes,
+        chunks=chunks,
+    ):
         return {"status": "refused", "reason": "redacted_memory_scope_export_cannot_be_imported"}
 
     async with AsyncSession(engine) as session:
@@ -236,8 +295,10 @@ async def import_memory_scope_payload(
         import_batch_id = _stable_id("import", source_name, now.isoformat())
         fact_id_map: dict[str, str] = {}
         document_id_map: dict[str, str] = {}
+        episode_id_map: dict[str, str] = {}
         chunk_id_map: dict[str, str] = {}
         relation_id_map: dict[str, str] = {}
+        thread_id_map: dict[str, str] = {}
 
         if merge_strategy == "create_new_memory_scope" and not dry_run:
             memory_scope = await _create_import_memory_scope(
@@ -255,9 +316,23 @@ async def import_memory_scope_payload(
             document_id_map = _build_id_map(
                 "doc", documents, target_memory_scope_id, import_batch_id
             )
+            episode_id_map = _build_id_map(
+                "episode", episodes, target_memory_scope_id, import_batch_id
+            )
             chunk_id_map = _build_id_map("chunk", chunks, target_memory_scope_id, import_batch_id)
             relation_id_map = _build_id_map(
                 "relation", relations, target_memory_scope_id, import_batch_id
+            )
+            thread_id_map = _build_thread_id_map(
+                episodes=episodes,
+                memory_scope_id=target_memory_scope_id,
+                import_batch_id=import_batch_id,
+            )
+        if episodes and not dry_run and not thread_id_map:
+            thread_id_map = _build_thread_id_map(
+                episodes=episodes,
+                memory_scope_id=target_memory_scope_id,
+                import_batch_id=import_batch_id,
             )
 
         conflict_ids = (
@@ -269,6 +344,7 @@ async def import_memory_scope_payload(
                 memory_scope_id=target_memory_scope_id,
                 facts=facts,
                 documents=documents,
+                episodes=episodes,
                 chunks=chunks,
                 relations=relations,
             )
@@ -293,6 +369,7 @@ async def import_memory_scope_payload(
                 conflict_ids=conflict_id_set,
                 facts=facts,
                 documents=documents,
+                episodes=episodes,
                 chunks=chunks,
                 relations=relations,
             )
@@ -302,6 +379,7 @@ async def import_memory_scope_payload(
                 "would_import": import_counts(
                     facts=facts,
                     documents=documents,
+                    episodes=episodes,
                     chunks=chunks,
                     relations=relations,
                     source_refs=source_refs,
@@ -323,6 +401,7 @@ async def import_memory_scope_payload(
             conflict_ids=conflict_id_set,
             facts=facts,
             documents=documents,
+            episodes=episodes,
             chunks=chunks,
             relations=relations,
         )
@@ -373,13 +452,40 @@ async def import_memory_scope_payload(
                     now=now,
                 )
             )
+        await _ensure_import_threads(
+            session,
+            episodes=episodes,
+            skipped_episode_ids=skipped["episodes"],
+            thread_id_map=thread_id_map,
+            space_id=space_id,
+            memory_scope_id=target_memory_scope_id,
+            now=now,
+        )
+        for episode in episodes:
+            if str(episode["id"]) in skipped["episodes"]:
+                continue
+            mapped = _remap_episode(
+                episode,
+                episode_id_map=episode_id_map,
+                thread_id_map=thread_id_map,
+            )
+            session.add(
+                _episode_from_json(
+                    mapped,
+                    space_id=space_id,
+                    memory_scope_id=target_memory_scope_id,
+                    now=now,
+                )
+            )
         for chunk in chunks:
             if str(chunk["id"]) in skipped["chunks"]:
                 continue
             mapped = _remap_chunk(
                 chunk,
                 document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
+                thread_id_map=thread_id_map,
             )
             session.add(
                 _chunk_from_json(
@@ -474,6 +580,7 @@ async def import_memory_scope_payload(
         "imported": import_counts(
             facts=facts,
             documents=documents,
+            episodes=episodes,
             chunks=chunks,
             relations=relations,
             source_refs=source_refs,
@@ -514,21 +621,6 @@ async def _load_scope(
     if memory_scope is None:
         return None
     return space, memory_scope
-
-
-def _contains_redacted_memory(
-    payload: dict[str, Any],
-    *,
-    facts: list[dict[str, Any]],
-    chunks: list[dict[str, Any]],
-) -> bool:
-    if payload.get("redacted") is True:
-        return True
-    if any(fact.get("text") is None for fact in facts):
-        return True
-    return any(
-        chunk.get("text") is None or chunk.get("normalized_text") is None for chunk in chunks
-    )
 
 
 def _fact_conflict_ids(
@@ -644,6 +736,68 @@ def _build_id_map(
     }
 
 
+def _build_thread_id_map(
+    *,
+    episodes: list[dict[str, Any]],
+    memory_scope_id: str,
+    import_batch_id: str,
+) -> dict[str, str]:
+    source_thread_ids = sorted(
+        {
+            _episode_source_thread_id(episode)
+            for episode in episodes
+            if episode.get("id") is not None
+        }
+    )
+    return {
+        thread_id: _stable_id("thread", memory_scope_id, thread_id, import_batch_id)
+        for thread_id in source_thread_ids
+    }
+
+
+async def _ensure_import_threads(
+    session: AsyncSession,
+    *,
+    episodes: list[dict[str, Any]],
+    skipped_episode_ids: set[str],
+    thread_id_map: dict[str, str],
+    space_id: str,
+    memory_scope_id: str,
+    now: datetime,
+) -> None:
+    needed = {
+        _episode_source_thread_id(episode): thread_id_map.get(
+            _episode_source_thread_id(episode),
+            _episode_source_thread_id(episode),
+        )
+        for episode in episodes
+        if str(episode.get("id")) not in skipped_episode_ids
+    }
+    if not needed:
+        return
+    existing = set(
+        (
+            await session.execute(
+                select(MemoryThreadRow.id).where(MemoryThreadRow.id.in_(set(needed.values())))
+            )
+        ).scalars()
+    )
+    for source_thread_id, target_thread_id in needed.items():
+        if target_thread_id in existing:
+            continue
+        session.add(
+            MemoryThreadRow(
+                id=target_thread_id,
+                space_id=space_id,
+                memory_scope_id=memory_scope_id,
+                external_ref=_import_thread_external_ref(source_thread_id, target_thread_id),
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
 def _remap_fact(item: dict[str, Any], *, fact_id_map: dict[str, str]) -> dict[str, Any]:
     fact_id = str(item["id"])
     if fact_id not in fact_id_map:
@@ -662,20 +816,48 @@ def _remap_document(
     return {**item, "id": document_id_map[document_id]}
 
 
+def _remap_episode(
+    item: dict[str, Any],
+    *,
+    episode_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
+) -> dict[str, Any]:
+    episode_id = str(item["id"])
+    source_thread_id = _episode_source_thread_id(item)
+    return {
+        **item,
+        "id": episode_id_map.get(episode_id, episode_id),
+        "thread_id": thread_id_map.get(source_thread_id, source_thread_id),
+    }
+
+
 def _remap_chunk(
     item: dict[str, Any],
     *,
     document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
 ) -> dict[str, Any]:
     chunk_id = str(item["id"])
     document_id = item.get("document_id")
+    episode_id = item.get("episode_id")
+    thread_id = item.get("thread_id")
+    mapped_thread_id = None
+    if episode_id is not None and thread_id is not None:
+        mapped_thread_id = thread_id_map.get(str(thread_id), str(thread_id))
     return {
         **item,
         "id": chunk_id_map.get(chunk_id, chunk_id),
+        "thread_id": mapped_thread_id,
         "document_id": (
             document_id_map.get(str(document_id), str(document_id))
             if document_id is not None
+            else None
+        ),
+        "episode_id": (
+            episode_id_map.get(str(episode_id), str(episode_id))
+            if episode_id is not None
             else None
         ),
     }
@@ -704,172 +886,14 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{digest}"
 
 
-def _fact_to_json(row: MemoryFactRow, *, redacted: bool) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "thread_id": row.thread_id,
-        "kind": row.kind,
-        "text": None if redacted else row.text,
-        "status": row.status,
-        "confidence": row.confidence,
-        "trust_level": row.trust_level,
-        "classification": row.classification,
-        "category": row.category,
-        "tags": list(row.tags_json or []),
-        "ttl_policy": row.ttl_policy,
-        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
-        "version": row.version,
-        "created_at": row.created_at.isoformat(),
-        "updated_at": row.updated_at.isoformat(),
-    }
+def _episode_source_thread_id(item: dict[str, Any]) -> str:
+    return str(item.get("thread_id") or item["id"])
 
 
-def _document_to_json(row: MemoryDocumentRow) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "thread_id": row.thread_id,
-        "title": row.title,
-        "source_type": row.source_type,
-        "source_external_id": row.source_external_id,
-        "content_hash": row.content_hash,
-        "classification": row.classification,
-        "status": row.status,
-        "created_at": row.created_at.isoformat(),
-        "updated_at": row.updated_at.isoformat(),
-    }
-
-
-def _chunk_to_json(row: MemoryChunkRow, *, redacted: bool) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "thread_id": row.thread_id,
-        "document_id": row.document_id,
-        "episode_id": row.episode_id,
-        "source_type": row.source_type,
-        "source_external_id": row.source_external_id,
-        "source_hash": row.source_hash,
-        "kind": row.kind,
-        "text": None if redacted else row.text,
-        "normalized_text": None if redacted else row.normalized_text,
-        "status": row.status,
-        "sequence": row.sequence,
-        "char_start": row.char_start,
-        "char_end": row.char_end,
-        "token_estimate": row.token_estimate,
-        "classification": row.classification,
-        "created_at": row.created_at.isoformat(),
-        "updated_at": row.updated_at.isoformat(),
-        "metadata_json": row.metadata_json,
-    }
-
-
-def _source_ref_to_json(row: MemorySourceRefRow, *, redacted: bool) -> dict[str, Any]:
-    return {
-        "fact_id": row.fact_id,
-        "fact_version": row.fact_version,
-        "source_type": row.source_type,
-        "source_id": row.source_id,
-        "chunk_id": row.chunk_id,
-        "char_start": row.char_start,
-        "char_end": row.char_end,
-        "quote_preview": None if redacted else _bounded_optional_text(row.quote_preview, 240),
-    }
-
-
-def _fact_from_json(
-    item: dict[str, Any],
-    *,
-    space_id: str,
-    memory_scope_id: str,
-    now: datetime,
-) -> MemoryFactRow:
-    return MemoryFactRow(
-        id=str(item["id"]),
-        space_id=space_id,
-        memory_scope_id=memory_scope_id,
-        thread_id=None,
-        kind=str(item.get("kind", "note")),
-        text=str(item.get("text") or "[redacted]"),
-        status=str(item.get("status", "active")),
-        confidence=str(item.get("confidence", "medium")),
-        trust_level=str(item.get("trust_level", "medium")),
-        classification=str(item.get("classification", "internal")),
-        category=_bounded_optional_text(item.get("category"), 80),
-        tags_json=_bounded_tags(item.get("tags")),
-        ttl_policy=_bounded_optional_text(item.get("ttl_policy"), 80),
-        expires_at=_parse_optional_dt(item.get("expires_at")),
-        version=int(item.get("version", 1)),
-        created_at=_parse_dt(item.get("created_at"), now),
-        updated_at=_parse_dt(item.get("updated_at"), now),
-    )
-
-
-def _document_from_json(
-    item: dict[str, Any],
-    *,
-    space_id: str,
-    memory_scope_id: str,
-    now: datetime,
-) -> MemoryDocumentRow:
-    return MemoryDocumentRow(
-        id=str(item["id"]),
-        space_id=space_id,
-        memory_scope_id=memory_scope_id,
-        thread_id=None,
-        title=str(item.get("title") or "Imported document"),
-        source_type=str(item.get("source_type", "import")),
-        source_external_id=str(item.get("source_external_id", item["id"])),
-        content_hash=str(item.get("content_hash", item["id"])),
-        classification=str(item.get("classification", "unknown")),
-        status=str(item.get("status", "active")),
-        created_at=_parse_dt(item.get("created_at"), now),
-        updated_at=_parse_dt(item.get("updated_at"), now),
-    )
-
-
-def _chunk_from_json(
-    item: dict[str, Any],
-    *,
-    space_id: str,
-    memory_scope_id: str,
-    now: datetime,
-) -> MemoryChunkRow:
-    text = str(item.get("text") or "[redacted]")
-    return MemoryChunkRow(
-        id=str(item["id"]),
-        space_id=space_id,
-        memory_scope_id=memory_scope_id,
-        thread_id=None,
-        document_id=item.get("document_id"),
-        episode_id=None,
-        source_type=str(item.get("source_type", "import")),
-        source_external_id=str(item.get("source_external_id", item["id"])),
-        source_hash=str(item.get("source_hash", item["id"])),
-        kind=str(item.get("kind", "document_section")),
-        text=text,
-        normalized_text=str(item.get("normalized_text") or text),
-        status=str(item.get("status", "active")),
-        sequence=int(item.get("sequence", 0)),
-        char_start=int(item.get("char_start", 0)),
-        char_end=int(item.get("char_end", len(text))),
-        token_estimate=int(item.get("token_estimate", max(1, len(text) // 4))),
-        classification=str(item.get("classification", "unknown")),
-        created_at=_parse_dt(item.get("created_at"), now),
-        updated_at=_parse_dt(item.get("updated_at"), now),
-        metadata_json=dict(item.get("metadata_json") or {}),
-    )
-
-
-def _source_ref_from_json(item: dict[str, Any]) -> MemorySourceRefRow:
-    return MemorySourceRefRow(
-        fact_id=str(item["fact_id"]),
-        fact_version=int(item.get("fact_version", 1)),
-        source_type=str(item.get("source_type", "import")),
-        source_id=str(item.get("source_id", "import")),
-        chunk_id=item.get("chunk_id"),
-        char_start=item.get("char_start"),
-        char_end=item.get("char_end"),
-        quote_preview=_bounded_optional_text(item.get("quote_preview"), 240),
+def _import_thread_external_ref(source_thread_id: str, target_thread_id: str) -> str:
+    return _bounded_external_ref(
+        f"imported-{source_thread_id}",
+        suffix=f"-{target_thread_id[-8:]}",
     )
 
 
@@ -897,34 +921,3 @@ def _outbox(
         created_at=now,
         updated_at=now,
     )
-
-
-def _parse_dt(value: object, fallback: datetime) -> datetime:
-    if not value:
-        return fallback
-    return datetime.fromisoformat(str(value))
-
-
-def _parse_optional_dt(value: object) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(str(value))
-
-
-def _bounded_optional_text(value: object, limit: int) -> str | None:
-    if value is None:
-        return None
-    return str(value)[:limit]
-
-
-def _bounded_tags(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    tags: list[str] = []
-    for item in value:
-        tag = str(item).strip().lower()[:48]
-        if tag and tag not in tags:
-            tags.append(tag)
-        if len(tags) >= 10:
-            break
-    return tags

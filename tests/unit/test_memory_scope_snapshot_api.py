@@ -64,6 +64,20 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
             },
             headers=auth_headers(),
         )
+        episode = client.post(
+            "/v1/episodes",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "thread_external_ref": "snapshot-thread",
+                "source_type": "system_audio",
+                "source_external_id": "snapshot-episode",
+                "text": "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots.",
+                "speaker": "user",
+                "trust_level": "high",
+            },
+            headers=auth_headers(),
+        )
         exported = client.get(
             "/v1/export/memory_scope-snapshot",
             params={
@@ -131,15 +145,28 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
             f"/v1/facts/{restored_source['id']}/relations",
             headers=auth_headers(),
         )
+        restored_browser = client.get(
+            "/v1/memory-browser",
+            params={
+                "space_slug": "agents",
+                "memory_scope_external_ref": created_memory_scope["external_ref"],
+            },
+            headers=auth_headers(),
+        )
 
     assert created.status_code == 201
     assert target.status_code == 201
     assert relation.status_code == 201
+    assert episode.status_code == 200
     assert exported.status_code == 200
     assert exported.json()["counts"]["facts"] == 2
+    assert exported.json()["counts"]["episodes"] == 1
+    assert exported.json()["counts"]["chunks"] == 1
     assert exported.json()["counts"]["relations"] == 1
-    assert snapshot["schema_version"] == 2
+    assert snapshot["schema_version"] == 3
     assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
+    assert manifest["counts"]["episodes"] == 1
+    assert manifest["counts"]["chunks"] == 1
     assert manifest["counts"]["relations"] == 1
     assert manifest["snapshot_sha256"]
     assert verify_snapshot_manifest_payload(snapshot=snapshot, manifest=manifest)["ok"] is True
@@ -148,22 +175,42 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     )
     assert snapshot["facts"][0]["category"] == "architecture"
     assert snapshot["facts"][0]["tags"] == ["snapshot"]
+    assert (
+        snapshot["episodes"][0]["text"]
+        == "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots."
+    )
+    assert snapshot["chunks"][0]["episode_id"] == snapshot["episodes"][0]["id"]
     assert snapshot["relations"][0]["relation_type"] == "supports"
     assert dry_run.status_code == 200
     assert dry_run.json()["data"]["dry_run"] is True
     assert dry_run.json()["data"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["would_import"]["facts"] == 2
+    assert dry_run.json()["data"]["would_import"]["episodes"] == 1
+    assert dry_run.json()["data"]["would_import"]["chunks"] == 1
     assert dry_run.json()["data"]["would_import"]["relations"] == 1
     assert dry_run.json()["data"]["preview"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 2
+    assert dry_run.json()["data"]["preview"]["would_import"]["episodes"] == 1
+    assert dry_run.json()["data"]["preview"]["would_import"]["chunks"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["relations"] == 1
     assert refused.status_code == 400
     assert imported.status_code == 200
     assert imported.json()["data"]["merge_strategy"] == "create_new_memory_scope"
+    assert imported.json()["data"]["imported"]["episodes"] == 1
+    assert imported.json()["data"]["imported"]["chunks"] == 1
     assert imported.json()["data"]["imported"]["relations"] == 1
     assert restored.status_code == 200
     assert restored_source["id"] != created.json()["data"]["id"]
     assert restored_relations.status_code == 200
+    assert restored_browser.status_code == 200
+    browser_data = restored_browser.json()["data"]
+    assert len(browser_data["episodes"]) == 1
+    assert len(browser_data["chunks"]) == 1
+    assert (
+        browser_data["episodes"][0]["text"]
+        == "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots."
+    )
+    assert browser_data["chunks"][0]["episode_id"] == browser_data["episodes"][0]["id"]
     restored_relation = restored_relations.json()["data"]["items"][0]
     assert restored_relation["relation"]["relation_type"] == "supports"
     assert restored_relation["relation"]["source_fact_id"] == restored_source["id"]

@@ -8,8 +8,10 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "schema_version": 1,
         "facts": [{"id": "fact_keep"}, {"id": "fact_conflict"}],
         "documents": [{"id": "doc_conflict"}],
+        "episodes": [{"id": "episode_keep", "thread_id": "thread_keep"}],
         "chunks": [
             {"id": "chunk_keep", "document_id": "doc_conflict"},
+            {"id": "chunk_episode_keep", "episode_id": "episode_keep"},
             {"id": "chunk_orphan", "document_id": "missing_doc"},
         ],
         "relations": [
@@ -22,6 +24,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         ],
         "source_refs": [
             {"fact_id": "fact_keep", "chunk_id": "chunk_keep"},
+            {"fact_id": "fact_keep", "chunk_id": "chunk_episode_keep"},
             {"fact_id": "fact_conflict", "chunk_id": "chunk_orphan"},
         ],
     }
@@ -40,15 +43,17 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     assert skip_preview["snapshot_counts"] == {
         "facts": 2,
         "documents": 1,
-        "chunks": 2,
+        "episodes": 1,
+        "chunks": 3,
         "relations": 1,
-        "source_refs": 2,
+        "source_refs": 3,
     }
     assert skip_preview["conflicts"]["facts"] == ["fact_conflict"]
     assert skip_preview["conflicts"]["documents"] == ["doc_conflict"]
     assert skip_preview["would_skip"] == {
         "facts": 1,
         "documents": 1,
+        "episodes": 0,
         "chunks": 2,
         "relations": 1,
         "source_refs": 2,
@@ -56,9 +61,10 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     assert skip_preview["would_import"] == {
         "facts": 1,
         "documents": 0,
-        "chunks": 0,
+        "episodes": 1,
+        "chunks": 1,
         "relations": 0,
-        "source_refs": 0,
+        "source_refs": 1,
     }
     assert "some_chunks_will_be_skipped" in skip_preview["warnings"]
     assert "some_relations_will_be_skipped" in skip_preview["warnings"]

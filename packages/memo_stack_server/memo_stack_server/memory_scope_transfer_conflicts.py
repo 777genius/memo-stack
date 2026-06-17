@@ -7,6 +7,7 @@ from typing import Any
 from memo_stack_adapters.postgres.models import (
     MemoryChunkRow,
     MemoryDocumentRow,
+    MemoryEpisodeRow,
     MemoryFactRelationRow,
     MemoryFactRow,
 )
@@ -21,17 +22,20 @@ async def memory_scope_snapshot_conflicts(
     memory_scope_id: str,
     facts: list[dict[str, Any]],
     documents: list[dict[str, Any]],
+    episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     relations: list[dict[str, Any]],
 ) -> list[str]:
     conflicts: list[str] = []
     fact_ids = [str(item["id"]) for item in facts]
     document_ids = [str(item["id"]) for item in documents]
+    episode_ids = [str(item["id"]) for item in episodes]
     chunk_ids = [str(item["id"]) for item in chunks]
     relation_ids = [str(item["id"]) for item in relations]
     for model, ids in (
         (MemoryFactRow, fact_ids),
         (MemoryDocumentRow, document_ids),
+        (MemoryEpisodeRow, episode_ids),
         (MemoryChunkRow, chunk_ids),
         (MemoryFactRelationRow, relation_ids),
     ):
