@@ -593,6 +593,100 @@ def test_anchor_split_rejects_empty_normalized_label_without_mutating_alias(
     assert all(item["normalized_key"] for item in active.json()["data"])
 
 
+def test_anchor_split_to_new_anchor_preserves_provenance_and_temporal_fields(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-split-provenance",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "anchor-split-provenance-seed",
+                "text": "Seed split provenance scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        parent = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-provenance",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Group",
+                "aliases": ["Acme Labs"],
+                "confidence": "high",
+                "evidence_refs": [
+                    {
+                        "source_type": "manual",
+                        "source_id": "acme-group-review",
+                        "quote_preview": (
+                            "Reviewer confirmed Acme Labs was only an alias candidate."
+                        ),
+                    }
+                ],
+                "observed_at": "2026-02-03T04:05:06+00:00",
+                "valid_from": "2026-02-01T00:00:00+00:00",
+                "valid_to": "2026-08-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        assert parent.status_code == 200, parent.text
+
+        split = client.post(
+            f"/v1/anchors/{parent.json()['data']['id']}/split",
+            json={
+                "alias": "Acme Labs",
+                "new_label": "Acme Labs",
+                "reason": "reviewer promoted alias into a separate organization",
+            },
+            headers=auth_headers(),
+        )
+        assert split.status_code == 200, split.text
+
+        active = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-split-provenance",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+
+    split_anchor = split.json()["data"]
+    assert split_anchor["normalized_key"] == "acme labs"
+    assert split_anchor["confidence"] == "high"
+    assert split_anchor["observed_at"] == "2026-02-03T04:05:06+00:00"
+    assert split_anchor["valid_from"] == "2026-02-01T00:00:00+00:00"
+    assert split_anchor["valid_to"] == "2026-08-01T00:00:00+00:00"
+    assert split_anchor["metadata"]["split_from_anchor_id"] == parent.json()["data"]["id"]
+    assert split_anchor["metadata"]["split_reason"] == (
+        "reviewer promoted alias into a separate organization"
+    )
+    assert split_anchor["evidence_refs"] == [
+        {
+            "source_type": "manual",
+            "source_id": "acme-group-review",
+            "chunk_id": None,
+            "char_start": None,
+            "char_end": None,
+            "quote_preview": "Reviewer confirmed Acme Labs was only an alias candidate.",
+        }
+    ]
+    active_by_id = {item["id"]: item for item in active.json()["data"]}
+    assert "Acme Labs" not in active_by_id[parent.json()["data"]["id"]]["aliases"]
+
+
 def test_anchor_merge_rejects_legacy_alias_conflict_with_third_anchor(
     tmp_path: Path,
 ) -> None:
