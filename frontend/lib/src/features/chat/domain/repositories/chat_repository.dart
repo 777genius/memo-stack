@@ -74,7 +74,25 @@ abstract class ChatRepository {
     List<String> aliases = const <String>[],
     String? description,
   });
+  Future<MemoryBrowserAnchor> updateMemoryAnchor({
+    required String anchorId,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  });
+  Future<void> deleteMemoryAnchor({
+    required String anchorId,
+    String reason = 'manual delete',
+  });
   Future<void> backfillMemoryAnchors({int limitPerSource = 100});
+  Future<List<MemoryAnchorMergeSuggestion>> listMemoryAnchorMergeSuggestions({
+    int limit = 50,
+  });
+  Future<MemoryBrowserAnchor> mergeMemoryAnchors({
+    required String sourceAnchorId,
+    required String targetAnchorId,
+    required String reason,
+  });
   Future<List<int>> downloadExtractionArtifact(String artifactId);
   Future<List<DocumentChunk>> listDocumentChunks(String documentId);
   Future<List<MemoryCapture>> listMemoryCaptures({int limit = 50});

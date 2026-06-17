@@ -658,12 +658,75 @@ class ChatRepositoryImpl
   }
 
   @override
+  Future<MemoryBrowserAnchor> updateMemoryAnchor({
+    required String anchorId,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    final row = await _rest.updateAnchor(
+      anchorId: anchorId,
+      label: label,
+      aliases: aliases,
+      description: description,
+    );
+    if ((row['id']?.toString().trim().isEmpty ?? true)) {
+      throw StateError('Memory anchor was not found for update');
+    }
+    return MemoryBrowserAnchor.fromMap(row);
+  }
+
+  @override
+  Future<void> deleteMemoryAnchor({
+    required String anchorId,
+    String reason = 'manual delete',
+  }) async {
+    await _rest.deleteAnchor(anchorId: anchorId, reason: reason);
+  }
+
+  @override
   Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {
     await _rest.backfillAnchors(
       spaceSlug: _spaceSlugGetter(),
       memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
       limitPerSource: limitPerSource,
     );
+  }
+
+  @override
+  Future<List<MemoryAnchorMergeSuggestion>> listMemoryAnchorMergeSuggestions({
+    int limit = 50,
+  }) async {
+    final row = await _rest.getAnchorMergeSuggestions(
+      spaceSlug: _spaceSlugGetter(),
+      memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
+      limit: limit,
+    );
+    final candidates = row['candidates'];
+    if (candidates is! List) return const <MemoryAnchorMergeSuggestion>[];
+    return candidates
+        .whereType<Map>()
+        .map(
+            (item) => item.map((key, value) => MapEntry(key.toString(), value)))
+        .map(MemoryAnchorMergeSuggestion.fromMap)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<MemoryBrowserAnchor> mergeMemoryAnchors({
+    required String sourceAnchorId,
+    required String targetAnchorId,
+    required String reason,
+  }) async {
+    final row = await _rest.mergeAnchor(
+      sourceAnchorId: sourceAnchorId,
+      targetAnchorId: targetAnchorId,
+      reason: reason,
+    );
+    if ((row['id']?.toString().trim().isEmpty ?? true)) {
+      throw StateError('Memory anchor was not found for merge');
+    }
+    return MemoryBrowserAnchor.fromMap(row);
   }
 
   @override

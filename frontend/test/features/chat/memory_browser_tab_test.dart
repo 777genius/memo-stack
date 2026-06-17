@@ -15,7 +15,7 @@ void main() {
   testWidgets('memory browser renders sections and filters results', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(700, 700));
+    await tester.binding.setSurfaceSize(const Size(800, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final repo = _BrowserRepo(snapshot: _snapshot());
@@ -25,6 +25,7 @@ void main() {
 
     runInAction(() {
       store.memoryBrowser.value = repo.snapshot;
+      store.anchorMergeSuggestions.addAll(repo.mergeSuggestions);
     });
 
     await tester.pumpWidget(
@@ -32,7 +33,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 610,
-            height: 620,
+            height: 800,
             child: MemoryBrowserTab(store: store),
           ),
         ),
@@ -43,10 +44,29 @@ void main() {
     expect(find.text('Captures 1'), findsWidgets);
     expect(find.text('Files 1'), findsWidgets);
     expect(find.text('Anchors 1'), findsWidgets);
-    expect(find.text('Relations 3'), findsOneWidget);
+    expect(find.text('Merge reviews 1'), findsOneWidget);
     expect(find.text('alex-call'), findsOneWidget);
     expect(find.text('atlas.png'), findsOneWidget);
     expect(find.text('Alex'), findsWidgets);
+    expect(find.text('Alex Carter -> Alex'), findsOneWidget);
+
+    final mergeButton = find.byKey(
+      const ValueKey('memory_anchor_merge_anchor_dup_anchor_1'),
+    );
+    await tester.ensureVisible(mergeButton);
+    await tester.tap(mergeButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_anchor_merge_dialog')),
+        findsOneWidget);
+    await tester
+        .tap(find.byKey(const ValueKey('memory_anchor_merge_confirm_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.mergedAnchors.single.sourceAnchorId, 'anchor-dup');
+    expect(repo.mergedAnchors.single.targetAnchorId, 'anchor-1');
+    expect(repo.mergedAnchors.single.reason, contains('Alex Carter -> Alex'));
+    expect(find.text('Relations 3'), findsOneWidget);
     expect(find.text('capture -> fact'), findsOneWidget);
 
     await tester
@@ -73,8 +93,58 @@ void main() {
     expect(find.text('Related evidence'), findsOneWidget);
     expect(find.textContaining('capture - QuickCapture'), findsWidgets);
 
-    await tester.tap(find.byTooltip('Close'));
+    await tester.tap(find.byKey(const ValueKey('memory_anchor_edit_anchor_1')));
     await tester.pumpAndSettle();
+
+    expect(find.text('Edit anchor'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('memory_anchor_label_field')),
+          )
+          .controller
+          ?.text,
+      'Alex',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_label_field')),
+      'Alex Carter',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_aliases_field')),
+      'A. Carter, AC, Alex Carter',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_description_field')),
+      'Updated Atlas contact',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory_anchor_save_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.updatedAnchors.single.anchorId, 'anchor-1');
+    expect(repo.updatedAnchors.single.label, 'Alex Carter');
+    expect(repo.updatedAnchors.single.aliases, ['A. Carter', 'AC']);
+    expect(repo.updatedAnchors.single.description, 'Updated Atlas contact');
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_browser_anchor_anchor_1')));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_anchor_delete_anchor_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_anchor_delete_dialog')),
+        findsOneWidget);
+    await tester
+        .tap(find.byKey(const ValueKey('memory_anchor_delete_confirm_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.deletedAnchors.single.anchorId, 'anchor-1');
+    expect(
+      repo.deletedAnchors.single.reason,
+      'deleted in Memo Stack frontend',
+    );
 
     await tester
         .tap(find.byKey(const ValueKey('memory_browser_add_anchor_button')));
@@ -133,13 +203,19 @@ void main() {
 class _BrowserRepo implements ChatRepository {
   final MemoryBrowserSnapshot snapshot;
   final createdAnchors = <_CreatedAnchor>[];
+  final updatedAnchors = <_UpdatedAnchor>[];
+  final deletedAnchors = <_DeletedAnchor>[];
+  final mergeSuggestions = <MemoryAnchorMergeSuggestion>[];
+  final mergedAnchors = <_MergedAnchor>[];
   final backfillRequests = <int>[];
   final _messages = StreamController<ChatMessage>.broadcast();
   final _usage = StreamController<CostUsage>.broadcast();
   final _running = StreamController<bool>.broadcast();
   final _connection = StreamController<ConnectionStatus>.broadcast();
 
-  _BrowserRepo({required this.snapshot});
+  _BrowserRepo({required this.snapshot}) {
+    mergeSuggestions.add(_mergeSuggestion());
+  }
 
   Future<void> close() async {
     await _messages.close();
@@ -206,6 +282,86 @@ class _BrowserRepo implements ChatRepository {
   }
 
   @override
+  Future<MemoryBrowserAnchor> updateMemoryAnchor({
+    required String anchorId,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    updatedAnchors.add(
+      _UpdatedAnchor(
+        anchorId: anchorId,
+        label: label,
+        aliases: aliases,
+        description: description,
+      ),
+    );
+    return MemoryBrowserAnchor.fromMap({
+      'id': anchorId,
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': 'person',
+      'normalized_key': label.toLowerCase(),
+      'label': label,
+      'aliases': aliases,
+      'description': description,
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:05:00Z',
+    });
+  }
+
+  @override
+  Future<void> deleteMemoryAnchor({
+    required String anchorId,
+    String reason = 'manual delete',
+  }) async {
+    deletedAnchors.add(_DeletedAnchor(anchorId: anchorId, reason: reason));
+  }
+
+  @override
+  Future<List<MemoryAnchorMergeSuggestion>> listMemoryAnchorMergeSuggestions({
+    int limit = 50,
+  }) async {
+    return mergeSuggestions.take(limit).toList(growable: false);
+  }
+
+  @override
+  Future<MemoryBrowserAnchor> mergeMemoryAnchors({
+    required String sourceAnchorId,
+    required String targetAnchorId,
+    required String reason,
+  }) async {
+    mergedAnchors.add(
+      _MergedAnchor(
+        sourceAnchorId: sourceAnchorId,
+        targetAnchorId: targetAnchorId,
+        reason: reason,
+      ),
+    );
+    mergeSuggestions.removeWhere(
+      (item) =>
+          item.sourceAnchor.id == sourceAnchorId &&
+          item.targetAnchor.id == targetAnchorId,
+    );
+    return MemoryBrowserAnchor.fromMap({
+      'id': targetAnchorId,
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': 'person',
+      'normalized_key': 'alex',
+      'label': 'Alex',
+      'aliases': ['A. Carter', 'Alex Carter'],
+      'description': 'Merged contact',
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:08:00Z',
+    });
+  }
+
+  @override
   Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {
     backfillRequests.add(limitPerSource);
   }
@@ -226,6 +382,85 @@ class _CreatedAnchor {
     required this.aliases,
     required this.description,
   });
+}
+
+class _UpdatedAnchor {
+  final String anchorId;
+  final String label;
+  final List<String> aliases;
+  final String? description;
+
+  const _UpdatedAnchor({
+    required this.anchorId,
+    required this.label,
+    required this.aliases,
+    required this.description,
+  });
+}
+
+class _DeletedAnchor {
+  final String anchorId;
+  final String reason;
+
+  const _DeletedAnchor({
+    required this.anchorId,
+    required this.reason,
+  });
+}
+
+class _MergedAnchor {
+  final String sourceAnchorId;
+  final String targetAnchorId;
+  final String reason;
+
+  const _MergedAnchor({
+    required this.sourceAnchorId,
+    required this.targetAnchorId,
+    required this.reason,
+  });
+}
+
+MemoryAnchorMergeSuggestion _mergeSuggestion() {
+  return MemoryAnchorMergeSuggestion.fromMap({
+    'source_anchor': _anchorMap(
+      id: 'anchor-dup',
+      normalizedKey: 'alex carter',
+      label: 'Alex Carter',
+      aliases: ['AC'],
+    ),
+    'target_anchor': _anchorMap(
+      id: 'anchor-1',
+      normalizedKey: 'alex',
+      label: 'Alex',
+      aliases: ['A. Carter'],
+    ),
+    'confidence': 'high',
+    'score': 94,
+    'reasons': ['alias overlap'],
+    'metadata': <String, dynamic>{},
+  });
+}
+
+Map<String, dynamic> _anchorMap({
+  required String id,
+  required String normalizedKey,
+  required String label,
+  required List<String> aliases,
+}) {
+  return {
+    'id': id,
+    'space_id': 'space-1',
+    'memory_scope_id': 'scope-1',
+    'kind': 'person',
+    'normalized_key': normalizedKey,
+    'label': label,
+    'aliases': aliases,
+    'description': 'Anchor $label',
+    'status': 'active',
+    'metadata': <String, dynamic>{},
+    'created_at': '2026-06-14T10:00:00Z',
+    'updated_at': '2026-06-14T10:00:00Z',
+  };
 }
 
 MemoryBrowserSnapshot _snapshot() {

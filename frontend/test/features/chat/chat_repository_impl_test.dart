@@ -146,7 +146,7 @@ void main() {
       await repo.dispose();
     });
 
-    test('creates and backfills anchors in the active memory scope', () async {
+    test('manages anchors in the active memory scope', () async {
       final rest = _AnchorRestClient();
       final repo = ChatRepositoryImpl(rest);
       repo.updateScopeGetters(
@@ -160,16 +160,47 @@ void main() {
         aliases: ['Atlas'],
         description: 'Primary project anchor',
       );
+      final updated = await repo.updateMemoryAnchor(
+        anchorId: 'anchor-1',
+        label: 'Project Atlas Updated',
+        aliases: ['Atlas 2'],
+        description: '',
+      );
+      await repo.deleteMemoryAnchor(anchorId: 'anchor-1', reason: 'cleanup');
       await repo.backfillMemoryAnchors(limitPerSource: 42);
+      final mergeSuggestions =
+          await repo.listMemoryAnchorMergeSuggestions(limit: 12);
+      final merged = await repo.mergeMemoryAnchors(
+        sourceAnchorId: 'anchor-dup',
+        targetAnchorId: 'anchor-1',
+        reason: 'duplicate person',
+      );
 
       expect(anchor.kind, 'project');
       expect(anchor.label, 'Project Atlas');
+      expect(updated.label, 'Project Atlas Updated');
+      expect(mergeSuggestions.single.sourceAnchor.id, 'anchor-dup');
+      expect(mergeSuggestions.single.targetAnchor.id, 'anchor-1');
+      expect(mergeSuggestions.single.confidence, 'high');
+      expect(merged.id, 'anchor-1');
       expect(rest.createSpaceSlug, 'team-space');
       expect(rest.createMemoryScopeRef, 'project-atlas');
       expect(rest.createAliases, ['Atlas']);
+      expect(rest.updateAnchorId, 'anchor-1');
+      expect(rest.updateLabel, 'Project Atlas Updated');
+      expect(rest.updateAliases, ['Atlas 2']);
+      expect(rest.updateDescription, '');
+      expect(rest.deleteAnchorId, 'anchor-1');
+      expect(rest.deleteReason, 'cleanup');
       expect(rest.backfillSpaceSlug, 'team-space');
       expect(rest.backfillMemoryScopeRef, 'project-atlas');
       expect(rest.backfillLimitPerSource, 42);
+      expect(rest.mergeSuggestionSpaceSlug, 'team-space');
+      expect(rest.mergeSuggestionMemoryScopeRef, 'project-atlas');
+      expect(rest.mergeSuggestionLimit, 12);
+      expect(rest.mergeSourceAnchorId, 'anchor-dup');
+      expect(rest.mergeTargetAnchorId, 'anchor-1');
+      expect(rest.mergeReason, 'duplicate person');
 
       await repo.dispose();
     });
@@ -223,9 +254,21 @@ class _AnchorRestClient extends BackendRestClient {
   String? createSpaceSlug;
   String? createMemoryScopeRef;
   List<String>? createAliases;
+  String? updateAnchorId;
+  String? updateLabel;
+  List<String>? updateAliases;
+  String? updateDescription;
+  String? deleteAnchorId;
+  String? deleteReason;
   String? backfillSpaceSlug;
   String? backfillMemoryScopeRef;
   int? backfillLimitPerSource;
+  String? mergeSuggestionSpaceSlug;
+  String? mergeSuggestionMemoryScopeRef;
+  int? mergeSuggestionLimit;
+  String? mergeSourceAnchorId;
+  String? mergeTargetAnchorId;
+  String? mergeReason;
 
   @override
   Future<Map<String, dynamic>> createAnchor({
@@ -256,6 +299,42 @@ class _AnchorRestClient extends BackendRestClient {
   }
 
   @override
+  Future<Map<String, dynamic>> updateAnchor({
+    required String anchorId,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    updateAnchorId = anchorId;
+    updateLabel = label;
+    updateAliases = aliases;
+    updateDescription = description;
+    return {
+      'id': anchorId,
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': 'project',
+      'normalized_key': label.toLowerCase(),
+      'label': label,
+      'aliases': aliases,
+      'description': description,
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:05:00Z',
+    };
+  }
+
+  @override
+  Future<void> deleteAnchor({
+    required String anchorId,
+    String reason = 'manual delete',
+  }) async {
+    deleteAnchorId = anchorId;
+    deleteReason = reason;
+  }
+
+  @override
   Future<void> backfillAnchors({
     required String spaceSlug,
     required String memoryScopeExternalRef,
@@ -265,6 +344,79 @@ class _AnchorRestClient extends BackendRestClient {
     backfillMemoryScopeRef = memoryScopeExternalRef;
     backfillLimitPerSource = limitPerSource;
   }
+
+  @override
+  Future<Map<String, dynamic>> getAnchorMergeSuggestions({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    int limit = 50,
+  }) async {
+    mergeSuggestionSpaceSlug = spaceSlug;
+    mergeSuggestionMemoryScopeRef = memoryScopeExternalRef;
+    mergeSuggestionLimit = limit;
+    return {
+      'candidates': [
+        {
+          'source_anchor': _anchorRow(
+            id: 'anchor-dup',
+            kind: 'person',
+            label: 'Alex Carter',
+            aliases: ['AC'],
+          ),
+          'target_anchor': _anchorRow(
+            id: 'anchor-1',
+            kind: 'person',
+            label: 'Alex',
+            aliases: ['A. Carter'],
+          ),
+          'confidence': 'high',
+          'score': 94,
+          'reasons': ['alias overlap'],
+          'metadata': <String, dynamic>{},
+        },
+      ],
+      'diagnostics': <String, dynamic>{},
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> mergeAnchor({
+    required String sourceAnchorId,
+    required String targetAnchorId,
+    required String reason,
+  }) async {
+    mergeSourceAnchorId = sourceAnchorId;
+    mergeTargetAnchorId = targetAnchorId;
+    mergeReason = reason;
+    return _anchorRow(
+      id: targetAnchorId,
+      kind: 'person',
+      label: 'Alex',
+      aliases: ['Alex Carter'],
+    );
+  }
+}
+
+Map<String, dynamic> _anchorRow({
+  required String id,
+  required String kind,
+  required String label,
+  required List<String> aliases,
+}) {
+  return {
+    'id': id,
+    'space_id': 'space-1',
+    'memory_scope_id': 'scope-1',
+    'kind': kind,
+    'normalized_key': label.toLowerCase(),
+    'label': label,
+    'aliases': aliases,
+    'description': 'Anchor $label',
+    'status': 'active',
+    'metadata': <String, dynamic>{},
+    'created_at': '2026-06-14T10:00:00Z',
+    'updated_at': '2026-06-14T10:05:00Z',
+  };
 }
 
 class _EmptyAnchorRestClient extends BackendRestClient {

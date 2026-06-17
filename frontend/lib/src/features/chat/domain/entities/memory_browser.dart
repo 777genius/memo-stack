@@ -273,6 +273,52 @@ class MemoryBrowserAnchor extends Equatable {
       ];
 }
 
+class MemoryAnchorMergeSuggestion extends Equatable {
+  final MemoryBrowserAnchor sourceAnchor;
+  final MemoryBrowserAnchor targetAnchor;
+  final String confidence;
+  final double score;
+  final List<String> reasons;
+  final Map<String, dynamic> metadata;
+
+  const MemoryAnchorMergeSuggestion({
+    required this.sourceAnchor,
+    required this.targetAnchor,
+    required this.confidence,
+    required this.score,
+    required this.reasons,
+    required this.metadata,
+  });
+
+  factory MemoryAnchorMergeSuggestion.fromMap(Map<String, dynamic> map) {
+    return MemoryAnchorMergeSuggestion(
+      sourceAnchor: MemoryBrowserAnchor.fromMap(_map(map['source_anchor'])),
+      targetAnchor: MemoryBrowserAnchor.fromMap(_map(map['target_anchor'])),
+      confidence: _string(map['confidence'], fallback: 'medium'),
+      score: _double(map['score']),
+      reasons: _stringList(map['reasons']),
+      metadata: _map(map['metadata']),
+    );
+  }
+
+  String get id => '${sourceAnchor.id}_${targetAnchor.id}';
+
+  String get reasonLabel {
+    if (reasons.isEmpty) return 'possible duplicate anchor';
+    return reasons.join(', ');
+  }
+
+  @override
+  List<Object?> get props => [
+        sourceAnchor,
+        targetAnchor,
+        confidence,
+        score,
+        reasons,
+        metadata,
+      ];
+}
+
 Map<String, dynamic> _map(Object? value) {
   if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
   if (value is Map) {
@@ -322,6 +368,12 @@ int _int(Object? value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double _double(Object? value) {
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 DateTime _date(Object? value) => _nullableDate(value) ?? DateTime.now();

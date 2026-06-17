@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
+
 typedef MemoryAnchorSubmit = Future<bool> Function({
   required String kind,
   required String label,
@@ -9,10 +11,12 @@ typedef MemoryAnchorSubmit = Future<bool> Function({
 
 class MemoryAnchorFormDialog extends StatefulWidget {
   final MemoryAnchorSubmit onSubmit;
+  final MemoryBrowserAnchor? anchor;
 
   const MemoryAnchorFormDialog({
     super.key,
     required this.onSubmit,
+    this.anchor,
   });
 
   @override
@@ -20,11 +24,23 @@ class MemoryAnchorFormDialog extends StatefulWidget {
 }
 
 class _MemoryAnchorFormDialogState extends State<MemoryAnchorFormDialog> {
-  final _label = TextEditingController();
-  final _aliases = TextEditingController();
-  final _description = TextEditingController();
-  String _kind = 'person';
+  late final TextEditingController _label;
+  late final TextEditingController _aliases;
+  late final TextEditingController _description;
+  late String _kind;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final anchor = widget.anchor;
+    _kind = anchor?.kind ?? 'person';
+    _label = TextEditingController(text: anchor?.label ?? '');
+    _aliases = TextEditingController(
+      text: anchor?.aliasesLabel ?? '',
+    );
+    _description = TextEditingController(text: anchor?.description ?? '');
+  }
 
   @override
   void dispose() {
@@ -36,9 +52,10 @@ class _MemoryAnchorFormDialogState extends State<MemoryAnchorFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final editing = widget.anchor != null;
     return AlertDialog(
       key: const ValueKey('memory_anchor_form_dialog'),
-      title: const Text('Add anchor'),
+      title: Text(editing ? 'Edit anchor' : 'Add anchor'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Column(
@@ -56,7 +73,7 @@ class _MemoryAnchorFormDialogState extends State<MemoryAnchorFormDialog> {
                 DropdownMenuItem(value: 'event', child: Text('Event')),
                 DropdownMenuItem(value: 'project', child: Text('Project')),
               ],
-              onChanged: _saving
+              onChanged: _saving || editing
                   ? null
                   : (value) => setState(() => _kind = value ?? 'person'),
             ),

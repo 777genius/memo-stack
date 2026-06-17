@@ -203,6 +203,12 @@ abstract class ChatStoreBase with Store {
 
   final Observable<String?> memoryBrowserError = Observable(null);
 
+  final ObservableList<MemoryAnchorMergeSuggestion> anchorMergeSuggestions =
+      ObservableList.of([]);
+
+  final ObservableMap<String, bool> anchorMergeSuggestionReviewing =
+      ObservableMap.of({});
+
   final ObservableMap<String, ObservableList<ChatMessage>> _messagesByChat =
       ObservableMap.of({});
 
@@ -531,9 +537,25 @@ abstract class ChatStoreBase with Store {
     runInAction(() => memoryBrowserError.value = null);
     try {
       final snapshot = await repo.getMemoryBrowser(limit: 100);
+      var mergeSuggestions = const <MemoryAnchorMergeSuggestion>[];
+      Object? mergeError;
+      try {
+        mergeSuggestions = await repo.listMemoryAnchorMergeSuggestions(
+          limit: 80,
+        );
+      } catch (e) {
+        mergeError = e;
+      }
       if (_disposed) return;
       runInAction(() {
         memoryBrowser.value = snapshot;
+        anchorMergeSuggestions
+          ..clear()
+          ..addAll(mergeSuggestions);
+        if (mergeError != null) {
+          memoryBrowserError.value =
+              'Anchor merge reviews unavailable: $mergeError';
+        }
       });
     } catch (e) {
       if (_disposed) return;
@@ -544,6 +566,39 @@ abstract class ChatStoreBase with Store {
       _memoryBrowserRefreshInFlight = false;
       if (showLoading && !_disposed) {
         runInAction(() => memoryBrowserLoading.value = false);
+      }
+    }
+  }
+
+  Future<bool> mergeMemoryAnchorSuggestion(
+    MemoryAnchorMergeSuggestion suggestion,
+  ) async {
+    final reason = _anchorMergeReason(suggestion);
+    runInAction(() {
+      anchorMergeSuggestionReviewing[suggestion.id] = true;
+      memoryBrowserError.value = null;
+    });
+    try {
+      await repo.mergeMemoryAnchors(
+        sourceAnchorId: suggestion.sourceAnchor.id,
+        targetAnchorId: suggestion.targetAnchor.id,
+        reason: reason,
+      );
+      if (_disposed) return false;
+      await refreshMemoryBrowser(showLoading: false);
+      return true;
+    } catch (e) {
+      if (!_disposed) {
+        runInAction(() {
+          memoryBrowserError.value = 'Anchor merge failed: $e';
+        });
+      }
+      return false;
+    } finally {
+      if (!_disposed) {
+        runInAction(() {
+          anchorMergeSuggestionReviewing.remove(suggestion.id);
+        });
       }
     }
   }
@@ -588,6 +643,85 @@ abstract class ChatStoreBase with Store {
       if (!_disposed) {
         runInAction(() {
           memoryBrowserError.value = 'Anchor creation failed: $e';
+        });
+      }
+      return false;
+    } finally {
+      if (!_disposed) {
+        runInAction(() => memoryBrowserLoading.value = false);
+      }
+    }
+  }
+
+  Future<bool> updateMemoryAnchor(
+    MemoryBrowserAnchor anchor, {
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    final cleanLabel = label.trim();
+    final cleanAliases = aliases
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty && item != cleanLabel)
+        .toSet()
+        .toList(growable: false);
+    final cleanDescription = description?.trim();
+    if (cleanLabel.isEmpty) {
+      runInAction(() {
+        memoryBrowserError.value = 'Anchor label is required';
+      });
+      return false;
+    }
+    runInAction(() {
+      memoryBrowserLoading.value = true;
+      memoryBrowserError.value = null;
+    });
+    try {
+      await repo.updateMemoryAnchor(
+        anchorId: anchor.id,
+        label: cleanLabel,
+        aliases: cleanAliases,
+        description: cleanDescription == null
+            ? null
+            : cleanDescription.isEmpty
+                ? ''
+                : cleanDescription,
+      );
+      if (_disposed) return false;
+      await refreshMemoryBrowser(showLoading: false);
+      return true;
+    } catch (e) {
+      if (!_disposed) {
+        runInAction(() {
+          memoryBrowserError.value = 'Anchor update failed: $e';
+        });
+      }
+      return false;
+    } finally {
+      if (!_disposed) {
+        runInAction(() => memoryBrowserLoading.value = false);
+      }
+    }
+  }
+
+  Future<bool> deleteMemoryAnchor(
+    MemoryBrowserAnchor anchor, {
+    String reason = 'deleted in Memo Stack frontend',
+  }) async {
+    final cleanReason = reason.trim().isEmpty ? 'manual delete' : reason.trim();
+    runInAction(() {
+      memoryBrowserLoading.value = true;
+      memoryBrowserError.value = null;
+    });
+    try {
+      await repo.deleteMemoryAnchor(anchorId: anchor.id, reason: cleanReason);
+      if (_disposed) return false;
+      await refreshMemoryBrowser(showLoading: false);
+      return true;
+    } catch (e) {
+      if (!_disposed) {
+        runInAction(() {
+          memoryBrowserError.value = 'Anchor deletion failed: $e';
         });
       }
       return false;
@@ -1228,6 +1362,11 @@ abstract class ChatStoreBase with Store {
     contextLinkSuggestionError.value = null;
     contextLinkSuggestionsLoading.value = false;
     contextLinkSuggestionReviewing.clear();
+    anchorMergeSuggestions.clear();
+    anchorMergeSuggestionReviewing.clear();
+    memoryBrowser.value = null;
+    memoryBrowserError.value = null;
+    memoryBrowserLoading.value = false;
     operationsConsole.value = null;
     operationsConsoleError.value = null;
     operationsConsoleLoading.value = false;
@@ -1339,4 +1478,11 @@ abstract class ChatStoreBase with Store {
 String _normalizeScopeRef(String value) {
   final normalized = value.trim();
   return normalized.isEmpty ? 'default' : normalized;
+}
+
+String _anchorMergeReason(MemoryAnchorMergeSuggestion suggestion) {
+  final details = suggestion.reasonLabel;
+  final reason =
+      'merged duplicate anchor from frontend review: ${suggestion.sourceAnchor.label} -> ${suggestion.targetAnchor.label}; $details';
+  return reason.length <= 320 ? reason : reason.substring(0, 320);
 }

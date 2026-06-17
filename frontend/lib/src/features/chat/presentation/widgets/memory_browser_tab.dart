@@ -43,6 +43,11 @@ class _MemoryBrowserTabState extends State<MemoryBrowserTab> {
         final snapshot = widget.store.memoryBrowser.value;
         final loading = widget.store.memoryBrowserLoading.value;
         final error = widget.store.memoryBrowserError.value;
+        final mergeSuggestions =
+            widget.store.anchorMergeSuggestions.toList(growable: false);
+        final mergeReviewing = Map<String, bool>.from(
+          widget.store.anchorMergeSuggestionReviewing,
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -64,7 +69,10 @@ class _MemoryBrowserTabState extends State<MemoryBrowserTab> {
             ),
             if (snapshot != null) ...[
               const SizedBox(height: 8),
-              _BrowserCounters(snapshot: snapshot),
+              _BrowserCounters(
+                snapshot: snapshot,
+                mergeReviewCount: mergeSuggestions.length,
+              ),
             ],
             if (error != null) ...[
               const SizedBox(height: 8),
@@ -73,7 +81,10 @@ class _MemoryBrowserTabState extends State<MemoryBrowserTab> {
             const SizedBox(height: 8),
             Expanded(
               child: _BrowserBody(
+                store: widget.store,
                 snapshot: snapshot,
+                mergeSuggestions: mergeSuggestions,
+                mergeReviewing: mergeReviewing,
                 loading: loading,
                 query: _search.text,
                 filter: _filter,
@@ -216,8 +227,12 @@ class _BrowserFilterChips extends StatelessWidget {
 
 class _BrowserCounters extends StatelessWidget {
   final MemoryBrowserSnapshot snapshot;
+  final int mergeReviewCount;
 
-  const _BrowserCounters({required this.snapshot});
+  const _BrowserCounters({
+    required this.snapshot,
+    required this.mergeReviewCount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -229,6 +244,8 @@ class _BrowserCounters extends StatelessWidget {
         _Counter(label: 'Captures', value: snapshot.captures.length),
         _Counter(label: 'Files', value: snapshot.assets.length),
         _Counter(label: 'Anchors', value: snapshot.anchors.length),
+        if (mergeReviewCount > 0)
+          _Counter(label: 'Merge reviews', value: mergeReviewCount),
         _Counter(label: 'Links', value: snapshot.contextLinks.length),
         _Counter(
           label: 'Pending',
@@ -268,13 +285,19 @@ class _Counter extends StatelessWidget {
 }
 
 class _BrowserBody extends StatelessWidget {
+  final ChatStore store;
   final MemoryBrowserSnapshot? snapshot;
+  final List<MemoryAnchorMergeSuggestion> mergeSuggestions;
+  final Map<String, bool> mergeReviewing;
   final bool loading;
   final String query;
   final _BrowserFilter filter;
 
   const _BrowserBody({
+    required this.store,
     required this.snapshot,
+    required this.mergeSuggestions,
+    required this.mergeReviewing,
     required this.loading,
     required this.query,
     required this.filter,
@@ -286,7 +309,7 @@ class _BrowserBody extends StatelessWidget {
       if (loading) return const Center(child: CircularProgressIndicator());
       return const Center(child: Text('Memory browser is empty'));
     }
-    final sections = _sections(snapshot!, query, filter);
+    final sections = _sections(snapshot!, mergeSuggestions, mergeReviewing);
     if (sections.every((section) => section.children.isEmpty)) {
       return const Center(child: Text('No matching memory items'));
     }
@@ -312,16 +335,16 @@ class _BrowserBody extends StatelessWidget {
 
   List<_BrowserSectionData> _sections(
     MemoryBrowserSnapshot snapshot,
-    String rawQuery,
-    _BrowserFilter active,
+    List<MemoryAnchorMergeSuggestion> mergeSuggestions,
+    Map<String, bool> mergeReviewing,
   ) {
-    final q = rawQuery.trim().toLowerCase();
-    final showAll = active == _BrowserFilter.all;
+    final q = query.trim().toLowerCase();
+    final showAll = filter == _BrowserFilter.all;
     return [
       _BrowserSectionData(
         title: 'Threads',
         icon: Icons.forum_outlined,
-        children: showAll || active == _BrowserFilter.threads
+        children: showAll || filter == _BrowserFilter.threads
             ? snapshot.threads
                 .where((item) => _matches(q, [item.externalRef, item.status]))
                 .map((item) => _BrowserItem(
@@ -337,7 +360,7 @@ class _BrowserBody extends StatelessWidget {
       _BrowserSectionData(
         title: 'Captures',
         icon: Icons.history_outlined,
-        children: showAll || active == _BrowserFilter.captures
+        children: showAll || filter == _BrowserFilter.captures
             ? snapshot.captures
                 .where((item) => _matches(q, [
                       item.preview,
@@ -352,7 +375,7 @@ class _BrowserBody extends StatelessWidget {
       _BrowserSectionData(
         title: 'Files',
         icon: Icons.attach_file,
-        children: showAll || active == _BrowserFilter.files
+        children: showAll || filter == _BrowserFilter.files
             ? snapshot.assets
                 .where((item) => _matches(q, [
                       item.filename,
@@ -367,7 +390,7 @@ class _BrowserBody extends StatelessWidget {
       _BrowserSectionData(
         title: 'Anchors',
         icon: Icons.hub_outlined,
-        children: showAll || active == _BrowserFilter.anchors
+        children: showAll || filter == _BrowserFilter.anchors
             ? snapshot.anchors
                 .where((item) => _matches(q, [
                       item.label,
@@ -376,15 +399,43 @@ class _BrowserBody extends StatelessWidget {
                       item.aliases.join(' '),
                       item.description ?? '',
                     ]))
-                .map((item) =>
-                    _AnchorBrowserItem(anchor: item, snapshot: snapshot))
+                .map(
+                  (item) => _AnchorBrowserItem(
+                    anchor: item,
+                    snapshot: snapshot,
+                    store: store,
+                  ),
+                )
+                .toList(growable: false)
+            : const <Widget>[],
+      ),
+      _BrowserSectionData(
+        title: 'Anchor merge reviews',
+        icon: Icons.merge_type_outlined,
+        children: showAll || filter == _BrowserFilter.links
+            ? mergeSuggestions
+                .where((item) => _matches(q, [
+                      item.sourceAnchor.label,
+                      item.targetAnchor.label,
+                      item.sourceAnchor.kind,
+                      item.targetAnchor.kind,
+                      item.confidence,
+                      item.reasonLabel,
+                    ]))
+                .map(
+                  (item) => _AnchorMergeSuggestionBrowserItem(
+                    suggestion: item,
+                    store: store,
+                    reviewing: mergeReviewing[item.id] ?? false,
+                  ),
+                )
                 .toList(growable: false)
             : const <Widget>[],
       ),
       _BrowserSectionData(
         title: 'Relations',
         icon: Icons.account_tree_outlined,
-        children: showAll || active == _BrowserFilter.links
+        children: showAll || filter == _BrowserFilter.links
             ? [
                 ...snapshot.contextLinks
                     .where((item) => _matches(q, [
@@ -482,6 +533,7 @@ class _BrowserItem extends StatelessWidget {
   final String? status;
   final VoidCallback? onTap;
   final Key? itemKey;
+  final Widget? trailingAction;
 
   const _BrowserItem({
     this.itemKey,
@@ -491,6 +543,7 @@ class _BrowserItem extends StatelessWidget {
     required this.meta,
     this.status,
     this.onTap,
+    this.trailingAction,
   });
 
   @override
@@ -554,6 +607,10 @@ class _BrowserItem extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (trailingAction != null) ...[
+                  const SizedBox(width: 6),
+                  trailingAction!,
+                ],
                 const SizedBox(width: 8),
                 Text(
                   meta,
@@ -611,8 +668,13 @@ class _AssetBrowserItem extends StatelessWidget {
 class _AnchorBrowserItem extends StatelessWidget {
   final MemoryBrowserAnchor anchor;
   final MemoryBrowserSnapshot snapshot;
+  final ChatStore store;
 
-  const _AnchorBrowserItem({required this.anchor, required this.snapshot});
+  const _AnchorBrowserItem({
+    required this.anchor,
+    required this.snapshot,
+    required this.store,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -630,6 +692,144 @@ class _AnchorBrowserItem extends StatelessWidget {
         builder: (_) => MemoryAnchorDetailDialog(
           anchor: anchor,
           snapshot: snapshot,
+          onEdit: () {
+            Navigator.of(context).pop();
+            _showEditDialog(context);
+          },
+          onDelete: () {
+            Navigator.of(context).pop();
+            _showDeleteDialog(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context) {
+    unawaited(
+      showDialog<bool>(
+        context: context,
+        builder: (_) => MemoryAnchorFormDialog(
+          anchor: anchor,
+          onSubmit: ({
+            required kind,
+            required label,
+            aliases = const <String>[],
+            description,
+          }) {
+            return store.updateMemoryAnchor(
+              anchor,
+              label: label,
+              aliases: aliases,
+              description: description,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteDialog(BuildContext context) {
+    unawaited(
+      showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          key: const ValueKey('memory_anchor_delete_dialog'),
+          title: const Text('Delete anchor'),
+          content: Text('Delete ${anchor.label}?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.tonal(
+              key: const ValueKey('memory_anchor_delete_confirm_button'),
+              onPressed: () async {
+                final navigator = Navigator.of(dialogContext);
+                final ok = await store.deleteMemoryAnchor(anchor);
+                if (ok && navigator.mounted) {
+                  navigator.pop(true);
+                }
+              },
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnchorMergeSuggestionBrowserItem extends StatelessWidget {
+  final MemoryAnchorMergeSuggestion suggestion;
+  final ChatStore store;
+  final bool reviewing;
+
+  const _AnchorMergeSuggestionBrowserItem({
+    required this.suggestion,
+    required this.store,
+    required this.reviewing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final source = suggestion.sourceAnchor;
+    final target = suggestion.targetAnchor;
+    return _BrowserItem(
+      itemKey: ValueKey(
+        'memory_browser_anchor_merge_${sidebarKeyPart(suggestion.id)}',
+      ),
+      icon: Icons.merge_type_outlined,
+      title: '${source.label} -> ${target.label}',
+      subtitle:
+          '${suggestion.confidence} - ${suggestion.score.toStringAsFixed(0)} - ${suggestion.reasonLabel}',
+      meta: source.kind,
+      status: suggestion.confidence,
+      onTap: reviewing ? null : () => _showMergeDialog(context),
+      trailingAction: reviewing
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : IconButton(
+              key: ValueKey(
+                'memory_anchor_merge_${sidebarKeyPart(suggestion.id)}',
+              ),
+              tooltip: 'Merge anchors',
+              onPressed: () => _showMergeDialog(context),
+              icon: const Icon(Icons.merge_type_outlined, size: 18),
+            ),
+    );
+  }
+
+  void _showMergeDialog(BuildContext context) {
+    unawaited(
+      showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          key: const ValueKey('memory_anchor_merge_dialog'),
+          title: const Text('Merge anchors'),
+          content: Text(
+            '${suggestion.sourceAnchor.label} -> ${suggestion.targetAnchor.label}\n${suggestion.reasonLabel}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const ValueKey('memory_anchor_merge_confirm_button'),
+              onPressed: () async {
+                final navigator = Navigator.of(dialogContext);
+                final ok = await store.mergeMemoryAnchorSuggestion(suggestion);
+                if (ok && navigator.mounted) {
+                  navigator.pop(true);
+                }
+              },
+              child: const Text('Merge'),
+            ),
+          ],
         ),
       ),
     );

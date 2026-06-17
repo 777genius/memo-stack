@@ -7,11 +7,15 @@ import 'package:frontend/src/features/chat/presentation/widgets/sidebar_formatte
 class MemoryAnchorDetailDialog extends StatelessWidget {
   final MemoryBrowserAnchor anchor;
   final MemoryBrowserSnapshot snapshot;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   const MemoryAnchorDetailDialog({
     super.key,
     required this.anchor,
     required this.snapshot,
+    this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -70,6 +74,25 @@ class MemoryAnchorDetailDialog extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (onEdit != null)
+                    IconButton(
+                      key: ValueKey(
+                        'memory_anchor_edit_${sidebarKeyPart(anchor.id)}',
+                      ),
+                      tooltip: 'Edit anchor',
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                    ),
+                  if (onDelete != null)
+                    IconButton(
+                      key: ValueKey(
+                        'memory_anchor_delete_${sidebarKeyPart(anchor.id)}',
+                      ),
+                      tooltip: 'Delete anchor',
+                      onPressed: onDelete,
+                      color: scheme.error,
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                    ),
                   IconButton(
                     tooltip: 'Close',
                     onPressed: () => Navigator.of(context).pop(),

@@ -227,6 +227,34 @@ class BackendRestClient {
     return _data(resp.data);
   }
 
+  Future<Map<String, dynamic>> updateAnchor({
+    required String anchorId,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    final resp = await _dio.patch<Map<String, dynamic>>(
+      '/v1/anchors/$anchorId',
+      data: {
+        'label': label,
+        'aliases': aliases,
+        'description': description,
+        'metadata': {'ui_edited': true},
+      },
+    );
+    return _data(resp.data);
+  }
+
+  Future<void> deleteAnchor({
+    required String anchorId,
+    String reason = 'manual delete',
+  }) async {
+    await _dio.delete<Map<String, dynamic>>(
+      '/v1/anchors/$anchorId',
+      data: {'reason': reason},
+    );
+  }
+
   Future<void> backfillAnchors({
     required String spaceSlug,
     required String memoryScopeExternalRef,
@@ -240,6 +268,37 @@ class BackendRestClient {
         'limit_per_source': limitPerSource,
       },
     );
+  }
+
+  Future<Map<String, dynamic>> getAnchorMergeSuggestions({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    int limit = 50,
+  }) async {
+    final resp = await _dio.get<Map<String, dynamic>>(
+      '/v1/anchors/merge-suggestions',
+      queryParameters: {
+        'space_slug': spaceSlug,
+        'memory_scope_external_ref': memoryScopeExternalRef,
+        'limit': limit,
+      },
+    );
+    return _data(resp.data);
+  }
+
+  Future<Map<String, dynamic>> mergeAnchor({
+    required String sourceAnchorId,
+    required String targetAnchorId,
+    required String reason,
+  }) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/anchors/$sourceAnchorId/merge',
+      data: {
+        'target_anchor_id': targetAnchorId,
+        'reason': reason,
+      },
+    );
+    return _data(resp.data);
   }
 
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
