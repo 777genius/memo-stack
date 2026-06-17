@@ -98,6 +98,7 @@ def remap_capture(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    anchor_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     capture_id = str(item["id"])
     mapped_capture_id = capture_id_map.get(capture_id, capture_id)
@@ -121,6 +122,58 @@ def remap_capture(
             episode_id_map=episode_id_map,
             chunk_id_map=chunk_id_map,
             capture_id_map=capture_id_map,
+            anchor_id_map=anchor_id_map or {},
+        ),
+    }
+
+
+def remap_anchor(
+    item: dict[str, Any],
+    *,
+    anchor_id_map: dict[str, str],
+) -> dict[str, Any]:
+    anchor_id = str(item["id"])
+    if anchor_id not in anchor_id_map:
+        return item
+    return {**item, "id": anchor_id_map[anchor_id]}
+
+
+def remap_context_link(
+    item: dict[str, Any],
+    *,
+    context_link_id_map: dict[str, str],
+    fact_id_map: dict[str, str],
+    document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
+    chunk_id_map: dict[str, str],
+    capture_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
+) -> dict[str, Any]:
+    link_id = str(item["id"])
+    source_type = str(item.get("source_type") or "")
+    target_type = str(item.get("target_type") or "")
+    return {
+        **item,
+        "id": context_link_id_map.get(link_id, link_id),
+        "source_id": remap_endpoint_id(
+            source_type=source_type,
+            source_id=str(item.get("source_id")),
+            fact_id_map=fact_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            anchor_id_map=anchor_id_map,
+        ),
+        "target_id": remap_endpoint_id(
+            source_type=target_type,
+            source_id=str(item.get("target_id")),
+            fact_id_map=fact_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            anchor_id_map=anchor_id_map,
         ),
     }
 
@@ -148,6 +201,7 @@ def _remap_capture_evidence_refs(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
 ) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
@@ -167,6 +221,7 @@ def _remap_capture_evidence_refs(
                 episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
                 capture_id_map=capture_id_map,
+                anchor_id_map=anchor_id_map,
             )
         chunk_id = next_ref.get("chunk_id")
         if chunk_id is not None:
@@ -184,6 +239,30 @@ def _remap_evidence_source_id(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     capture_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
+) -> str:
+    return remap_endpoint_id(
+        source_type=source_type,
+        source_id=source_id,
+        fact_id_map=fact_id_map,
+        document_id_map=document_id_map,
+        episode_id_map=episode_id_map,
+        chunk_id_map=chunk_id_map,
+        capture_id_map=capture_id_map,
+        anchor_id_map=anchor_id_map,
+    )
+
+
+def remap_endpoint_id(
+    *,
+    source_type: str,
+    source_id: str,
+    fact_id_map: dict[str, str],
+    document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
+    chunk_id_map: dict[str, str],
+    capture_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
 ) -> str:
     if source_type == "fact":
         return fact_id_map.get(source_id, source_id)
@@ -195,4 +274,6 @@ def _remap_evidence_source_id(
         return chunk_id_map.get(source_id, source_id)
     if source_type == "capture":
         return capture_id_map.get(source_id, source_id)
+    if source_type == "anchor":
+        return anchor_id_map.get(source_id, source_id)
     return source_id

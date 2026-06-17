@@ -8,18 +8,18 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from memo_stack_adapters.postgres.models import (
+    MemoryAnchorRow,
     MemoryCaptureRow,
     MemoryChunkRow,
+    MemoryContextLinkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
     MemoryFactRelationRow,
     MemoryFactRow,
-    MemoryOutboxRow,
     MemoryScopeRow,
     MemorySourceRefRow,
     MemorySpaceRow,
@@ -34,6 +34,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
+from memo_stack_server.memory_scope_transfer_records import (
+    anchor_from_json as _anchor_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    anchor_to_json as _anchor_to_json,
+)
 from memo_stack_server.memory_scope_transfer_records import (
     bounded_optional_text as _bounded_optional_text,
 )
@@ -51,6 +57,12 @@ from memo_stack_server.memory_scope_transfer_records import (
 )
 from memo_stack_server.memory_scope_transfer_records import (
     contains_redacted_memory as _contains_redacted_memory,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    context_link_from_json as _context_link_from_json,
+)
+from memo_stack_server.memory_scope_transfer_records import (
+    context_link_to_json as _context_link_to_json,
 )
 from memo_stack_server.memory_scope_transfer_records import (
     document_from_json as _document_from_json,
@@ -85,10 +97,16 @@ from memo_stack_server.memory_scope_transfer_remap import (
     episode_source_thread_id as _episode_source_thread_id,
 )
 from memo_stack_server.memory_scope_transfer_remap import (
+    remap_anchor as _remap_anchor,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
     remap_capture as _remap_capture,
 )
 from memo_stack_server.memory_scope_transfer_remap import (
     remap_chunk as _remap_chunk,
+)
+from memo_stack_server.memory_scope_transfer_remap import (
+    remap_context_link as _remap_context_link,
 )
 from memo_stack_server.memory_scope_transfer_remap import (
     remap_document as _remap_document,
@@ -102,9 +120,27 @@ from memo_stack_server.memory_scope_transfer_remap import (
 from memo_stack_server.memory_scope_transfer_remap import (
     remap_source_ref as _remap_source_ref,
 )
+from memo_stack_server.memory_scope_transfer_support import (
+    bounded_external_ref as _bounded_external_ref,
+)
+from memo_stack_server.memory_scope_transfer_support import (
+    build_id_map as _build_id_map,
+)
+from memo_stack_server.memory_scope_transfer_support import (
+    build_thread_id_map as _build_thread_id_map,
+)
+from memo_stack_server.memory_scope_transfer_support import (
+    import_thread_external_ref as _import_thread_external_ref,
+)
+from memo_stack_server.memory_scope_transfer_support import (
+    outbox as _outbox,
+)
+from memo_stack_server.memory_scope_transfer_support import (
+    stable_id as _stable_id,
+)
 
-SCHEMA_VERSION = 4
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4}
+SCHEMA_VERSION = 5
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, 4, 5}
 SUPPORTED_MERGE_STRATEGIES = {
     "fail_on_conflict",
     "skip_existing",
@@ -140,6 +176,8 @@ async def export_memory_scope(
         "episodes": counts["episodes"],
         "chunks": counts["chunks"],
         "captures": counts["captures"],
+        "anchors": counts["anchors"],
+        "context_links": counts["context_links"],
         "relations": counts["relations"],
         "redacted": redacted,
     }
@@ -221,6 +259,30 @@ async def export_memory_scope_payload(
                 )
             ).scalars()
         )
+        anchors = list(
+            (
+                await session.execute(
+                    select(MemoryAnchorRow)
+                    .where(
+                        MemoryAnchorRow.space_id == space.id,
+                        MemoryAnchorRow.memory_scope_id == memory_scope.id,
+                    )
+                    .order_by(MemoryAnchorRow.created_at, MemoryAnchorRow.id)
+                )
+            ).scalars()
+        )
+        context_links = list(
+            (
+                await session.execute(
+                    select(MemoryContextLinkRow)
+                    .where(
+                        MemoryContextLinkRow.space_id == space.id,
+                        MemoryContextLinkRow.memory_scope_id == memory_scope.id,
+                    )
+                    .order_by(MemoryContextLinkRow.created_at, MemoryContextLinkRow.id)
+                )
+            ).scalars()
+        )
         fact_ids = [fact.id for fact in facts]
         source_refs = []
         relations = []
@@ -258,6 +320,8 @@ async def export_memory_scope_payload(
         "episodes": [_episode_to_json(episode, redacted=redacted) for episode in episodes],
         "chunks": [_chunk_to_json(chunk, redacted=redacted) for chunk in chunks],
         "captures": [_capture_to_json(capture, redacted=redacted) for capture in captures],
+        "anchors": [_anchor_to_json(anchor) for anchor in anchors],
+        "context_links": [_context_link_to_json(link) for link in context_links],
         "relations": [relation_to_json(relation) for relation in relations],
         "source_refs": [_source_ref_to_json(ref, redacted=redacted) for ref in source_refs],
         "exported_at": datetime.now(UTC).isoformat(),
@@ -272,6 +336,8 @@ async def export_memory_scope_payload(
             "episodes": len(episodes),
             "chunks": len(chunks),
             "captures": len(captures),
+            "anchors": len(anchors),
+            "context_links": len(context_links),
             "relations": len(relations),
             "source_refs": len(source_refs),
         },
@@ -323,6 +389,8 @@ async def import_memory_scope_payload(
     episodes = list(payload.get("episodes", []))
     chunks = list(payload.get("chunks", []))
     captures = list(payload.get("captures", []))
+    anchors = list(payload.get("anchors", []))
+    context_links = list(payload.get("context_links", []))
     relations = list(payload.get("relations", []))
     source_refs = list(payload.get("source_refs", []))
     if not dry_run and _contains_redacted_memory(
@@ -343,6 +411,8 @@ async def import_memory_scope_payload(
         episode_id_map: dict[str, str] = {}
         chunk_id_map: dict[str, str] = {}
         capture_id_map: dict[str, str] = {}
+        anchor_id_map: dict[str, str] = {}
+        context_link_id_map: dict[str, str] = {}
         relation_id_map: dict[str, str] = {}
         thread_id_map: dict[str, str] = {}
 
@@ -368,6 +438,12 @@ async def import_memory_scope_payload(
             chunk_id_map = _build_id_map("chunk", chunks, target_memory_scope_id, import_batch_id)
             capture_id_map = _build_id_map(
                 "capture", captures, target_memory_scope_id, import_batch_id
+            )
+            anchor_id_map = _build_id_map(
+                "anchor", anchors, target_memory_scope_id, import_batch_id
+            )
+            context_link_id_map = _build_id_map(
+                "context_link", context_links, target_memory_scope_id, import_batch_id
             )
             relation_id_map = _build_id_map(
                 "relation", relations, target_memory_scope_id, import_batch_id
@@ -396,6 +472,8 @@ async def import_memory_scope_payload(
                 episodes=episodes,
                 chunks=chunks,
                 captures=captures,
+                anchors=anchors,
+                context_links=context_links,
                 relations=relations,
             )
         )
@@ -422,6 +500,8 @@ async def import_memory_scope_payload(
                 episodes=episodes,
                 chunks=chunks,
                 captures=captures,
+                anchors=anchors,
+                context_links=context_links,
                 relations=relations,
             )
             result: dict[str, object] = {
@@ -433,6 +513,8 @@ async def import_memory_scope_payload(
                     episodes=episodes,
                     chunks=chunks,
                     captures=captures,
+                    anchors=anchors,
+                    context_links=context_links,
                     relations=relations,
                     source_refs=source_refs,
                     skipped=skipped,
@@ -456,6 +538,8 @@ async def import_memory_scope_payload(
             episodes=episodes,
             chunks=chunks,
             captures=captures,
+            anchors=anchors,
+            context_links=context_links,
             relations=relations,
         )
         if merge_strategy == "supersede_matching_facts":
@@ -567,9 +651,43 @@ async def import_memory_scope_payload(
                 episode_id_map=episode_id_map,
                 chunk_id_map=chunk_id_map,
                 capture_id_map=capture_id_map,
+                anchor_id_map=anchor_id_map,
             )
             session.add(
                 _capture_from_json(
+                    mapped,
+                    space_id=space_id,
+                    memory_scope_id=target_memory_scope_id,
+                    now=now,
+                )
+            )
+        for anchor in anchors:
+            if str(anchor["id"]) in skipped["anchors"]:
+                continue
+            mapped = _remap_anchor(anchor, anchor_id_map=anchor_id_map)
+            session.add(
+                _anchor_from_json(
+                    mapped,
+                    space_id=space_id,
+                    memory_scope_id=target_memory_scope_id,
+                    now=now,
+                )
+            )
+        for context_link in context_links:
+            if str(context_link["id"]) in skipped["context_links"]:
+                continue
+            mapped = _remap_context_link(
+                context_link,
+                context_link_id_map=context_link_id_map,
+                fact_id_map=fact_id_map,
+                document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
+                chunk_id_map=chunk_id_map,
+                capture_id_map=capture_id_map,
+                anchor_id_map=anchor_id_map,
+            )
+            session.add(
+                _context_link_from_json(
                     mapped,
                     space_id=space_id,
                     memory_scope_id=target_memory_scope_id,
@@ -655,6 +773,8 @@ async def import_memory_scope_payload(
             episodes=episodes,
             chunks=chunks,
             captures=captures,
+            anchors=anchors,
+            context_links=context_links,
             relations=relations,
             source_refs=source_refs,
             skipped=skipped,
@@ -792,42 +912,6 @@ async def _memory_scope_ref_exists(
     )
 
 
-def _bounded_external_ref(value: str, *, suffix: str) -> str:
-    limit = 200 - len(suffix)
-    return f"{value[:limit].rstrip('-')}{suffix}"
-
-
-def _build_id_map(
-    prefix: str,
-    items: list[dict[str, Any]],
-    memory_scope_id: str,
-    import_batch_id: str,
-) -> dict[str, str]:
-    return {
-        str(item["id"]): _stable_id(prefix, memory_scope_id, str(item["id"]), import_batch_id)
-        for item in items
-    }
-
-
-def _build_thread_id_map(
-    *,
-    episodes: list[dict[str, Any]],
-    memory_scope_id: str,
-    import_batch_id: str,
-) -> dict[str, str]:
-    source_thread_ids = sorted(
-        {
-            _episode_source_thread_id(episode)
-            for episode in episodes
-            if episode.get("id") is not None
-        }
-    )
-    return {
-        thread_id: _stable_id("thread", memory_scope_id, thread_id, import_batch_id)
-        for thread_id in source_thread_ids
-    }
-
-
 async def _ensure_import_threads(
     session: AsyncSession,
     *,
@@ -869,41 +953,3 @@ async def _ensure_import_threads(
                 updated_at=now,
             )
         )
-
-
-def _stable_id(prefix: str, *parts: str) -> str:
-    digest = sha256("\u241f".join(parts).encode("utf-8")).hexdigest()[:24]
-    return f"{prefix}_{digest}"
-
-
-def _import_thread_external_ref(source_thread_id: str, target_thread_id: str) -> str:
-    return _bounded_external_ref(
-        f"imported-{source_thread_id}",
-        suffix=f"-{target_thread_id[-8:]}",
-    )
-
-
-def _outbox(
-    *,
-    event_type: str,
-    aggregate_type: str,
-    aggregate_id: str,
-    now: datetime,
-    payload: dict[str, object],
-    aggregate_version: int | None = None,
-) -> MemoryOutboxRow:
-    return MemoryOutboxRow(
-        event_type=event_type,
-        aggregate_type=aggregate_type,
-        aggregate_id=aggregate_id,
-        aggregate_version=aggregate_version,
-        workload_class="projection",
-        fairness_key=f"{aggregate_type}:{aggregate_id}",
-        payload_json=payload,
-        status="pending",
-        attempt_count=0,
-        next_attempt_at=now,
-        last_safe_error=None,
-        created_at=now,
-        updated_at=now,
-    )

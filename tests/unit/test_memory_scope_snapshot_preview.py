@@ -5,7 +5,7 @@ from memo_stack_core.memory_scope_snapshot_preview import build_memory_scope_sna
 
 def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> None:
     payload = {
-        "schema_version": 1,
+        "schema_version": 5,
         "facts": [{"id": "fact_keep"}, {"id": "fact_conflict"}],
         "documents": [{"id": "doc_conflict"}],
         "episodes": [{"id": "episode_keep", "thread_id": "thread_keep"}],
@@ -15,6 +15,36 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
             {"id": "chunk_orphan", "document_id": "missing_doc"},
         ],
         "captures": [{"id": "capture_keep"}, {"id": "capture_conflict"}],
+        "anchors": [
+            {"id": "anchor_keep", "kind": "person", "normalized_key": "alex"},
+            {"id": "anchor_conflict", "kind": "project", "normalized_key": "atlas"},
+        ],
+        "context_links": [
+            {
+                "id": "context_link_keep",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "anchor",
+                "target_id": "anchor_keep",
+                "relation_type": "mentions",
+            },
+            {
+                "id": "context_link_anchor_skip",
+                "source_type": "capture",
+                "source_id": "capture_keep",
+                "target_type": "anchor",
+                "target_id": "anchor_conflict",
+                "relation_type": "mentions",
+            },
+            {
+                "id": "context_link_unsupported",
+                "source_type": "asset",
+                "source_id": "asset_missing",
+                "target_type": "anchor",
+                "target_id": "anchor_keep",
+                "relation_type": "mentions",
+            },
+        ],
         "relations": [
             {
                 "id": "relation_keep",
@@ -33,7 +63,7 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     skip_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
         merge_strategy="skip_existing",
-        conflict_ids={"fact_conflict", "doc_conflict", "capture_conflict"},
+        conflict_ids={"fact_conflict", "doc_conflict", "capture_conflict", "anchor_conflict"},
     )
     supersede_preview = build_memory_scope_snapshot_import_preview(
         payload=payload,
@@ -47,18 +77,23 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "episodes": 1,
         "chunks": 3,
         "captures": 2,
+        "anchors": 2,
+        "context_links": 3,
         "relations": 1,
         "source_refs": 3,
     }
     assert skip_preview["conflicts"]["facts"] == ["fact_conflict"]
     assert skip_preview["conflicts"]["documents"] == ["doc_conflict"]
     assert skip_preview["conflicts"]["captures"] == ["capture_conflict"]
+    assert skip_preview["conflicts"]["anchors"] == ["anchor_conflict"]
     assert skip_preview["would_skip"] == {
         "facts": 1,
         "documents": 1,
         "episodes": 0,
         "chunks": 2,
         "captures": 1,
+        "anchors": 1,
+        "context_links": 2,
         "relations": 1,
         "source_refs": 2,
     }
@@ -68,11 +103,14 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
         "episodes": 1,
         "chunks": 1,
         "captures": 1,
+        "anchors": 1,
+        "context_links": 1,
         "relations": 0,
         "source_refs": 1,
     }
     assert "some_chunks_will_be_skipped" in skip_preview["warnings"]
     assert "some_relations_will_be_skipped" in skip_preview["warnings"]
+    assert "some_context_links_will_be_skipped" in skip_preview["warnings"]
     assert supersede_preview["would_supersede"] == {
         "facts": 1,
         "fact_ids": ["fact_conflict"],

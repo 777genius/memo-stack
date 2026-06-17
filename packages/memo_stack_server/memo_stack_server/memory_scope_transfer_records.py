@@ -6,8 +6,10 @@ from datetime import datetime
 from typing import Any
 
 from memo_stack_adapters.postgres.models import (
+    MemoryAnchorRow,
     MemoryCaptureRow,
     MemoryChunkRow,
+    MemoryContextLinkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
     MemoryFactRow,
@@ -166,6 +168,38 @@ def capture_to_json(row: MemoryCaptureRow, *, redacted: bool) -> dict[str, Any]:
         "resolver_version": row.resolver_version,
         "last_error_code": row.last_error_code,
         "last_error_message": row.last_error_message,
+    }
+
+
+def anchor_to_json(row: MemoryAnchorRow) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "normalized_key": row.normalized_key,
+        "label": row.label,
+        "aliases": list(row.aliases_json or []),
+        "description": row.description,
+        "status": row.status,
+        "metadata_json": row.metadata_json,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def context_link_to_json(row: MemoryContextLinkRow) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "source_type": row.source_type,
+        "source_id": row.source_id,
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+        "relation_type": row.relation_type,
+        "confidence": row.confidence,
+        "reason": row.reason,
+        "status": row.status,
+        "metadata_json": row.metadata_json,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
     }
 
 
@@ -354,6 +388,54 @@ def capture_from_json(
     )
 
 
+def anchor_from_json(
+    item: dict[str, Any],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    now: datetime,
+) -> MemoryAnchorRow:
+    return MemoryAnchorRow(
+        id=str(item["id"]),
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        kind=str(item.get("kind", "concept")),
+        normalized_key=str(item.get("normalized_key") or item["id"]),
+        label=str(item.get("label") or item.get("normalized_key") or item["id"]),
+        aliases_json=_bounded_string_list(item.get("aliases"), limit=20, item_limit=120),
+        description=bounded_optional_text(item.get("description"), 500),
+        status=str(item.get("status", "active")),
+        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        created_at=_parse_dt(item.get("created_at"), now),
+        updated_at=_parse_dt(item.get("updated_at"), now),
+    )
+
+
+def context_link_from_json(
+    item: dict[str, Any],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    now: datetime,
+) -> MemoryContextLinkRow:
+    return MemoryContextLinkRow(
+        id=str(item["id"]),
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        source_type=str(item.get("source_type", "unknown")),
+        source_id=str(item.get("source_id", item["id"])),
+        target_type=str(item.get("target_type", "unknown")),
+        target_id=str(item.get("target_id", item["id"])),
+        relation_type=str(item.get("relation_type", "related_to")),
+        confidence=str(item.get("confidence", "medium")),
+        reason=str(item.get("reason", "Imported context link")),
+        status=str(item.get("status", "active")),
+        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        created_at=_parse_dt(item.get("created_at"), now),
+        updated_at=_parse_dt(item.get("updated_at"), now),
+    )
+
+
 def bounded_optional_text(value: object, limit: int) -> str | None:
     if value is None:
         return None
@@ -383,3 +465,16 @@ def _bounded_tags(value: object) -> list[str]:
         if len(tags) >= 10:
             break
     return tags
+
+
+def _bounded_string_list(value: object, *, limit: int, item_limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = str(item).strip()[:item_limit]
+        if text and text not in items:
+            items.append(text)
+        if len(items) >= limit:
+            break
+    return items
