@@ -194,6 +194,7 @@ def import_context_records(
         mapped = remap_context_link(
             context_link,
             context_link_id_map=context_link_id_map,
+            context_link_suggestion_id_map=context_link_suggestion_id_map,
             fact_id_map=fact_id_map,
             document_id_map=document_id_map,
             episode_id_map=episode_id_map,

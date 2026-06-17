@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 from memo_stack_adapters.postgres.models import MemoryContextLinkSuggestionRow
@@ -635,6 +636,170 @@ def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path:
     assert "conflicts_block_import" in preview["warnings"]
 
 
+def test_memory_scope_snapshot_import_remaps_reviewed_context_link_audit(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        original_fact = _create_fact(
+            client,
+            text="SNAPSHOT_REVIEW_ORIGINAL: original suggestion target.",
+            source_id="snapshot-review-original",
+        )
+        override_fact = _create_fact(
+            client,
+            text="SNAPSHOT_REVIEW_OVERRIDE: reviewer override target.",
+            source_id="snapshot-review-override",
+        )
+        corrected_fact = _create_fact(
+            client,
+            text="SNAPSHOT_REVIEW_CORRECTED: reviewer corrected target.",
+            source_id="snapshot-review-corrected",
+        )
+        approved_capture = _create_review_capture(
+            client,
+            source_event_id="snapshot-review-approved-capture",
+            text="Snapshot review capture should first suggest original target.",
+        )
+        rejected_capture = _create_review_capture(
+            client,
+            source_event_id="snapshot-review-rejected-capture",
+            text="Snapshot review rejected capture should stay rejected after import.",
+        )
+        approved_candidate = _persist_fact_link_suggestion(
+            client,
+            source_id=approved_capture.json()["data"]["id"],
+            target_id=original_fact.json()["data"]["id"],
+            text="Snapshot review original target",
+        )
+        rejected_candidate = _persist_fact_link_suggestion(
+            client,
+            source_id=rejected_capture.json()["data"]["id"],
+            target_id=original_fact.json()["data"]["id"],
+            text="Snapshot review original target rejected",
+        )
+        approved = client.post(
+            f"/v1/context-link-suggestions/{approved_candidate['suggestion_id']}/review",
+            json={
+                "action": "approve",
+                "reason": "approved with reviewer override",
+                "target_type": "fact",
+                "target_id": override_fact.json()["data"]["id"],
+                "relation_type": "supports",
+                "confidence": "high",
+                "link_reason": "reviewer selected override target",
+            },
+            headers=auth_headers(),
+        )
+        rejected = client.post(
+            f"/v1/context-link-suggestions/{rejected_candidate['suggestion_id']}/review",
+            json={"action": "reject", "reason": "not the right restored context"},
+            headers=auth_headers(),
+        )
+        approved_link_id = approved.json()["data"]["link"]["id"]
+        corrected_link = client.patch(
+            f"/v1/context-links/{approved_link_id}",
+            json={
+                "target_type": "fact",
+                "target_id": corrected_fact.json()["data"]["id"],
+                "relation_type": "supports",
+                "confidence": "medium",
+                "reason": "manual correction after approval",
+                "metadata": {"last_edit_source": "snapshot-review-test"},
+            },
+            headers=auth_headers(),
+        )
+        exported = client.get(
+            "/v1/export/memory_scope-snapshot",
+            params={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "redacted": False,
+            },
+            headers=auth_headers(),
+        )
+        imported = client.post(
+            "/v1/export/memory_scope-snapshot/import",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "restore-base",
+                "snapshot": exported.json()["data"],
+                "manifest": exported.json()["manifest"],
+                "dry_run": False,
+                "merge_strategy": "create_new_memory_scope",
+                "confirmed": True,
+                "source_name": "review-history-snapshot",
+            },
+            headers=auth_headers(),
+        )
+        created_memory_scope = imported.json()["data"]["created_memory_scope"]
+        restored_facts = client.get(
+            "/v1/facts",
+            params={
+                "space_slug": "agents",
+                "memory_scope_external_ref": created_memory_scope["external_ref"],
+            },
+            headers=auth_headers(),
+        )
+        restored_suggestions = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "agents",
+                "memory_scope_external_ref": created_memory_scope["external_ref"],
+                "statuses": "approved,rejected",
+                "limit": "20",
+            },
+            headers=auth_headers(),
+        )
+        restored_links = client.get(
+            "/v1/context-links",
+            params={
+                "space_slug": "agents",
+                "memory_scope_external_ref": created_memory_scope["external_ref"],
+                "status": "active",
+                "limit": "20",
+            },
+            headers=auth_headers(),
+        )
+
+    assert original_fact.status_code == 201
+    assert override_fact.status_code == 201
+    assert corrected_fact.status_code == 201
+    assert approved.status_code == 200, approved.text
+    assert rejected.status_code == 200, rejected.text
+    assert corrected_link.status_code == 200, corrected_link.text
+    assert exported.status_code == 200
+    assert exported.json()["counts"]["context_link_suggestions"] >= 2
+    assert exported.json()["counts"]["context_links"] == 1
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["data"]["imported"]["context_link_suggestions"] >= 2
+    assert imported.json()["data"]["imported"]["context_links"] == 1
+    assert restored_facts.status_code == 200
+    fact_by_text = {item["text"]: item for item in restored_facts.json()["data"]}
+    restored_original = fact_by_text["SNAPSHOT_REVIEW_ORIGINAL: original suggestion target."]
+    restored_override = fact_by_text["SNAPSHOT_REVIEW_OVERRIDE: reviewer override target."]
+    restored_corrected = fact_by_text["SNAPSHOT_REVIEW_CORRECTED: reviewer corrected target."]
+    assert restored_suggestions.status_code == 200
+    suggestions_by_status = {item["status"]: item for item in restored_suggestions.json()["data"]}
+    restored_approved_suggestion = suggestions_by_status["approved"]
+    restored_rejected_suggestion = suggestions_by_status["rejected"]
+    assert restored_approved_suggestion["review_reason"] == "approved with reviewer override"
+    assert restored_approved_suggestion["reviewed_at"]
+    assert restored_approved_suggestion["target_id"] == restored_original["id"]
+    assert restored_rejected_suggestion["review_reason"] == "not the right restored context"
+    assert restored_rejected_suggestion["reviewed_at"]
+    assert restored_links.status_code == 200
+    restored_link = restored_links.json()["data"][0]
+    assert restored_link["target_id"] == restored_corrected["id"]
+    assert (
+        restored_link["metadata"]["approved_from_suggestion_id"]
+        == restored_approved_suggestion["id"]
+    )
+    assert restored_link["metadata"]["original_target_id"] == restored_original["id"]
+    edit_event = restored_link["metadata"]["edit_events"][-1]
+    assert edit_event["previous"]["target_id"] == restored_override["id"]
+    assert edit_event["next"]["target_id"] == restored_corrected["id"]
+
+
 def test_memory_scope_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(
@@ -729,3 +894,73 @@ def test_memory_scope_snapshot_import_refuses_redacted_memory(tmp_path: Path) ->
     assert imported.status_code == 200
     assert imported.json()["data"]["status"] == "refused"
     assert imported.json()["data"]["reason"] == "redacted_memory_scope_export_cannot_be_imported"
+
+
+def _create_fact(client: TestClient, *, text: str, source_id: str) -> Any:
+    return client.post(
+        "/v1/facts",
+        json={
+            "space_slug": "agents",
+            "memory_scope_external_ref": "source-memory_scope",
+            "thread_external_ref": "snapshot-review",
+            "text": text,
+            "kind": "note",
+            "source_refs": [{"source_type": "manual", "source_id": source_id}],
+            "tags": ["snapshot", "review"],
+        },
+        headers={**auth_headers(), "Idempotency-Key": source_id},
+    )
+
+
+def _create_review_capture(
+    client: TestClient,
+    *,
+    source_event_id: str,
+    text: str,
+) -> Any:
+    return client.post(
+        "/v1/captures",
+        json={
+            "space_slug": "agents",
+            "memory_scope_external_ref": "source-memory_scope",
+            "thread_external_ref": "snapshot-review",
+            "source_agent": "memo-frontend",
+            "source_kind": "manual",
+            "event_type": "SnapshotReviewCapture",
+            "actor_role": "user",
+            "source_event_id": source_event_id,
+            "text": text,
+            "source_authority": "user_statement",
+            "consolidate": False,
+        },
+        headers=auth_headers(),
+    )
+
+
+def _persist_fact_link_suggestion(
+    client: TestClient,
+    *,
+    source_id: str,
+    target_id: str,
+    text: str,
+) -> dict[str, Any]:
+    response = client.post(
+        "/v1/link-suggestions",
+        json={
+            "space_slug": "agents",
+            "memory_scope_external_ref": "source-memory_scope",
+            "thread_external_ref": "snapshot-review",
+            "source_type": "capture",
+            "source_id": source_id,
+            "text": text,
+            "persist": True,
+            "limit": 10,
+        },
+        headers=auth_headers(),
+    )
+    assert response.status_code == 200, response.text
+    return next(
+        item
+        for item in response.json()["data"]["candidates"]
+        if item["target_type"] == "fact" and item["target_id"] == target_id
+    )

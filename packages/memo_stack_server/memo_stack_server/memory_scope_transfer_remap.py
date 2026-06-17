@@ -187,6 +187,7 @@ def remap_context_link(
     item: dict[str, Any],
     *,
     context_link_id_map: dict[str, str],
+    context_link_suggestion_id_map: dict[str, str] | None = None,
     fact_id_map: dict[str, str],
     document_id_map: dict[str, str],
     episode_id_map: dict[str, str],
@@ -201,6 +202,9 @@ def remap_context_link(
     link_id = str(item["id"])
     source_type = str(item.get("source_type") or "")
     target_type = str(item.get("target_type") or "")
+    suggestion_id_map = context_link_suggestion_id_map or {}
+    extraction_job_id_map = extraction_job_id_map or {}
+    extraction_artifact_id_map = extraction_artifact_id_map or {}
     return {
         **item,
         "id": context_link_id_map.get(link_id, link_id),
@@ -215,8 +219,8 @@ def remap_context_link(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
-            extraction_job_id_map=extraction_job_id_map or {},
-            extraction_artifact_id_map=extraction_artifact_id_map or {},
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
         ),
         "target_id": remap_endpoint_id(
             source_type=target_type,
@@ -229,8 +233,22 @@ def remap_context_link(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
-            extraction_job_id_map=extraction_job_id_map or {},
-            extraction_artifact_id_map=extraction_artifact_id_map or {},
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        ),
+        "metadata_json": _remap_context_link_metadata(
+            item.get("metadata_json") or item.get("metadata") or {},
+            context_link_suggestion_id_map=suggestion_id_map,
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
         ),
     }
 
@@ -371,6 +389,158 @@ def remap_endpoint_id(
     if source_type == "extraction_artifact":
         return (extraction_artifact_id_map or {}).get(source_id, source_id)
     return source_id
+
+
+def _remap_context_link_metadata(
+    value: object,
+    *,
+    context_link_suggestion_id_map: dict[str, str],
+    fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
+    document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
+    chunk_id_map: dict[str, str],
+    capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+    extraction_artifact_id_map: dict[str, str],
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    metadata: dict[str, object] = dict(value)
+    approved_from_suggestion_id = metadata.get("approved_from_suggestion_id")
+    if approved_from_suggestion_id is not None:
+        metadata["approved_from_suggestion_id"] = context_link_suggestion_id_map.get(
+            str(approved_from_suggestion_id),
+            str(approved_from_suggestion_id),
+        )
+    original_target_type = metadata.get("original_target_type")
+    original_target_id = metadata.get("original_target_id")
+    if original_target_type is not None and original_target_id is not None:
+        metadata["original_target_id"] = remap_endpoint_id(
+            source_type=str(original_target_type),
+            source_id=str(original_target_id),
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        )
+    if "edit_events" in metadata:
+        metadata["edit_events"] = _remap_context_link_edit_events(
+            metadata.get("edit_events"),
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        )
+    return metadata
+
+
+def _remap_context_link_edit_events(
+    value: object,
+    *,
+    fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
+    document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
+    chunk_id_map: dict[str, str],
+    capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+    extraction_artifact_id_map: dict[str, str],
+) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    events: list[object] = []
+    for event in value:
+        if not isinstance(event, dict):
+            events.append(event)
+            continue
+        next_event = dict(event)
+        for key in ("previous", "next"):
+            endpoint = next_event.get(key)
+            if isinstance(endpoint, dict):
+                next_event[key] = _remap_context_link_endpoint_snapshot(
+                    endpoint,
+                    fact_id_map=fact_id_map,
+                    thread_id_map=thread_id_map,
+                    document_id_map=document_id_map,
+                    episode_id_map=episode_id_map,
+                    chunk_id_map=chunk_id_map,
+                    capture_id_map=capture_id_map,
+                    asset_id_map=asset_id_map,
+                    anchor_id_map=anchor_id_map,
+                    extraction_job_id_map=extraction_job_id_map,
+                    extraction_artifact_id_map=extraction_artifact_id_map,
+                )
+        events.append(next_event)
+    return events
+
+
+def _remap_context_link_endpoint_snapshot(
+    value: dict[str, object],
+    *,
+    fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
+    document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
+    chunk_id_map: dict[str, str],
+    capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+    extraction_artifact_id_map: dict[str, str],
+) -> dict[str, object]:
+    endpoint = dict(value)
+    source_type = endpoint.get("source_type")
+    source_id = endpoint.get("source_id")
+    if source_type is not None and source_id is not None:
+        endpoint["source_id"] = remap_endpoint_id(
+            source_type=str(source_type),
+            source_id=str(source_id),
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        )
+    target_type = endpoint.get("target_type")
+    target_id = endpoint.get("target_id")
+    if target_type is not None and target_id is not None:
+        endpoint["target_id"] = remap_endpoint_id(
+            source_type=str(target_type),
+            source_id=str(target_id),
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        )
+    return endpoint
 
 
 def _remap_source_external_id(
