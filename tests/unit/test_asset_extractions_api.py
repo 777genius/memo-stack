@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from memo_stack_core.application.dto import CancelAssetExtractionCommand
 from memo_stack_server.admin import token_create
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
@@ -88,6 +89,38 @@ class _FailingVisionClient:
 
     async def aclose(self) -> None:
         return None
+
+
+class _CancelAfterIngestDocument:
+    def __init__(self, *, inner: Any, cancel_use_case: Any, job_id: str) -> None:
+        self._inner = inner
+        self._cancel_use_case = cancel_use_case
+        self._job_id = job_id
+
+    async def execute(self, command: Any) -> Any:
+        result = await self._inner.execute(command)
+        await self._cancel_use_case.execute(CancelAssetExtractionCommand(job_id=self._job_id))
+        return result
+
+
+class _FailingArtifactBlobStorage:
+    def __init__(self, *, inner: Any, fail_on_artifact_write: int = 2) -> None:
+        self._inner = inner
+        self._fail_on_artifact_write = fail_on_artifact_write
+        self._artifact_write_count = 0
+
+    async def write_bytes(self, *, storage_key: str, content: bytes) -> Any:
+        if "/extractions/" in storage_key:
+            self._artifact_write_count += 1
+            if self._artifact_write_count >= self._fail_on_artifact_write:
+                raise RuntimeError("simulated artifact storage outage")
+        return await self._inner.write_bytes(storage_key=storage_key, content=content)
+
+    async def read_bytes(self, *, storage_key: str) -> bytes:
+        return await self._inner.read_bytes(storage_key=storage_key)
+
+    async def delete(self, *, storage_key: str) -> None:
+        await self._inner.delete(storage_key=storage_key)
 
 
 def sample_mp4_bytes(tmp_path: Path) -> bytes:
@@ -300,6 +333,111 @@ def test_canceled_asset_extraction_retry_resets_progress(tmp_path: Path) -> None
         }
         assert retried["execution"]["cancellation_requested_at"] is None
         assert retried["execution"]["retry_disposition"] is None
+
+
+def test_asset_extraction_ignores_cancel_after_document_commit(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "race-cancel.txt",
+                "extract": "true",
+            },
+            content=(
+                b"Canonical extraction evidence should not be canceled after the "
+                b"document is already committed."
+            ),
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_ingest_document = run_use_case._ingest_document
+        run_use_case._ingest_document = _CancelAfterIngestDocument(
+            inner=original_ingest_document,
+            cancel_use_case=client.app.state.container.cancel_asset_extraction,
+            job_id=extraction_id,
+        )
+        try:
+            processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        finally:
+            run_use_case._ingest_document = original_ingest_document
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["safe_error_code"] is None
+        assert extracted["metadata"]["cancellation_status"] == (
+            "ignored_after_document_commit"
+        )
+        assert extracted["execution"]["cancellation_requested_at"] is None
+        assert len(extracted["result_document_ids"]) == 1
+        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
+            "extracted_json",
+            "markdown",
+        }
+
+
+def test_asset_extraction_marks_failed_and_cleans_blobs_on_artifact_storage_error(
+    tmp_path: Path,
+) -> None:
+    asset_storage_dir = tmp_path / "assets"
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "artifact-failure.txt",
+                "extract": "true",
+            },
+            content=b"Artifact storage failure should not leave extraction running.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_blob_storage = run_use_case._blob_storage
+        run_use_case._blob_storage = _FailingArtifactBlobStorage(
+            inner=original_blob_storage,
+            fail_on_artifact_write=2,
+        )
+        try:
+            processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        finally:
+            run_use_case._blob_storage = original_blob_storage
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "failed"
+        assert extracted["safe_error_code"] == "asset_extraction.runtimeerror"
+        assert extracted["safe_error_message"] == "simulated artifact storage outage"
+        assert extracted["execution"]["retry_disposition"] == "retryable"
+        assert extracted["execution"]["retry_after_at"] is not None
+        assert extracted["artifacts"] == []
+
+        extraction_files = [
+            path
+            for path in asset_storage_dir.glob("**/extractions/**/*")
+            if path.is_file()
+        ]
+        assert extraction_files == []
 
 
 def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> None:

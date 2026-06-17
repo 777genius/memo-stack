@@ -417,98 +417,94 @@ class RunAssetExtractionUseCase:
             job = await self._cancel_if_requested(job)
             if job.status == AssetExtractionStatus.CANCELED:
                 return AssetExtractionResult(job=job, indexing_status="canceled")
+
+            if result.status == "unsupported":
+                job = await self._reconcile_media_usage(job, result=result)
+                unsupported = await self._mark_unsupported(job, result=result)
+                return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
+            if result.status != "succeeded":
+                await self._mark_failed(
+                    job,
+                    code=result.safe_error_code or "asset_extraction.invalid_status",
+                    message=result.safe_error_message or "Extractor returned invalid status",
+                    metadata=result.technical_metadata,
+                )
+                raise MemoryInfrastructureError("Asset extraction returned invalid status")
+
+            extracted_text_value = extracted_text(result)
+            if not extracted_text_value.strip():
+                job = await self._reconcile_media_usage(job, result=result)
+                unsupported = await self._mark_unsupported(
+                    job,
+                    result=ExtractionResult(
+                        status="unsupported",
+                        normalized_content_type=result.normalized_content_type,
+                        title=result.title,
+                        technical_metadata=result.technical_metadata,
+                        diagnostics=result.diagnostics,
+                        parser_name=result.parser_name,
+                        parser_version=result.parser_version,
+                        model_version=result.model_version,
+                        safe_error_code="asset_extraction.empty_text",
+                        safe_error_message="Extractor returned no searchable text",
+                    ),
+                )
+                return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
+
+            ingest = await self._ingest_document.execute(
+                IngestDocumentCommand(
+                    space_id=asset.space_id,
+                    memory_scope_id=asset.memory_scope_id,
+                    thread_id=asset.thread_id,
+                    title=result.title or asset.filename,
+                    source_type=ASSET_EXTRACTION_SOURCE_TYPE,
+                    source_external_id=str(job.id),
+                    text=extracted_text_value,
+                    idempotency_key=(
+                        f"asset_extraction:{job.id}:{content_hash(extracted_text_value)}"
+                    ),
+                    classification=asset.classification,
+                    chunk_metadata=asset_extraction_chunk_metadata(
+                        asset=asset,
+                        job=job,
+                        result=result,
+                        extracted_text_value=extracted_text_value,
+                    ),
+                )
+            )
+            job = await self._save_progress(
+                job,
+                stage="storing_artifacts",
+                percent=80,
+                message="Storing extracted evidence",
+            )
+            job = await self._acknowledge_cancel_after_document_commit(job)
+            artifacts = await self._store_artifacts(
+                job=job,
+                result=result,
+                markdown=extracted_text_value,
+            )
+            job = await self._save_progress(
+                job,
+                stage="indexing_memory",
+                percent=90,
+                message="Indexing extracted memory",
+            )
+            succeeded = await self._mark_succeeded(
+                await self._reconcile_media_usage(job, result=result),
+                result=result,
+                result_document_ids=(str(ingest.document.id),),
+            )
+            return AssetExtractionResult(
+                job=succeeded,
+                artifacts=tuple(artifacts),
+                indexing_status=ingest.indexing_status,
+            )
         except Exception as exc:
-            failed = await self._mark_failed(
-                job,
-                code=safe_exception_code(exc),
-                message=safe_exception_message(exc),
-            )
+            await self._mark_failed_unless_terminal(job, exc)
+            if isinstance(exc, MemoryInfrastructureError):
+                raise
             raise MemoryInfrastructureError("Asset extraction failed") from exc
-
-        if result.status == "unsupported":
-            job = await self._reconcile_media_usage(job, result=result)
-            unsupported = await self._mark_unsupported(job, result=result)
-            return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
-        if result.status != "succeeded":
-            failed = await self._mark_failed(
-                job,
-                code=result.safe_error_code or "asset_extraction.invalid_status",
-                message=result.safe_error_message or "Extractor returned invalid status",
-                metadata=result.technical_metadata,
-            )
-            raise MemoryInfrastructureError("Asset extraction returned invalid status")
-
-        extracted_text_value = extracted_text(result)
-        if not extracted_text_value.strip():
-            job = await self._reconcile_media_usage(job, result=result)
-            unsupported = await self._mark_unsupported(
-                job,
-                result=ExtractionResult(
-                    status="unsupported",
-                    normalized_content_type=result.normalized_content_type,
-                    title=result.title,
-                    technical_metadata=result.technical_metadata,
-                    diagnostics=result.diagnostics,
-                    parser_name=result.parser_name,
-                    parser_version=result.parser_version,
-                    model_version=result.model_version,
-                    safe_error_code="asset_extraction.empty_text",
-                    safe_error_message="Extractor returned no searchable text",
-                ),
-            )
-            return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
-
-        ingest = await self._ingest_document.execute(
-            IngestDocumentCommand(
-                space_id=asset.space_id,
-                memory_scope_id=asset.memory_scope_id,
-                thread_id=asset.thread_id,
-                title=result.title or asset.filename,
-                source_type=ASSET_EXTRACTION_SOURCE_TYPE,
-                source_external_id=str(job.id),
-                text=extracted_text_value,
-                idempotency_key=(
-                    f"asset_extraction:{job.id}:{content_hash(extracted_text_value)}"
-                ),
-                classification=asset.classification,
-                chunk_metadata=asset_extraction_chunk_metadata(
-                    asset=asset,
-                    job=job,
-                    result=result,
-                    extracted_text_value=extracted_text_value,
-                ),
-            )
-        )
-        job = await self._save_progress(
-            job,
-            stage="storing_artifacts",
-            percent=80,
-            message="Storing extracted evidence",
-        )
-        job = await self._cancel_if_requested(job)
-        if job.status == AssetExtractionStatus.CANCELED:
-            return AssetExtractionResult(job=job, indexing_status="canceled")
-        artifacts = await self._store_artifacts(
-            job=job,
-            result=result,
-            markdown=extracted_text_value,
-        )
-        job = await self._save_progress(
-            job,
-            stage="indexing_memory",
-            percent=90,
-            message="Indexing extracted memory",
-        )
-        succeeded = await self._mark_succeeded(
-            await self._reconcile_media_usage(job, result=result),
-            result=result,
-            result_document_ids=(str(ingest.document.id),),
-        )
-        return AssetExtractionResult(
-            job=succeeded,
-            artifacts=tuple(artifacts),
-            indexing_status=ingest.indexing_status,
-        )
 
     async def _mark_running(self, command: RunAssetExtractionCommand) -> AssetExtractionJob:
         async with self._uow_factory() as uow:
@@ -576,6 +572,33 @@ class RunAssetExtractionUseCase:
                 message="Extraction was canceled by request",
             )
             saved = await uow.asset_extractions.save(canceled)
+            await uow.commit()
+        return saved
+
+    async def _acknowledge_cancel_after_document_commit(
+        self,
+        job: AssetExtractionJob,
+    ) -> AssetExtractionJob:
+        async with self._uow_factory() as uow:
+            current = await uow.asset_extractions.get_by_id(str(job.id))
+            if current is None:
+                raise MemoryNotFoundError("Asset extraction job not found")
+            if (
+                current.status != AssetExtractionStatus.RUNNING
+                or current.cancellation_requested_at is None
+            ):
+                return current
+            updated = current.with_metadata_updates(
+                now=self._clock.now(),
+                metadata={
+                    "cancellation_status": "ignored_after_document_commit",
+                    "cancellation_message": (
+                        "Cancellation requested after canonical document commit; "
+                        "finalizing extraction to keep evidence consistent"
+                    ),
+                },
+            )
+            saved = await uow.asset_extractions.save(updated)
             await uow.commit()
         return saved
 
@@ -833,3 +856,26 @@ class RunAssetExtractionUseCase:
             saved = await uow.asset_extractions.save(failed)
             await uow.commit()
         return saved
+
+    async def _mark_failed_unless_terminal(
+        self,
+        job: AssetExtractionJob,
+        exc: Exception,
+    ) -> AssetExtractionJob:
+        async with self._uow_factory() as uow:
+            current = await uow.asset_extractions.get_by_id(str(job.id))
+        if current is None:
+            raise MemoryNotFoundError("Asset extraction job not found") from exc
+        if current.status in {
+            AssetExtractionStatus.SUCCEEDED,
+            AssetExtractionStatus.FAILED,
+            AssetExtractionStatus.UNSUPPORTED,
+            AssetExtractionStatus.CANCELED,
+            AssetExtractionStatus.STALE,
+        }:
+            return current
+        return await self._mark_failed(
+            current,
+            code=safe_exception_code(exc),
+            message=safe_exception_message(exc),
+        )
