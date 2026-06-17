@@ -2,6 +2,7 @@ import asyncio
 import shutil
 import subprocess
 import wave
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
 from memo_stack_core.application.dto import CancelAssetExtractionCommand
+from memo_stack_core.domain.errors import MemoryQuotaExceededError
 from memo_stack_server.admin import token_create
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
@@ -128,6 +130,13 @@ class _FailingArtifactBlobStorage:
 
     async def delete(self, *, storage_key: str) -> None:
         await self._inner.delete(storage_key=storage_key)
+
+
+class _QuotaFailureExtractionRequest:
+    async def execute(self, command: Any) -> Any:
+        raise MemoryQuotaExceededError(
+            "quota blocked by provider token sk-proj-secretvalue1234567890"
+        )
 
 
 def sample_mp4_bytes(tmp_path: Path) -> bytes:
@@ -1236,6 +1245,33 @@ def test_scoped_tokens_cannot_read_cross_scope_extraction_jobs(
     assert cross_artifact.status_code == 403
     assert "beta extraction secret" not in cross_scope.text
     assert "beta extraction secret" not in cross_artifact.text
+
+
+def test_upload_extract_quota_error_redacts_sensitive_message(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        client.app.state.container = replace(
+            client.app.state.container,
+            request_asset_extraction=_QuotaFailureExtractionRequest(),
+        )
+
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "filename": "over-quota.txt",
+                "extract": "true",
+            },
+            content=b"keep this text but redact quota diagnostics",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+
+    assert upload.status_code == 201, upload.text
+    error = upload.json()["data"]["extraction_error"]
+    assert error["code"] == "memory.quota_exceeded"
+    assert error["retryable"] is False
+    assert "[redacted]" in error["message"]
+    assert "sk-proj-secretvalue1234567890" not in error["message"]
 
 
 def test_media_extraction_consumes_free_plan_quota_and_blocks_overage(

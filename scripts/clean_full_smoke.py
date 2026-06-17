@@ -233,15 +233,15 @@ def main() -> int:
             "memo_stack_neo4j",
         )
         _wait_for_postgres(project_name, compose_env)
-        _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/")
-        _wait_for_neo4j(ports["neo4j_bolt"])
+        _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/", env=server_env)
+        _wait_for_neo4j(ports["neo4j_bolt"], env=server_env)
 
         _run_python(server_env, "-m", "memo_stack_server.db", "upgrade")
         _run_python(server_env, "-m", "memo_stack_server.admin", "seed-defaults")
 
         server = _start_server(server_env)
         base_url = f"http://127.0.0.1:{ports['server']}"
-        _wait_for_http(f"{base_url}/v1/health", token=token)
+        _wait_for_http(f"{base_url}/v1/health", token=token, env=server_env)
 
         def restart_server_for_canary() -> None:
             nonlocal server
@@ -249,12 +249,12 @@ def main() -> int:
                 _stop_server(server)
                 server = None
             server = _start_server(server_env)
-            _wait_for_http(f"{base_url}/v1/health", token=token)
+            _wait_for_http(f"{base_url}/v1/health", token=token, env=server_env)
 
         def restart_providers_for_canary() -> None:
             _compose(project_name, compose_env, "restart", "memo_stack_qdrant", "memo_stack_neo4j")
-            _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/")
-            _wait_for_neo4j(ports["neo4j_bolt"])
+            _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/", env=server_env)
+            _wait_for_neo4j(ports["neo4j_bolt"], env=server_env)
 
         def stop_providers_for_canary() -> None:
             _compose(project_name, compose_env, "stop", "memo_stack_qdrant", "memo_stack_neo4j")
@@ -2395,7 +2395,15 @@ def _wait_for_postgres(project_name: str, env: Mapping[str, str]) -> None:
     raise CleanSmokeFailure("Postgres did not become ready")
 
 
-def _wait_for_http(url: str, *, token: str | None = None) -> None:
+def _wait_for_http(
+    url: str,
+    *,
+    token: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> None:
+    redaction_env = dict(env or {})
+    if token:
+        redaction_env["MEMORY_SERVICE_TOKEN"] = token
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     deadline = time.monotonic() + 120
     last_error = ""
@@ -2405,14 +2413,15 @@ def _wait_for_http(url: str, *, token: str | None = None) -> None:
                 response = client.get(url, headers=headers)
             if response.status_code < 500:
                 return
-            last_error = response.text[:500]
+            last_error = _redact_text(response.text[:500], env=redaction_env)
         except Exception as exc:
-            last_error = str(exc)
+            last_error = _exception_summary(exc, env=redaction_env)
         time.sleep(1)
     raise CleanSmokeFailure(f"HTTP endpoint did not become ready: {url}: {last_error}")
 
 
-def _wait_for_neo4j(port: int) -> None:
+def _wait_for_neo4j(port: int, *, env: Mapping[str, str] | None = None) -> None:
+    redaction_env = env or {}
     deadline = time.monotonic() + 120
     last_error = ""
     while time.monotonic() < deadline:
@@ -2424,7 +2433,7 @@ def _wait_for_neo4j(port: int) -> None:
             driver.verify_connectivity()
             return
         except Exception as exc:
-            last_error = str(exc)
+            last_error = _exception_summary(exc, env=redaction_env)
         finally:
             driver.close()
         time.sleep(1)

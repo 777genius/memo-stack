@@ -18,6 +18,7 @@ from memo_stack_core.application import (
     RequestAssetExtractionCommand,
     RetryAssetExtractionCommand,
 )
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 from memo_stack_core.domain.assets import AssetStatus, MemoryAsset
 from memo_stack_core.domain.errors import (
     MemoryIngressLimitError,
@@ -115,7 +116,7 @@ async def upload_asset(
         except MemoryQuotaExceededError as exc:
             data["extraction_error"] = {
                 "code": exc.code,
-                "message": str(exc),
+                "message": _safe_public_error_message(exc),
                 "retryable": exc.retryable,
             }
     return {"data": data}
@@ -551,3 +552,7 @@ def _safe_metadata(metadata: Any) -> dict[str, Any]:
         for key, value in metadata.items()
         if isinstance(value, (str, int, float, bool, type(None)))
     }
+
+
+def _safe_public_error_message(error: Exception) -> str:
+    return redact_sensitive_text(str(error).strip() or error.__class__.__name__)[:500]

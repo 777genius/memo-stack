@@ -1,5 +1,6 @@
 import json
 
+import scripts.agent_transcript_corpus_audit as corpus_audit
 from scripts.agent_transcript_corpus_audit import audit_transcript_corpus
 
 
@@ -89,6 +90,22 @@ def test_corpus_audit_warns_when_redacted_markers_are_not_forbidden(tmp_path) ->
 
     assert report["ok"] is True
     assert "redacted_markers_should_be_forbidden_contains" in report["files"][0]["warnings"]
+
+
+def test_corpus_audit_main_redacts_exception(capsys, monkeypatch, tmp_path) -> None:
+    raw_secret = "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890"
+
+    def fail_audit(*_args, **_kwargs):
+        raise RuntimeError(f"failed with {raw_secret}")
+
+    monkeypatch.setattr(corpus_audit, "audit_transcript_corpus", fail_audit)
+
+    exit_code = corpus_audit.main([str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert raw_secret not in captured.err
+    assert "<redacted:secret>" in captured.err
 
 
 def _write_fixture(path, payload: dict) -> None:

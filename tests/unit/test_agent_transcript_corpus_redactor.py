@@ -1,5 +1,6 @@
 import json
 
+import scripts.agent_transcript_corpus_redactor as corpus_redactor
 from scripts.agent_transcript_corpus_redactor import redact_text, redact_transcript_corpus
 
 
@@ -110,3 +111,19 @@ def test_redactor_skips_oversized_files(tmp_path) -> None:
 
     assert result["written_count"] == 0
     assert result["skipped"] == [{"file": "large.txt", "reason": "file_too_large"}]
+
+
+def test_redactor_main_redacts_exception(capsys, monkeypatch, tmp_path) -> None:
+    raw_secret = "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890"
+
+    def fail_redact(*_args, **_kwargs):
+        raise RuntimeError(f"failed with {raw_secret}")
+
+    monkeypatch.setattr(corpus_redactor, "redact_transcript_corpus", fail_redact)
+
+    exit_code = corpus_redactor.main([str(tmp_path / "in.txt"), str(tmp_path / "out")])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert raw_secret not in captured.err
+    assert "<redacted:secret>" in captured.err

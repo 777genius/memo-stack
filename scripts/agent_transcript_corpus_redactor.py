@@ -74,7 +74,8 @@ def main(argv: list[str] | None = None) -> int:
             extra_tags=tuple(args.tag),
         )
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True), file=sys.stderr)
+        safe_error, _counts = redact_text(str(exc))
+        print(json.dumps({"ok": False, "error": safe_error}, sort_keys=True), file=sys.stderr)
         return 1
     print(json.dumps(result, sort_keys=True))
     return 0

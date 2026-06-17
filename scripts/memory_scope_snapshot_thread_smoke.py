@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -14,6 +15,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.clean_full_smoke_redaction import redact_text
+except ModuleNotFoundError:
+    from clean_full_smoke_redaction import redact_text
 
 
 class SmokeFailure(RuntimeError):
@@ -231,7 +237,7 @@ def _wait_for_health(config: SmokeConfig, *, request_json: RequestJson) -> None:
             if response.get("status") == "ok":
                 return
         except Exception as exc:  # noqa: BLE001 - smoke diagnostics should stay compact.
-            last_error = str(exc)
+            last_error = _redact_text(str(exc), config=config)
         time.sleep(1)
     raise SmokeFailure(f"Health check did not pass within {config.timeout}s: {last_error}")
 
@@ -261,8 +267,9 @@ def _request_json(
             raw = response.read().decode()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
-        raw = exc.read().decode()
-        raise SmokeFailure(f"{method} {path} failed {exc.code}: {raw}") from exc
+        raw = exc.read().decode("utf-8", errors="replace")
+        safe_raw = _redact_text(raw, config=config)
+        raise SmokeFailure(f"{method} {path} failed {exc.code}: {safe_raw}") from exc
 
 
 def _find_thread_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -324,5 +331,19 @@ def _find_restored_thread_suggestion(
     raise SmokeFailure("No restored pending thread suggestion found")
 
 
+def _redact_text(text: str, *, config: SmokeConfig | None = None) -> str:
+    env = dict(os.environ)
+    if config is not None:
+        env["MEMORY_SMOKE_AUTH_TOKEN"] = config.auth_token
+    return redact_text(text, env=env)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SmokeFailure as exc:
+        print(
+            json.dumps({"status": "failed", "error": _redact_text(str(exc))}, sort_keys=True),
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc

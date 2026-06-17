@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import urllib.error
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -144,5 +146,33 @@ def test_snapshot_thread_smoke_fails_when_suggestion_target_is_not_remapped() ->
         smoke.run_smoke(config, request_json=api.request, time_ns=lambda: 42)
     except smoke.SmokeFailure as exc:
         assert "Restored thread suggestion target did not remap" in str(exc)
+    else:
+        raise AssertionError("Expected SmokeFailure")
+
+
+def test_snapshot_thread_smoke_http_error_redacts_auth_token(
+    monkeypatch,
+) -> None:
+    smoke = load_smoke_module()
+    token = "snapshot-secret-token-abcdefghijklmnopqrstuvwxyz"
+    config = smoke.SmokeConfig(api_url="http://memory.test", auth_token=token)
+
+    def fail_urlopen(*_args: Any, **_kwargs: Any) -> Any:
+        raise urllib.error.HTTPError(
+            url="http://memory.test/v1/health",
+            code=500,
+            msg="failed",
+            hdrs={},
+            fp=BytesIO(f'{{"message":"Bearer {token}"}}'.encode()),
+        )
+
+    monkeypatch.setattr(smoke.urllib.request, "urlopen", fail_urlopen)
+
+    try:
+        smoke._request_json("GET", "/v1/health", config, None, None)
+    except smoke.SmokeFailure as exc:
+        message = str(exc)
+        assert token not in message
+        assert "<redacted>" in message
     else:
         raise AssertionError("Expected SmokeFailure")

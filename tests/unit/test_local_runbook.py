@@ -771,6 +771,74 @@ def test_clean_full_smoke_redacts_explicit_canary_env_without_process_env() -> N
     assert "<redacted>" in rendered
 
 
+def test_clean_full_smoke_http_readiness_error_is_redacted(monkeypatch) -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+    token = "unit-service-token-abcdefghijklmnopqrstuvwxyz"
+
+    class Response:
+        status_code = 503
+        text = f'{{"message":"Bearer {token}"}}'
+
+    class Client:
+        def __init__(self, *, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def get(self, url, *, headers):
+            return Response()
+
+    ticks = iter([0.0, 0.0, 121.0])
+    monkeypatch.setattr(module.httpx, "Client", Client)
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    try:
+        module._wait_for_http(
+            "http://127.0.0.1:7788/v1/health",
+            token=token,
+            env={"MEMORY_SERVICE_TOKEN": token},
+        )
+    except module.CleanSmokeFailure as exc:
+        message = str(exc)
+        assert token not in message
+        assert "<redacted>" in message
+    else:
+        raise AssertionError("Expected CleanSmokeFailure")
+
+
+def test_clean_full_smoke_neo4j_readiness_error_is_redacted(monkeypatch) -> None:
+    module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
+
+    class Driver:
+        def verify_connectivity(self):
+            raise RuntimeError("auth failed for password memostackgraph")
+
+        def close(self):
+            return None
+
+    ticks = iter([0.0, 0.0, 121.0])
+    monkeypatch.setattr(module.GraphDatabase, "driver", lambda *_args, **_kwargs: Driver())
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    try:
+        module._wait_for_neo4j(
+            17687,
+            env={"MEMORY_GRAPHITI_NEO4J_PASSWORD": "memostackgraph"},
+        )
+    except module.CleanSmokeFailure as exc:
+        message = str(exc)
+        assert "memostackgraph" not in message
+        assert "<redacted>" in message
+    else:
+        raise AssertionError("Expected CleanSmokeFailure")
+
+
 def test_clean_full_smoke_mcp_text_secret_check_catches_generic_tokens() -> None:
     module = _load_clean_full_smoke(ROOT / "scripts" / "clean_full_smoke.py")
 

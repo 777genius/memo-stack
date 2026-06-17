@@ -16,6 +16,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.clean_full_smoke_redaction import redact_text
+except ModuleNotFoundError:
+    from clean_full_smoke_redaction import redact_text
+
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = ROOT / "docker-compose.selfhost.yml"
 DEFAULT_ENV_FILE = ROOT / ".env.selfhost"
@@ -143,9 +148,12 @@ def _run(
     )
     if check and process.returncode != 0:
         raise SmokeFailure(
-            "Command failed: "
-            + shlex.join(command)
-            + f"\nstdout:\n{process.stdout}\nstderr:\n{process.stderr}"
+            _redact_text(
+                "Command failed: "
+                + shlex.join(command)
+                + f"\nstdout:\n{process.stdout}\nstderr:\n{process.stderr}",
+                env=env,
+            )
         )
     return process
 
@@ -164,7 +172,7 @@ def _wait_for_health(base_url: str, token: str, *, timeout_seconds: float) -> No
             if response.get("status") == "ok":
                 return
         except Exception as exc:  # noqa: BLE001 - keep smoke diagnostics compact.
-            last_error = str(exc)
+            last_error = _redact_text(str(exc), env={"MEMORY_SERVICE_TOKEN": token})
         time.sleep(1)
     raise SmokeFailure(f"Health check did not pass within {timeout_seconds}s: {last_error}")
 
@@ -263,13 +271,25 @@ def _request_json(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = response.read()
     except urllib.error.HTTPError as exc:
-        raise SmokeFailure(f"{method} {url} failed with HTTP {exc.code}: {exc.read()}") from exc
+        raw = exc.read().decode("utf-8", errors="replace")
+        safe_raw = _redact_text(raw, env={"MEMORY_SERVICE_TOKEN": token})
+        raise SmokeFailure(f"{method} {url} failed with HTTP {exc.code}: {safe_raw}") from exc
     return json.loads(payload.decode("utf-8"))
+
+
+def _redact_text(text: str, *, env: dict[str, str] | None = None) -> str:
+    return redact_text(text, env=env or os.environ)
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except SmokeFailure as exc:
-        print(json.dumps({"status": "failed", "error": str(exc)}, sort_keys=True), file=sys.stderr)
+        print(
+            json.dumps(
+                {"status": "failed", "error": _redact_text(str(exc))},
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
         raise SystemExit(1) from exc
