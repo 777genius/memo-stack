@@ -121,8 +121,7 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
                 "source_type": "capture",
                 "source_id": call_capture["id"],
                 "text": (
-                    "Alex Project Atlas call last week migration rollback "
-                    "production risk handoff"
+                    "Alex Project Atlas call last week migration rollback production risk handoff"
                 ),
                 "persist": True,
                 "limit": 8,
@@ -139,6 +138,56 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
             event_fact_candidates,
             chat_distractor_fact["id"],
         )
+
+        document = _ingest_document(
+            client,
+            title="Project Atlas onboarding pricing SOP",
+            text=(
+                "Project Atlas onboarding pricing SOP. Screenshots showing invoice "
+                "threshold approval should be attached to this document evidence "
+                "before the finance handoff."
+            ),
+            source_external_id="atlas-pricing-sop",
+        )
+        document_capture = _capture(
+            client,
+            source_event_id="atlas-pricing-sop-screenshot",
+            text=(
+                "Screenshot from the Project Atlas onboarding pricing SOP showing "
+                "invoice threshold approval before finance handoff."
+            ),
+            thread_external_ref="document-review",
+        )
+        document_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "document-review",
+                "source_type": "capture",
+                "source_id": document_capture["id"],
+                "text": (
+                    "Project Atlas onboarding pricing SOP invoice threshold "
+                    "approval finance handoff"
+                ),
+                "persist": True,
+                "limit": 8,
+            },
+        )
+        assert document_suggestions.status_code == 200, document_suggestions.text
+        document_candidates = [
+            item
+            for item in document_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "document"
+        ]
+        chunk_candidates = [
+            item
+            for item in document_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "chunk"
+        ]
+        assert document_candidates[0]["target_id"] == document["id"]
+        assert chunk_candidates[0]["metadata"]["document_id"] == document["id"]
+        assert "text_match" in chunk_candidates[0]["metadata"]["reason_codes"]
 
         unrelated_capture = _capture(
             client,
@@ -199,6 +248,31 @@ def _capture(
             "text": text,
             "source_authority": "user_statement",
         },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]
+
+
+def _ingest_document(
+    client: httpx.Client,
+    *,
+    title: str,
+    text: str,
+    source_external_id: str,
+) -> dict[str, object]:
+    response = client.post(
+        "/v1/documents",
+        json={
+            "space_slug": "semantic-linking-quality",
+            "memory_scope_external_ref": "default",
+            "thread_external_ref": "document-review",
+            "title": title,
+            "text": text,
+            "source_type": "document",
+            "source_external_id": source_external_id,
+            "classification": "internal",
+        },
+        headers={"Idempotency-Key": f"semantic-linking-quality-{source_external_id}"},
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]

@@ -292,6 +292,77 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             )
         )
 
+    document_space_slug = f"{space_slug}-documents"
+    target_document = _ingest_document(
+        client,
+        headers,
+        space_slug=document_space_slug,
+        title="Project Atlas onboarding pricing SOP",
+        text=(
+            "Project Atlas onboarding pricing SOP. "
+            "Screenshots showing invoice threshold approval should be attached "
+            "to this document evidence before the finance handoff."
+        ),
+        source_external_id="atlas-pricing-sop",
+    )
+    document_capture = _capture(
+        client,
+        headers,
+        space_slug=document_space_slug,
+        source_event_id="atlas-pricing-sop-screenshot",
+        text=(
+            "Screenshot from the Project Atlas onboarding pricing SOP showing "
+            "invoice threshold approval before finance handoff."
+        ),
+        thread_external_ref="document-review",
+    )
+    document_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=document_space_slug,
+        source_id=str(document_capture.get("id", "")),
+        text="Project Atlas onboarding pricing SOP invoice threshold approval finance handoff",
+        thread_external_ref="document-review",
+    )
+    document_candidates = [
+        item
+        for item in document_suggestions.get("candidates", [])
+        if item.get("target_type") == "document"
+    ]
+    chunk_candidates = [
+        item
+        for item in document_suggestions.get("candidates", [])
+        if item.get("target_type") == "chunk"
+    ]
+    top_document = document_candidates[0] if document_candidates else {}
+    top_chunk = chunk_candidates[0] if chunk_candidates else {}
+    checks["document_chunk_evidence_suggested"] = (
+        bool(target_document)
+        and bool(document_capture)
+        and top_document.get("target_id") == target_document.get("id")
+        and top_chunk.get("metadata", {}).get("document_id") == target_document.get("id")
+        and "text_match" in set(top_chunk.get("metadata", {}).get("reason_codes", []))
+    )
+    cases.append(
+        {
+            "case_id": "screenshot_note_links_uploaded_document_chunk",
+            "ok": checks["document_chunk_evidence_suggested"],
+            "document_target_id": top_document.get("target_id"),
+            "chunk_target_id": top_chunk.get("target_id"),
+            "chunk_document_id": top_chunk.get("metadata", {}).get("document_id"),
+            "chunk_score": top_chunk.get("score"),
+        }
+    )
+    if not checks["document_chunk_evidence_suggested"]:
+        failures.append(
+            _failure(
+                "screenshot_note_links_uploaded_document_chunk",
+                "document_chunk_linking",
+                "uploaded_document_chunk_not_suggested",
+                item_ids=[str(target_document.get("id", ""))],
+            )
+        )
+
     unrelated_capture = _capture(
         client,
         headers,
@@ -345,6 +416,32 @@ def _remember_fact(
             "source_refs": [{"source_type": "manual", "source_id": source_id}],
         },
         headers={**headers, "Idempotency-Key": f"{space_slug}-{source_id}"},
+    )
+    return _data(response) if response.status_code == 201 else {}
+
+
+def _ingest_document(
+    client: Any,
+    headers: dict[str, str],
+    *,
+    space_slug: str,
+    title: str,
+    text: str,
+    source_external_id: str,
+) -> dict[str, object]:
+    response = client.post(
+        "/v1/documents",
+        json={
+            "space_slug": space_slug,
+            "memory_scope_external_ref": "default",
+            "thread_external_ref": "document-review",
+            "title": title,
+            "text": text,
+            "source_type": "document",
+            "source_external_id": source_external_id,
+            "classification": "internal",
+        },
+        headers={**headers, "Idempotency-Key": f"{space_slug}-{source_external_id}"},
     )
     return _data(response) if response.status_code == 201 else {}
 
@@ -442,19 +539,21 @@ def _report(
         "ranking_accuracy": 1.0 if checks.get("top_fact_beats_distractor") else 0.0,
         "event_linking_accuracy": 1.0 if checks.get("event_call_beats_recent_chat") else 0.0,
         "temporal_intent_recall": (
-            1.0
-            if checks.get("temporal_intent_links_recent_fact_without_text_match")
-            else 0.0
+            1.0 if checks.get("temporal_intent_links_recent_fact_without_text_match") else 0.0
+        ),
+        "document_chunk_linking_accuracy": (
+            1.0 if checks.get("document_chunk_evidence_suggested") else 0.0
         ),
         "anchor_recall_rate": 1.0 if checks.get("person_and_project_anchors_suggested") else 0.0,
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
     }
     gates = {
-        "case_count": metrics["case_count"] >= 4,
+        "case_count": metrics["case_count"] >= 5,
         "ranking_accuracy": metrics["ranking_accuracy"] == 1.0,
         "event_linking_accuracy": metrics["event_linking_accuracy"] == 1.0,
         "temporal_intent_recall": metrics["temporal_intent_recall"] == 1.0,
+        "document_chunk_linking_accuracy": metrics["document_chunk_linking_accuracy"] == 1.0,
         "anchor_recall_rate": metrics["anchor_recall_rate"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,

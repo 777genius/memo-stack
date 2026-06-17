@@ -57,10 +57,11 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "ok": True,
             "status": "ok",
             "metrics": {
-                "case_count": 4,
+                "case_count": 5,
                 "ranking_accuracy": 1.0,
                 "event_linking_accuracy": 1.0,
                 "temporal_intent_recall": 1.0,
+                "document_chunk_linking_accuracy": 1.0,
                 "anchor_recall_rate": 1.0,
                 "review_approval_rate": 1.0,
                 "false_positive_count": 0,
@@ -69,6 +70,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "top_fact_beats_distractor": True,
                 "event_call_beats_recent_chat": True,
                 "temporal_intent_links_recent_fact_without_text_match": True,
+                "document_chunk_evidence_suggested": True,
                 "person_and_project_anchors_suggested": True,
                 "top_suggestion_approves_to_link": True,
                 "unrelated_capture_has_no_candidates": True,
@@ -442,14 +444,15 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
 
     assert policy["require_top_evidence"] is True
     assert "semantic-linking-golden" in policy["required_suites"]
-    assert policy["min_case_counts"]["semantic-linking-golden"] == 4
+    assert policy["min_case_counts"]["semantic-linking-golden"] == 5
     assert policy["full_provider"]["required_adapters"] == [
         "qdrant",
         "graphiti",
         "embeddings",
     ]
-    assert "mcp_search_has_qdrant_document_chunk_after_worker" in (
-        policy["full_provider"]["required_checks"]
+    assert (
+        "mcp_search_has_qdrant_document_chunk_after_worker"
+        in (policy["full_provider"]["required_checks"])
     )
     assert policy["agent_behavior"]["accepted_scenario_sets"] == [
         "realistic",
@@ -509,33 +512,25 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "no_sensitive_text",
         "no_local_home_paths",
     ]
-    assert policy["public_benchmark"][
-        "top_evidence_requires_dataset_fingerprint"
-    ] is True
-    assert policy["public_benchmark"][
-        "top_evidence_requires_dataset_source_metadata"
-    ] is True
-    assert policy["public_benchmark"][
-        "top_evidence_requires_dataset_source_hash_match"
-    ] is True
-    assert policy["public_benchmark"][
-        "top_evidence_requires_dataset_path_label"
-    ] is True
-    assert policy["public_benchmark"][
-        "top_evidence_requires_dataset_source_case_count"
-    ] is True
+    assert policy["public_benchmark"]["top_evidence_requires_dataset_fingerprint"] is True
+    assert policy["public_benchmark"]["top_evidence_requires_dataset_source_metadata"] is True
+    assert policy["public_benchmark"]["top_evidence_requires_dataset_source_hash_match"] is True
+    assert policy["public_benchmark"]["top_evidence_requires_dataset_path_label"] is True
+    assert policy["public_benchmark"]["top_evidence_requires_dataset_source_case_count"] is True
     assert policy["public_benchmark"]["top_evidence_rejects_raw_dataset_paths"] is True
-    assert policy["public_benchmark"][
-        "top_evidence_requires_official_url_for_official_sources"
-    ] is True
+    assert (
+        policy["public_benchmark"]["top_evidence_requires_official_url_for_official_sources"]
+        is True
+    )
     assert policy["public_benchmark"]["top_evidence_allowed_dataset_source_kinds"] == [
         "official_download",
         "local_override",
         "local_dataset",
     ]
-    assert "provenance_generator_allowed" in policy["agent_behavior"][
-        "top_evidence_required_provenance_checks"
-    ]
+    assert (
+        "provenance_generator_allowed"
+        in policy["agent_behavior"]["top_evidence_required_provenance_checks"]
+    )
     assert policy["agent_behavior"]["rate_floors"]["adversarial_pass_rate"] == 0.9
     assert "unsafe_write_count" in policy["agent_behavior"]["zero_count_metrics"]
     assert policy["public_benchmark"]["required_benchmarks"] == [
@@ -655,8 +650,7 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
     evidence = result["external_evidence"]
     assert result["ok"] is True
     assert evidence["confidence_tier"] == (
-        "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
-        "public_benchmark_evaluated"
+        "full_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
     )
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
@@ -879,9 +873,9 @@ def test_memory_quality_scorecard_rejects_public_benchmark_raw_dataset_path() ->
     evidence = result["external_evidence"]
     assert result["ok"] is False
     assert evidence["public_benchmark"]["dataset_evidence_ok"] is False
-    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0][
-        "report_failures"
-    ] == ["dataset_path_not_redacted"]
+    assert evidence["public_benchmark"]["dataset_evidence"]["reports"][0]["report_failures"] == [
+        "dataset_path_not_redacted"
+    ]
     assert "public_benchmark_dataset_evidence_failed" in evidence["evidence_gaps"]
 
 
@@ -954,9 +948,7 @@ def test_memory_quality_scorecard_requires_full_provider_mcp_lifecycle() -> None
     evidence = result["external_evidence"]
     assert result["ok"] is False
     assert evidence["full_provider_canary"]["required_checks"]["mcp_lifecycle_included"] is False
-    assert evidence["full_provider_canary"]["failed_required_checks"] == [
-        "mcp_lifecycle_included"
-    ]
+    assert evidence["full_provider_canary"]["failed_required_checks"] == ["mcp_lifecycle_included"]
 
 
 def test_memory_quality_scorecard_rejects_weak_agent_behavior_evidence() -> None:
@@ -1190,8 +1182,7 @@ def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> 
     assert result["ok"] is True
     assert result["gates"]["top_library_external_evidence"] is True
     assert evidence["confidence_tier"] == (
-        "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
-        "public_benchmark_evaluated"
+        "full_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
     )
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
@@ -1324,9 +1315,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
         suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
-        suite_results[target]["debug"] = {
-            "unsafe_note": "REPORT_TOKEN=abcdefghijklmnopqrstuvwxyz"
-        }
+        suite_results[target]["debug"] = {"unsafe_note": "REPORT_TOKEN=abcdefghijklmnopqrstuvwxyz"}
 
         result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
 
@@ -1335,9 +1324,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
         assert evidence["top_library_comparison_ready"] is False
         assert evidence[summary_key]["quality_ok"] is True
         assert evidence[summary_key]["safety_ok"] is False
-        assert evidence[summary_key]["safety"]["failed_checks"] == [
-            "no_sensitive_text"
-        ]
+        assert evidence[summary_key]["safety"]["failed_checks"] == ["no_sensitive_text"]
         assert evidence[summary_key]["safety"]["sensitive_path_count"] == 1
         assert failed_gap in evidence["evidence_gaps"]
 
@@ -1379,9 +1366,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
         assert evidence["top_library_comparison_ready"] is False
         assert evidence[summary_key]["quality_ok"] is True
         assert evidence[summary_key]["safety_ok"] is False
-        assert evidence[summary_key]["safety"]["failed_checks"] == [
-            "no_local_home_paths"
-        ]
+        assert evidence[summary_key]["safety"]["failed_checks"] == ["no_local_home_paths"]
         assert evidence[summary_key]["safety"]["local_path_count"] == 1
         assert evidence[summary_key]["safety"]["local_paths"] == ["$.debug.local_path"]
         assert "/Users/alice" not in repr(evidence[summary_key]["safety"])
@@ -1409,12 +1394,8 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     assert result["external_evidence"]["public_benchmark"]["provenance_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["safety_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["dataset_evidence_ok"] is True
-    assert (
-        result["external_evidence"]["confidence_tier"]
-        == (
-            "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
-            "public_benchmark_evaluated"
-        )
+    assert result["external_evidence"]["confidence_tier"] == (
+        "full_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
     )
 
 
@@ -1440,6 +1421,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
             "ranking_accuracy": 0.0,
             "event_linking_accuracy": 0.0,
             "temporal_intent_recall": 0.0,
+            "document_chunk_linking_accuracy": 0.0,
             "anchor_recall_rate": 0.5,
             "review_approval_rate": 0.0,
             "false_positive_count": 1,
@@ -1452,6 +1434,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["capabilities"]["semantic_linking"]["ok"] is False
     assert result["capabilities"]["semantic_linking"]["failed_checks"] == [
         "anchor_recall_rate",
+        "document_chunk_linking_accuracy",
         "event_linking_accuracy",
         "false_positive_count",
         "ranking_accuracy",
@@ -1461,6 +1444,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["metrics"]["semantic_linking_ranking_accuracy"] == 0.0
     assert result["metrics"]["semantic_linking_event_linking_accuracy"] == 0.0
     assert result["metrics"]["semantic_linking_temporal_intent_recall"] == 0.0
+    assert result["metrics"]["semantic_linking_document_chunk_linking_accuracy"] == 0.0
     assert result["metrics"]["semantic_linking_false_positive_count"] == 1
     assert result["gates"]["all_capabilities_ok"] is False
 

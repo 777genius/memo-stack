@@ -65,6 +65,7 @@ def _ratio(passed: int, total: int) -> float:
         return 0.0
     return round(passed / total, 4)
 
+
 def memory_quality_scorecard_policy_snapshot(
     *,
     require_top_evidence: bool,
@@ -87,17 +88,13 @@ def memory_quality_scorecard_policy_snapshot(
             "required_checks": list(_FULL_PROVIDER_REQUIRED_CHECK_KEYS),
             "requires_mcp_lifecycle": True,
             "top_evidence_requires_provenance": True,
-            "top_evidence_required_provenance_checks": list(
-                TOP_EVIDENCE_PROVENANCE_CHECKS
-            ),
+            "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
         },
         "agent_behavior": {
             "accepted_scenario_sets": list(_AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS),
-            "top_evidence_required_scenario_set": (
-                AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET
-            ),
+            "top_evidence_required_scenario_set": (AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_SET),
             "top_evidence_required_case_count_floors": dict(
                 AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS
             ),
@@ -113,25 +110,17 @@ def memory_quality_scorecard_policy_snapshot(
             "rate_floors": dict(_AGENT_BEHAVIOR_RATE_FLOORS),
             "zero_count_metrics": list(_AGENT_BEHAVIOR_ZERO_COUNT_METRICS),
             "top_evidence_requires_provenance": True,
-            "top_evidence_required_provenance_checks": list(
-                TOP_EVIDENCE_PROVENANCE_CHECKS
-            ),
+            "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
         },
         "agent_live_smoke": {
             "suite_aliases": list(_AGENT_LIVE_SMOKE_SUITE_ALIASES),
-            "required_generated_mcp_checks": list(
-                _AGENT_LIVE_SMOKE_REQUIRED_GENERATED_MCP_CHECKS
-            ),
-            "required_agent_cli_checks": list(
-                _AGENT_LIVE_SMOKE_REQUIRED_AGENT_CLI_CHECKS
-            ),
+            "required_generated_mcp_checks": list(_AGENT_LIVE_SMOKE_REQUIRED_GENERATED_MCP_CHECKS),
+            "required_agent_cli_checks": list(_AGENT_LIVE_SMOKE_REQUIRED_AGENT_CLI_CHECKS),
             "requires_strict_agent_cli": True,
             "top_evidence_requires_provenance": True,
-            "top_evidence_required_provenance_checks": list(
-                TOP_EVIDENCE_PROVENANCE_CHECKS
-            ),
+            "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
         },
@@ -142,9 +131,7 @@ def memory_quality_scorecard_policy_snapshot(
                 for name, floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.items()
             },
             "top_evidence_requires_provenance": True,
-            "top_evidence_required_provenance_checks": list(
-                TOP_EVIDENCE_PROVENANCE_CHECKS
-            ),
+            "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
             "top_evidence_requires_dataset_fingerprint": True,
@@ -384,6 +371,7 @@ def _scorecard_semantic_linking(
         "ranking_accuracy": metrics.get("ranking_accuracy") == 1.0,
         "event_linking_accuracy": metrics.get("event_linking_accuracy") == 1.0,
         "temporal_intent_recall": metrics.get("temporal_intent_recall") == 1.0,
+        "document_chunk_linking_accuracy": (metrics.get("document_chunk_linking_accuracy") == 1.0),
         "anchor_recall_rate": metrics.get("anchor_recall_rate") == 1.0,
         "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
         "false_positive_count": metrics.get("false_positive_count") == 0,
@@ -650,10 +638,7 @@ def _scorecard_agent_live_smoke_evidence_summary(
         "present": True,
         "suite": result.get("suite", AGENT_LIVE_SMOKE_SUITE),
         "ok": quality_ok
-        and (
-            not require_top_evidence
-            or (provenance["ok"] is True and safety["ok"] is True)
-        ),
+        and (not require_top_evidence or (provenance["ok"] is True and safety["ok"] is True)),
         "quality_ok": quality_ok,
         "quality_floor_ok": quality_ok,
         "provenance_ok": provenance["ok"] if require_top_evidence else None,
@@ -665,9 +650,7 @@ def _scorecard_agent_live_smoke_evidence_summary(
         "failed_required_checks": failed_required_checks,
         "generated_mcp": _scorecard_live_check_statuses(generated_mcp_map),
         "agent_cli": _scorecard_live_check_statuses(agent_cli_map),
-        "generated_mcp_failures": _scorecard_string_list(
-            result.get("generated_mcp_failures")
-        ),
+        "generated_mcp_failures": _scorecard_string_list(result.get("generated_mcp_failures")),
         "agent_cli_failures": _scorecard_string_list(result.get("agent_cli_failures")),
     }
 
@@ -728,15 +711,12 @@ def _scorecard_public_benchmark_evidence_summary(
         report["ok"] is True for report in provenance_reports
     )
     safety_reports = [top_evidence_safety_summary(report) for report in reports]
-    safety_ok = bool(safety_reports) and all(
-        report["ok"] is True for report in safety_reports
-    )
+    safety_ok = bool(safety_reports) and all(report["ok"] is True for report in safety_reports)
     safety = _scorecard_combined_safety_summary(safety_reports)
     dataset_evidence = _scorecard_public_benchmark_dataset_evidence_summary(reports)
     dataset_evidence_ok = dataset_evidence["ok"] is True
     ok = quality_ok and (
-        not require_top_evidence
-        or (provenance_ok and safety_ok and dataset_evidence_ok)
+        not require_top_evidence or (provenance_ok and safety_ok and dataset_evidence_ok)
     )
     return {
         "present": bool(reports),
@@ -784,8 +764,7 @@ def _scorecard_combined_safety_summary(
         }
     )
     checks = {
-        check: bool(reports) and check not in failed_checks
-        for check in TOP_EVIDENCE_SAFETY_CHECKS
+        check: bool(reports) and check not in failed_checks for check in TOP_EVIDENCE_SAFETY_CHECKS
     }
     return {
         "ok": bool(reports) and not failed_checks,
@@ -800,9 +779,7 @@ def _scorecard_combined_safety_summary(
             for path in report.get("sensitive_paths", ())
             if isinstance(path, str)
         ][:10],
-        "local_path_count": sum(
-            int(report.get("local_path_count", 0)) for report in reports
-        ),
+        "local_path_count": sum(int(report.get("local_path_count", 0)) for report in reports),
         "local_paths": [
             path
             for report in reports
@@ -830,9 +807,7 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
             name: _scorecard_public_benchmark_dataset_source_failures(report, name)
             for name in benchmark_names
         }
-        missing_sources = [
-            name for name, failures in source_failures.items() if failures
-        ]
+        missing_sources = [name for name, failures in source_failures.items() if failures]
         ok = (
             bool(benchmark_names)
             and not report_failures
@@ -847,19 +822,13 @@ def _scorecard_public_benchmark_dataset_evidence_summary(
                 "ok": ok,
                 "benchmarks": benchmark_names,
                 "report_failures": list(report_failures),
-                "missing_benchmarks": sorted(
-                    set(missing_fingerprints) | set(missing_sources)
-                ),
+                "missing_benchmarks": sorted(set(missing_fingerprints) | set(missing_sources)),
                 "missing_dataset_fingerprints": missing_fingerprints,
                 "missing_dataset_sources": missing_sources,
                 "dataset_source_failures": {
-                    name: list(failures)
-                    for name, failures in source_failures.items()
-                    if failures
+                    name: list(failures) for name, failures in source_failures.items() if failures
                 },
-                "has_dataset_hash": _scorecard_nonempty_string(
-                    report.get("dataset_hash")
-                ),
+                "has_dataset_hash": _scorecard_nonempty_string(report.get("dataset_hash")),
                 "has_dataset_hashes": isinstance(report.get("dataset_hashes"), Mapping),
                 "has_dataset_sources": isinstance(report.get("dataset_sources"), Mapping),
             }
@@ -1134,10 +1103,7 @@ def _scorecard_full_provider_evidence_summary(
         "present": True,
         "suite": result.get("suite", FULL_PROVIDER_CANARY_SUITE),
         "ok": quality_ok
-        and (
-            not require_top_evidence
-            or (provenance["ok"] is True and safety["ok"] is True)
-        ),
+        and (not require_top_evidence or (provenance["ok"] is True and safety["ok"] is True)),
         "quality_ok": quality_ok,
         "provenance_ok": provenance["ok"] if require_top_evidence else None,
         "provenance": provenance,
@@ -1204,10 +1170,7 @@ def _scorecard_agent_behavior_evidence_summary(
         "present": True,
         "suite": result.get("suite", AGENT_BEHAVIOR_BENCH_SUITE),
         "ok": quality_ok
-        and (
-            not require_top_evidence
-            or (provenance["ok"] is True and safety["ok"] is True)
-        ),
+        and (not require_top_evidence or (provenance["ok"] is True and safety["ok"] is True)),
         "quality_ok": quality_ok,
         "provenance_ok": provenance["ok"] if require_top_evidence else None,
         "provenance": provenance,
@@ -1236,8 +1199,7 @@ def _scorecard_agent_behavior_required_checks(
         "scenario_set_realistic_or_better": (
             result.get("scenario_set") in _AGENT_BEHAVIOR_ACCEPTED_SCENARIO_SETS
         ),
-        "all_reported_gates_pass": bool(gates)
-        and all(value is True for value in gates.values()),
+        "all_reported_gates_pass": bool(gates) and all(value is True for value in gates.values()),
     }
     for metric, floor in _AGENT_BEHAVIOR_RATE_FLOORS.items():
         value = _scorecard_float(metrics.get(metric))
@@ -1256,25 +1218,16 @@ def _scorecard_agent_behavior_required_checks(
         scenario_count = _scorecard_int(scenario_evidence.get("scenario_count"))
         metric_scenario_count = _scorecard_int(metrics.get("scenario_count"))
         checks["scenario_reports_present"] = scenario_evidence["present"] is True
-        checks["scenario_reports_well_formed"] = (
-            scenario_evidence.get("invalid_entry_count") == 0
-        )
-        checks["scenario_report_ids_present"] = (
-            scenario_evidence.get("missing_id_count") == 0
-        )
-        checks["scenario_report_ids_unique"] = (
-            scenario_evidence.get("duplicate_id_count") == 0
-        )
-        checks["scenario_reports_all_passed"] = (
-            scenario_evidence.get("non_passed_count") == 0
-        )
+        checks["scenario_reports_well_formed"] = scenario_evidence.get("invalid_entry_count") == 0
+        checks["scenario_report_ids_present"] = scenario_evidence.get("missing_id_count") == 0
+        checks["scenario_report_ids_unique"] = scenario_evidence.get("duplicate_id_count") == 0
+        checks["scenario_reports_all_passed"] = scenario_evidence.get("non_passed_count") == 0
         checks["canonical_scenario_ids_present"] = (
             scenario_evidence.get("missing_canonical_id_count") == 0
         )
         scenario_count_floor = AGENT_BEHAVIOR_TOP_EVIDENCE_CASE_COUNT_FLOORS["scenario_count"]
         checks[f"scenario_report_count_min_{scenario_count_floor}"] = (
-            scenario_count is not None
-            and scenario_count >= scenario_count_floor
+            scenario_count is not None and scenario_count >= scenario_count_floor
         )
         checks["scenario_report_count_matches_metric"] = (
             scenario_count is not None
@@ -1287,9 +1240,7 @@ def _scorecard_agent_behavior_required_checks(
             tag_count = _scorecard_int(tag_counts_map.get(tag))
             metric_count = _scorecard_int(metrics.get(metric))
             checks[f"{tag}_scenario_report_count_matches_metric"] = (
-                tag_count is not None
-                and metric_count is not None
-                and tag_count == metric_count
+                tag_count is not None and metric_count is not None and tag_count == metric_count
             )
     return checks
 
@@ -1310,9 +1261,7 @@ def _scorecard_agent_behavior_scenario_evidence(
             "missing_canonical_id_count": None,
             "missing_canonical_ids": [],
         }
-    tag_counts = {
-        tag: 0 for tag in AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.values()
-    }
+    tag_counts = {tag: 0 for tag in AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_TAG_METRICS.values()}
     seen_ids: set[str] = set()
     invalid_entry_count = 0
     missing_id_count = 0
@@ -1338,9 +1287,7 @@ def _scorecard_agent_behavior_scenario_evidence(
         for tag in tag_counts:
             if tag in tag_set:
                 tag_counts[tag] += 1
-    missing_canonical_ids = sorted(
-        set(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS) - seen_ids
-    )
+    missing_canonical_ids = sorted(set(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS) - seen_ids)
     return {
         "present": True,
         "scenario_count": len(scenarios),
@@ -1443,6 +1390,10 @@ def _scorecard_metrics(
         ),
         "semantic_linking_temporal_intent_recall": semantic.get(
             "temporal_intent_recall",
+            0.0,
+        ),
+        "semantic_linking_document_chunk_linking_accuracy": semantic.get(
+            "document_chunk_linking_accuracy",
             0.0,
         ),
         "semantic_linking_anchor_recall_rate": semantic.get("anchor_recall_rate", 0.0),
