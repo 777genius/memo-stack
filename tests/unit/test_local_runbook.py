@@ -39,6 +39,25 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
     assert "$(MAKE) memo-stack-api-smoke" in makefile
 
 
+def test_makefile_has_frontend_quality_gate() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "FRONTEND_DIR ?= frontend" in makefile
+    assert "FLUTTER ?=" in makefile
+    assert ".PHONY: memo-stack-frontend-pub-get" in makefile
+    assert ".PHONY: memo-stack-frontend-analyze" in makefile
+    assert ".PHONY: memo-stack-frontend-test" in makefile
+    assert ".PHONY: memo-stack-frontend-build-macos" in makefile
+    assert ".PHONY: memo-stack-frontend-check" in makefile
+    assert (
+        "memo-stack-frontend-check: memo-stack-frontend-analyze memo-stack-frontend-test"
+    ) in makefile
+    assert "cd $(FRONTEND_DIR) && $(FLUTTER) pub get" in makefile
+    assert "cd $(FRONTEND_DIR) && $(FLUTTER) analyze" in makefile
+    assert "cd $(FRONTEND_DIR) && $(FLUTTER) test" in makefile
+    assert "cd $(FRONTEND_DIR) && $(FLUTTER) build macos --debug" in makefile
+
+
 def test_selfhost_compose_has_team_deployment_contract() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     compose = (ROOT / "docker-compose.selfhost.yml").read_text(encoding="utf-8")

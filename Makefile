@@ -5,6 +5,8 @@ SELFHOST_ENV ?= .env.selfhost
 SELFHOST_COMPOSE ?= $(COMPOSE) --env-file $(SELFHOST_ENV) -f docker-compose.selfhost.yml
 MEMO_STACK_PYTHONPATH ?= packages/memo_stack_core:packages/memo_stack_server:packages/memo_stack_adapters:packages/memo_stack_sdk:packages/memo_stack_obsidian:packages/memo_stack_mcp:packages/memo_stack_cli
 export PYTHONPATH := $(MEMO_STACK_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONPATH))
+FRONTEND_DIR ?= frontend
+FLUTTER ?= $(shell command -v flutter 2>/dev/null || if [ -x "$$HOME/dev/flutter/bin/flutter" ]; then echo "$$HOME/dev/flutter/bin/flutter"; elif [ -x "$$HOME/dev/projects/flutter/bin/flutter" ]; then echo "$$HOME/dev/projects/flutter/bin/flutter"; else echo flutter; fi)
 MEMORY_SERVER_ENV ?= MEMORY_AUTO_CREATE_SCHEMA=true MEMORY_SERVICE_TOKEN=local-dev-token
 PLUGIN_KIT_AI ?= scripts/plugin-kit-ai-local
 MEMORY_AGENT_PLUGIN_ROOT ?= plugins/memo-stack-agent-plugin
@@ -50,6 +52,25 @@ memo-stack-test-integration:
 .PHONY: memo-stack-test-e2e
 memo-stack-test-e2e:
 	$(PYTHON) -m pytest tests/e2e
+
+.PHONY: memo-stack-frontend-pub-get
+memo-stack-frontend-pub-get:
+	cd $(FRONTEND_DIR) && $(FLUTTER) pub get
+
+.PHONY: memo-stack-frontend-analyze
+memo-stack-frontend-analyze:
+	cd $(FRONTEND_DIR) && $(FLUTTER) analyze
+
+.PHONY: memo-stack-frontend-test
+memo-stack-frontend-test:
+	cd $(FRONTEND_DIR) && $(FLUTTER) test
+
+.PHONY: memo-stack-frontend-build-macos
+memo-stack-frontend-build-macos:
+	cd $(FRONTEND_DIR) && $(FLUTTER) build macos --debug
+
+.PHONY: memo-stack-frontend-check
+memo-stack-frontend-check: memo-stack-frontend-analyze memo-stack-frontend-test
 
 .PHONY: memo-stack-scale-chaos-load-e2e
 memo-stack-scale-chaos-load-e2e:

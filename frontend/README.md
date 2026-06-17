@@ -46,6 +46,13 @@ flutter test
 flutter build macos --debug
 ```
 
+From the repository root:
+
+```bash
+make memo-stack-frontend-check
+make memo-stack-frontend-build-macos
+```
+
 Notes
 -----
 
