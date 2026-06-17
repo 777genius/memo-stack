@@ -24,7 +24,7 @@ from memo_stack_server.admin import (
     seed_defaults,
 )
 from memo_stack_server.composition import build_container
-from memo_stack_server.config import DeployProfile, Settings
+from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
 from memo_stack_server.doctor import run_doctor
 from memo_stack_server.eval import (
@@ -36,6 +36,7 @@ from memo_stack_server.eval import (
     run_semantic_linking_golden,
     run_small_golden,
 )
+from memo_stack_server.eval_semantic_linking import _execute_semantic_linking_golden
 from memo_stack_server.main import create_app
 from memo_stack_server.worker import (
     OutboxWorker,
@@ -1123,6 +1124,21 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert "Project Atlas" not in report_text
     assert "invoice threshold" not in report_text
     assert "migration rollback" not in report_text
+
+
+def test_semantic_linking_golden_eval_repeats_against_persistent_server(
+    tmp_path: Path,
+) -> None:
+    with make_client_with_settings(tmp_path, capture_mode=CaptureMode.SUGGEST) as client:
+        first = _execute_semantic_linking_golden(client, auth_headers())
+        second = _execute_semantic_linking_golden(client, auth_headers())
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert first["metrics"]["case_count"] >= 3
+    assert second["metrics"]["case_count"] >= 3
+    assert first["failures"] == []
+    assert second["failures"] == []
 
 
 def test_long_memory_golden_eval_passes() -> None:

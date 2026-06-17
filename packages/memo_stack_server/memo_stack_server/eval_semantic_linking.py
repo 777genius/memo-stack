@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from fastapi.testclient import TestClient
@@ -56,9 +57,11 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     checks: dict[str, bool] = {}
     cases: list[dict[str, object]] = []
     failures: list[dict[str, object]] = []
+    space_slug = f"semantic-linking-eval-{uuid4().hex[:12]}"
     target_fact = _remember_fact(
         client,
         headers,
+        space_slug=space_slug,
         text=(
             "Alex and Project Atlas onboarding pricing summary from an hour ago. "
             "The action item is invoice threshold approval."
@@ -68,6 +71,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     distractor_fact = _remember_fact(
         client,
         headers,
+        space_slug=space_slug,
         text=(
             "Alex and Project Aurora branding notes from last week. "
             "The topic is logo color and launch copy."
@@ -77,6 +81,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     source_capture = _capture(
         client,
         headers,
+        space_slug=space_slug,
         source_event_id="atlas-pricing-capture",
         text=(
             "Screenshot note from Alex an hour ago about Project Atlas onboarding "
@@ -92,6 +97,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     suggestions = _suggest(
         client,
         headers,
+        space_slug=space_slug,
         source_id=str(source_capture["id"]),
         text="Alex hour ago Project Atlas onboarding pricing invoice threshold",
         thread_external_ref="quality-review",
@@ -145,6 +151,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     call_fact = _remember_fact(
         client,
         headers,
+        space_slug=space_slug,
         text=(
             "Alex Project Atlas call from last week covered migration rollback "
             "window ownership and production risk handoff."
@@ -154,6 +161,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     chat_distractor_fact = _remember_fact(
         client,
         headers,
+        space_slug=space_slug,
         text=(
             "Alex Project Atlas chat from an hour ago covered billing dashboard "
             "copy and button icons."
@@ -163,6 +171,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     call_capture = _capture(
         client,
         headers,
+        space_slug=space_slug,
         source_event_id="atlas-migration-call-capture",
         text=(
             "Please link this note to the Alex Project Atlas call last week "
@@ -173,6 +182,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     event_suggestions = _suggest(
         client,
         headers,
+        space_slug=space_slug,
         source_id=str(call_capture.get("id", "")),
         text="Alex Project Atlas call last week migration rollback production risk handoff",
         thread_external_ref="quality-review",
@@ -220,12 +230,14 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
     unrelated_capture = _capture(
         client,
         headers,
+        space_slug=space_slug,
         source_event_id="unrelated-capture",
         text="lowercase grocery reminder about bananas milk and receipts",
     )
     unrelated = _suggest(
         client,
         headers,
+        space_slug=space_slug,
         source_id=str(unrelated_capture.get("id", "")),
         text="lowercase grocery reminder bananas milk receipts",
     )
@@ -252,20 +264,21 @@ def _remember_fact(
     client: Any,
     headers: dict[str, str],
     *,
+    space_slug: str,
     text: str,
     source_id: str,
 ) -> dict[str, object]:
     response = client.post(
         "/v1/facts",
         json={
-            "space_slug": "semantic-linking-eval",
+            "space_slug": space_slug,
             "memory_scope_external_ref": "default",
             "thread_external_ref": "quality-review",
             "text": text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": source_id}],
         },
-        headers={**headers, "Idempotency-Key": f"semantic-linking-eval-{source_id}"},
+        headers={**headers, "Idempotency-Key": f"{space_slug}-{source_id}"},
     )
     return _data(response) if response.status_code == 201 else {}
 
@@ -274,6 +287,7 @@ def _capture(
     client: Any,
     headers: dict[str, str],
     *,
+    space_slug: str,
     source_event_id: str,
     text: str,
     thread_external_ref: str | None = None,
@@ -281,7 +295,7 @@ def _capture(
     response = client.post(
         "/v1/captures",
         json={
-            "space_slug": "semantic-linking-eval",
+            "space_slug": space_slug,
             "memory_scope_external_ref": "default",
             "thread_external_ref": thread_external_ref,
             "source_agent": "memo-frontend",
@@ -301,6 +315,7 @@ def _suggest(
     client: Any,
     headers: dict[str, str],
     *,
+    space_slug: str,
     source_id: str,
     text: str,
     thread_external_ref: str | None = None,
@@ -308,7 +323,7 @@ def _suggest(
     response = client.post(
         "/v1/link-suggestions",
         json={
-            "space_slug": "semantic-linking-eval",
+            "space_slug": space_slug,
             "memory_scope_external_ref": "default",
             "thread_external_ref": thread_external_ref,
             "source_type": "capture",
