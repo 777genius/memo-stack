@@ -227,6 +227,71 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             )
         )
 
+    temporal_space_slug = f"{space_slug}-temporal"
+    temporal_fact = _remember_fact(
+        client,
+        headers,
+        space_slug=temporal_space_slug,
+        text="Payment exception window was confirmed for Atlas cutoff.",
+        source_id="atlas-payment-window",
+        thread_external_ref="alex-chat-hour-ago",
+    )
+    temporal_capture = _capture(
+        client,
+        headers,
+        space_slug=temporal_space_slug,
+        source_event_id="temporal-intent-capture",
+        text="Сохрани заметку и привяжи к разговору час назад.",
+        thread_external_ref="quick-save",
+    )
+    temporal_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=temporal_space_slug,
+        source_id=str(temporal_capture.get("id", "")),
+        text="привяжи к разговору час назад",
+        thread_external_ref="quick-save",
+    )
+    temporal_fact_candidates = [
+        item
+        for item in temporal_suggestions.get("candidates", [])
+        if item.get("target_type") == "fact"
+    ]
+    temporal_fact_candidate = next(
+        (
+            item
+            for item in temporal_fact_candidates
+            if item.get("target_id") == temporal_fact.get("id")
+        ),
+        {},
+    )
+    temporal_metadata = temporal_fact_candidate.get("metadata", {})
+    checks["temporal_intent_links_recent_fact_without_text_match"] = (
+        bool(temporal_fact)
+        and bool(temporal_capture)
+        and bool(temporal_fact_candidate)
+        and temporal_metadata.get("matched_terms") == []
+        and "temporal_intent_match" in set(temporal_metadata.get("reason_codes", []))
+    )
+    cases.append(
+        {
+            "case_id": "temporal_intent_links_recent_fact_without_text_match",
+            "ok": checks["temporal_intent_links_recent_fact_without_text_match"],
+            "target_type": temporal_fact_candidate.get("target_type"),
+            "target_id": temporal_fact_candidate.get("target_id"),
+            "score": temporal_fact_candidate.get("score"),
+        }
+    )
+    if not checks["temporal_intent_links_recent_fact_without_text_match"]:
+        failures.append(
+            _failure(
+                "temporal_intent_links_recent_fact_without_text_match",
+                "temporal_intent",
+                "recent_fact_not_linked_without_text_match",
+                item_ids=[str(temporal_fact.get("id", ""))],
+            )
+        )
+
     unrelated_capture = _capture(
         client,
         headers,
@@ -267,13 +332,14 @@ def _remember_fact(
     space_slug: str,
     text: str,
     source_id: str,
+    thread_external_ref: str = "quality-review",
 ) -> dict[str, object]:
     response = client.post(
         "/v1/facts",
         json={
             "space_slug": space_slug,
             "memory_scope_external_ref": "default",
-            "thread_external_ref": "quality-review",
+            "thread_external_ref": thread_external_ref,
             "text": text,
             "kind": "note",
             "source_refs": [{"source_type": "manual", "source_id": source_id}],
@@ -375,14 +441,20 @@ def _report(
         "case_count": len(cases),
         "ranking_accuracy": 1.0 if checks.get("top_fact_beats_distractor") else 0.0,
         "event_linking_accuracy": 1.0 if checks.get("event_call_beats_recent_chat") else 0.0,
+        "temporal_intent_recall": (
+            1.0
+            if checks.get("temporal_intent_links_recent_fact_without_text_match")
+            else 0.0
+        ),
         "anchor_recall_rate": 1.0 if checks.get("person_and_project_anchors_suggested") else 0.0,
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
     }
     gates = {
-        "case_count": metrics["case_count"] >= 3,
+        "case_count": metrics["case_count"] >= 4,
         "ranking_accuracy": metrics["ranking_accuracy"] == 1.0,
         "event_linking_accuracy": metrics["event_linking_accuracy"] == 1.0,
+        "temporal_intent_recall": metrics["temporal_intent_recall"] == 1.0,
         "anchor_recall_rate": metrics["anchor_recall_rate"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,

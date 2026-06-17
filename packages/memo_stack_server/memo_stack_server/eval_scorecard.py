@@ -383,6 +383,7 @@ def _scorecard_semantic_linking(
     checks = {
         "ranking_accuracy": metrics.get("ranking_accuracy") == 1.0,
         "event_linking_accuracy": metrics.get("event_linking_accuracy") == 1.0,
+        "temporal_intent_recall": metrics.get("temporal_intent_recall") == 1.0,
         "anchor_recall_rate": metrics.get("anchor_recall_rate") == 1.0,
         "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
         "false_positive_count": metrics.get("false_positive_count") == 0,
@@ -1438,6 +1439,10 @@ def _scorecard_metrics(
         "semantic_linking_ranking_accuracy": semantic.get("ranking_accuracy", 0.0),
         "semantic_linking_event_linking_accuracy": semantic.get(
             "event_linking_accuracy",
+            0.0,
+        ),
+        "semantic_linking_temporal_intent_recall": semantic.get(
+            "temporal_intent_recall",
             0.0,
         ),
         "semantic_linking_anchor_recall_rate": semantic.get("anchor_recall_rate", 0.0),
