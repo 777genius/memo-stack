@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 import wave
 from io import BytesIO
 from pathlib import Path
@@ -77,6 +78,22 @@ class _FakeAudioClient:
 
 class _FakeTranscriptionClient:
     audio = _FakeAudioClient()
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FailingAudioTranscriptions:
+    async def create(self, **kwargs: Any) -> object:
+        raise RuntimeError("simulated provider outage")
+
+
+class _FailingAudioClient:
+    transcriptions = _FailingAudioTranscriptions()
+
+
+class _FailingTranscriptionClient:
+    audio = _FailingAudioClient()
 
     async def aclose(self) -> None:
         return None
@@ -162,3 +179,64 @@ def test_audio_asset_extraction_uses_api_first_transcription(
         assert source_refs[0]["asset_id"] == upload.json()["data"]["id"]
         assert source_refs[0]["time_start_ms"] == 0
         assert source_refs[0]["time_end_ms"] == 1000
+
+
+def test_audio_asset_extraction_provider_failure_falls_back_to_media_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if not shutil.which("ffprobe"):
+        pytest.skip("ffprobe is not available")
+
+    monkeypatch.setattr(
+        OpenAISpeechTranscriptionAdapter,
+        "_client",
+        lambda self: _FailingTranscriptionClient(),
+    )
+    with make_client(
+        tmp_path,
+        extraction_external_ai_enabled=True,
+        extraction_default_profile="media_api",
+        openai_api_key="test-key",
+        transcription_provider="openai",
+        transcription_openai_model="gpt-4o-mini-transcribe",
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "voice-notes",
+                "filename": "voice-note.wav",
+                "extract": "true",
+                "estimated_media_seconds": 1,
+            },
+            content=sample_wav_bytes(),
+            headers=auth_headers({"Content-Type": "audio/wav"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["parser_profile"] == "media_api"
+        assert extracted["parser_name"] == "media_metadata"
+        assert extracted["safe_error_code"] is None
+        assert extracted["metadata"]["transcript_status"] == "not_configured"
+        assert extracted["metadata"]["duration_seconds"] > 0
+        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
+            "extracted_json",
+            "markdown",
+            "media_manifest",
+        }
+        assert extracted["usage"]["media_analysis_seconds_requested"] == 1
+        assert extracted["usage"]["media_analysis_seconds_actual"] == 1
+        assert extracted["usage"]["reconciled"] is True
