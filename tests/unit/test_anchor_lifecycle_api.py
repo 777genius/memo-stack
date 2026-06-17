@@ -126,6 +126,11 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
         assert duplicate_data["id"] == manual_anchor_data["id"]
         assert "Atlas roadmap" in duplicate_data["aliases"]
         assert duplicate_data["description"] == "Updated manual project anchor."
+        assert duplicate_data["confidence"] == "high"
+        assert duplicate_data["evidence_refs"]
+        assert duplicate_data["observed_at"] == "2026-01-02T03:04:05+00:00"
+        assert duplicate_data["valid_from"] == "2026-01-01T00:00:00+00:00"
+        assert duplicate_data["valid_to"] == "2026-12-31T23:59:59+00:00"
 
         edited_anchor = client.patch(
             f"/v1/anchors/{manual_anchor_data['id']}",

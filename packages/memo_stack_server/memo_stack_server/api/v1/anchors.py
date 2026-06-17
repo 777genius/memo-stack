@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -354,12 +354,12 @@ def anchor_to_response(anchor: MemoryAnchor) -> dict[str, Any]:
         "status": anchor.status.value,
         "confidence": anchor.confidence.value,
         "evidence_refs": [_anchor_evidence_ref_to_response(ref) for ref in anchor.evidence_refs],
-        "observed_at": anchor.observed_at.isoformat(),
-        "valid_from": anchor.valid_from.isoformat() if anchor.valid_from else None,
-        "valid_to": anchor.valid_to.isoformat() if anchor.valid_to else None,
+        "observed_at": _datetime_to_response(anchor.observed_at),
+        "valid_from": _datetime_to_response(anchor.valid_from),
+        "valid_to": _datetime_to_response(anchor.valid_to),
         "metadata": safe_public_metadata(anchor.metadata),
-        "created_at": anchor.created_at.isoformat(),
-        "updated_at": anchor.updated_at.isoformat(),
+        "created_at": _datetime_to_response(anchor.created_at),
+        "updated_at": _datetime_to_response(anchor.updated_at),
     }
 
 
@@ -383,3 +383,11 @@ def _anchor_evidence_ref_to_response(ref: SourceRef) -> dict[str, Any]:
         "char_end": ref.char_end,
         "quote_preview": safe_public_text(ref.quote_preview) if ref.quote_preview else None,
     }
+
+
+def _datetime_to_response(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.isoformat()

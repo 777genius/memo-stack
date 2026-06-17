@@ -11,7 +11,12 @@ from memo_stack_server.memory_scope_transfer_extractions import (
     extraction_job_from_json,
     extraction_job_to_json,
 )
-from memo_stack_server.memory_scope_transfer_records import capture_from_json, capture_to_json
+from memo_stack_server.memory_scope_transfer_records import (
+    anchor_from_json,
+    capture_from_json,
+    capture_to_json,
+)
+from memo_stack_server.memory_scope_transfer_relations import relation_from_json
 
 
 def test_snapshot_asset_import_redacts_metadata() -> None:
@@ -219,6 +224,51 @@ def test_snapshot_context_suggestion_import_redacts_metadata() -> None:
     assert raw_secret not in rendered
     assert "token" not in row.metadata_json
     assert "[redacted]" in rendered
+
+
+def test_snapshot_anchor_import_accepts_legacy_payload_without_evidence_fields() -> None:
+    now = _now()
+    row = anchor_from_json(
+        {
+            "id": "anchor_legacy_alex",
+            "kind": "person",
+            "normalized_key": "alex",
+            "label": "Alex",
+            "created_at": "2026-06-01T12:00:00+00:00",
+            "updated_at": "2026-06-02T12:00:00+00:00",
+        },
+        space_id="space_1",
+        memory_scope_id="scope_1",
+        now=now,
+    )
+
+    assert row.confidence == "medium"
+    assert row.evidence_refs_json == []
+    assert row.observed_at is None
+    assert row.valid_from is None
+    assert row.valid_to is None
+    assert row.metadata_json == {}
+
+
+def test_snapshot_relation_import_accepts_legacy_payload_without_temporal_fields() -> None:
+    row = relation_from_json(
+        {
+            "id": "relation_legacy",
+            "source_fact_id": "fact_current",
+            "target_fact_id": "fact_old",
+            "relation_type": "supersedes",
+            "created_at": "2026-06-01T12:00:00+00:00",
+        },
+        space_id="space_1",
+        memory_scope_id="scope_1",
+        now=_now(),
+    )
+
+    assert row.reason == "imported memory_scope snapshot relation"
+    assert row.status == "active"
+    assert row.observed_at == row.created_at
+    assert row.valid_from is None
+    assert row.valid_to is None
 
 
 def _now() -> datetime:

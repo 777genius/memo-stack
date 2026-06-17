@@ -1039,6 +1039,8 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
         "description": "Canonical person anchor.",
         "metadata": {},
     }
+    for optional_key in ("confidence", "evidence_refs", "observed_at", "valid_from", "valid_to"):
+        assert optional_key not in seen[0][3]
     assert seen[1][2] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
@@ -1052,6 +1054,8 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
         "description": "Edited person anchor.",
         "metadata": {},
     }
+    for optional_key in ("confidence", "evidence_refs", "observed_at", "valid_from", "valid_to"):
+        assert optional_key not in seen[2][3]
     assert seen[3][3] == {"reason": "obsolete anchor"}
     assert seen[4][3] == {
         "space_slug": "client-app",
