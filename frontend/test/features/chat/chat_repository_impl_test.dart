@@ -146,6 +146,46 @@ void main() {
       await repo.dispose();
     });
 
+    test('creates and backfills anchors in the active memory scope', () async {
+      final rest = _AnchorRestClient();
+      final repo = ChatRepositoryImpl(rest);
+      repo.updateScopeGetters(
+        spaceSlug: () => 'team-space',
+        memoryScopeExternalRef: () => 'project-atlas',
+      );
+
+      final anchor = await repo.createMemoryAnchor(
+        kind: 'project',
+        label: 'Project Atlas',
+        aliases: ['Atlas'],
+        description: 'Primary project anchor',
+      );
+      await repo.backfillMemoryAnchors(limitPerSource: 42);
+
+      expect(anchor.kind, 'project');
+      expect(anchor.label, 'Project Atlas');
+      expect(rest.createSpaceSlug, 'team-space');
+      expect(rest.createMemoryScopeRef, 'project-atlas');
+      expect(rest.createAliases, ['Atlas']);
+      expect(rest.backfillSpaceSlug, 'team-space');
+      expect(rest.backfillMemoryScopeRef, 'project-atlas');
+      expect(rest.backfillLimitPerSource, 42);
+
+      await repo.dispose();
+    });
+
+    test('fails closed when anchor creation returns no data', () async {
+      final rest = _EmptyAnchorRestClient();
+      final repo = ChatRepositoryImpl(rest);
+
+      await expectLater(
+        repo.createMemoryAnchor(kind: 'person', label: 'Alex'),
+        throwsA(isA<StateError>()),
+      );
+
+      await repo.dispose();
+    });
+
     test('keeps saved capture when link suggestions fail softly', () async {
       final rest = _SuggestionFailingRestClient();
       final repo = ChatRepositoryImpl(rest);
@@ -177,6 +217,68 @@ void main() {
       await repo.dispose();
     });
   });
+}
+
+class _AnchorRestClient extends BackendRestClient {
+  String? createSpaceSlug;
+  String? createMemoryScopeRef;
+  List<String>? createAliases;
+  String? backfillSpaceSlug;
+  String? backfillMemoryScopeRef;
+  int? backfillLimitPerSource;
+
+  @override
+  Future<Map<String, dynamic>> createAnchor({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    createSpaceSlug = spaceSlug;
+    createMemoryScopeRef = memoryScopeExternalRef;
+    createAliases = aliases;
+    return {
+      'id': 'anchor-1',
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': kind,
+      'normalized_key': 'project atlas',
+      'label': label,
+      'aliases': aliases,
+      'description': description,
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:00:00Z',
+    };
+  }
+
+  @override
+  Future<void> backfillAnchors({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    int limitPerSource = 100,
+  }) async {
+    backfillSpaceSlug = spaceSlug;
+    backfillMemoryScopeRef = memoryScopeExternalRef;
+    backfillLimitPerSource = limitPerSource;
+  }
+}
+
+class _EmptyAnchorRestClient extends BackendRestClient {
+  @override
+  Future<Map<String, dynamic>> createAnchor({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    return const <String, dynamic>{};
+  }
 }
 
 class _MemoryHistoryRestClient extends BackendRestClient {

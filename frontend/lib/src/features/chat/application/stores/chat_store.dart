@@ -548,6 +548,80 @@ abstract class ChatStoreBase with Store {
     }
   }
 
+  Future<bool> createMemoryAnchor({
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    final cleanKind = kind.trim().isEmpty ? 'person' : kind.trim();
+    final cleanLabel = label.trim();
+    final cleanAliases = aliases
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty && item != cleanLabel)
+        .toSet()
+        .toList(growable: false);
+    final cleanDescription = description?.trim();
+    if (cleanLabel.isEmpty) {
+      runInAction(() {
+        memoryBrowserError.value = 'Anchor label is required';
+      });
+      return false;
+    }
+    runInAction(() {
+      memoryBrowserLoading.value = true;
+      memoryBrowserError.value = null;
+    });
+    try {
+      await repo.createMemoryAnchor(
+        kind: cleanKind,
+        label: cleanLabel,
+        aliases: cleanAliases,
+        description: cleanDescription == null || cleanDescription.isEmpty
+            ? null
+            : cleanDescription,
+      );
+      if (_disposed) return false;
+      await refreshMemoryBrowser(showLoading: false);
+      return true;
+    } catch (e) {
+      if (!_disposed) {
+        runInAction(() {
+          memoryBrowserError.value = 'Anchor creation failed: $e';
+        });
+      }
+      return false;
+    } finally {
+      if (!_disposed) {
+        runInAction(() => memoryBrowserLoading.value = false);
+      }
+    }
+  }
+
+  Future<bool> backfillMemoryAnchors({int limitPerSource = 100}) async {
+    runInAction(() {
+      memoryBrowserLoading.value = true;
+      memoryBrowserError.value = null;
+    });
+    try {
+      await repo.backfillMemoryAnchors(limitPerSource: limitPerSource);
+      if (_disposed) return false;
+      await refreshMemoryBrowser(showLoading: false);
+      return true;
+    } catch (e) {
+      if (!_disposed) {
+        runInAction(() {
+          memoryBrowserError.value = 'Anchor backfill failed: $e';
+        });
+      }
+      return false;
+    } finally {
+      if (!_disposed) {
+        runInAction(() => memoryBrowserLoading.value = false);
+      }
+    }
+  }
+
   Future<void> reviewContextLinkSuggestion(
     MemoryContextLinkSuggestion suggestion, {
     required bool approve,

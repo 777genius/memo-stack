@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 
@@ -6,6 +8,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/memory_anchor_detail_dialog.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/memory_anchor_form_dialog.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/sidebar_formatters.dart';
 
 class MemoryBrowserTab extends StatefulWidget {
@@ -49,6 +52,15 @@ class _MemoryBrowserTabState extends State<MemoryBrowserTab> {
               loading: loading,
               onFilterChanged: (filter) => setState(() => _filter = filter),
               onRefresh: widget.store.refreshMemoryBrowser,
+              onCreateAnchor: () => showDialog<bool>(
+                context: context,
+                builder: (_) => MemoryAnchorFormDialog(
+                  onSubmit: widget.store.createMemoryAnchor,
+                ),
+              ),
+              onBackfillAnchors: () {
+                unawaited(widget.store.backfillMemoryAnchors());
+              },
             ),
             if (snapshot != null) ...[
               const SizedBox(height: 8),
@@ -80,6 +92,8 @@ class _BrowserToolbar extends StatelessWidget {
   final bool loading;
   final ValueChanged<_BrowserFilter> onFilterChanged;
   final VoidCallback onRefresh;
+  final VoidCallback onCreateAnchor;
+  final VoidCallback onBackfillAnchors;
 
   const _BrowserToolbar({
     required this.controller,
@@ -87,6 +101,8 @@ class _BrowserToolbar extends StatelessWidget {
     required this.loading,
     required this.onFilterChanged,
     required this.onRefresh,
+    required this.onCreateAnchor,
+    required this.onBackfillAnchors,
   });
 
   @override
@@ -121,11 +137,30 @@ class _BrowserToolbar extends StatelessWidget {
                 onPressed: onRefresh,
                 icon: const Icon(Icons.refresh, size: 20),
               );
+        final createAnchor = IconButton(
+          key: const ValueKey('memory_browser_add_anchor_button'),
+          tooltip: 'Add anchor',
+          onPressed: loading ? null : onCreateAnchor,
+          icon: const Icon(Icons.add_link_outlined, size: 20),
+        );
+        final backfillAnchors = IconButton(
+          key: const ValueKey('memory_browser_backfill_anchors_button'),
+          tooltip: 'Backfill anchors',
+          onPressed: loading ? null : onBackfillAnchors,
+          icon: const Icon(Icons.auto_awesome_outlined, size: 20),
+        );
         if (!wide) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [Expanded(child: search), refresh]),
+              Row(
+                children: [
+                  Expanded(child: search),
+                  createAnchor,
+                  backfillAnchors,
+                  refresh,
+                ],
+              ),
               const SizedBox(height: 8),
               filters,
             ],
@@ -137,6 +172,8 @@ class _BrowserToolbar extends StatelessWidget {
             const SizedBox(width: 10),
             Flexible(child: filters),
             const SizedBox(width: 4),
+            createAnchor,
+            backfillAnchors,
             refresh,
           ],
         );

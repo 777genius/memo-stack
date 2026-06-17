@@ -294,6 +294,32 @@ class _FakeChatRepository implements ChatRepository {
   }
 
   @override
+  Future<MemoryBrowserAnchor> createMemoryAnchor({
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    return MemoryBrowserAnchor.fromMap({
+      'id': 'anchor-fake',
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': kind,
+      'normalized_key': label.toLowerCase(),
+      'label': label,
+      'aliases': aliases,
+      'description': description,
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:00:00Z',
+    });
+  }
+
+  @override
+  Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {}
+
+  @override
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     return <int>[];
   }

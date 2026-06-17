@@ -203,6 +203,45 @@ class BackendRestClient {
     return _data(resp.data);
   }
 
+  Future<Map<String, dynamic>> createAnchor({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/anchors',
+      data: {
+        'space_slug': spaceSlug,
+        'memory_scope_external_ref': memoryScopeExternalRef,
+        'kind': kind,
+        'label': label,
+        'aliases': aliases,
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+        'metadata': {'creation_source': 'manual_frontend'},
+      },
+    );
+    return _data(resp.data);
+  }
+
+  Future<void> backfillAnchors({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    int limitPerSource = 100,
+  }) async {
+    await _dio.post<Map<String, dynamic>>(
+      '/v1/anchors/backfill',
+      data: {
+        'space_slug': spaceSlug,
+        'memory_scope_external_ref': memoryScopeExternalRef,
+        'limit_per_source': limitPerSource,
+      },
+    );
+  }
+
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     final resp = await _dio.get<List<int>>(
       '/v1/extraction-artifacts/$artifactId/download',

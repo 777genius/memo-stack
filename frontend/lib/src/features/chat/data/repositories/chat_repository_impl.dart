@@ -637,6 +637,36 @@ class ChatRepositoryImpl
   }
 
   @override
+  Future<MemoryBrowserAnchor> createMemoryAnchor({
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    final row = await _rest.createAnchor(
+      spaceSlug: _spaceSlugGetter(),
+      memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
+      kind: kind,
+      label: label,
+      aliases: aliases,
+      description: description,
+    );
+    if ((row['id']?.toString().trim().isEmpty ?? true)) {
+      throw StateError('Memory scope was not found for anchor creation');
+    }
+    return MemoryBrowserAnchor.fromMap(row);
+  }
+
+  @override
+  Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {
+    await _rest.backfillAnchors(
+      spaceSlug: _spaceSlugGetter(),
+      memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
+      limitPerSource: limitPerSource,
+    );
+  }
+
+  @override
   Future<List<int>> downloadExtractionArtifact(String artifactId) async {
     return _rest.downloadExtractionArtifact(artifactId);
   }

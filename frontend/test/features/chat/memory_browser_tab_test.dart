@@ -77,6 +77,39 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester
+        .tap(find.byKey(const ValueKey('memory_browser_add_anchor_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory_anchor_form_dialog')),
+        findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_label_field')),
+      'Jordan',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_aliases_field')),
+      'J, Jordan',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('memory_anchor_description_field')),
+      'Design partner',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory_anchor_save_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.createdAnchors.single.kind, 'person');
+    expect(repo.createdAnchors.single.label, 'Jordan');
+    expect(repo.createdAnchors.single.aliases, ['J']);
+    expect(repo.createdAnchors.single.description, 'Design partner');
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_browser_backfill_anchors_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.backfillRequests, [100]);
+
+    await tester
         .tap(find.byKey(const ValueKey('memory_browser_filter_anchors')));
     await tester.pumpAndSettle();
 
@@ -99,6 +132,8 @@ void main() {
 
 class _BrowserRepo implements ChatRepository {
   final MemoryBrowserSnapshot snapshot;
+  final createdAnchors = <_CreatedAnchor>[];
+  final backfillRequests = <int>[];
   final _messages = StreamController<ChatMessage>.broadcast();
   final _usage = StreamController<CostUsage>.broadcast();
   final _running = StreamController<bool>.broadcast();
@@ -140,7 +175,57 @@ class _BrowserRepo implements ChatRepository {
   }
 
   @override
+  Future<MemoryBrowserAnchor> createMemoryAnchor({
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  }) async {
+    createdAnchors.add(
+      _CreatedAnchor(
+        kind: kind,
+        label: label,
+        aliases: aliases,
+        description: description,
+      ),
+    );
+    return MemoryBrowserAnchor.fromMap({
+      'id': 'anchor-created',
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'kind': kind,
+      'normalized_key': label.toLowerCase(),
+      'label': label,
+      'aliases': aliases,
+      'description': description,
+      'status': 'active',
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-14T10:00:00Z',
+      'updated_at': '2026-06-14T10:00:00Z',
+    });
+  }
+
+  @override
+  Future<void> backfillMemoryAnchors({int limitPerSource = 100}) async {
+    backfillRequests.add(limitPerSource);
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CreatedAnchor {
+  final String kind;
+  final String label;
+  final List<String> aliases;
+  final String? description;
+
+  const _CreatedAnchor({
+    required this.kind,
+    required this.label,
+    required this.aliases,
+    required this.description,
+  });
 }
 
 MemoryBrowserSnapshot _snapshot() {

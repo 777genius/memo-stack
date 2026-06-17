@@ -68,6 +68,13 @@ abstract class ChatRepository {
   Future<AssetExtractionJob> cancelAssetExtraction(String jobId);
   Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50});
   Future<MemoryBrowserSnapshot> getMemoryBrowser({int limit = 50});
+  Future<MemoryBrowserAnchor> createMemoryAnchor({
+    required String kind,
+    required String label,
+    List<String> aliases = const <String>[],
+    String? description,
+  });
+  Future<void> backfillMemoryAnchors({int limitPerSource = 100});
   Future<List<int>> downloadExtractionArtifact(String artifactId);
   Future<List<DocumentChunk>> listDocumentChunks(String documentId);
   Future<List<MemoryCapture>> listMemoryCaptures({int limit = 50});
