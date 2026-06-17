@@ -2,6 +2,7 @@ from pathlib import Path
 
 from memo_stack_core.application import context_diagnostics, context_link_policy
 from memo_stack_core.application.use_cases import context_link_reviews
+from memo_stack_core.domain import assets
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -19,6 +20,7 @@ def test_memory_platform_rules_lock_bounded_payload_budgets() -> None:
     assert f"max {context_link_policy.MAX_DENIED_DIAGNOSTIC_ITEMS}" in rules
     assert f"max {context_link_policy.MAX_SUGGESTIONS_PER_SOURCE}" in rules
     assert f"max {context_link_reviews.MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS}" in rules
+    assert f"max {assets.MAX_CONTEXT_LINK_REVIEW_EVENTS}" in rules
     assert f"max {context_link_reviews.MAX_SAFE_BATCH_ERROR_CHARS} chars" in rules
 
 

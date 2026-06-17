@@ -135,6 +135,7 @@ tests.
 | denied link-candidate diagnostics | max 8 sampled denied candidates |
 | persisted context-link suggestions per source request | max 10 |
 | context-link batch review | max 50 review items |
+| review/audit metadata events | max 20 events per metadata list |
 | safe batch error text | max 320 chars after redaction |
 
 Payload budgets are safety controls, not presentation preferences. If a provider
