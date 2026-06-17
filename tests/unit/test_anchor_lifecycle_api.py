@@ -528,6 +528,71 @@ def test_organization_anchor_alias_conflicts_and_split_preserve_lineage(
     assert "Acme" not in active_by_id[acme_parent.json()["data"]["id"]]["aliases"]
 
 
+def test_anchor_split_rejects_empty_normalized_label_without_mutating_alias(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-split-invalid-key",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "anchor-split-invalid-key-seed",
+                "text": "Seed invalid split scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        acme_parent = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-invalid-key",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Group",
+                "aliases": ["Acme"],
+                "evidence_refs": [{"source_type": "manual", "source_id": "acme-group"}],
+            },
+            headers=auth_headers(),
+        )
+        assert acme_parent.status_code == 200, acme_parent.text
+
+        invalid_split = client.post(
+            f"/v1/anchors/{acme_parent.json()['data']['id']}/split",
+            json={
+                "alias": "Acme",
+                "new_label": "!!!",
+                "reason": "reject split labels without canonical identity",
+            },
+            headers=auth_headers(),
+        )
+
+        active = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-split-invalid-key",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+
+    assert invalid_split.status_code == 400, invalid_split.text
+    assert invalid_split.json()["error"]["code"] == "memory.validation"
+    active_by_id = {item["id"]: item for item in active.json()["data"]}
+    parent = active_by_id[acme_parent.json()["data"]["id"]]
+    assert "Acme" in parent["aliases"]
+    assert all(item["normalized_key"] for item in active.json()["data"])
+
+
 def test_anchor_merge_rejects_legacy_alias_conflict_with_third_anchor(
     tmp_path: Path,
 ) -> None:

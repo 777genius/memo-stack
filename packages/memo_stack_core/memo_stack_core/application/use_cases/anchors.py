@@ -340,11 +340,13 @@ class SplitAnchorUseCase:
             raise MemoryValidationError("Anchor split alias is required")
         if not label:
             raise MemoryValidationError("Anchor split label is required")
+        normalized_key = normalize_anchor_key(label)
+        if not normalized_key:
+            raise MemoryValidationError("Anchor split normalized key is required")
         now = self._clock.now()
         async with self._uow_factory() as uow:
             anchor = await _get_anchor(uow, command.anchor_id, role="anchor")
             updated_anchor = anchor.remove_alias(alias=alias, reason=reason, now=now)
-            normalized_key = normalize_anchor_key(label)
             existing = await uow.anchors.find_active_by_key(
                 space_id=str(anchor.space_id),
                 memory_scope_id=str(anchor.memory_scope_id),
