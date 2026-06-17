@@ -121,6 +121,15 @@ class CreateAnchorUseCase:
                 normalized_key=normalized_key,
             )
             if existing is not None:
+                await _assert_anchor_aliases_available(
+                    uow,
+                    space_id=str(command.space_id),
+                    memory_scope_id=str(command.memory_scope_id),
+                    kind=kind.value,
+                    label=label,
+                    aliases=command.aliases,
+                    exclude_anchor_ids=(str(existing.id),),
+                )
                 anchor = await uow.anchors.save(
                     existing.update_details(
                         label=label,
@@ -136,6 +145,14 @@ class CreateAnchorUseCase:
                     )
                 )
             else:
+                await _assert_anchor_aliases_available(
+                    uow,
+                    space_id=str(command.space_id),
+                    memory_scope_id=str(command.memory_scope_id),
+                    kind=kind.value,
+                    label=label,
+                    aliases=command.aliases,
+                )
                 anchor = await uow.anchors.create(
                     MemoryAnchor.create(
                         anchor_id=MemoryAnchorId(self._ids.new_id("anchor")),
@@ -189,6 +206,15 @@ class UpdateAnchorUseCase:
                     raise MemoryConflictError(
                         "Anchor label conflicts with an existing active anchor"
                     )
+            await _assert_anchor_aliases_available(
+                uow,
+                space_id=str(anchor.space_id),
+                memory_scope_id=str(anchor.memory_scope_id),
+                kind=anchor.kind.value,
+                label=label or anchor.label,
+                aliases=command.aliases,
+                exclude_anchor_ids=(str(anchor.id),),
+            )
             saved = await uow.anchors.save(
                 anchor.update_details(
                     normalized_key=normalized_key,
@@ -316,6 +342,15 @@ class SplitAnchorUseCase:
                 kind=anchor.kind.value,
                 normalized_key=normalized_key,
             )
+            if existing is None:
+                existing = await _find_active_anchor_by_alias_key(
+                    uow,
+                    space_id=str(anchor.space_id),
+                    memory_scope_id=str(anchor.memory_scope_id),
+                    kind=anchor.kind.value,
+                    alias_key=normalized_key,
+                    exclude_anchor_ids=(str(anchor.id),),
+                )
             if existing is not None:
                 new_anchor = existing.merge_observation(
                     label=label,
@@ -513,6 +548,14 @@ async def _upsert_observed_anchor(
             space_id=space_id,
             memory_scope_id=memory_scope_id,
         )
+    if existing is None:
+        existing = await _find_active_anchor_by_alias_key(
+            uow,
+            space_id=str(space_id),
+            memory_scope_id=str(memory_scope_id),
+            kind=observed.kind.value,
+            alias_key=observed.normalized_key,
+        )
     metadata = {
         **observed.metadata,
         "last_backfill_source_type": source_type,
@@ -564,6 +607,71 @@ async def _upsert_observed_anchor(
         )
     )
     return saved, True
+
+
+async def _assert_anchor_aliases_available(
+    uow: UnitOfWorkPort,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    kind: str,
+    label: str,
+    aliases: tuple[str, ...],
+    exclude_anchor_ids: tuple[str, ...] = (),
+) -> None:
+    proposed_keys = _anchor_alias_keys(label, aliases)
+    if not proposed_keys:
+        return
+    conflict = await _find_active_anchor_by_alias_key(
+        uow,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        kind=kind,
+        alias_key=None,
+        candidate_keys=proposed_keys,
+        exclude_anchor_ids=exclude_anchor_ids,
+    )
+    if conflict is not None:
+        raise MemoryConflictError("Anchor alias conflicts with an existing active anchor")
+
+
+async def _find_active_anchor_by_alias_key(
+    uow: UnitOfWorkPort,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    kind: str,
+    alias_key: str | None = None,
+    candidate_keys: tuple[str, ...] | None = None,
+    exclude_anchor_ids: tuple[str, ...] = (),
+) -> MemoryAnchor | None:
+    keys = candidate_keys or ((alias_key,) if alias_key else ())
+    keys = tuple(key for key in keys if key)
+    if not keys:
+        return None
+    excluded = set(exclude_anchor_ids)
+    anchors = await uow.anchors.list_for_scope(
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        kind=kind,
+        status=LifecycleStatus.ACTIVE.value,
+        limit=1000,
+    )
+    for anchor in anchors:
+        if str(anchor.id) in excluded:
+            continue
+        if set(keys) & set(_anchor_alias_keys(anchor.label, anchor.aliases)):
+            return anchor
+    return None
+
+
+def _anchor_alias_keys(label: str, aliases: tuple[str, ...]) -> tuple[str, ...]:
+    keys = {
+        normalized
+        for value in (label, *aliases)
+        if (normalized := normalize_anchor_key(value))
+    }
+    return tuple(sorted(keys))
 
 
 def _parse_anchor_confidence(value: str | None) -> Confidence:

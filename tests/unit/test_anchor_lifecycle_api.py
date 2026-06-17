@@ -381,6 +381,138 @@ def test_anchor_backfill_collapses_russian_person_case_variants(tmp_path: Path) 
         assert person_anchors[0]["metadata"]["canonical_key"] == "aleks"
 
 
+def test_organization_anchor_alias_conflicts_and_split_preserve_lineage(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "org-anchor-conflict-seed",
+                "text": "Seed organization anchor conflict scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        openai = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "OpenAI",
+                "aliases": ["Open AI"],
+                "evidence_refs": [{"source_type": "manual", "source_id": "openai-review"}],
+                "valid_from": "2026-01-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        assert openai.status_code == 200, openai.text
+
+        duplicate_openai_alias = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Open AI",
+            },
+            headers=auth_headers(),
+        )
+
+        github = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "GitHub",
+                "aliases": ["GH"],
+            },
+            headers=auth_headers(),
+        )
+        assert github.status_code == 200, github.text
+
+        github_alias_conflict = client.patch(
+            f"/v1/anchors/{github.json()['data']['id']}",
+            json={"aliases": ["Open AI"]},
+            headers=auth_headers(),
+        )
+
+        acme_parent = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Group",
+                "aliases": ["Acme"],
+                "evidence_refs": [{"source_type": "manual", "source_id": "acme-group"}],
+                "valid_from": "2026-02-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        assert acme_parent.status_code == 200, acme_parent.text
+
+        acme_existing = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Research",
+                "aliases": ["Acme Labs"],
+                "evidence_refs": [{"source_type": "manual", "source_id": "acme-research"}],
+            },
+            headers=auth_headers(),
+        )
+        assert acme_existing.status_code == 200, acme_existing.text
+
+        split = client.post(
+            f"/v1/anchors/{acme_parent.json()['data']['id']}/split",
+            json={
+                "alias": "Acme",
+                "new_label": "Acme Research",
+                "reason": "reviewer separated Acme alias into the research org",
+            },
+            headers=auth_headers(),
+        )
+
+        active = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "organization-anchor-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+
+    assert duplicate_openai_alias.status_code == 409, duplicate_openai_alias.text
+    assert github_alias_conflict.status_code == 409, github_alias_conflict.text
+    assert split.status_code == 200, split.text
+    split_anchor = split.json()["data"]
+    assert split_anchor["id"] == acme_existing.json()["data"]["id"]
+    assert split_anchor["metadata"]["split_from_anchor_id"] == acme_parent.json()["data"]["id"]
+    assert split_anchor["valid_from"] == "2026-02-01T00:00:00+00:00"
+    assert {ref["source_id"] for ref in split_anchor["evidence_refs"]} == {
+        "acme-group",
+        "acme-research",
+    }
+    active_by_id = {item["id"]: item for item in active.json()["data"]}
+    assert "Acme" not in active_by_id[acme_parent.json()["data"]["id"]]["aliases"]
+
+
 def test_anchor_backfill_preserves_manual_event_label_for_case_variants(
     tmp_path: Path,
 ) -> None:
