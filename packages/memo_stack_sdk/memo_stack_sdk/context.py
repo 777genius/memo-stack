@@ -67,6 +67,13 @@ class ContextBundleDiagnostics:
     retrieval_sources_used: tuple[str, ...]
     hybrid_items_used: int
     temporal_replacements_applied: int
+    temporal_relations_skipped_by_validity: int
+    items_considered: int
+    items_used: int
+    dropped_by_instruction_flag: int
+    dropped_by_budget: int
+    dropped_by_source_cap: int
+    dropped_by_char_cap: int
     diagnostics_truncated: bool
     raw: Mapping[str, object]
 
@@ -161,6 +168,17 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         temporal_replacements_applied=_non_negative_int(
             raw.get("temporal_replacements_applied")
         ),
+        temporal_relations_skipped_by_validity=_non_negative_int(
+            raw.get("temporal_relations_skipped_by_validity")
+        ),
+        items_considered=_non_negative_int(raw.get("items_considered")),
+        items_used=_non_negative_int(raw.get("items_used")),
+        dropped_by_instruction_flag=_non_negative_int(
+            raw.get("dropped_by_instruction_flag")
+        ),
+        dropped_by_budget=_non_negative_int(raw.get("dropped_by_budget")),
+        dropped_by_source_cap=_non_negative_int(raw.get("dropped_by_source_cap")),
+        dropped_by_char_cap=_non_negative_int(raw.get("dropped_by_char_cap")),
         diagnostics_truncated=bool(raw.get("diagnostics_truncated")),
         raw=raw,
     )

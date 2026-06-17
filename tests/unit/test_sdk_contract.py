@@ -456,6 +456,13 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         ],
                         "hybrid_items_used": 2,
                         "temporal_replacements_applied": 1,
+                        "temporal_relations_skipped_by_validity": 3,
+                        "items_considered": 14,
+                        "items_used": 7,
+                        "dropped_by_instruction_flag": 1,
+                        "dropped_by_budget": 2,
+                        "dropped_by_source_cap": 3,
+                        "dropped_by_char_cap": 4,
                         "api_key": raw_secret,
                     },
                     "items": [
@@ -521,6 +528,13 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     )
     assert bundle.diagnostics.hybrid_items_used == 2
     assert bundle.diagnostics.temporal_replacements_applied == 1
+    assert bundle.diagnostics.temporal_relations_skipped_by_validity == 3
+    assert bundle.diagnostics.items_considered == 14
+    assert bundle.diagnostics.items_used == 7
+    assert bundle.diagnostics.dropped_by_instruction_flag == 1
+    assert bundle.diagnostics.dropped_by_budget == 2
+    assert bundle.diagnostics.dropped_by_source_cap == 3
+    assert bundle.diagnostics.dropped_by_char_cap == 4
     assert "api_key" not in bundle.diagnostics.raw
 
     item = bundle.items[0]
