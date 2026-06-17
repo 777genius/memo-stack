@@ -95,6 +95,11 @@ class _MemoStackMarionetteE2eBridgeState
       (handler, params) => handler.reviewFirstPendingLinkSuggestion(params),
     );
     _register(
+      'memoStack.createManualContextLinkFromSuggestion',
+      (handler, params) =>
+          handler.createManualContextLinkFromSuggestion(params),
+    );
+    _register(
       'memoStack.createMemoryAnchor',
       (handler, params) => handler.createMemoryAnchor(params),
     );
@@ -289,20 +294,7 @@ class MemoStackMarionetteE2eCommandHandler {
   ) async {
     final store = _store();
     await store.refreshContextLinkSuggestions(showLoading: false);
-    final targetId = _optional(params, 'targetId');
-    final targetType = _optional(params, 'targetType');
-    final targetLabelContains =
-        _optional(params, 'targetLabelContains')?.toLowerCase();
-    final pending = store.contextLinkSuggestions.where((item) {
-      if (!item.isPending) return false;
-      if (targetId != null && item.targetId != targetId) return false;
-      if (targetType != null && item.targetType != targetType) return false;
-      if (targetLabelContains != null &&
-          !item.targetLabel.toLowerCase().contains(targetLabelContains)) {
-        return false;
-      }
-      return true;
-    }).toList(growable: false);
+    final pending = _matchingPendingLinkSuggestions(store, params);
     if (pending.isEmpty) {
       return {
         ..._state(store),
@@ -322,6 +314,49 @@ class MemoStackMarionetteE2eCommandHandler {
       'reviewedTargetType': pending.first.targetType,
       'reviewedTargetId': pending.first.targetId,
       'reviewAction': approve ? 'approve' : 'reject',
+    };
+  }
+
+  Future<Map<String, dynamic>> createManualContextLinkFromSuggestion(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    await store.refreshContextLinkSuggestions(showLoading: false);
+    final pending = _matchingPendingLinkSuggestions(
+      store,
+      params,
+      includeTargetAliases: false,
+    );
+    if (pending.isEmpty) {
+      return {
+        ..._state(store),
+        'manualLinked': false,
+      };
+    }
+    final suggestion = pending.first;
+    final targetType = _required(params, 'targetType');
+    final targetId = _required(params, 'targetId');
+    final ok = await store.createManualContextLinkFromSuggestion(
+      suggestion,
+      targetType: targetType,
+      targetId: targetId,
+      relationType:
+          _optional(params, 'relationType') ?? suggestion.relationType,
+      confidence: _optional(params, 'confidence') ?? suggestion.confidence,
+      reason: _optional(params, 'reason') ?? 'selected by user',
+    );
+    _throwIfFailed(
+      ok,
+      store.contextLinkSuggestionError.value,
+      'Manual context link was not created',
+    );
+    await _refreshEvidence(store);
+    return {
+      ..._state(store),
+      'manualLinked': true,
+      'manualLinkSuggestionId': suggestion.id,
+      'manualLinkTargetType': targetType,
+      'manualLinkTargetId': targetId,
     };
   }
 
@@ -512,6 +547,33 @@ class MemoStackMarionetteE2eCommandHandler {
       store.refreshMemoryBrowser(showLoading: false),
     ]);
     await store.refreshAssetExtractions(showLoading: false);
+  }
+
+  List<MemoryContextLinkSuggestion> _matchingPendingLinkSuggestions(
+    ChatStore store,
+    Map<String, String> params, {
+    bool includeTargetAliases = true,
+  }) {
+    final targetId = _optional(params, 'suggestionTargetId') ??
+        (includeTargetAliases ? _optional(params, 'targetId') : null);
+    final targetType = _optional(params, 'suggestionTargetType') ??
+        (includeTargetAliases ? _optional(params, 'targetType') : null);
+    final targetLabelContains =
+        (_optional(params, 'suggestionTargetLabelContains') ??
+                (includeTargetAliases
+                    ? _optional(params, 'targetLabelContains')
+                    : null))
+            ?.toLowerCase();
+    return store.contextLinkSuggestions.where((item) {
+      if (!item.isPending) return false;
+      if (targetId != null && item.targetId != targetId) return false;
+      if (targetType != null && item.targetType != targetType) return false;
+      if (targetLabelContains != null &&
+          !item.targetLabel.toLowerCase().contains(targetLabelContains)) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
   }
 
   Map<String, dynamic> _state(ChatStore store) {

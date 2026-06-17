@@ -151,6 +151,43 @@ void main() {
       expect(repo.contextLinkSuggestions.single.id, 'ctxlinksug-1');
     });
 
+    test('creates a manual context link from a pending suggestion', () async {
+      await handler.submitCapture({
+        'text': 'Alex confirmed the Project Atlas launch timing.',
+      });
+
+      final result = await handler.createManualContextLinkFromSuggestion({
+        'suggestionTargetId': 'anchor-project-atlas',
+        'targetType': 'anchor',
+        'targetId': 'anchor-manual-project',
+        'relationType': 'supports',
+        'confidence': 'medium',
+        'reason': 'manual override',
+      });
+
+      expect(result['manualLinked'], true);
+      expect(result['manualLinkSuggestionId'], 'ctxlinksug-1');
+      expect(result['manualLinkTargetId'], 'anchor-manual-project');
+      expect(result['pendingLinkSuggestionCount'], 0);
+      expect(result['memoryBrowserContextLinkCount'], 1);
+      expect(repo.createdContextLinks, [
+        {
+          'source_type': 'capture',
+          'source_id': 'capture-1',
+          'target_type': 'anchor',
+          'target_id': 'anchor-manual-project',
+          'relation_type': 'supports',
+          'confidence': 'medium',
+          'reason': 'manual override',
+        },
+      ]);
+      expect(repo.reviewedSuggestions, ['ctxlinksug-1:reject']);
+      expect(
+        repo.reviewedSuggestionReasons['ctxlinksug-1'],
+        'replaced by manual link',
+      );
+    });
+
     test('drives memory anchor lifecycle for live e2e checks', () async {
       var result = await handler.createMemoryAnchor({
         'memoryScopeExternalRef': 'project-atlas',
@@ -223,17 +260,20 @@ class _FakeChatRepository implements ChatRepository {
   };
   final List<MemoryCapture> captures = <MemoryCapture>[];
   final List<MemoryBrowserAnchor> anchors = <MemoryBrowserAnchor>[];
+  final List<MemoryContextLink> contextLinks = <MemoryContextLink>[];
   final List<Map<String, String?>> pendingUploads = <Map<String, String?>>[];
   final List<AssetExtractionJob> extractions = <AssetExtractionJob>[];
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
   List<MemoryAnchorMergeSuggestion> anchorMergeSuggestions = const [];
   final List<String> reviewedSuggestions = <String>[];
   final Map<String, String?> reviewedSuggestionReasons = <String, String?>{};
+  final List<Map<String, String>> createdContextLinks = <Map<String, String>>[];
   String activeMemoryScopeExternalRef = 'default';
   String? activeChatId;
   String? lastTask;
   int _captureSeq = 0;
   int _anchorSeq = 0;
+  int _contextLinkSeq = 0;
   int _assetSeq = 0;
   int _extractionSeq = 0;
 
@@ -375,7 +415,31 @@ class _FakeChatRepository implements ChatRepository {
     required String relationType,
     required String confidence,
     required String reason,
-  }) async {}
+  }) async {
+    createdContextLinks.add({
+      'source_type': sourceType,
+      'source_id': sourceId,
+      'target_type': targetType,
+      'target_id': targetId,
+      'relation_type': relationType,
+      'confidence': confidence,
+      'reason': reason,
+    });
+    contextLinks.add(
+      _contextLink(
+        id: 'ctxlink-${++_contextLinkSeq}',
+        memoryScopeId:
+            scopesByRef[activeMemoryScopeExternalRef]?.id ?? 'scope-default',
+        sourceType: sourceType,
+        sourceId: sourceId,
+        targetType: targetType,
+        targetId: targetId,
+        relationType: relationType,
+        confidence: confidence,
+        reason: reason,
+      ),
+    );
+  }
 
   @override
   Future<String> uploadFile(
@@ -469,7 +533,7 @@ class _FakeChatRepository implements ChatRepository {
       captures: captures.take(limit).toList(growable: false),
       assets: const <MemoryBrowserAsset>[],
       anchors: anchors.take(limit).toList(growable: false),
-      contextLinks: const <MemoryContextLink>[],
+      contextLinks: contextLinks.take(limit).toList(growable: false),
       contextLinkSuggestions:
           contextLinkSuggestions.take(limit).toList(growable: false),
       stats: {
@@ -650,7 +714,12 @@ class _FakeChatRepository implements ChatRepository {
     required String sourceId,
     int limit = 50,
   }) async {
-    return const <MemoryContextLink>[];
+    return contextLinks
+        .where(
+          (link) => link.sourceType == sourceType && link.sourceId == sourceId,
+        )
+        .take(limit)
+        .toList(growable: false);
   }
 
   @override
@@ -820,6 +889,36 @@ AssetExtractionJob _extractionJob({
     'updated_at': now,
     'started_at': now,
     'finished_at': now,
+  });
+}
+
+MemoryContextLink _contextLink({
+  required String id,
+  required String memoryScopeId,
+  required String sourceType,
+  required String sourceId,
+  required String targetType,
+  required String targetId,
+  required String relationType,
+  required String confidence,
+  required String reason,
+}) {
+  final now = DateTime.now().toIso8601String();
+  return MemoryContextLink.fromMap({
+    'id': id,
+    'space_id': 'space-1',
+    'memory_scope_id': memoryScopeId,
+    'source_type': sourceType,
+    'source_id': sourceId,
+    'target_type': targetType,
+    'target_id': targetId,
+    'relation_type': relationType,
+    'confidence': confidence,
+    'reason': reason,
+    'status': 'active',
+    'metadata': {'target_label': targetId},
+    'created_at': now,
+    'updated_at': now,
   });
 }
 

@@ -101,6 +101,7 @@ class MarionetteAnchorLifecycleRunner {
 
       await _runCaptureLinkingFlow(memoStack, runMarker);
       await _runAttachmentCaptureFlow(memoStack, runMarker);
+      await _runManualContextLinkFlow(memoStack, runMarker);
       final anchorBaselineState =
           await memoStack.call('memoStack.e2eState', {});
       final anchorBaseline =
@@ -355,6 +356,66 @@ class MarionetteAnchorLifecycleRunner {
     _log('attachment capture linked asset $assetId to extracted document');
   }
 
+  Future<void> _runManualContextLinkFlow(
+    MemoStackExtensionClient memoStack,
+    String runMarker,
+  ) async {
+    final baseline = await memoStack.call('memoStack.e2eState', {});
+    final baselineLinkCount = _int(baseline['memoryBrowserContextLinkCount']);
+    final target = await memoStack.call(
+      'memoStack.createMemoryAnchor',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'kind': 'project',
+        'label': 'Manual Link Target $runMarker',
+        'aliases': 'Manual Override Target $runMarker',
+        'description': 'Target anchor for manual context-link e2e',
+      },
+    );
+    final targetAnchorId = _field(_map(target['anchor']), 'id');
+    _log('created manual link target $targetAnchorId');
+
+    await memoStack.call(
+      'memoStack.submitCapture',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'threadTitle': 'Manual Link Thread $runMarker',
+        'text': 'Alex confirmed Manual Link Target $runMarker should be '
+            'linked with an edited manual relation.',
+      },
+    );
+    await _waitForPendingContextLinkSuggestion(
+      memoStack,
+      targetAnchorId: targetAnchorId,
+    );
+
+    final manual = await memoStack.call(
+      'memoStack.createManualContextLinkFromSuggestion',
+      {
+        'suggestionTargetId': targetAnchorId,
+        'targetType': 'anchor',
+        'targetId': targetAnchorId,
+        'relationType': 'supports',
+        'confidence': 'medium',
+        'reason': 'manual override from Marionette E2E',
+      },
+    );
+    _expect(
+      manual['manualLinked'] == true,
+      'manual context link was not created from suggestion',
+    );
+    _expect(
+      manual['manualLinkTargetId'] == targetAnchorId,
+      'manual context link target did not match selected anchor',
+    );
+
+    await _waitForContextLinkCount(
+      memoStack,
+      minimumCount: baselineLinkCount + 1,
+    );
+    _log('created manual context link for $targetAnchorId');
+  }
+
   Future<Map<String, dynamic>> _waitForPendingContextLinkSuggestion(
     MemoStackExtensionClient memoStack, {
     required String targetAnchorId,
@@ -413,13 +474,14 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<Map<String, dynamic>> _waitForContextLinkCount(
-    MemoStackExtensionClient memoStack,
-  ) async {
+    MemoStackExtensionClient memoStack, {
+    int minimumCount = 1,
+  }) async {
     final deadline = DateTime.now().add(config.callTimeout);
     Map<String, dynamic>? lastState;
     while (DateTime.now().isBefore(deadline)) {
       lastState = await memoStack.call('memoStack.refresh', {});
-      if (_int(lastState['memoryBrowserContextLinkCount']) > 0) {
+      if (_int(lastState['memoryBrowserContextLinkCount']) >= minimumCount) {
         return lastState;
       }
       await Future<void>.delayed(const Duration(milliseconds: 400));
