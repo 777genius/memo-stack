@@ -518,6 +518,11 @@ class MarionetteAnchorLifecycleRunner {
         {'externalRef': config.scopeRef},
       );
       await _cleanupRunAnchors(memoStack, runMarker);
+      await memoStack.call(
+        'memoStack.deleteMemoryScope',
+        {'externalRef': config.scopeRef},
+      );
+      _log('deleted memory scope ${config.scopeRef}');
     } catch (error) {
       _log('cleanup warning: $error');
     }

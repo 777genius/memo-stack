@@ -187,7 +187,43 @@ class FakeMarionetteChatRepository implements ChatRepository {
   }
 
   @override
-  Future<void> deleteMemoryScope(String memoryScopeId) async {}
+  Future<void> deleteMemoryScope(String memoryScopeId) async {
+    final removedScopeIds = scopesByRef.values
+        .where((scope) => scope.id == memoryScopeId)
+        .map((scope) => scope.id)
+        .toSet();
+    final removedRefs = scopesByRef.values
+        .where((scope) => scope.id == memoryScopeId)
+        .map((scope) => scope.externalRef)
+        .toSet();
+    scopesByRef.removeWhere((_, scope) => removedScopeIds.contains(scope.id));
+    captures.removeWhere(
+      (capture) => removedScopeIds.contains(capture.memoryScopeId),
+    );
+    extractions.removeWhere(
+      (job) => removedScopeIds.contains(job.memoryScopeId),
+    );
+    anchors.removeWhere(
+      (anchor) => removedScopeIds.contains(anchor.memoryScopeId),
+    );
+    contextLinks.removeWhere(
+      (link) => removedScopeIds.contains(link.memoryScopeId),
+    );
+    contextLinkSuggestions = contextLinkSuggestions
+        .where((item) => !removedScopeIds.contains(item.memoryScopeId))
+        .toList(growable: false);
+    anchorMergeSuggestions = anchorMergeSuggestions
+        .where(
+          (item) =>
+              !removedScopeIds.contains(item.sourceAnchor.memoryScopeId) &&
+              !removedScopeIds.contains(item.targetAnchor.memoryScopeId),
+        )
+        .toList(growable: false);
+    if (removedRefs.contains(activeMemoryScopeExternalRef)) {
+      activeMemoryScopeExternalRef = 'default';
+      activeChatId = null;
+    }
+  }
 
   @override
   Future<void> createContextLink({

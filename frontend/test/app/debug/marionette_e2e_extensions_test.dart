@@ -45,6 +45,22 @@ void main() {
       expect(repo.lastTask, contains('Project Atlas'));
     });
 
+    test('deletes a memory scope and falls back to default scope', () async {
+      await handler.createMemoryScope({
+        'externalRef': 'project-atlas',
+        'name': 'Project Atlas',
+      });
+      expect(repo.scopesByRef.containsKey('project-atlas'), true);
+
+      final result = await handler.deleteMemoryScope({
+        'externalRef': 'project-atlas',
+      });
+
+      expect(result['deletedMemoryScopeExternalRef'], 'project-atlas');
+      expect(result['activeMemoryScopeExternalRef'], 'default');
+      expect(repo.scopesByRef.containsKey('project-atlas'), false);
+    });
+
     test('submits an attachment capture with asset evidence', () async {
       final result = await handler.submitAttachmentCapture({
         'memoryScopeExternalRef': 'project-atlas',

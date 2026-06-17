@@ -81,6 +81,10 @@ class _MemoStackMarionetteE2eBridgeState
       (handler, params) => handler.switchMemoryScope(params),
     );
     _register(
+      'memoStack.deleteMemoryScope',
+      (handler, params) => handler.deleteMemoryScope(params),
+    );
+    _register(
       'memoStack.createThread',
       (handler, params) => handler.createThread(params),
     );
@@ -205,6 +209,28 @@ class MemoStackMarionetteE2eCommandHandler {
     await store.setActiveMemoryScope(_required(params, 'externalRef'));
     await _refreshEvidence(store);
     return _state(store);
+  }
+
+  Future<Map<String, dynamic>> deleteMemoryScope(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final scope = await _findMemoryScope(
+      store,
+      scopeId: _optional(params, 'memoryScopeId'),
+      externalRef: _optional(params, 'externalRef'),
+    );
+    await store.deleteMemoryScope(scope);
+    final error = store.memoryScopeError;
+    if (error != null) {
+      throw StateError(error);
+    }
+    await _refreshEvidence(store);
+    return {
+      ..._state(store),
+      'deletedMemoryScopeId': scope.id,
+      'deletedMemoryScopeExternalRef': scope.externalRef,
+    };
   }
 
   Future<Map<String, dynamic>> createThread(Map<String, String> params) async {
@@ -605,6 +631,30 @@ class MemoStackMarionetteE2eCommandHandler {
       store.refreshMemoryBrowser(showLoading: false),
     ]);
     await store.refreshAssetExtractions(showLoading: false);
+  }
+
+  Future<MemoryScope> _findMemoryScope(
+    ChatStore store, {
+    String? scopeId,
+    String? externalRef,
+  }) async {
+    await store.refreshMemoryScopes();
+    final ref = externalRef == null ? null : _normalizeRef(externalRef);
+    for (final scope in store.memoryScopes) {
+      final idMatches = scopeId != null && scope.id == scopeId;
+      final refMatches = ref != null && scope.externalRef == ref;
+      if (idMatches || refMatches) {
+        return scope;
+      }
+    }
+    final activeRef = store.activeMemoryScopeExternalRef;
+    if (scopeId == null && ref == null) {
+      for (final scope in store.memoryScopes) {
+        if (scope.externalRef == activeRef) return scope;
+      }
+    }
+    final selector = scopeId ?? ref ?? activeRef;
+    throw StateError('Memory scope not found: $selector');
   }
 
   Future<AssetExtractionJob> _findAssetExtraction(
