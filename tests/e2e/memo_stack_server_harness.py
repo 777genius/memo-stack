@@ -40,6 +40,8 @@ def run_memo_stack_server(
     extra_env: dict[str, str] | None = None,
 ) -> Iterator[MemoryServerHandle]:
     port = free_port()
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
     env = python_env(
         {
             "MEMORY_DEPLOY_PROFILE": "test",
@@ -51,6 +53,15 @@ def run_memo_stack_server(
             "MEMORY_QDRANT_ENABLED": "false",
             "MEMORY_GRAPHITI_ENABLED": "false",
             "MEMORY_EMBEDDINGS_ENABLED": "false",
+            "TMPDIR": str(temp_dir),
+            "TMP": str(temp_dir),
+            "TEMP": str(temp_dir),
+            "OMP_NUM_THREADS": "1",
+            "OPENBLAS_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
+            "VECLIB_MAXIMUM_THREADS": "1",
+            "NUMEXPR_NUM_THREADS": "1",
+            "TOKENIZERS_PARALLELISM": "false",
             **(extra_env or {}),
         }
     )
