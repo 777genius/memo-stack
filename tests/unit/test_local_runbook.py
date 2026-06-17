@@ -591,7 +591,11 @@ def test_clean_full_smoke_uses_env_secrets_and_redacts_output(monkeypatch) -> No
     monkeypatch.setenv("MEMORY_MCP_AUTH_TOKEN", "unit-mcp-token")
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "unit-service-token")
     payload = {
-        "stdout": "sk-unit-openai-secret unit-mcp-token unit-service-token",
+        "stdout": (
+            "sk-unit-openai-secret unit-mcp-token unit-service-token "
+            "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890 "
+            "token=[redacted-secret]"
+        ),
         "nested": ["unit-mcp-token"],
         "OPENAI_API_KEY": "Authorization: Bearer sk-proj-unit-secret-value",
         "Authorization": "Bearer plain-header-secret-value",
@@ -606,8 +610,10 @@ def test_clean_full_smoke_uses_env_secrets_and_redacts_output(monkeypatch) -> No
     rendered = json.dumps(module._redact_payload(payload), ensure_ascii=False)
 
     assert "sk-unit-openai-secret" not in rendered
+    assert "sk-svcacct" not in rendered
     assert "unit-mcp-token" not in rendered
     assert "unit-service-token" not in rendered
+    assert "token=[redacted-secret]" in rendered
     assert "OPENAI_API_KEY" not in rendered
     assert "sk-proj-unit-secret-value" not in rendered
     assert "Authorization" not in rendered

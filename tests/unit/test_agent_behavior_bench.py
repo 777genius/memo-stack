@@ -1838,7 +1838,11 @@ def test_report_redaction_removes_keys_tokens_and_secret_like_text(monkeypatch) 
     monkeypatch.setenv("MEMORY_AGENT_BENCH_OPENAI_API_KEY", "sk-test-agent-bench-secret")
     payload = {
         "authorization": "Bearer local-memory-token",
-        "final_answer": "password=bench-secret-project-alpha",
+        "final_answer": (
+            "password=bench-secret-project-alpha "
+            "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890 "
+            "token=[redacted-secret]"
+        ),
         "tool_calls": [{"arguments": {"token": "local-memory-token"}}],
         "raw": "sk-test-agent-bench-secret",
     }
@@ -1846,8 +1850,10 @@ def test_report_redaction_removes_keys_tokens_and_secret_like_text(monkeypatch) 
     report_text = json.dumps(_redact_payload(payload, env={}), ensure_ascii=False)
 
     assert "sk-test-agent-bench-secret" not in report_text
+    assert "sk-svcacct" not in report_text
     assert "local-memory-token" not in report_text
     assert "bench-secret-project-alpha" not in report_text
+    assert "token=[redacted-secret]" in report_text
     assert "<redacted>" in report_text
 
 
