@@ -551,6 +551,46 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert raw_secret not in str(bundle)
 
 
+def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "bundle_id": "ctx_legacy",
+                    "rendered_text": "",
+                    "diagnostics": {
+                        "context_assembly_version": "context-v2-hybrid-explainable",
+                        "consistency_mode": "best_effort",
+                    },
+                    "items": [],
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    bundle = client.build_typed_context(
+        space_id="space_client_app",
+        memory_scope_ids=["memory_scope_default"],
+        query="legacy diagnostics",
+    )
+
+    assert bundle.diagnostics.hybrid_items_used == 0
+    assert bundle.diagnostics.temporal_replacements_applied == 0
+    assert bundle.diagnostics.temporal_relations_skipped_by_validity == 0
+    assert bundle.diagnostics.items_considered == 0
+    assert bundle.diagnostics.items_used == 0
+    assert bundle.diagnostics.dropped_by_instruction_flag == 0
+    assert bundle.diagnostics.dropped_by_budget == 0
+    assert bundle.diagnostics.dropped_by_source_cap == 0
+    assert bundle.diagnostics.dropped_by_char_cap == 0
+
+
 def test_sdk_build_digest_posts_stable_contract() -> None:
     seen: dict[str, object] = {}
 

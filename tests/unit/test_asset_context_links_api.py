@@ -608,6 +608,11 @@ def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> N
         item for item in pending.json()["data"] if item["id"] == suggestion_id
     )
     assert pending_suggestion["status"] == "pending"
+    assert pending_suggestion["review_audit"] == {
+        "events": [],
+        "event_count": 0,
+        "truncated": False,
+    }
     assert approved.status_code == 200
     approved_data = approved.json()["data"]
     approved_suggestion = approved_data["suggestion"]
