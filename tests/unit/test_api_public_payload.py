@@ -9,6 +9,7 @@ from memo_stack_server.api.v1.anchors import anchor_to_response
 from memo_stack_server.api.v1.context import context_item_to_response
 from memo_stack_server.api.v1.context_links import context_link_to_response
 from memo_stack_server.api.v1.documents import chunk_to_response
+from memo_stack_server.api.v1.facts import fact_relation_to_response
 
 
 def test_safe_public_metadata_redacts_nested_sensitive_values() -> None:
@@ -164,3 +165,60 @@ def test_browser_serializers_redact_metadata_and_quote_previews() -> None:
     assert "[redacted]" in anchor["evidence_refs"][0]["quote_preview"]
     assert "[redacted]" in chunk["source_refs"][0]["quote_preview"]
     assert "[redacted]" in context_item["source_refs"][0]["quote_preview"]
+
+
+def test_anchor_response_defaults_legacy_lifecycle_fields() -> None:
+    created_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    enum = SimpleNamespace
+
+    response = anchor_to_response(
+        SimpleNamespace(
+            id="anchor_legacy_openai",
+            space_id="space_1",
+            memory_scope_id="scope_1",
+            kind=enum(value="organization"),
+            normalized_key="openai",
+            label="OpenAI",
+            aliases=("Open AI",),
+            description=None,
+            status=enum(value="active"),
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    )
+
+    assert response["confidence"] == "medium"
+    assert response["evidence_refs"] == []
+    assert response["observed_at"] == created_at.isoformat()
+    assert response["valid_from"] is None
+    assert response["valid_to"] is None
+    assert response["metadata"] == {}
+
+
+def test_fact_relation_response_defaults_legacy_temporal_fields_and_redacts_reason() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    created_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+
+    response = fact_relation_to_response(
+        SimpleNamespace(
+            id="relation_legacy_supports",
+            space_id="space_1",
+            memory_scope_id="scope_1",
+            source_fact_id="fact_source",
+            target_fact_id="fact_target",
+            relation_type="supports",
+            reason=f"legacy relation checked with Bearer {raw_secret}",
+            status="active",
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    )
+
+    rendered = json.dumps(response, sort_keys=True)
+    assert response["observed_at"] == created_at.isoformat()
+    assert response["valid_from"] is None
+    assert response["valid_to"] is None
+    assert response["relation_type"] == "supports"
+    assert response["status"] == "active"
+    assert raw_secret not in rendered
+    assert "[redacted]" in response["reason"]

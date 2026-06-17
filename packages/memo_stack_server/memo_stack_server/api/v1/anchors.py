@@ -342,22 +342,26 @@ def merge_candidate_to_response(candidate: AnchorMergeCandidate) -> dict[str, An
 
 
 def anchor_to_response(anchor: MemoryAnchor) -> dict[str, Any]:
+    confidence = getattr(anchor, "confidence", None)
+    observed_at = getattr(anchor, "observed_at", None) or anchor.created_at
     return {
         "id": str(anchor.id),
         "space_id": str(anchor.space_id),
         "memory_scope_id": str(anchor.memory_scope_id),
-        "kind": anchor.kind.value,
+        "kind": _enum_or_text(anchor.kind),
         "normalized_key": anchor.normalized_key,
         "label": anchor.label,
         "aliases": list(anchor.aliases),
         "description": anchor.description,
-        "status": anchor.status.value,
-        "confidence": anchor.confidence.value,
-        "evidence_refs": [_anchor_evidence_ref_to_response(ref) for ref in anchor.evidence_refs],
-        "observed_at": _datetime_to_response(anchor.observed_at),
-        "valid_from": _datetime_to_response(anchor.valid_from),
-        "valid_to": _datetime_to_response(anchor.valid_to),
-        "metadata": safe_public_metadata(anchor.metadata),
+        "status": _enum_or_text(anchor.status),
+        "confidence": _enum_or_text(confidence or "medium"),
+        "evidence_refs": [
+            _anchor_evidence_ref_to_response(ref) for ref in getattr(anchor, "evidence_refs", ())
+        ],
+        "observed_at": _datetime_to_response(observed_at),
+        "valid_from": _datetime_to_response(getattr(anchor, "valid_from", None)),
+        "valid_to": _datetime_to_response(getattr(anchor, "valid_to", None)),
+        "metadata": safe_public_metadata(getattr(anchor, "metadata", {})),
         "created_at": _datetime_to_response(anchor.created_at),
         "updated_at": _datetime_to_response(anchor.updated_at),
     }
@@ -391,3 +395,8 @@ def _datetime_to_response(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.isoformat()
+
+
+def _enum_or_text(value: object) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw)

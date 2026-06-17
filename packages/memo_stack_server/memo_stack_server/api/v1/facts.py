@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
@@ -163,20 +163,21 @@ def related_fact_to_response(item: RelatedFactItem) -> dict[str, Any]:
 
 
 def fact_relation_to_response(relation: MemoryFactRelation) -> dict[str, Any]:
+    observed_at = getattr(relation, "observed_at", None) or relation.created_at
     return {
         "id": str(relation.id),
         "space_id": str(relation.space_id),
         "memory_scope_id": str(relation.memory_scope_id),
         "source_fact_id": str(relation.source_fact_id),
         "target_fact_id": str(relation.target_fact_id),
-        "relation_type": relation.relation_type.value,
-        "reason": relation.reason,
-        "status": relation.status.value,
-        "observed_at": relation.observed_at.isoformat(),
-        "valid_from": relation.valid_from.isoformat() if relation.valid_from else None,
-        "valid_to": relation.valid_to.isoformat() if relation.valid_to else None,
-        "created_at": relation.created_at.isoformat(),
-        "updated_at": relation.updated_at.isoformat(),
+        "relation_type": _enum_or_text(relation.relation_type),
+        "reason": safe_public_text(getattr(relation, "reason", "")),
+        "status": _enum_or_text(relation.status),
+        "observed_at": _datetime_to_response(observed_at),
+        "valid_from": _datetime_to_response(getattr(relation, "valid_from", None)),
+        "valid_to": _datetime_to_response(getattr(relation, "valid_to", None)),
+        "created_at": _datetime_to_response(relation.created_at),
+        "updated_at": _datetime_to_response(relation.updated_at),
     }
 
 
@@ -186,6 +187,19 @@ def fact_relation_item_to_response(item: FactRelationItem) -> dict[str, Any]:
         "related_fact": fact_to_response(item.related_fact),
         "direction": item.direction,
     }
+
+
+def _datetime_to_response(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.isoformat()
+
+
+def _enum_or_text(value: object) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

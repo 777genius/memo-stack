@@ -244,7 +244,7 @@ def test_snapshot_anchor_import_accepts_legacy_payload_without_evidence_fields()
 
     assert row.confidence == "medium"
     assert row.evidence_refs_json == []
-    assert row.observed_at is None
+    assert row.observed_at == datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
     assert row.valid_from is None
     assert row.valid_to is None
     assert row.metadata_json == {}
