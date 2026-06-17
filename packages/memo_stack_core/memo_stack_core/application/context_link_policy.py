@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, replace
 
 from memo_stack_core.application.dto import ContextLinkCandidate
+from memo_stack_core.application.safe_payload import safe_metadata_text
 
 POLICY_VERSION = "context-link-policy-v1"
 MAX_SUGGESTIONS_PER_SOURCE = 10
@@ -14,6 +15,7 @@ MIN_STRONG_SIGNAL_REVIEW_SCORE = 55.0
 AUTO_APPROVE_ELIGIBLE_SCORE = 92.0
 MAX_DENIED_DIAGNOSTIC_ITEMS = 8
 MAX_REASON_CODES = 12
+MAX_DENIED_DIAGNOSTIC_TEXT_CHARS = 160
 
 _AUTO_APPROVE_TARGET_TYPES = frozenset({"anchor", "fact", "episode", "document", "chunk"})
 _REVIEW_BLOCKED_TARGET_TYPES = frozenset({"suggestion"})
@@ -73,9 +75,9 @@ def apply_context_link_policy(
             if len(denied_candidates) < MAX_DENIED_DIAGNOSTIC_ITEMS:
                 denied_candidates.append(
                     {
-                        "target_type": candidate.target_type,
-                        "target_id": candidate.target_id,
-                        "score": candidate.score,
+                        "target_type": _safe_denied_diagnostic_text(candidate.target_type),
+                        "target_id": _safe_denied_diagnostic_text(candidate.target_id),
+                        "score": round(candidate.score, 2),
                         "reason_codes": list(decision.reason_codes),
                     }
                 )
@@ -226,3 +228,7 @@ def _confidence_for_score(score: float) -> str:
     if score >= 55:
         return "medium"
     return "low"
+
+
+def _safe_denied_diagnostic_text(value: object) -> str:
+    return safe_metadata_text(str(value), limit=MAX_DENIED_DIAGNOSTIC_TEXT_CHARS).strip()

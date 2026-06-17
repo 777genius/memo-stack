@@ -58,6 +58,28 @@ def test_policy_denies_low_score_without_strong_link_signal() -> None:
     }
 
 
+def test_policy_redacts_denied_candidate_diagnostics() -> None:
+    candidate = _candidate(
+        target_id="fact sk-proj-secretvalue123456",
+        score=39.0,
+        reason_codes=["recent_context"],
+    )
+
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    diagnostics = result.diagnostics
+    serialized = repr(diagnostics)
+    assert "sk-proj-secretvalue123456" not in serialized
+    assert diagnostics["link_policy_denied_candidates"] == [
+        {
+            "target_type": "fact",
+            "target_id": "fact [redacted]",
+            "score": 39.0,
+            "reason_codes": ["score_below_review_threshold", "recent_context_only"],
+        }
+    ]
+
+
 def test_policy_allows_low_score_with_strong_temporal_signal_for_review() -> None:
     candidate = _candidate(
         target_id="temporal",
