@@ -1188,18 +1188,21 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["same_name_person_project_anchors_separate"] is True
     assert result["checks"]["top_suggestion_approves_to_link"] is True
     assert result["checks"]["unrelated_capture_has_no_candidates"] is True
+    assert result["checks"]["cross_scope_fact_not_suggested"] is True
     assert result["metrics"]["case_count"] >= 4
     assert result["gates"]["case_count"] is True
     assert result["metrics"]["event_linking_accuracy"] == 1.0
     assert result["metrics"]["temporal_intent_recall"] == 1.0
     assert result["metrics"]["anchor_disambiguation_rate"] == 1.0
     assert result["metrics"]["false_positive_count"] == 0
+    assert result["metrics"]["cross_scope_leak_count"] == 0
     assert {
         "specific_target_beats_similar_project",
         "event_call_beats_recent_chat",
         "temporal_intent_links_recent_fact_without_text_match",
         "same_name_person_project_anchors_separate",
         "unrelated_capture_has_no_candidates",
+        "cross_scope_exact_match_fact_not_suggested",
     } <= {case["case_id"] for case in result["cases"]}
     assert payload["suite"] == "semantic-linking-golden"
     assert "Project Atlas" not in report_text

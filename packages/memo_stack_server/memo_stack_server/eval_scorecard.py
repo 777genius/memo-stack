@@ -376,6 +376,7 @@ def _scorecard_semantic_linking(
         "anchor_disambiguation_rate": metrics.get("anchor_disambiguation_rate") == 1.0,
         "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
         "false_positive_count": metrics.get("false_positive_count") == 0,
+        "cross_scope_leak_count": metrics.get("cross_scope_leak_count") == 0,
     }
     return _scorecard_capability("semantic_linking", checks)
 
@@ -1404,6 +1405,7 @@ def _scorecard_metrics(
         ),
         "semantic_linking_review_approval_rate": semantic.get("review_approval_rate", 0.0),
         "semantic_linking_false_positive_count": semantic.get("false_positive_count", 0),
+        "semantic_linking_cross_scope_leak_count": semantic.get("cross_scope_leak_count", 0),
         "graph_recall_rate": graph.get("graph_recall_rate", 0.0),
         "graph_hydration_rate": graph.get("graph_hydration_rate", 0.0),
         "safety_leak_count": _scorecard_safety_leak_count(suite_results),

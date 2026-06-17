@@ -474,6 +474,62 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
                 "unexpected_candidates",
             )
         )
+    cross_scope_target_slug = f"{space_slug}-external-target"
+    cross_scope_query_slug = f"{space_slug}-external-query"
+    cross_scope_fact = _remember_fact(
+        client,
+        headers,
+        space_slug=cross_scope_target_slug,
+        text=(
+            "Project Zephyr private renewal memo names Casey as owner for the "
+            "vendor risk exception."
+        ),
+        source_id="zephyr-private-renewal",
+    )
+    cross_scope_capture = _capture(
+        client,
+        headers,
+        space_slug=cross_scope_query_slug,
+        source_event_id="zephyr-cross-scope-capture",
+        text=(
+            "Project Zephyr private renewal memo names Casey as owner for the "
+            "vendor risk exception."
+        ),
+    )
+    cross_scope_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=cross_scope_query_slug,
+        source_id=str(cross_scope_capture.get("id", "")),
+        text="Project Zephyr private renewal Casey vendor risk exception",
+    )
+    cross_scope_fact_candidates = [
+        item
+        for item in cross_scope_suggestions.get("candidates", [])
+        if item.get("target_type") == "fact"
+    ]
+    checks["cross_scope_fact_not_suggested"] = (
+        bool(cross_scope_fact)
+        and bool(cross_scope_capture)
+        and not cross_scope_fact_candidates
+    )
+    cases.append(
+        {
+            "case_id": "cross_scope_exact_match_fact_not_suggested",
+            "ok": checks["cross_scope_fact_not_suggested"],
+            "candidate_count": len(cross_scope_suggestions.get("candidates", [])),
+            "fact_candidate_count": len(cross_scope_fact_candidates),
+        }
+    )
+    if not checks["cross_scope_fact_not_suggested"]:
+        failures.append(
+            _failure(
+                "cross_scope_exact_match_fact_not_suggested",
+                "scope_safety",
+                "out_of_scope_fact_candidate_leaked",
+                item_ids=[str(cross_scope_fact.get("id", ""))],
+            )
+        )
     return _report(checks=checks, cases=cases, failures=failures)
 
 
@@ -668,6 +724,7 @@ def _report(
         ),
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
+        "cross_scope_leak_count": 0 if checks.get("cross_scope_fact_not_suggested") else 1,
     }
     gates = {
         "case_count": metrics["case_count"] >= 5,
@@ -680,6 +737,7 @@ def _report(
         "anchor_review_evidence_rate": metrics["anchor_review_evidence_rate"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,
+        "cross_scope_leak_count": metrics["cross_scope_leak_count"] == 0,
     }
     ok = all(checks.values()) and all(gates.values()) and not failures
     return {

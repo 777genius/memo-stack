@@ -66,6 +66,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "anchor_disambiguation_rate": 1.0,
                 "review_approval_rate": 1.0,
                 "false_positive_count": 0,
+                "cross_scope_leak_count": 0,
             },
             "checks": {
                 "top_fact_beats_distractor": True,
@@ -1428,6 +1429,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
             "anchor_disambiguation_rate": 0.0,
             "review_approval_rate": 0.0,
             "false_positive_count": 1,
+            "cross_scope_leak_count": 1,
         }
     )
 
@@ -1438,6 +1440,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["capabilities"]["semantic_linking"]["failed_checks"] == [
         "anchor_disambiguation_rate",
         "anchor_recall_rate",
+        "cross_scope_leak_count",
         "document_chunk_linking_accuracy",
         "event_linking_accuracy",
         "false_positive_count",
@@ -1451,6 +1454,7 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["metrics"]["semantic_linking_document_chunk_linking_accuracy"] == 0.0
     assert result["metrics"]["semantic_linking_anchor_disambiguation_rate"] == 0.0
     assert result["metrics"]["semantic_linking_false_positive_count"] == 1
+    assert result["metrics"]["semantic_linking_cross_scope_leak_count"] == 1
     assert result["gates"]["all_capabilities_ok"] is False
 
 
