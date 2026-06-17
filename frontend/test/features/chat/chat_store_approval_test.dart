@@ -314,6 +314,9 @@ class _FakeChatRepository implements ChatRepository {
   final reviewedSuggestions = <String>[];
   final reviewedSuggestionReasons = <String, String?>{};
   final createdContextLinks = <Map<String, String>>[];
+  final assetExtractions = <AssetExtractionJob>[];
+  int _assetSeq = 0;
+  int _extractionSeq = 0;
 
   void emitMessage(ChatMessage message) {
     _messages.add(message);
@@ -446,7 +449,15 @@ class _FakeChatRepository implements ChatRepository {
     int? batchSize,
     int? batchIndex,
   }) async {
-    return 'file-1';
+    final assetId = 'file-${++_assetSeq}';
+    final job = _assetExtractionJob(
+      id: 'extract-${++_extractionSeq}',
+      assetId: assetId,
+      status: 'succeeded',
+    );
+    assetExtractions.insert(0, job);
+    onProgress?.call(bytes.length, bytes.length);
+    return assetId;
   }
 
   @override
@@ -457,22 +468,53 @@ class _FakeChatRepository implements ChatRepository {
     String? status,
     int limit = 50,
   }) async {
-    return const <AssetExtractionJob>[];
+    return assetExtractions
+        .where((job) => status == null || job.status == status)
+        .take(limit)
+        .toList(growable: false);
   }
 
   @override
   Future<AssetExtractionJob> getAssetExtraction(String jobId) async {
-    throw UnimplementedError();
+    return assetExtractions.firstWhere(
+      (job) => job.id == jobId,
+      orElse: () => throw StateError('Asset extraction not found: $jobId'),
+    );
   }
 
   @override
   Future<AssetExtractionJob> retryAssetExtraction(String jobId) async {
-    throw UnimplementedError();
+    final current = await getAssetExtraction(jobId);
+    final updated = _assetExtractionJob(
+      id: current.id,
+      assetId: current.assetId,
+      status: 'pending',
+      attemptCount: current.attemptCount + 1,
+    );
+    _replaceAssetExtraction(updated);
+    return updated;
   }
 
   @override
   Future<AssetExtractionJob> cancelAssetExtraction(String jobId) async {
-    throw UnimplementedError();
+    final current = await getAssetExtraction(jobId);
+    final updated = _assetExtractionJob(
+      id: current.id,
+      assetId: current.assetId,
+      status: 'canceled',
+      attemptCount: current.attemptCount,
+    );
+    _replaceAssetExtraction(updated);
+    return updated;
+  }
+
+  void _replaceAssetExtraction(AssetExtractionJob updated) {
+    final index = assetExtractions.indexWhere((job) => job.id == updated.id);
+    if (index == -1) {
+      assetExtractions.insert(0, updated);
+      return;
+    }
+    assetExtractions[index] = updated;
   }
 
   @override
@@ -480,12 +522,12 @@ class _FakeChatRepository implements ChatRepository {
     return MemoryOperationsConsole(
       generatedAt: DateTime.now(),
       scope: const <String, dynamic>{},
-      extractionStatusCounts: const <String, int>{},
+      extractionStatusCounts: _statusCounts(assetExtractions),
       linkSuggestionStatusCounts: {
         'pending':
             contextLinkSuggestions.where((item) => item.isPending).length,
       },
-      extractionJobs: const <AssetExtractionJob>[],
+      extractionJobs: assetExtractions.take(limit).toList(growable: false),
       contextLinkSuggestions: contextLinkSuggestions.take(limit).toList(),
       diagnostics: const <String, dynamic>{},
     );
@@ -682,6 +724,55 @@ MemoryScope _scope(String id, String externalRef, String name) {
     createdAt: now,
     updatedAt: now,
   );
+}
+
+AssetExtractionJob _assetExtractionJob({
+  required String id,
+  required String assetId,
+  required String status,
+  int attemptCount = 1,
+}) {
+  final now = DateTime.now().toIso8601String();
+  final succeeded = status == 'succeeded';
+  return AssetExtractionJob.fromMap({
+    'id': id,
+    'asset_id': assetId,
+    'space_id': 'space-1',
+    'memory_scope_id': 'scope-default',
+    'thread_id': null,
+    'parser_profile': 'standard_local',
+    'parser_config_hash': 'fake-parser-config',
+    'source_sha256_hex': 'fake-source-sha',
+    'status': status,
+    'attempt_count': attemptCount,
+    'parser_name': succeeded ? 'fake_text_parser' : null,
+    'parser_version': succeeded ? '1' : null,
+    'model_version': null,
+    'result_document_ids': succeeded ? ['doc-$assetId'] : const <String>[],
+    'artifacts': const <Map<String, dynamic>>[],
+    'metadata': const <String, dynamic>{},
+    'progress': {
+      'stage': status,
+      'percent': succeeded ? 100 : 0,
+      'message': 'Extraction $status',
+      'terminal': status != 'pending' && status != 'running',
+    },
+    'execution': const <String, dynamic>{},
+    'usage': const <String, dynamic>{},
+    'created_at': now,
+    'updated_at': now,
+    'started_at': status == 'pending' ? null : now,
+    'finished_at': status == 'pending' || status == 'running' ? null : now,
+  });
+}
+
+Map<String, int> _statusCounts(Iterable<dynamic> items) {
+  final counts = <String, int>{};
+  for (final item in items) {
+    final status = item.status.toString();
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+  return counts;
 }
 
 MemoryContextLinkSuggestion _suggestion(String id) {
