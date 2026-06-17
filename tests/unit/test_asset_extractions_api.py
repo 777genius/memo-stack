@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
 from memo_stack_server.admin import token_create
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
@@ -75,6 +76,18 @@ def sample_wav_bytes(seconds: int = 1) -> bytes:
         wav.setframerate(8000)
         wav.writeframes(b"\x00\x00" * 8000 * seconds)
     return buffer.getvalue()
+
+
+class _FailingVisionResponses:
+    async def create(self, **kwargs: Any) -> object:
+        raise RuntimeError("simulated vision provider outage")
+
+
+class _FailingVisionClient:
+    responses = _FailingVisionResponses()
+
+    async def aclose(self) -> None:
+        return None
 
 
 def sample_mp4_bytes(tmp_path: Path) -> bytes:
@@ -429,6 +442,58 @@ def test_standard_vision_profile_falls_back_to_local_image_metadata(
         assert extracted["metadata"]["image_width"] == 120
         assert extracted["metadata"]["image_height"] == 40
         assert extracted["metadata"]["image_region_count"] >= 1
+
+
+def test_standard_vision_provider_failure_falls_back_to_local_image_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        OpenAIVisionImageExtractionEngine,
+        "_client",
+        lambda self: _FailingVisionClient(),
+    )
+    with make_client(
+        tmp_path,
+        extraction_external_ai_enabled=True,
+        openai_api_key="test-key",
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "screenshots",
+                "filename": "memory-screenshot.png",
+                "parser_profile": "standard_vision",
+                "extract": "true",
+            },
+            content=sample_png_bytes(),
+            headers=auth_headers({"Content-Type": "image/png"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["parser_profile"] == "standard_vision"
+        assert extracted["parser_name"] == "image_metadata"
+        assert extracted["safe_error_code"] is None
+        assert extracted["metadata"]["image_width"] == 120
+        assert extracted["metadata"]["image_height"] == 40
+        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
+            "extracted_json",
+            "image_regions",
+            "markdown",
+        }
 
 
 def test_timed_text_transcript_extraction_stores_transcript_artifact(tmp_path: Path) -> None:
