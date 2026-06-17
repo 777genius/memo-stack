@@ -439,6 +439,30 @@ def test_asset_extraction_marks_failed_and_cleans_blobs_on_artifact_storage_erro
         ]
         assert extraction_files == []
 
+        retry = client.post(
+            f"/v1/asset-extractions/{extraction_id}/retry",
+            headers=auth_headers(),
+        )
+        assert retry.status_code == 202, retry.text
+        assert retry.json()["data"]["status"] == "pending"
+
+        retried_count = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert retried_count >= 1
+
+        retried_fetch = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert retried_fetch.status_code == 200, retried_fetch.text
+        retried = retried_fetch.json()["data"]
+        assert retried["status"] == "succeeded"
+        assert retried["safe_error_code"] is None
+        assert len(retried["result_document_ids"]) == 1
+        assert {item["artifact_type"] for item in retried["artifacts"]} == {
+            "extracted_json",
+            "markdown",
+        }
+
 
 def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> None:
     marker = "PDF_MEMORY_SCOPE_DECISION"
