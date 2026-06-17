@@ -361,6 +361,16 @@ def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
             codes.append("same_thread")
         elif reason.startswith("category:"):
             codes.append("shared_category")
+        elif reason == "explicit project reference":
+            codes.append("explicit_project_reference")
+        elif reason == "known project/tool reference":
+            codes.append("known_project_tool_reference")
+        elif reason == "event phrase":
+            codes.append("event_phrase")
+        elif reason == "person name":
+            codes.append("person_name")
+        elif reason == "organization reference":
+            codes.append("organization_reference")
         elif reason == "recent context":
             codes.append("recent_context")
         else:

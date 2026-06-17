@@ -906,6 +906,15 @@ def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Pa
             and item["metadata"]["anchor_kind"] == "event"
             for item in anchor_candidates
         )
+        reason_codes_by_anchor = {
+            (item["metadata"]["anchor_kind"], item["metadata"]["normalized_key"]): set(
+                item["metadata"]["reason_codes"]
+            )
+            for item in anchor_candidates
+        }
+        assert "person_name" in reason_codes_by_anchor[("person", "alex")]
+        assert "explicit_project_reference" in reason_codes_by_anchor[("project", "atlas")]
+        assert "event_phrase" in reason_codes_by_anchor[("event", "meeting last week")]
 
         person_suggestion = next(
             item for item in anchor_candidates if item["metadata"]["normalized_key"] == "alex"
