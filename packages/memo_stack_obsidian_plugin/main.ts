@@ -23,6 +23,7 @@ import {
   localStackApiReady,
   localStackArgs,
   parseJson,
+  sanitizeRunResult,
   safeRootFolder,
   safeScopeSegment,
   summarizeLocalStackResult,
@@ -537,12 +538,14 @@ export default class MemoStackPlugin extends Plugin {
         args,
         options,
         (error: ExecFileException | null, stdout: string, stderr: string) => {
-          resolve({
-            exitCode: exitCode(error),
-            stdout,
-            stderr,
-            payload: parseJson(stdout),
-          });
+          resolve(
+            sanitizeRunResult({
+              exitCode: exitCode(error),
+              stdout,
+              stderr,
+              payload: parseJson(stdout),
+            }),
+          );
         },
       );
     });
@@ -574,12 +577,14 @@ export default class MemoStackPlugin extends Plugin {
         args,
         options,
         (error: ExecFileException | null, stdout: string, stderr: string) => {
-          resolve({
-            exitCode: exitCode(error),
-            stdout,
-            stderr,
-            payload: parseJson(stdout),
-          });
+          resolve(
+            sanitizeRunResult({
+              exitCode: exitCode(error),
+              stdout,
+              stderr,
+              payload: parseJson(stdout),
+            }),
+          );
         },
       );
     });

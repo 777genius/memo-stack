@@ -20,8 +20,10 @@ const factsDir = path.join(
 const fakeEnvKeys = [
   "MEMO_STACK_FAKE_OBSIDIAN_DELAY_MS",
   "MEMO_STACK_FAKE_OBSIDIAN_FAIL_COMMAND",
+  "MEMO_STACK_FAKE_OBSIDIAN_FAIL_MESSAGE",
   "MEMO_STACK_FAKE_LOCAL_DELAY_MS",
   "MEMO_STACK_FAKE_LOCAL_FAIL_COMMAND",
+  "MEMO_STACK_FAKE_LOCAL_FAIL_MESSAGE",
   "MEMO_STACK_FAKE_LOCAL_STATUS_READY",
 ];
 
@@ -241,6 +243,40 @@ describe("Memo Stack Obsidian plugin", function () {
     assert.equal(snapshot.lastCommand, "preview");
     assert.equal(snapshot.lastResult.exitCode, 1);
     assert.match(snapshot.lastResult.stderr, /Forced fake connector failure/);
+  });
+
+  it("redacts secrets from connector and local stack command snapshots", async function () {
+    const vaultPath = await resetVaultAndConfigure();
+    const connectorSecret = `ghp_${"abcdefghijklmnopqrstuvwxyz"}`;
+    const localSecret = `AKIA${"IOSFODNN7EXAMPLE"}`;
+    const keyValueSecret = "plain-provider-token-value";
+
+    await setFakeEnv({
+      MEMO_STACK_FAKE_OBSIDIAN_FAIL_COMMAND: "preview",
+      MEMO_STACK_FAKE_OBSIDIAN_FAIL_MESSAGE: `Authorization: Bearer ${connectorSecret} token=${keyValueSecret}`,
+    });
+    await browser.executeObsidianCommand("memo-stack:preview-sync");
+    await waitForCliCalls(vaultPath, 1);
+    await waitForPluginIdle();
+
+    await setFakeEnv({
+      MEMO_STACK_FAKE_LOCAL_FAIL_COMMAND: "init",
+      MEMO_STACK_FAKE_LOCAL_FAIL_MESSAGE: `password=hunter2-secret-value ${localSecret}`,
+    });
+    await browser.executeObsidianCommand("memo-stack:local-stack-init");
+    await waitForLocalStackCalls(vaultPath, 1);
+    await waitForPluginIdle();
+
+    const snapshot = await memoStackSnapshot();
+    const rendered = JSON.stringify(snapshot);
+
+    assert.equal(snapshot.lastResult.exitCode, 1);
+    assert.equal(snapshot.lastStackResult.exitCode, 1);
+    assert.ok(rendered.includes("<redacted>"));
+    assert.equal(rendered.includes(connectorSecret), false);
+    assert.equal(rendered.includes(localSecret), false);
+    assert.equal(rendered.includes(keyValueSecret), false);
+    assert.equal(rendered.includes("hunter2-secret-value"), false);
   });
 
   it("handles a missing connector binary without leaving the plugin busy", async function () {

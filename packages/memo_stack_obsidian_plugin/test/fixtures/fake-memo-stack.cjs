@@ -12,7 +12,7 @@ fs.mkdirSync(memoDir, { recursive: true });
 
 delayFromEnv("MEMO_STACK_FAKE_LOCAL_DELAY_MS");
 if (process.env.MEMO_STACK_FAKE_LOCAL_FAIL_COMMAND === command) {
-  fail(`Forced fake local stack failure: ${command}`);
+  fail(process.env.MEMO_STACK_FAKE_LOCAL_FAIL_MESSAGE || `Forced fake local stack failure: ${command}`);
 }
 
 if (command === "status") {

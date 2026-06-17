@@ -16,7 +16,7 @@ fs.mkdirSync(memoDir, { recursive: true });
 
 delayFromEnv("MEMO_STACK_FAKE_OBSIDIAN_DELAY_MS");
 if (process.env.MEMO_STACK_FAKE_OBSIDIAN_FAIL_COMMAND === command) {
-  fail(`Forced fake connector failure: ${command}`);
+  fail(process.env.MEMO_STACK_FAKE_OBSIDIAN_FAIL_MESSAGE || `Forced fake connector failure: ${command}`);
 }
 
 if (command === "connect") {

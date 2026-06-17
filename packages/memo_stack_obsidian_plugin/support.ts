@@ -138,13 +138,77 @@ export function compactPayload(payload: Record<string, unknown>): Record<string,
       result[key] = payload[key];
     }
   }
-  return result;
+  return redactPayload(result) as Record<string, unknown>;
 }
 
 export function compactText(stdout: string, stderr: string): string {
-  const text = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+  const text = redactText([stdout.trim(), stderr.trim()].filter(Boolean).join("\n"));
   return text.length > 2000 ? `${text.slice(0, 2000)}...` : text;
 }
+
+export function sanitizeRunResult(result: ConnectorRunResult): ConnectorRunResult {
+  return {
+    ...result,
+    stdout: redactText(result.stdout),
+    stderr: redactText(result.stderr),
+    payload: redactPayload(result.payload),
+  };
+}
+
+export function redactText(value: string): string {
+  let redacted = value;
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "<redacted>");
+  }
+  return redacted;
+}
+
+function redactPayload(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redactText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactPayload(item));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      const safeKey = redactText(key);
+      result[safeKey] = isSensitiveKey(key) ? "<redacted>" : redactPayload(item);
+    }
+    return result;
+  }
+  return value;
+}
+
+function isSensitiveKey(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (normalized.endsWith("count") || normalized.endsWith("rate")) {
+    return false;
+  }
+  return (
+    normalized === "authorization" ||
+    normalized === "apikey" ||
+    normalized === "token" ||
+    normalized.endsWith("apikey") ||
+    (normalized.endsWith("token") && !normalized.endsWith("budget")) ||
+    normalized.includes("credential") ||
+    normalized.includes("password") ||
+    normalized.includes("passwd") ||
+    normalized.includes("secret")
+  );
+}
+
+const SECRET_PATTERNS: RegExp[] = [
+  /Authorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+  /\bsk-[A-Za-z0-9_-]{12,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9_]{12,}\b/g,
+  /\bAKIA[0-9A-Z]{12,}\b/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
+  /\b(api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*['"]?[A-Za-z0-9_./+=-]{8,}/gi,
+];
 
 export function localStackArgs(command: LocalStackCommand, apiUrl: string): string[] {
   if (command === "init") {
@@ -327,7 +391,7 @@ export function exitCode(error: ExecFileException | null): number {
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return redactText(error instanceof Error ? error.message : String(error));
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
