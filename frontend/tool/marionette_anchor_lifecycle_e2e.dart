@@ -101,6 +101,7 @@ class MarionetteAnchorLifecycleRunner {
         },
       );
 
+      await _runMemoryScopeManagementFlow(memoStack, runMarker);
       await _runCaptureLinkingFlow(memoStack, runMarker);
       await _runAttachmentCaptureFlow(memoStack, runMarker);
       await _runManualContextLinkFlow(memoStack, runMarker);
@@ -234,6 +235,53 @@ class MarionetteAnchorLifecycleRunner {
         await startedApp.stop();
       }
     }
+  }
+
+  Future<void> _runMemoryScopeManagementFlow(
+    MemoStackExtensionClient memoStack,
+    String runMarker,
+  ) async {
+    final tempRef = 'marionette-scope-admin-$runMarker';
+    final renamedRef = '$tempRef-renamed';
+    final created = await memoStack.call(
+      'memoStack.createMemoryScope',
+      {
+        'externalRef': tempRef,
+        'name': 'Marionette Scope Admin $runMarker',
+      },
+    );
+    final createdScopeId = _field(_map(created['memoryScope']), 'id');
+    final updated = await memoStack.call(
+      'memoStack.updateMemoryScope',
+      {
+        'memoryScopeId': createdScopeId,
+        'externalRef': renamedRef,
+        'name': 'Marionette Scope Admin Renamed $runMarker',
+      },
+    );
+    _expect(
+      _field(_map(updated['memoryScope']), 'externalRef') == renamedRef,
+      'memory scope update did not return the renamed external ref',
+    );
+    final deleted = await memoStack.call(
+      'memoStack.deleteMemoryScope',
+      {'externalRef': renamedRef},
+    );
+    _expect(
+      deleted['deletedMemoryScopeExternalRef'] == renamedRef,
+      'memory scope delete did not delete the renamed scope',
+    );
+    final state = await memoStack.call('memoStack.e2eState', {});
+    final refs = _list(state['memoryScopes'])
+        .map(_map)
+        .map((scope) => _field(scope, 'externalRef'))
+        .toSet();
+    _expect(!refs.contains(renamedRef), 'renamed test scope is still listed');
+    await memoStack.call(
+      'memoStack.switchMemoryScope',
+      {'externalRef': config.scopeRef},
+    );
+    _log('created, renamed, and deleted temporary memory scope $renamedRef');
   }
 
   Future<void> _runCaptureLinkingFlow(

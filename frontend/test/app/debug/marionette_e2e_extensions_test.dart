@@ -61,6 +61,27 @@ void main() {
       expect(repo.scopesByRef.containsKey('project-atlas'), false);
     });
 
+    test('updates a memory scope by external ref', () async {
+      final created = await handler.createMemoryScope({
+        'externalRef': 'project-atlas',
+        'name': 'Project Atlas',
+      });
+      final scope = created['memoryScope'] as Map<String, dynamic>;
+
+      final result = await handler.updateMemoryScope({
+        'memoryScopeId': scope['id'] as String,
+        'externalRef': 'project-atlas-renamed',
+        'name': 'Project Atlas Renamed',
+      });
+
+      final updated = result['memoryScope'] as Map<String, dynamic>;
+      expect(updated['externalRef'], 'project-atlas-renamed');
+      expect(updated['name'], 'Project Atlas Renamed');
+      expect(result['activeMemoryScopeExternalRef'], 'project-atlas-renamed');
+      expect(repo.scopesByRef.containsKey('project-atlas'), false);
+      expect(repo.scopesByRef.containsKey('project-atlas-renamed'), true);
+    });
+
     test('submits an attachment capture with asset evidence', () async {
       final result = await handler.submitAttachmentCapture({
         'memoryScopeExternalRef': 'project-atlas',

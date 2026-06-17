@@ -183,7 +183,21 @@ class FakeMarionetteChatRepository implements ChatRepository {
     String? externalRef,
     String? name,
   }) async {
-    throw UnimplementedError();
+    final current = scopesByRef.values.firstWhere(
+      (scope) => scope.id == memoryScopeId,
+      orElse: () => throw StateError('Memory scope not found: $memoryScopeId'),
+    );
+    final updated = current.copyWith(
+      externalRef: externalRef ?? current.externalRef,
+      name: name ?? current.name,
+      updatedAt: DateTime.now(),
+    );
+    scopesByRef.remove(current.externalRef);
+    scopesByRef[updated.externalRef] = updated;
+    if (activeMemoryScopeExternalRef == current.externalRef) {
+      activeMemoryScopeExternalRef = updated.externalRef;
+    }
+    return updated;
   }
 
   @override

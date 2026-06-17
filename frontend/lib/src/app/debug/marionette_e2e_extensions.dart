@@ -81,6 +81,10 @@ class _MemoStackMarionetteE2eBridgeState
       (handler, params) => handler.switchMemoryScope(params),
     );
     _register(
+      'memoStack.updateMemoryScope',
+      (handler, params) => handler.updateMemoryScope(params),
+    );
+    _register(
       'memoStack.deleteMemoryScope',
       (handler, params) => handler.deleteMemoryScope(params),
     );
@@ -209,6 +213,31 @@ class MemoStackMarionetteE2eCommandHandler {
     await store.setActiveMemoryScope(_required(params, 'externalRef'));
     await _refreshEvidence(store);
     return _state(store);
+  }
+
+  Future<Map<String, dynamic>> updateMemoryScope(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final scope = await _findMemoryScope(
+      store,
+      scopeId: _optional(params, 'memoryScopeId'),
+      externalRef: _optional(params, 'currentExternalRef'),
+    );
+    final updated = await store.updateMemoryScope(
+      scope,
+      externalRef: _required(params, 'externalRef'),
+      name: _optional(params, 'name') ?? scope.name,
+    );
+    if (updated == null) {
+      throw StateError(
+          store.memoryScopeError ?? 'Memory scope was not updated');
+    }
+    await _refreshEvidence(store);
+    return {
+      ..._state(store),
+      'memoryScope': _scopeToMap(updated),
+    };
   }
 
   Future<Map<String, dynamic>> deleteMemoryScope(
