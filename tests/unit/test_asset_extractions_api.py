@@ -310,6 +310,45 @@ def test_text_asset_extraction_indexes_document_chunks_and_artifacts(tmp_path: P
         assert b"quick capture attached to memory scopes" in downloaded.content
 
 
+def test_asset_extraction_size_limit_keeps_source_asset_downloadable(tmp_path: Path) -> None:
+    with make_client(tmp_path, max_asset_upload_bytes=100, extraction_max_bytes=4) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "filename": "oversized-for-extraction.txt",
+                "extract": "true",
+            },
+            content=b"12345",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        uploaded = upload.json()["data"]
+        extraction = uploaded["extraction"]
+        assert extraction["status"] == "pending"
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction['id']}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "unsupported"
+        assert extracted["safe_error_code"] == "asset_extraction.file_too_large"
+        assert extracted["safe_error_message"] == "Asset exceeds configured extraction size limit"
+
+        download = client.get(
+            f"/v1/assets/{uploaded['id']}/download",
+            headers=auth_headers(),
+        )
+        assert download.status_code == 200, download.text
+        assert download.content == b"12345"
+
+
 def test_pending_asset_extraction_can_be_canceled_before_worker(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         upload = client.post(
