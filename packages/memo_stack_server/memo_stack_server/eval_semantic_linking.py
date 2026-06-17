@@ -365,7 +365,7 @@ def _report(
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
     }
     gates = {
-        "case_count": metrics["case_count"] >= 2,
+        "case_count": metrics["case_count"] >= 3,
         "ranking_accuracy": metrics["ranking_accuracy"] == 1.0,
         "event_linking_accuracy": metrics["event_linking_accuracy"] == 1.0,
         "anchor_recall_rate": metrics["anchor_recall_rate"] == 1.0,

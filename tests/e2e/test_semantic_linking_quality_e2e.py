@@ -86,6 +86,60 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
         assert approved.status_code == 200, approved.text
         assert approved.json()["data"]["link"]["target_id"] == target_fact["id"]
 
+        call_fact = _remember_fact(
+            client,
+            text=(
+                "Alex Project Atlas call from last week covered migration rollback "
+                "window ownership and production risk handoff."
+            ),
+            source_id="atlas-migration-call",
+        )
+        chat_distractor_fact = _remember_fact(
+            client,
+            text=(
+                "Alex Project Atlas chat from an hour ago covered billing dashboard "
+                "copy and button icons."
+            ),
+            source_id="atlas-billing-chat",
+        )
+        call_capture = _capture(
+            client,
+            source_event_id="atlas-migration-call-capture",
+            text=(
+                "Please link this note to the Alex Project Atlas call last week "
+                "about migration rollback window and production risk handoff."
+            ),
+            thread_external_ref="quality-review",
+        )
+
+        event_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quality-review",
+                "source_type": "capture",
+                "source_id": call_capture["id"],
+                "text": (
+                    "Alex Project Atlas call last week migration rollback "
+                    "production risk handoff"
+                ),
+                "persist": True,
+                "limit": 8,
+            },
+        )
+        assert event_suggestions.status_code == 200, event_suggestions.text
+        event_fact_candidates = [
+            item
+            for item in event_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "fact"
+        ]
+        assert event_fact_candidates[0]["target_id"] == call_fact["id"]
+        assert event_fact_candidates[0]["score"] > _candidate_score(
+            event_fact_candidates,
+            chat_distractor_fact["id"],
+        )
+
         unrelated_capture = _capture(
             client,
             source_event_id="unrelated-capture",
