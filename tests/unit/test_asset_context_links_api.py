@@ -824,12 +824,20 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
     payload = approved.json()["data"]
     assert payload["suggestion"]["status"] == "approved"
     assert payload["suggestion"]["target_id"] == fact_candidate["target_id"]
+    assert payload["suggestion"]["metadata"]["approved_override"] is True
+    assert payload["suggestion"]["metadata"]["original_target_id"] == fact_candidate["target_id"]
+    assert (
+        payload["suggestion"]["metadata"]["approved_target_id"]
+        == override_fact.json()["data"]["id"]
+    )
+    assert payload["suggestion"]["metadata"]["approved_relation_type"] == "supports"
     assert payload["link"]["target_id"] == override_fact.json()["data"]["id"]
     assert payload["link"]["relation_type"] == "supports"
     assert payload["link"]["confidence"] == "high"
     assert payload["link"]["reason"] == "approved corrected target"
     assert payload["link"]["metadata"]["approved_override"] is True
     assert payload["link"]["metadata"]["original_target_id"] == fact_candidate["target_id"]
+    assert payload["link"]["metadata"]["approved_target_id"] == override_fact.json()["data"]["id"]
     assert scope_links.status_code == 200, scope_links.text
     assert [item["id"] for item in scope_links.json()["data"]] == [payload["link"]["id"]]
     assert repeated.status_code == 200, repeated.text

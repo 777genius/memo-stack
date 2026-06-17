@@ -134,6 +134,27 @@ def remap_context_link_suggestion(
     source_type = str(item.get("source_type") or "")
     target_type = str(item.get("target_type") or "")
     metadata = dict(item.get("metadata_json") or item.get("metadata") or {})
+    for type_key, id_key in (
+        ("original_target_type", "original_target_id"),
+        ("approved_target_type", "approved_target_id"),
+    ):
+        metadata_target_type = metadata.get(type_key)
+        metadata_target_id = metadata.get(id_key)
+        if metadata_target_type is not None and metadata_target_id is not None:
+            metadata[id_key] = remap_endpoint_id(
+                source_type=str(metadata_target_type),
+                source_id=str(metadata_target_id),
+                fact_id_map=fact_id_map,
+                thread_id_map=thread_id_map or {},
+                document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
+                chunk_id_map=chunk_id_map,
+                capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
+                anchor_id_map=anchor_id_map,
+                extraction_job_id_map=extraction_job_id_map,
+                extraction_artifact_id_map=extraction_artifact_id_map,
+            )
     if "review_events" in metadata:
         metadata["review_events"] = remap_context_link_review_events(
             metadata.get("review_events"),

@@ -415,23 +415,27 @@ def _remap_context_link_metadata(
             str(approved_from_suggestion_id),
             str(approved_from_suggestion_id),
         )
-    original_target_type = metadata.get("original_target_type")
-    original_target_id = metadata.get("original_target_id")
-    if original_target_type is not None and original_target_id is not None:
-        metadata["original_target_id"] = remap_endpoint_id(
-            source_type=str(original_target_type),
-            source_id=str(original_target_id),
-            fact_id_map=fact_id_map,
-            thread_id_map=thread_id_map,
-            document_id_map=document_id_map,
-            episode_id_map=episode_id_map,
-            chunk_id_map=chunk_id_map,
-            capture_id_map=capture_id_map,
-            asset_id_map=asset_id_map,
-            anchor_id_map=anchor_id_map,
-            extraction_job_id_map=extraction_job_id_map,
-            extraction_artifact_id_map=extraction_artifact_id_map,
-        )
+    for type_key, id_key in (
+        ("original_target_type", "original_target_id"),
+        ("approved_target_type", "approved_target_id"),
+    ):
+        target_type = metadata.get(type_key)
+        target_id = metadata.get(id_key)
+        if target_type is not None and target_id is not None:
+            metadata[id_key] = remap_endpoint_id(
+                source_type=str(target_type),
+                source_id=str(target_id),
+                fact_id_map=fact_id_map,
+                thread_id_map=thread_id_map,
+                document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
+                chunk_id_map=chunk_id_map,
+                capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
+                anchor_id_map=anchor_id_map,
+                extraction_job_id_map=extraction_job_id_map,
+                extraction_artifact_id_map=extraction_artifact_id_map,
+            )
     if "edit_events" in metadata:
         metadata["edit_events"] = _remap_context_link_edit_events(
             metadata.get("edit_events"),

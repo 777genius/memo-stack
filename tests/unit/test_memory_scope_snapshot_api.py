@@ -785,6 +785,9 @@ def test_memory_scope_snapshot_import_remaps_reviewed_context_link_audit(
     assert restored_approved_suggestion["review_reason"] == "approved with reviewer override"
     assert restored_approved_suggestion["reviewed_at"]
     assert restored_approved_suggestion["target_id"] == restored_original["id"]
+    assert restored_approved_suggestion["metadata"]["approved_override"] is True
+    assert restored_approved_suggestion["metadata"]["original_target_id"] == restored_original["id"]
+    assert restored_approved_suggestion["metadata"]["approved_target_id"] == restored_override["id"]
     approved_review_event = restored_approved_suggestion["metadata"]["review_events"][-1]
     assert approved_review_event["suggestion_id"] == restored_approved_suggestion["id"]
     assert approved_review_event["source_id"] == restored_approved_suggestion["source_id"]
@@ -807,6 +810,7 @@ def test_memory_scope_snapshot_import_remaps_reviewed_context_link_audit(
         == restored_approved_suggestion["id"]
     )
     assert restored_link["metadata"]["original_target_id"] == restored_original["id"]
+    assert restored_link["metadata"]["approved_target_id"] == restored_override["id"]
     edit_event = restored_link["metadata"]["edit_events"][-1]
     assert edit_event["previous"]["target_id"] == restored_override["id"]
     assert edit_event["next"]["target_id"] == restored_corrected["id"]

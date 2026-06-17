@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from memo_stack_core.application.dto import (
     ContextLinkSuggestionResult,
     ListContextLinkSuggestionsQuery,
@@ -75,9 +77,8 @@ class ReviewContextLinkSuggestionUseCase:
             suggestion = await uow.context_link_suggestions.get_by_id(command.suggestion_id)
             if suggestion is None:
                 raise MemoryNotFoundError("Context link suggestion not found")
-            if (
-                suggestion.status != ContextLinkSuggestionStatus.PENDING
-                and _has_approval_override(command)
+            if suggestion.status != ContextLinkSuggestionStatus.PENDING and _has_approval_override(
+                command
             ):
                 raise MemoryValidationError(
                     "Context link suggestion overrides require pending suggestion"
@@ -155,8 +156,12 @@ class ReviewContextLinkSuggestionUseCase:
                     now=now,
                 )
                 link = await uow.context_links.create(link)
+            reviewed_suggestion = _with_review_override_metadata(
+                suggestion,
+                override_metadata,
+            )
             saved = await uow.context_link_suggestions.save(
-                suggestion.approve(now=now, reason=command.reason)
+                reviewed_suggestion.approve(now=now, reason=command.reason)
             )
             await uow.commit()
         return ContextLinkSuggestionResult(
@@ -287,7 +292,24 @@ def _review_override_metadata(
         metadata["original_target_id"] = suggestion.target_id
         metadata["original_relation_type"] = suggestion.relation_type
         metadata["original_confidence"] = suggestion.confidence
+        metadata["approved_target_type"] = target_type
+        metadata["approved_target_id"] = target_id
+        metadata["approved_relation_type"] = relation_type
+        metadata["approved_confidence"] = confidence
+        metadata["approved_link_reason"] = link_reason[:320]
     return metadata
+
+
+def _with_review_override_metadata(
+    suggestion: MemoryContextLinkSuggestion,
+    metadata: dict[str, object],
+) -> MemoryContextLinkSuggestion:
+    if not metadata:
+        return suggestion
+    return replace(
+        suggestion,
+        metadata={**dict(suggestion.metadata), **metadata},
+    )
 
 
 def _safe_batch_error_message(value: object) -> str:
