@@ -7,7 +7,10 @@ from types import SimpleNamespace
 from memo_stack_server.api.public_payload import safe_public_metadata
 from memo_stack_server.api.v1.anchors import anchor_to_response
 from memo_stack_server.api.v1.context import context_item_to_response
-from memo_stack_server.api.v1.context_links import context_link_to_response
+from memo_stack_server.api.v1.context_links import (
+    context_link_suggestion_to_response,
+    context_link_to_response,
+)
 from memo_stack_server.api.v1.documents import chunk_to_response
 from memo_stack_server.api.v1.facts import fact_relation_to_response
 
@@ -165,6 +168,66 @@ def test_browser_serializers_redact_metadata_and_quote_previews() -> None:
     assert "[redacted]" in anchor["evidence_refs"][0]["quote_preview"]
     assert "[redacted]" in chunk["source_refs"][0]["quote_preview"]
     assert "[redacted]" in context_item["source_refs"][0]["quote_preview"]
+
+
+def test_context_link_suggestion_review_audit_is_bounded_and_redacted() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    enum = SimpleNamespace
+
+    response = context_link_suggestion_to_response(
+        SimpleNamespace(
+            id="ctxlinksug_1",
+            space_id="space_1",
+            memory_scope_id="scope_1",
+            source_type="capture",
+            source_id="capture_1",
+            target_type="fact",
+            target_id="fact_1",
+            relation_type="supports",
+            confidence="high",
+            reason=f"candidate reason with Bearer {raw_secret}",
+            score=96.0,
+            status=enum(value="approved"),
+            metadata={
+                "review_events": [
+                    {
+                        "event_type": "context_link_suggestion_reviewed",
+                        "suggestion_id": f"ctxlinksug_{index}",
+                        "source_type": "capture",
+                        "source_id": f"capture_{index}",
+                        "target_type": "fact",
+                        "target_id": f"fact_{index}",
+                        "relation_type": "supports",
+                        "action": "approve",
+                        "previous_status": "pending",
+                        "new_status": "approved",
+                        "reviewed_at": now.isoformat(),
+                        "policy_version": "context-link-policy-v1",
+                        "reason": f"approved with Bearer {raw_secret}",
+                        "authorization": f"Bearer {raw_secret}",
+                    }
+                    for index in range(12)
+                ],
+                "api_key": raw_secret,
+            },
+            created_at=now,
+            updated_at=now,
+            reviewed_at=now,
+            review_reason=f"reviewed with Bearer {raw_secret}",
+        )
+    )
+
+    rendered = json.dumps(response, sort_keys=True)
+
+    assert response["review_audit"]["event_count"] == 12
+    assert response["review_audit"]["truncated"] is True
+    assert len(response["review_audit"]["events"]) == 10
+    assert response["review_audit"]["events"][0]["suggestion_id"] == "ctxlinksug_2"
+    assert "authorization" not in response["review_audit"]["events"][0]
+    assert "api_key" not in response["metadata"]
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
 
 
 def test_anchor_response_defaults_legacy_lifecycle_fields() -> None:
