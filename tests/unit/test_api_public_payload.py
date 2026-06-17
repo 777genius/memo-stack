@@ -26,6 +26,18 @@ def test_safe_public_metadata_redacts_nested_sensitive_values() -> None:
                     "previous": {"reason": f"old {raw_secret}", "token": raw_secret},
                 }
             ],
+            "review_events": [
+                {
+                    "event_type": "context_link_suggestion_reviewed",
+                    "suggestion_id": "ctxlinksug_1",
+                    "source_type": "capture",
+                    "source_id": "capture_1",
+                    "target_type": "fact",
+                    "target_id": "fact_1",
+                    "reason": f"approved after checking Bearer {raw_secret}",
+                    "authorization": f"Bearer {raw_secret}",
+                }
+            ],
             "numbers": [1, f"password={raw_secret}"],
         }
     )
@@ -36,6 +48,9 @@ def test_safe_public_metadata_redacts_nested_sensitive_values() -> None:
     assert raw_secret not in rendered
     assert "[redacted]" in rendered
     assert metadata["edit_events"][0]["changed_fields"] == ["reason"]
+    assert metadata["review_events"][0]["event_type"] == ("context_link_suggestion_reviewed")
+    assert metadata["review_events"][0]["suggestion_id"] == "ctxlinksug_1"
+    assert "authorization" not in metadata["review_events"][0]
     assert metadata["numbers"][0] == 1
 
 
