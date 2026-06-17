@@ -38,6 +38,10 @@ from memo_stack_core.application.context_link_candidate_policy import (
 from memo_stack_core.application.context_link_candidate_policy import (
     terms as _terms,
 )
+from memo_stack_core.application.context_link_policy import (
+    apply_context_link_policy,
+    policy_confidence_for_candidate,
+)
 from memo_stack_core.application.dto import (
     ContextLinkCandidate,
     ContextLinkSuggestionsResult,
@@ -528,8 +532,15 @@ class SuggestContextLinksUseCase:
             key=lambda item: (-item.score, item.target_type, item.target_id),
         )
         diagnostics["query_terms"] = list(terms)
+        diagnostics["candidate_count_before_policy"] = len(ranked)
+        policy_result = apply_context_link_policy(
+            tuple(ranked),
+            limit=command.limit,
+            persist=command.persist,
+        )
+        ranked = list(policy_result.candidates)
+        diagnostics.update(policy_result.diagnostics)
         diagnostics["candidate_count"] = len(ranked)
-        ranked = ranked[: command.limit]
         if command.persist:
             ranked = await self._persist_candidates(command, ranked, diagnostics)
         return ContextLinkSuggestionsResult(
@@ -681,7 +692,7 @@ class SuggestContextLinksUseCase:
                         target_type=candidate.target_type,
                         target_id=candidate.target_id,
                         relation_type="related_to",
-                        confidence=_confidence_for_candidate(candidate),
+                        confidence=_suggestion_confidence(candidate),
                         reason=_candidate_reason(candidate),
                         score=candidate.score,
                         metadata=_candidate_metadata(candidate, diagnostics),
@@ -711,6 +722,10 @@ def _confidence_for_observed_anchor(score_boost: int) -> Confidence:
     if score_boost <= 8:
         return Confidence.LOW
     return Confidence.MEDIUM
+
+
+def _suggestion_confidence(candidate: ContextLinkCandidate) -> str:
+    return policy_confidence_for_candidate(candidate) or _confidence_for_candidate(candidate)
 
 
 def _same_scope(entity: object, command: SuggestContextLinksCommand) -> bool:
