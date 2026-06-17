@@ -353,7 +353,9 @@ def asset_extraction_to_response(job: AssetExtractionJob) -> dict[str, Any]:
         "status": job.status.value,
         "attempt_count": job.attempt_count,
         "safe_error_code": job.safe_error_code,
-        "safe_error_message": job.safe_error_message,
+        "safe_error_message": _safe_public_text(job.safe_error_message)
+        if job.safe_error_message
+        else None,
         "parser_name": job.parser_name,
         "parser_version": job.parser_version,
         "model_version": job.model_version,
@@ -396,8 +398,10 @@ def _extraction_progress(job: AssetExtractionJob) -> dict[str, Any]:
         "stale": 0,
     }.get(job.status.value, 0)
     percent = _progress_int(metadata.get("progress_percent"), fallback=fallback_percent)
-    stage = str(metadata.get("processing_stage") or job.status.value)
-    message = str(metadata.get("progress_message") or _progress_message(job.status.value))
+    stage = _safe_public_text(str(metadata.get("processing_stage") or job.status.value), limit=120)
+    message = _safe_public_text(
+        str(metadata.get("progress_message") or _progress_message(job.status.value))
+    )
     return {
         "stage": stage,
         "percent": percent,
@@ -548,11 +552,15 @@ def _safe_metadata(metadata: Any) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         return {}
     return {
-        str(key): value
+        str(key): _safe_public_text(value) if isinstance(value, str) else value
         for key, value in metadata.items()
         if isinstance(value, (str, int, float, bool, type(None)))
     }
 
 
+def _safe_public_text(value: str, *, limit: int = 500) -> str:
+    return redact_sensitive_text(value)[:limit]
+
+
 def _safe_public_error_message(error: Exception) -> str:
-    return redact_sensitive_text(str(error).strip() or error.__class__.__name__)[:500]
+    return _safe_public_text(str(error).strip() or error.__class__.__name__)

@@ -1,8 +1,10 @@
 import asyncio
+import json
 import shutil
 import subprocess
 import wave
 from dataclasses import replace
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -11,8 +13,12 @@ import pytest
 from fastapi.testclient import TestClient
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
 from memo_stack_core.application.dto import CancelAssetExtractionCommand
+from memo_stack_core.domain.assets import MemoryAssetId
+from memo_stack_core.domain.entities import MemoryScopeId, SpaceId
 from memo_stack_core.domain.errors import MemoryQuotaExceededError
+from memo_stack_core.domain.extraction import AssetExtractionJob, AssetExtractionJobId
 from memo_stack_server.admin import token_create
+from memo_stack_server.api.v1.assets import asset_extraction_to_response
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
 from memo_stack_server.main import create_app
@@ -137,6 +143,43 @@ class _QuotaFailureExtractionRequest:
         raise MemoryQuotaExceededError(
             "quota blocked by provider token sk-proj-secretvalue1234567890"
         )
+
+
+def test_asset_extraction_response_redacts_sensitive_diagnostic_strings() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    job = AssetExtractionJob.create(
+        job_id=AssetExtractionJobId("extract_1"),
+        asset_id=MemoryAssetId("asset_1"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("scope_1"),
+        parser_profile="standard_local",
+        parser_config_hash="hash",
+        source_sha256_hex="a" * 64,
+        now=now,
+    ).mark_failed(
+        now=now,
+        code="asset_extraction.provider_failed",
+        message=f"provider failed with {raw_secret}",
+    ).with_metadata_updates(
+        now=now,
+        metadata={
+            "processing_stage": f"provider {raw_secret}",
+            "progress_message": f"provider token {raw_secret}",
+            "debug_message": f"Bearer {raw_secret}",
+            "attempt": 1,
+        },
+    )
+
+    response = asset_extraction_to_response(job)
+    rendered = json.dumps(response, sort_keys=True)
+
+    assert raw_secret not in rendered
+    assert "[redacted]" in response["safe_error_message"]
+    assert "[redacted]" in response["metadata"]["debug_message"]
+    assert "[redacted]" in response["progress"]["stage"]
+    assert "[redacted]" in response["progress"]["message"]
+    assert response["metadata"]["attempt"] == 1
 
 
 def sample_mp4_bytes(tmp_path: Path) -> bytes:
