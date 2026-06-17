@@ -387,13 +387,26 @@ def test_context_link_suggestions_batch_review_validates_request_shape(
             json={"items": [{"suggestion_id": "ctxlinksug_invalid_action", "action": "archive"}]},
             headers=auth_headers(),
         )
+        duplicate = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={
+                "items": [
+                    {"suggestion_id": "ctxlinksug_duplicate", "action": "approve"},
+                    {"suggestion_id": "ctxlinksug_duplicate", "action": "reject"},
+                ]
+            },
+            headers=auth_headers(),
+        )
 
     assert empty.status_code == 400, empty.text
     assert too_many.status_code == 400, too_many.text
     assert invalid_action.status_code == 400, invalid_action.text
+    assert duplicate.status_code == 400, duplicate.text
     assert empty.json()["error"]["code"] == "memory.validation"
     assert too_many.json()["error"]["code"] == "memory.validation"
     assert invalid_action.json()["error"]["code"] == "memory.validation"
+    assert duplicate.json()["error"]["code"] == "memory.validation"
+    assert "duplicate suggestion_id" in duplicate.json()["error"]["message"]
 
 
 def _create_capture(

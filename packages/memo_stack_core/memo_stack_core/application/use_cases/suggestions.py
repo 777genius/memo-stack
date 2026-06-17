@@ -360,6 +360,7 @@ class ReviewSuggestionsBatchUseCase:
             raise MemoryValidationError("Batch review requires at least one item")
         if len(command.items) > 50:
             raise MemoryValidationError("Batch review supports at most 50 items")
+        _assert_unique_review_batch_suggestion_ids(command.items)
 
         results: list[ReviewSuggestionBatchItemResult] = []
         stopped = False
@@ -414,6 +415,19 @@ class ReviewSuggestionsBatchUseCase:
         return await self._expire_suggestion.execute(
             ExpireSuggestionCommand(suggestion_id=item.suggestion_id, reason=item.reason)
         )
+
+
+def _assert_unique_review_batch_suggestion_ids(
+    items: tuple[ReviewSuggestionBatchItemCommand, ...],
+) -> None:
+    seen: set[str] = set()
+    for item in items:
+        suggestion_id = item.suggestion_id.strip()
+        if not suggestion_id:
+            raise MemoryValidationError("Batch review requires suggestion_id")
+        if suggestion_id in seen:
+            raise MemoryValidationError("Batch review contains duplicate suggestion_id")
+        seen.add(suggestion_id)
 
 
 def _safe_reason(reason: str, auto_approve: bool, trust: TrustLevel) -> str:

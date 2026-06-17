@@ -187,6 +187,7 @@ class ReviewContextLinkSuggestionsBatchUseCase:
             raise MemoryValidationError("Context link batch review requires at least one item")
         if len(command.items) > MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS:
             raise MemoryValidationError("Context link batch review supports at most 50 items")
+        _assert_unique_batch_suggestion_ids(command.items)
 
         results: list[ReviewContextLinkSuggestionBatchItemResult] = []
         stopped = False
@@ -254,6 +255,21 @@ def _has_approval_override(command: ReviewContextLinkSuggestionCommand) -> bool:
             command.link_reason,
         )
     )
+
+
+def _assert_unique_batch_suggestion_ids(
+    items: tuple[ReviewContextLinkSuggestionBatchItemCommand, ...],
+) -> None:
+    seen: set[str] = set()
+    for item in items:
+        suggestion_id = item.suggestion_id.strip()
+        if not suggestion_id:
+            raise MemoryValidationError("Context link batch review requires suggestion_id")
+        if suggestion_id in seen:
+            raise MemoryValidationError(
+                "Context link batch review contains duplicate suggestion_id"
+            )
+        seen.add(suggestion_id)
 
 
 def _review_target(

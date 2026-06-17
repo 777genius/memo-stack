@@ -424,6 +424,41 @@ def test_review_suggestions_batch_applies_mixed_review_actions(tmp_path: Path) -
     assert "Batch rejected memory marker." not in context.json()["data"]["rendered_text"]
 
 
+def test_review_suggestions_batch_rejects_duplicate_ids(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(candidate_text="Duplicate batch memory marker."),
+            headers=auth_headers(),
+        )
+        suggestion_id = created.json()["data"]["id"]
+        reviewed = client.post(
+            "/v1/suggestions/review-batch",
+            json={
+                "items": [
+                    {"suggestion_id": suggestion_id, "action": "approve"},
+                    {"suggestion_id": suggestion_id, "action": "reject"},
+                ],
+                "continue_on_error": True,
+            },
+            headers=auth_headers(),
+        )
+        pending = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "status": "pending",
+            },
+            headers=auth_headers(),
+        )
+
+    assert reviewed.status_code == 400, reviewed.text
+    assert reviewed.json()["error"]["code"] == "memory.validation"
+    assert "duplicate suggestion_id" in reviewed.json()["error"]["message"]
+    assert {item["id"] for item in pending.json()["data"]} == {suggestion_id}
+
+
 def test_review_suggestions_batch_stops_on_first_item_failure(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         weak = client.post(
