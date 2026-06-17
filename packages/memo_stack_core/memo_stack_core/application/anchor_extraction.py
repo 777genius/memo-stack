@@ -22,12 +22,13 @@ _TEMPORAL_PHRASE = (
     r"\d{1,3}\s+д(?:ень|ня|ней)\s+назад|"
     r"\d{1,2}\s+недел[юи]\s+назад"
 )
-_EVENT_PATTERN = re.compile(
-    r"\b("
+_EVENT_KEYWORDS = (
     r"call|meeting|review|sync|demo|chat|message|conversation|"
     r"звонок|созвон|встреча|ревью|демо|переписка|переписывался|"
     r"разговор(?:а|е|ом)?|чат"
-    r")"
+)
+_EVENT_PATTERN = re.compile(
+    rf"\b({_EVENT_KEYWORDS})"
     r"(?:\s+(?:with|from|about|с|от|по|об|про|[A-Za-zА-Яа-яЁё0-9][\w.-]{1,40})){0,5}?"
     rf"(?:\s+({_TEMPORAL_PHRASE}))?",
     re.IGNORECASE,
@@ -36,14 +37,7 @@ _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
     r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
 )
-_EVENT_KEYWORD_PATTERN = re.compile(
-    r"\b("
-    r"call|meeting|review|sync|demo|chat|message|conversation|"
-    r"звонок|созвон|встреча|ревью|демо|переписка|переписывался|"
-    r"разговор(?:а|е|ом)?|чат"
-    r")\b",
-    re.IGNORECASE,
-)
+_EVENT_KEYWORD_PATTERN = re.compile(rf"\b({_EVENT_KEYWORDS})\b", re.IGNORECASE)
 _TEMPORAL_PATTERN = re.compile(
     rf"\b({_TEMPORAL_PHRASE})\b",
     re.IGNORECASE,
