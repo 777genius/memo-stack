@@ -153,6 +153,32 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
                 "suggestions": {"review_tool_supported": True},
                 "extraction": {
                     "enabled": True,
+                    "default_profile": "standard_vision",
+                    "profiles_v2": [
+                        {
+                            "name": "standard_vision",
+                            "enabled": True,
+                            "status": "ok",
+                            "providers": ["openai_vision"],
+                            "external_provider_egress": True,
+                            "requires_explicit_external_ai": True,
+                            "fallback_profiles": ["standard_local"],
+                            "memory_promotion": "review_required",
+                            "source_text_policy": "untrusted_evidence",
+                            "artifact_payloads_bounded": True,
+                        }
+                    ],
+                    "providers": {
+                        "openai_vision": {
+                            "status": "ok",
+                            "enabled": True,
+                            "configured": True,
+                        }
+                    },
+                    "policy": {
+                        "schema_version": 2,
+                        "external_ai_allowed": True,
+                    },
                     "limits": {"max_bytes": 12345},
                 },
                 "plans": {
@@ -199,6 +225,32 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
         "suggestions": {"review_tool_supported": True},
         "extraction": {
             "enabled": True,
+            "default_profile": "standard_vision",
+            "profiles_v2": [
+                {
+                    "name": "standard_vision",
+                    "enabled": True,
+                    "status": "ok",
+                    "providers": ["openai_vision"],
+                    "external_provider_egress": True,
+                    "requires_explicit_external_ai": True,
+                    "fallback_profiles": ["standard_local"],
+                    "memory_promotion": "review_required",
+                    "source_text_policy": "untrusted_evidence",
+                    "artifact_payloads_bounded": True,
+                }
+            ],
+            "providers": {
+                "openai_vision": {
+                    "status": "ok",
+                    "enabled": True,
+                    "configured": True,
+                }
+            },
+            "policy": {
+                "schema_version": 2,
+                "external_ai_allowed": True,
+            },
             "limits": {"max_bytes": 12345},
         },
         "plans": {
@@ -208,6 +260,74 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
             },
         },
     }
+
+
+def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://memory.test/v1/capabilities"
+        return httpx.Response(
+            200,
+            json={
+                "extraction": {
+                    "enabled": True,
+                    "default_profile": "media_api",
+                    "profiles_v2": [
+                        {
+                            "name": "media_api",
+                            "enabled": True,
+                            "status": "ok",
+                            "providers": ["transcription_api"],
+                            "external_provider_egress": True,
+                            "requires_explicit_external_ai": True,
+                            "fallback_profiles": ["standard_local"],
+                            "memory_promotion": "review_required",
+                            "source_text_policy": "untrusted_evidence",
+                            "artifact_payloads_bounded": True,
+                        },
+                        {
+                            "name": "media_local_asr",
+                            "enabled": False,
+                            "status": "unavailable",
+                            "reason": "provider_package_missing",
+                            "providers": ["transcription_local"],
+                            "external_provider_egress": False,
+                            "requires_explicit_external_ai": False,
+                            "fallback_profiles": ["standard_local"],
+                            "memory_promotion": "review_required",
+                            "source_text_policy": "untrusted_evidence",
+                            "artifact_payloads_bounded": True,
+                        },
+                    ],
+                    "providers": {
+                        "transcription_api": {"status": "ok", "configured": True},
+                    },
+                    "policy": {"schema_version": 2, "external_ai_allowed": True},
+                    "limits": {"max_media_seconds": 600},
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    diagnostics = client.extraction_capability_diagnostics()
+    assert diagnostics.enabled is True
+    assert diagnostics.default_profile == "media_api"
+    assert diagnostics.policy["schema_version"] == 2
+    assert diagnostics.limits["max_media_seconds"] == 600
+    assert diagnostics.provider_status("transcription_api") == "ok"
+    media_api = diagnostics.profile("media_api")
+    assert media_api is not None
+    assert media_api.status == "ok"
+    assert media_api.providers == ("transcription_api",)
+    assert media_api.external_provider_egress is True
+    assert media_api.memory_promotion == "review_required"
+    local_asr = diagnostics.profile("media_local_asr")
+    assert local_asr is not None
+    assert local_asr.reason == "provider_package_missing"
+    assert diagnostics.profile("missing") is None
 
 
 def test_sdk_sends_memory_insights_scope_and_limits() -> None:

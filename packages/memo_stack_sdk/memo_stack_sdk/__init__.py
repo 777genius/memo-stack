@@ -11,6 +11,7 @@ import memo_stack_sdk._payloads as _payloads
 from memo_stack_sdk._redaction import redact_sensitive_text
 from memo_stack_sdk.anchors import MemoStackAnchorsMixin
 from memo_stack_sdk.assets import MemoStackAssetsMixin
+from memo_stack_sdk.capabilities import ExtractionCapabilityDiagnostics
 from memo_stack_sdk.context import ContextBundle, context_bundle_from_response
 from memo_stack_sdk.export import MemoStackExportMixin
 from memo_stack_sdk.scopes import MemoryScope, ReadScope
@@ -255,6 +256,11 @@ class MemoStackClient(
             "extraction": payload.get("extraction", {}),
             "plans": payload.get("plans", {}),
         }
+
+    def extraction_capability_diagnostics(self) -> ExtractionCapabilityDiagnostics:
+        return ExtractionCapabilityDiagnostics.from_payload(
+            self.capabilities().get("extraction", {})
+        )
 
     def diagnostics_adapters(self) -> dict[str, Any]:
         return self._request("GET", "/v1/diagnostics/adapters")
