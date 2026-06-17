@@ -895,6 +895,7 @@ def test_service_write_mode_off_blocks_write_paths() -> None:
     [
         "sk-test-secret-token",
         "sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890",
+        f"sk-ant-{'a' * 95}",
     ],
 )
 def test_service_secret_text_is_rejected_before_gateway(secret: str) -> None:

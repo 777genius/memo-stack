@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -674,12 +675,13 @@ def _client_retrieval_query(text: str, max_chars: int) -> str:
 
 
 def _redact_key_value(text: str, key: str) -> str:
-    lowered = text.lower()
-    index = lowered.find(key)
-    if index < 0:
+    match = re.search(rf"(?i)\b({re.escape(key)})\b\s*[:=]\s*", text)
+    if not match:
         return text
-    end = min(len(text), index + len(key) + 96)
-    return text[:index] + f"{key}=[redacted]" + text[end:]
+    end = text.find("\n", match.end())
+    if end < 0:
+        end = len(text)
+    return text[: match.start()] + f"{match.group(1)}=[redacted]" + text[end:]
 
 
 def _safe_capture_metadata(values: dict[str, object]) -> dict[str, object]:

@@ -339,6 +339,7 @@ def test_hook_capture_skips_old_server_without_capture_endpoint() -> None:
     [
         ("Remember: token=sk-proj-abcdefghijklmnopqrstuvwxyz123456", "sk-proj"),
         ("Remember: token=sk-svcacct-abcdefghijklmnopqrstuvwxyz123456", "sk-svcacct"),
+        (f"Remember: token=sk-ant-{'a' * 95}", "sk-ant"),
     ],
 )
 def test_hook_capture_skips_sensitive_input_without_leaking_value(

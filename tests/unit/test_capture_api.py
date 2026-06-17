@@ -149,6 +149,7 @@ def test_capture_only_mode_ignores_client_consolidate_request(tmp_path: Path) ->
     [
         ("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", "sk-proj"),
         ("sk-svcacct-abcdefghijklmnopqrstuvwxyz1234567890", "sk-svcacct"),
+        (f"sk-ant-{'a' * 95}", "sk-ant"),
     ],
 )
 def test_capture_secret_is_redacted_or_rejected_before_storage(
