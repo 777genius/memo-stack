@@ -18,6 +18,7 @@ from memo_stack_core.application.semantic_dedupe import (
     looks_equivalent_fact,
     normalize_memory_text,
 )
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 from memo_stack_core.domain.capture import (
     CaptureActorRole,
     ConsolidationStatus,
@@ -118,13 +119,13 @@ class ConsolidateCaptureUseCase:
             return await self._mark_retry_pending(
                 capture_id=command.capture_id,
                 code="extractor_infrastructure_unavailable",
-                message=str(exc),
+                message=_safe_consolidation_error_message(exc),
             )
         except MemoryValidationError as exc:
             return await self._mark_dead(
                 capture_id=command.capture_id,
                 code="extractor_invalid_output",
-                message=str(exc),
+                message=_safe_consolidation_error_message(exc),
             )
 
         if not validation.candidates:
@@ -399,7 +400,11 @@ class ConsolidateCaptureUseCase:
             if capture is None:
                 raise MemoryNotFoundError("Capture not found")
             saved = await uow.captures.save(
-                capture.mark_dead(now=self._clock.now(), code=code, message=message)
+                capture.mark_dead(
+                    now=self._clock.now(),
+                    code=code,
+                    message=_safe_consolidation_error_message(message),
+                )
             )
             await uow.commit()
         return CaptureResult(capture=saved)
@@ -416,7 +421,11 @@ class ConsolidateCaptureUseCase:
             if capture is None:
                 raise MemoryNotFoundError("Capture not found")
             saved = await uow.captures.save(
-                capture.mark_retry_pending(now=self._clock.now(), code=code, message=message)
+                capture.mark_retry_pending(
+                    now=self._clock.now(),
+                    code=code,
+                    message=_safe_consolidation_error_message(message),
+                )
             )
             await uow.commit()
         return CaptureResult(capture=saved)
@@ -525,6 +534,11 @@ def _expires_at(now: datetime, duration) -> datetime | None:
     if duration is None:
         return None
     return now + duration
+
+
+def _safe_consolidation_error_message(value: object) -> str:
+    text = str(value).strip() or value.__class__.__name__
+    return redact_sensitive_text(text)[:400]
 
 
 async def _find_active_duplicate(

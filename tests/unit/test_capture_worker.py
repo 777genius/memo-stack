@@ -44,7 +44,8 @@ class FailingInfrastructureExtractor:
     prompt_version = "failing-infra-test-prompt-v1"
     requires_external_ai = True
 
-    def __init__(self) -> None:
+    def __init__(self, message: str = "provider unavailable") -> None:
+        self._message = message
         self.calls = 0
 
     async def extract_facts(
@@ -54,7 +55,7 @@ class FailingInfrastructureExtractor:
         source: SourceProvenance,
     ) -> tuple[MemoryCandidate, ...]:
         self.calls += 1
-        raise MemoryInfrastructureError("provider unavailable")
+        raise MemoryInfrastructureError(self._message)
 
 
 def test_capture_outbox_worker_creates_suggestion(tmp_path: Path) -> None:
@@ -316,7 +317,10 @@ def test_consolidation_skips_pending_capture_after_policy_downgrade(tmp_path: Pa
 
 
 def test_consolidation_provider_outage_leaves_capture_retryable(tmp_path: Path) -> None:
-    extractor = FailingInfrastructureExtractor()
+    secret = "sk-proj-capture-provider-secret-value"
+    extractor = FailingInfrastructureExtractor(
+        f"provider unavailable Authorization: Bearer {secret}"
+    )
     app = create_app(
         Settings(
             deploy_profile=DeployProfile.TEST,
@@ -360,6 +364,8 @@ def test_consolidation_provider_outage_leaves_capture_retryable(tmp_path: Path) 
     assert extractor.calls == 1
     assert result.capture.consolidation_status.value == "retry_pending"
     assert result.capture.last_error_code == "extractor_infrastructure_unavailable"
+    assert secret not in (result.capture.last_error_message or "")
+    assert "[redacted]" in (result.capture.last_error_message or "")
     assert suggestions.json()["data"] == []
 
 
