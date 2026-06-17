@@ -21,6 +21,7 @@ def test_docker_compose_bootstraps_local_server_before_http() -> None:
 
 def test_makefile_has_one_command_stack_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    quality_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-test-quality"))
 
     assert ".PHONY: memo-stack-smoke" in makefile
     assert (
@@ -28,10 +29,10 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
         "memo_stack_extraction_worker"
     ) in makefile
     assert (
-        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all "
-        "memo-stack-eval memo-stack-secret-scan"
+        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
         in makefile
     )
+    assert "$(MAKE) memo-stack-secret-scan" in quality_recipe
     assert "$(PYTHON) -m memo_stack_server eval run --suite quality-golden" in makefile
     assert "$(PYTHON) -m memo_stack_server eval run --suite semantic-linking-golden" in makefile
     assert "$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden" in makefile
@@ -200,8 +201,7 @@ def test_makefile_has_manual_prod_load_canary_target() -> None:
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in "\n".join(recipe)
     assert "MEMORY_OPENAI_API_KEY" in "\n".join(recipe)
     assert (
-        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all "
-        "memo-stack-eval memo-stack-secret-scan"
+        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
         in makefile
     )
     assert "memo-stack-test-quality: memo-stack-prod-load-canary" not in makefile
@@ -1208,7 +1208,11 @@ def _load_clean_full_smoke(path: Path):
 
 def _make_target_recipe(makefile: str, target: str) -> list[str]:
     lines = makefile.splitlines()
-    start = next(index for index, line in enumerate(lines) if line == f"{target}:")
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line == f"{target}:" or line.startswith(f"{target}: ")
+    )
     recipe: list[str] = []
     for line in lines[start + 1 :]:
         if line and not line.startswith(("\t", " ")):
