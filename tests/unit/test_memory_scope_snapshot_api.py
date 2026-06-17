@@ -785,8 +785,20 @@ def test_memory_scope_snapshot_import_remaps_reviewed_context_link_audit(
     assert restored_approved_suggestion["review_reason"] == "approved with reviewer override"
     assert restored_approved_suggestion["reviewed_at"]
     assert restored_approved_suggestion["target_id"] == restored_original["id"]
+    approved_review_event = restored_approved_suggestion["metadata"]["review_events"][-1]
+    assert approved_review_event["suggestion_id"] == restored_approved_suggestion["id"]
+    assert approved_review_event["source_id"] == restored_approved_suggestion["source_id"]
+    assert approved_review_event["target_id"] == restored_original["id"]
+    assert approved_review_event["action"] == "approve"
+    assert approved_review_event["new_status"] == "approved"
     assert restored_rejected_suggestion["review_reason"] == "not the right restored context"
     assert restored_rejected_suggestion["reviewed_at"]
+    rejected_review_event = restored_rejected_suggestion["metadata"]["review_events"][-1]
+    assert rejected_review_event["suggestion_id"] == restored_rejected_suggestion["id"]
+    assert rejected_review_event["source_id"] == restored_rejected_suggestion["source_id"]
+    assert rejected_review_event["target_id"] == restored_rejected_suggestion["target_id"]
+    assert rejected_review_event["action"] == "reject"
+    assert rejected_review_event["new_status"] == "rejected"
     assert restored_links.status_code == 200
     restored_link = restored_links.json()["data"][0]
     assert restored_link["target_id"] == restored_corrected["id"]

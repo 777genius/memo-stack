@@ -446,7 +446,89 @@ def _remap_context_link_metadata(
             extraction_job_id_map=extraction_job_id_map,
             extraction_artifact_id_map=extraction_artifact_id_map,
         )
+    if "review_events" in metadata:
+        metadata["review_events"] = remap_context_link_review_events(
+            metadata.get("review_events"),
+            context_link_suggestion_id_map=context_link_suggestion_id_map,
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map,
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        )
     return metadata
+
+
+def remap_context_link_review_events(
+    value: object,
+    *,
+    context_link_suggestion_id_map: dict[str, str],
+    fact_id_map: dict[str, str],
+    thread_id_map: dict[str, str],
+    document_id_map: dict[str, str],
+    episode_id_map: dict[str, str],
+    chunk_id_map: dict[str, str],
+    capture_id_map: dict[str, str],
+    asset_id_map: dict[str, str],
+    anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+    extraction_artifact_id_map: dict[str, str],
+) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    events: list[object] = []
+    for event in value:
+        if not isinstance(event, dict):
+            events.append(event)
+            continue
+        next_event = dict(event)
+        suggestion_id = next_event.get("suggestion_id")
+        if suggestion_id is not None:
+            next_event["suggestion_id"] = context_link_suggestion_id_map.get(
+                str(suggestion_id),
+                str(suggestion_id),
+            )
+        source_type = next_event.get("source_type")
+        source_id = next_event.get("source_id")
+        if source_type is not None and source_id is not None:
+            next_event["source_id"] = remap_endpoint_id(
+                source_type=str(source_type),
+                source_id=str(source_id),
+                fact_id_map=fact_id_map,
+                thread_id_map=thread_id_map,
+                document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
+                chunk_id_map=chunk_id_map,
+                capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
+                anchor_id_map=anchor_id_map,
+                extraction_job_id_map=extraction_job_id_map,
+                extraction_artifact_id_map=extraction_artifact_id_map,
+            )
+        target_type = next_event.get("target_type")
+        target_id = next_event.get("target_id")
+        if target_type is not None and target_id is not None:
+            next_event["target_id"] = remap_endpoint_id(
+                source_type=str(target_type),
+                source_id=str(target_id),
+                fact_id_map=fact_id_map,
+                thread_id_map=thread_id_map,
+                document_id_map=document_id_map,
+                episode_id_map=episode_id_map,
+                chunk_id_map=chunk_id_map,
+                capture_id_map=capture_id_map,
+                asset_id_map=asset_id_map,
+                anchor_id_map=anchor_id_map,
+                extraction_job_id_map=extraction_job_id_map,
+                extraction_artifact_id_map=extraction_artifact_id_map,
+            )
+        events.append(next_event)
+    return events
 
 
 def _remap_context_link_edit_events(

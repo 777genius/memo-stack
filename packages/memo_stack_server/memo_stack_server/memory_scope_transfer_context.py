@@ -22,6 +22,7 @@ from memo_stack_server.memory_scope_transfer_records import (
 )
 from memo_stack_server.memory_scope_transfer_remap import (
     remap_context_link,
+    remap_context_link_review_events,
     remap_endpoint_id,
 )
 
@@ -132,6 +133,22 @@ def remap_context_link_suggestion(
     suggestion_id = str(item["id"])
     source_type = str(item.get("source_type") or "")
     target_type = str(item.get("target_type") or "")
+    metadata = dict(item.get("metadata_json") or item.get("metadata") or {})
+    if "review_events" in metadata:
+        metadata["review_events"] = remap_context_link_review_events(
+            metadata.get("review_events"),
+            context_link_suggestion_id_map=context_link_suggestion_id_map,
+            fact_id_map=fact_id_map,
+            thread_id_map=thread_id_map or {},
+            document_id_map=document_id_map,
+            episode_id_map=episode_id_map,
+            chunk_id_map=chunk_id_map,
+            capture_id_map=capture_id_map,
+            asset_id_map=asset_id_map,
+            anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+            extraction_artifact_id_map=extraction_artifact_id_map,
+        )
     return {
         **item,
         "id": context_link_suggestion_id_map.get(suggestion_id, suggestion_id),
@@ -163,6 +180,7 @@ def remap_context_link_suggestion(
             extraction_job_id_map=extraction_job_id_map,
             extraction_artifact_id_map=extraction_artifact_id_map,
         ),
+        "metadata_json": metadata,
     }
 
 
