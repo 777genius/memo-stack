@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from memo_stack_adapters.postgres.models import MemoryScopeRow, MemorySpaceRow
+from memo_stack_adapters.postgres.models import MemoryScopeRow, MemorySpaceRow, MemoryThreadRow
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from memo_stack_server.memory_scope_transfer_remap import episode_source_thread_id
 from memo_stack_server.memory_scope_transfer_support import (
     bounded_external_ref,
+    import_thread_external_ref,
     stable_id,
 )
 
@@ -73,6 +76,49 @@ async def create_import_memory_scope(
     session.add(row)
     await session.flush()
     return row
+
+
+async def ensure_import_threads(
+    session: AsyncSession,
+    *,
+    episodes: list[dict[str, Any]],
+    skipped_episode_ids: set[str],
+    thread_id_map: dict[str, str],
+    space_id: str,
+    memory_scope_id: str,
+    now: datetime,
+) -> None:
+    needed = {
+        episode_source_thread_id(episode): thread_id_map.get(
+            episode_source_thread_id(episode),
+            episode_source_thread_id(episode),
+        )
+        for episode in episodes
+        if str(episode.get("id")) not in skipped_episode_ids
+    }
+    if not needed:
+        return
+    existing = set(
+        (
+            await session.execute(
+                select(MemoryThreadRow.id).where(MemoryThreadRow.id.in_(set(needed.values())))
+            )
+        ).scalars()
+    )
+    for source_thread_id, target_thread_id in needed.items():
+        if target_thread_id in existing:
+            continue
+        session.add(
+            MemoryThreadRow(
+                id=target_thread_id,
+                space_id=space_id,
+                memory_scope_id=memory_scope_id,
+                external_ref=import_thread_external_ref(source_thread_id, target_thread_id),
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
+        )
 
 
 async def _next_import_memory_scope_ref(

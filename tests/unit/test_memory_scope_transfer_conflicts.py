@@ -97,6 +97,8 @@ def test_memory_scope_snapshot_anchor_conflicts_match_exact_key_pairs(tmp_path: 
                     episodes=[],
                     chunks=[],
                     assets=[],
+                    asset_extraction_jobs=[],
+                    extraction_artifacts=[],
                     captures=[],
                     anchors=[
                         {

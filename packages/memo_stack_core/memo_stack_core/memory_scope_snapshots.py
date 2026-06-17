@@ -75,6 +75,11 @@ def build_snapshot_manifest(
             "chunks": _list_count(snapshot.get("chunks")),
             "assets": _list_count(snapshot.get("assets")),
             "asset_blobs": _list_count(snapshot.get("asset_blobs")),
+            "asset_extraction_jobs": _list_count(snapshot.get("asset_extraction_jobs")),
+            "extraction_artifacts": _list_count(snapshot.get("extraction_artifacts")),
+            "extraction_artifact_blobs": _list_count(
+                snapshot.get("extraction_artifact_blobs")
+            ),
             "captures": _list_count(snapshot.get("captures")),
             "anchors": _list_count(snapshot.get("anchors")),
             "context_links": _list_count(snapshot.get("context_links")),

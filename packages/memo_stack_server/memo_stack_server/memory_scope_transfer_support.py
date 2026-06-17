@@ -13,6 +13,12 @@ from memo_stack_server.memory_scope_transfer_remap import episode_source_thread_
 
 _MAX_FILENAME_CHARS = 240
 _SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
+SUPPORTED_MERGE_STRATEGIES = {
+    "fail_on_conflict",
+    "skip_existing",
+    "create_new_memory_scope",
+    "supersede_matching_facts",
+}
 
 
 def stable_id(prefix: str, *parts: str) -> str:

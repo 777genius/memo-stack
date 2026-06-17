@@ -6,6 +6,8 @@ from typing import Any
 
 from memo_stack_adapters.postgres.models import (
     MemoryAnchorRow,
+    MemoryAssetExtractionArtifactRow,
+    MemoryAssetExtractionJobRow,
     MemoryAssetRow,
     MemoryCaptureRow,
     MemoryChunkRow,
@@ -29,6 +31,8 @@ async def memory_scope_snapshot_conflicts(
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     assets: list[dict[str, Any]],
+    asset_extraction_jobs: list[dict[str, Any]],
+    extraction_artifacts: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -40,6 +44,8 @@ async def memory_scope_snapshot_conflicts(
     episode_ids = [str(item["id"]) for item in episodes]
     chunk_ids = [str(item["id"]) for item in chunks]
     asset_ids = [str(item["id"]) for item in assets]
+    asset_extraction_job_ids = [str(item["id"]) for item in asset_extraction_jobs]
+    extraction_artifact_ids = [str(item["id"]) for item in extraction_artifacts]
     capture_ids = [str(item["id"]) for item in captures]
     anchor_ids = [str(item["id"]) for item in anchors]
     context_link_ids = [str(item["id"]) for item in context_links]
@@ -50,6 +56,8 @@ async def memory_scope_snapshot_conflicts(
         (MemoryEpisodeRow, episode_ids),
         (MemoryChunkRow, chunk_ids),
         (MemoryAssetRow, asset_ids),
+        (MemoryAssetExtractionJobRow, asset_extraction_job_ids),
+        (MemoryAssetExtractionArtifactRow, extraction_artifact_ids),
         (MemoryCaptureRow, capture_ids),
         (MemoryAnchorRow, anchor_ids),
         (MemoryContextLinkRow, context_link_ids),
@@ -81,6 +89,14 @@ async def memory_scope_snapshot_conflicts(
             space_id=space_id,
             memory_scope_id=memory_scope_id,
             assets=assets,
+        )
+    )
+    conflicts.extend(
+        await _asset_extraction_job_signature_conflicts(
+            session,
+            space_id=space_id,
+            memory_scope_id=memory_scope_id,
+            jobs=asset_extraction_jobs,
         )
     )
     conflicts.extend(
@@ -205,6 +221,84 @@ async def _asset_hash_conflicts(
         by_hash[str(sha256_hex)]
         for row_id, sha256_hex in rows
         if str(row_id) != by_hash[str(sha256_hex)]
+    ]
+
+
+async def _asset_extraction_job_signature_conflicts(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    jobs: list[dict[str, Any]],
+) -> list[str]:
+    active_statuses = {"pending", "running", "succeeded"}
+    by_signature = {
+        (
+            str(item.get("asset_id")),
+            str(item.get("parser_profile")),
+            str(item.get("parser_config_hash")),
+            str(item.get("source_sha256_hex")),
+        ): str(item["id"])
+        for item in jobs
+        if item.get("asset_id")
+        and item.get("parser_profile")
+        and item.get("parser_config_hash")
+        and item.get("source_sha256_hex")
+        and str(item.get("status", "pending")) in active_statuses
+    }
+    if not by_signature:
+        return []
+    rows = (
+        await session.execute(
+            select(
+                MemoryAssetExtractionJobRow.id,
+                MemoryAssetExtractionJobRow.asset_id,
+                MemoryAssetExtractionJobRow.parser_profile,
+                MemoryAssetExtractionJobRow.parser_config_hash,
+                MemoryAssetExtractionJobRow.source_sha256_hex,
+            ).where(
+                MemoryAssetExtractionJobRow.space_id == space_id,
+                MemoryAssetExtractionJobRow.memory_scope_id == memory_scope_id,
+                MemoryAssetExtractionJobRow.status.in_(active_statuses),
+                MemoryAssetExtractionJobRow.asset_id.in_({key[0] for key in by_signature}),
+                MemoryAssetExtractionJobRow.parser_profile.in_(
+                    {key[1] for key in by_signature}
+                ),
+                MemoryAssetExtractionJobRow.parser_config_hash.in_(
+                    {key[2] for key in by_signature}
+                ),
+                MemoryAssetExtractionJobRow.source_sha256_hex.in_(
+                    {key[3] for key in by_signature}
+                ),
+            )
+        )
+    ).all()
+    return [
+        by_signature[
+            (
+                str(asset_id),
+                str(parser_profile),
+                str(parser_config_hash),
+                str(source_sha256_hex),
+            )
+        ]
+        for row_id, asset_id, parser_profile, parser_config_hash, source_sha256_hex in rows
+        if (
+            str(asset_id),
+            str(parser_profile),
+            str(parser_config_hash),
+            str(source_sha256_hex),
+        )
+        in by_signature
+        and str(row_id)
+        != by_signature[
+            (
+                str(asset_id),
+                str(parser_profile),
+                str(parser_config_hash),
+                str(source_sha256_hex),
+            )
+        ]
     ]
 
 

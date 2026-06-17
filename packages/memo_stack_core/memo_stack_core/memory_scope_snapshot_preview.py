@@ -10,12 +10,14 @@ _RECORD_TYPES = (
     "episodes",
     "chunks",
     "assets",
+    "asset_extraction_jobs",
+    "extraction_artifacts",
     "captures",
     "anchors",
     "context_links",
     "relations",
 )
-_COUNT_TYPES = (*_RECORD_TYPES, "source_refs")
+_COUNT_TYPES = (*_RECORD_TYPES, "asset_blobs", "extraction_artifact_blobs", "source_refs")
 
 
 def build_memory_scope_snapshot_import_preview(
@@ -30,6 +32,9 @@ def build_memory_scope_snapshot_import_preview(
     chunks = _records(payload, "chunks")
     assets = _records(payload, "assets")
     asset_blobs = _records(payload, "asset_blobs")
+    asset_extraction_jobs = _records(payload, "asset_extraction_jobs")
+    extraction_artifacts = _records(payload, "extraction_artifacts")
+    extraction_artifact_blobs = _records(payload, "extraction_artifact_blobs")
     captures = _records(payload, "captures")
     anchors = _records(payload, "anchors")
     context_links = _records(payload, "context_links")
@@ -44,6 +49,9 @@ def build_memory_scope_snapshot_import_preview(
         chunks=chunks,
         assets=assets,
         asset_blobs=asset_blobs,
+        asset_extraction_jobs=asset_extraction_jobs,
+        extraction_artifacts=extraction_artifacts,
+        extraction_artifact_blobs=extraction_artifact_blobs,
         captures=captures,
         anchors=anchors,
         context_links=context_links,
@@ -56,6 +64,8 @@ def build_memory_scope_snapshot_import_preview(
         episodes=episodes,
         chunks=chunks,
         assets=assets,
+        asset_extraction_jobs=asset_extraction_jobs,
+        extraction_artifacts=extraction_artifacts,
         captures=captures,
         anchors=anchors,
         context_links=context_links,
@@ -72,6 +82,9 @@ def build_memory_scope_snapshot_import_preview(
             chunks=chunks,
             assets=assets,
             asset_blobs=asset_blobs,
+            asset_extraction_jobs=asset_extraction_jobs,
+            extraction_artifacts=extraction_artifacts,
+            extraction_artifact_blobs=extraction_artifact_blobs,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -86,6 +99,8 @@ def build_memory_scope_snapshot_import_preview(
             episodes=episodes,
             chunks=chunks,
             assets=assets,
+            asset_extraction_jobs=asset_extraction_jobs,
+            extraction_artifacts=extraction_artifacts,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -99,6 +114,8 @@ def build_memory_scope_snapshot_import_preview(
             episodes=episodes,
             chunks=chunks,
             assets=assets,
+            asset_extraction_jobs=asset_extraction_jobs,
+            extraction_artifacts=extraction_artifacts,
             captures=captures,
             anchors=anchors,
             context_links=context_links,
@@ -127,6 +144,9 @@ def snapshot_counts(
     chunks: list[dict[str, Any]],
     assets: list[dict[str, Any]],
     asset_blobs: list[dict[str, Any]],
+    asset_extraction_jobs: list[dict[str, Any]],
+    extraction_artifacts: list[dict[str, Any]],
+    extraction_artifact_blobs: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -140,6 +160,9 @@ def snapshot_counts(
         "chunks": len(chunks),
         "assets": len(assets),
         "asset_blobs": len(asset_blobs),
+        "asset_extraction_jobs": len(asset_extraction_jobs),
+        "extraction_artifacts": len(extraction_artifacts),
+        "extraction_artifact_blobs": len(extraction_artifact_blobs),
         "captures": len(captures),
         "anchors": len(anchors),
         "context_links": len(context_links),
@@ -158,18 +181,27 @@ def skipped_snapshot_ids(
     chunks: list[dict[str, Any]],
     assets: list[dict[str, Any]],
     asset_blobs: list[dict[str, Any]],
+    asset_extraction_jobs: list[dict[str, Any]] | None = None,
+    extraction_artifacts: list[dict[str, Any]] | None = None,
+    extraction_artifact_blobs: list[dict[str, Any]] | None = None,
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
     relations: list[dict[str, Any]] | None = None,
 ) -> dict[str, set[str]]:
     relations = relations or []
+    asset_extraction_jobs = asset_extraction_jobs or []
+    extraction_artifacts = extraction_artifacts or []
+    extraction_artifact_blobs = extraction_artifact_blobs or []
     fact_ids = _record_ids(facts)
     document_ids = _record_ids(documents)
     episode_ids = _record_ids(episodes)
     chunk_ids = _record_ids(chunks)
     asset_ids = _record_ids(assets)
     asset_blob_asset_ids = _asset_blob_asset_ids(asset_blobs)
+    asset_extraction_job_ids = _record_ids(asset_extraction_jobs)
+    extraction_artifact_ids = _record_ids(extraction_artifacts)
+    extraction_artifact_blob_ids = _extraction_artifact_blob_ids(extraction_artifact_blobs)
     capture_ids = _record_ids(captures)
     anchor_ids = _record_ids(anchors)
     context_link_ids = _record_ids(context_links)
@@ -179,6 +211,8 @@ def skipped_snapshot_ids(
     skipped_episodes = episode_ids & conflict_ids
     skipped_chunks = chunk_ids & conflict_ids
     skipped_assets = asset_ids & conflict_ids
+    skipped_asset_extraction_jobs = asset_extraction_job_ids & conflict_ids
+    skipped_extraction_artifacts = extraction_artifact_ids & conflict_ids
     skipped_captures = capture_ids & conflict_ids
     skipped_anchors = anchor_ids & conflict_ids
     skipped_context_links = context_link_ids & conflict_ids
@@ -198,6 +232,27 @@ def skipped_snapshot_ids(
         for asset in assets
         if _asset_requires_blob(asset) and str(asset["id"]) not in asset_blob_asset_ids
     )
+    skipped_asset_extraction_jobs.update(
+        str(job["id"])
+        for job in asset_extraction_jobs
+        if _extraction_job_asset_skipped(
+            job,
+            asset_ids=asset_ids,
+            skipped_assets=skipped_assets,
+        )
+    )
+    skipped_extraction_artifacts.update(
+        str(artifact["id"])
+        for artifact in extraction_artifacts
+        if _extraction_artifact_parent_skipped(
+            artifact,
+            asset_ids=asset_ids,
+            skipped_assets=skipped_assets,
+            asset_extraction_job_ids=asset_extraction_job_ids,
+            skipped_asset_extraction_jobs=skipped_asset_extraction_jobs,
+        )
+        or str(artifact["id"]) not in extraction_artifact_blob_ids
+    )
     skipped_relations = relation_ids & conflict_ids
     skipped_context_links.update(
         str(context_link["id"])
@@ -209,6 +264,8 @@ def skipped_snapshot_ids(
             episode_ids=episode_ids,
             chunk_ids=chunk_ids,
             asset_ids=asset_ids,
+            asset_extraction_job_ids=asset_extraction_job_ids,
+            extraction_artifact_ids=extraction_artifact_ids,
             capture_ids=capture_ids,
             anchor_ids=anchor_ids,
             skipped_facts=skipped_facts,
@@ -216,6 +273,8 @@ def skipped_snapshot_ids(
             skipped_episodes=skipped_episodes,
             skipped_chunks=skipped_chunks,
             skipped_assets=skipped_assets,
+            skipped_asset_extraction_jobs=skipped_asset_extraction_jobs,
+            skipped_extraction_artifacts=skipped_extraction_artifacts,
             skipped_captures=skipped_captures,
             skipped_anchors=skipped_anchors,
         )
@@ -236,6 +295,8 @@ def skipped_snapshot_ids(
         "episodes": skipped_episodes,
         "chunks": skipped_chunks,
         "assets": skipped_assets,
+        "asset_extraction_jobs": skipped_asset_extraction_jobs,
+        "extraction_artifacts": skipped_extraction_artifacts,
         "captures": skipped_captures,
         "anchors": skipped_anchors,
         "context_links": skipped_context_links,
@@ -250,6 +311,8 @@ def import_counts(
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     assets: list[dict[str, Any]],
+    asset_extraction_jobs: list[dict[str, Any]],
+    extraction_artifacts: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -265,6 +328,10 @@ def import_counts(
         "episodes": len(episodes) - _count_skipped(episodes, skipped["episodes"]),
         "chunks": len(chunks) - _count_skipped(chunks, skipped["chunks"]),
         "assets": len(assets) - _count_skipped(assets, skipped["assets"]),
+        "asset_extraction_jobs": len(asset_extraction_jobs)
+        - _count_skipped(asset_extraction_jobs, skipped["asset_extraction_jobs"]),
+        "extraction_artifacts": len(extraction_artifacts)
+        - _count_skipped(extraction_artifacts, skipped["extraction_artifacts"]),
         "captures": len(captures) - _count_skipped(captures, skipped["captures"]),
         "anchors": len(anchors) - _count_skipped(anchors, skipped["anchors"]),
         "context_links": len(context_links)
@@ -281,6 +348,8 @@ def _skipped_counts(
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     assets: list[dict[str, Any]],
+    asset_extraction_jobs: list[dict[str, Any]],
+    extraction_artifacts: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -295,6 +364,14 @@ def _skipped_counts(
         "episodes": _count_skipped(episodes, skipped["episodes"]),
         "chunks": _count_skipped(chunks, skipped["chunks"]),
         "assets": _count_skipped(assets, skipped["assets"]),
+        "asset_extraction_jobs": _count_skipped(
+            asset_extraction_jobs,
+            skipped["asset_extraction_jobs"],
+        ),
+        "extraction_artifacts": _count_skipped(
+            extraction_artifacts,
+            skipped["extraction_artifacts"],
+        ),
         "captures": _count_skipped(captures, skipped["captures"]),
         "anchors": _count_skipped(anchors, skipped["anchors"]),
         "context_links": _count_skipped(context_links, skipped["context_links"]),
@@ -311,6 +388,8 @@ def _conflicts_by_type(
     episodes: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     assets: list[dict[str, Any]],
+    asset_extraction_jobs: list[dict[str, Any]],
+    extraction_artifacts: list[dict[str, Any]],
     captures: list[dict[str, Any]],
     anchors: list[dict[str, Any]],
     context_links: list[dict[str, Any]],
@@ -322,6 +401,8 @@ def _conflicts_by_type(
         "episodes": _record_ids(episodes) & conflict_ids,
         "chunks": _record_ids(chunks) & conflict_ids,
         "assets": _record_ids(assets) & conflict_ids,
+        "asset_extraction_jobs": _record_ids(asset_extraction_jobs) & conflict_ids,
+        "extraction_artifacts": _record_ids(extraction_artifacts) & conflict_ids,
         "captures": _record_ids(captures) & conflict_ids,
         "anchors": _record_ids(anchors) & conflict_ids,
         "context_links": _record_ids(context_links) & conflict_ids,
@@ -346,6 +427,10 @@ def _preview_warnings(
         warnings.append("some_chunks_will_be_skipped")
     if skipped["assets"]:
         warnings.append("some_assets_will_be_skipped")
+    if skipped["asset_extraction_jobs"]:
+        warnings.append("some_asset_extraction_jobs_will_be_skipped")
+    if skipped["extraction_artifacts"]:
+        warnings.append("some_extraction_artifacts_will_be_skipped")
     if skipped["relations"]:
         warnings.append("some_relations_will_be_skipped")
     if skipped["context_links"]:
@@ -385,6 +470,8 @@ def _context_link_endpoint_skipped(
     episode_ids: set[str],
     chunk_ids: set[str],
     asset_ids: set[str],
+    asset_extraction_job_ids: set[str],
+    extraction_artifact_ids: set[str],
     capture_ids: set[str],
     anchor_ids: set[str],
     skipped_facts: set[str],
@@ -392,6 +479,8 @@ def _context_link_endpoint_skipped(
     skipped_episodes: set[str],
     skipped_chunks: set[str],
     skipped_assets: set[str],
+    skipped_asset_extraction_jobs: set[str],
+    skipped_extraction_artifacts: set[str],
     skipped_captures: set[str],
     skipped_anchors: set[str],
 ) -> bool:
@@ -403,6 +492,8 @@ def _context_link_endpoint_skipped(
         episode_ids=episode_ids,
         chunk_ids=chunk_ids,
         asset_ids=asset_ids,
+        asset_extraction_job_ids=asset_extraction_job_ids,
+        extraction_artifact_ids=extraction_artifact_ids,
         capture_ids=capture_ids,
         anchor_ids=anchor_ids,
         skipped_facts=skipped_facts,
@@ -410,6 +501,8 @@ def _context_link_endpoint_skipped(
         skipped_episodes=skipped_episodes,
         skipped_chunks=skipped_chunks,
         skipped_assets=skipped_assets,
+        skipped_asset_extraction_jobs=skipped_asset_extraction_jobs,
+        skipped_extraction_artifacts=skipped_extraction_artifacts,
         skipped_captures=skipped_captures,
         skipped_anchors=skipped_anchors,
     ) or _endpoint_skipped(
@@ -420,6 +513,8 @@ def _context_link_endpoint_skipped(
         episode_ids=episode_ids,
         chunk_ids=chunk_ids,
         asset_ids=asset_ids,
+        asset_extraction_job_ids=asset_extraction_job_ids,
+        extraction_artifact_ids=extraction_artifact_ids,
         capture_ids=capture_ids,
         anchor_ids=anchor_ids,
         skipped_facts=skipped_facts,
@@ -427,6 +522,8 @@ def _context_link_endpoint_skipped(
         skipped_episodes=skipped_episodes,
         skipped_chunks=skipped_chunks,
         skipped_assets=skipped_assets,
+        skipped_asset_extraction_jobs=skipped_asset_extraction_jobs,
+        skipped_extraction_artifacts=skipped_extraction_artifacts,
         skipped_captures=skipped_captures,
         skipped_anchors=skipped_anchors,
     )
@@ -441,6 +538,8 @@ def _endpoint_skipped(
     episode_ids: set[str],
     chunk_ids: set[str],
     asset_ids: set[str],
+    asset_extraction_job_ids: set[str],
+    extraction_artifact_ids: set[str],
     capture_ids: set[str],
     anchor_ids: set[str],
     skipped_facts: set[str],
@@ -448,6 +547,8 @@ def _endpoint_skipped(
     skipped_episodes: set[str],
     skipped_chunks: set[str],
     skipped_assets: set[str],
+    skipped_asset_extraction_jobs: set[str],
+    skipped_extraction_artifacts: set[str],
     skipped_captures: set[str],
     skipped_anchors: set[str],
 ) -> bool:
@@ -459,6 +560,8 @@ def _endpoint_skipped(
         "episode": (episode_ids, skipped_episodes),
         "chunk": (chunk_ids, skipped_chunks),
         "asset": (asset_ids, skipped_assets),
+        "asset_extraction": (asset_extraction_job_ids, skipped_asset_extraction_jobs),
+        "extraction_artifact": (extraction_artifact_ids, skipped_extraction_artifacts),
         "capture": (capture_ids, skipped_captures),
         "anchor": (anchor_ids, skipped_anchors),
     }
@@ -477,8 +580,44 @@ def _asset_blob_asset_ids(asset_blobs: list[dict[str, Any]]) -> set[str]:
     return {str(item["asset_id"]) for item in asset_blobs if item.get("asset_id") is not None}
 
 
+def _extraction_artifact_blob_ids(artifact_blobs: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(item["artifact_id"]) for item in artifact_blobs if item.get("artifact_id") is not None
+    }
+
+
 def _asset_requires_blob(asset: dict[str, Any]) -> bool:
     return str(asset.get("status", "stored")) == "stored"
+
+
+def _extraction_job_asset_skipped(
+    job: dict[str, Any],
+    *,
+    asset_ids: set[str],
+    skipped_assets: set[str],
+) -> bool:
+    asset_id = job.get("asset_id")
+    return asset_id is None or str(asset_id) not in asset_ids or str(asset_id) in skipped_assets
+
+
+def _extraction_artifact_parent_skipped(
+    artifact: dict[str, Any],
+    *,
+    asset_ids: set[str],
+    skipped_assets: set[str],
+    asset_extraction_job_ids: set[str],
+    skipped_asset_extraction_jobs: set[str],
+) -> bool:
+    asset_id = artifact.get("asset_id")
+    job_id = artifact.get("job_id")
+    return (
+        asset_id is None
+        or str(asset_id) not in asset_ids
+        or str(asset_id) in skipped_assets
+        or job_id is None
+        or str(job_id) not in asset_extraction_job_ids
+        or str(job_id) in skipped_asset_extraction_jobs
+    )
 
 
 def _skipped_source_ref_indexes(

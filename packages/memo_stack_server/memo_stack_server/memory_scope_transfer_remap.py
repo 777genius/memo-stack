@@ -18,11 +18,19 @@ def remap_document(
     item: dict[str, Any],
     *,
     document_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     document_id = str(item["id"])
-    if document_id not in document_id_map:
-        return item
-    return {**item, "id": document_id_map[document_id]}
+    extraction_job_id_map = extraction_job_id_map or {}
+    return {
+        **item,
+        "id": document_id_map.get(document_id, document_id),
+        "source_external_id": _remap_source_external_id(
+            source_type=str(item.get("source_type") or ""),
+            source_external_id=str(item.get("source_external_id") or ""),
+            extraction_job_id_map=extraction_job_id_map,
+        ),
+    }
 
 
 def remap_episode(
@@ -47,11 +55,15 @@ def remap_chunk(
     episode_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     thread_id_map: dict[str, str],
+    asset_id_map: dict[str, str] | None = None,
+    extraction_job_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     chunk_id = str(item["id"])
     document_id = item.get("document_id")
     episode_id = item.get("episode_id")
     thread_id = item.get("thread_id")
+    asset_id_map = asset_id_map or {}
+    extraction_job_id_map = extraction_job_id_map or {}
     mapped_thread_id = None
     if episode_id is not None and thread_id is not None:
         mapped_thread_id = thread_id_map.get(str(thread_id), str(thread_id))
@@ -69,6 +81,16 @@ def remap_chunk(
             if episode_id is not None
             else None
         ),
+        "source_external_id": _remap_source_external_id(
+            source_type=str(item.get("source_type") or ""),
+            source_external_id=str(item.get("source_external_id") or ""),
+            extraction_job_id_map=extraction_job_id_map,
+        ),
+        "metadata_json": _remap_chunk_metadata(
+            item.get("metadata_json") or item.get("metadata") or {},
+            asset_id_map=asset_id_map,
+            extraction_job_id_map=extraction_job_id_map,
+        ),
     }
 
 
@@ -78,14 +100,23 @@ def remap_source_ref(
     fact_id_map: dict[str, str],
     chunk_id_map: dict[str, str],
     skipped_chunk_ids: set[str],
+    extraction_job_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     chunk_id = item.get("chunk_id")
     mapped_chunk_id = None
     if chunk_id is not None and str(chunk_id) not in skipped_chunk_ids:
         mapped_chunk_id = chunk_id_map.get(str(chunk_id), str(chunk_id))
+    source_type = str(item.get("source_type") or "")
+    source_id = str(item.get("source_id") or "")
+    extraction_job_id_map = extraction_job_id_map or {}
     return {
         **item,
         "fact_id": fact_id_map.get(str(item["fact_id"]), str(item["fact_id"])),
+        "source_id": (
+            extraction_job_id_map.get(source_id, source_id)
+            if source_type == "asset_extraction"
+            else source_id
+        ),
         "chunk_id": mapped_chunk_id,
     }
 
@@ -100,6 +131,8 @@ def remap_capture(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str] | None = None,
     anchor_id_map: dict[str, str] | None = None,
+    extraction_job_id_map: dict[str, str] | None = None,
+    extraction_artifact_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     capture_id = str(item["id"])
     mapped_capture_id = capture_id_map.get(capture_id, capture_id)
@@ -125,6 +158,8 @@ def remap_capture(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map or {},
             anchor_id_map=anchor_id_map or {},
+            extraction_job_id_map=extraction_job_id_map or {},
+            extraction_artifact_id_map=extraction_artifact_id_map or {},
         ),
     }
 
@@ -151,6 +186,8 @@ def remap_context_link(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str] | None = None,
+    extraction_artifact_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     link_id = str(item["id"])
     source_type = str(item.get("source_type") or "")
@@ -168,6 +205,8 @@ def remap_context_link(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map or {},
+            extraction_artifact_id_map=extraction_artifact_id_map or {},
         ),
         "target_id": remap_endpoint_id(
             source_type=target_type,
@@ -179,6 +218,8 @@ def remap_context_link(
             capture_id_map=capture_id_map,
             asset_id_map=asset_id_map,
             anchor_id_map=anchor_id_map,
+            extraction_job_id_map=extraction_job_id_map or {},
+            extraction_artifact_id_map=extraction_artifact_id_map or {},
         ),
     }
 
@@ -208,6 +249,8 @@ def _remap_capture_evidence_refs(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+    extraction_artifact_id_map: dict[str, str],
 ) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
@@ -229,7 +272,12 @@ def _remap_capture_evidence_refs(
                 capture_id_map=capture_id_map,
                 asset_id_map=asset_id_map,
                 anchor_id_map=anchor_id_map,
+                extraction_job_id_map=extraction_job_id_map,
+                extraction_artifact_id_map=extraction_artifact_id_map,
             )
+        asset_id = next_ref.get("asset_id")
+        if asset_id is not None:
+            next_ref["asset_id"] = asset_id_map.get(str(asset_id), str(asset_id))
         chunk_id = next_ref.get("chunk_id")
         if chunk_id is not None:
             next_ref["chunk_id"] = chunk_id_map.get(str(chunk_id), str(chunk_id))
@@ -248,6 +296,8 @@ def _remap_evidence_source_id(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+    extraction_artifact_id_map: dict[str, str],
 ) -> str:
     return remap_endpoint_id(
         source_type=source_type,
@@ -259,6 +309,8 @@ def _remap_evidence_source_id(
         capture_id_map=capture_id_map,
         asset_id_map=asset_id_map,
         anchor_id_map=anchor_id_map,
+        extraction_job_id_map=extraction_job_id_map,
+        extraction_artifact_id_map=extraction_artifact_id_map,
     )
 
 
@@ -273,6 +325,8 @@ def remap_endpoint_id(
     capture_id_map: dict[str, str],
     asset_id_map: dict[str, str],
     anchor_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str] | None = None,
+    extraction_artifact_id_map: dict[str, str] | None = None,
 ) -> str:
     if source_type == "fact":
         return fact_id_map.get(source_id, source_id)
@@ -288,4 +342,68 @@ def remap_endpoint_id(
         return asset_id_map.get(source_id, source_id)
     if source_type == "anchor":
         return anchor_id_map.get(source_id, source_id)
+    if source_type == "asset_extraction":
+        return (extraction_job_id_map or {}).get(source_id, source_id)
+    if source_type == "extraction_artifact":
+        return (extraction_artifact_id_map or {}).get(source_id, source_id)
     return source_id
+
+
+def _remap_source_external_id(
+    *,
+    source_type: str,
+    source_external_id: str,
+    extraction_job_id_map: dict[str, str],
+) -> str:
+    if source_type != "asset_extraction" or not source_external_id:
+        return source_external_id
+    return extraction_job_id_map.get(source_external_id, source_external_id)
+
+
+def _remap_chunk_metadata(
+    value: object,
+    *,
+    asset_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    metadata = dict(value)
+    asset_id = metadata.get("asset_id")
+    if asset_id is not None:
+        metadata["asset_id"] = asset_id_map.get(str(asset_id), str(asset_id))
+    extraction_job_id = metadata.get("extraction_job_id")
+    if extraction_job_id is not None:
+        metadata["extraction_job_id"] = extraction_job_id_map.get(
+            str(extraction_job_id),
+            str(extraction_job_id),
+        )
+    refs = metadata.get("source_refs")
+    if isinstance(refs, list):
+        metadata["source_refs"] = [
+            _remap_chunk_source_ref(
+                ref,
+                asset_id_map=asset_id_map,
+                extraction_job_id_map=extraction_job_id_map,
+            )
+            for ref in refs
+            if isinstance(ref, dict)
+        ]
+    return metadata
+
+
+def _remap_chunk_source_ref(
+    ref: dict[str, object],
+    *,
+    asset_id_map: dict[str, str],
+    extraction_job_id_map: dict[str, str],
+) -> dict[str, object]:
+    next_ref = dict(ref)
+    source_type = str(next_ref.get("source_type") or "")
+    source_id = next_ref.get("source_id")
+    if source_type == "asset_extraction" and source_id is not None:
+        next_ref["source_id"] = extraction_job_id_map.get(str(source_id), str(source_id))
+    asset_id = next_ref.get("asset_id")
+    if asset_id is not None:
+        next_ref["asset_id"] = asset_id_map.get(str(asset_id), str(asset_id))
+    return next_ref

@@ -1,9 +1,11 @@
+import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 from memo_stack_core.memory_scope_snapshots import verify_snapshot_manifest_payload
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
+from memo_stack_server.worker import OutboxWorker
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -17,6 +19,7 @@ def make_client(tmp_path: Path) -> TestClient:
             graphiti_enabled=False,
             embeddings_enabled=False,
             capture_mode=CaptureMode.SUGGEST,
+            asset_storage_dir=str(tmp_path / "assets"),
         )
     )
     return TestClient(app)
@@ -99,9 +102,21 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
                 "memory_scope_external_ref": "source-memory_scope",
                 "thread_external_ref": "snapshot-thread",
                 "filename": "snapshot-evidence.txt",
+                "extract": "true",
             },
             content=b"snapshot asset bytes",
             headers={**auth_headers(), "Content-Type": "text/plain"},
+        )
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=20))
+        extraction_id = asset.json()["data"]["extraction"]["id"]
+        extraction = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        markdown_artifact = next(
+            item
+            for item in extraction.json()["data"]["artifacts"]
+            if item["artifact_type"] == "markdown"
         )
         capture = client.post(
             "/v1/captures",
@@ -238,6 +253,19 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
             f"/v1/assets/{restored_browser_data['assets'][0]['id']}/download",
             headers=auth_headers(),
         )
+        restored_extraction = client.get(
+            f"/v1/asset-extractions/{restored_browser_data['extraction_jobs'][0]['id']}",
+            headers=auth_headers(),
+        )
+        restored_markdown_artifact = next(
+            item
+            for item in restored_extraction.json()["data"]["artifacts"]
+            if item["artifact_type"] == "markdown"
+        )
+        restored_artifact_download = client.get(
+            f"/v1/extraction-artifacts/{restored_markdown_artifact['id']}/download",
+            headers=auth_headers(),
+        )
 
     assert created.status_code == 201
     assert target.status_code == 201
@@ -245,25 +273,36 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert episode.status_code == 200
     assert anchor.status_code == 200
     assert asset.status_code == 201
+    assert processed >= 1
+    assert extraction.status_code == 200
+    assert extraction.json()["data"]["status"] == "succeeded"
     assert capture.status_code == 201
     assert context_link.status_code == 200
     assert asset_context_link.status_code == 200
     assert exported.status_code == 200
     assert exported.json()["counts"]["facts"] == 2
     assert exported.json()["counts"]["episodes"] == 1
-    assert exported.json()["counts"]["chunks"] == 1
+    assert exported.json()["counts"]["documents"] == 1
+    assert exported.json()["counts"]["chunks"] == 2
     assert exported.json()["counts"]["assets"] == 1
     assert exported.json()["counts"]["asset_blobs"] == 1
+    assert exported.json()["counts"]["asset_extraction_jobs"] == 1
+    assert exported.json()["counts"]["extraction_artifacts"] == 2
+    assert exported.json()["counts"]["extraction_artifact_blobs"] == 2
     assert exported.json()["counts"]["captures"] == 1
     assert exported.json()["counts"]["anchors"] == 1
     assert exported.json()["counts"]["context_links"] == 2
     assert exported.json()["counts"]["relations"] == 1
-    assert snapshot["schema_version"] == 6
+    assert snapshot["schema_version"] == 7
     assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
     assert manifest["counts"]["episodes"] == 1
-    assert manifest["counts"]["chunks"] == 1
+    assert manifest["counts"]["documents"] == 1
+    assert manifest["counts"]["chunks"] == 2
     assert manifest["counts"]["assets"] == 1
     assert manifest["counts"]["asset_blobs"] == 1
+    assert manifest["counts"]["asset_extraction_jobs"] == 1
+    assert manifest["counts"]["extraction_artifacts"] == 2
+    assert manifest["counts"]["extraction_artifact_blobs"] == 2
     assert manifest["counts"]["captures"] == 1
     assert manifest["counts"]["anchors"] == 1
     assert manifest["counts"]["context_links"] == 2
@@ -283,9 +322,18 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
         snapshot["captures"][0]["text_redacted"]
         == "SNAPSHOT_CAPTURE_MARKER: quick capture survives snapshots."
     )
-    assert snapshot["chunks"][0]["episode_id"] == snapshot["episodes"][0]["id"]
+    assert {chunk["source_type"] for chunk in snapshot["chunks"]} == {
+        "asset_extraction",
+        "system_audio",
+    }
+    assert any(chunk["episode_id"] == snapshot["episodes"][0]["id"] for chunk in snapshot["chunks"])
     assert snapshot["assets"][0]["filename"] == "snapshot-evidence.txt"
     assert snapshot["asset_blobs"][0]["asset_id"] == snapshot["assets"][0]["id"]
+    assert snapshot["asset_extraction_jobs"][0]["id"] == extraction_id
+    assert snapshot["asset_extraction_jobs"][0]["asset_id"] == snapshot["assets"][0]["id"]
+    assert {
+        item["artifact_id"] for item in snapshot["extraction_artifact_blobs"]
+    } == {item["id"] for item in snapshot["extraction_artifacts"]}
     assert snapshot["anchors"][0]["label"] == "Alex Snapshot"
     assert {item["target_type"] for item in snapshot["context_links"]} == {"anchor", "asset"}
     assert snapshot["relations"][0]["relation_type"] == "supports"
@@ -294,8 +342,11 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert dry_run.json()["data"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["would_import"]["episodes"] == 1
-    assert dry_run.json()["data"]["would_import"]["chunks"] == 1
+    assert dry_run.json()["data"]["would_import"]["documents"] == 1
+    assert dry_run.json()["data"]["would_import"]["chunks"] == 2
     assert dry_run.json()["data"]["would_import"]["assets"] == 1
+    assert dry_run.json()["data"]["would_import"]["asset_extraction_jobs"] == 1
+    assert dry_run.json()["data"]["would_import"]["extraction_artifacts"] == 2
     assert dry_run.json()["data"]["would_import"]["captures"] == 1
     assert dry_run.json()["data"]["would_import"]["anchors"] == 1
     assert dry_run.json()["data"]["would_import"]["context_links"] == 2
@@ -303,8 +354,11 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert dry_run.json()["data"]["preview"]["would_create_memory_scope"] is True
     assert dry_run.json()["data"]["preview"]["would_import"]["facts"] == 2
     assert dry_run.json()["data"]["preview"]["would_import"]["episodes"] == 1
-    assert dry_run.json()["data"]["preview"]["would_import"]["chunks"] == 1
+    assert dry_run.json()["data"]["preview"]["would_import"]["documents"] == 1
+    assert dry_run.json()["data"]["preview"]["would_import"]["chunks"] == 2
     assert dry_run.json()["data"]["preview"]["would_import"]["assets"] == 1
+    assert dry_run.json()["data"]["preview"]["would_import"]["asset_extraction_jobs"] == 1
+    assert dry_run.json()["data"]["preview"]["would_import"]["extraction_artifacts"] == 2
     assert dry_run.json()["data"]["preview"]["would_import"]["captures"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["anchors"] == 1
     assert dry_run.json()["data"]["preview"]["would_import"]["context_links"] == 2
@@ -313,8 +367,11 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert imported.status_code == 200
     assert imported.json()["data"]["merge_strategy"] == "create_new_memory_scope"
     assert imported.json()["data"]["imported"]["episodes"] == 1
-    assert imported.json()["data"]["imported"]["chunks"] == 1
+    assert imported.json()["data"]["imported"]["documents"] == 1
+    assert imported.json()["data"]["imported"]["chunks"] == 2
     assert imported.json()["data"]["imported"]["assets"] == 1
+    assert imported.json()["data"]["imported"]["asset_extraction_jobs"] == 1
+    assert imported.json()["data"]["imported"]["extraction_artifacts"] == 2
     assert imported.json()["data"]["imported"]["captures"] == 1
     assert imported.json()["data"]["imported"]["anchors"] == 1
     assert imported.json()["data"]["imported"]["context_links"] == 2
@@ -325,8 +382,10 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_browser.status_code == 200
     browser_data = restored_browser_data
     assert len(browser_data["episodes"]) == 1
-    assert len(browser_data["chunks"]) == 1
+    assert len(browser_data["documents"]) == 1
+    assert len(browser_data["chunks"]) == 2
     assert len(browser_data["assets"]) == 1
+    assert len(browser_data["extraction_jobs"]) == 1
     assert len(browser_data["captures"]) == 1
     assert len(browser_data["anchors"]) == 1
     assert len(browser_data["context_links"]) == 2
@@ -334,9 +393,16 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
         browser_data["episodes"][0]["text"]
         == "SNAPSHOT_EPISODE_MARKER: transcript survives memory_scope snapshots."
     )
-    assert browser_data["chunks"][0]["episode_id"] == browser_data["episodes"][0]["id"]
+    restored_extraction_chunk = next(
+        item for item in browser_data["chunks"] if item["source_type"] == "asset_extraction"
+    )
+    restored_episode_chunk = next(
+        item for item in browser_data["chunks"] if item["source_type"] == "system_audio"
+    )
+    assert restored_episode_chunk["episode_id"] == browser_data["episodes"][0]["id"]
     restored_capture = browser_data["captures"][0]
     restored_asset = browser_data["assets"][0]
+    restored_extraction_job = browser_data["extraction_jobs"][0]
     restored_anchor = browser_data["anchors"][0]
     restored_context_link = next(
         item for item in browser_data["context_links"] if item["target_type"] == "anchor"
@@ -346,6 +412,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     )
     assert restored_capture["id"] != capture.json()["data"]["id"]
     assert restored_asset["id"] != asset.json()["data"]["id"]
+    assert restored_extraction_job["id"] != extraction_id
     assert restored_anchor["id"] != anchor.json()["data"]["id"]
     assert restored_context_link["id"] != context_link.json()["data"]["id"]
     assert restored_asset_context_link["id"] != asset_context_link.json()["data"]["id"]
@@ -356,12 +423,28 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert restored_capture["evidence_refs"][1]["source_id"] == browser_data["episodes"][0]["id"]
     assert restored_capture["evidence_refs"][2]["source_id"] == restored_anchor["id"]
     assert restored_capture["evidence_refs"][3]["source_id"] == restored_asset["id"]
+    assert restored_extraction_job["asset_id"] == restored_asset["id"]
+    assert restored_extraction_job["result_document_ids"] == [browser_data["documents"][0]["id"]]
+    assert restored_extraction_chunk["source_external_id"] == restored_extraction_job["id"]
+    assert restored_extraction_chunk["metadata"]["asset_id"] == restored_asset["id"]
+    assert (
+        restored_extraction_chunk["metadata"]["extraction_job_id"]
+        == restored_extraction_job["id"]
+    )
+    assert restored_extraction_chunk["source_refs"][0]["source_id"] == restored_extraction_job["id"]
+    assert restored_extraction_chunk["source_refs"][0]["asset_id"] == restored_asset["id"]
     assert restored_context_link["source_id"] == restored_capture["id"]
     assert restored_context_link["target_id"] == restored_anchor["id"]
     assert restored_asset_context_link["source_id"] == restored_capture["id"]
     assert restored_asset_context_link["target_id"] == restored_asset["id"]
     assert restored_asset_download.status_code == 200
     assert restored_asset_download.content == b"snapshot asset bytes"
+    assert restored_extraction.status_code == 200
+    assert restored_markdown_artifact["id"] != markdown_artifact["id"]
+    assert restored_markdown_artifact["asset_id"] == restored_asset["id"]
+    assert restored_markdown_artifact["job_id"] == restored_extraction_job["id"]
+    assert restored_artifact_download.status_code == 200
+    assert restored_artifact_download.content == b"snapshot asset bytes"
     restored_relation = restored_relations.json()["data"]["items"][0]
     assert restored_relation["relation"]["relation_type"] == "supports"
     assert restored_relation["relation"]["source_fact_id"] == restored_source["id"]
