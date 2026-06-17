@@ -43,6 +43,12 @@ SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"Authorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{12,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{12,}\b"),
+    re.compile(
+        r"(?i)\b(api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*['\"]?"
+        r"[A-Za-z0-9_./+=-]{8,}"
+    ),
 )
 
 

@@ -80,6 +80,29 @@ def test_agent_install_verifier_redacts_secret_values(monkeypatch) -> None:
     assert "<redacted>" in rendered
 
 
+def test_agent_install_verifier_redacts_provider_tokens_without_env() -> None:
+    module = _load_script()
+
+    rendered = json.dumps(
+        module.redact_payload(
+            {
+                "stdout": (
+                    "ghp_abcdefghijklmnopqrstuvwxyz "
+                    "AKIAIOSFODNN7EXAMPLE "
+                    "token=plain-provider-token-value "
+                    "password=hunter2-secret-value"
+                ),
+            }
+        )
+    )
+
+    assert "ghp_abcdefghijklmnopqrstuvwxyz" not in rendered
+    assert "AKIAIOSFODNN7EXAMPLE" not in rendered
+    assert "plain-provider-token-value" not in rendered
+    assert "hunter2-secret-value" not in rendered
+    assert "<redacted>" in rendered
+
+
 def test_agent_install_verifier_accepts_gemini_json_on_stderr(monkeypatch) -> None:
     module = _load_script()
 
