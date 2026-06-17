@@ -74,6 +74,65 @@ void main() {
         'rejected by user from review queue',
       );
     });
+
+    test('drives memory anchor lifecycle for live e2e checks', () async {
+      var result = await handler.createMemoryAnchor({
+        'memoryScopeExternalRef': 'project-atlas',
+        'memoryScopeName': 'Project Atlas',
+        'kind': 'person',
+        'label': 'Alex Key',
+        'aliases': 'Alex, AK',
+        'description': 'Launch stakeholder',
+      });
+
+      expect(result['memoryBrowserAnchorCount'], 1);
+      expect(result['pendingAnchorMergeSuggestionCount'], 0);
+      final created = result['anchor'] as Map<String, dynamic>;
+      expect(created['label'], 'Alex Key');
+      expect(created['aliases'], ['Alex', 'AK']);
+
+      result = await handler.updateMemoryAnchor({
+        'anchorId': created['id'] as String,
+        'label': 'Alex Key',
+        'aliases': 'Alex, Sasha, AK',
+        'description': 'Launch and memory stakeholder',
+      });
+
+      final updated = result['anchor'] as Map<String, dynamic>;
+      expect(updated['description'], 'Launch and memory stakeholder');
+      expect(updated['aliases'], ['Alex', 'Sasha', 'AK']);
+
+      result = await handler.splitMemoryAnchorAlias({
+        'anchorId': created['id'] as String,
+        'alias': 'AK',
+        'newLabel': 'Alex Krasnov',
+      });
+
+      expect(result['memoryBrowserAnchorCount'], 2);
+      final split = result['splitAnchor'] as Map<String, dynamic>;
+      expect(split['label'], 'Alex Krasnov');
+
+      repo.anchorMergeSuggestions = [
+        _mergeSuggestion(
+          repo.anchors.firstWhere((anchor) => anchor.id == split['id']),
+          repo.anchors.firstWhere((anchor) => anchor.id == created['id']),
+        ),
+      ];
+
+      result = await handler.mergeFirstAnchorSuggestion({});
+
+      expect(result['merged'], true);
+      expect(result['memoryBrowserAnchorCount'], 1);
+      expect(result['pendingAnchorMergeSuggestionCount'], 0);
+
+      result = await handler.deleteMemoryAnchor({
+        'label': 'Alex Key',
+        'reason': 'cleanup after e2e',
+      });
+
+      expect(result['deletedAnchorLabel'], 'Alex Key');
+      expect(result['memoryBrowserAnchorCount'], 0);
+    });
   });
 }
 
@@ -87,13 +146,16 @@ class _FakeChatRepository implements ChatRepository {
     'default': _scope('scope-default', 'default', 'Default'),
   };
   final List<MemoryCapture> captures = <MemoryCapture>[];
+  final List<MemoryBrowserAnchor> anchors = <MemoryBrowserAnchor>[];
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
+  List<MemoryAnchorMergeSuggestion> anchorMergeSuggestions = const [];
   final List<String> reviewedSuggestions = <String>[];
   final Map<String, String?> reviewedSuggestionReasons = <String, String?>{};
   String activeMemoryScopeExternalRef = 'default';
   String? activeChatId;
   String? lastTask;
   int _captureSeq = 0;
+  int _anchorSeq = 0;
 
   Future<void> close() async {
     await _messages.close();
@@ -290,7 +352,22 @@ class _FakeChatRepository implements ChatRepository {
 
   @override
   Future<MemoryBrowserSnapshot> getMemoryBrowser({int limit = 50}) async {
-    return MemoryBrowserSnapshot.empty();
+    return MemoryBrowserSnapshot(
+      generatedAt: DateTime.now(),
+      memoryScope: scopesByRef[activeMemoryScopeExternalRef],
+      threads: const <MemoryBrowserThread>[],
+      captures: captures.take(limit).toList(growable: false),
+      assets: const <MemoryBrowserAsset>[],
+      anchors: anchors.take(limit).toList(growable: false),
+      contextLinks: const <MemoryContextLink>[],
+      contextLinkSuggestions:
+          contextLinkSuggestions.take(limit).toList(growable: false),
+      stats: {
+        'captures': captures.length,
+        'anchors': anchors.length,
+      },
+      diagnostics: const <String, dynamic>{},
+    );
   }
 
   @override
@@ -300,20 +377,18 @@ class _FakeChatRepository implements ChatRepository {
     List<String> aliases = const <String>[],
     String? description,
   }) async {
-    return MemoryBrowserAnchor.fromMap({
-      'id': 'anchor-fake',
-      'space_id': 'space-1',
-      'memory_scope_id': 'scope-1',
-      'kind': kind,
-      'normalized_key': label.toLowerCase(),
-      'label': label,
-      'aliases': aliases,
-      'description': description,
-      'status': 'active',
-      'metadata': <String, dynamic>{},
-      'created_at': '2026-06-14T10:00:00Z',
-      'updated_at': '2026-06-14T10:00:00Z',
-    });
+    final scope =
+        scopesByRef[activeMemoryScopeExternalRef] ?? scopesByRef.values.first;
+    final anchor = _browserAnchor(
+      id: 'anchor-${++_anchorSeq}',
+      memoryScopeId: scope.id,
+      kind: kind,
+      label: label,
+      aliases: aliases,
+      description: description,
+    );
+    anchors.add(anchor);
+    return anchor;
   }
 
   @override
@@ -323,33 +398,45 @@ class _FakeChatRepository implements ChatRepository {
     List<String> aliases = const <String>[],
     String? description,
   }) async {
-    return MemoryBrowserAnchor.fromMap({
-      'id': anchorId,
-      'space_id': 'space-1',
-      'memory_scope_id': 'scope-1',
-      'kind': 'person',
-      'normalized_key': label.toLowerCase(),
-      'label': label,
-      'aliases': aliases,
-      'description': description,
-      'status': 'active',
-      'metadata': <String, dynamic>{},
-      'created_at': '2026-06-14T10:00:00Z',
-      'updated_at': '2026-06-14T10:05:00Z',
-    });
+    final index = anchors.indexWhere((anchor) => anchor.id == anchorId);
+    if (index == -1) {
+      throw StateError('Anchor not found: $anchorId');
+    }
+    final current = anchors[index];
+    final updated = _browserAnchor(
+      id: current.id,
+      memoryScopeId: current.memoryScopeId,
+      kind: current.kind,
+      label: label,
+      aliases: aliases,
+      description: description,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    anchors[index] = updated;
+    return updated;
   }
 
   @override
   Future<void> deleteMemoryAnchor({
     required String anchorId,
     String reason = 'manual delete',
-  }) async {}
+  }) async {
+    anchors.removeWhere((anchor) => anchor.id == anchorId);
+    anchorMergeSuggestions = anchorMergeSuggestions
+        .where(
+          (suggestion) =>
+              suggestion.sourceAnchor.id != anchorId &&
+              suggestion.targetAnchor.id != anchorId,
+        )
+        .toList(growable: false);
+  }
 
   @override
   Future<List<MemoryAnchorMergeSuggestion>> listMemoryAnchorMergeSuggestions({
     int limit = 50,
   }) async {
-    return const <MemoryAnchorMergeSuggestion>[];
+    return anchorMergeSuggestions.take(limit).toList(growable: false);
   }
 
   @override
@@ -358,20 +445,40 @@ class _FakeChatRepository implements ChatRepository {
     required String targetAnchorId,
     required String reason,
   }) async {
-    return MemoryBrowserAnchor.fromMap({
-      'id': targetAnchorId,
-      'space_id': 'space-1',
-      'memory_scope_id': 'scope-1',
-      'kind': 'person',
-      'normalized_key': targetAnchorId,
-      'label': targetAnchorId,
-      'aliases': const <String>[],
-      'description': null,
-      'status': 'active',
-      'metadata': <String, dynamic>{},
-      'created_at': '2026-06-14T10:00:00Z',
-      'updated_at': '2026-06-14T10:05:00Z',
-    });
+    final sourceIndex =
+        anchors.indexWhere((anchor) => anchor.id == sourceAnchorId);
+    final targetIndex =
+        anchors.indexWhere((anchor) => anchor.id == targetAnchorId);
+    if (sourceIndex == -1 || targetIndex == -1) {
+      throw StateError('Merge anchors not found');
+    }
+    final source = anchors[sourceIndex];
+    final target = anchors[targetIndex];
+    final mergedAliases = <String>{
+      ...target.aliases,
+      source.label,
+      ...source.aliases,
+    }.where((item) => item != target.label).toList(growable: false);
+    final merged = _browserAnchor(
+      id: target.id,
+      memoryScopeId: target.memoryScopeId,
+      kind: target.kind,
+      label: target.label,
+      aliases: mergedAliases,
+      description: target.description,
+      createdAt: target.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    anchors[targetIndex] = merged;
+    anchors.removeWhere((anchor) => anchor.id == sourceAnchorId);
+    anchorMergeSuggestions = anchorMergeSuggestions
+        .where(
+          (suggestion) =>
+              suggestion.sourceAnchor.id != sourceAnchorId &&
+              suggestion.targetAnchor.id != sourceAnchorId,
+        )
+        .toList(growable: false);
+    return merged;
   }
 
   @override
@@ -381,20 +488,32 @@ class _FakeChatRepository implements ChatRepository {
     String? newLabel,
     String reason = 'manual split',
   }) async {
-    return MemoryBrowserAnchor.fromMap({
-      'id': 'anchor-split',
-      'space_id': 'space-1',
-      'memory_scope_id': 'scope-1',
-      'kind': 'person',
-      'normalized_key': (newLabel ?? alias).toLowerCase(),
-      'label': newLabel ?? alias,
-      'aliases': const <String>[],
-      'description': null,
-      'status': 'active',
-      'metadata': <String, dynamic>{},
-      'created_at': '2026-06-14T10:00:00Z',
-      'updated_at': '2026-06-14T10:05:00Z',
-    });
+    final index = anchors.indexWhere((anchor) => anchor.id == anchorId);
+    if (index == -1) {
+      throw StateError('Anchor not found: $anchorId');
+    }
+    final source = anchors[index];
+    final updatedSource = _browserAnchor(
+      id: source.id,
+      memoryScopeId: source.memoryScopeId,
+      kind: source.kind,
+      label: source.label,
+      aliases: source.aliases.where((item) => item != alias).toList(),
+      description: source.description,
+      createdAt: source.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    final split = _browserAnchor(
+      id: 'anchor-${++_anchorSeq}',
+      memoryScopeId: source.memoryScopeId,
+      kind: source.kind,
+      label: newLabel ?? alias,
+      aliases: const <String>[],
+      description: null,
+    );
+    anchors[index] = updatedSource;
+    anchors.add(split);
+    return split;
   }
 
   @override
@@ -535,5 +654,49 @@ MemoryContextLinkSuggestion _suggestion(String id, {required String sourceId}) {
     },
     createdAt: now,
     updatedAt: now,
+  );
+}
+
+MemoryBrowserAnchor _browserAnchor({
+  required String id,
+  required String memoryScopeId,
+  required String kind,
+  required String label,
+  List<String> aliases = const <String>[],
+  String? description,
+  DateTime? createdAt,
+  DateTime? updatedAt,
+}) {
+  final now = DateTime.now();
+  return MemoryBrowserAnchor(
+    id: id,
+    spaceId: 'space-1',
+    memoryScopeId: memoryScopeId,
+    kind: kind,
+    normalizedKey: label.trim().toLowerCase(),
+    label: label,
+    aliases: aliases,
+    description: description,
+    status: 'active',
+    metadata: const <String, dynamic>{},
+    createdAt: createdAt ?? now,
+    updatedAt: updatedAt ?? now,
+  );
+}
+
+MemoryAnchorMergeSuggestion _mergeSuggestion(
+  MemoryBrowserAnchor source,
+  MemoryBrowserAnchor target,
+) {
+  return MemoryAnchorMergeSuggestion(
+    sourceAnchor: source,
+    targetAnchor: target,
+    confidence: 'high',
+    score: 0.92,
+    reasons: const <String>[
+      'same person alias',
+      'recently split from the same source',
+    ],
+    metadata: const <String, dynamic>{},
   );
 }

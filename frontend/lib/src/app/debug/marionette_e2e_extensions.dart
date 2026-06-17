@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_session.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
@@ -85,6 +86,30 @@ class _MemoStackMarionetteE2eBridgeState
     _register(
       'memoStack.reviewFirstPendingLinkSuggestion',
       (handler, params) => handler.reviewFirstPendingLinkSuggestion(params),
+    );
+    _register(
+      'memoStack.createMemoryAnchor',
+      (handler, params) => handler.createMemoryAnchor(params),
+    );
+    _register(
+      'memoStack.updateMemoryAnchor',
+      (handler, params) => handler.updateMemoryAnchor(params),
+    );
+    _register(
+      'memoStack.deleteMemoryAnchor',
+      (handler, params) => handler.deleteMemoryAnchor(params),
+    );
+    _register(
+      'memoStack.splitMemoryAnchorAlias',
+      (handler, params) => handler.splitMemoryAnchorAlias(params),
+    );
+    _register(
+      'memoStack.mergeFirstAnchorSuggestion',
+      (handler, params) => handler.mergeFirstAnchorSuggestion(params),
+    );
+    _register(
+      'memoStack.backfillMemoryAnchors',
+      (handler, params) => handler.backfillMemoryAnchors(params),
     );
   }
 
@@ -236,6 +261,161 @@ class MemoStackMarionetteE2eCommandHandler {
     };
   }
 
+  Future<Map<String, dynamic>> createMemoryAnchor(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final scopeRef = _optional(params, 'memoryScopeExternalRef');
+    if (scopeRef != null) {
+      await _ensureMemoryScope(
+        store,
+        externalRef: scopeRef,
+        name: params['memoryScopeName'],
+      );
+    }
+    final label = _required(params, 'label');
+    final ok = await store.createMemoryAnchor(
+      kind: _optional(params, 'kind') ?? 'person',
+      label: label,
+      aliases: _listParam(params, 'aliases'),
+      description: _optional(params, 'description'),
+    );
+    _throwIfFailed(
+        ok, store.memoryBrowserError.value, 'Anchor was not created');
+    await _refreshEvidence(store);
+    final anchor = await _findAnchor(store, label: label);
+    return {
+      ..._state(store),
+      'anchor': _anchorToMap(anchor),
+    };
+  }
+
+  Future<Map<String, dynamic>> updateMemoryAnchor(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final anchor = await _findAnchor(
+      store,
+      anchorId: _optional(params, 'anchorId'),
+      label: _optional(params, 'currentLabel'),
+    );
+    final label = _required(params, 'label');
+    final ok = await store.updateMemoryAnchor(
+      anchor,
+      label: label,
+      aliases: _listParam(params, 'aliases'),
+      description: _optional(params, 'description'),
+    );
+    _throwIfFailed(
+        ok, store.memoryBrowserError.value, 'Anchor was not updated');
+    await _refreshEvidence(store);
+    final updated = await _findAnchor(store, anchorId: anchor.id, label: label);
+    return {
+      ..._state(store),
+      'anchor': _anchorToMap(updated),
+    };
+  }
+
+  Future<Map<String, dynamic>> deleteMemoryAnchor(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final anchor = await _findAnchor(
+      store,
+      anchorId: _optional(params, 'anchorId'),
+      label: _optional(params, 'label'),
+    );
+    final ok = await store.deleteMemoryAnchor(
+      anchor,
+      reason: _optional(params, 'reason') ?? 'deleted by marionette e2e',
+    );
+    _throwIfFailed(
+        ok, store.memoryBrowserError.value, 'Anchor was not deleted');
+    await _refreshEvidence(store);
+    return {
+      ..._state(store),
+      'deletedAnchorId': anchor.id,
+      'deletedAnchorLabel': anchor.label,
+    };
+  }
+
+  Future<Map<String, dynamic>> splitMemoryAnchorAlias(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final anchor = await _findAnchor(
+      store,
+      anchorId: _optional(params, 'anchorId'),
+      label: _optional(params, 'label'),
+    );
+    final alias = _required(params, 'alias');
+    final ok = await store.splitMemoryAnchorAlias(
+      anchor,
+      alias: alias,
+      newLabel: _optional(params, 'newLabel'),
+      reason: _optional(params, 'reason') ?? 'split by marionette e2e',
+    );
+    _throwIfFailed(ok, store.memoryBrowserError.value, 'Anchor was not split');
+    await _refreshEvidence(store);
+    final split = await _findAnchor(
+      store,
+      label: _optional(params, 'newLabel') ?? alias,
+    );
+    return {
+      ..._state(store),
+      'sourceAnchorId': anchor.id,
+      'splitAnchor': _anchorToMap(split),
+    };
+  }
+
+  Future<Map<String, dynamic>> mergeFirstAnchorSuggestion(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    await store.refreshMemoryBrowser(showLoading: false);
+    final sourceAnchorId = _optional(params, 'sourceAnchorId');
+    final targetAnchorId = _optional(params, 'targetAnchorId');
+    final suggestions = store.anchorMergeSuggestions.where((item) {
+      final sourceMatches =
+          sourceAnchorId == null || item.sourceAnchor.id == sourceAnchorId;
+      final targetMatches =
+          targetAnchorId == null || item.targetAnchor.id == targetAnchorId;
+      return sourceMatches && targetMatches;
+    }).toList(growable: false);
+    if (suggestions.isEmpty) {
+      return {
+        ..._state(store),
+        'merged': false,
+      };
+    }
+    final suggestion = suggestions.first;
+    final ok = await store.mergeMemoryAnchorSuggestion(suggestion);
+    _throwIfFailed(ok, store.memoryBrowserError.value, 'Anchor was not merged');
+    await _refreshEvidence(store);
+    return {
+      ..._state(store),
+      'merged': true,
+      'mergedSourceAnchorId': suggestion.sourceAnchor.id,
+      'mergedTargetAnchorId': suggestion.targetAnchor.id,
+    };
+  }
+
+  Future<Map<String, dynamic>> backfillMemoryAnchors(
+    Map<String, String> params,
+  ) async {
+    final store = _store();
+    final ok = await store.backfillMemoryAnchors(
+      limitPerSource: _intParam(params, 'limitPerSource', fallback: 100),
+    );
+    _throwIfFailed(
+      ok,
+      store.memoryBrowserError.value,
+      'Anchor backfill failed',
+    );
+    await _refreshEvidence(store);
+    return _state(store);
+  }
+
   Future<MemoryScope> _ensureMemoryScope(
     ChatStore store, {
     required String externalRef,
@@ -275,6 +455,7 @@ class MemoStackMarionetteE2eCommandHandler {
         store.memoryCaptures.isEmpty ? null : store.memoryCaptures.first;
     final pendingLinkSuggestionCount =
         store.contextLinkSuggestions.where((item) => item.isPending).length;
+    final browser = store.memoryBrowser.value;
     return {
       'activeChatId': store.activeChatId,
       'activeMemoryScopeExternalRef': store.activeMemoryScopeExternalRef,
@@ -287,6 +468,10 @@ class MemoStackMarionetteE2eCommandHandler {
       'assetExtractionCount': store.assetExtractions.length,
       'pendingLinkSuggestionCount': pendingLinkSuggestionCount,
       'operationsPendingLinkSuggestionCount': pendingLinkSuggestionCount,
+      'memoryBrowserAnchorCount': browser?.anchors.length ?? 0,
+      'memoryBrowserContextLinkCount': browser?.contextLinks.length ?? 0,
+      'memoryBrowserCaptureCount': browser?.captures.length ?? 0,
+      'pendingAnchorMergeSuggestionCount': store.anchorMergeSuggestions.length,
       'lastMessage': lastMessage == null ? null : _messageToMap(lastMessage),
       'latestCapture':
           latestCapture == null ? null : _captureToMap(latestCapture),
@@ -308,7 +493,33 @@ class MemoStackMarionetteE2eCommandHandler {
           .where((item) => item.isPending)
           .map(_suggestionToMap)
           .toList(growable: false),
+      'memoryBrowserAnchors':
+          browser?.anchors.map(_anchorToMap).toList(growable: false) ??
+              const <Map<String, dynamic>>[],
+      'pendingAnchorMergeSuggestions': store.anchorMergeSuggestions
+          .map(_anchorMergeSuggestionToMap)
+          .toList(growable: false),
     };
+  }
+
+  Future<MemoryBrowserAnchor> _findAnchor(
+    ChatStore store, {
+    String? anchorId,
+    String? label,
+  }) async {
+    await store.refreshMemoryBrowser(showLoading: false);
+    final anchors = store.memoryBrowser.value?.anchors ?? const [];
+    final normalizedLabel = label?.trim().toLowerCase();
+    for (final anchor in anchors) {
+      final idMatches = anchorId != null && anchor.id == anchorId;
+      final labelMatches = normalizedLabel != null &&
+          anchor.label.trim().toLowerCase() == normalizedLabel;
+      if (idMatches || labelMatches) {
+        return anchor;
+      }
+    }
+    final selector = anchorId ?? label ?? '<missing selector>';
+    throw StateError('Memory anchor not found: $selector');
   }
 }
 
@@ -393,6 +604,33 @@ Map<String, dynamic> _suggestionToMap(MemoryContextLinkSuggestion suggestion) {
   };
 }
 
+Map<String, dynamic> _anchorToMap(MemoryBrowserAnchor anchor) {
+  return {
+    'id': anchor.id,
+    'spaceId': anchor.spaceId,
+    'memoryScopeId': anchor.memoryScopeId,
+    'kind': anchor.kind,
+    'normalizedKey': anchor.normalizedKey,
+    'label': anchor.label,
+    'aliases': anchor.aliases,
+    'description': anchor.description,
+    'status': anchor.status,
+  };
+}
+
+Map<String, dynamic> _anchorMergeSuggestionToMap(
+  MemoryAnchorMergeSuggestion suggestion,
+) {
+  return {
+    'id': suggestion.id,
+    'sourceAnchor': _anchorToMap(suggestion.sourceAnchor),
+    'targetAnchor': _anchorToMap(suggestion.targetAnchor),
+    'confidence': suggestion.confidence,
+    'score': suggestion.score,
+    'reasons': suggestion.reasons,
+  };
+}
+
 String _required(Map<String, String> params, String key) {
   final value = _optional(params, key);
   if (value == null) {
@@ -409,6 +647,48 @@ String? _optional(Map<String, String> params, String key) {
 String? _optionalName(String? value) {
   final normalized = value?.trim();
   return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+List<String> _listParam(Map<String, String> params, String key) {
+  final value = _optional(params, key);
+  if (value == null) return const <String>[];
+  if (value.startsWith('[')) {
+    final decoded = jsonDecode(value);
+    if (decoded is List) {
+      return decoded
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+    }
+    throw ArgumentError.value(value, key, 'must be a JSON array');
+  }
+  return value
+      .split(',')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
+}
+
+int _intParam(
+  Map<String, String> params,
+  String key, {
+  required int fallback,
+}) {
+  final value = _optional(params, key);
+  if (value == null) return fallback;
+  final parsed = int.tryParse(value);
+  if (parsed == null || parsed <= 0) {
+    throw ArgumentError.value(value, key, 'must be a positive integer');
+  }
+  return parsed;
+}
+
+void _throwIfFailed(bool ok, String? error, String fallback) {
+  if (!ok) {
+    throw StateError(error ?? fallback);
+  }
 }
 
 String _normalizeRef(String value) {
