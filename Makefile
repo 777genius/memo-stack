@@ -225,7 +225,7 @@ memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval
 
 .PHONY: memo-stack-secret-scan
 memo-stack-secret-scan:
-	@! rg -n -P '\bsk-(?!ant-)[A-Za-z0-9_-]{40,}\b' . \
+	@! rg -n -P '\bsk-[A-Za-z0-9_-]{40,}\b' . \
 		-g '!**/__pycache__/**' \
 		-g '!tests/**' \
 		-g '!frontend/test/**' \
