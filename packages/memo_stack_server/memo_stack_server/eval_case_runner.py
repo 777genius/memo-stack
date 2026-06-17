@@ -201,6 +201,9 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
         result for result in case_results if result.case.category == "answer_support"
     )
     document_cases = tuple(result for result in case_results if result.case.category == "documents")
+    hybrid_cases = tuple(
+        result for result in case_results if result.case.category == "hybrid_retrieval"
+    )
     multi_memory_scope_cases = tuple(
         result for result in case_results if result.case.category == "multi_memory_scope"
     )
@@ -240,6 +243,10 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
             sum(1 for result in document_cases if result.recall_ok),
             len(document_cases),
         ),
+        "hybrid_retrieval_rate": _ratio(
+            sum(1 for result in hybrid_cases if not result.failures),
+            len(hybrid_cases),
+        ),
         "multi_memory_scope_recall_at_5": _ratio(
             sum(1 for result in multi_memory_scope_cases if result.recall_ok),
             len(multi_memory_scope_cases),
@@ -262,6 +269,7 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "precision_at_5": float(metrics["precision_at_5"]) >= _QUALITY_GOLDEN_PRECISION_GATE,
         "answer_support_rate": metrics["answer_support_rate"] == 1.0,
         "document_recall_at_5": float(metrics["document_recall_at_5"]) >= 0.95,
+        "hybrid_retrieval_rate": metrics["hybrid_retrieval_rate"] == 1.0,
         "multi_memory_scope_recall_at_5": metrics["multi_memory_scope_recall_at_5"] == 1.0,
         "thread_recall_at_5": metrics["thread_recall_at_5"] == 1.0,
         "stale_memory_rate": metrics["stale_memory_rate"] == 0.0,

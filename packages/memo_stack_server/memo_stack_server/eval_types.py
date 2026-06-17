@@ -23,6 +23,7 @@ class QualitySeedResult:
     beta_memory_scope_id: str
     current_thread_id: str
     other_thread_id: str
+    hybrid_chunk_id: str | None = None
 
 
 @dataclass(frozen=True)

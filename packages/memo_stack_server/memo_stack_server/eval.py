@@ -35,6 +35,7 @@ from memo_stack_server.eval_case_runner import (
     _small_golden_metrics,
 )
 from memo_stack_server.eval_common import (
+    _json_data_list,
     _remember_eval_fact,
     _remember_eval_fact_response,
     _response_data_id,
@@ -73,6 +74,7 @@ from memo_stack_server.eval_fixtures import (
     _seed_updated_fact,
 )
 from memo_stack_server.eval_graph import EvalGraphMemoryAdapter, _install_eval_graph_adapter
+from memo_stack_server.eval_hybrid import install_eval_hybrid_context
 from memo_stack_server.eval_prompt_contract import (
     build_prompt_contract_snapshot,
     run_prompt_snapshots,
@@ -429,6 +431,7 @@ def _execute_small_golden(client, headers: dict[str, str]) -> dict[str, object]:
 
 def _execute_quality_golden(client, headers: dict[str, str]) -> dict[str, object]:
     seeded = _seed_quality_golden(client, headers)
+    install_eval_hybrid_context(client, chunk_id=seeded.hybrid_chunk_id)
     case_results = tuple(
         _run_eval_case(client, headers, case)
         for case in _quality_golden_cases(
@@ -678,6 +681,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             beta_memory_scope_id=beta_memory_scope_id,
             current_thread_id="thread_quality_current",
             other_thread_id="thread_quality_other",
+            hybrid_chunk_id=None,
         )
 
     current_thread_id = "thread_quality_current"
@@ -886,6 +890,44 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             headers=_with_idempotency(headers, "quality-doc-prompt-injection-v1"),
         ).status_code
     )
+    hybrid_document_response = client.post(
+        "/v1/documents",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": alpha_memory_scope_id,
+            "title": "Quality hybrid retrieval target",
+            "text": (
+                "QUALITY_HYBRID_DUAL_SOURCE: hybrid dual source vector keyword "
+                "routing evidence must outrank a single-source decoy."
+            ),
+            "source_type": "document",
+            "source_external_id": "quality-doc-hybrid-target",
+            "classification": "internal",
+        },
+        headers=_with_idempotency(headers, "quality-doc-hybrid-target-v1"),
+    )
+    checks["quality_hybrid_document"] = _status_ok(hybrid_document_response.status_code)
+    hybrid_document_id = _response_data_id(hybrid_document_response)
+    hybrid_chunk_id = _first_document_chunk_id(client, headers, document_id=hybrid_document_id)
+    checks["quality_hybrid_chunk"] = bool(hybrid_chunk_id)
+    checks["quality_hybrid_decoy_document"] = _status_ok(
+        client.post(
+            "/v1/documents",
+            json={
+                "space_id": space_id,
+                "memory_scope_id": alpha_memory_scope_id,
+                "title": "Quality hybrid retrieval decoy",
+                "text": (
+                    "QUALITY_HYBRID_SINGLE_SOURCE_DECOY: hybrid dual source vector "
+                    "keyword routing evidence appears here only through canonical keyword recall."
+                ),
+                "source_type": "document",
+                "source_external_id": "quality-doc-hybrid-decoy",
+                "classification": "internal",
+            },
+            headers=_with_idempotency(headers, "quality-doc-hybrid-decoy-v1"),
+        ).status_code
+    )
     return QualitySeedResult(
         ok=all(checks.values()),
         checks=checks,
@@ -894,7 +936,24 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         beta_memory_scope_id=beta_memory_scope_id,
         current_thread_id=current_thread_id,
         other_thread_id=other_thread_id,
+        hybrid_chunk_id=hybrid_chunk_id,
     )
+
+
+def _first_document_chunk_id(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    document_id: str | None,
+) -> str | None:
+    if not document_id:
+        return None
+    response = client.get(f"/v1/documents/{document_id}/chunks", headers=headers)
+    for item in _json_data_list(response):
+        chunk_id = item.get("id")
+        if chunk_id:
+            return str(chunk_id)
+    return None
 
 
 def _seed_quality_temporal_supersedes(

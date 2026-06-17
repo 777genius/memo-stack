@@ -1140,6 +1140,8 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["precision_at_5"] >= 0.90
     assert result["metrics"]["answer_support_rate"] == 1.0
     assert result["metrics"]["document_recall_at_5"] >= 0.95
+    assert result["metrics"]["hybrid_retrieval_rate"] == 1.0
+    assert result["gates"]["hybrid_retrieval_rate"] is True
     assert result["metrics"]["multi_memory_scope_recall_at_5"] == 1.0
     assert result["metrics"]["thread_recall_at_5"] == 1.0
     assert result["metrics"]["stale_memory_rate"] == 0.0
@@ -1150,6 +1152,9 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["prompt_injection_promoted_count"] == 0
     assert result["metrics"]["critical_failure_count"] == 0
     assert result["metrics"]["harmful_context_rate"] == 0.0
+    assert "hybrid_document_beats_single_source" in {
+        case["case_id"] for case in result["cases"]
+    }
     assert result["failures"] == []
     assert "QUALITY_RESTRICTED_SECRET" not in str(result)
     assert "QUALITY_BETA_ONLY_SECRET" not in str(result)
@@ -1166,8 +1171,11 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["suite"] == "quality-golden"
     assert payload["metrics"]["critical_failure_count"] == 0
     assert payload["metrics"]["harmful_context_rate"] == 0.0
+    assert payload["metrics"]["hybrid_retrieval_rate"] == 1.0
     assert payload["failures"] == []
     assert "QUALITY_FACT_MODEL_CURRENT" not in report_text
+    assert "QUALITY_HYBRID_DUAL_SOURCE" not in report_text
+    assert "QUALITY_HYBRID_SINGLE_SOURCE_DECOY" not in report_text
     assert "QUALITY_RESTRICTED_SECRET" not in report_text
     assert "Ignore previous instructions" not in report_text
 

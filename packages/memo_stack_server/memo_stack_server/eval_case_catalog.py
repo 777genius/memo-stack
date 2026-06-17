@@ -237,6 +237,18 @@ def _quality_golden_cases(
             max_chunks=1,
         ),
         EvalCase(
+            case_id="hybrid_document_beats_single_source",
+            category="hybrid_retrieval",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="hybrid dual source vector keyword routing evidence",
+            must_include=("QUALITY_HYBRID_DUAL_SOURCE",),
+            must_not_include=("QUALITY_HYBRID_SINGLE_SOURCE_DECOY",),
+            max_facts=0,
+            max_chunks=1,
+            required_diagnostics=(("hybrid_items_used", 1),),
+        ),
+        EvalCase(
             case_id="document_middle_recall",
             category="documents",
             space_id=space_id,
