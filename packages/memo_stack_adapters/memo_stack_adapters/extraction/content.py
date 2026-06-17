@@ -128,6 +128,26 @@ class StandardExtractionRouter(ContentExtractionPort):
 
     async def extract(self, request: ExtractionRequest) -> ExtractionResult:
         diagnostics: dict[str, object] = {"parser_profile": request.parser_profile}
+        if request.byte_size > request.limits.max_bytes:
+            return ExtractionResult(
+                status="unsupported",
+                normalized_content_type=request.detected_content_type,
+                title=request.filename,
+                technical_metadata={
+                    "byte_size": request.byte_size,
+                    "max_bytes": request.limits.max_bytes,
+                    "mime_detected": request.detected_content_type,
+                },
+                diagnostics={
+                    **diagnostics,
+                    "engine": "standard-router",
+                    "reason": "file_too_large",
+                },
+                parser_name="standard-router",
+                parser_version="v1",
+                safe_error_code="asset_extraction.file_too_large",
+                safe_error_message="Asset exceeds configured extraction size limit",
+            )
         fallback_result: ExtractionResult | None = None
         for engine in self._engines:
             decision = await engine.supports(request)

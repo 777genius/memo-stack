@@ -121,6 +121,29 @@ def test_docling_engine_timeout_returns_safe_unsupported_result() -> None:
     assert result.technical_metadata["parser_timeout_seconds"] == 0.001
 
 
+def test_standard_router_rejects_files_over_extraction_byte_limit() -> None:
+    engine = _CountingExtractionEngine()
+    router = StandardExtractionRouter((engine,))
+    request = _request(
+        parser_profile="standard_local",
+        detected_content_type="text/plain",
+        content=b"large text payload",
+        filename="large.txt",
+        max_bytes=4,
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.file_too_large"
+    assert result.safe_error_message == "Asset exceeds configured extraction size limit"
+    assert result.technical_metadata["byte_size"] == len(b"large text payload")
+    assert result.technical_metadata["max_bytes"] == 4
+    assert result.diagnostics["reason"] == "file_too_large"
+    assert engine.support_calls == 0
+    assert engine.extract_calls == 0
+
+
 def test_router_falls_back_from_docling_failure_to_pdf_text() -> None:
     router = StandardExtractionRouter(
         engines=(
@@ -508,6 +531,7 @@ def test_speech_transcription_router_falls_back_when_provider_upload_is_too_larg
         filename="voice-note.wav",
         enable_external_ai=True,
         byte_size=OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES + 1,
+        max_bytes=OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES + 2,
     )
 
     result = asyncio.run(router.extract(request))
@@ -622,6 +646,7 @@ def _request(
     parser_timeout_seconds: float = 300,
     subprocess_timeout_seconds: int = 60,
     max_image_pixels: int = 50_000_000,
+    max_bytes: int = 10_000_000,
     byte_size: int | None = None,
 ) -> ExtractionRequest:
     return ExtractionRequest(
@@ -635,13 +660,36 @@ def _request(
         content=content,
         parser_profile=parser_profile,
         limits=ExtractionLimits(
-            max_bytes=10_000_000,
+            max_bytes=max_bytes,
             parser_timeout_seconds=parser_timeout_seconds,
             subprocess_timeout_seconds=subprocess_timeout_seconds,
             max_image_pixels=max_image_pixels,
             enable_external_ai=enable_external_ai,
         ),
     )
+
+
+class _CountingExtractionEngine(ExtractionEngine):
+    name = "counting"
+
+    def __init__(self) -> None:
+        self.support_calls = 0
+        self.extract_calls = 0
+
+    async def supports(self, request: ExtractionRequest) -> SupportDecision:
+        self.support_calls += 1
+        return SupportDecision(True)
+
+    async def extract(self, request: ExtractionRequest) -> ExtractionResult:
+        self.extract_calls += 1
+        return ExtractionResult(
+            status="succeeded",
+            normalized_content_type=request.detected_content_type,
+            title=request.filename,
+            markdown="counting extraction",
+            parser_name=self.name,
+            parser_version="v1",
+        )
 
 
 @dataclass(frozen=True)
