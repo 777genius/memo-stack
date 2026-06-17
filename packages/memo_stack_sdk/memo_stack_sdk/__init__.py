@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from memo_stack_core.application.sensitive_text import redact_sensitive_text
 
 import memo_stack_sdk._payloads as _payloads
+from memo_stack_sdk._redaction import redact_sensitive_text
 from memo_stack_sdk.anchors import MemoStackAnchorsMixin
 from memo_stack_sdk.assets import MemoStackAssetsMixin
 from memo_stack_sdk.export import MemoStackExportMixin
@@ -95,7 +95,7 @@ class MemoStackClient(
         scope_payload = (
             scope.to_payload()
             if scope is not None
-                else _payloads.single_scope_body(
+            else _payloads.single_scope_body(
                 space_id=space_id,
                 memory_scope_id=memory_scope_id,
                 thread_id=thread_id,
@@ -759,8 +759,12 @@ class MemoStackClient(
         )
 
     def create_suggestions_batch(
-        self, *, items: list[dict[str, Any]], space_id: str | None = None,
-        memory_scope_id: str | None = None, space_slug: str | None = None,
+        self,
+        *,
+        items: list[dict[str, Any]],
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        space_slug: str | None = None,
         memory_scope_external_ref: str | None = None,
         continue_on_error: bool = False,
     ) -> dict[str, Any]:
