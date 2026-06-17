@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.eval_auto_memory import _execute_auto_memory_golden
@@ -1316,7 +1317,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 report_out=args.report_out,
             )
         except ValueError as exc:
-            raise SystemExit(str(exc)) from exc
+            raise SystemExit(_safe_cli_error(exc)) from exc
     elif args.command == "scorecard":
         try:
             result = run_memory_quality_scorecard(
@@ -1325,7 +1326,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 require_top_evidence=args.require_top_evidence,
             )
         except ValueError as exc:
-            raise SystemExit(str(exc)) from exc
+            raise SystemExit(_safe_cli_error(exc)) from exc
     elif args.command == "public-benchmark":
         try:
             result = run_public_memory_benchmark(
@@ -1338,12 +1339,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 report_out=args.report_out,
             )
         except ValueError as exc:
-            raise SystemExit(str(exc)) from exc
+            raise SystemExit(_safe_cli_error(exc)) from exc
     else:
         raise SystemExit("Unsupported eval command")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if not result["ok"]:
         raise SystemExit(1)
+
+
+def _safe_cli_error(exc: Exception) -> str:
+    return redact_sensitive_text(str(exc).strip() or exc.__class__.__name__)[:500]
 
 
 if __name__ == "__main__":

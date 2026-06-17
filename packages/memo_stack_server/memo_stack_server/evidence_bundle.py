@@ -16,6 +16,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 from memo_stack_core.reporting import git_metadata
 
 from memo_stack_server.eval import (
@@ -219,9 +220,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             allow_dirty_top_evidence=args.allow_dirty_top_evidence,
         )
     except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+        raise SystemExit(_safe_cli_error(exc)) from exc
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["ok"] else 1
+
+
+def _safe_cli_error(exc: Exception) -> str:
+    return redact_sensitive_text(str(exc).strip() or exc.__class__.__name__)[:500]
 
 
 def _validated_extra_reports(
