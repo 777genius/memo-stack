@@ -75,6 +75,10 @@
   gap: 8px;
 }
 
+.memo-stack-setup-primary button {
+  width: 100%;
+}
+
 .memo-stack-setup-row {
   display: grid;
   grid-template-columns: 24px minmax(72px, 0.8fr) minmax(0, 1fr) minmax(74px, auto);
