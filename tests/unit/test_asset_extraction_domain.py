@@ -1,6 +1,12 @@
+import json
 from datetime import UTC, datetime, timedelta
 
-from memo_stack_core.domain.assets import MemoryAssetId
+from memo_stack_core.application.asset_extraction_mapping import (
+    asset_extraction_chunk_metadata,
+    result_json,
+)
+from memo_stack_core.application.safe_payload import safe_metadata
+from memo_stack_core.domain.assets import MemoryAsset, MemoryAssetId
 from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
 from memo_stack_core.domain.extraction import (
     AssetExtractionJob,
@@ -11,6 +17,7 @@ from memo_stack_core.domain.extraction import (
     ExtractionArtifactType,
     ExtractionRetryDisposition,
 )
+from memo_stack_core.ports.extraction import ExtractedElement, ExtractionResult
 
 
 def test_normalized_json_is_a_supported_extraction_artifact_type() -> None:
@@ -42,6 +49,89 @@ def test_media_artifacts_are_supported_extraction_artifact_types() -> None:
         _artifact("video_frame_timeline").artifact_type
         == ExtractionArtifactType.VIDEO_FRAME_TIMELINE
     )
+
+
+def test_safe_metadata_redacts_provider_diagnostics() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+
+    metadata = safe_metadata(
+        {
+            "provider": "openai",
+            "token": raw_secret,
+            "debug": f"Bearer {raw_secret}",
+            raw_secret: "secret key must not leak",
+            "nested": [{"message": f"password={raw_secret}"}],
+        }
+    )
+    rendered = json.dumps(metadata, sort_keys=True)
+
+    assert metadata["provider"] == "openai"
+    assert "token" not in metadata
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
+
+
+def test_extraction_result_json_redacts_provider_metadata() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+
+    rendered = result_json(
+        ExtractionResult(
+            status="succeeded",
+            normalized_content_type=f"text/plain Bearer {raw_secret}",
+            title="Safe extracted title",
+            markdown="Safe extracted text",
+            parser_name=f"parser {raw_secret}",
+            parser_version=f"version {raw_secret}",
+            model_version=f"model {raw_secret}",
+            technical_metadata={
+                "provider": "openai",
+                "authorization": f"Bearer {raw_secret}",
+                "debug": f"Bearer {raw_secret}",
+            },
+            diagnostics={"message": f"password={raw_secret}"},
+            elements=(
+                ExtractedElement(
+                    kind="text",
+                    text="Safe extracted text",
+                    metadata={"source": f"Bearer {raw_secret}"},
+                ),
+            ),
+        )
+    )
+    payload = json.loads(rendered)
+
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
+    assert "authorization" not in payload["technical_metadata"]
+    assert payload["elements"][0]["text"] == "Safe extracted text"
+    assert "[redacted]" in payload["elements"][0]["metadata"]["source"]
+
+
+def test_asset_extraction_chunk_metadata_redacts_provider_source() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    now = datetime(2026, 6, 14, 10, tzinfo=UTC)
+    metadata = asset_extraction_chunk_metadata(
+        asset=_asset(now),
+        job=_job(now),
+        result=ExtractionResult(
+            status="succeeded",
+            normalized_content_type="text/plain",
+            title="Safe extracted title",
+            elements=(
+                ExtractedElement(
+                    kind="text",
+                    text="Safe extracted text",
+                    metadata={"source": f"Bearer {raw_secret}"},
+                ),
+            ),
+            parser_name="test_parser",
+        ),
+        extracted_text_value="Safe extracted text",
+    )
+
+    rendered = json.dumps(metadata, sort_keys=True)
+    assert raw_secret not in rendered
+    assert "[redacted]" in metadata["source_refs"][0]["provider_source"]
 
 
 def test_extraction_job_running_records_lease_and_heartbeat() -> None:
@@ -170,4 +260,20 @@ def _job(now: datetime) -> AssetExtractionJob:
         source_sha256_hex="a" * 64,
         now=now,
         metadata={"processing_stage": "queued"},
+    )
+
+
+def _asset(now: datetime) -> MemoryAsset:
+    return MemoryAsset.create(
+        asset_id=MemoryAssetId("asset-1"),
+        space_id=SpaceId("space-1"),
+        memory_scope_id=MemoryScopeId("scope-1"),
+        thread_id=ThreadId("thread-1"),
+        filename="safe.txt",
+        content_type="text/plain",
+        byte_size=42,
+        sha256_hex="a" * 64,
+        storage_backend="local",
+        storage_key="safe.txt",
+        now=now,
     )

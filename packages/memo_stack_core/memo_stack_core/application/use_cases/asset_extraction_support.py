@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 from math import ceil
 
-from memo_stack_core.application.sensitive_text import redact_sensitive_text
+from memo_stack_core.application.safe_payload import safe_metadata_text
 from memo_stack_core.domain.events import OutboxEvent
 from memo_stack_core.domain.extraction import (
     AssetExtractionJob,
@@ -199,8 +199,7 @@ def safe_exception_message(exc: Exception) -> str:
 
 
 def safe_error_text(text: str) -> str:
-    redacted = redact_sensitive_text(text.strip() or "Unexpected extraction error")
-    return redacted[:500]
+    return safe_metadata_text(text.strip() or "Unexpected extraction error")
 
 
 def is_permanent_error_code(code: str) -> bool:

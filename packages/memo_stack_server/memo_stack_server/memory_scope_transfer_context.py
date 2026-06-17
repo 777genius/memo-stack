@@ -9,6 +9,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryContextLinkRow,
     MemoryContextLinkSuggestionRow,
 )
+from memo_stack_core.application.safe_payload import safe_metadata
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,7 +74,7 @@ def context_link_suggestion_to_json(row: MemoryContextLinkSuggestionRow) -> dict
         "reason": row.reason,
         "score": row.score,
         "status": row.status,
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
         "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
@@ -105,7 +106,7 @@ def context_link_suggestion_from_json(
         reason=str(item.get("reason", "Imported context-link suggestion"))[:320],
         score=float(item.get("score", 0.0) or 0.0),
         status=str(item.get("status", "pending")),
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
         reviewed_at=_parse_optional_dt(item.get("reviewed_at")),

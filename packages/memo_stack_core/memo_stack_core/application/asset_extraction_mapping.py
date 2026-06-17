@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.domain.assets import MemoryAsset
 from memo_stack_core.domain.extraction import AssetExtractionJob
 from memo_stack_core.ports.extraction import ExtractedElement, ExtractionResult
@@ -37,31 +38,33 @@ def asset_extraction_chunk_metadata(
         "asset_content_type": asset.content_type,
         "extraction_job_id": str(job.id),
         "parser_profile": job.parser_profile,
-        "parser_name": result.parser_name,
-        "normalized_content_type": result.normalized_content_type,
+        "parser_name": safe_metadata_text(result.parser_name),
+        "normalized_content_type": safe_metadata_text(result.normalized_content_type),
         "source_ref_count": len(refs),
         "source_refs": refs,
     }
     if result.parser_version:
-        metadata["parser_version"] = result.parser_version
+        metadata["parser_version"] = safe_metadata_text(result.parser_version)
     if result.model_version:
-        metadata["model_version"] = result.model_version
+        metadata["model_version"] = safe_metadata_text(result.model_version)
     if result.language:
-        metadata["language"] = result.language
+        metadata["language"] = safe_metadata_text(result.language)
     return metadata
 
 
 def result_json(result: ExtractionResult) -> str:
     payload = {
         "status": result.status,
-        "normalized_content_type": result.normalized_content_type,
+        "normalized_content_type": safe_metadata_text(result.normalized_content_type),
         "title": result.title,
-        "language": result.language,
-        "parser_name": result.parser_name,
-        "parser_version": result.parser_version,
-        "model_version": result.model_version,
-        "technical_metadata": result.technical_metadata,
-        "diagnostics": result.diagnostics,
+        "language": safe_metadata_text(result.language) if result.language else None,
+        "parser_name": safe_metadata_text(result.parser_name),
+        "parser_version": safe_metadata_text(result.parser_version)
+        if result.parser_version
+        else None,
+        "model_version": safe_metadata_text(result.model_version) if result.model_version else None,
+        "technical_metadata": safe_metadata(result.technical_metadata),
+        "diagnostics": safe_metadata(result.diagnostics),
         "elements": [
             {
                 "kind": element.kind,
@@ -71,7 +74,7 @@ def result_json(result: ExtractionResult) -> str:
                 "time_end_ms": element.time_end_ms,
                 "bbox": element.bbox,
                 "confidence": element.confidence,
-                "metadata": element.metadata,
+                "metadata": safe_metadata(element.metadata),
             }
             for element in result.elements
         ],
@@ -163,7 +166,7 @@ def _element_source_ref(
         ref["confidence"] = element.confidence
     provider_source = element.metadata.get("source")
     if isinstance(provider_source, str) and provider_source.strip():
-        ref["provider_source"] = provider_source.strip()[:120]
+        ref["provider_source"] = safe_metadata_text(provider_source.strip(), limit=120)
     return ref
 
 

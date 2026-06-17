@@ -15,6 +15,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryFactRow,
     MemorySourceRefRow,
 )
+from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 
 
 def contains_redacted_memory(
@@ -85,7 +86,7 @@ def episode_to_json(row: MemoryEpisodeRow, *, redacted: bool) -> dict[str, Any]:
         "status": row.status,
         "occurred_at": row.occurred_at.isoformat(),
         "created_at": row.created_at.isoformat(),
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
     }
 
 
@@ -109,7 +110,7 @@ def chunk_to_json(row: MemoryChunkRow, *, redacted: bool) -> dict[str, Any]:
         "classification": row.classification,
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
     }
 
 
@@ -148,7 +149,7 @@ def capture_to_json(row: MemoryCaptureRow, *, redacted: bool) -> dict[str, Any]:
         "received_at": row.received_at.isoformat(),
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "source_event_id": row.source_event_id,
         "source_actor_external_ref": row.source_actor_external_ref,
         "client_instance_id": row.client_instance_id,
@@ -167,7 +168,7 @@ def capture_to_json(row: MemoryCaptureRow, *, redacted: bool) -> dict[str, Any]:
         "extractor_prompt_version": row.extractor_prompt_version,
         "resolver_version": row.resolver_version,
         "last_error_code": row.last_error_code,
-        "last_error_message": row.last_error_message,
+        "last_error_message": safe_bounded_optional_text(row.last_error_message, 400),
     }
 
 
@@ -180,7 +181,7 @@ def anchor_to_json(row: MemoryAnchorRow) -> dict[str, Any]:
         "aliases": list(row.aliases_json or []),
         "description": row.description,
         "status": row.status,
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
     }
@@ -197,7 +198,7 @@ def context_link_to_json(row: MemoryContextLinkRow) -> dict[str, Any]:
         "confidence": row.confidence,
         "reason": row.reason,
         "status": row.status,
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
     }
@@ -274,7 +275,7 @@ def episode_from_json(
         status=str(item.get("status", "active")),
         occurred_at=_parse_dt(item.get("occurred_at"), now),
         created_at=_parse_dt(item.get("created_at"), now),
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
     )
 
 
@@ -307,7 +308,7 @@ def chunk_from_json(
         classification=str(item.get("classification", "unknown")),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
-        metadata_json=dict(item.get("metadata_json") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or {}),
     )
 
 
@@ -354,7 +355,7 @@ def capture_from_json(
         received_at=_parse_dt(item.get("received_at"), now),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         source_event_id=bounded_optional_text(item.get("source_event_id"), 240),
         source_actor_external_ref=bounded_optional_text(
             item.get("source_actor_external_ref"),
@@ -384,7 +385,7 @@ def capture_from_json(
         ),
         resolver_version=bounded_optional_text(item.get("resolver_version"), 80),
         last_error_code=bounded_optional_text(item.get("last_error_code"), 120),
-        last_error_message=bounded_optional_text(item.get("last_error_message"), 400),
+        last_error_message=safe_bounded_optional_text(item.get("last_error_message"), 400),
     )
 
 
@@ -405,7 +406,7 @@ def anchor_from_json(
         aliases_json=_bounded_string_list(item.get("aliases"), limit=20, item_limit=120),
         description=bounded_optional_text(item.get("description"), 500),
         status=str(item.get("status", "active")),
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
     )
@@ -430,7 +431,7 @@ def context_link_from_json(
         confidence=str(item.get("confidence", "medium")),
         reason=str(item.get("reason", "Imported context link")),
         status=str(item.get("status", "active")),
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
     )
@@ -440,6 +441,12 @@ def bounded_optional_text(value: object, limit: int) -> str | None:
     if value is None:
         return None
     return str(value)[:limit]
+
+
+def safe_bounded_optional_text(value: object, limit: int) -> str | None:
+    if value is None:
+        return None
+    return safe_metadata_text(str(value), limit=limit)
 
 
 def _parse_dt(value: object, fallback: datetime) -> datetime:

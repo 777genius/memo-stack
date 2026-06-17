@@ -1334,6 +1334,55 @@ def test_sdk_raises_typed_server_error_envelope() -> None:
     assert raised.value.retryable is False
 
 
+def test_sdk_redacts_sensitive_server_error_message() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            500,
+            json={
+                "error": {
+                    "code": "memory.provider_error",
+                    "message": f"upstream leaked Bearer {raw_secret}",
+                    "retryable": True,
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MemoStackError) as raised:
+        client.forget_fact("fact_1")
+
+    assert raw_secret not in str(raised.value)
+    assert "[redacted]" in str(raised.value)
+    assert raised.value.code == "memory.provider_error"
+
+
+def test_sdk_redacts_sensitive_non_json_error_body() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, text=f"gateway leaked {raw_secret}")
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MemoStackError) as raised:
+        client.forget_fact("fact_1")
+
+    assert raw_secret not in str(raised.value)
+    assert "[redacted]" in str(raised.value)
+    assert raised.value.code == "memory.http_error"
+
+
 def test_sdk_maps_transport_error_to_retryable_memory_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)

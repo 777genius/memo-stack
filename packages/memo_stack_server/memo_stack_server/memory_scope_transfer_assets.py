@@ -9,6 +9,7 @@ from hashlib import sha256
 from typing import Any
 
 from memo_stack_adapters.postgres.models import MemoryAssetRow
+from memo_stack_core.application.safe_payload import safe_metadata
 from memo_stack_core.ports.assets import BlobStoragePort
 
 from memo_stack_server.memory_scope_transfer_support import asset_storage_key
@@ -35,7 +36,7 @@ def asset_to_json(row: MemoryAssetRow) -> dict[str, Any]:
         "storage_key": row.storage_key,
         "status": row.status,
         "classification": row.classification,
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
     }
@@ -61,7 +62,7 @@ def asset_from_json(
         storage_key=str(item.get("storage_key") or item["id"])[:500],
         status=str(item.get("status", "stored")),
         classification=str(item.get("classification", "unknown"))[:40],
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
     )

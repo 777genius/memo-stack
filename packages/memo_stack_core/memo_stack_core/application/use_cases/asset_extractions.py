@@ -27,6 +27,7 @@ from memo_stack_core.application.dto import (
     RunAssetExtractionCommand,
 )
 from memo_stack_core.application.normalize import content_hash
+from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.application.use_cases.asset_extraction_support import (
     NON_RUNNABLE_EXTRACTION_STATUSES,
     ExtractionRetryPolicy,
@@ -698,14 +699,22 @@ class RunAssetExtractionUseCase:
             succeeded = current.mark_succeeded(
                 now=self._clock.now(),
                 result_document_ids=result_document_ids,
-                parser_name=result.parser_name,
-                parser_version=result.parser_version,
-                model_version=result.model_version,
+                parser_name=safe_metadata_text(result.parser_name),
+                parser_version=safe_metadata_text(result.parser_version)
+                if result.parser_version
+                else None,
+                model_version=safe_metadata_text(result.model_version)
+                if result.model_version
+                else None,
                 metadata={
-                    "normalized_content_type": result.normalized_content_type,
-                    "language": result.language,
+                    "normalized_content_type": safe_metadata_text(
+                        result.normalized_content_type
+                    ),
+                    "language": safe_metadata_text(result.language)
+                    if result.language
+                    else None,
                     "element_count": len(result.elements),
-                    **result.technical_metadata,
+                    **safe_metadata(result.technical_metadata),
                 },
             )
             saved = await uow.asset_extractions.save(succeeded)
@@ -816,8 +825,10 @@ class RunAssetExtractionUseCase:
                     result.safe_error_message or "Asset type is unsupported"
                 ),
                 metadata={
-                    "normalized_content_type": result.normalized_content_type,
-                    **result.technical_metadata,
+                    "normalized_content_type": safe_metadata_text(
+                        result.normalized_content_type
+                    ),
+                    **safe_metadata(result.technical_metadata),
                 },
             )
             saved = await uow.asset_extractions.save(unsupported)
@@ -852,7 +863,7 @@ class RunAssetExtractionUseCase:
                 now=now,
                 code=code,
                 message=safe_error_text(message),
-                metadata={**dict(metadata or {}), **retry_metadata},
+                metadata={**safe_metadata(metadata or {}), **retry_metadata},
                 retry_disposition=retry_disposition,
                 retry_after_at=retry_after_at,
             )

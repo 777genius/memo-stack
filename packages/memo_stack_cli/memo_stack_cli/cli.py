@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 from memo_stack_core.memory_scope_snapshots import (
     default_manifest_path,
     verify_snapshot_manifest,
@@ -35,7 +36,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Interrupted.", file=sys.stderr)
         return 130
     except (MemoStackError, httpx.HTTPError, ValueError) as exc:
-        print(f"memo-stack: {exc}", file=sys.stderr)
+        print(
+            f"memo-stack: {_safe_cli_text(str(exc).strip() or exc.__class__.__name__)}",
+            file=sys.stderr,
+        )
         return 1
 
 
@@ -511,15 +515,15 @@ def _response_payload(response: httpx.Response) -> dict[str, Any]:
     try:
         payload = response.json()
     except ValueError:
-        payload = {"body": response.text[:500]}
+        payload = {"body": _safe_cli_text(response.text, limit=500)}
     return {"status_code": response.status_code, "data": payload}
 
 
 def _print_runtime_result(result) -> None:
     if result.stdout:
-        print(result.stdout, end="")
+        print(_safe_cli_text(result.stdout), end="")
     if result.stderr:
-        print(result.stderr, end="", file=sys.stderr)
+        print(_safe_cli_text(result.stderr), end="", file=sys.stderr)
 
 
 def _print_payload(payload: dict[str, Any], *, as_json: bool) -> None:
@@ -546,3 +550,8 @@ def _nested(payload: dict[str, Any], *keys: str) -> Any:
             return None
         current = current.get(key)
     return current
+
+
+def _safe_cli_text(value: str, *, limit: int | None = None) -> str:
+    redacted = redact_sensitive_text(value or "Unexpected CLI error")
+    return redacted if limit is None else redacted[:limit]

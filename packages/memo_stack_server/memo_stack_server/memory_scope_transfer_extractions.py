@@ -13,6 +13,7 @@ from memo_stack_adapters.postgres.models import (
     MemoryAssetExtractionJobRow,
 )
 from memo_stack_core.application.asset_extraction_mapping import artifact_storage_key
+from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.ports.assets import BlobStoragePort
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,15 +36,15 @@ def extraction_job_to_json(row: MemoryAssetExtractionJobRow) -> dict[str, Any]:
         "parser_profile": row.parser_profile,
         "parser_config_hash": row.parser_config_hash,
         "source_sha256_hex": row.source_sha256_hex,
-        "parser_name": row.parser_name,
-        "parser_version": row.parser_version,
-        "model_version": row.model_version,
+        "parser_name": _safe_optional_str(row.parser_name, 120),
+        "parser_version": _safe_optional_str(row.parser_version, 120),
+        "model_version": _safe_optional_str(row.model_version, 120),
         "status": row.status,
         "attempt_count": row.attempt_count,
         "safe_error_code": row.safe_error_code,
-        "safe_error_message": row.safe_error_message,
+        "safe_error_message": _safe_optional_str(row.safe_error_message, 500),
         "result_document_ids": list(row.result_document_ids_json or []),
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
         "started_at": row.started_at.isoformat() if row.started_at else None,
@@ -75,15 +76,15 @@ def extraction_job_from_json(
         parser_profile=str(item.get("parser_profile") or "standard_local")[:80],
         parser_config_hash=str(item.get("parser_config_hash") or "imported")[:80],
         source_sha256_hex=str(item.get("source_sha256_hex") or "")[:80],
-        parser_name=_optional_str(item.get("parser_name"), 120),
-        parser_version=_optional_str(item.get("parser_version"), 120),
-        model_version=_optional_str(item.get("model_version"), 120),
+        parser_name=_safe_optional_str(item.get("parser_name"), 120),
+        parser_version=_safe_optional_str(item.get("parser_version"), 120),
+        model_version=_safe_optional_str(item.get("model_version"), 120),
         status=str(item.get("status") or "stale")[:40],
         attempt_count=int(item.get("attempt_count") or 0),
         safe_error_code=_optional_str(item.get("safe_error_code"), 120),
-        safe_error_message=_optional_str(item.get("safe_error_message"), 500),
+        safe_error_message=_safe_optional_str(item.get("safe_error_message"), 500),
         result_document_ids_json=[str(value) for value in item.get("result_document_ids") or []],
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=_parse_dt(item.get("created_at"), now),
         updated_at=_parse_dt(item.get("updated_at"), now),
         started_at=_parse_optional_dt(item.get("started_at")),
@@ -107,7 +108,7 @@ def extraction_artifact_to_json(row: MemoryAssetExtractionArtifactRow) -> dict[s
         "storage_key": row.storage_key,
         "sha256_hex": row.sha256_hex,
         "byte_size": row.byte_size,
-        "metadata_json": row.metadata_json,
+        "metadata_json": safe_metadata(row.metadata_json),
         "created_at": row.created_at.isoformat(),
     }
 
@@ -126,7 +127,7 @@ def extraction_artifact_from_json(
         storage_key=str(item.get("storage_key") or item["id"])[:500],
         sha256_hex=str(item.get("sha256_hex") or "")[:80],
         byte_size=int(item.get("byte_size") or 0),
-        metadata_json=dict(item.get("metadata_json") or item.get("metadata") or {}),
+        metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=_parse_dt(item.get("created_at"), now),
     )
 
@@ -153,7 +154,7 @@ def remap_extraction_job(
         ],
     }
     if str(mapped.get("status") or "") in _NON_TERMINAL_STATUSES:
-        metadata = dict(mapped.get("metadata_json") or mapped.get("metadata") or {})
+        metadata = safe_metadata(mapped.get("metadata_json") or mapped.get("metadata") or {})
         mapped.update(
             {
                 "status": "stale",
@@ -366,6 +367,13 @@ def _optional_str(value: object, limit: int) -> str | None:
         return None
     text = str(value).strip()
     return text[:limit] if text else None
+
+
+def _safe_optional_str(value: object, limit: int) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return safe_metadata_text(text, limit=limit) if text else None
 
 
 def _parse_dt(value: object, fallback: datetime) -> datetime:

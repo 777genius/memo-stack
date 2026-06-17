@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 
 import memo_stack_sdk._payloads as _payloads
 from memo_stack_sdk.anchors import MemoStackAnchorsMixin
@@ -920,7 +921,7 @@ def _to_error(response: httpx.Response) -> MemoStackError:
     error = payload.get("error", {}) if isinstance(payload, dict) else {}
     detail = payload.get("detail", {}) if isinstance(payload, dict) else {}
     code = str(error.get("code") or detail.get("code") or "memory.http_error")
-    message = str(error.get("message") or response.text or code)
+    message = _safe_error_message(str(error.get("message") or response.text or code))
     retryable = bool(error.get("retryable", response.status_code >= 500))
     return MemoStackError(
         status_code=response.status_code,
@@ -928,6 +929,10 @@ def _to_error(response: httpx.Response) -> MemoStackError:
         message=message,
         retryable=retryable,
     )
+
+
+def _safe_error_message(value: str) -> str:
+    return redact_sensitive_text(value.strip() or "Memo Stack request failed")[:500]
 
 
 __all__ = ["MemoStackClient", "MemoStackError", "MemoryScope", "ReadScope"]
