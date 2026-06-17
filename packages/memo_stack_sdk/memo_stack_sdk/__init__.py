@@ -11,6 +11,7 @@ import memo_stack_sdk._payloads as _payloads
 from memo_stack_sdk._redaction import redact_sensitive_text
 from memo_stack_sdk.anchors import MemoStackAnchorsMixin
 from memo_stack_sdk.assets import MemoStackAssetsMixin
+from memo_stack_sdk.context import ContextBundle, context_bundle_from_response
 from memo_stack_sdk.export import MemoStackExportMixin
 from memo_stack_sdk.scopes import MemoryScope, ReadScope
 from memo_stack_sdk.thread_memory import MemoStackThreadMemoryMixin
@@ -619,6 +620,51 @@ class MemoStackClient(
                 tags_all=tags_all,
                 tags_none=tags_none,
             ),
+        )
+
+    def build_typed_context(
+        self,
+        *,
+        query: str,
+        read_scope: ReadScope | None = None,
+        space_id: str | None = None,
+        memory_scope_ids: list[str] | None = None,
+        thread_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        memory_scope_external_refs: list[str] | None = None,
+        thread_external_ref: str | None = None,
+        token_budget: int = 1800,
+        max_facts: int = 20,
+        max_chunks: int = 30,
+        consistency_mode: str | None = None,
+        max_conflicting_suggestions: int | None = None,
+        category: str | None = None,
+        tags_any: list[str] | None = None,
+        tags_all: list[str] | None = None,
+        tags_none: list[str] | None = None,
+    ) -> ContextBundle:
+        return context_bundle_from_response(
+            self.build_context(
+                query=query,
+                read_scope=read_scope,
+                space_id=space_id,
+                memory_scope_ids=memory_scope_ids,
+                thread_id=thread_id,
+                space_slug=space_slug,
+                memory_scope_external_ref=memory_scope_external_ref,
+                memory_scope_external_refs=memory_scope_external_refs,
+                thread_external_ref=thread_external_ref,
+                token_budget=token_budget,
+                max_facts=max_facts,
+                max_chunks=max_chunks,
+                consistency_mode=consistency_mode,
+                max_conflicting_suggestions=max_conflicting_suggestions,
+                category=category,
+                tags_any=tags_any,
+                tags_all=tags_all,
+                tags_none=tags_none,
+            )
         )
 
     def search(

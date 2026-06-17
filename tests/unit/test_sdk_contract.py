@@ -2,7 +2,7 @@ import json
 
 import httpx
 import pytest
-from memo_stack_sdk import MemoryScope, MemoStackClient, MemoStackError, ReadScope
+from memo_stack_sdk import ContextBundle, MemoryScope, MemoStackClient, MemoStackError, ReadScope
 
 
 def test_sdk_sends_auth_and_params() -> None:
@@ -312,6 +312,109 @@ def test_sdk_facade_accepts_additive_response_fields() -> None:
 
     assert response["data"]["rendered_text"] == "Known memory evidence."
     assert response["data"]["new_optional_server_field"] == {"safe": True}
+
+
+def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "meta": {"request_id": "req_1"},
+                "data": {
+                    "bundle_id": "ctx_1",
+                    "rendered_text": "Known memory evidence.",
+                    "diagnostics": {
+                        "context_assembly_version": "context-v2-hybrid-explainable",
+                        "consistency_mode": "best_effort",
+                        "retrieval_sources_used": [
+                            f"source_{index}" for index in range(12)
+                        ],
+                        "hybrid_items_used": 2,
+                        "temporal_replacements_applied": 1,
+                        "api_key": raw_secret,
+                    },
+                    "items": [
+                        {
+                            "item_id": "chunk_1",
+                            "item_type": "chunk",
+                            "memory_scope_id": "memory_scope_default",
+                            "text": "Chunk evidence.",
+                            "score": 0.91,
+                            "is_instruction": False,
+                            "source_refs": [
+                                {
+                                    "source_type": "document",
+                                    "source_id": f"doc_{index}",
+                                    "chunk_id": f"chunk_{index}",
+                                    "quote_preview": f"preview {index}",
+                                }
+                                for index in range(25)
+                            ],
+                            "diagnostics": {
+                                "retrieval_source": "vector_chunks",
+                                "retrieval_sources": [
+                                    "vector_chunks",
+                                    "keyword_chunks",
+                                ],
+                                "score_signals": {
+                                    "base_score": 0.91,
+                                    "provider_note": f"Bearer {raw_secret}",
+                                    "nested": {"unsafe": "skip"},
+                                },
+                                "provenance": {
+                                    "source_ref_count": 25,
+                                    "token": raw_secret,
+                                },
+                            },
+                        }
+                    ],
+                },
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    bundle = client.build_typed_context(
+        space_id="space_client_app",
+        memory_scope_ids=["memory_scope_default"],
+        query="typed context",
+        consistency_mode="best_effort",
+    )
+
+    assert isinstance(bundle, ContextBundle)
+    assert seen["url"] == "http://memory.test/v1/context"
+    assert seen["body"]["consistency_mode"] == "best_effort"
+    assert bundle.bundle_id == "ctx_1"
+    assert bundle.meta["request_id"] == "req_1"
+    assert bundle.diagnostics.context_assembly_version == "context-v2-hybrid-explainable"
+    assert bundle.diagnostics.retrieval_sources_used == tuple(
+        f"source_{index}" for index in range(8)
+    )
+    assert bundle.diagnostics.hybrid_items_used == 2
+    assert bundle.diagnostics.temporal_replacements_applied == 1
+    assert "api_key" not in bundle.diagnostics.raw
+
+    item = bundle.items[0]
+    assert item.memory_scope_id == "memory_scope_default"
+    assert len(item.source_refs) == 20
+    assert item.source_refs[0].source_id == "doc_0"
+    assert item.diagnostics.retrieval_source == "vector_chunks"
+    assert item.diagnostics.retrieval_sources == ("vector_chunks", "keyword_chunks")
+    assert item.diagnostics.ranking_reason == "hybrid match via vector_chunks, keyword_chunks"
+    assert item.diagnostics.score_signals["base_score"] == 0.91
+    assert item.diagnostics.score_signals["provider_note"] == "[redacted]"
+    assert "nested" not in item.diagnostics.score_signals
+    assert "token" not in item.diagnostics.provenance
+    assert raw_secret not in str(bundle)
 
 
 def test_sdk_build_digest_posts_stable_contract() -> None:
