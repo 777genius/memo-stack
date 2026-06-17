@@ -163,6 +163,8 @@ def _diagnostics(
                 "execution.retry_after_at",
                 "execution.retry_disposition",
                 "execution.cancellation_requested_at",
+                "metadata.cancellation_status",
+                "metadata.cancellation_message",
             )
         },
     }

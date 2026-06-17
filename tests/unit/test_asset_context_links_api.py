@@ -1235,6 +1235,9 @@ def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path)
         stored_fields = data["diagnostics"]["link_suggestion_explainability"]["stored_fields"]
         assert "review_reason" in stored_fields
         assert "metadata.matched_terms" in stored_fields
+        extraction_fields = data["diagnostics"]["extraction_observability"]["stored_fields"]
+        assert "metadata.cancellation_status" in extraction_fields
+        assert "metadata.cancellation_message" in extraction_fields
         no_suggestion_reasons = data["diagnostics"]["link_suggestion_explainability"][
             "no_suggestion_reasons"
         ]
