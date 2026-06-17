@@ -24,6 +24,22 @@ NON_RUNNABLE_EXTRACTION_STATUSES = {
 }
 
 
+class ActiveAssetExtractionLeaseError(RuntimeError):
+    diagnostic_code = "asset_extraction.lease_active"
+
+    def __init__(
+        self,
+        *,
+        job_id: str,
+        lease_owner: str | None,
+        retry_after_at: datetime | None,
+    ) -> None:
+        super().__init__("Asset extraction is already running with an active lease")
+        self.job_id = job_id
+        self.lease_owner = lease_owner
+        self.retry_after_at = retry_after_at
+
+
 class ExtractionRetryPolicy:
     def __init__(
         self,

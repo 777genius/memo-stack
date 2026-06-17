@@ -545,6 +545,74 @@ def test_expired_running_outbox_job_becomes_dead_after_max_attempts(tmp_path: Pa
     assert diagnostic_code == "worker.lease_expired"
 
 
+def test_asset_extraction_active_lease_reschedules_outbox_without_attempt_burn(
+    tmp_path: Path,
+) -> None:
+    async def mark_extraction_running(client: TestClient, extraction_id: str):
+        container = client.app.state.container
+        now = container.clock.now()
+        lease_expires_at = now + timedelta(minutes=15)
+        async with container.uow_factory() as uow:
+            job = await uow.asset_extractions.get_by_id(extraction_id)
+            assert job is not None
+            running = job.mark_running(
+                now=now,
+                lease_owner="outbox:active",
+                lease_expires_at=lease_expires_at,
+            )
+            saved = await uow.asset_extractions.save(running)
+            await uow.commit()
+        return saved.lease_expires_at
+
+    async def outbox_row_state(
+        client: TestClient,
+    ) -> tuple[str, int, object, str | None, str | None]:
+        async with AsyncSession(client.app.state.container.engine) as session:
+            row = (
+                await session.execute(
+                    select(MemoryOutboxRow).where(MemoryOutboxRow.event_type == "asset.extract")
+                )
+            ).scalar_one()
+            return (
+                row.status,
+                row.attempt_count,
+                row.next_attempt_at,
+                row.last_safe_error,
+                row.last_safe_diagnostic_code,
+            )
+
+    with make_client_with_settings(
+        tmp_path,
+        asset_storage_dir=str(tmp_path / "assets"),
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "filename": "active-lease.txt",
+                "extract": "true",
+            },
+            content=b"Active extraction lease should delay duplicate outbox work.",
+            headers={**auth_headers(), "Content-Type": "text/plain"},
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+        lease_expires_at = asyncio.run(mark_extraction_running(client, extraction_id))
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        status, attempt_count, next_attempt_at, last_safe_error, diagnostic_code = asyncio.run(
+            outbox_row_state(client)
+        )
+
+    assert processed == 1
+    assert status == "retry_pending"
+    assert attempt_count == 0
+    assert next_attempt_at == lease_expires_at.replace(tzinfo=None)
+    assert last_safe_error == "ActiveAssetExtractionLeaseError"
+    assert diagnostic_code == "asset_extraction.lease_active"
+
+
 def test_unknown_document_is_not_embedded_but_job_completes(tmp_path: Path) -> None:
     class FailingEmbedder:
         calls = 0

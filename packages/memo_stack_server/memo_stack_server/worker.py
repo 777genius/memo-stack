@@ -6,7 +6,7 @@ import argparse
 import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from memo_stack_adapters.postgres import create_schema
 from memo_stack_adapters.postgres.models import MemoryOutboxRow
@@ -115,11 +115,7 @@ class OutboxWorker:
                 .with_for_update(skip_locked=True)
             )
             query = _apply_worker_filter(query, self._filter)
-            rows = list(
-                (
-                    await session.execute(query)
-                ).scalars()
-            )
+            rows = list((await session.execute(query)).scalars())
             claimed = [
                 ClaimedOutboxJob(
                     id=row.id,
@@ -158,11 +154,7 @@ class OutboxWorker:
             .with_for_update(skip_locked=True)
         )
         query = _apply_worker_filter(query, self._filter)
-        rows = list(
-            (
-                await session.execute(query)
-            ).scalars()
-        )
+        rows = list((await session.execute(query)).scalars())
         for row in rows:
             row.attempt_count += 1
             row.last_safe_error = "Worker lease expired"
@@ -366,15 +358,21 @@ class OutboxWorker:
         async with AsyncSession(self._container.engine) as session:
             row = await session.get(MemoryOutboxRow, job_id)
             if row:
-                row.attempt_count += 1
                 row.last_safe_error = _safe_error(exc)[:400]
-                row.last_safe_diagnostic_code = _safe_diagnostic_code(exc)[:120]
+                diagnostic_code = _safe_diagnostic_code(exc)[:120]
+                row.last_safe_diagnostic_code = diagnostic_code
                 row.updated_at = now
-                if row.attempt_count >= MAX_ATTEMPTS:
-                    row.status = "dead"
-                else:
+                retry_after_at = _retry_after_from_exception(exc)
+                if diagnostic_code == "asset_extraction.lease_active":
                     row.status = "retry_pending"
-                    row.next_attempt_at = now + timedelta(seconds=2**row.attempt_count)
+                    row.next_attempt_at = retry_after_at or now + timedelta(seconds=30)
+                else:
+                    row.attempt_count += 1
+                    if row.attempt_count >= MAX_ATTEMPTS:
+                        row.status = "dead"
+                    else:
+                        row.status = "retry_pending"
+                        row.next_attempt_at = now + timedelta(seconds=2**row.attempt_count)
             await session.commit()
 
 
@@ -441,6 +439,11 @@ def _safe_diagnostic_code(exc: Exception) -> str:
     if isinstance(code, str) and code.strip():
         return code
     return exc.__class__.__name__
+
+
+def _retry_after_from_exception(exc: Exception) -> datetime | None:
+    value = getattr(exc, "retry_after_at", None)
+    return value if isinstance(value, datetime) else None
 
 
 def _normalize_filter_values(values: Iterable[str]) -> tuple[str, ...]:

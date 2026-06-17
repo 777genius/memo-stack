@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import wave
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -12,7 +12,13 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
-from memo_stack_core.application.dto import CancelAssetExtractionCommand
+from memo_stack_core.application.dto import (
+    CancelAssetExtractionCommand,
+    RunAssetExtractionCommand,
+)
+from memo_stack_core.application.use_cases.asset_extraction_support import (
+    ActiveAssetExtractionLeaseError,
+)
 from memo_stack_core.domain.assets import MemoryAssetId
 from memo_stack_core.domain.entities import MemoryScopeId, SpaceId
 from memo_stack_core.domain.errors import MemoryQuotaExceededError
@@ -48,6 +54,29 @@ def auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
     if extra:
         headers.update(extra)
     return headers
+
+
+async def _mark_asset_extraction_running(
+    client: TestClient,
+    extraction_id: str,
+    *,
+    started_offset: timedelta = timedelta(),
+    lease_offset: timedelta = timedelta(minutes=15),
+    lease_owner: str = "outbox:active",
+):
+    container = client.app.state.container
+    now = container.clock.now()
+    async with container.uow_factory() as uow:
+        job = await uow.asset_extractions.get_by_id(extraction_id)
+        assert job is not None
+        running = job.mark_running(
+            now=now + started_offset,
+            lease_owner=lease_owner,
+            lease_expires_at=now + lease_offset,
+        )
+        saved = await uow.asset_extractions.save(running)
+        await uow.commit()
+        return saved
 
 
 def sample_pdf_bytes(text: str) -> bytes:
@@ -148,27 +177,31 @@ class _QuotaFailureExtractionRequest:
 def test_asset_extraction_response_redacts_sensitive_diagnostic_strings() -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     now = datetime(2026, 1, 1, tzinfo=UTC)
-    job = AssetExtractionJob.create(
-        job_id=AssetExtractionJobId("extract_1"),
-        asset_id=MemoryAssetId("asset_1"),
-        space_id=SpaceId("space_1"),
-        memory_scope_id=MemoryScopeId("scope_1"),
-        parser_profile="standard_local",
-        parser_config_hash="hash",
-        source_sha256_hex="a" * 64,
-        now=now,
-    ).mark_failed(
-        now=now,
-        code="asset_extraction.provider_failed",
-        message=f"provider failed with {raw_secret}",
-    ).with_metadata_updates(
-        now=now,
-        metadata={
-            "processing_stage": f"provider {raw_secret}",
-            "progress_message": f"provider token {raw_secret}",
-            "debug_message": f"Bearer {raw_secret}",
-            "attempt": 1,
-        },
+    job = (
+        AssetExtractionJob.create(
+            job_id=AssetExtractionJobId("extract_1"),
+            asset_id=MemoryAssetId("asset_1"),
+            space_id=SpaceId("space_1"),
+            memory_scope_id=MemoryScopeId("scope_1"),
+            parser_profile="standard_local",
+            parser_config_hash="hash",
+            source_sha256_hex="a" * 64,
+            now=now,
+        )
+        .mark_failed(
+            now=now,
+            code="asset_extraction.provider_failed",
+            message=f"provider failed with {raw_secret}",
+        )
+        .with_metadata_updates(
+            now=now,
+            metadata={
+                "processing_stage": f"provider {raw_secret}",
+                "progress_message": f"provider token {raw_secret}",
+                "debug_message": f"Bearer {raw_secret}",
+                "attempt": 1,
+            },
+        )
     )
 
     response = asset_extraction_to_response(job)
@@ -433,6 +466,144 @@ def test_canceled_asset_extraction_retry_resets_progress(tmp_path: Path) -> None
         assert retried["execution"]["retry_disposition"] is None
 
 
+def test_active_asset_extraction_lease_blocks_duplicate_worker_run(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "active-lease.txt",
+                "extract": "true",
+            },
+            content=b"Only one worker should extract this active asset at a time.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        running = asyncio.run(
+            _mark_asset_extraction_running(
+                client,
+                extraction_id,
+                lease_offset=timedelta(minutes=15),
+            )
+        )
+
+        with pytest.raises(ActiveAssetExtractionLeaseError) as exc_info:
+            asyncio.run(
+                client.app.state.container.run_asset_extraction.execute(
+                    RunAssetExtractionCommand(
+                        job_id=extraction_id,
+                        force=True,
+                        worker_id="outbox:duplicate",
+                    )
+                )
+            )
+
+        assert exc_info.value.retry_after_at == running.lease_expires_at.replace(tzinfo=None)
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extraction = fetched.json()["data"]
+        assert extraction["status"] == "running"
+        assert extraction["attempt_count"] == 1
+        assert extraction["execution"]["lease_owner"] == "outbox:active"
+        assert extraction["result_document_ids"] == []
+        assert extraction["artifacts"] == []
+
+
+def test_expired_asset_extraction_lease_can_be_reclaimed(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "expired-lease.txt",
+                "extract": "true",
+            },
+            content=b"Expired extraction leases should be safely reclaimed by a worker.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        asyncio.run(
+            _mark_asset_extraction_running(
+                client,
+                extraction_id,
+                started_offset=-timedelta(minutes=20),
+                lease_offset=-timedelta(minutes=5),
+            )
+        )
+
+        result = asyncio.run(
+            client.app.state.container.run_asset_extraction.execute(
+                RunAssetExtractionCommand(
+                    job_id=extraction_id,
+                    worker_id="outbox:reclaimer",
+                )
+            )
+        )
+
+        assert result.job.status.value == "succeeded"
+        assert result.job.attempt_count == 2
+        assert result.job.lease_owner is None
+        assert len(result.job.result_document_ids) == 1
+
+
+def test_cancel_requested_running_asset_extraction_is_honored(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "running-cancel.txt",
+                "extract": "true",
+            },
+            content=b"Running extraction should honor cancellation before restarting work.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        asyncio.run(
+            _mark_asset_extraction_running(
+                client,
+                extraction_id,
+                lease_offset=timedelta(minutes=15),
+            )
+        )
+        canceled = client.post(
+            f"/v1/asset-extractions/{extraction_id}/cancel",
+            headers=auth_headers(),
+        )
+        assert canceled.status_code == 202, canceled.text
+        assert canceled.json()["data"]["status"] == "running"
+        assert canceled.json()["data"]["execution"]["cancellation_requested_at"] is not None
+
+        result = asyncio.run(
+            client.app.state.container.run_asset_extraction.execute(
+                RunAssetExtractionCommand(
+                    job_id=extraction_id,
+                    force=True,
+                    worker_id="outbox:cancel-ack",
+                )
+            )
+        )
+
+        assert result.job.status.value == "canceled"
+        assert result.job.attempt_count == 1
+        assert result.job.result_document_ids == ()
+
+
 def test_asset_extraction_ignores_cancel_after_document_commit(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         upload = client.post(
@@ -474,9 +645,7 @@ def test_asset_extraction_ignores_cancel_after_document_commit(tmp_path: Path) -
         extracted = fetched.json()["data"]
         assert extracted["status"] == "succeeded"
         assert extracted["safe_error_code"] is None
-        assert extracted["metadata"]["cancellation_status"] == (
-            "ignored_after_document_commit"
-        )
+        assert extracted["metadata"]["cancellation_status"] == ("ignored_after_document_commit")
         assert extracted["execution"]["cancellation_requested_at"] is None
         assert len(extracted["result_document_ids"]) == 1
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
@@ -531,9 +700,7 @@ def test_asset_extraction_marks_failed_and_cleans_blobs_on_artifact_storage_erro
         assert extracted["artifacts"] == []
 
         extraction_files = [
-            path
-            for path in asset_storage_dir.glob("**/extractions/**/*")
-            if path.is_file()
+            path for path in asset_storage_dir.glob("**/extractions/**/*") if path.is_file()
         ]
         assert extraction_files == []
 

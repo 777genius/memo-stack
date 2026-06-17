@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from datetime import timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 
 from memo_stack_core.application.asset_extraction_mapping import (
@@ -30,6 +30,7 @@ from memo_stack_core.application.normalize import content_hash
 from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.application.use_cases.asset_extraction_support import (
     NON_RUNNABLE_EXTRACTION_STATUSES,
+    ActiveAssetExtractionLeaseError,
     ExtractionRetryPolicy,
     actual_media_analysis_seconds,
     asset_extract_event,
@@ -147,9 +148,7 @@ class RequestAssetExtractionUseCase:
                     window=window,
                 )
                 if not usage_decision.allowed:
-                    raise MemoryQuotaExceededError(
-                        "Media analysis monthly quota would be exceeded"
-                    )
+                    raise MemoryQuotaExceededError("Media analysis monthly quota would be exceeded")
             job = AssetExtractionJob.create(
                 job_id=AssetExtractionJobId(self._ids.new_id("extract")),
                 asset_id=asset.id,
@@ -175,9 +174,7 @@ class RequestAssetExtractionUseCase:
                     "usage_window_end": window.end.isoformat(),
                     **(
                         {
-                            "usage_media_analysis_seconds_used": (
-                                usage_decision.snapshot.used
-                            ),
+                            "usage_media_analysis_seconds_used": (usage_decision.snapshot.used),
                             "usage_media_analysis_seconds_remaining": (
                                 usage_decision.snapshot.remaining
                             ),
@@ -266,9 +263,7 @@ class ListAssetExtractionsUseCase:
                     cursor_id=query.cursor_id,
                 )
             else:
-                raise MemoryValidationError(
-                    "asset_id or space_id and memory_scope_id are required"
-                )
+                raise MemoryValidationError("asset_id or space_id and memory_scope_id are required")
         return AssetExtractionsResult(jobs=tuple(jobs))
 
 
@@ -516,6 +511,24 @@ class RunAssetExtractionUseCase:
             if job.status in NON_RUNNABLE_EXTRACTION_STATUSES:
                 return job
             now = self._clock.now()
+            if job.status == AssetExtractionStatus.RUNNING:
+                if job.cancellation_requested_at is not None:
+                    return job
+                if job.lease_expires_at is None and not command.force:
+                    raise ActiveAssetExtractionLeaseError(
+                        job_id=str(job.id),
+                        lease_owner=job.lease_owner,
+                        retry_after_at=None,
+                    )
+                if job.lease_expires_at is not None and _datetime_after(
+                    job.lease_expires_at,
+                    now,
+                ):
+                    raise ActiveAssetExtractionLeaseError(
+                        job_id=str(job.id),
+                        lease_owner=job.lease_owner,
+                        retry_after_at=job.lease_expires_at,
+                    )
             running = job.mark_running(
                 now=now,
                 lease_owner=command.worker_id or f"asset-extraction:{command.job_id}",
@@ -533,6 +546,7 @@ class RunAssetExtractionUseCase:
             saved = await uow.asset_extractions.save(running)
             await uow.commit()
         return saved
+
     async def _save_progress(
         self,
         job: AssetExtractionJob,
@@ -707,12 +721,8 @@ class RunAssetExtractionUseCase:
                 if result.model_version
                 else None,
                 metadata={
-                    "normalized_content_type": safe_metadata_text(
-                        result.normalized_content_type
-                    ),
-                    "language": safe_metadata_text(result.language)
-                    if result.language
-                    else None,
+                    "normalized_content_type": safe_metadata_text(result.normalized_content_type),
+                    "language": safe_metadata_text(result.language) if result.language else None,
                     "element_count": len(result.elements),
                     **safe_metadata(result.technical_metadata),
                 },
@@ -730,9 +740,7 @@ class RunAssetExtractionUseCase:
         actual_seconds = actual_media_analysis_seconds(result)
         if actual_seconds is None:
             return job
-        reserved_seconds = positive_int(
-            job.metadata.get("usage_media_analysis_seconds_requested")
-        )
+        reserved_seconds = positive_int(job.metadata.get("usage_media_analysis_seconds_requested"))
         if reserved_seconds is None or reserved_seconds <= 0:
             return job
         desired_delta = actual_seconds - reserved_seconds
@@ -821,13 +829,9 @@ class RunAssetExtractionUseCase:
             unsupported = current.mark_unsupported(
                 now=self._clock.now(),
                 code=result.safe_error_code or "asset_extraction.unsupported",
-                message=safe_error_text(
-                    result.safe_error_message or "Asset type is unsupported"
-                ),
+                message=safe_error_text(result.safe_error_message or "Asset type is unsupported"),
                 metadata={
-                    "normalized_content_type": safe_metadata_text(
-                        result.normalized_content_type
-                    ),
+                    "normalized_content_type": safe_metadata_text(result.normalized_content_type),
                     **safe_metadata(result.technical_metadata),
                 },
             )
@@ -893,3 +897,11 @@ class RunAssetExtractionUseCase:
             code=safe_exception_code(exc),
             message=safe_exception_message(exc),
         )
+
+
+def _datetime_after(value: datetime, reference: datetime) -> bool:
+    if value.tzinfo is None and reference.tzinfo is not None:
+        value = value.replace(tzinfo=reference.tzinfo)
+    elif value.tzinfo is not None and reference.tzinfo is None:
+        value = value.replace(tzinfo=None)
+    return value > reference
