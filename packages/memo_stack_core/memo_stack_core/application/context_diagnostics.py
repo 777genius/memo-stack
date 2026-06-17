@@ -10,10 +10,42 @@ from memo_stack_core.application.safe_payload import safe_metadata, safe_metadat
 
 _MAX_RETRIEVAL_SOURCES = 8
 _MAX_DIAGNOSTIC_MAPPING_ITEMS = 24
+_MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS = 64
 _MAX_DIAGNOSTIC_LIST_ITEMS = 8
 _MAX_DIAGNOSTIC_KEY_CHARS = 80
 _MAX_DIAGNOSTIC_STRING_CHARS = 240
 _MAX_RANKING_REASON_CHARS = 240
+_BUNDLE_COUNTER_KEYS = (
+    "facts_considered",
+    "keyword_chunks_considered",
+    "vector_candidate_count",
+    "vector_hydrated_count",
+    "graph_candidate_count",
+    "graph_hydrated_count",
+    "stale_vector_drop_count",
+    "stale_graph_drop_count",
+    "stale_rag_drop_count",
+    "temporal_relations_considered",
+    "temporal_replacements_applied",
+    "temporal_contradictions_considered",
+    "temporal_relations_skipped_by_validity",
+    "pending_conflict_suggestions_considered",
+    "hybrid_items_used",
+    "items_considered",
+    "items_used",
+    "dropped_by_instruction_flag",
+    "dropped_by_budget",
+    "dropped_by_source_cap",
+    "dropped_by_char_cap",
+    "rendered_chars",
+    "max_rendered_chars",
+)
+_BUNDLE_COUNTER_DEFAULTS = {
+    "temporal_replacements_applied": 0,
+    "temporal_relations_skipped_by_validity": 0,
+    "pending_conflict_suggestions_considered": 0,
+    "hybrid_items_used": 0,
+}
 
 
 def context_rank_key(item: ContextItem) -> tuple[float, str, str, str]:
@@ -43,6 +75,36 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     if retrieval_sources:
         provenance["retrieval_sources"] = list(retrieval_sources)
     normalized["provenance"] = provenance
+    return normalized
+
+
+def normalize_context_bundle_diagnostics(
+    diagnostics: object,
+    *,
+    items: tuple[ContextItem, ...],
+) -> dict[str, object]:
+    raw = _as_dict(diagnostics)
+    normalized = _bounded_mapping(
+        safe_metadata(raw, max_items=_MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS),
+        max_items=_MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS,
+    )
+    normalized["context_assembly_version"] = _safe_optional_text(
+        raw.get("context_assembly_version"),
+        limit=_MAX_DIAGNOSTIC_KEY_CHARS,
+    ) or "unknown"
+    normalized["consistency_mode"] = _safe_optional_text(
+        raw.get("consistency_mode"),
+        limit=_MAX_DIAGNOSTIC_KEY_CHARS,
+    ) or "unknown"
+    retrieval_sources = _bundle_retrieval_sources(items)
+    normalized["retrieval_sources_used"] = list(retrieval_sources)
+    normalized["diagnostics_truncated"] = len(raw) > _MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS
+    for key in _BUNDLE_COUNTER_KEYS:
+        if key in raw or key in _BUNDLE_COUNTER_DEFAULTS:
+            normalized[key] = _non_negative_int(
+                raw.get(key),
+                default=_BUNDLE_COUNTER_DEFAULTS.get(key, 0),
+            )
     return normalized
 
 
@@ -120,7 +182,10 @@ def safe_score_signals(value: object) -> dict[str, object]:
 
 
 def safe_diagnostic_mapping(value: object) -> dict[str, object]:
-    return _bounded_mapping(safe_metadata(value, max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS))
+    return _bounded_mapping(
+        safe_metadata(value, max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS),
+        max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS,
+    )
 
 
 def ranking_reason_for(retrieval_sources: tuple[str, ...]) -> str:
@@ -133,31 +198,41 @@ def ranking_reason_for(retrieval_sources: tuple[str, ...]) -> str:
     return safe_metadata_text(reason, limit=_MAX_RANKING_REASON_CHARS)
 
 
-def _bounded_mapping(value: object, *, depth: int = 0) -> dict[str, object]:
+def _bounded_mapping(
+    value: object,
+    *,
+    depth: int = 0,
+    max_items: int = _MAX_DIAGNOSTIC_MAPPING_ITEMS,
+) -> dict[str, object]:
     if not isinstance(value, dict) or depth > 2:
         return {}
     bounded: dict[str, object] = {}
-    for raw_key, raw_value in list(value.items())[:_MAX_DIAGNOSTIC_MAPPING_ITEMS]:
+    for raw_key, raw_value in list(value.items())[:max_items]:
         key = safe_metadata_text(str(raw_key), limit=_MAX_DIAGNOSTIC_KEY_CHARS).strip()
         if not key or "[redacted]" in key:
             continue
-        item = _bounded_value(raw_value, depth=depth)
+        item = _bounded_value(raw_value, depth=depth, max_items=max_items)
         if _is_safe_diagnostic_value(item):
             bounded[key] = item
     return bounded
 
 
-def _bounded_value(value: object, *, depth: int) -> object:
+def _bounded_value(
+    value: object,
+    *,
+    depth: int,
+    max_items: int,
+) -> object:
     if isinstance(value, str):
         return safe_metadata_text(value, limit=_MAX_DIAGNOSTIC_STRING_CHARS)
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     if isinstance(value, dict):
-        return _bounded_mapping(value, depth=depth + 1)
+        return _bounded_mapping(value, depth=depth + 1, max_items=max_items)
     if isinstance(value, list):
         safe_items: list[object] = []
         for raw_item in value[:_MAX_DIAGNOSTIC_LIST_ITEMS]:
-            item = _bounded_value(raw_item, depth=depth + 1)
+            item = _bounded_value(raw_item, depth=depth + 1, max_items=max_items)
             if _is_safe_diagnostic_value(item):
                 safe_items.append(item)
         return safe_items
@@ -185,6 +260,26 @@ def _safe_optional_text(value: object, *, limit: int) -> str | None:
 def _candidate_count(diagnostics: dict[str, Any]) -> int:
     value = diagnostics.get("merged_candidate_count")
     return value if isinstance(value, int) and value > 0 else 1
+
+
+def _bundle_retrieval_sources(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
+    return _ordered_unique(
+        tuple(
+            source
+            for item in items
+            for source in diagnostic_retrieval_sources(item.diagnostics)
+        )
+    )
+
+
+def _non_negative_int(value: object, *, default: int) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, float):
+        return max(0, int(value))
+    return default
 
 
 def _updated_at(item: ContextItem) -> str:

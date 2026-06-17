@@ -359,6 +359,11 @@ def test_context_marks_keyword_and_vector_hits_as_hybrid_evidence(tmp_path: Path
     assert context.diagnostics["vector_status"] == "ok"
     assert context.diagnostics["vector_candidate_count"] == 1
     assert context.diagnostics["vector_hydrated_count"] == 1
+    assert context.diagnostics["retrieval_sources_used"] == [
+        "vector_chunks",
+        "keyword_chunks",
+    ]
+    assert context.diagnostics["hybrid_items_used"] == 1
     assert len(context.items) == 1
     item = context.items[0]
     assert item.item_id == chunk_id
@@ -429,6 +434,7 @@ def test_context_replaces_superseded_fact_with_active_temporal_relation(
     assert "TEMPORAL_NEW_FACT" in data["rendered_text"]
     assert "TEMPORAL_OLD_FACT" not in data["rendered_text"]
     assert data["diagnostics"]["temporal_replacements_applied"] == 1
+    assert "temporal_supersedes_relation" in data["diagnostics"]["retrieval_sources_used"]
     replacement = next(
         item for item in data["items"] if item["item_id"] == new_fact.json()["data"]["id"]
     )

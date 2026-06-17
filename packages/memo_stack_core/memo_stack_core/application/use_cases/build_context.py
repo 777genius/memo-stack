@@ -11,6 +11,7 @@ from memo_stack_core.application.context_collectors import (
     RagContextCollector,
     VectorContextCollector,
 )
+from memo_stack_core.application.context_diagnostics import normalize_context_bundle_diagnostics
 from memo_stack_core.application.context_hydration import ContextHydrator
 from memo_stack_core.application.context_packer import ContextPacker
 from memo_stack_core.application.context_policy import is_context_fact_visible
@@ -178,12 +179,16 @@ class BuildContextUseCase:
             for item in result.bundle.items
             if len((item.diagnostics or {}).get("retrieval_sources") or ()) > 1
         )
+        bundle_diagnostics = normalize_context_bundle_diagnostics(
+            diagnostics,
+            items=result.bundle.items,
+        )
         return ContextBundle(
             bundle_id=result.bundle.bundle_id,
             rendered_text=result.bundle.rendered_text,
             items=result.bundle.items,
             token_estimate=result.bundle.token_estimate,
-            diagnostics=diagnostics,
+            diagnostics=bundle_diagnostics,
         )
 
     async def _apply_temporal_relation_signals(
