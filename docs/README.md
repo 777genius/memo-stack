@@ -8,12 +8,13 @@ This folder contains the platform planning documents moved out of Client App.
 2. [Global architecture plan](memo-stack-architecture-plan.md)
 3. [MCP memory foundation plan](mcp-memory-foundation-plan.md)
 4. [Auto-memory capture platform plan](auto-memory-capture-platform-plan.md)
-5. [Multimodal quick capture research](multimodal-quick-capture-memory-research.md)
-6. [Content extraction clean architecture plan](content-extraction-clean-architecture-plan.md)
-7. [Parser library research](content-extraction-parser-library-research.md)
-8. [Client compatibility notes](client-integration/interview-memo-stack-clean-architecture-plan.md)
-9. [Client integration run notes](client-integration/current-integration-run-notes.md)
-10. [Self-hosted team deployment](self-hosted-team-deployment.md)
+5. [Memory architecture research lockfile](memory-architecture-research-lockfile.md)
+6. [Multimodal quick capture research](multimodal-quick-capture-memory-research.md)
+7. [Content extraction clean architecture plan](content-extraction-clean-architecture-plan.md)
+8. [Parser library research](content-extraction-parser-library-research.md)
+9. [Client compatibility notes](client-integration/interview-memo-stack-clean-architecture-plan.md)
+10. [Client integration run notes](client-integration/current-integration-run-notes.md)
+11. [Self-hosted team deployment](self-hosted-team-deployment.md)
 
 ## Architecture Decisions
 
