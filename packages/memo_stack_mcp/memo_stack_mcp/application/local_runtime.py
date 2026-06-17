@@ -17,6 +17,7 @@ from memo_stack_cli.config import (
 )
 from memo_stack_cli.doctor import run_doctor
 from memo_stack_cli.runtime import DockerComposeRuntime, RuntimeResult
+from memo_stack_core.application.sensitive_text import redact_sensitive_text
 
 from memo_stack_mcp.config import MemoryMcpSettings
 from memo_stack_mcp.domain.models import (
@@ -469,4 +470,4 @@ def _runtime_result(result: RuntimeResult, *, token: str) -> dict[str, Any]:
 
 def _safe_output(value: str, token: str) -> str:
     redacted = value.replace(token, "[redacted]") if token else value
-    return redacted[:_OUTPUT_LIMIT]
+    return redact_sensitive_text(redacted)[:_OUTPUT_LIMIT]
