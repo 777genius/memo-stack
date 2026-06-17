@@ -243,6 +243,11 @@ def test_context_link_suggestions_batch_review_applies_mixed_actions(
     assert approved_review_event["target_id"] == approved_item["suggestion"]["target_id"]
     assert approved_review_event["policy_version"] == "context-link-policy-v1"
     assert approved_review_event["reason"] == "batch confirmed"
+    approved_audit = approved_item["suggestion"]["review_audit"]
+    assert approved_audit["event_count"] == 1
+    assert approved_audit["truncated"] is False
+    assert approved_audit["events"][-1]["action"] == "approve"
+    assert approved_audit["events"][-1]["reason"] == "batch confirmed"
     assert approved_item["link"]["reason"] == "batch confirmed link"
     assert approved_item["duplicate_link"] is False
     assert rejected_item["suggestion_id"] == rejected_suggestion_id
@@ -254,6 +259,10 @@ def test_context_link_suggestions_batch_review_applies_mixed_actions(
     assert rejected_review_event["previous_status"] == "pending"
     assert rejected_review_event["new_status"] == "rejected"
     assert rejected_review_event["reason"] == "batch rejected"
+    rejected_audit = rejected_item["suggestion"]["review_audit"]
+    assert rejected_audit["event_count"] == 1
+    assert rejected_audit["events"][-1]["action"] == "reject"
+    assert rejected_audit["events"][-1]["reason"] == "batch rejected"
     assert rejected_item["link"] is None
     assert duplicate_approve.status_code == 200, duplicate_approve.text
     duplicate_item = duplicate_approve.json()["data"]["results"][0]

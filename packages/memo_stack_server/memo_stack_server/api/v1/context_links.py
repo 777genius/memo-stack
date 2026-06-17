@@ -22,7 +22,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from memo_stack_server.api.auth import require_service_token
 from memo_stack_server.api.dependencies import get_container
 from memo_stack_server.api.policy import ensure_server_writes_enabled
-from memo_stack_server.api.public_payload import safe_public_metadata
+from memo_stack_server.api.public_payload import (
+    safe_public_metadata,
+    safe_public_reason,
+    safe_public_text,
+)
 from memo_stack_server.api.v1.scope_resolution import (
     resolve_existing_single_scope,
     resolve_single_scope,
@@ -33,6 +37,25 @@ router = APIRouter(
     tags=["context-links"],
     dependencies=[Depends(require_service_token)],
 )
+
+_MAX_PUBLIC_REVIEW_AUDIT_EVENTS = 10
+_PUBLIC_REVIEW_AUDIT_FIELDS = {
+    "event_type": 120,
+    "suggestion_id": 160,
+    "space_id": 80,
+    "memory_scope_id": 80,
+    "source_type": 80,
+    "source_id": 160,
+    "target_type": 80,
+    "target_id": 160,
+    "relation_type": 80,
+    "action": 16,
+    "previous_status": 40,
+    "new_status": 40,
+    "reviewed_at": 80,
+    "policy_version": 120,
+    "reason": 320,
+}
 
 
 class SuggestContextLinksRequest(BaseModel):
@@ -402,7 +425,7 @@ def context_link_to_response(link: MemoryContextLink) -> dict[str, Any]:
         "target_id": link.target_id,
         "relation_type": link.relation_type,
         "confidence": link.confidence,
-        "reason": link.reason,
+        "reason": safe_public_reason(link.reason, limit=320),
         "status": link.status.value,
         "metadata": _safe_metadata(link.metadata),
         "created_at": link.created_at.isoformat(),
@@ -423,19 +446,56 @@ def context_link_suggestion_to_response(
         "target_id": suggestion.target_id,
         "relation_type": suggestion.relation_type,
         "confidence": suggestion.confidence,
-        "reason": suggestion.reason,
+        "reason": safe_public_reason(suggestion.reason, limit=320),
         "score": suggestion.score,
         "status": suggestion.status.value,
         "metadata": _safe_metadata(suggestion.metadata),
         "created_at": suggestion.created_at.isoformat(),
         "updated_at": suggestion.updated_at.isoformat(),
         "reviewed_at": suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None,
-        "review_reason": suggestion.review_reason,
+        "review_reason": _safe_optional_text(suggestion.review_reason, limit=320),
+        "review_audit": _review_audit_to_response(suggestion),
     }
 
 
 def _safe_metadata(metadata: Any) -> dict[str, Any]:
     return safe_public_metadata(metadata)
+
+
+def _review_audit_to_response(suggestion: MemoryContextLinkSuggestion) -> dict[str, Any]:
+    raw_events = suggestion.metadata.get("review_events")
+    events = (
+        [item for item in raw_events if isinstance(item, dict)]
+        if isinstance(raw_events, list)
+        else []
+    )
+    public_events = [
+        _review_audit_event_to_response(item)
+        for item in events[-_MAX_PUBLIC_REVIEW_AUDIT_EVENTS:]
+    ]
+    return {
+        "events": public_events,
+        "event_count": len(events),
+        "truncated": len(events) > len(public_events),
+    }
+
+
+def _review_audit_event_to_response(event: dict[str, Any]) -> dict[str, Any]:
+    public: dict[str, Any] = {}
+    for key, limit in _PUBLIC_REVIEW_AUDIT_FIELDS.items():
+        value = event.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            sanitizer = safe_public_reason if key == "reason" else safe_public_text
+            public[key] = sanitizer(str(value), limit=limit)
+    return public
+
+
+def _safe_optional_text(value: str | None, *, limit: int) -> str | None:
+    if value is None:
+        return None
+    return safe_public_reason(value, limit=limit)
 
 
 def _normalize_status_filter(

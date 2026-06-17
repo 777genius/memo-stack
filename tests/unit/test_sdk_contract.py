@@ -1179,6 +1179,53 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
     }
 
 
+def test_sdk_preserves_context_link_review_audit_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/v1/context-link-suggestions/ctxlinksug_1/review"
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "suggestion": {
+                        "id": "ctxlinksug_1",
+                        "status": "approved",
+                        "review_audit": {
+                            "event_count": 1,
+                            "truncated": False,
+                            "events": [
+                                {
+                                    "event_type": "context_link_suggestion_reviewed",
+                                    "action": "approve",
+                                    "new_status": "approved",
+                                    "reason": "confirmed",
+                                }
+                            ],
+                        },
+                    },
+                    "link": {"id": "ctxlink_1"},
+                    "duplicate_link": False,
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.review_context_link_suggestion(
+        "ctxlinksug_1",
+        action="approve",
+        reason="confirmed",
+    )
+
+    audit = result["data"]["suggestion"]["review_audit"]
+    assert audit["event_count"] == 1
+    assert audit["events"][0]["action"] == "approve"
+
+
 def test_sdk_rejects_oversized_context_link_batch_review() -> None:
     calls = 0
 

@@ -609,17 +609,87 @@ def test_persisted_context_link_suggestions_can_be_reviewed(tmp_path: Path) -> N
     )
     assert pending_suggestion["status"] == "pending"
     assert approved.status_code == 200
-    assert approved.json()["data"]["suggestion"]["status"] == "approved"
-    assert approved.json()["data"]["suggestion"]["review_reason"] == "reviewed by user"
-    assert approved.json()["data"]["suggestion"]["reviewed_at"]
-    assert approved.json()["data"]["link"]["target_id"] == fact.json()["data"]["id"]
-    assert approved.json()["data"]["link"]["reason"] == "reviewed by user"
-    assert "approved_override" not in approved.json()["data"]["link"]["metadata"]
-    assert approved.json()["data"]["duplicate_link"] is False
+    approved_data = approved.json()["data"]
+    approved_suggestion = approved_data["suggestion"]
+    assert approved_suggestion["status"] == "approved"
+    assert approved_suggestion["review_reason"] == "reviewed by user"
+    assert approved_suggestion["reviewed_at"]
+    assert approved_suggestion["review_audit"]["event_count"] == 1
+    assert approved_suggestion["review_audit"]["truncated"] is False
+    assert approved_suggestion["review_audit"]["events"][-1]["action"] == "approve"
+    assert approved_suggestion["review_audit"]["events"][-1]["reason"] == "reviewed by user"
+    assert approved_suggestion["review_audit"]["events"][-1]["new_status"] == "approved"
+    assert approved_data["link"]["target_id"] == fact.json()["data"]["id"]
+    assert approved_data["link"]["reason"] == "reviewed by user"
+    assert "approved_override" not in approved_data["link"]["metadata"]
+    assert approved_data["duplicate_link"] is False
     assert approve_again.status_code == 200
     assert approve_again.json()["data"]["duplicate_link"] is True
     assert links.status_code == 200
     assert links.json()["data"][0]["target_id"] == fact.json()["data"]["id"]
+
+
+def test_context_link_review_response_redacts_sensitive_reason(tmp_path: Path) -> None:
+    sensitive_reason = "Authorization: Bearer sk-proj-review-secret-value"
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "text": "Alex screenshot evidence belongs to the secure review fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "secure-review"}],
+                "tags": ["alex", "screenshot"],
+            },
+            headers=auth_headers({"Idempotency-Key": "secure-review-link-fact"}),
+        )
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "secure-review-capture",
+                "text": "Screenshot note from Alex about secure review links.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review-thread",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Alex screenshot secure review",
+                "persist": True,
+            },
+            headers=auth_headers(),
+        )
+        suggestion_id = suggestions.json()["data"]["candidates"][0]["suggestion_id"]
+        approved = client.post(
+            f"/v1/context-link-suggestions/{suggestion_id}/review",
+            json={"action": "approve", "reason": sensitive_reason},
+            headers=auth_headers(),
+        )
+
+    assert fact.status_code == 201
+    assert capture.status_code == 201
+    assert suggestions.status_code == 200
+    assert approved.status_code == 200, approved.text
+    assert "sk-proj-review-secret-value" not in approved.text
+    data = approved.json()["data"]
+    assert data["suggestion"]["review_reason"] == "[redacted]"
+    assert data["suggestion"]["review_audit"]["events"][-1]["reason"] == "[redacted]"
+    assert data["link"]["reason"] == "[redacted]"
 
 
 def test_rejected_context_link_suggestion_is_not_recreated(tmp_path: Path) -> None:
