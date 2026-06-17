@@ -43,11 +43,38 @@ void main() {
     expect(find.text('Captures 1'), findsWidgets);
     expect(find.text('Files 1'), findsWidgets);
     expect(find.text('Anchors 1'), findsWidgets);
-    expect(find.text('Relations 2'), findsOneWidget);
+    expect(find.text('Relations 3'), findsOneWidget);
     expect(find.text('alex-call'), findsOneWidget);
     expect(find.text('atlas.png'), findsOneWidget);
     expect(find.text('Alex'), findsWidgets);
     expect(find.text('capture -> fact'), findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_browser_anchor_anchor_1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('memory_browser_anchor_dialog_anchor_1')),
+      findsOneWidget,
+    );
+    expect(find.text('person anchor - active'), findsOneWidget);
+    expect(find.text('key: alex'), findsOneWidget);
+    expect(find.text('aliases: A. Carter'), findsOneWidget);
+    expect(find.text('source: rule'), findsOneWidget);
+    expect(find.textContaining('Stable contact from Atlas captures'),
+        findsOneWidget);
+    expect(
+      find.textContaining(
+        'Screenshot from Alex about Project Atlas memory. -> person: Alex',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('matched person'), findsWidgets);
+    expect(find.text('Related evidence'), findsOneWidget);
+    expect(find.textContaining('capture - QuickCapture'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
 
     await tester
         .tap(find.byKey(const ValueKey('memory_browser_filter_anchors')));
@@ -187,9 +214,13 @@ MemoryBrowserSnapshot _snapshot() {
         'kind': 'person',
         'normalized_key': 'alex',
         'label': 'Alex',
-        'aliases': ['Alex'],
+        'aliases': ['Alex', 'A. Carter'],
+        'description': 'Stable contact from Atlas captures.',
         'status': 'active',
-        'metadata': <String, dynamic>{},
+        'metadata': {
+          'creation_source': 'rule',
+          'canonical_key': 'alex',
+        },
         'created_at': '2026-06-14T09:00:00Z',
         'updated_at': '2026-06-14T10:00:00Z',
       },
@@ -208,6 +239,22 @@ MemoryBrowserSnapshot _snapshot() {
         'reason': 'same project',
         'status': 'active',
         'metadata': <String, dynamic>{},
+        'created_at': '2026-06-14T09:00:00Z',
+        'updated_at': '2026-06-14T10:00:00Z',
+      },
+      {
+        'id': 'link-2',
+        'space_id': 'space-1',
+        'memory_scope_id': 'scope-1',
+        'source_type': 'capture',
+        'source_id': 'capture-1',
+        'target_type': 'anchor',
+        'target_id': 'anchor-1',
+        'relation_type': 'mentions',
+        'confidence': 'high',
+        'reason': 'matched person',
+        'status': 'active',
+        'metadata': {'target_label': 'Alex'},
         'created_at': '2026-06-14T09:00:00Z',
         'updated_at': '2026-06-14T10:00:00Z',
       },
@@ -236,7 +283,7 @@ MemoryBrowserSnapshot _snapshot() {
       'captures': 1,
       'assets': 1,
       'anchors': 1,
-      'context_links': 1,
+      'context_links': 2,
       'context_link_suggestions': 1,
     },
     'diagnostics': {'browser_version': 'memory-browser-v1'},

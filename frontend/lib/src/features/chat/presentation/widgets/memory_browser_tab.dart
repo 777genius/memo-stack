@@ -5,6 +5,7 @@ import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/memory_anchor_detail_dialog.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/sidebar_formatters.dart';
 
 class MemoryBrowserTab extends StatefulWidget {
@@ -338,7 +339,8 @@ class _BrowserBody extends StatelessWidget {
                       item.aliases.join(' '),
                       item.description ?? '',
                     ]))
-                .map((item) => _AnchorBrowserItem(anchor: item))
+                .map((item) =>
+                    _AnchorBrowserItem(anchor: item, snapshot: snapshot))
                 .toList(growable: false)
             : const <Widget>[],
       ),
@@ -441,56 +443,84 @@ class _BrowserItem extends StatelessWidget {
   final String subtitle;
   final String meta;
   final String? status;
+  final VoidCallback? onTap;
+  final Key? itemKey;
 
   const _BrowserItem({
+    this.itemKey,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.meta,
     this.status,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(8);
     return Container(
+      key: itemKey,
       margin: const EdgeInsets.only(bottom: 7),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: radius,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title.isEmpty ? meta : title,
-                        maxLines: 1,
+                Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title.isEmpty ? meta : title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ),
+                          if (status != null) ...[
+                            const SizedBox(width: 6),
+                            _StatusPill(status: status!),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w700,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
                             ),
                       ),
-                    ),
-                    if (status != null) ...[
-                      const SizedBox(width: 6),
-                      _StatusPill(status: status!),
                     ],
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(width: 8),
                 Text(
-                  subtitle,
-                  maxLines: 2,
+                  meta,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -499,16 +529,7 @@ class _BrowserItem extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            meta,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -552,19 +573,28 @@ class _AssetBrowserItem extends StatelessWidget {
 
 class _AnchorBrowserItem extends StatelessWidget {
   final MemoryBrowserAnchor anchor;
+  final MemoryBrowserSnapshot snapshot;
 
-  const _AnchorBrowserItem({required this.anchor});
+  const _AnchorBrowserItem({required this.anchor, required this.snapshot});
 
   @override
   Widget build(BuildContext context) {
     final aliases = anchor.aliasesLabel;
     return _BrowserItem(
+      itemKey: ValueKey('memory_browser_anchor_${sidebarKeyPart(anchor.id)}'),
       icon: _anchorIcon(anchor.kind),
       title: anchor.label,
       subtitle:
           '${anchor.kind} - ${aliases.isEmpty ? anchor.normalizedKey : aliases}',
       meta: shortStorageId(anchor.id),
       status: anchor.status,
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => MemoryAnchorDetailDialog(
+          anchor: anchor,
+          snapshot: snapshot,
+        ),
+      ),
     );
   }
 }
