@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 
 from memo_stack_core.application.dto import ContextLinkCandidate
@@ -12,9 +13,11 @@ MIN_REVIEW_SCORE = 40.0
 MIN_STRONG_SIGNAL_REVIEW_SCORE = 55.0
 AUTO_APPROVE_ELIGIBLE_SCORE = 92.0
 MAX_DENIED_DIAGNOSTIC_ITEMS = 8
+MAX_REASON_CODES = 12
 
 _AUTO_APPROVE_TARGET_TYPES = frozenset({"anchor", "fact", "episode", "document", "chunk"})
 _REVIEW_BLOCKED_TARGET_TYPES = frozenset({"suggestion"})
+_REASON_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _STRONG_REVIEW_SIGNAL_CODES = frozenset(
     {
         "text_match",
@@ -198,11 +201,23 @@ def _deny_reason_codes(
 def _reason_codes(candidate: ContextLinkCandidate) -> tuple[str, ...]:
     metadata = candidate.metadata or {}
     raw_codes = metadata.get("reason_codes")
-    if isinstance(raw_codes, list):
-        return tuple(str(code) for code in raw_codes if str(code).strip())
-    if isinstance(raw_codes, tuple):
-        return tuple(str(code) for code in raw_codes if str(code).strip())
-    return ()
+    if not isinstance(raw_codes, (list, tuple)):
+        return ()
+    codes: list[str] = []
+    for raw_code in raw_codes:
+        code = _normalize_reason_code(raw_code)
+        if code and code not in codes:
+            codes.append(code)
+        if len(codes) >= MAX_REASON_CODES:
+            break
+    return tuple(codes)
+
+
+def _normalize_reason_code(value: object) -> str:
+    raw = str(value).strip()
+    if not _REASON_CODE_PATTERN.fullmatch(raw):
+        return ""
+    return raw.lower().replace("-", "_")
 
 
 def _confidence_for_score(score: float) -> str:

@@ -1,4 +1,5 @@
 from memo_stack_core.application.context_link_policy import (
+    MAX_REASON_CODES,
     MAX_SUGGESTIONS_PER_SOURCE,
     apply_context_link_policy,
     decide_context_link_candidate,
@@ -100,3 +101,49 @@ def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
     assert first_metadata["review_gate"] == "required"
     assert first_metadata["auto_approve_eligible"] is True
     assert first_metadata["policy_confidence"] == "high"
+
+
+def test_policy_normalizes_reason_codes_without_raw_text_or_secrets() -> None:
+    candidate = _candidate(
+        target_id="unsafe",
+        score=80,
+        reason_codes=[
+            "text-match",
+            "Authorization: Bearer sk-proj-secret-value",
+            "raw person Alex private note",
+            "x" * 80,
+            "text_match",
+            "recent-context",
+        ],
+    )
+
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.reason_codes == (
+        "score_threshold_met",
+        "text_match",
+        "recent_context",
+        "review_required",
+    )
+    metadata = result.candidates[0].metadata or {}
+    assert metadata["policy_reason_codes"] == [
+        "score_threshold_met",
+        "text_match",
+        "recent_context",
+        "review_required",
+    ]
+
+
+def test_policy_caps_reason_codes_before_public_metadata() -> None:
+    candidate = _candidate(
+        target_id="many-reasons",
+        score=80,
+        reason_codes=[f"custom_signal_{index}" for index in range(MAX_REASON_CODES + 5)],
+    )
+
+    decision = decide_context_link_candidate(candidate)
+
+    assert len(decision.reason_codes) == MAX_REASON_CODES + 2
+    assert decision.reason_codes[:2] == ("score_threshold_met", "custom_signal_0")
+    assert decision.reason_codes[-1] == "review_required"
