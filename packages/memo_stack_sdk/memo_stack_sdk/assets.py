@@ -450,12 +450,50 @@ class MemoStackAssetsMixin:
             ),
         )
 
+    def approve_context_link_suggestion(
+        self,
+        suggestion_id: str,
+        *,
+        reason: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
+        confidence: str | None = None,
+        link_reason: str | None = None,
+    ) -> dict[str, Any]:
+        return self.review_context_link_suggestion(
+            suggestion_id,
+            action="approve",
+            reason=reason,
+            target_type=target_type,
+            target_id=target_id,
+            relation_type=relation_type,
+            confidence=confidence,
+            link_reason=link_reason,
+        )
+
+    def reject_context_link_suggestion(
+        self,
+        suggestion_id: str,
+        *,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        return self.review_context_link_suggestion(
+            suggestion_id,
+            action="reject",
+            reason=reason,
+        )
+
     def review_context_link_suggestions_batch(
         self,
         items: list[dict[str, Any]],
         *,
         continue_on_error: bool = False,
     ) -> dict[str, Any]:
+        if not items:
+            raise ValueError("Context link batch review requires at least one item")
+        if len(items) > 50:
+            raise ValueError("Context link batch review supports at most 50 items")
         return self._request(
             "POST",
             "/v1/context-link-suggestions/review-batch",

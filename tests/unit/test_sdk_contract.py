@@ -815,6 +815,19 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         confidence="high",
         link_reason="corrected target",
     )
+    client.approve_context_link_suggestion(
+        "ctxlinksug_approve_alias",
+        reason="alias accepted",
+        target_type="fact",
+        target_id="fact_5",
+        relation_type="supports",
+        confidence="high",
+        link_reason="alias target override",
+    )
+    client.reject_context_link_suggestion(
+        "ctxlinksug_reject_alias",
+        reason="alias rejected",
+    )
     client.review_context_link_suggestions_batch(
         [
             {
@@ -843,6 +856,8 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "PATCH /v1/context-links/ctxlink_1",
         "DELETE /v1/context-links/ctxlink_1",
         "POST /v1/context-link-suggestions/ctxlinksug_1/review",
+        "POST /v1/context-link-suggestions/ctxlinksug_approve_alias/review",
+        "POST /v1/context-link-suggestions/ctxlinksug_reject_alias/review",
         "POST /v1/context-link-suggestions/review-batch",
     ]
     assert seen[0][3] == {
@@ -900,6 +915,19 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         "link_reason": "corrected target",
     }
     assert seen[7][3] == {
+        "action": "approve",
+        "reason": "alias accepted",
+        "target_type": "fact",
+        "target_id": "fact_5",
+        "relation_type": "supports",
+        "confidence": "high",
+        "link_reason": "alias target override",
+    }
+    assert seen[8][3] == {
+        "action": "reject",
+        "reason": "alias rejected",
+    }
+    assert seen[9][3] == {
         "items": [
             {
                 "suggestion_id": "ctxlinksug_2",
@@ -918,6 +946,32 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         ],
         "continue_on_error": True,
     }
+
+
+def test_sdk_rejects_oversized_context_link_batch_review() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    try:
+        client.review_context_link_suggestions_batch(
+            [{"suggestion_id": f"ctxlinksug_{index}", "action": "approve"} for index in range(51)]
+        )
+    except ValueError as exc:
+        assert "at most 50" in str(exc)
+    else:
+        raise AssertionError("Expected oversized context link batch review to fail")
+
+    assert calls == 0
 
 
 def test_sdk_supports_context_link_statuses_filters() -> None:
