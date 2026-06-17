@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any
 from urllib.parse import quote
 
@@ -112,7 +113,10 @@ async def upload_asset(
                     parser_profile=parser_profile,
                 )
             )
-            data["extraction"] = asset_extraction_to_response(extraction.job)
+            data["extraction"] = asset_extraction_to_response(
+                extraction.job,
+                now=container.clock.now(),
+            )
         except MemoryQuotaExceededError as exc:
             data["extraction_error"] = {
                 "code": exc.code,
@@ -193,7 +197,7 @@ async def request_asset_extraction(
     )
     return {
         "data": {
-            **asset_extraction_to_response(result.job),
+            **asset_extraction_to_response(result.job, now=container.clock.now()),
             "duplicate": result.duplicate,
             "indexing_status": result.indexing_status,
         }
@@ -210,7 +214,8 @@ async def list_asset_extractions(
     result = await container.list_asset_extractions.execute(
         ListAssetExtractionsQuery(asset_id=asset_id, status=status_filter, limit=limit)
     )
-    return {"data": [asset_extraction_to_response(job) for job in result.jobs]}
+    now = container.clock.now()
+    return {"data": [asset_extraction_to_response(job, now=now) for job in result.jobs]}
 
 
 @router.get("/asset-extractions")
@@ -246,7 +251,8 @@ async def list_scope_asset_extractions(
             limit=limit,
         )
     )
-    return {"data": [asset_extraction_to_response(job) for job in result.jobs]}
+    now = container.clock.now()
+    return {"data": [asset_extraction_to_response(job, now=now) for job in result.jobs]}
 
 
 @router.get("/asset-extractions/{job_id}")
@@ -257,7 +263,7 @@ async def get_asset_extraction(
     result = await container.get_asset_extraction.execute(GetAssetExtractionQuery(job_id=job_id))
     return {
         "data": {
-            **asset_extraction_to_response(result.job),
+            **asset_extraction_to_response(result.job, now=container.clock.now()),
             "artifacts": [extraction_artifact_to_response(item) for item in result.artifacts],
         }
     }
@@ -273,7 +279,7 @@ async def retry_asset_extraction(
     result = await container.retry_asset_extraction.execute(
         RetryAssetExtractionCommand(job_id=job_id)
     )
-    return {"data": asset_extraction_to_response(result.job)}
+    return {"data": asset_extraction_to_response(result.job, now=container.clock.now())}
 
 
 @router.post("/asset-extractions/{job_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
@@ -286,7 +292,7 @@ async def cancel_asset_extraction(
     result = await container.cancel_asset_extraction.execute(
         CancelAssetExtractionCommand(job_id=job_id)
     )
-    return {"data": asset_extraction_to_response(result.job)}
+    return {"data": asset_extraction_to_response(result.job, now=container.clock.now())}
 
 
 @router.get("/extraction-artifacts/{artifact_id}/download")
@@ -340,7 +346,11 @@ def asset_to_response(asset: MemoryAsset) -> dict[str, Any]:
     }
 
 
-def asset_extraction_to_response(job: AssetExtractionJob) -> dict[str, Any]:
+def asset_extraction_to_response(
+    job: AssetExtractionJob,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     return {
         "id": str(job.id),
         "asset_id": str(job.asset_id),
@@ -362,7 +372,7 @@ def asset_extraction_to_response(job: AssetExtractionJob) -> dict[str, Any]:
         "result_document_ids": list(job.result_document_ids),
         "metadata": _safe_metadata(job.metadata),
         "progress": _extraction_progress(job),
-        "execution": _extraction_execution(job),
+        "execution": _extraction_execution(job, now=now),
         "usage": _extraction_usage(job),
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
@@ -371,7 +381,12 @@ def asset_extraction_to_response(job: AssetExtractionJob) -> dict[str, Any]:
     }
 
 
-def _extraction_execution(job: AssetExtractionJob) -> dict[str, Any]:
+def _extraction_execution(
+    job: AssetExtractionJob,
+    *,
+    now: datetime | None,
+) -> dict[str, Any]:
+    lease_state = _lease_state(job, now=now)
     return {
         "lease_owner": job.lease_owner,
         "lease_expires_at": job.lease_expires_at.isoformat()
@@ -383,7 +398,49 @@ def _extraction_execution(job: AssetExtractionJob) -> dict[str, Any]:
         "cancellation_requested_at": job.cancellation_requested_at.isoformat()
         if job.cancellation_requested_at
         else None,
+        "lease_state": lease_state,
+        "lease_seconds_remaining": _lease_seconds_remaining(job, now=now),
+        "reclaimable": _lease_reclaimable(job, lease_state=lease_state),
     }
+
+
+def _lease_state(job: AssetExtractionJob, *, now: datetime | None) -> str:
+    if job.status.value != "running":
+        return "none"
+    if job.cancellation_requested_at is not None:
+        return "cancel_requested"
+    if job.lease_expires_at is None:
+        return "missing"
+    if now is None:
+        return "unknown"
+    if _datetime_after(job.lease_expires_at, now):
+        return "active"
+    return "expired"
+
+
+def _lease_seconds_remaining(job: AssetExtractionJob, *, now: datetime | None) -> int | None:
+    if job.status.value != "running" or job.lease_expires_at is None or now is None:
+        return None
+    delta = _comparable_datetime(job.lease_expires_at) - _comparable_datetime(now)
+    return max(0, int(delta.total_seconds()))
+
+
+def _lease_reclaimable(job: AssetExtractionJob, *, lease_state: str) -> bool:
+    return (
+        job.status.value == "running"
+        and job.cancellation_requested_at is None
+        and lease_state in {"missing", "expired"}
+    )
+
+
+def _datetime_after(left: datetime, right: datetime) -> bool:
+    return _comparable_datetime(left) > _comparable_datetime(right)
+
+
+def _comparable_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value
+    return value.replace(tzinfo=None)
 
 
 def _extraction_progress(job: AssetExtractionJob) -> dict[str, Any]:

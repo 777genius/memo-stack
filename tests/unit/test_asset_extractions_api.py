@@ -530,6 +530,9 @@ def test_active_asset_extraction_lease_blocks_duplicate_worker_run(tmp_path: Pat
         assert extraction["status"] == "running"
         assert extraction["attempt_count"] == 1
         assert extraction["execution"]["lease_owner"] == "outbox:active"
+        assert extraction["execution"]["lease_state"] == "active"
+        assert extraction["execution"]["lease_seconds_remaining"] > 0
+        assert extraction["execution"]["reclaimable"] is False
         assert extraction["result_document_ids"] == []
         assert extraction["artifacts"] == []
 
@@ -560,6 +563,16 @@ def test_expired_asset_extraction_lease_can_be_reclaimed(tmp_path: Path) -> None
             )
         )
 
+        stale = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert stale.status_code == 200, stale.text
+        stale_execution = stale.json()["data"]["execution"]
+        assert stale_execution["lease_state"] == "expired"
+        assert stale_execution["lease_seconds_remaining"] == 0
+        assert stale_execution["reclaimable"] is True
+
         result = asyncio.run(
             client.app.state.container.run_asset_extraction.execute(
                 RunAssetExtractionCommand(
@@ -573,6 +586,16 @@ def test_expired_asset_extraction_lease_can_be_reclaimed(tmp_path: Path) -> None
         assert result.job.attempt_count == 2
         assert result.job.lease_owner is None
         assert len(result.job.result_document_ids) == 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        execution = fetched.json()["data"]["execution"]
+        assert execution["lease_state"] == "none"
+        assert execution["lease_seconds_remaining"] is None
+        assert execution["reclaimable"] is False
 
 
 def test_cancel_requested_running_asset_extraction_is_honored(tmp_path: Path) -> None:
