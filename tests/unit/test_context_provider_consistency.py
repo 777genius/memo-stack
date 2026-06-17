@@ -439,6 +439,103 @@ def test_context_replaces_superseded_fact_with_active_temporal_relation(
     )
 
 
+def test_context_ignores_future_and_expired_supersedes_relations_by_default(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        future_old = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TEMPORAL_FUTURE_OLD_FACT: legacy retention is 90 days.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "future-old"}],
+            },
+            headers=auth_headers(),
+        )
+        future_new = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TEMPORAL_FUTURE_NEW_FACT: retention will become 7 days.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "future-new"}],
+            },
+            headers=auth_headers(),
+        )
+        expired_old = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TEMPORAL_EXPIRED_OLD_FACT: legacy webhook endpoint is v1.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "expired-old"}],
+            },
+            headers=auth_headers(),
+        )
+        expired_new = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TEMPORAL_EXPIRED_NEW_FACT: webhook endpoint was v2 last year.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "expired-new"}],
+            },
+            headers=auth_headers(),
+        )
+        future_relation = client.post(
+            f"/v1/facts/{future_new.json()['data']['id']}/relations",
+            json={
+                "target_fact_id": future_old.json()["data"]["id"],
+                "relation_type": "supersedes",
+                "reason": "Future policy is not active yet.",
+                "valid_from": "2099-01-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        expired_relation = client.post(
+            f"/v1/facts/{expired_new.json()['data']['id']}/relations",
+            json={
+                "target_fact_id": expired_old.json()["data"]["id"],
+                "relation_type": "supersedes",
+                "reason": "Expired migration window should not hide current old fact.",
+                "valid_from": "2000-01-01T00:00:00+00:00",
+                "valid_to": "2001-01-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "TEMPORAL_FUTURE_OLD_FACT TEMPORAL_EXPIRED_OLD_FACT legacy",
+                "token_budget": 1024,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
+
+    assert future_old.status_code == 201
+    assert future_new.status_code == 201
+    assert expired_old.status_code == 201
+    assert expired_new.status_code == 201
+    assert future_relation.status_code == 201
+    assert expired_relation.status_code == 201
+    assert context.status_code == 200
+    data = context.json()["data"]
+    assert "TEMPORAL_FUTURE_OLD_FACT" in data["rendered_text"]
+    assert "TEMPORAL_EXPIRED_OLD_FACT" in data["rendered_text"]
+    assert "TEMPORAL_FUTURE_NEW_FACT" not in data["rendered_text"]
+    assert "TEMPORAL_EXPIRED_NEW_FACT" not in data["rendered_text"]
+    assert data["diagnostics"]["temporal_replacements_applied"] == 0
+    assert data["diagnostics"]["temporal_relations_skipped_by_validity"] == 2
+
+
 def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(

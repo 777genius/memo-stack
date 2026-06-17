@@ -199,6 +199,7 @@ class BuildContextUseCase:
                 "temporal_relations_considered": 0,
                 "temporal_replacements_applied": 0,
                 "temporal_contradictions_considered": 0,
+                "temporal_relations_skipped_by_validity": 0,
             }
 
         now = self._clock.now() if self._clock is not None else None
@@ -206,6 +207,7 @@ class BuildContextUseCase:
         invalidated_fact_ids: set[str] = set()
         replacement_items: dict[str, ContextItem] = {}
         relations_considered = 0
+        relations_skipped_by_validity = 0
         contradictions_considered = 0
         async with self._uow_factory() as uow:
             for item in fact_items:
@@ -215,6 +217,9 @@ class BuildContextUseCase:
                     limit=50,
                 )
                 for relation in relations:
+                    if not _temporal_relation_is_current(relation, now=now):
+                        relations_skipped_by_validity += 1
+                        continue
                     relation_type = relation.relation_type.value
                     if relation_type == "supersedes":
                         relations_considered += 1
@@ -266,6 +271,7 @@ class BuildContextUseCase:
             "temporal_relations_considered": relations_considered,
             "temporal_replacements_applied": len(invalidated_fact_ids),
             "temporal_contradictions_considered": contradictions_considered,
+            "temporal_relations_skipped_by_validity": relations_skipped_by_validity,
         }
 
     async def _pending_conflict_items(
@@ -389,6 +395,33 @@ def _fact_context_item(
             "updated_at": fact.updated_at.isoformat(),
         },
     )
+
+
+def _temporal_relation_is_current(
+    relation: MemoryFactRelation,
+    *,
+    now: datetime | None,
+) -> bool:
+    if now is None:
+        return True
+    comparable_now = now
+    if comparable_now.tzinfo is None:
+        comparable_now = comparable_now.replace(tzinfo=None)
+    valid_from = _comparable_datetime(relation.valid_from, comparable_now)
+    valid_to = _comparable_datetime(relation.valid_to, comparable_now)
+    if valid_from is not None and comparable_now < valid_from:
+        return False
+    return not (valid_to is not None and comparable_now >= valid_to)
+
+
+def _comparable_datetime(value: datetime | None, reference: datetime) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None and reference.tzinfo is not None:
+        return value.replace(tzinfo=reference.tzinfo)
+    if value.tzinfo is not None and reference.tzinfo is None:
+        return value.replace(tzinfo=None)
+    return value
 
 
 def _temporal_replacement_item(
