@@ -299,6 +299,15 @@ class MergeAnchorsUseCase:
         async with self._uow_factory() as uow:
             source = await _get_anchor(uow, command.source_anchor_id, role="source")
             target = await _get_anchor(uow, command.target_anchor_id, role="target")
+            await _assert_anchor_aliases_available(
+                uow,
+                space_id=str(target.space_id),
+                memory_scope_id=str(target.memory_scope_id),
+                kind=target.kind.value,
+                label=target.label,
+                aliases=(*target.aliases, source.label, *source.aliases),
+                exclude_anchor_ids=(str(source.id), str(target.id)),
+            )
             merged_target = target.merge_source(source=source, reason=reason, now=now)
             merged_source = source.mark_merged_into(
                 target_anchor_id=target.id,

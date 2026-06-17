@@ -1,9 +1,12 @@
+import asyncio
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from memo_stack_adapters.postgres.models import MemoryAnchorRow
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.main import create_app
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_client(tmp_path: Path, **overrides: Any) -> TestClient:
@@ -29,6 +32,18 @@ def auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
     if extra:
         headers.update(extra)
     return headers
+
+
+def overwrite_anchor_aliases(client: TestClient, anchor_id: str, aliases: list[str]) -> None:
+    async def run() -> None:
+        container = client.app.state.container
+        async with AsyncSession(container.engine) as session:
+            row = await session.get(MemoryAnchorRow, anchor_id)
+            assert row is not None
+            row.aliases_json = aliases
+            await session.commit()
+
+    asyncio.run(run())
 
 
 def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
@@ -511,6 +526,95 @@ def test_organization_anchor_alias_conflicts_and_split_preserve_lineage(
     }
     active_by_id = {item["id"]: item for item in active.json()["data"]}
     assert "Acme" not in active_by_id[acme_parent.json()["data"]["id"]]["aliases"]
+
+
+def test_anchor_merge_rejects_legacy_alias_conflict_with_third_anchor(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-merge-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "anchor-merge-conflict-seed",
+                "text": "Seed merge conflict scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        target = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-merge-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Group",
+                "aliases": ["Acme Group Canonical"],
+            },
+            headers=auth_headers(),
+        )
+        source = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-merge-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Legacy",
+                "aliases": ["Acme"],
+            },
+            headers=auth_headers(),
+        )
+        third = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-merge-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Research",
+                "aliases": ["Research Labs"],
+            },
+            headers=auth_headers(),
+        )
+        assert target.status_code == 200, target.text
+        assert source.status_code == 200, source.text
+        assert third.status_code == 200, third.text
+        overwrite_anchor_aliases(
+            client,
+            third.json()["data"]["id"],
+            ["Acme Research", "Acme"],
+        )
+
+        merge = client.post(
+            f"/v1/anchors/{source.json()['data']['id']}/merge",
+            json={
+                "target_anchor_id": target.json()["data"]["id"],
+                "reason": "reviewer attempted legacy merge",
+            },
+            headers=auth_headers(),
+        )
+        active = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-merge-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+
+    assert merge.status_code == 409, merge.text
+    active_by_id = {item["id"]: item for item in active.json()["data"]}
+    assert source.json()["data"]["id"] in active_by_id
+    assert "Acme" not in active_by_id[target.json()["data"]["id"]]["aliases"]
 
 
 def test_anchor_backfill_preserves_manual_event_label_for_case_variants(
