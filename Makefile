@@ -72,10 +72,13 @@ memo-stack-frontend-build-macos:
 .PHONY: memo-stack-frontend-check
 memo-stack-frontend-check: memo-stack-frontend-analyze memo-stack-frontend-test
 
-.PHONY: memo-stack-frontend-marionette-anchor-e2e
-memo-stack-frontend-marionette-anchor-e2e: memo-stack-up-lite
+.PHONY: memo-stack-frontend-marionette-memory-e2e
+memo-stack-frontend-marionette-memory-e2e: memo-stack-up-lite
 	for i in $$(seq 1 90); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 90 ]; then $(COMPOSE) logs --tail=120 memo_stack_server; exit 1; fi; sleep 1; done
 	cd $(FRONTEND_DIR) && dart_bin="$$(dirname "$(FLUTTER)")/dart"; if [ ! -x "$$dart_bin" ]; then dart_bin=dart; fi; FLUTTER_BIN="$(FLUTTER)" MEMO_STACK_BACKEND_HOST=127.0.0.1 MEMO_STACK_BACKEND_PORT=7788 MEMO_STACK_SERVICE_TOKEN=local-dev-token MEMO_STACK_SPACE_SLUG=marionette-anchor-e2e "$$dart_bin" run tool/marionette_anchor_lifecycle_e2e.dart
+
+.PHONY: memo-stack-frontend-marionette-anchor-e2e
+memo-stack-frontend-marionette-anchor-e2e: memo-stack-frontend-marionette-memory-e2e
 
 .PHONY: memo-stack-scale-chaos-load-e2e
 memo-stack-scale-chaos-load-e2e:

@@ -75,6 +75,51 @@ void main() {
       );
     });
 
+    test('reviews a pending link suggestion by target filter', () async {
+      await handler.submitCapture({
+        'text': 'Alex confirmed the Project Atlas launch timing.',
+      });
+      repo.contextLinkSuggestions = [
+        _suggestion(
+          'ctxlinksug-other',
+          sourceId: 'capture-1',
+          targetId: 'anchor-other',
+        ),
+        _suggestion(
+          'ctxlinksug-project',
+          sourceId: 'capture-1',
+          targetId: 'anchor-project-atlas',
+        ),
+      ];
+
+      final result = await handler.reviewFirstPendingLinkSuggestion({
+        'approve': 'true',
+        'targetId': 'anchor-project-atlas',
+      });
+
+      expect(result['reviewed'], true);
+      expect(result['reviewedSuggestionId'], 'ctxlinksug-project');
+      expect(result['reviewedTargetId'], 'anchor-project-atlas');
+      expect(repo.reviewedSuggestions, ['ctxlinksug-project:approve']);
+      expect(repo.contextLinkSuggestions.single.id, 'ctxlinksug-other');
+    });
+
+    test('does not review pending link suggestions outside target filter',
+        () async {
+      await handler.submitCapture({
+        'text': 'Alex confirmed the Project Atlas launch timing.',
+      });
+
+      final result = await handler.reviewFirstPendingLinkSuggestion({
+        'approve': 'true',
+        'targetId': 'anchor-missing',
+      });
+
+      expect(result['reviewed'], false);
+      expect(repo.reviewedSuggestions, isEmpty);
+      expect(repo.contextLinkSuggestions.single.id, 'ctxlinksug-1');
+    });
+
     test('drives memory anchor lifecycle for live e2e checks', () async {
       var result = await handler.createMemoryAnchor({
         'memoryScopeExternalRef': 'project-atlas',
@@ -632,7 +677,11 @@ MemoryCapture _capture({
   );
 }
 
-MemoryContextLinkSuggestion _suggestion(String id, {required String sourceId}) {
+MemoryContextLinkSuggestion _suggestion(
+  String id, {
+  required String sourceId,
+  String targetId = 'anchor-project-atlas',
+}) {
   final now = DateTime.now();
   return MemoryContextLinkSuggestion(
     id: id,
@@ -641,7 +690,7 @@ MemoryContextLinkSuggestion _suggestion(String id, {required String sourceId}) {
     sourceType: 'capture',
     sourceId: sourceId,
     targetType: 'anchor',
-    targetId: 'anchor-project-atlas',
+    targetId: targetId,
     relationType: 'related_to',
     confidence: 'high',
     reason: 'matched Project Atlas and Alex',

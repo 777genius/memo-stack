@@ -238,9 +238,20 @@ class MemoStackMarionetteE2eCommandHandler {
   ) async {
     final store = _store();
     await store.refreshContextLinkSuggestions(showLoading: false);
-    final pending = store.contextLinkSuggestions
-        .where((item) => item.isPending)
-        .toList(growable: false);
+    final targetId = _optional(params, 'targetId');
+    final targetType = _optional(params, 'targetType');
+    final targetLabelContains =
+        _optional(params, 'targetLabelContains')?.toLowerCase();
+    final pending = store.contextLinkSuggestions.where((item) {
+      if (!item.isPending) return false;
+      if (targetId != null && item.targetId != targetId) return false;
+      if (targetType != null && item.targetType != targetType) return false;
+      if (targetLabelContains != null &&
+          !item.targetLabel.toLowerCase().contains(targetLabelContains)) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
     if (pending.isEmpty) {
       return {
         ..._state(store),
@@ -257,6 +268,8 @@ class MemoStackMarionetteE2eCommandHandler {
       ..._state(store),
       'reviewed': true,
       'reviewedSuggestionId': pending.first.id,
+      'reviewedTargetType': pending.first.targetType,
+      'reviewedTargetId': pending.first.targetId,
       'reviewAction': approve ? 'approve' : 'reject',
     };
   }

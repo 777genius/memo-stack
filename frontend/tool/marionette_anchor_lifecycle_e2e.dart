@@ -99,6 +99,11 @@ class MarionetteAnchorLifecycleRunner {
         },
       );
 
+      await _runCaptureLinkingFlow(memoStack, runMarker);
+      final anchorBaselineState =
+          await memoStack.call('memoStack.e2eState', {});
+      final anchorBaseline =
+          _int(anchorBaselineState['memoryBrowserAnchorCount']);
       final created = await memoStack.call(
         'memoStack.createMemoryAnchor',
         {
@@ -111,8 +116,8 @@ class MarionetteAnchorLifecycleRunner {
       );
       final targetAnchorId = _field(_map(created['anchor']), 'id');
       _expect(
-        _int(created['memoryBrowserAnchorCount']) == 1,
-        'create anchor did not produce exactly one browser anchor',
+        _int(created['memoryBrowserAnchorCount']) == anchorBaseline + 1,
+        'create anchor did not add exactly one browser anchor',
       );
       _log('created anchor $targetAnchorId');
 
@@ -141,7 +146,7 @@ class MarionetteAnchorLifecycleRunner {
       );
       final splitAnchorId = _field(_map(split['splitAnchor']), 'id');
       _expect(
-        _int(split['memoryBrowserAnchorCount']) == 2,
+        _int(split['memoryBrowserAnchorCount']) == anchorBaseline + 2,
         'split alias did not produce the expected second anchor',
       );
       _log('split alias into anchor $splitAnchorId');
@@ -171,10 +176,22 @@ class MarionetteAnchorLifecycleRunner {
         'backend did not produce an anchor merge suggestion',
       );
 
-      final merged = await memoStack.call(
+      var merged = await memoStack.call(
         'memoStack.mergeFirstAnchorSuggestion',
-        {},
+        {
+          'sourceAnchorId': duplicateAnchorId,
+          'targetAnchorId': targetAnchorId,
+        },
       );
+      if (merged['merged'] != true) {
+        merged = await memoStack.call(
+          'memoStack.mergeFirstAnchorSuggestion',
+          {
+            'sourceAnchorId': targetAnchorId,
+            'targetAnchorId': duplicateAnchorId,
+          },
+        );
+      }
       _expect(merged['merged'] == true, 'merge suggestion was not applied');
       final mergedSourceAnchorId = _field(merged, 'mergedSourceAnchorId');
       final mergedTargetAnchorId = _field(merged, 'mergedTargetAnchorId');
@@ -213,6 +230,115 @@ class MarionetteAnchorLifecycleRunner {
         await startedApp.stop();
       }
     }
+  }
+
+  Future<void> _runCaptureLinkingFlow(
+    MemoStackExtensionClient memoStack,
+    String runMarker,
+  ) async {
+    final target = await memoStack.call(
+      'memoStack.createMemoryAnchor',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'kind': 'project',
+        'label': 'Project Capture Target $runMarker',
+        'aliases': 'Capture Target $runMarker, Project Link $runMarker',
+        'description': 'Target anchor for automated capture linking e2e',
+      },
+    );
+    final targetAnchorId = _field(_map(target['anchor']), 'id');
+    _log('created capture link target $targetAnchorId');
+
+    final captured = await memoStack.call(
+      'memoStack.submitCapture',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'threadTitle': 'Capture Link Thread $runMarker',
+        'text': 'Alex confirmed Project Capture Target $runMarker should be '
+            'linked to the onboarding screenshot note.',
+      },
+    );
+    _expect(
+      _int(captured['captureCount']) > 0,
+      'submitCapture did not create a visible memory capture',
+    );
+    _expect(
+      _field(_map(captured['latestCapture']), 'preview').contains(runMarker),
+      'latest capture does not contain the run marker',
+    );
+
+    final pending = await _waitForPendingContextLinkSuggestion(
+      memoStack,
+      targetAnchorId: targetAnchorId,
+    );
+    _expect(
+      _int(pending['pendingLinkSuggestionCount']) > 0,
+      'capture did not produce a pending context-link suggestion',
+    );
+    _log(
+      'capture produced ${pending['pendingLinkSuggestionCount']} '
+      'context-link suggestions',
+    );
+
+    final reviewed = await memoStack.call(
+      'memoStack.reviewFirstPendingLinkSuggestion',
+      {
+        'approve': 'true',
+        'targetId': targetAnchorId,
+      },
+    );
+    _expect(
+        reviewed['reviewed'] == true, 'no context-link suggestion reviewed');
+    _expect(
+      reviewed['reviewedTargetId'] == targetAnchorId,
+      'reviewed suggestion target did not match the capture target anchor',
+    );
+    final linked = await _waitForContextLinkCount(memoStack);
+    _expect(
+      _int(linked['memoryBrowserContextLinkCount']) > 0,
+      'approved context-link suggestion did not create a visible link',
+    );
+    _log(
+      'approved context-link suggestion ${reviewed['reviewedSuggestionId']} '
+      'for capture flow',
+    );
+  }
+
+  Future<Map<String, dynamic>> _waitForPendingContextLinkSuggestion(
+    MemoStackExtensionClient memoStack, {
+    required String targetAnchorId,
+  }) async {
+    final deadline = DateTime.now().add(config.callTimeout);
+    Map<String, dynamic>? lastState;
+    while (DateTime.now().isBefore(deadline)) {
+      lastState = await memoStack.call('memoStack.refresh', {});
+      final matching = _list(lastState['pendingLinkSuggestions'])
+          .map(_map)
+          .where((item) => _field(item, 'targetId') == targetAnchorId)
+          .toList(growable: false);
+      if (matching.isNotEmpty) {
+        return lastState;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    }
+    throw StateError(
+      'No pending context-link suggestion before timeout: $lastState',
+    );
+  }
+
+  Future<Map<String, dynamic>> _waitForContextLinkCount(
+    MemoStackExtensionClient memoStack,
+  ) async {
+    final deadline = DateTime.now().add(config.callTimeout);
+    Map<String, dynamic>? lastState;
+    while (DateTime.now().isBefore(deadline)) {
+      lastState = await memoStack.call('memoStack.refresh', {});
+      if (_int(lastState['memoryBrowserContextLinkCount']) > 0) {
+        return lastState;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    }
+    throw StateError('No visible context link before timeout: $lastState');
   }
 
   Future<void> _cleanupRunAnchors(

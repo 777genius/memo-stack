@@ -53,7 +53,7 @@ Local smokes:
 make memo-stack-smoke
 make memo-stack-smoke-full
 make memo-stack-mcp-smoke
-make memo-stack-frontend-marionette-anchor-e2e
+make memo-stack-frontend-marionette-memory-e2e
 ```
 
 Quality gates:
@@ -74,10 +74,10 @@ item ids, gates and aggregate metrics, not raw memory text.
 specific target ranking against a similar distractor, event-like call linking
 against a recent chat distractor, person/project anchor suggestions, review
 approval, and the no-candidate path for unrelated captures.
-`memo-stack-frontend-marionette-anchor-e2e` starts the Flutter debug app against
-the local Docker backend and validates the Memory Browser anchor lifecycle
-through VM service extensions: create, update, split alias, merge suggestion and
-cleanup.
+`memo-stack-frontend-marionette-memory-e2e` starts the Flutter debug app against
+the local Docker backend and validates the frontend memory save/review path
+through VM service extensions: create scope, save capture, approve a context-link
+suggestion, create/update/split anchors, merge duplicate anchors and cleanup.
 
 Fresh full-provider canary with isolated Docker volumes:
 
