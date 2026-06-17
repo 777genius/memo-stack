@@ -22,12 +22,17 @@ Current competitive memory systems converge on the same core ideas:
 
 Useful references checked during planning:
 
-- Mem0 migration docs emphasize add-only extraction, hybrid search, and entity linking.
-- Graphiti/Zep emphasize temporal context graphs, provenance, evolving facts, and
-  context assembly for agents.
-- Letta separates always-visible memory blocks from on-demand archival memory.
-- RAG evaluation references emphasize measuring retrieval and generation separately,
-  including recall, precision, faithfulness, and answer relevance.
+- Mem0 migration docs emphasize add-only extraction, single-pass extraction, hybrid
+  search, graph/entity linking, and multi-signal retrieval.
+  Source: https://docs.mem0.ai/migration/oss-v2-to-v3
+- Graphiti/Zep emphasize temporal context graphs, custom entities, evolving facts,
+  relationship invalidation, and hybrid retrieval over semantic, full-text and graph
+  signals. Source: https://help.getzep.com/graphiti/getting-started/overview
+- Letta separates always-visible core memory blocks from on-demand archival memory.
+  Source: https://docs.letta.com/guides/core-concepts/memory/context-hierarchy
+- LangMem documents semantic, episodic and procedural memory patterns, plus memory
+  extraction/update flows over long-term stores.
+  Source: https://langchain-ai.github.io/langmem/concepts/conceptual_guide/
 
 ## Non-negotiable architecture rules
 
@@ -52,6 +57,147 @@ Useful references checked during planning:
    reasons/evidence. Batch operations must stay bounded and auditable.
 10. Evals are product gates, not optional tests. Every risky memory behavior needs a
     golden case that can fail when relevance, safety, or provenance regresses.
+
+## Product memory taxonomy
+
+These names are product contracts. Code may use existing domain names, but behavior
+must map to the taxonomy below.
+
+| Type | Canonical storage | Retrieval behavior | Write policy |
+| --- | --- | --- | --- |
+| Semantic memory | `MemoryFact`, `MemoryAnchor`, context links | high precision, evidence-backed facts and entities | source refs required, conflict checks required |
+| Episodic memory | captures, episodes, document chunks, artifacts | time-ordered evidence and transcript/document recall | keep as evidence unless consolidated into facts |
+| Procedural memory | user/team operating rules and preferences | only explicit, high-trust rules may influence prompts | never infer from screenshots or untrusted docs |
+| Archival memory | documents, chunks, assets, external records | searched on demand; not always pinned to prompts | provider/storage adapters remain derived or external |
+
+Important distinction: tags help navigation and filtering; anchors represent canonical
+things. People, events, projects and organizations must be anchors, not only tags.
+
+## Canonical write rules
+
+1. A memory write must identify scope, source evidence and source trust before it can
+   become active canonical memory.
+2. Screenshots, files, transcripts and documents are first stored as evidence. Facts,
+   anchors and links are derived from that evidence.
+3. Weak extraction or weak linking creates pending review items, never silent active
+   memory.
+4. Imported legacy rows with missing new fields must receive safe defaults at mapper
+   boundaries, not inside business logic.
+5. User-approved decisions remain auditable even if later evidence changes confidence.
+
+## Context Assembly v2 contract
+
+Every selected `ContextItem` should include bounded diagnostics:
+
+```text
+retrieval_source: one selected source string
+retrieval_sources: ordered unique list, max 8
+ranking_reason: short human-readable explanation, max 240 chars
+score_signals: scalar-only non-sensitive score inputs
+provenance: non-sensitive source counts, ids and retrieval channels
+```
+
+Bundle-level diagnostics should include:
+
+```text
+context_assembly_version
+consistency_mode
+vector_status / graph_status / rag_status
+*_candidate_count
+*_hydrated_count
+stale_*_drop_count
+hybrid_items_used
+temporal_relations_considered
+temporal_replacements_applied
+pending_conflict_suggestions_considered
+```
+
+Sorting must be deterministic. If scores tie, use stable type/id/update ordering instead
+of relying on database or adapter return order.
+
+Diagnostics must never include raw provider payloads, secrets, stack traces, hidden
+prompt text, full document bodies, or unrestricted metadata blobs.
+
+## Scoring and provenance policy
+
+Score signals are explanations, not the source of truth. Postgres visibility checks and
+authorization always run before ranking. Ranking may boost:
+
+- same exact canonical item found by multiple retrieval sources;
+- recent and high-trust evidence;
+- approved user review;
+- temporal replacement that supersedes a matched stale fact.
+
+Ranking must penalize or exclude:
+
+- stale/deleted/disputed/superseded candidates in normal context;
+- provenance-less candidate facts;
+- weak entity-only matches without supporting evidence;
+- cross-scope/thread matches unless explicitly requested.
+
+## Semantic linking policy
+
+Context-link suggestions must be explainable and bounded.
+
+Required suggestion metadata:
+
+- `reason`
+- `reason_codes`
+- `matched_terms`
+- `target_preview`
+- confidence and score
+- source/target type and id
+
+Auto-approve is allowed only when all are true:
+
+- relation type policy allows auto-approval;
+- confidence is high;
+- at least two independent signals support the link;
+- no existing active duplicate link exists;
+- no reviewed rejected suggestion exists for the same source/target/relation;
+- source and target belong to the requested scope.
+
+Otherwise persist a pending review suggestion. If in doubt, review wins.
+
+## Temporal rules
+
+Normal context retrieval is current-state retrieval. It must hide deleted, disputed,
+superseded and expired facts unless a debug/review/as-of query explicitly asks for them.
+
+Temporal fields have these meanings:
+
+- `observed_at`: when the system learned the fact or relation;
+- `valid_from`: when the statement starts being true in the real world;
+- `valid_to`: when the statement stops being true in the real world;
+- `supersedes`: source fact replaces target fact for current context;
+- `contradicts`: target fact must not be treated as reliable current context without
+  review.
+
+Derived indexes must preserve temporal metadata but cannot decide canonical visibility.
+
+## Review UX gates
+
+Review surfaces must let a user:
+
+- approve, reject and edit target/relation;
+- see source and target evidence;
+- see why the suggestion exists;
+- filter by status, type, relation and target/evidence text;
+- run bounded batch actions only over visible pending suggestions;
+- avoid optimistic writes; refresh after confirmed API responses.
+
+Every review action should have a reason and be auditable.
+
+## Migration and compatibility rules
+
+New schema fields must be additive until a formal breaking migration is planned.
+Compatibility tests should cover:
+
+- old anchor rows without confidence, evidence refs or temporal fields;
+- old relation rows without observed/valid windows;
+- transfer import/export with missing fields;
+- SDK clients receiving old and new payload shapes;
+- public API returning empty lists instead of missing arrays when possible.
 
 ## Implementation order
 
