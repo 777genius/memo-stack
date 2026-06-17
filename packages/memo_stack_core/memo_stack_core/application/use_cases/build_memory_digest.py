@@ -162,9 +162,28 @@ class BuildMemoryDigestUseCase:
                             source_refs=fact.source_refs,
                             diagnostics={
                                 "memory_scope_id": str(fact.memory_scope_id),
+                                "retrieval_source": "superseded_review",
+                                "retrieval_sources": ["superseded_review"],
+                                "ranking_reason": (
+                                    "included only because include_superseded requested "
+                                    "review evidence"
+                                ),
+                                "score_signals": {
+                                    "base_score": 0.25,
+                                    "canonical": False,
+                                    "review_only": True,
+                                },
+                                "provenance": {
+                                    "retrieval_sources": ["superseded_review"],
+                                    "source_ref_count": len(fact.source_refs),
+                                    "fact_status": fact.status.value,
+                                    "fact_version": fact.version,
+                                    "visibility": "review_only",
+                                },
                                 "status": fact.status.value,
                                 "kind": fact.kind.value,
                                 "canonical": False,
+                                "review_only": True,
                             },
                         )
                     )
