@@ -316,6 +316,129 @@ def test_canonical_only_context_skips_all_provider_adapters(tmp_path: Path) -> N
     assert context.diagnostics["graph_skip_reason"] == "canonical_only"
 
 
+def test_context_marks_keyword_and_vector_hits_as_hybrid_evidence(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "title": "Hybrid context source",
+                "text": "HYBRID_CONTEXT_MARKER should be found by keyword and vector.",
+                "source_type": "document",
+                "source_external_id": "hybrid-doc",
+            },
+            headers=auth_headers(),
+        )
+        document_id = document.json()["data"]["id"]
+        chunk_id = client.get(
+            f"/v1/documents/{document_id}/chunks",
+            headers=auth_headers(),
+        ).json()["data"][0]["id"]
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=FakeVectorAdapter(chunk_id),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=FakeEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="HYBRID_CONTEXT_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert document.status_code == 201
+    assert "HYBRID_CONTEXT_MARKER" in context.rendered_text
+    assert context.diagnostics["vector_status"] == "ok"
+    assert context.diagnostics["vector_candidate_count"] == 1
+    assert context.diagnostics["vector_hydrated_count"] == 1
+    assert len(context.items) == 1
+    item = context.items[0]
+    assert item.item_id == chunk_id
+    assert item.score > 0.82
+    diagnostics = item.diagnostics or {}
+    assert diagnostics["retrieval_source"] == "vector_chunks"
+    assert diagnostics["retrieval_sources"] == ["vector_chunks", "keyword_chunks"]
+    assert diagnostics["ranking_reason"] == "hybrid match via vector_chunks, keyword_chunks"
+    assert diagnostics["score_signals"]["hybrid_source_count"] == 2
+    assert diagnostics["provenance"]["retrieval_sources"] == [
+        "vector_chunks",
+        "keyword_chunks",
+    ]
+
+
+def test_context_replaces_superseded_fact_with_active_temporal_relation(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        old_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TEMPORAL_OLD_FACT: legacy cache TTL is 7 days.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "old-cache-ttl"}],
+            },
+            headers=auth_headers(),
+        )
+        new_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TEMPORAL_NEW_FACT: cache TTL is 24 hours.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "new-cache-ttl"}],
+            },
+            headers=auth_headers(),
+        )
+        relation = client.post(
+            f"/v1/facts/{new_fact.json()['data']['id']}/relations",
+            json={
+                "target_fact_id": old_fact.json()["data"]["id"],
+                "relation_type": "supersedes",
+                "reason": "New cache TTL decision replaces legacy TTL.",
+                "valid_from": "2026-01-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "legacy cache TTL 7 days",
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert old_fact.status_code == 201
+    assert new_fact.status_code == 201
+    assert relation.status_code == 201
+    assert context.status_code == 200
+    data = context.json()["data"]
+    assert "TEMPORAL_NEW_FACT" in data["rendered_text"]
+    assert "TEMPORAL_OLD_FACT" not in data["rendered_text"]
+    assert data["diagnostics"]["temporal_replacements_applied"] == 1
+    replacement = next(
+        item for item in data["items"] if item["item_id"] == new_fact.json()["data"]["id"]
+    )
+    assert replacement["diagnostics"]["retrieval_source"] == "temporal_supersedes_relation"
+    assert (
+        replacement["diagnostics"]["temporal_replacement_for_fact_id"]
+        == old_fact.json()["data"]["id"]
+    )
+
+
 def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(

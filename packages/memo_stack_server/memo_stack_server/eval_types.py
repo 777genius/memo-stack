@@ -63,6 +63,7 @@ class EvalCase:
     max_chunks: int = 30
     consistency_mode: str = "best_effort"
     require_evidence_guard: bool = True
+    required_diagnostics: tuple[tuple[str, object], ...] = ()
 
 
 @dataclass(frozen=True)

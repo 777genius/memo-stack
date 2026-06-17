@@ -817,6 +817,18 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         space_id=space_id,
         memory_scope_id=alpha_memory_scope_id,
     )
+    checks["temporal_supersedes_relation"] = _seed_quality_temporal_supersedes(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=alpha_memory_scope_id,
+    )
+    checks["contradicted_fact_disputed"] = _seed_quality_contradiction_dispute(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=alpha_memory_scope_id,
+    )
     checks["deleted_fact"] = _seed_quality_deleted_fact(
         client,
         headers,
@@ -882,6 +894,112 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         beta_memory_scope_id=beta_memory_scope_id,
         current_thread_id=current_thread_id,
         other_thread_id=other_thread_id,
+    )
+
+
+def _seed_quality_temporal_supersedes(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    old_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text=(
+            "QUALITY_FACT_TEMPORAL_OLD: legacy temporal owner used RedisGraph "
+            "snapshots for memory invalidation."
+        ),
+        source_id="quality-temporal-old",
+        idempotency_key="quality-temporal-old-v1",
+        classification="internal",
+    )
+    new_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text=(
+            "QUALITY_FACT_TEMPORAL_CURRENT: temporal owner is Graphiti-style "
+            "supersedes relations with Postgres canonical evidence."
+        ),
+        source_id="quality-temporal-current",
+        idempotency_key="quality-temporal-current-v1",
+        classification="internal",
+    )
+    old_id = _response_data_id(old_fact)
+    new_id = _response_data_id(new_fact)
+    if not old_id or not new_id:
+        return False
+    relation = client.post(
+        f"/v1/facts/{new_id}/relations",
+        json={
+            "target_fact_id": old_id,
+            "relation_type": "supersedes",
+            "reason": "Quality eval current temporal memory invalidates the legacy owner.",
+            "observed_at": "2026-01-02T12:00:00+00:00",
+            "valid_from": "2026-01-01T00:00:00+00:00",
+        },
+        headers=headers,
+    )
+    return (
+        _status_ok(old_fact.status_code)
+        and _status_ok(new_fact.status_code)
+        and _status_ok(relation.status_code)
+    )
+
+
+def _seed_quality_contradiction_dispute(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    old_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text="QUALITY_FACT_CONTRADICTION_OLD: legacy billing owner is Alex.",
+        source_id="quality-contradiction-old",
+        idempotency_key="quality-contradiction-old-v1",
+        classification="internal",
+    )
+    new_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text="QUALITY_FACT_CONTRADICTION_CURRENT: billing owner is Dana, not legacy Alex.",
+        source_id="quality-contradiction-current",
+        idempotency_key="quality-contradiction-current-v1",
+        classification="internal",
+    )
+    old_id = _response_data_id(old_fact)
+    new_id = _response_data_id(new_fact)
+    if not old_id or not new_id:
+        return False
+    relation = client.post(
+        f"/v1/facts/{new_id}/relations",
+        json={
+            "target_fact_id": old_id,
+            "relation_type": "contradicts",
+            "reason": "Quality eval new billing owner contradicts the old owner.",
+            "observed_at": "2026-01-03T12:00:00+00:00",
+        },
+        headers=headers,
+    )
+    disputed = client.get(f"/v1/facts/{old_id}", headers=headers)
+    return (
+        _status_ok(old_fact.status_code)
+        and _status_ok(new_fact.status_code)
+        and _status_ok(relation.status_code)
+        and disputed.status_code == 200
+        and disputed.json().get("data", {}).get("status") == "disputed"
     )
 
 

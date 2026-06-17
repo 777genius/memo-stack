@@ -64,7 +64,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
         space_slug=space_slug,
         text=(
             "Alex and Project Atlas onboarding pricing summary from an hour ago. "
-            "The action item is invoice threshold approval."
+            "OpenAI vendor review is part of the invoice threshold approval."
         ),
         source_id="atlas-pricing",
     )
@@ -85,7 +85,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
         source_event_id="atlas-pricing-capture",
         text=(
             "Screenshot note from Alex an hour ago about Project Atlas onboarding "
-            "pricing and invoice threshold approval."
+            "pricing, OpenAI vendor review and invoice threshold approval."
         ),
         thread_external_ref="quality-review",
     )
@@ -99,7 +99,7 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
         headers,
         space_slug=space_slug,
         source_id=str(source_capture["id"]),
-        text="Alex hour ago Project Atlas onboarding pricing invoice threshold",
+        text="Alex hour ago Project Atlas OpenAI onboarding pricing invoice threshold",
         thread_external_ref="quality-review",
     )
     candidates = suggestions.get("candidates", [])
@@ -119,10 +119,26 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
         for item in candidates
         if item.get("target_type") == "anchor"
     }
-    checks["person_and_project_anchors_suggested"] = {
+    checks["person_project_and_org_anchors_suggested"] = {
         ("person", "alex"),
         ("project", "atlas"),
+        ("organization", "openai"),
     }.issubset(anchor_keys)
+    checks["person_and_project_anchors_suggested"] = checks[
+        "person_project_and_org_anchors_suggested"
+    ]
+    persisted_anchors = _list_anchors(client, headers, space_slug=space_slug)
+    anchors_by_key = {
+        (item.get("kind"), item.get("normalized_key")): item for item in persisted_anchors
+    }
+    required_anchor_keys = {
+        ("person", "alex"),
+        ("project", "atlas"),
+        ("organization", "openai"),
+    }
+    checks["anchor_evidence_confidence_and_observed_at_exposed"] = all(
+        _anchor_has_review_evidence(anchors_by_key.get(key)) for key in required_anchor_keys
+    )
     cases.append(
         {
             "case_id": "specific_target_beats_similar_project",
@@ -133,6 +149,20 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             "distractor_score": distractor_score,
         }
     )
+    cases.append(
+        {
+            "case_id": "person_project_and_org_anchors_suggested",
+            "ok": checks["person_project_and_org_anchors_suggested"],
+            "anchor_keys": sorted(anchor_keys),
+        }
+    )
+    cases.append(
+        {
+            "case_id": "anchor_evidence_confidence_and_observed_at_exposed",
+            "ok": checks["anchor_evidence_confidence_and_observed_at_exposed"],
+            "anchor_keys": sorted(required_anchor_keys),
+        }
+    )
     if not checks["top_fact_beats_distractor"]:
         failures.append(
             _failure(
@@ -140,6 +170,14 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
                 "ranking",
                 "top_fact_did_not_beat_distractor",
                 item_ids=[str(target_fact["id"]), str(distractor_fact["id"])],
+            )
+        )
+    if not checks["anchor_evidence_confidence_and_observed_at_exposed"]:
+        failures.append(
+            _failure(
+                "anchor_evidence_confidence_and_observed_at_exposed",
+                "anchor_quality",
+                "anchors_missing_review_evidence_or_confidence",
             )
         )
 
@@ -500,6 +538,38 @@ def _suggest(
     return _data(response) if response.status_code == 200 else {"candidates": []}
 
 
+def _list_anchors(client: Any, headers: dict[str, str], *, space_slug: str) -> list[dict[str, Any]]:
+    response = client.get(
+        "/v1/anchors",
+        params={
+            "space_slug": space_slug,
+            "memory_scope_external_ref": "default",
+            "limit": 100,
+        },
+        headers=headers,
+    )
+    payload = response.json() if response.status_code == 200 else {}
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return data if isinstance(data, list) else []
+
+
+def _anchor_has_review_evidence(anchor: object) -> bool:
+    if not isinstance(anchor, dict):
+        return False
+    evidence_refs = anchor.get("evidence_refs")
+    return (
+        anchor.get("confidence") in {"low", "medium", "high"}
+        and bool(anchor.get("observed_at"))
+        and isinstance(evidence_refs, list)
+        and any(
+            isinstance(ref, dict)
+            and ref.get("source_type") == "capture"
+            and bool(ref.get("source_id"))
+            for ref in evidence_refs
+        )
+    )
+
+
 def _approve(client: Any, headers: dict[str, str], suggestion_id: str) -> dict[str, object]:
     if not suggestion_id:
         return {}
@@ -545,6 +615,11 @@ def _report(
             1.0 if checks.get("document_chunk_evidence_suggested") else 0.0
         ),
         "anchor_recall_rate": 1.0 if checks.get("person_and_project_anchors_suggested") else 0.0,
+        "anchor_review_evidence_rate": (
+            1.0
+            if checks.get("anchor_evidence_confidence_and_observed_at_exposed")
+            else 0.0
+        ),
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
     }
@@ -555,6 +630,7 @@ def _report(
         "temporal_intent_recall": metrics["temporal_intent_recall"] == 1.0,
         "document_chunk_linking_accuracy": metrics["document_chunk_linking_accuracy"] == 1.0,
         "anchor_recall_rate": metrics["anchor_recall_rate"] == 1.0,
+        "anchor_review_evidence_rate": metrics["anchor_review_evidence_rate"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,
     }
