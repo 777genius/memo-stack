@@ -1,12 +1,16 @@
 import asyncio
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from memo_stack_adapters.postgres.models import MemoryFactRow, MemoryThreadRow
 from memo_stack_server.admin import token_create
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.db import upgrade
 from memo_stack_server.main import create_app
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_client(tmp_path: Path, **overrides: Any) -> TestClient:
@@ -1221,6 +1225,90 @@ def test_context_linking_quality_golden_links_temporal_intent_without_text_match
         assert thread_candidate["suggestion_id"]
 
 
+def test_context_linking_quality_golden_links_last_week_intent_without_text_match(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "last-week-intent-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-review-week-old",
+                "text": "Payment exception window was confirmed for Atlas cutoff.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "week-old-review"}],
+                "tags": ["atlas", "payment"],
+            },
+            headers=auth_headers({"Idempotency-Key": "last-week-intent-linking-quality-fact"}),
+        )
+        assert fact.status_code == 201, fact.text
+        asyncio.run(
+            _age_fact_and_thread(
+                client,
+                fact_id=fact.json()["data"]["id"],
+                thread_external_ref="alex-review-week-old",
+                age=timedelta(days=7),
+            )
+        )
+
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "last-week-intent-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quick-save",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "last-week-intent-linking-quality-capture",
+                "text": "Сохрани заметку и привяжи к встрече неделю назад.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "last-week-intent-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quick-save",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "привяжи к встрече неделю назад",
+                "persist": True,
+                "limit": 16,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        payload = suggestions.json()["data"]
+        candidates = payload["candidates"]
+
+        assert payload["diagnostics"]["temporal_hints"] == ["last_week"]
+        fact_candidate = next(
+            item
+            for item in candidates
+            if item["target_type"] == "fact"
+            and item["target_id"] == fact.json()["data"]["id"]
+        )
+        thread_candidate = next(
+            item
+            for item in candidates
+            if item["target_type"] == "thread"
+            and item["metadata"]["external_ref"] == "alex-review-week-old"
+        )
+        assert fact_candidate["metadata"]["matched_terms"] == []
+        assert thread_candidate["metadata"]["matched_terms"] == []
+        assert "temporal intent match" in fact_candidate["reasons"]
+        assert "temporal_intent_match" in fact_candidate["metadata"]["reason_codes"]
+        assert fact_candidate["suggestion_id"]
+        assert thread_candidate["suggestion_id"]
+
+
 def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         upload = client.post(
@@ -1685,3 +1773,25 @@ def test_scoped_tokens_can_only_access_assets_and_links_in_their_memory_scope(
     assert hidden_cross_target.status_code == 400
     assert hidden_cross_target.json()["error"]["code"] == "memory.validation"
     assert "beta secret asset" not in cross_asset_download.text
+
+
+async def _age_fact_and_thread(
+    client: TestClient,
+    *,
+    fact_id: str,
+    thread_external_ref: str,
+    age: timedelta,
+) -> None:
+    aged_at = client.app.state.container.clock.now() - age
+    async with AsyncSession(client.app.state.container.engine) as session:
+        await session.execute(
+            update(MemoryFactRow)
+            .where(MemoryFactRow.id == fact_id)
+            .values(created_at=aged_at, updated_at=aged_at)
+        )
+        await session.execute(
+            update(MemoryThreadRow)
+            .where(MemoryThreadRow.external_ref == thread_external_ref)
+            .values(created_at=aged_at, updated_at=aged_at)
+        )
+        await session.commit()
