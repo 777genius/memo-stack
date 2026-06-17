@@ -17,7 +17,7 @@ _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(
         r"\b[A-Za-z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)"
-        r"\s*[:=]\s*['\"]?(?![$<{])[^'\"\s]{12,}",
+        r"\s*[:=]\s*['\"]?(?![$<{]|\[redacted[^\]]*\])[^'\"\s]{12,}",
         re.IGNORECASE,
     ),
 )

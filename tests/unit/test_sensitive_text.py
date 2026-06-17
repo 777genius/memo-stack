@@ -49,3 +49,18 @@ def test_shared_sensitive_text_policy_allows_safe_env_placeholders() -> None:
     assert contains_sensitive_value(text) is False
     assert redact_sensitive_text(text, marker="[redacted-secret]") == text
     assert redact_mcp_sensitive_text(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "token=[redacted-secret]",
+        "api_key=[redacted]",
+        "password=<redacted:secret>",
+    ],
+)
+def test_shared_sensitive_text_policy_allows_redacted_placeholders(text: str) -> None:
+    assert contains_sensitive_text(text) is False
+    assert contains_sensitive_value(text) is False
+    assert redact_sensitive_text(text, marker="[redacted-secret]") == text
+    assert redact_mcp_sensitive_text(text) == text
