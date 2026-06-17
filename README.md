@@ -209,6 +209,8 @@ make memo-stack-smoke
 make memo-stack-mcp-smoke
 ```
 
+`memo-stack-smoke` covers the SDK lifecycle path plus MemoryScope snapshot thread transfer.
+
 Full provider mode needs OpenAI for embeddings and Graphiti. Do not paste the
 key into commands that will be saved in shell history. Read it silently or use
 an ignored local env file:

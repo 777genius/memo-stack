@@ -232,6 +232,10 @@ memo-stack-prod-confidence-strict-preflight:
 memo-stack-api-smoke:
 	MEMORY_SMOKE_API_URL=$${MEMORY_SMOKE_API_URL:-http://127.0.0.1:7788} MEMORY_SMOKE_AUTH_TOKEN=$${MEMORY_SMOKE_AUTH_TOKEN:-local-dev-token} $(PYTHON) examples/integration_memory_smoke.py
 
+.PHONY: memo-stack-snapshot-thread-smoke
+memo-stack-snapshot-thread-smoke:
+	MEMORY_SMOKE_API_URL=$${MEMORY_SMOKE_API_URL:-http://127.0.0.1:7788} MEMORY_SMOKE_AUTH_TOKEN=$${MEMORY_SMOKE_AUTH_TOKEN:-local-dev-token} $(PYTHON) scripts/memory_scope_snapshot_thread_smoke.py
+
 .PHONY: memo-stack-mcp-smoke
 memo-stack-mcp-smoke:
 	MEMORY_MCP_API_URL=$${MEMORY_MCP_API_URL:-http://127.0.0.1:7788} MEMORY_MCP_AUTH_TOKEN=$${MEMORY_MCP_AUTH_TOKEN:-local-dev-token} MEMORY_MCP_WRITE_MODE=direct MEMORY_MCP_DELETE_MODE=explicit MEMORY_MCP_INGEST_MODE=allowed $(PYTHON) examples/mcp_agent_smoke.py
@@ -420,12 +424,14 @@ memo-stack-smoke:
 	$(MAKE) memo-stack-up-lite
 	for i in $$(seq 1 90); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 90 ]; then $(COMPOSE) logs --tail=120 memo_stack_server; exit 1; fi; sleep 1; done
 	$(MAKE) memo-stack-api-smoke
+	$(MAKE) memo-stack-snapshot-thread-smoke
 
 .PHONY: memo-stack-smoke-full
 memo-stack-smoke-full:
 	$(MAKE) memo-stack-up-full
 	for i in $$(seq 1 120); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 120 ]; then $(COMPOSE) logs --tail=120 memo_stack_server_full; exit 1; fi; sleep 1; done
 	$(MAKE) memo-stack-api-smoke
+	$(MAKE) memo-stack-snapshot-thread-smoke
 	$(MAKE) memo-stack-mcp-smoke
 
 .PHONY: memo-stack-clean-full-smoke
