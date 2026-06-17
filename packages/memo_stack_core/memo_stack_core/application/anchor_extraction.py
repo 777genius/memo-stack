@@ -28,9 +28,13 @@ _EVENT_PATTERN = re.compile(
     r"звонок|созвон|встреча|ревью|демо|переписка|переписывался|"
     r"разговор(?:а|е|ом)?|чат"
     r")"
-    r"(?:\s+(?:with|about|с|по|об|про|[A-Za-zА-Яа-яЁё0-9][\w.-]{1,40})){0,5}?"
+    r"(?:\s+(?:with|from|about|с|от|по|об|про|[A-Za-zА-Яа-яЁё0-9][\w.-]{1,40})){0,5}?"
     rf"(?:\s+({_TEMPORAL_PHRASE}))?",
     re.IGNORECASE,
+)
+_EVENT_PARTICIPANT_PATTERN = re.compile(
+    r"\b(?P<prep>with|from|с|от)\s+"
+    r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
 )
 _TEMPORAL_PATTERN = re.compile(
     rf"\b({_TEMPORAL_PHRASE})\b",
@@ -200,8 +204,7 @@ def normalize_anchor_key(label: str) -> str:
 def canonical_anchor_key(label: str) -> str:
     normalized = normalize_anchor_key(label)
     return " ".join(
-        part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks")
-        for part in normalized.split()
+        part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks") for part in normalized.split()
     )
 
 
@@ -260,13 +263,17 @@ def _event_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for match in _EVENT_PATTERN.finditer(text):
         event = match.group(1).strip()
+        participant = _nearby_event_participant(text, match.end())
         temporal = (
             match.group(2)
             or _nearby_temporal_after(text, match.end())
             or _nearby_temporal_before(text, match.start())
         ).strip()
-        label = f"{event} {temporal}".strip()
+        label = " ".join(part for part in (event, participant, temporal) if part).strip()
         labels.append(label)
+        generic_temporal_label = f"{event} {temporal}".strip()
+        if participant and temporal and generic_temporal_label != label:
+            labels.append(generic_temporal_label)
     return tuple(labels)
 
 
@@ -289,6 +296,17 @@ def _nearby_temporal_after(text: str, start: int) -> str:
     tail = re.split(r"[.!?\n]", text[start : start + 80], maxsplit=1)[0]
     match = _TEMPORAL_PATTERN.search(tail)
     return match.group(1) if match else ""
+
+
+def _nearby_event_participant(text: str, start: int) -> str:
+    tail = re.split(r"[.!?\n]", text[start : start + 80], maxsplit=1)[0]
+    match = _EVENT_PARTICIPANT_PATTERN.search(tail)
+    if not match:
+        return ""
+    label = match.group("label")
+    if not _is_probable_person_label(label):
+        return ""
+    return f"{match.group('prep')} {label}"
 
 
 def _nearby_temporal_before(text: str, end: int) -> str:
@@ -321,11 +339,7 @@ def _canonical_key_for(kind: MemoryAnchorKind, label: str) -> str:
 def _canonical_person_key(label: str) -> str:
     normalized = normalize_anchor_key(label)
     parts = [_normalize_cyrillic_person_case(part) for part in normalized.split()]
-    return " ".join(
-        part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks")
-        for part in parts
-        if part
-    )
+    return " ".join(part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks") for part in parts if part)
 
 
 def _normalize_cyrillic_person_case(part: str) -> str:

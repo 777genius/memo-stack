@@ -35,10 +35,20 @@ def test_anchor_extraction_keeps_numeric_temporal_event_labels() -> None:
     assert ("event", "chat 2 days ago") in keys
 
 
+def test_anchor_extraction_keeps_event_participants() -> None:
+    anchors = extract_observed_anchors(
+        "Call with Alex about Atlas. Созвон с Марией вчера по Project Atlas."
+    )
+
+    keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
+    assert ("event", "call with alex") in keys
+    assert ("event", "созвон с марией вчера") in keys
+    assert ("event", "созвон вчера") in keys
+
+
 def test_anchor_extraction_handles_russian_temporal_person_cases() -> None:
     anchors = extract_observed_anchors(
-        "Час назад я переписывался с Алексом по Project Atlas. "
-        "Созвон с Марией вчера про backend."
+        "Час назад я переписывался с Алексом по Project Atlas. Созвон с Марией вчера про backend."
     )
 
     person_keys = {
@@ -46,14 +56,10 @@ def test_anchor_extraction_handles_russian_temporal_person_cases() -> None:
         for anchor in anchors
         if anchor.kind.value == "person"
     }
-    event_keys = {
-        anchor.normalized_key
-        for anchor in anchors
-        if anchor.kind.value == "event"
-    }
+    event_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "event"}
     assert ("час", "chas") not in person_keys
     assert ("созвон", "sozvon") not in person_keys
     assert ("алексом", "aleks") in person_keys
     assert ("марией", "mariya") in person_keys
-    assert "переписывался час назад" in event_keys
-    assert "созвон вчера" in event_keys
+    assert "переписывался с алексом час назад" in event_keys
+    assert "созвон с марией вчера" in event_keys
