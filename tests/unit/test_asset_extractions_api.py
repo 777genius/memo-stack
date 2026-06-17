@@ -104,16 +104,23 @@ class _CancelAfterIngestDocument:
 
 
 class _FailingArtifactBlobStorage:
-    def __init__(self, *, inner: Any, fail_on_artifact_write: int = 2) -> None:
+    def __init__(
+        self,
+        *,
+        inner: Any,
+        fail_on_artifact_write: int = 2,
+        failure_message: str = "simulated artifact storage outage",
+    ) -> None:
         self._inner = inner
         self._fail_on_artifact_write = fail_on_artifact_write
+        self._failure_message = failure_message
         self._artifact_write_count = 0
 
     async def write_bytes(self, *, storage_key: str, content: bytes) -> Any:
         if "/extractions/" in storage_key:
             self._artifact_write_count += 1
             if self._artifact_write_count >= self._fail_on_artifact_write:
-                raise RuntimeError("simulated artifact storage outage")
+                raise RuntimeError(self._failure_message)
         return await self._inner.write_bytes(storage_key=storage_key, content=content)
 
     async def read_bytes(self, *, storage_key: str) -> bytes:
@@ -488,6 +495,53 @@ def test_asset_extraction_marks_failed_and_cleans_blobs_on_artifact_storage_erro
         ]
         assert len(matching_documents) == 1
         assert len(matching_chunks) == 1
+
+
+def test_asset_extraction_redacts_secret_failure_messages(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "secret-failure.txt",
+                "extract": "true",
+            },
+            content=b"Failure messages must not leak credentials.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_blob_storage = run_use_case._blob_storage
+        run_use_case._blob_storage = _FailingArtifactBlobStorage(
+            inner=original_blob_storage,
+            fail_on_artifact_write=1,
+            failure_message=(
+                "Authorization: Bearer sk-proj-secret-failure-token-value "
+                "-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----"
+            ),
+        )
+        try:
+            processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        finally:
+            run_use_case._blob_storage = original_blob_storage
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        rendered = fetched.text
+
+        assert extracted["status"] == "failed"
+        assert "sk-proj-secret-failure-token-value" not in rendered
+        assert "PRIVATE KEY" not in rendered
+        assert "[redacted]" in extracted["safe_error_message"]
 
 
 def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> None:

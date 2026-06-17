@@ -36,6 +36,7 @@ from memo_stack_core.application.use_cases.asset_extraction_support import (
     indexing_status,
     parser_config_hash,
     positive_int,
+    safe_error_text,
     safe_exception_code,
     safe_exception_message,
     usage_idempotency_key,
@@ -811,7 +812,9 @@ class RunAssetExtractionUseCase:
             unsupported = current.mark_unsupported(
                 now=self._clock.now(),
                 code=result.safe_error_code or "asset_extraction.unsupported",
-                message=result.safe_error_message or "Asset type is unsupported",
+                message=safe_error_text(
+                    result.safe_error_message or "Asset type is unsupported"
+                ),
                 metadata={
                     "normalized_content_type": result.normalized_content_type,
                     **result.technical_metadata,
@@ -848,7 +851,7 @@ class RunAssetExtractionUseCase:
             failed = current.mark_failed(
                 now=now,
                 code=code,
-                message=message,
+                message=safe_error_text(message),
                 metadata={**dict(metadata or {}), **retry_metadata},
                 retry_disposition=retry_disposition,
                 retry_after_at=retry_after_at,
