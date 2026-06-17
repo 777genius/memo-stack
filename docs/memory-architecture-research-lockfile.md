@@ -239,6 +239,18 @@ Provenance:
 - Temporal relation ids when temporal replacement happened.
 - Sequence or character offsets for chunks when available.
 
+Current context-link guardrails:
+
+- Direct suggestion requests clamp effective limit to `1..30`.
+- Persisted link suggestions return at most `10` review candidates per source.
+- Query term diagnostics keep at most `64` redacted terms.
+- Each query term is capped at `80` characters.
+- Denied candidate diagnostics keep at most `8` denied candidates.
+- Policy reason codes keep at most `12` normalized codes.
+- Denied diagnostic target text is capped at `160` characters.
+- Public metadata payloads keep bounded dict/list sizes and redact sensitive
+  text before API exposure.
+
 Deterministic ordering:
 
 - Primary sort is score.
