@@ -76,6 +76,48 @@ def test_context_link_review_audit_reason_redacts_obvious_secret_markers() -> No
     assert review_event["reason"] == "[redacted]"
 
 
+def test_context_link_review_audit_preserves_override_decision_details() -> None:
+    now = datetime(2026, 6, 17, tzinfo=UTC)
+    suggestion = MemoryContextLinkSuggestion.create(
+        suggestion_id=MemoryContextLinkSuggestionId("ctxlinksug_override"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
+        source_type="capture",
+        source_id="capture_1",
+        target_type="fact",
+        target_id="fact_original",
+        relation_type="related_to",
+        confidence="medium",
+        reason="same evidence",
+        score=88.0,
+        now=now,
+        metadata={
+            "approved_override": True,
+            "original_target_type": "fact",
+            "original_target_id": "fact_original",
+            "approved_target_type": "anchor",
+            "approved_target_id": "anchor_alex",
+            "original_relation_type": "related_to",
+            "approved_relation_type": "mentions",
+            "original_confidence": "medium",
+            "approved_confidence": "high",
+            "approved_link_reason": "reviewer selected Bearer sk-proj-review-secret",
+        },
+    )
+
+    approved = suggestion.approve(now=now, reason="confirmed")
+    review_event = approved.metadata["review_events"][-1]
+
+    assert review_event["approved_override"] is True
+    assert review_event["target_id"] == "fact_original"
+    assert review_event["original_target_id"] == "fact_original"
+    assert review_event["approved_target_id"] == "anchor_alex"
+    assert review_event["original_relation_type"] == "related_to"
+    assert review_event["approved_relation_type"] == "mentions"
+    assert review_event["approved_confidence"] == "high"
+    assert review_event["approved_link_reason"] == "[redacted]"
+
+
 def test_context_link_metadata_preserves_nested_evidence_refs_without_secret_payloads() -> None:
     now = datetime(2026, 6, 17, tzinfo=UTC)
     metadata = {

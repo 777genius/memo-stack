@@ -916,6 +916,14 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
         payload["suggestion"]["metadata"]["approved_link_reason"]
         == "approved corrected target with [redacted]"
     )
+    review_event = payload["suggestion"]["review_audit"]["events"][-1]
+    assert review_event["approved_override"] is True
+    assert review_event["target_id"] == fact_candidate["target_id"]
+    assert review_event["original_target_id"] == fact_candidate["target_id"]
+    assert review_event["approved_target_id"] == override_fact.json()["data"]["id"]
+    assert review_event["approved_relation_type"] == "supports"
+    assert review_event["approved_confidence"] == "high"
+    assert review_event["approved_link_reason"] == "approved corrected target with [redacted]"
     assert payload["link"]["target_id"] == override_fact.json()["data"]["id"]
     assert payload["link"]["relation_type"] == "supports"
     assert payload["link"]["confidence"] == "high"

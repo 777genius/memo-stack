@@ -978,6 +978,10 @@ def test_memory_scope_snapshot_import_remaps_reviewed_context_link_audit(
     assert approved_review_event["suggestion_id"] == restored_approved_suggestion["id"]
     assert approved_review_event["source_id"] == restored_approved_suggestion["source_id"]
     assert approved_review_event["target_id"] == restored_original["id"]
+    assert approved_review_event["approved_override"] is True
+    assert approved_review_event["original_target_id"] == restored_original["id"]
+    assert approved_review_event["approved_target_id"] == restored_override["id"]
+    assert approved_review_event["approved_relation_type"] == "supports"
     assert approved_review_event["action"] == "approve"
     assert approved_review_event["new_status"] == "approved"
     assert restored_rejected_suggestion["review_reason"] == "not the right restored context"

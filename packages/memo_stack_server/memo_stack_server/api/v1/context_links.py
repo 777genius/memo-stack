@@ -56,6 +56,16 @@ _PUBLIC_REVIEW_AUDIT_FIELDS = {
     "new_status": 40,
     "reviewed_at": 80,
     "policy_version": 120,
+    "approved_override": 8,
+    "original_target_type": 80,
+    "original_target_id": 160,
+    "approved_target_type": 80,
+    "approved_target_id": 160,
+    "original_relation_type": 80,
+    "approved_relation_type": 80,
+    "original_confidence": 40,
+    "approved_confidence": 40,
+    "approved_link_reason": 320,
     "reason": 320,
 }
 
@@ -553,8 +563,10 @@ def _review_audit_event_to_response(event: dict[str, Any]) -> dict[str, Any]:
         value = event.get(key)
         if value is None:
             continue
-        if isinstance(value, (str, int, float, bool)):
-            sanitizer = safe_public_reason if key == "reason" else safe_public_text
+        if isinstance(value, bool):
+            public[key] = value
+        elif isinstance(value, (str, int, float)):
+            sanitizer = safe_public_reason if key.endswith("reason") else safe_public_text
             public[key] = sanitizer(str(value), limit=limit)
     return public
 

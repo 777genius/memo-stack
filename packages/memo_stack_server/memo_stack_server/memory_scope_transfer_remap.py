@@ -531,6 +531,27 @@ def remap_context_link_review_events(
                 extraction_job_id_map=extraction_job_id_map,
                 extraction_artifact_id_map=extraction_artifact_id_map,
             )
+        for type_key, id_key in (
+            ("original_target_type", "original_target_id"),
+            ("approved_target_type", "approved_target_id"),
+        ):
+            override_type = next_event.get(type_key)
+            override_id = next_event.get(id_key)
+            if override_type is not None and override_id is not None:
+                next_event[id_key] = remap_endpoint_id(
+                    source_type=str(override_type),
+                    source_id=str(override_id),
+                    fact_id_map=fact_id_map,
+                    thread_id_map=thread_id_map,
+                    document_id_map=document_id_map,
+                    episode_id_map=episode_id_map,
+                    chunk_id_map=chunk_id_map,
+                    capture_id_map=capture_id_map,
+                    asset_id_map=asset_id_map,
+                    anchor_id_map=anchor_id_map,
+                    extraction_job_id_map=extraction_job_id_map,
+                    extraction_artifact_id_map=extraction_artifact_id_map,
+                )
         events.append(next_event)
     return events
 

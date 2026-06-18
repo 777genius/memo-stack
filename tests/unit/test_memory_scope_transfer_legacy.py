@@ -189,6 +189,11 @@ def test_legacy_snapshot_context_link_suggestion_remaps_approved_override_metada
                         "source_id": "capture_old",
                         "target_type": "anchor",
                         "target_id": "anchor_alex_old",
+                        "approved_override": True,
+                        "original_target_type": "fact",
+                        "original_target_id": "fact_original_old",
+                        "approved_target_type": "anchor",
+                        "approved_target_id": "anchor_alex_old",
                     },
                     "legacy_raw_event",
                 ],
@@ -220,6 +225,8 @@ def test_legacy_snapshot_context_link_suggestion_remaps_approved_override_metada
     assert review_events[0]["suggestion_id"] == "ctxlinksug_new"
     assert review_events[0]["source_id"] == "capture_new"
     assert review_events[0]["target_id"] == "anchor_alex_new"
+    assert review_events[0]["original_target_id"] == "fact_original_new"
+    assert review_events[0]["approved_target_id"] == "anchor_alex_new"
     assert review_events[1] == "legacy_raw_event"
 
 

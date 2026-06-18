@@ -606,8 +606,32 @@ def _context_link_review_event(
     policy_version = suggestion.metadata.get("suggestion_policy_version")
     if isinstance(policy_version, str) and policy_version.strip():
         event["policy_version"] = policy_version[:120]
+    event.update(_context_link_review_override_event_fields(suggestion.metadata))
     if reason:
         event["reason"] = _safe_audit_reason(reason)
+    return event
+
+
+def _context_link_review_override_event_fields(
+    metadata: Mapping[str, object],
+) -> dict[str, object]:
+    if metadata.get("approved_override") is not True:
+        return {}
+    event: dict[str, object] = {"approved_override": True}
+    for key, max_chars in (
+        ("original_target_type", 80),
+        ("original_target_id", 160),
+        ("approved_target_type", 80),
+        ("approved_target_id", 160),
+        ("original_relation_type", 80),
+        ("approved_relation_type", 80),
+        ("original_confidence", 40),
+        ("approved_confidence", 40),
+        ("approved_link_reason", MAX_CONTEXT_LINK_REVIEW_REASON_CHARS),
+    ):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            event[key] = _safe_metadata_text(value, max_chars=max_chars)
     return event
 
 

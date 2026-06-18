@@ -206,6 +206,13 @@ def test_context_link_suggestion_review_audit_is_bounded_and_redacted() -> None:
                         "new_status": "approved",
                         "reviewed_at": now.isoformat(),
                         "policy_version": "context-link-policy-v1",
+                        "approved_override": True,
+                        "original_target_type": "fact",
+                        "original_target_id": f"fact_original_{index}",
+                        "approved_target_type": "anchor",
+                        "approved_target_id": f"anchor_{index}",
+                        "approved_relation_type": "mentions",
+                        "approved_link_reason": f"approved link reason Bearer {raw_secret}",
                         "reason": f"approved with Bearer {raw_secret}",
                         "authorization": f"Bearer {raw_secret}",
                     }
@@ -226,6 +233,9 @@ def test_context_link_suggestion_review_audit_is_bounded_and_redacted() -> None:
     assert response["review_audit"]["truncated"] is True
     assert len(response["review_audit"]["events"]) == 10
     assert response["review_audit"]["events"][0]["suggestion_id"] == "ctxlinksug_2"
+    assert response["review_audit"]["events"][0]["approved_override"] is True
+    assert response["review_audit"]["events"][0]["approved_target_id"] == "anchor_2"
+    assert response["review_audit"]["events"][0]["approved_link_reason"] == "[redacted]"
     assert "authorization" not in response["review_audit"]["events"][0]
     assert "api_key" not in response["metadata"]
     assert raw_secret not in rendered
