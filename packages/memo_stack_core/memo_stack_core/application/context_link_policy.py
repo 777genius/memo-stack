@@ -31,9 +31,9 @@ _ALLOWED_RELATION_TYPES = frozenset(
         "contradicts",
     }
 )
-_HIGH_IMPACT_RELATION_TYPES = frozenset({"supersedes", "contradicts"})
+_HIGH_IMPACT_RELATION_TYPES = frozenset({"supersedes", "contradicts", "duplicates"})
 _REASON_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-_STRONG_REVIEW_SIGNAL_CODES = frozenset(
+_BASE_STRONG_REVIEW_SIGNAL_CODES = frozenset(
     {
         "text_match",
         "temporal_intent_match",
@@ -45,15 +45,37 @@ _STRONG_REVIEW_SIGNAL_CODES = frozenset(
         "rule_signal",
     }
 )
-_HIGH_IMPACT_RELATION_SIGNAL_CODES = frozenset(
-    {
-        "temporal_intent_match",
-        "supersedes_signal",
-        "contradicts_signal",
-        "explicit_user_update",
-        "explicit_correction",
-    }
+_HIGH_IMPACT_RELATION_SIGNAL_CODES = {
+    "supersedes": frozenset(
+        {
+            "temporal_intent_match",
+            "supersedes_signal",
+            "explicit_user_update",
+        }
+    ),
+    "contradicts": frozenset(
+        {
+            "contradicts_signal",
+            "explicit_correction",
+        }
+    ),
+    "duplicates": frozenset(
+        {
+            "duplicates_signal",
+            "exact_duplicate",
+            "semantic_duplicate",
+            "same_kind",
+            "same_source_hash",
+            "equivalent_text",
+        }
+    ),
+}
+_HIGH_IMPACT_SIGNAL_CODES = frozenset(
+    code
+    for relation_signal_codes in _HIGH_IMPACT_RELATION_SIGNAL_CODES.values()
+    for code in relation_signal_codes
 )
+_STRONG_REVIEW_SIGNAL_CODES = _BASE_STRONG_REVIEW_SIGNAL_CODES | _HIGH_IMPACT_SIGNAL_CODES
 _AUTO_APPROVE_SIGNAL_CODES = _STRONG_REVIEW_SIGNAL_CODES - frozenset({"recent_context"})
 MIN_AUTO_APPROVE_INDEPENDENT_SIGNALS = 2
 
@@ -271,11 +293,17 @@ def _deny_reason_codes(
         and not _STRONG_REVIEW_SIGNAL_CODES.intersection(reason_codes)
     ):
         codes.append("weak_signal_below_review_threshold")
-    if relation_type in _HIGH_IMPACT_RELATION_TYPES and not (
-        _HIGH_IMPACT_RELATION_SIGNAL_CODES.intersection(reason_codes)
+    if relation_type in _HIGH_IMPACT_RELATION_TYPES and not _has_high_impact_signal(
+        relation_type,
+        reason_codes,
     ):
         codes.append("high_impact_relation_requires_explicit_signal")
     return tuple(codes)
+
+
+def _has_high_impact_signal(relation_type: str, reason_codes: tuple[str, ...]) -> bool:
+    signal_codes = _HIGH_IMPACT_RELATION_SIGNAL_CODES.get(relation_type, frozenset())
+    return bool(signal_codes.intersection(reason_codes))
 
 
 def _auto_approve_signal_count(reason_codes: tuple[str, ...]) -> int:

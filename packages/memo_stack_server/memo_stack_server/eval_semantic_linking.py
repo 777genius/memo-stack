@@ -725,19 +725,50 @@ def _high_impact_relation_policy_case() -> dict[str, object]:
         reason_codes=("temporal_intent_match",),
         relation_type="supersedes",
     )
+    weak_duplicates = _policy_candidate(
+        target_id="policy-duplicate-fact",
+        reason_codes=("text_match",),
+        relation_type="duplicates",
+    )
+    explicit_duplicates = _policy_candidate(
+        target_id="policy-duplicate-fact",
+        reason_codes=("exact_duplicate",),
+        relation_type="duplicates",
+    )
 
     weak_result = apply_context_link_policy((weak_supersedes,), limit=8, persist=True)
     explicit_result = apply_context_link_policy((explicit_supersedes,), limit=8, persist=True)
+    weak_duplicate_result = apply_context_link_policy((weak_duplicates,), limit=8, persist=True)
+    explicit_duplicate_result = apply_context_link_policy(
+        (explicit_duplicates,),
+        limit=8,
+        persist=True,
+    )
     explicit_candidate = explicit_result.candidates[0] if explicit_result.candidates else None
     explicit_metadata = explicit_candidate.metadata if explicit_candidate else {}
+    explicit_duplicate_candidate = (
+        explicit_duplicate_result.candidates[0]
+        if explicit_duplicate_result.candidates
+        else None
+    )
+    explicit_duplicate_metadata = (
+        explicit_duplicate_candidate.metadata if explicit_duplicate_candidate else {}
+    )
     ok = (
         weak_result.candidates == ()
         and weak_result.diagnostics.get("link_policy_denied_reason_counts")
+        == {"high_impact_relation_requires_explicit_signal": 1}
+        and weak_duplicate_result.candidates == ()
+        and weak_duplicate_result.diagnostics.get("link_policy_denied_reason_counts")
         == {"high_impact_relation_requires_explicit_signal": 1}
         and explicit_candidate is not None
         and explicit_metadata.get("policy_relation_type") == "supersedes"
         and explicit_metadata.get("review_gate") == "required"
         and explicit_metadata.get("auto_approve_eligible") is False
+        and explicit_duplicate_candidate is not None
+        and explicit_duplicate_metadata.get("policy_relation_type") == "duplicates"
+        and explicit_duplicate_metadata.get("review_gate") == "required"
+        and explicit_duplicate_metadata.get("auto_approve_eligible") is False
     )
     return {
         "case_id": "high_impact_relation_requires_explicit_signal",
@@ -745,8 +776,17 @@ def _high_impact_relation_policy_case() -> dict[str, object]:
         "weak_denied_reason_counts": weak_result.diagnostics.get(
             "link_policy_denied_reason_counts"
         ),
+        "weak_duplicate_denied_reason_counts": weak_duplicate_result.diagnostics.get(
+            "link_policy_denied_reason_counts"
+        ),
         "explicit_policy_relation_type": explicit_metadata.get("policy_relation_type"),
+        "explicit_duplicate_policy_relation_type": explicit_duplicate_metadata.get(
+            "policy_relation_type"
+        ),
         "explicit_auto_approve_eligible": explicit_metadata.get("auto_approve_eligible"),
+        "explicit_duplicate_auto_approve_eligible": explicit_duplicate_metadata.get(
+            "auto_approve_eligible"
+        ),
     }
 
 

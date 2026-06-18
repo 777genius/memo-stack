@@ -309,6 +309,52 @@ def test_policy_blocks_contradicts_relation_without_explicit_signal() -> None:
     assert result.candidates[0].metadata["review_gate"] == "required"
 
 
+def test_policy_blocks_duplicates_relation_without_explicit_duplicate_signal() -> None:
+    weak_duplicates = _candidate(
+        target_id="duplicate-fact",
+        score=96,
+        metadata={"relation_type": "duplicates"},
+    )
+    explicit_duplicates = _candidate(
+        target_id="duplicate-fact",
+        score=96,
+        reason_codes=["exact_duplicate"],
+        metadata={"relation_type": "duplicates"},
+    )
+
+    weak_decision = decide_context_link_candidate(weak_duplicates)
+    explicit_decision = decide_context_link_candidate(explicit_duplicates)
+    result = apply_context_link_policy(
+        (weak_duplicates, explicit_duplicates),
+        limit=10,
+        persist=True,
+    )
+
+    assert weak_decision.outcome == "deny"
+    assert weak_decision.reason_codes == ("high_impact_relation_requires_explicit_signal",)
+    assert explicit_decision.outcome == "needs_review"
+    assert explicit_decision.relation_type == "duplicates"
+    assert explicit_decision.auto_approve_eligible is False
+    assert result.candidates[0].metadata["policy_relation_type"] == "duplicates"
+    assert result.candidates[0].metadata["review_gate"] == "required"
+
+
+def test_policy_uses_relation_specific_high_impact_signals() -> None:
+    same_kind_supersedes = _candidate(
+        target_id="old-fact",
+        score=96,
+        reason_codes=["same_kind"],
+        metadata={"relation_type": "supersedes"},
+    )
+
+    decision = decide_context_link_candidate(same_kind_supersedes)
+    result = apply_context_link_policy((same_kind_supersedes,), limit=10, persist=True)
+
+    assert decision.outcome == "deny"
+    assert decision.reason_codes == ("high_impact_relation_requires_explicit_signal",)
+    assert result.candidates == ()
+
+
 def test_policy_caps_candidates_considered_before_review_decisions() -> None:
     candidates = tuple(
         _candidate(

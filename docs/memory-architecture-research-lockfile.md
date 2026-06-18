@@ -426,11 +426,21 @@ event_phrase
 person_name
 organization_reference
 rule_signal
+supersedes_signal
+contradicts_signal
+explicit_user_update
+explicit_correction
+duplicates_signal
+exact_duplicate
+semantic_duplicate
+same_kind
+same_source_hash
+equivalent_text
 ```
 
-High-impact relations are `supersedes` and `contradicts`. They require explicit
-temporal/update/conflict reason codes and remain review-gated. A high score
-alone is never enough for these relations.
+High-impact relations are `supersedes`, `contradicts` and `duplicates`. They
+require relation-specific temporal/update/conflict/duplicate reason codes and
+remain review-gated. A high score alone is never enough for these relations.
 
 ### Review Decision Contract
 
