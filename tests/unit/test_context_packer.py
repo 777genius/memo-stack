@@ -108,6 +108,7 @@ def test_memory_items_render_multimodal_citation_locations() -> None:
                         source_type="asset_extraction",
                         source_id="extract_image_1",
                         chunk_id="chunk_vision",
+                        quote_preview="Invoice threshold visible in screenshot.",
                         page_number=2,
                         time_start_ms=1200,
                         time_end_ms=5400,
@@ -124,9 +125,42 @@ def test_memory_items_render_multimodal_citation_locations() -> None:
     assert "source=asset_extraction:extract_image_1#chunk_vision" in rendered
     assert (
         'citations="asset_extraction:extract_image_1#chunk_vision '
-        'page=2 time_ms=1200-5400 bbox=12,32,300,88"'
+        'page=2 time_ms=1200-5400 bbox=12,32,300,88 '
+        'quote=\\"Invoice threshold visible in screenshot.\\""'
     ) in rendered
     assert result.bundle.diagnostics["citations_rendered"] == 1
+
+
+def test_memory_items_skip_sensitive_citation_quote_previews() -> None:
+    result = ContextPacker().pack(
+        bundle_id="ctx_sensitive_citation_quote",
+        items=(
+            ContextItem(
+                item_id="chunk_secret",
+                item_type="chunk",
+                text="A safe summary can still be rendered.",
+                score=1.0,
+                source_refs=(
+                    SourceRef(
+                        source_type="asset_extraction",
+                        source_id="extract_secret",
+                        chunk_id="chunk_secret",
+                        quote_preview="Authorization: Bearer sk-test-secret-token",
+                        time_start_ms=10,
+                        time_end_ms=20,
+                    ),
+                ),
+                diagnostics={"memory_scope_id": "memory_scope_default"},
+            ),
+        ),
+        token_budget=512,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "source=asset_extraction:extract_secret#chunk_secret" in rendered
+    assert "time_ms=10-20" in rendered
+    assert "Bearer" not in rendered
+    assert "sk-test-secret-token" not in rendered
 
 
 def test_memory_block_drops_instruction_marked_items() -> None:
