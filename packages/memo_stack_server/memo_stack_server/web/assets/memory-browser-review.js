@@ -106,21 +106,28 @@
     if (linkReviews.length) {
       els.suggestionList.append(sectionLabel("Link reviews"));
       const pendingLinkReviews = visiblePendingContextLinkReviews();
+      const batchVisibleFilter = browser().contextLinkBatchVisibleFilter();
       if (pendingLinkReviews.length) {
-        const batchActions = document.createElement("div");
-        batchActions.className = "action-row two-actions";
-        batchActions.append(
-          actionButton(
-            `Approve Pending (${Math.min(pendingLinkReviews.length, 50)})`,
-            () => reviewPendingContextLinkSuggestionsBatch("approve"),
-            "primary-button",
-          ),
-          actionButton(
-            `Reject Pending (${Math.min(pendingLinkReviews.length, 50)})`,
-            () => reviewPendingContextLinkSuggestionsBatch("reject"),
-          ),
-        );
-        els.suggestionList.append(batchActions);
+        if (batchVisibleFilter) {
+          const batchActions = document.createElement("div");
+          batchActions.className = "action-row two-actions";
+          batchActions.append(
+            actionButton(
+              `Approve Pending (${Math.min(pendingLinkReviews.length, 50)})`,
+              () => reviewPendingContextLinkSuggestionsBatch("approve"),
+              "primary-button",
+            ),
+            actionButton(
+              `Reject Pending (${Math.min(pendingLinkReviews.length, 50)})`,
+              () => reviewPendingContextLinkSuggestionsBatch("reject"),
+            ),
+          );
+          els.suggestionList.append(batchActions);
+        } else {
+          els.suggestionList.append(
+            emptyItem("Batch review is disabled while target search is active."),
+          );
+        }
       }
     }
     for (const suggestion of linkReviews.slice(0, 160)) {

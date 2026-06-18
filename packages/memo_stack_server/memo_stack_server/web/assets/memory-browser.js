@@ -84,6 +84,7 @@
     reviewContextLinkSuggestion: (...args) => reviewContextLinkSuggestion(...args),
     reviewPendingContextLinkSuggestionsBatch: (...args) =>
       reviewPendingContextLinkSuggestionsBatch(...args),
+    contextLinkBatchVisibleFilter: (...args) => contextLinkBatchVisibleFilter(...args),
     mergeAnchorSuggestion: (...args) => mergeAnchorSuggestion(...args),
     setError: (...args) => setError(...args),
   };
@@ -789,6 +790,11 @@
       setError("No pending link reviews.");
       return;
     }
+    const visibleFilter = contextLinkBatchVisibleFilter();
+    if (!visibleFilter) {
+      setError("Clear the review target filter before batch review.");
+      return;
+    }
     const reason = window.prompt(
       `${action} ${batch.length} pending link reviews`,
       `Batch reviewed in Memo Stack Browser`,
@@ -811,6 +817,7 @@
             reason: reason || "Batch reviewed in Memo Stack Browser",
           })),
           continue_on_error: true,
+          visible_filter: visibleFilter,
         },
       });
       const result = response.data || {};
@@ -822,6 +829,22 @@
     } catch (error) {
       setError(error.message);
     }
+  }
+
+  function contextLinkBatchVisibleFilter() {
+    if ((state.reviewTargetFilter || "").trim()) {
+      return null;
+    }
+    const relationType =
+      state.reviewRelationFilter && state.reviewRelationFilter !== "all"
+        ? state.reviewRelationFilter
+        : null;
+    return withoutEmpty({
+      ...scopeBody(),
+      status: "pending",
+      relation_type: relationType,
+      limit: 200,
+    });
   }
 
   async function createManualContextLink(payload) {

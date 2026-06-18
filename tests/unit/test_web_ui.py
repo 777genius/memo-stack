@@ -71,7 +71,11 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "/v1/context-link-suggestions/review-batch" in js.text
     assert "reviewContextLinkSuggestion" in js.text
     assert "reviewPendingContextLinkSuggestionsBatch" in js.text
+    assert "contextLinkBatchVisibleFilter" in js.text
+    assert "visible_filter: visibleFilter" in js.text
+    assert "Clear the review target filter before batch review." in js.text
     assert "Approve Pending" in review_js.text
+    assert "Batch review is disabled while target search is active." in review_js.text
     assert "Approve With Edits" in js.text
     assert "Manual Link" in js.text
     assert "Create Link" in js.text
