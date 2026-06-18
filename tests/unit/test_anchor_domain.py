@@ -13,12 +13,21 @@ from memo_stack_core.domain.entities import (
 
 def test_anchor_audit_reasons_redact_obvious_secret_markers() -> None:
     now = datetime(2026, 6, 17, tzinfo=UTC)
+    target_observed_at = datetime(2026, 6, 1, tzinfo=UTC)
+    source_observed_at = datetime(2026, 6, 10, tzinfo=UTC)
+    target_valid_from = datetime(2026, 6, 1, tzinfo=UTC)
+    target_valid_to = datetime(2026, 6, 30, tzinfo=UTC)
+    source_valid_from = datetime(2026, 5, 1, tzinfo=UTC)
+    source_valid_to = datetime(2026, 6, 15, tzinfo=UTC)
     target = _anchor(
         "anchor_target",
         label="Acme",
         confidence=Confidence.MEDIUM,
         evidence_refs=(SourceRef(source_type="manual", source_id="target-evidence"),),
         now=now,
+        observed_at=target_observed_at,
+        valid_from=target_valid_from,
+        valid_to=target_valid_to,
     )
     source = _anchor(
         "anchor_source",
@@ -26,6 +35,9 @@ def test_anchor_audit_reasons_redact_obvious_secret_markers() -> None:
         confidence=Confidence.HIGH,
         evidence_refs=(SourceRef(source_type="manual", source_id="source-evidence"),),
         now=now,
+        observed_at=source_observed_at,
+        valid_from=source_valid_from,
+        valid_to=source_valid_to,
     )
 
     merged = target.merge_source(
@@ -50,6 +62,10 @@ def test_anchor_audit_reasons_redact_obvious_secret_markers() -> None:
         "target-evidence",
         "source-evidence",
     }
+    assert merged.observed_at == source_observed_at
+    assert merged.valid_from == source_valid_from
+    assert merged.valid_to == target_valid_to
+    assert merged.metadata["merge_events"][-1]["source_label"] == "Acme Research"
     assert merged.metadata["merge_events"][-1]["reason"] == "[redacted]"
     assert deleted.metadata["delete_reason"] == "[redacted]"
     assert split_source.metadata["split_events"][-1]["reason"] == "[redacted]"
@@ -63,6 +79,9 @@ def _anchor(
     confidence: Confidence,
     evidence_refs: tuple[SourceRef, ...],
     now: datetime,
+    observed_at: datetime | None = None,
+    valid_from: datetime | None = None,
+    valid_to: datetime | None = None,
 ) -> MemoryAnchor:
     return MemoryAnchor.create(
         anchor_id=MemoryAnchorId(anchor_id),
@@ -74,5 +93,8 @@ def _anchor(
         aliases=(),
         confidence=confidence,
         evidence_refs=evidence_refs,
+        observed_at=observed_at,
+        valid_from=valid_from,
+        valid_to=valid_to,
         now=now,
     )
