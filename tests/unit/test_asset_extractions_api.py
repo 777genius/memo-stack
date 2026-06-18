@@ -819,6 +819,62 @@ def test_asset_extraction_ignores_cancel_after_document_commit(tmp_path: Path) -
         }
 
 
+def test_asset_extraction_records_cancel_after_artifact_storage(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "filename": "race-cancel-after-artifacts.txt",
+                "extract": "true",
+            },
+            content=(
+                b"Late cancellation after artifact storage should be recorded "
+                b"without breaking committed evidence."
+            ),
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_store_artifacts = run_use_case._store_artifacts
+
+        async def store_artifacts_and_cancel(**kwargs: Any) -> Any:
+            artifacts = await original_store_artifacts(**kwargs)
+            await client.app.state.container.cancel_asset_extraction.execute(
+                CancelAssetExtractionCommand(job_id=extraction_id)
+            )
+            return artifacts
+
+        run_use_case._store_artifacts = store_artifacts_and_cancel
+        try:
+            processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        finally:
+            run_use_case._store_artifacts = original_store_artifacts
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["safe_error_code"] is None
+        assert extracted["metadata"]["cancellation_status"] == "ignored_after_document_commit"
+        assert extracted["execution"]["cancellation_requested_at"] is None
+        assert len(extracted["result_document_ids"]) == 1
+        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
+            "extracted_json",
+            "markdown",
+        }
+
+
 def test_asset_extraction_marks_failed_and_cleans_blobs_on_artifact_storage_error(
     tmp_path: Path,
 ) -> None:

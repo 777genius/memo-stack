@@ -501,6 +501,7 @@ class RunAssetExtractionUseCase:
                 result=result,
                 markdown=extracted_text_value,
             )
+            job = await self._acknowledge_cancel_after_document_commit(job)
             job = await self._save_progress(
                 job,
                 stage="indexing_memory",
