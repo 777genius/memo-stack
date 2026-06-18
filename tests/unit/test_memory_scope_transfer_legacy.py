@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from memo_stack_core.domain.errors import MemoryValidationError
+from memo_stack_server.memory_scope_transfer_context import remap_context_link_suggestion
 from memo_stack_server.memory_scope_transfer_records import anchor_from_json, anchor_to_json
 from memo_stack_server.memory_scope_transfer_relations import relation_from_json, relation_to_json
 
@@ -97,6 +98,62 @@ def test_legacy_snapshot_relation_defaults_temporal_fields() -> None:
     assert row.observed_at == created_at
     assert row.valid_from is None
     assert row.valid_to is None
+
+
+def test_legacy_snapshot_context_link_suggestion_remaps_approved_override_metadata() -> None:
+    mapped = remap_context_link_suggestion(
+        {
+            "id": "ctxlinksug_old",
+            "source_type": "capture",
+            "source_id": "capture_old",
+            "target_type": "fact",
+            "target_id": "fact_target_old",
+            "metadata": {
+                "approved_override": True,
+                "original_target_type": "fact",
+                "original_target_id": "fact_original_old",
+                "approved_target_type": "anchor",
+                "approved_target_id": "anchor_alex_old",
+                "review_events": [
+                    {
+                        "suggestion_id": "ctxlinksug_old",
+                        "action": "approve",
+                        "source_type": "capture",
+                        "source_id": "capture_old",
+                        "target_type": "anchor",
+                        "target_id": "anchor_alex_old",
+                    },
+                    "legacy_raw_event",
+                ],
+            },
+        },
+        context_link_suggestion_id_map={"ctxlinksug_old": "ctxlinksug_new"},
+        fact_id_map={
+            "fact_target_old": "fact_target_new",
+            "fact_original_old": "fact_original_new",
+        },
+        document_id_map={},
+        episode_id_map={},
+        chunk_id_map={},
+        capture_id_map={"capture_old": "capture_new"},
+        asset_id_map={},
+        anchor_id_map={"anchor_alex_old": "anchor_alex_new"},
+        thread_id_map={},
+        extraction_job_id_map={},
+        extraction_artifact_id_map={},
+    )
+
+    assert mapped["id"] == "ctxlinksug_new"
+    assert mapped["source_id"] == "capture_new"
+    assert mapped["target_id"] == "fact_target_new"
+    assert mapped["metadata_json"]["original_target_id"] == "fact_original_new"
+    assert mapped["metadata_json"]["approved_target_id"] == "anchor_alex_new"
+
+    review_events = mapped["metadata_json"]["review_events"]
+    assert review_events[0]["suggestion_id"] == "ctxlinksug_new"
+    assert review_events[0]["source_id"] == "capture_new"
+    assert review_events[0]["target_id"] == "anchor_alex_new"
+    assert review_events[1] == "legacy_raw_event"
 
 
 def test_legacy_relation_export_uses_created_at_when_observed_at_missing() -> None:
