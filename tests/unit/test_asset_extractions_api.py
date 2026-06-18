@@ -1033,7 +1033,20 @@ def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> 
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
             "extracted_json",
             "markdown",
+            "media_manifest",
         }
+        manifest_artifact = next(
+            item for item in extracted["artifacts"] if item["artifact_type"] == "media_manifest"
+        )
+        manifest_download = client.get(
+            f"/v1/extraction-artifacts/{manifest_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert manifest_download.status_code == 200, manifest_download.text
+        manifest = json.loads(manifest_download.content)
+        assert manifest["schema_version"] == "memo_stack.multimodal_manifest.v1"
+        assert manifest["modalities"] == ["text", "document"]
+        assert manifest["evidence_items"][0]["page_number"] == 1
 
         chunks = client.get(
             f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",
@@ -1090,7 +1103,20 @@ def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
             "extracted_json",
             "image_regions",
             "markdown",
+            "media_manifest",
         }
+        manifest_artifact = next(
+            item for item in extracted["artifacts"] if item["artifact_type"] == "media_manifest"
+        )
+        manifest_download = client.get(
+            f"/v1/extraction-artifacts/{manifest_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert manifest_download.status_code == 200, manifest_download.text
+        manifest = json.loads(manifest_download.content)
+        assert manifest["schema_version"] == "memo_stack.multimodal_manifest.v1"
+        assert manifest["modalities"] == ["text", "image"]
+        assert manifest["evidence_items"][0]["bbox"] == [0.0, 0.0, 120.0, 40.0]
 
         chunks = client.get(
             f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",
@@ -1190,6 +1216,7 @@ def test_standard_vision_provider_failure_falls_back_to_local_image_metadata(
             "extracted_json",
             "image_regions",
             "markdown",
+            "media_manifest",
         }
 
 
@@ -1230,6 +1257,7 @@ def test_timed_text_transcript_extraction_stores_transcript_artifact(tmp_path: P
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
             "extracted_json",
             "markdown",
+            "media_manifest",
             "transcript",
         }
         transcript_artifact = next(

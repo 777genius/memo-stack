@@ -27,6 +27,10 @@ from memo_stack_core.application.dto import (
     RetryAssetExtractionCommand,
     RunAssetExtractionCommand,
 )
+from memo_stack_core.application.multimodal_manifest import (
+    multimodal_manifest_artifact_candidate,
+    should_store_generic_multimodal_manifest,
+)
 from memo_stack_core.application.normalize import content_hash
 from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.application.use_cases.asset_extraction_support import (
@@ -45,7 +49,7 @@ from memo_stack_core.application.use_cases.asset_extraction_support import (
     usage_idempotency_key,
     usage_reconciliation_idempotency_key,
 )
-from memo_stack_core.domain.assets import AssetStatus
+from memo_stack_core.domain.assets import AssetStatus, MemoryAsset
 from memo_stack_core.domain.errors import (
     MemoryInfrastructureError,
     MemoryNotFoundError,
@@ -485,6 +489,7 @@ class RunAssetExtractionUseCase:
             )
             job = await self._acknowledge_cancel_after_document_commit(job)
             artifacts = await self._store_artifacts(
+                asset=asset,
                 job=job,
                 result=result,
                 markdown=extracted_text_value,
@@ -629,6 +634,7 @@ class RunAssetExtractionUseCase:
     async def _store_artifacts(
         self,
         *,
+        asset: MemoryAsset,
         job: AssetExtractionJob,
         result: ExtractionResult,
         markdown: str,
@@ -648,8 +654,12 @@ class RunAssetExtractionUseCase:
                 content=result_json(result).encode("utf-8"),
                 metadata={"parser": result.parser_name},
             ),
-            *result.artifacts,
         ]
+        if should_store_generic_multimodal_manifest(result):
+            candidates.append(
+                multimodal_manifest_artifact_candidate(asset=asset, job=job, result=result)
+            )
+        candidates.extend(result.artifacts)
         byte_limit = _artifact_byte_limit(self._limits)
         stored: list[ExtractionArtifact] = []
         written_storage_keys: list[str] = []
