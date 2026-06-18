@@ -93,16 +93,17 @@ def normalize_context_item_diagnostics(item: ContextItem) -> ContextItem:
 
 def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     raw = _as_dict(diagnostics)
-    retrieval_sources = diagnostic_retrieval_sources(raw)
+    listed_retrieval_sources = diagnostic_retrieval_sources(raw)
+    selected_source = _safe_retrieval_source(raw.get("retrieval_source"))
+    retrieval_sources = (
+        _ordered_unique((selected_source, *listed_retrieval_sources))
+        if selected_source
+        else listed_retrieval_sources
+    )
     normalized = safe_diagnostic_mapping(raw)
     normalized["retrieval_sources"] = list(retrieval_sources)
-    selected_source = _safe_retrieval_source(raw.get("retrieval_source"))
-    if retrieval_sources:
-        if selected_source not in retrieval_sources:
-            selected_source = retrieval_sources[0]
-    elif selected_source:
-        retrieval_sources = (selected_source,)
-        normalized["retrieval_sources"] = list(retrieval_sources)
+    if retrieval_sources and not selected_source:
+        selected_source = retrieval_sources[0]
     if selected_source:
         normalized["retrieval_source"] = selected_source
     else:
@@ -127,14 +128,20 @@ def normalize_context_bundle_diagnostics(
         safe_metadata(raw, max_items=_MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS),
         max_items=_MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS,
     )
-    normalized["context_assembly_version"] = _safe_optional_text(
-        raw.get("context_assembly_version"),
-        limit=_MAX_DIAGNOSTIC_KEY_CHARS,
-    ) or "unknown"
-    normalized["consistency_mode"] = _safe_optional_text(
-        raw.get("consistency_mode"),
-        limit=_MAX_DIAGNOSTIC_KEY_CHARS,
-    ) or "unknown"
+    normalized["context_assembly_version"] = (
+        _safe_optional_text(
+            raw.get("context_assembly_version"),
+            limit=_MAX_DIAGNOSTIC_KEY_CHARS,
+        )
+        or "unknown"
+    )
+    normalized["consistency_mode"] = (
+        _safe_optional_text(
+            raw.get("consistency_mode"),
+            limit=_MAX_DIAGNOSTIC_KEY_CHARS,
+        )
+        or "unknown"
+    )
     retrieval_sources = _bundle_retrieval_sources(items)
     normalized["retrieval_sources_used"] = list(retrieval_sources)
     normalized["diagnostics_truncated"] = len(raw) > _MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS
@@ -152,11 +159,7 @@ def diagnostic_retrieval_sources(diagnostics: object) -> tuple[str, ...]:
     raw_sources = raw.get("retrieval_sources")
     if isinstance(raw_sources, (list, tuple)):
         return _ordered_unique(
-            tuple(
-                source
-                for value in raw_sources
-                if (source := _safe_retrieval_source(value))
-            )
+            tuple(source for value in raw_sources if (source := _safe_retrieval_source(value)))
         )
     raw_source = _safe_retrieval_source(raw.get("retrieval_source"))
     return (raw_source,) if raw_source else ()
@@ -307,11 +310,7 @@ def _candidate_count(diagnostics: dict[str, Any]) -> int:
 
 def _bundle_retrieval_sources(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
     sources = _ordered_unique(
-        tuple(
-            source
-            for item in items
-            for source in diagnostic_retrieval_sources(item.diagnostics)
-        )
+        tuple(source for item in items for source in diagnostic_retrieval_sources(item.diagnostics))
     )
     return _prioritized_retrieval_sources(sources)
 

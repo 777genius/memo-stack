@@ -273,6 +273,15 @@ class FactRelationRepositoryPort(Protocol):
     ) -> list[MemoryFactRelation]:
         """List incoming and outgoing relations for a fact."""
 
+    async def list_for_facts(
+        self,
+        *,
+        fact_ids: tuple[str, ...],
+        status: str | None,
+        limit_per_fact: int,
+    ) -> dict[str, list[MemoryFactRelation]]:
+        """List incoming and outgoing relations for multiple facts."""
+
 
 class EpisodeRepositoryPort(Protocol):
     async def create(self, episode: MemoryEpisode) -> MemoryEpisode:

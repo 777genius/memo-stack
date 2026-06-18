@@ -10,7 +10,7 @@ from memo_stack_core.ports.repositories import (
     FactRelationRepositoryPort,
     FactRepositoryPort,
 )
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, func, or_, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from memo_stack_adapters.postgres.mappers import (
@@ -472,3 +472,65 @@ class PostgresFactRelationRepository(FactRelationRepositoryPort):
             )
         ).scalars()
         return [fact_relation_row_to_domain(row) for row in rows]
+
+    async def list_for_facts(
+        self,
+        *,
+        fact_ids: tuple[str, ...],
+        status: str | None,
+        limit_per_fact: int,
+    ) -> dict[str, list[MemoryFactRelation]]:
+        unique_fact_ids = tuple(dict.fromkeys(str(fact_id) for fact_id in fact_ids if fact_id))
+        if not unique_fact_ids:
+            return {}
+        safe_limit_per_fact = max(0, int(limit_per_fact))
+        if safe_limit_per_fact <= 0:
+            return {fact_id: [] for fact_id in unique_fact_ids}
+        source_conditions = [MemoryFactRelationRow.source_fact_id.in_(unique_fact_ids)]
+        target_conditions = [MemoryFactRelationRow.target_fact_id.in_(unique_fact_ids)]
+        if status is not None:
+            source_conditions.append(MemoryFactRelationRow.status == status)
+            target_conditions.append(MemoryFactRelationRow.status == status)
+        relation_matches = union(
+            select(
+                MemoryFactRelationRow.source_fact_id.label("fact_id"),
+                MemoryFactRelationRow.id.label("relation_id"),
+                MemoryFactRelationRow.updated_at.label("updated_at"),
+            ).where(*source_conditions),
+            select(
+                MemoryFactRelationRow.target_fact_id.label("fact_id"),
+                MemoryFactRelationRow.id.label("relation_id"),
+                MemoryFactRelationRow.updated_at.label("updated_at"),
+            ).where(*target_conditions),
+        ).subquery()
+        ranked_matches = select(
+            relation_matches.c.fact_id,
+            relation_matches.c.relation_id,
+            func.row_number()
+            .over(
+                partition_by=relation_matches.c.fact_id,
+                order_by=(
+                    relation_matches.c.updated_at.desc(),
+                    relation_matches.c.relation_id.desc(),
+                ),
+            )
+            .label("relation_rank"),
+        ).subquery()
+        rows = (
+            await self._session.execute(
+                select(ranked_matches.c.fact_id, MemoryFactRelationRow)
+                .join(
+                    MemoryFactRelationRow,
+                    MemoryFactRelationRow.id == ranked_matches.c.relation_id,
+                )
+                .where(ranked_matches.c.relation_rank <= safe_limit_per_fact)
+                .order_by(ranked_matches.c.fact_id, ranked_matches.c.relation_rank)
+            )
+        ).all()
+        relations_by_fact_id: dict[str, list[MemoryFactRelation]] = {
+            fact_id: [] for fact_id in unique_fact_ids
+        }
+        for fact_id, row in rows:
+            relation = fact_relation_row_to_domain(row)
+            relations_by_fact_id[str(fact_id)].append(relation)
+        return relations_by_fact_id

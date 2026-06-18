@@ -245,12 +245,13 @@ class BuildContextUseCase:
         relations_skipped_by_validity = 0
         contradictions_considered = 0
         async with self._uow_factory() as uow:
+            relations_by_fact_id = await uow.fact_relations.list_for_facts(
+                fact_ids=tuple(item.item_id for item in fact_items),
+                status="active",
+                limit_per_fact=50,
+            )
             for item in fact_items:
-                relations = await uow.fact_relations.list_for_fact(
-                    fact_id=item.item_id,
-                    status="active",
-                    limit=50,
-                )
+                relations = relations_by_fact_id.get(item.item_id, [])
                 for relation in relations:
                     if not _temporal_relation_is_current(relation, now=now):
                         relations_skipped_by_validity += 1

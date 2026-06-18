@@ -43,7 +43,7 @@ from memo_stack_server.provider_circuit import (
     CircuitBreakingVectorMemoryAdapter,
     ProviderCircuitBreaker,
 )
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -555,6 +555,83 @@ def test_context_ignores_future_and_expired_supersedes_relations_by_default(
     assert data["diagnostics"]["temporal_relations_skipped_by_validity"] == 2
 
 
+def test_context_batches_temporal_relation_lookup_for_multiple_fact_items(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact_ids = [
+            client.post(
+                "/v1/facts",
+                json={
+                    "space_id": "space_client_app",
+                    "memory_scope_id": "memory_scope_default",
+                    "text": (
+                        f"TEMPORAL_BATCH_RELATION_MARKER_{index}: "
+                        "shared relation lookup should stay batched."
+                    ),
+                    "kind": "architecture_decision",
+                    "source_refs": [
+                        {
+                            "source_type": "manual",
+                            "source_id": f"temporal-batch-{index}",
+                        }
+                    ],
+                },
+                headers=auth_headers(),
+            ).json()["data"]["id"]
+            for index in range(3)
+        ]
+        relation = client.post(
+            f"/v1/facts/{fact_ids[0]}/relations",
+            json={
+                "target_fact_id": fact_ids[1],
+                "relation_type": "supports",
+                "reason": "Batch relation lookup regression guard.",
+            },
+            headers=auth_headers(),
+        )
+
+        relation_select_count = 0
+        engine = client.app.state.container.engine.sync_engine
+
+        def count_relation_selects(
+            _conn: object,
+            _cursor: object,
+            statement: str,
+            _parameters: object,
+            _context: object,
+            _executemany: bool,
+        ) -> None:
+            nonlocal relation_select_count
+            normalized = statement.lower()
+            if "select" in normalized and "memory_fact_relations" in normalized:
+                relation_select_count += 1
+
+        event.listen(engine, "before_cursor_execute", count_relation_selects)
+        try:
+            context = client.post(
+                "/v1/context",
+                json={
+                    "space_id": "space_client_app",
+                    "memory_scope_ids": ["memory_scope_default"],
+                    "query": "TEMPORAL_BATCH_RELATION_MARKER shared relation lookup",
+                    "token_budget": 1024,
+                    "max_facts": 3,
+                    "max_chunks": 0,
+                },
+                headers=auth_headers(),
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", count_relation_selects)
+
+    assert relation.status_code == 201, relation.text
+    assert context.status_code == 200, context.text
+    rendered = context.json()["data"]["rendered_text"]
+    assert "TEMPORAL_BATCH_RELATION_MARKER_0" in rendered
+    assert "TEMPORAL_BATCH_RELATION_MARKER_1" in rendered
+    assert relation_select_count == 1
+
+
 def test_context_can_include_superseded_review_only_evidence(
     tmp_path: Path,
 ) -> None:
@@ -565,8 +642,7 @@ def test_context_can_include_superseded_review_only_evidence(
                 "space_id": "space_client_app",
                 "memory_scope_id": "memory_scope_default",
                 "text": (
-                    "CONTEXT_SUPERSEDED_REVIEW_MARKER: legacy project Alpha used "
-                    "the old endpoint."
+                    "CONTEXT_SUPERSEDED_REVIEW_MARKER: legacy project Alpha used the old endpoint."
                 ),
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "superseded-safe"}],
@@ -581,9 +657,7 @@ def test_context_can_include_superseded_review_only_evidence(
                 "text": "CONTEXT_SUPERSEDED_SECRET_MARKER should stay hidden.",
                 "kind": "architecture_decision",
                 "classification": "restricted",
-                "source_refs": [
-                    {"source_type": "manual", "source_id": "superseded-restricted"}
-                ],
+                "source_refs": [{"source_type": "manual", "source_id": "superseded-restricted"}],
             },
             headers=auth_headers(),
         )
@@ -653,9 +727,7 @@ def test_context_can_include_superseded_review_only_evidence(
     assert review_data["diagnostics"]["superseded_facts_considered"] >= 1
     assert review_data["diagnostics"]["superseded_facts_used"] == 1
     review_item = next(
-        item
-        for item in review_data["items"]
-        if item["item_id"] == safe_fact.json()["data"]["id"]
+        item for item in review_data["items"] if item["item_id"] == safe_fact.json()["data"]["id"]
     )
     assert review_item["diagnostics"]["retrieval_source"] == "superseded_review"
     assert review_item["diagnostics"]["review_only"] is True

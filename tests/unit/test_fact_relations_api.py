@@ -1,9 +1,12 @@
+import asyncio
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from memo_stack_adapters.postgres.fact_repositories import PostgresFactRelationRepository
 from memo_stack_server.config import DeployProfile, Settings
 from memo_stack_server.main import create_app
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -114,6 +117,56 @@ def test_fact_relations_link_list_unlink_and_relink(tmp_path: Path) -> None:
     assert deleted_list.json()["data"]["items"][0]["relation"]["status"] == "deleted"
     assert relinked.status_code == 201
     assert relinked.json()["data"]["id"] != linked.json()["data"]["id"]
+
+
+def test_fact_relations_batch_list_enforces_limit_per_fact(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        first_source_id = create_fact(client, "RELATION_BATCH_LIMIT: first source.")
+        second_source_id = create_fact(client, "RELATION_BATCH_LIMIT: second source.")
+        target_ids = [
+            create_fact(client, f"RELATION_BATCH_LIMIT: target {index}.") for index in range(4)
+        ]
+
+        second_relation = client.post(
+            f"/v1/facts/{second_source_id}/relations",
+            json={
+                "target_fact_id": target_ids[0],
+                "relation_type": "related_to",
+                "reason": "Second source relation should not be starved by first source.",
+            },
+            headers=auth_headers(),
+        )
+        first_relations = [
+            client.post(
+                f"/v1/facts/{first_source_id}/relations",
+                json={
+                    "target_fact_id": target_id,
+                    "relation_type": "related_to",
+                    "reason": "First source has multiple newer relations.",
+                },
+                headers=auth_headers(),
+            )
+            for target_id in target_ids[1:]
+        ]
+
+        async def load_batch() -> dict[str, list[object]]:
+            async with AsyncSession(client.app.state.container.engine) as session:
+                repository = PostgresFactRelationRepository(session)
+                return await repository.list_for_facts(
+                    fact_ids=(first_source_id, second_source_id),
+                    status="active",
+                    limit_per_fact=1,
+                )
+
+        relations_by_fact_id = asyncio.run(load_batch())
+
+    assert second_relation.status_code == 201, second_relation.text
+    assert all(relation.status_code == 201 for relation in first_relations)
+    assert set(relations_by_fact_id) == {first_source_id, second_source_id}
+    assert len(relations_by_fact_id[first_source_id]) == 1
+    assert len(relations_by_fact_id[second_source_id]) == 1
+    assert str(relations_by_fact_id[first_source_id][0].source_fact_id) == first_source_id
+    assert str(relations_by_fact_id[second_source_id][0].source_fact_id) == second_source_id
 
 
 def test_fact_relations_reject_invalid_temporal_range(tmp_path: Path) -> None:
