@@ -71,6 +71,7 @@ SEMANTIC_LINKING_REQUIRED_CASE_IDS = (
     "anchor_evidence_confidence_and_observed_at_exposed",
     "same_name_person_project_anchors_separate",
     "high_impact_relation_requires_explicit_signal",
+    "weak_overlap_below_review_threshold_denied",
     "event_call_beats_recent_chat",
     "temporal_intent_links_recent_fact_without_text_match",
     "screenshot_note_links_uploaded_document_chunk",

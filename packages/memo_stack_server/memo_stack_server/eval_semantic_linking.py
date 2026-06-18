@@ -240,6 +240,17 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
                 "high_impact_relation_accepted_without_explicit_signal",
             )
         )
+    weak_policy_case = _weak_overlap_policy_case()
+    checks["weak_overlap_below_review_threshold_denied"] = bool(weak_policy_case["ok"])
+    cases.append(weak_policy_case)
+    if not checks["weak_overlap_below_review_threshold_denied"]:
+        failures.append(
+            _failure(
+                "weak_overlap_below_review_threshold_denied",
+                "policy",
+                "weak_overlap_candidate_accepted",
+            )
+        )
 
     approved = _approve(client, headers, str(top_fact.get("suggestion_id") or ""))
     checks["top_suggestion_approves_to_link"] = approved.get("target_id") == target_fact["id"]
@@ -795,13 +806,14 @@ def _policy_candidate(
     target_id: str,
     reason_codes: tuple[str, ...],
     relation_type: str,
+    score: float = 96.0,
 ) -> ContextLinkCandidate:
     return ContextLinkCandidate(
         target_type="fact",
         target_id=target_id,
         label="policy fact",
         preview="policy preview",
-        score=96.0,
+        score=score,
         tier="likely",
         reasons=("policy signal",),
         metadata={
@@ -810,6 +822,30 @@ def _policy_candidate(
             "matched_terms": [],
         },
     )
+
+
+def _weak_overlap_policy_case() -> dict[str, object]:
+    weak_related = _policy_candidate(
+        target_id="policy-weak-overlap",
+        reason_codes=("text_match",),
+        relation_type="related_to",
+        score=39.0,
+    )
+    result = apply_context_link_policy((weak_related,), limit=8, persist=True)
+    denied_reason_counts = result.diagnostics.get("link_policy_denied_reason_counts")
+    ok = (
+        result.candidates == ()
+        and denied_reason_counts == {"score_below_review_threshold": 1}
+        and result.diagnostics.get("link_policy_denied_count") == 1
+        and result.diagnostics.get("link_policy_candidates_returned") == 0
+    )
+    return {
+        "case_id": "weak_overlap_below_review_threshold_denied",
+        "ok": ok,
+        "denied_reason_counts": denied_reason_counts,
+        "candidate_count": len(result.candidates),
+        "denied_count": result.diagnostics.get("link_policy_denied_count"),
+    }
 
 
 def _report(
@@ -842,6 +878,9 @@ def _report(
         "high_impact_relation_policy_safety": (
             1.0 if checks.get("high_impact_relation_requires_explicit_signal") else 0.0
         ),
+        "weak_overlap_policy_safety": (
+            1.0 if checks.get("weak_overlap_below_review_threshold_denied") else 0.0
+        ),
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
         "cross_scope_leak_count": 0 if checks.get("cross_scope_fact_not_suggested") else 1,
@@ -860,6 +899,7 @@ def _report(
         "high_impact_relation_policy_safety": (
             metrics["high_impact_relation_policy_safety"] == 1.0
         ),
+        "weak_overlap_policy_safety": metrics["weak_overlap_policy_safety"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,
         "cross_scope_leak_count": metrics["cross_scope_leak_count"] == 0,
