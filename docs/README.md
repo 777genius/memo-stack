@@ -102,6 +102,7 @@ Fresh full-provider canary with isolated Docker volumes:
 make memo-stack-clean-full-smoke
 make memo-stack-clean-full-mcp-smoke
 make memo-stack-full-provider-canary-interactive
+make memo-stack-multimodal-live-provider-canary
 ```
 
 This is a manual paid canary. It requires Docker plus `MEMORY_OPENAI_API_KEY`
@@ -111,6 +112,16 @@ uses OpenAI embeddings, and tears the stack down unless
 Use `memo-stack-full-provider-canary-interactive` when the key is not already
 exported; it reads the key with terminal echo disabled and passes it only via
 process environment.
+`memo-stack-multimodal-live-provider-canary` is the direct multimodal provider
+canary for image vision and audio transcription adapters. It requires
+`MEMORY_OPENAI_API_KEY` or `OPENAI_API_KEY`, uses
+`MEMORY_EXTRACTION_VISION_MODEL`, `MEMORY_EXTRACTION_VISION_DETAIL` and
+`MEMORY_TRANSCRIPTION_OPENAI_MODEL` when set, and writes a bounded JSON report
+with `MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT`. For audio it uses
+`MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE` when provided; otherwise it tries the
+macOS `say` command to synthesize a short speech fixture. Missing keys or missing
+speech fixture are reported as degraded diagnostics, not fake success, and the
+report never includes API key values.
 
 `memo-stack-clean-full-smoke` now runs the real stdio MCP canary by default. To
 run only the historical HTTP/API full-provider smoke, set:

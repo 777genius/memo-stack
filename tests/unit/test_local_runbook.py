@@ -42,6 +42,8 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
         "$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py -q"
         in makefile
     )
+    assert ".PHONY: memo-stack-multimodal-live-provider-canary" in makefile
+    assert "$(PYTHON) scripts/multimodal_live_provider_canary.py" in makefile
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
     assert "$(MAKE) memo-stack-api-smoke" in makefile
 
@@ -1273,6 +1275,9 @@ def test_real_stack_mcp_canary_docs_are_env_based() -> None:
     assert "memo-stack-agent-transcript-corpus-bench" in docs
     assert "memo-stack-agent-transcript-corpus-redact" in docs
     assert "memo-stack-agent-transcript-corpus-audit" in docs
+    assert "memo-stack-multimodal-live-provider-canary" in docs
+    assert "MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE" in docs
+    assert "MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT" in docs
     assert "MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR" in docs
     assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in docs
     assert "memo-stack-real-memory-confidence" in docs

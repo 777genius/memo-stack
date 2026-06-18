@@ -57,6 +57,10 @@ memo-stack-test-e2e:
 memo-stack-multimodal-production-e2e:
 	$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py -q
 
+.PHONY: memo-stack-multimodal-live-provider-canary
+memo-stack-multimodal-live-provider-canary:
+	$(PYTHON) scripts/multimodal_live_provider_canary.py
+
 .PHONY: memo-stack-frontend-pub-get
 memo-stack-frontend-pub-get:
 	cd $(FRONTEND_DIR) && $(FLUTTER) pub get
