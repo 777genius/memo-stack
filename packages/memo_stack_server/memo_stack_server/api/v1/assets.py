@@ -387,6 +387,7 @@ def _extraction_execution(
     now: datetime | None,
 ) -> dict[str, Any]:
     lease_state = _lease_state(job, now=now)
+    available_actions = _available_extraction_actions(job)
     return {
         "lease_owner": job.lease_owner,
         "lease_expires_at": job.lease_expires_at.isoformat()
@@ -401,7 +402,59 @@ def _extraction_execution(
         "lease_state": lease_state,
         "lease_seconds_remaining": _lease_seconds_remaining(job, now=now),
         "reclaimable": _lease_reclaimable(job, lease_state=lease_state),
+        "retry_actionable": "retry" in available_actions,
+        "cancel_actionable": "cancel" in available_actions,
+        "available_actions": available_actions,
+        "retry_state_reason": _retry_state_reason(job, now=now),
+        "cancel_state_reason": _cancel_state_reason(job),
     }
+
+
+def _available_extraction_actions(job: AssetExtractionJob) -> list[str]:
+    actions: list[str] = []
+    if job.status.value in {"failed", "unsupported", "canceled", "stale"}:
+        actions.append("retry")
+    if job.status.value in {"pending", "running"} and job.cancellation_requested_at is None:
+        actions.append("cancel")
+    return actions
+
+
+def _retry_state_reason(job: AssetExtractionJob, *, now: datetime | None) -> str:
+    status = job.status.value
+    if status in {"pending", "running"}:
+        return "job_not_terminal"
+    if status == "succeeded":
+        return "already_succeeded"
+    if status == "failed":
+        if job.retry_disposition and job.retry_disposition.value == "permanent":
+            return "failed_permanent_requires_fix"
+        if (
+            job.retry_after_at is not None
+            and now is not None
+            and _datetime_after(job.retry_after_at, now)
+        ):
+            return "failed_retryable_backoff_active"
+        return "failed_retryable"
+    if status == "unsupported":
+        return "unsupported_after_provider_or_parser_fix"
+    if status == "canceled":
+        return "canceled_manual_retry_available"
+    if status == "stale":
+        return "stale_manual_retry_available"
+    return "unknown_status"
+
+
+def _cancel_state_reason(job: AssetExtractionJob) -> str:
+    status = job.status.value
+    if status == "pending":
+        return "pending_cancel_available"
+    if status == "running":
+        if job.cancellation_requested_at is not None:
+            return "cancel_already_requested"
+        return "running_cancel_available"
+    if status in {"succeeded", "failed", "unsupported", "canceled", "stale"}:
+        return "terminal_job"
+    return "unknown_status"
 
 
 def _lease_state(job: AssetExtractionJob, *, now: datetime | None) -> str:

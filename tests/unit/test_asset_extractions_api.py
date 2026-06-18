@@ -639,6 +639,14 @@ def test_pending_asset_extraction_can_be_canceled_before_worker(tmp_path: Path) 
         assert canceled_data["safe_error_code"] == "asset_extraction.canceled"
         assert canceled_data["progress"]["terminal"] is True
         assert canceled_data["execution"]["cancellation_requested_at"] is not None
+        assert canceled_data["execution"]["available_actions"] == ["retry"]
+        assert canceled_data["execution"]["retry_actionable"] is True
+        assert canceled_data["execution"]["cancel_actionable"] is False
+        assert (
+            canceled_data["execution"]["retry_state_reason"]
+            == "canceled_manual_retry_available"
+        )
+        assert canceled_data["execution"]["cancel_state_reason"] == "terminal_job"
 
         processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
         assert processed >= 1
@@ -694,6 +702,11 @@ def test_canceled_asset_extraction_retry_resets_progress(tmp_path: Path) -> None
         }
         assert retried["execution"]["cancellation_requested_at"] is None
         assert retried["execution"]["retry_disposition"] is None
+        assert retried["execution"]["available_actions"] == ["cancel"]
+        assert retried["execution"]["retry_actionable"] is False
+        assert retried["execution"]["cancel_actionable"] is True
+        assert retried["execution"]["retry_state_reason"] == "job_not_terminal"
+        assert retried["execution"]["cancel_state_reason"] == "pending_cancel_available"
 
 
 def test_active_asset_extraction_lease_blocks_duplicate_worker_run(tmp_path: Path) -> None:
@@ -1062,6 +1075,11 @@ def test_slow_asset_extraction_parser_timeout_marks_retryable_without_artifacts(
         assert data["safe_error_message"] == "Asset extraction parser timed out after 0.1s"
         assert data["execution"]["retry_disposition"] == "retryable"
         assert data["execution"]["retry_after_at"] is not None
+        assert data["execution"]["available_actions"] == ["retry"]
+        assert data["execution"]["retry_actionable"] is True
+        assert data["execution"]["cancel_actionable"] is False
+        assert data["execution"]["retry_state_reason"] == "failed_retryable_backoff_active"
+        assert data["execution"]["cancel_state_reason"] == "terminal_job"
         assert data["result_document_ids"] == []
         assert data["artifacts"] == []
 
@@ -2275,6 +2293,14 @@ def test_unsupported_asset_extraction_finishes_without_document_or_retry(
         assert extracted["result_document_ids"] == []
         assert extracted["artifacts"] == []
         assert extracted["attempt_count"] == 1
+        assert extracted["execution"]["available_actions"] == ["retry"]
+        assert extracted["execution"]["retry_actionable"] is True
+        assert extracted["execution"]["cancel_actionable"] is False
+        assert (
+            extracted["execution"]["retry_state_reason"]
+            == "unsupported_after_provider_or_parser_fix"
+        )
+        assert extracted["execution"]["cancel_state_reason"] == "terminal_job"
 
 
 def test_invalid_media_asset_extraction_finishes_unsupported(tmp_path: Path) -> None:

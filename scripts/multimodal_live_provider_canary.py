@@ -25,6 +25,7 @@ from memo_stack_core.ports.vision import ImageVisionRequest
 
 SUITE = "memo-stack-multimodal-live-provider-canary"
 REQUIRED_ENV = "MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"
+DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
 DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
@@ -255,7 +256,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--report-out",
-        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT"),
+        default=os.environ.get(
+            "MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT",
+            DEFAULT_REPORT_OUT,
+        ),
         help="Optional path for the JSON canary report.",
     )
     parser.add_argument(

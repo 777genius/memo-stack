@@ -107,6 +107,17 @@ def test_multimodal_live_provider_canary_has_local_fixtures_and_redaction() -> N
     assert safe["usage"] == {"input_tokens": 1, "output_tokens": 2}
 
 
+def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
+    monkeypatch,
+) -> None:
+    module = _load_canary_module()
+    monkeypatch.delenv("MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT", raising=False)
+
+    args = module._parse_args([])
+
+    assert args.report_out == ".e2e-artifacts/multimodal-live-provider-canary.json"
+
+
 def test_multimodal_live_provider_canary_requires_strong_synthetic_transcript() -> None:
     module = _load_canary_module()
 
