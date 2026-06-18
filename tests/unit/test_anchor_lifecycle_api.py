@@ -284,6 +284,10 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
             "Алекс",
         }.issubset(set(merged_anchor["aliases"]))
         assert merged_anchor["metadata"]["merged_anchor_ids"]
+        merge_event = merged_anchor["metadata"]["merge_events"][-1]
+        assert merge_event["source_anchor_id"] == alex_candidate["source_anchor"]["id"]
+        assert merge_event["reason"] == "same person confirmed by reviewer"
+        assert merge_event["merged_at"]
         assert merged_anchor["evidence_refs"]
 
         deleted_source = client.get(
@@ -329,7 +333,12 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
             headers=auth_headers(),
         )
         by_id = {item["id"]: item for item in active_after_split.json()["data"]}
-        assert "Алекс" not in by_id[merged_anchor["id"]]["aliases"]
+        parent_after_split = by_id[merged_anchor["id"]]
+        assert "Алекс" not in parent_after_split["aliases"]
+        split_event = parent_after_split["metadata"]["split_events"][-1]
+        assert split_event["alias"] == "Алекс"
+        assert split_event["reason"] == "reviewer split alias into a different person"
+        assert split_event["split_at"]
 
 
 def test_anchor_backfill_collapses_russian_person_case_variants(tmp_path: Path) -> None:
