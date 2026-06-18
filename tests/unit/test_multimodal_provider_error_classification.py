@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any
 
 from memo_stack_adapters.extraction.openai_vision import OpenAIImageVisionAdapter
@@ -13,10 +14,18 @@ from memo_stack_core.ports.vision import ImageVisionRequest
 
 
 class _ProviderError(Exception):
-    def __init__(self, *, status_code: int | None = None, code: str = "") -> None:
-        super().__init__("provider failure with hidden details")
+    def __init__(
+        self,
+        *,
+        status_code: int | None = None,
+        code: str = "",
+        message: str = "provider failure with hidden details",
+        body: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
         self.status_code = status_code
         self.code = code
+        self.body = body or {}
 
 
 class _Transcriptions:
@@ -74,6 +83,67 @@ def test_openai_transcription_adapter_classifies_retryable_rate_limit() -> None:
     assert "provider failure" not in repr(result.diagnostics)
 
 
+def test_openai_transcription_adapter_classifies_permanent_invalid_api_key() -> None:
+    raw_secret = "sk-proj-provider-secret-value1234567890"
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key="test-key",
+        model="gpt-4o-mini-transcribe",
+        client_factory=lambda: _TranscriptionClient(
+            _ProviderError(
+                status_code=401,
+                code="invalid_api_key",
+                message=f"invalid Bearer {raw_secret}",
+            )
+        ),
+    )
+
+    result = asyncio.run(adapter.transcribe(_speech_request()))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.transcription.invalid_api_key"
+    assert result.diagnostics["provider_retryable"] is False
+    assert is_permanent_error_code(result.safe_error_code)
+    assert raw_secret not in json.dumps(result.diagnostics)
+
+
+def test_openai_transcription_adapter_classifies_timeout_as_retryable_unavailable() -> None:
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key="test-key",
+        model="gpt-4o-mini-transcribe",
+        client_factory=lambda: _TranscriptionClient(TimeoutError()),
+    )
+
+    result = asyncio.run(adapter.transcribe(_speech_request()))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.transcription.provider_unavailable"
+    assert result.diagnostics["provider_retryable"] is True
+    assert result.diagnostics["request_timeout_seconds"] == 60.0
+
+
+def test_openai_transcription_adapter_classifies_provider_quota_as_permanent() -> None:
+    raw_secret = "sk-proj-quota-secret-value1234567890"
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key="test-key",
+        model="gpt-4o-mini-transcribe",
+        client_factory=lambda: _TranscriptionClient(
+            _ProviderError(
+                status_code=429,
+                message=f"quota exhausted for Bearer {raw_secret}",
+                body={"error": {"code": "insufficient_quota", "type": "insufficient_quota"}},
+            )
+        ),
+    )
+
+    result = asyncio.run(adapter.transcribe(_speech_request()))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.transcription.quota_exceeded"
+    assert result.diagnostics["provider_retryable"] is False
+    assert is_permanent_error_code(result.safe_error_code)
+    assert raw_secret not in json.dumps(result.diagnostics)
+
+
 def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:
     adapter = OpenAIImageVisionAdapter(
         api_key="test-key",
@@ -90,6 +160,46 @@ def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:
     assert result.diagnostics["provider_retryable"] is False
     assert result.diagnostics["provider_error_type"] == "_ProviderError"
     assert is_permanent_error_code(result.safe_error_code)
+
+
+def test_openai_vision_adapter_classifies_retryable_rate_limit() -> None:
+    adapter = OpenAIImageVisionAdapter(
+        api_key="test-key",
+        model="gpt-4.1-mini",
+        client_factory=lambda: _VisionClient(
+            _ProviderError(status_code=429, code="rate_limit_exceeded")
+        ),
+    )
+
+    result = asyncio.run(adapter.analyze(_vision_request()))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.vision.rate_limited"
+    assert result.diagnostics["provider_retryable"] is True
+    assert result.diagnostics["provider_error_type"] == "_ProviderError"
+
+
+def test_openai_vision_adapter_classifies_provider_quota_as_permanent() -> None:
+    raw_secret = "sk-proj-vision-quota-secret-value1234567890"
+    adapter = OpenAIImageVisionAdapter(
+        api_key="test-key",
+        model="gpt-4.1-mini",
+        client_factory=lambda: _VisionClient(
+            _ProviderError(
+                status_code=429,
+                code="insufficient_quota",
+                message=f"vision quota Bearer {raw_secret}",
+            )
+        ),
+    )
+
+    result = asyncio.run(adapter.analyze(_vision_request()))
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.vision.quota_exceeded"
+    assert result.diagnostics["provider_retryable"] is False
+    assert is_permanent_error_code(result.safe_error_code)
+    assert raw_secret not in json.dumps(result.diagnostics)
 
 
 def test_openai_vision_adapter_classifies_timeout_as_retryable_unavailable() -> None:

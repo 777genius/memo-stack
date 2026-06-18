@@ -262,6 +262,8 @@ def is_permanent_error_code(code: str) -> bool:
         "missing_api_key",
         "invalid_api_key",
         "invalid_request",
+        "permission_denied",
+        "quota_exceeded",
         "external_ai_disabled",
         "empty_text",
         "empty_output",
