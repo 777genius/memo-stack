@@ -1741,6 +1741,47 @@ def test_sdk_supports_review_suggestions_batch() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("items", "message"),
+    [
+        ([], "at least one item"),
+        (
+            [{"suggestion_id": f"sug_{index}", "action": "approve"} for index in range(51)],
+            "at most 50",
+        ),
+        ([{"suggestion_id": "   ", "action": "approve"}], "non-empty suggestion_id"),
+        (
+            [
+                {"suggestion_id": "sug_duplicate", "action": "approve"},
+                {"suggestion_id": " sug_duplicate ", "action": "reject"},
+            ],
+            "unique suggestion_id",
+        ),
+    ],
+)
+def test_sdk_rejects_invalid_review_suggestions_batch(
+    items: list[dict[str, object]],
+    message: str,
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        client.review_suggestions_batch(items)
+
+    assert calls == 0
+
+
 def test_sdk_supports_create_suggestions_batch() -> None:
     seen: dict[str, object] = {}
 

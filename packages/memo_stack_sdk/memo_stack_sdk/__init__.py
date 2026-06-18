@@ -889,6 +889,18 @@ class MemoStackClient(
         *,
         continue_on_error: bool = False,
     ) -> dict[str, Any]:
+        if not items:
+            raise ValueError("Suggestion batch review requires at least one item")
+        if len(items) > 50:
+            raise ValueError("Suggestion batch review supports at most 50 items")
+        seen_suggestion_ids: set[str] = set()
+        for item in items:
+            suggestion_id = str(item.get("suggestion_id", "")).strip()
+            if not suggestion_id:
+                raise ValueError("Suggestion batch review requires non-empty suggestion_id values")
+            if suggestion_id in seen_suggestion_ids:
+                raise ValueError("Suggestion batch review requires unique suggestion_id values")
+            seen_suggestion_ids.add(suggestion_id)
         return self._request(
             "POST",
             "/v1/suggestions/review-batch",
