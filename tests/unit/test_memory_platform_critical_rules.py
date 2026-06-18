@@ -77,3 +77,50 @@ def test_memory_architecture_lockfile_covers_core_product_rules() -> None:
         "capabilities API/SDK contract tests",
     ):
         assert required in lockfile
+
+
+def test_memory_architecture_lockfile_documents_public_policy_reason_codes() -> None:
+    lockfile = (ROOT / "docs" / "memory-architecture-research-lockfile.md").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "### Public Policy Reason Codes",
+        "`score_threshold_met`",
+        "`review_required`",
+        "`auto_approve_eligible`",
+        "`review_required_target_type`",
+        "`insufficient_independent_signals`",
+        "`score_below_review_threshold`",
+        "`missing_reason_codes`",
+        "`recent_context_only`",
+        "`weak_signal_below_review_threshold`",
+        "`unsupported_relation_type`",
+        "`high_impact_relation_requires_explicit_signal`",
+        "`evidence_relation_requires_source_signal`",
+        "`mentions_relation_requires_entity_signal`",
+        "`text_match`",
+        "`recent_activity`",
+        "`temporal_proximity`",
+        "`temporal_intent_match`",
+        "`same_thread`",
+        "`shared_category`",
+        "`explicit_project_reference`",
+        "`known_project_tool_reference`",
+        "`event_phrase`",
+        "`person_name`",
+        "`organization_reference`",
+        "`recent_context`",
+        "`rule_signal`",
+        "`supersedes_signal`",
+        "`contradicts_signal`",
+        "`explicit_user_update`",
+        "`explicit_correction`",
+        "`duplicates_signal`",
+        "`exact_duplicate`",
+        "`semantic_duplicate`",
+        "`same_kind`",
+        "`same_source_hash`",
+        "`equivalent_text`",
+    ):
+        assert required in lockfile

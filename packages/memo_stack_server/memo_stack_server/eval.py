@@ -1004,10 +1004,50 @@ def _seed_quality_temporal_supersedes(
         },
         headers=headers,
     )
+    relative_old_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text=(
+            "QUALITY_FACT_RELATIVE_TIME_OLD: billing rollout owner was Alex last week."
+        ),
+        source_id="quality-relative-time-old",
+        idempotency_key="quality-relative-time-old-v1",
+        classification="internal",
+    )
+    relative_current_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text="QUALITY_FACT_RELATIVE_TIME_CURRENT: billing rollout owner is Priya now.",
+        source_id="quality-relative-time-current",
+        idempotency_key="quality-relative-time-current-v1",
+        classification="internal",
+    )
+    relative_old_id = _response_data_id(relative_old_fact)
+    relative_current_id = _response_data_id(relative_current_fact)
+    if not relative_old_id or not relative_current_id:
+        return False
+    relative_relation = client.post(
+        f"/v1/facts/{relative_current_id}/relations",
+        json={
+            "target_fact_id": relative_old_id,
+            "relation_type": "supersedes",
+            "reason": "Current rollout ownership invalidates last week's owner.",
+            "observed_at": "2026-06-18T09:00:00+00:00",
+            "valid_from": "2026-06-18T00:00:00+00:00",
+        },
+        headers=headers,
+    )
     return (
         _status_ok(old_fact.status_code)
         and _status_ok(new_fact.status_code)
         and _status_ok(relation.status_code)
+        and _status_ok(relative_old_fact.status_code)
+        and _status_ok(relative_current_fact.status_code)
+        and _status_ok(relative_relation.status_code)
     )
 
 

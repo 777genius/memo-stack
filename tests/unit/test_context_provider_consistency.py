@@ -490,6 +490,77 @@ def test_context_replaces_superseded_fact_with_active_temporal_relation(
     )
 
 
+def test_context_resolves_relative_time_query_to_current_fact(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        old_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": (
+                    "RELATIVE_TIME_OLD_FACT: billing rollout owner was Alex last week."
+                ),
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "relative-old"}],
+            },
+            headers=auth_headers(),
+        )
+        current_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "RELATIVE_TIME_CURRENT_FACT: billing rollout owner is Priya now.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "relative-current"}],
+            },
+            headers=auth_headers(),
+        )
+        relation = client.post(
+            f"/v1/facts/{current_fact.json()['data']['id']}/relations",
+            json={
+                "target_fact_id": old_fact.json()["data"]["id"],
+                "relation_type": "supersedes",
+                "reason": "Current rollout ownership replaced last week's owner.",
+                "observed_at": "2026-06-18T09:00:00+00:00",
+                "valid_from": "2026-06-18T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "billing rollout owner was Alex last week",
+                "token_budget": 512,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
+
+    assert old_fact.status_code == 201
+    assert current_fact.status_code == 201
+    assert relation.status_code == 201
+    assert context.status_code == 200
+    data = context.json()["data"]
+    assert "RELATIVE_TIME_CURRENT_FACT" in data["rendered_text"]
+    assert "RELATIVE_TIME_OLD_FACT" not in data["rendered_text"]
+    assert data["diagnostics"]["temporal_replacements_applied"] == 1
+    replacement = next(
+        item for item in data["items"] if item["item_id"] == current_fact.json()["data"]["id"]
+    )
+    assert replacement["diagnostics"]["ranking_reason"] == (
+        "active fact supersedes a matched older fact"
+    )
+    assert replacement["diagnostics"]["provenance"]["valid_from"].startswith("2026-06-18")
+    assert replacement["diagnostics"]["provenance"]["supersedes_fact_id"] == (
+        old_fact.json()["data"]["id"]
+    )
+
+
 def test_context_ignores_future_and_expired_supersedes_relations_by_default(
     tmp_path: Path,
 ) -> None:

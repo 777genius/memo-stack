@@ -458,6 +458,70 @@ High-impact relations are `supersedes`, `contradicts` and `duplicates`. They
 require relation-specific temporal/update/conflict/duplicate reason codes and
 remain review-gated. A high score alone is never enough for these relations.
 
+### Public Policy Reason Codes
+
+Policy reason codes are part of the public review contract. UI, SDK, CLI and
+future MCP surfaces may display them, filter by them or use them to group
+review items. They are safe identifiers, not raw evidence text.
+
+Public rendering rules:
+
+- Show codes as explanations for a suggestion, rejection or review gate.
+- Do not treat any code as permission to mutate memory without the review
+  decision contract below.
+- Unknown normalized codes may appear from future candidate scorers. Render them
+  as "additional signal" and keep the suggestion review-gated.
+- Do not expose raw matched text, prompts, document snippets, secrets, paths or
+  provider payloads through reason-code labels.
+- Preserve the code string in API/SDK payloads even when the client translates
+  the display label.
+
+Core decision codes:
+
+| Code | User-facing meaning | UI action |
+| --- | --- | --- |
+| `score_threshold_met` | The candidate was strong enough to ask for review. | Show as a positive signal. |
+| `review_required` | A human or trusted service must decide before applying. | Keep approve/reject controls visible. |
+| `auto_approve_eligible` | The candidate is high-confidence and can be fast-reviewed. | Emphasize, but do not silently apply. |
+| `review_required_target_type` | The target type cannot bypass review. | Keep review gate and show target type. |
+| `insufficient_independent_signals` | Score is high, but only one independent signal supports it. | Ask for confirmation. |
+| `score_below_review_threshold` | The candidate is too weak to show as a suggestion. | Hide from normal review, keep bounded diagnostics. |
+| `missing_reason_codes` | The scorer did not provide explainable evidence. | Deny or send to diagnostics only. |
+| `recent_context_only` | The only signal was recency. | Deny weak link, avoid noisy suggestions. |
+| `weak_signal_below_review_threshold` | A weak signal did not meet the stronger review threshold. | Deny weak link. |
+| `unsupported_relation_type` | The requested relation type is not allowed. | Deny and show safe error if user-visible. |
+| `high_impact_relation_requires_explicit_signal` | A supersede, contradict or duplicate link needs explicit evidence. | Require manual review and stronger evidence. |
+| `evidence_relation_requires_source_signal` | Evidence links need source refs, text match or coordinates. | Ask user to select evidence or upload source. |
+| `mentions_relation_requires_entity_signal` | Mentions links need a person, organization, project or text signal. | Ask user to select an entity. |
+
+Candidate signal codes:
+
+| Code | User-facing meaning | UI action |
+| --- | --- | --- |
+| `text_match` | Text overlap supports this link. | Show as a matching text signal. |
+| `recent_activity` | Recent activity made this candidate more relevant. | Show as a weak recency signal. |
+| `temporal_proximity` | The candidate happened near the capture time. | Show with timestamp/evidence when available. |
+| `temporal_intent_match` | The user used a time phrase matching this candidate. | Show the time phrase and keep review-gated. |
+| `same_thread` | Candidate came from the same thread. | Show as context, not as enough evidence alone. |
+| `shared_category` | Candidate shares a category/tag-like facet. | Show as secondary context only. |
+| `explicit_project_reference` | The capture explicitly named a project. | Show as a strong project signal. |
+| `known_project_tool_reference` | The capture referenced a known project/tool name. | Show as a strong project/tool signal. |
+| `event_phrase` | The capture includes an event phrase such as call or meeting. | Prefer event anchors over generic tags. |
+| `person_name` | The capture includes a person name. | Prefer person anchors and surface ambiguity. |
+| `organization_reference` | The capture includes an organization name. | Prefer organization anchors and surface ambiguity. |
+| `recent_context` | The target came from recent context only. | Treat as weak unless combined with stronger signals. |
+| `rule_signal` | A deterministic local rule matched. | Show as additional policy signal. |
+| `supersedes_signal` | Evidence suggests a current fact replaces an old fact. | Require review unless explicitly trusted by policy. |
+| `contradicts_signal` | Evidence suggests a conflict with an existing fact. | Require review and show both sides. |
+| `explicit_user_update` | The user explicitly said a fact changed. | Strong update signal, still review-gated for high impact. |
+| `explicit_correction` | The user explicitly corrected previous memory. | Strong conflict/update signal. |
+| `duplicates_signal` | Evidence suggests duplicate memory. | Require review before merge/suppression. |
+| `exact_duplicate` | The candidate appears exactly duplicated. | Fast-review candidate, preserve evidence. |
+| `semantic_duplicate` | The candidate appears semantically duplicated. | Require review because false merges are costly. |
+| `same_kind` | Candidate and source have the same memory kind. | Secondary signal only. |
+| `same_source_hash` | Candidate shares a source hash. | Strong duplicate/source signal. |
+| `equivalent_text` | Candidate text is equivalent after normalization. | Strong duplicate signal. |
+
 ### Review Decision Contract
 
 Review decisions must be stable across API, SDK, frontend, CLI and future MCP

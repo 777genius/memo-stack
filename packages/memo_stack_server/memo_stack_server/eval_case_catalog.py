@@ -141,6 +141,18 @@ def _quality_golden_cases(
             required_diagnostics=(("temporal_replacements_applied", "gte", 1),),
         ),
         EvalCase(
+            case_id="relative_time_current_fact_not_last_week_fact",
+            category="stale_update",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="billing rollout owner was Alex last week",
+            must_include=("QUALITY_FACT_RELATIVE_TIME_CURRENT",),
+            must_not_include=("QUALITY_FACT_RELATIVE_TIME_OLD",),
+            max_facts=5,
+            max_chunks=0,
+            required_diagnostics=(("temporal_replacements_applied", "gte", 1),),
+        ),
+        EvalCase(
             case_id="contradicted_fact_hidden_by_default",
             category="stale_update",
             space_id=space_id,
