@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from memo_stack_core.application import (
+    ContextLinkSuggestionVisibleFilter,
     CreateContextLinkCommand,
     DeleteContextLinkCommand,
     ListContextLinksQuery,
@@ -17,6 +18,7 @@ from memo_stack_core.application import (
     UpdateContextLinkCommand,
 )
 from memo_stack_core.domain.assets import MemoryContextLink, MemoryContextLinkSuggestion
+from memo_stack_core.domain.errors import MemoryValidationError
 from pydantic import BaseModel, ConfigDict, Field
 
 from memo_stack_server.api.auth import require_service_token
@@ -107,6 +109,23 @@ class ReviewContextLinkSuggestionBatchItemRequest(ReviewContextLinkSuggestionReq
     suggestion_id: str = Field(min_length=1, max_length=160)
 
 
+class ReviewContextLinkSuggestionsBatchVisibleFilterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    space_id: str | None = Field(default=None, min_length=1, max_length=80)
+    memory_scope_id: str | None = Field(default=None, min_length=1, max_length=80)
+    space_slug: str | None = Field(default=None, min_length=1, max_length=160)
+    memory_scope_external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    source_type: str | None = Field(default=None, min_length=1, max_length=80)
+    source_id: str | None = Field(default=None, min_length=1, max_length=160)
+    target_type: str | None = Field(default=None, min_length=1, max_length=80)
+    target_id: str | None = Field(default=None, min_length=1, max_length=160)
+    relation_type: str | None = Field(default=None, min_length=1, max_length=80)
+    status: str | None = Field(default="pending", max_length=40)
+    statuses: str | None = Field(default=None, max_length=240)
+    limit: int = Field(default=50, ge=1, le=200)
+
+
 class ReviewContextLinkSuggestionsBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,6 +134,7 @@ class ReviewContextLinkSuggestionsBatchRequest(BaseModel):
         max_length=50,
     )
     continue_on_error: bool = False
+    visible_filter: ReviewContextLinkSuggestionsBatchVisibleFilterRequest | None = None
 
 
 class UpdateContextLinkRequest(BaseModel):
@@ -335,6 +355,7 @@ async def review_context_link_suggestions_batch(
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
     ensure_server_writes_enabled(container)
+    visible_filter = await _resolve_batch_visible_filter(request.visible_filter, container)
     result = await container.review_context_link_suggestions_batch.execute(
         ReviewContextLinkSuggestionsBatchCommand(
             items=tuple(
@@ -351,6 +372,7 @@ async def review_context_link_suggestions_batch(
                 for item in request.items
             ),
             continue_on_error=request.continue_on_error,
+            visible_filter=visible_filter,
         )
     )
     return {"data": _review_context_link_batch_to_response(result)}
@@ -424,6 +446,38 @@ def _review_context_link_batch_item_payload(item: Any) -> dict[str, Any]:
         "link": context_link_to_response(item.result.link) if item.result.link else None,
         "duplicate_link": item.result.duplicate_link,
     }
+
+
+async def _resolve_batch_visible_filter(
+    request: ReviewContextLinkSuggestionsBatchVisibleFilterRequest | None,
+    container: Container,
+) -> ContextLinkSuggestionVisibleFilter | None:
+    if request is None:
+        return None
+    scope = await resolve_existing_single_scope(
+        container,
+        space_id=request.space_id,
+        memory_scope_id=request.memory_scope_id,
+        thread_id=None,
+        space_slug=request.space_slug,
+        memory_scope_external_ref=request.memory_scope_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
+    if scope is None:
+        raise MemoryValidationError("Context link batch visible filter scope not found")
+    return ContextLinkSuggestionVisibleFilter(
+        space_id=scope.space_id,
+        memory_scope_id=scope.memory_scope_id,
+        status=request.status,
+        statuses=_normalize_status_filter(request.status, request.statuses),
+        limit=request.limit,
+        source_type=request.source_type,
+        source_id=request.source_id,
+        target_type=request.target_type,
+        target_id=request.target_id,
+        relation_type=request.relation_type,
+    )
 
 
 def context_link_to_response(link: MemoryContextLink) -> dict[str, Any]:

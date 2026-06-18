@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from memo_stack_core.application.dto import (
     ContextLinkSuggestionResult,
+    ContextLinkSuggestionVisibleFilter,
     ListContextLinkSuggestionsQuery,
     ReviewContextLinkSuggestionBatchItemCommand,
     ReviewContextLinkSuggestionBatchItemResult,
@@ -179,8 +180,10 @@ class ReviewContextLinkSuggestionsBatchUseCase:
         self,
         *,
         review_context_link_suggestion: ReviewContextLinkSuggestionUseCase,
+        list_context_link_suggestions: ListContextLinkSuggestionsUseCase | None = None,
     ) -> None:
         self._review_context_link_suggestion = review_context_link_suggestion
+        self._list_context_link_suggestions = list_context_link_suggestions
 
     async def execute(
         self,
@@ -191,6 +194,7 @@ class ReviewContextLinkSuggestionsBatchUseCase:
         if len(command.items) > MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS:
             raise MemoryValidationError("Context link batch review supports at most 50 items")
         _assert_unique_batch_suggestion_ids(command.items)
+        await self._assert_visible_filter_matches(command)
 
         results: list[ReviewContextLinkSuggestionBatchItemResult] = []
         stopped = False
@@ -245,6 +249,42 @@ class ReviewContextLinkSuggestionsBatchUseCase:
                 link_reason=item.link_reason,
             )
         )
+
+    async def _assert_visible_filter_matches(
+        self,
+        command: ReviewContextLinkSuggestionsBatchCommand,
+    ) -> None:
+        visible_filter = command.visible_filter
+        if visible_filter is None:
+            return
+        if self._list_context_link_suggestions is None:
+            raise MemoryValidationError("Context link batch visible filter is unavailable")
+        visible = await self._list_context_link_suggestions.execute(
+            _visible_filter_to_query(visible_filter)
+        )
+        visible_ids = {str(item.id) for item in visible}
+        requested_ids = tuple(item.suggestion_id.strip() for item in command.items)
+        if any(suggestion_id not in visible_ids for suggestion_id in requested_ids):
+            raise MemoryValidationError(
+                "Context link batch review contains suggestions outside visible filter"
+            )
+
+
+def _visible_filter_to_query(
+    visible_filter: ContextLinkSuggestionVisibleFilter,
+) -> ListContextLinkSuggestionsQuery:
+    return ListContextLinkSuggestionsQuery(
+        space_id=visible_filter.space_id,
+        memory_scope_id=visible_filter.memory_scope_id,
+        status=visible_filter.status,
+        limit=visible_filter.limit,
+        source_type=visible_filter.source_type,
+        source_id=visible_filter.source_id,
+        target_type=visible_filter.target_type,
+        target_id=visible_filter.target_id,
+        relation_type=visible_filter.relation_type,
+        statuses=visible_filter.statuses,
+    )
 
 
 def _has_approval_override(command: ReviewContextLinkSuggestionCommand) -> bool:

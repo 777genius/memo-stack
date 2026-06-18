@@ -589,9 +589,24 @@ class ReviewContextLinkSuggestionBatchItemCommand:
 
 
 @dataclass(frozen=True)
+class ContextLinkSuggestionVisibleFilter:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    status: str | None
+    limit: int
+    source_type: str | None = None
+    source_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    relation_type: str | None = None
+    statuses: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
 class ReviewContextLinkSuggestionsBatchCommand:
     items: tuple[ReviewContextLinkSuggestionBatchItemCommand, ...]
     continue_on_error: bool = False
+    visible_filter: ContextLinkSuggestionVisibleFilter | None = None
 
 
 @dataclass(frozen=True)

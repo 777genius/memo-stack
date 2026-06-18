@@ -85,6 +85,14 @@ def test_context_link_batch_review_sdk_e2e(tmp_path: Path) -> None:
                 },
             ],
             continue_on_error=True,
+            visible_filter={
+                "space_slug": "context-link-batch-sdk-e2e",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture["data"]["id"],
+                "status": "pending",
+                "limit": 20,
+            },
         )
         links = client.list_context_links(
             space_slug="context-link-batch-sdk-e2e",

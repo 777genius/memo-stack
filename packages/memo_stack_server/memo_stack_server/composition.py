@@ -365,6 +365,7 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     review_context_link_suggestions_batch = ReviewContextLinkSuggestionsBatchUseCase(
         review_context_link_suggestion=review_context_link_suggestion,
+        list_context_link_suggestions=list_context_link_suggestions,
     )
     update_context_link = UpdateContextLinkUseCase(uow_factory=uow_factory, clock=clock)
     delete_context_link = DeleteContextLinkUseCase(uow_factory=uow_factory, clock=clock)

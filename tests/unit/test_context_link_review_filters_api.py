@@ -353,6 +353,92 @@ def test_context_link_suggestions_batch_review_applies_mixed_actions(
     )
 
 
+def test_context_link_suggestions_batch_review_requires_visible_filter_match(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-review",
+                "text": "Alex Project Atlas visible batch review must be guarded.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "visible-batch"}],
+                "tags": ["alex", "atlas"],
+            },
+            headers=auth_headers({"Idempotency-Key": "visible-batch-review-fact"}),
+        )
+        assert fact.status_code == 201, fact.text
+        visible_capture = _create_capture(
+            client,
+            source_event_id="visible-batch-source",
+            text="Visible Project Atlas capture from Alex review.",
+        )
+        hidden_capture = _create_capture(
+            client,
+            source_event_id="hidden-batch-source",
+            text="Hidden Project Atlas capture from Alex review.",
+        )
+        visible_suggestion_id = _persist_first_suggestion(
+            client,
+            source_id=visible_capture.json()["data"]["id"],
+            text="Alex Project Atlas visible batch capture",
+        )
+        hidden_suggestion_id = _persist_first_suggestion(
+            client,
+            source_id=hidden_capture.json()["data"]["id"],
+            text="Alex Project Atlas hidden batch capture",
+        )
+
+        guarded = client.post(
+            "/v1/context-link-suggestions/review-batch",
+            json={
+                "items": [
+                    {
+                        "suggestion_id": visible_suggestion_id,
+                        "action": "approve",
+                        "reason": "visible item",
+                    },
+                    {
+                        "suggestion_id": hidden_suggestion_id,
+                        "action": "reject",
+                        "reason": "hidden item should block the batch",
+                    },
+                ],
+                "continue_on_error": True,
+                "visible_filter": {
+                    "space_slug": "review-history",
+                    "memory_scope_external_ref": "default",
+                    "source_type": "capture",
+                    "source_id": visible_capture.json()["data"]["id"],
+                    "status": "pending",
+                    "limit": 50,
+                },
+            },
+            headers=auth_headers(),
+        )
+        still_pending = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "statuses": "pending",
+                "limit": "50",
+            },
+            headers=auth_headers(),
+        )
+
+    assert guarded.status_code == 400, guarded.text
+    assert guarded.json()["error"]["code"] == "memory.validation"
+    assert "outside visible filter" in guarded.json()["error"]["message"]
+    assert still_pending.status_code == 200, still_pending.text
+    pending_by_id = {item["id"]: item for item in still_pending.json()["data"]}
+    assert pending_by_id[visible_suggestion_id]["status"] == "pending"
+    assert pending_by_id[hidden_suggestion_id]["status"] == "pending"
+
+
 def test_context_link_suggestions_batch_review_honors_continue_on_error(
     tmp_path: Path,
 ) -> None:

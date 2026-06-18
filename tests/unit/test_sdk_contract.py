@@ -1343,6 +1343,14 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
             },
         ],
         continue_on_error=True,
+        visible_filter={
+            "space_slug": "client-app",
+            "memory_scope_external_ref": "default",
+            "source_type": "capture",
+            "source_id": "cap_1",
+            "status": "pending",
+            "limit": 20,
+        },
     )
 
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
@@ -1442,6 +1450,14 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
             },
         ],
         "continue_on_error": True,
+        "visible_filter": {
+            "space_slug": "client-app",
+            "memory_scope_external_ref": "default",
+            "source_type": "capture",
+            "source_id": "cap_1",
+            "status": "pending",
+            "limit": 20,
+        },
     }
 
 

@@ -506,6 +506,7 @@ class MemoStackAssetsMixin:
         items: list[dict[str, Any]],
         *,
         continue_on_error: bool = False,
+        visible_filter: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not items:
             raise ValueError("Context link batch review requires at least one item")
@@ -523,7 +524,13 @@ class MemoStackAssetsMixin:
         return self._request(
             "POST",
             "/v1/context-link-suggestions/review-batch",
-            json={"items": normalized_items, "continue_on_error": continue_on_error},
+            json=_payloads.without_none(
+                {
+                    "items": normalized_items,
+                    "continue_on_error": continue_on_error,
+                    "visible_filter": visible_filter,
+                }
+            ),
         )
 
 
