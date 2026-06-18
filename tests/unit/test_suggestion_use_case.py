@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from memo_stack_core.application import CreateSuggestionCommand, CreateSuggestionUseCase
 from memo_stack_core.domain.entities import (
     MAX_SOURCE_REFS_PER_ITEM,
+    MAX_SUGGESTION_REVIEW_EVENTS,
     Confidence,
     MemoryKind,
     MemoryScopeId,
@@ -43,6 +44,35 @@ def test_suggestion_source_refs_are_deduplicated_and_capped() -> None:
     assert len(suggestion.source_refs) == MAX_SOURCE_REFS_PER_ITEM
     assert suggestion.source_refs[0].source_id == "source_0"
     assert suggestion.source_refs[-1].source_id == f"source_{MAX_SOURCE_REFS_PER_ITEM - 1}"
+
+
+def test_suggestion_review_audit_events_are_capped() -> None:
+    suggestion = MemorySuggestion.create(
+        suggestion_id=MemorySuggestionId("sug_review_cap"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
+        candidate_text="Suggestion review audit stays bounded.",
+        kind=MemoryKind.NOTE,
+        source_refs=(SourceRef(source_type="manual", source_id="source_1"),),
+        confidence=Confidence.MEDIUM,
+        trust_level=TrustLevel.MEDIUM,
+        safe_reason="review",
+        review_payload={
+            "review_events": [
+                {"event_type": "memory_suggestion_reviewed", "suggestion_id": f"sug_{index}"}
+                for index in range(MAX_SUGGESTION_REVIEW_EVENTS + 5)
+            ]
+        },
+        now=_NOW,
+    )
+
+    rejected = suggestion.reject(now=_NOW, reason="not useful")
+    events = rejected.review_payload["review_events"] if rejected.review_payload else []
+
+    assert len(events) == MAX_SUGGESTION_REVIEW_EVENTS
+    assert events[0]["suggestion_id"] == "sug_6"
+    assert events[-1]["suggestion_id"] == "sug_review_cap"
+    assert events[-1]["action"] == "reject"
 
 
 async def _run_commit_conflict_recovery() -> None:
