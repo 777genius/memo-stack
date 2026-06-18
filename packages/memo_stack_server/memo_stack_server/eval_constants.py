@@ -48,7 +48,7 @@ _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES = (
 _MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS = {
     SMALL_GOLDEN_SUITE: 8,
     QUALITY_GOLDEN_SUITE: 16,
-    SEMANTIC_LINKING_GOLDEN_SUITE: 10,
+    SEMANTIC_LINKING_GOLDEN_SUITE: 13,
     LONG_MEMORY_GOLDEN_SUITE: 16,
     AUTO_MEMORY_GOLDEN_SUITE: 13,
     GRAPH_NATIVE_GOLDEN_SUITE: 8,
@@ -72,6 +72,8 @@ SEMANTIC_LINKING_REQUIRED_CASE_IDS = (
     "same_name_person_project_anchors_separate",
     "high_impact_relation_requires_explicit_signal",
     "weak_overlap_below_review_threshold_denied",
+    "evidence_relation_requires_source_signal",
+    "mentions_relation_requires_entity_signal",
     "event_call_beats_recent_chat",
     "temporal_intent_links_recent_fact_without_text_match",
     "screenshot_note_links_uploaded_document_chunk",

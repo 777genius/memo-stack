@@ -70,6 +70,8 @@ _SEMANTIC_LINKING_REQUIRED_CHECKS = (
     "anchor_evidence_confidence_and_observed_at_exposed",
     "same_name_person_project_anchors_separate",
     "high_impact_relation_requires_explicit_signal",
+    "evidence_relation_requires_source_signal",
+    "mentions_relation_requires_entity_signal",
     "top_suggestion_approves_to_link",
     "unrelated_capture_has_no_candidates",
     "cross_scope_fact_not_suggested",
@@ -456,6 +458,12 @@ def _scorecard_semantic_linking(
         "anchor_review_evidence_rate": metrics.get("anchor_review_evidence_rate") == 1.0,
         "high_impact_relation_policy_safety": (
             metrics.get("high_impact_relation_policy_safety") == 1.0
+        ),
+        "evidence_relation_policy_safety": (
+            metrics.get("evidence_relation_policy_safety") == 1.0
+        ),
+        "mentions_relation_policy_safety": (
+            metrics.get("mentions_relation_policy_safety") == 1.0
         ),
         "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
         "false_positive_count": metrics.get("false_positive_count") == 0,
@@ -1498,6 +1506,14 @@ def _scorecard_metrics(
         ),
         "semantic_linking_high_impact_relation_policy_safety": semantic.get(
             "high_impact_relation_policy_safety",
+            0.0,
+        ),
+        "semantic_linking_evidence_relation_policy_safety": semantic.get(
+            "evidence_relation_policy_safety",
+            0.0,
+        ),
+        "semantic_linking_mentions_relation_policy_safety": semantic.get(
+            "mentions_relation_policy_safety",
             0.0,
         ),
         "semantic_linking_review_approval_rate": semantic.get("review_approval_rate", 0.0),

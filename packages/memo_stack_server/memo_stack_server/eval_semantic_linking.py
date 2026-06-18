@@ -251,6 +251,18 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
                 "weak_overlap_candidate_accepted",
             )
         )
+    for relation_policy_case in _relation_specific_policy_cases():
+        case_id = str(relation_policy_case["case_id"])
+        checks[case_id] = bool(relation_policy_case["ok"])
+        cases.append(relation_policy_case)
+        if not checks[case_id]:
+            failures.append(
+                _failure(
+                    case_id,
+                    "policy",
+                    "relation_specific_policy_guard_failed",
+                )
+            )
 
     approved = _approve(client, headers, str(top_fact.get("suggestion_id") or ""))
     checks["top_suggestion_approves_to_link"] = approved.get("target_id") == target_fact["id"]
@@ -807,6 +819,7 @@ def _policy_candidate(
     reason_codes: tuple[str, ...],
     relation_type: str,
     score: float = 96.0,
+    metadata: dict[str, object] | None = None,
 ) -> ContextLinkCandidate:
     return ContextLinkCandidate(
         target_type="fact",
@@ -820,6 +833,7 @@ def _policy_candidate(
             "reason_codes": list(reason_codes),
             "relation_type": relation_type,
             "matched_terms": [],
+            **(metadata or {}),
         },
     )
 
@@ -846,6 +860,96 @@ def _weak_overlap_policy_case() -> dict[str, object]:
         "candidate_count": len(result.candidates),
         "denied_count": result.diagnostics.get("link_policy_denied_count"),
     }
+
+
+def _relation_specific_policy_cases() -> tuple[dict[str, object], dict[str, object]]:
+    weak_evidence = _policy_candidate(
+        target_id="policy-weak-evidence",
+        reason_codes=("temporal_intent_match",),
+        relation_type="evidence_of",
+        score=82.0,
+    )
+    sourced_evidence = _policy_candidate(
+        target_id="policy-sourced-evidence",
+        reason_codes=("temporal_intent_match",),
+        relation_type="evidence_of",
+        score=82.0,
+        metadata={
+            "evidence_source_ref_count": 1,
+            "evidence_modalities": ["image"],
+            "evidence_has_bbox_ref": True,
+        },
+    )
+    evidence_result = apply_context_link_policy(
+        (weak_evidence, sourced_evidence),
+        limit=8,
+        persist=True,
+    )
+    sourced_evidence_candidate = (
+        evidence_result.candidates[0] if evidence_result.candidates else None
+    )
+    sourced_evidence_metadata = (
+        sourced_evidence_candidate.metadata if sourced_evidence_candidate else {}
+    )
+
+    weak_mention = _policy_candidate(
+        target_id="policy-weak-mention",
+        reason_codes=("temporal_intent_match",),
+        relation_type="mentions",
+        score=82.0,
+    )
+    entity_mention = _policy_candidate(
+        target_id="policy-entity-mention",
+        reason_codes=("organization_reference",),
+        relation_type="mentions",
+        score=82.0,
+    )
+    mention_result = apply_context_link_policy(
+        (weak_mention, entity_mention),
+        limit=8,
+        persist=True,
+    )
+    entity_mention_candidate = mention_result.candidates[0] if mention_result.candidates else None
+    entity_mention_metadata = entity_mention_candidate.metadata if entity_mention_candidate else {}
+
+    return (
+        {
+            "case_id": "evidence_relation_requires_source_signal",
+            "ok": (
+                evidence_result.diagnostics.get("link_policy_denied_reason_counts")
+                == {"evidence_relation_requires_source_signal": 1}
+                and sourced_evidence_candidate is not None
+                and sourced_evidence_metadata.get("policy_relation_type") == "evidence_of"
+                and sourced_evidence_metadata.get("review_gate") == "required"
+                and sourced_evidence_metadata.get("auto_approve_eligible") is False
+            ),
+            "denied_reason_counts": evidence_result.diagnostics.get(
+                "link_policy_denied_reason_counts"
+            ),
+            "accepted_relation_type": sourced_evidence_metadata.get("policy_relation_type"),
+            "accepted_auto_approve_eligible": sourced_evidence_metadata.get(
+                "auto_approve_eligible"
+            ),
+        },
+        {
+            "case_id": "mentions_relation_requires_entity_signal",
+            "ok": (
+                mention_result.diagnostics.get("link_policy_denied_reason_counts")
+                == {"mentions_relation_requires_entity_signal": 1}
+                and entity_mention_candidate is not None
+                and entity_mention_metadata.get("policy_relation_type") == "mentions"
+                and entity_mention_metadata.get("review_gate") == "required"
+                and entity_mention_metadata.get("auto_approve_eligible") is False
+            ),
+            "denied_reason_counts": mention_result.diagnostics.get(
+                "link_policy_denied_reason_counts"
+            ),
+            "accepted_relation_type": entity_mention_metadata.get("policy_relation_type"),
+            "accepted_auto_approve_eligible": entity_mention_metadata.get(
+                "auto_approve_eligible"
+            ),
+        },
+    )
 
 
 def _report(
@@ -881,6 +985,12 @@ def _report(
         "weak_overlap_policy_safety": (
             1.0 if checks.get("weak_overlap_below_review_threshold_denied") else 0.0
         ),
+        "evidence_relation_policy_safety": (
+            1.0 if checks.get("evidence_relation_requires_source_signal") else 0.0
+        ),
+        "mentions_relation_policy_safety": (
+            1.0 if checks.get("mentions_relation_requires_entity_signal") else 0.0
+        ),
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
         "cross_scope_leak_count": 0 if checks.get("cross_scope_fact_not_suggested") else 1,
@@ -900,6 +1010,10 @@ def _report(
             metrics["high_impact_relation_policy_safety"] == 1.0
         ),
         "weak_overlap_policy_safety": metrics["weak_overlap_policy_safety"] == 1.0,
+        "evidence_relation_policy_safety": (
+            metrics["evidence_relation_policy_safety"] == 1.0
+        ),
+        "mentions_relation_policy_safety": metrics["mentions_relation_policy_safety"] == 1.0,
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,
         "cross_scope_leak_count": metrics["cross_scope_leak_count"] == 0,

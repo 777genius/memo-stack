@@ -87,7 +87,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "ok": True,
             "status": "ok",
             "metrics": {
-                "case_count": 10,
+                "case_count": 13,
                 "required_case_coverage_rate": 1.0,
                 "missing_required_case_count": 0,
                 "ranking_accuracy": 1.0,
@@ -98,6 +98,8 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "anchor_disambiguation_rate": 1.0,
                 "anchor_review_evidence_rate": 1.0,
                 "high_impact_relation_policy_safety": 1.0,
+                "evidence_relation_policy_safety": 1.0,
+                "mentions_relation_policy_safety": 1.0,
                 "review_approval_rate": 1.0,
                 "false_positive_count": 0,
                 "cross_scope_leak_count": 0,
@@ -113,6 +115,8 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "person_and_project_anchors_suggested": True,
                 "same_name_person_project_anchors_separate": True,
                 "high_impact_relation_requires_explicit_signal": True,
+                "evidence_relation_requires_source_signal": True,
+                "mentions_relation_requires_entity_signal": True,
                 "top_suggestion_approves_to_link": True,
                 "unrelated_capture_has_no_candidates": True,
                 "cross_scope_fact_not_suggested": True,
@@ -486,7 +490,9 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
 
     assert policy["require_top_evidence"] is True
     assert "semantic-linking-golden" in policy["required_suites"]
-    assert policy["min_case_counts"]["semantic-linking-golden"] == 10
+    assert policy["min_case_counts"]["semantic-linking-golden"] == len(
+        SEMANTIC_LINKING_REQUIRED_CASE_IDS
+    )
     assert policy["full_provider"]["required_adapters"] == [
         "qdrant",
         "graphiti",
@@ -1468,6 +1474,8 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
             "anchor_disambiguation_rate": 0.0,
             "anchor_review_evidence_rate": 0.0,
             "high_impact_relation_policy_safety": 0.0,
+            "evidence_relation_policy_safety": 0.0,
+            "mentions_relation_policy_safety": 0.0,
             "review_approval_rate": 0.0,
             "false_positive_count": 1,
             "cross_scope_leak_count": 1,
@@ -1485,8 +1493,10 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
         "cross_scope_leak_count",
         "document_chunk_linking_accuracy",
         "event_linking_accuracy",
+        "evidence_relation_policy_safety",
         "false_positive_count",
         "high_impact_relation_policy_safety",
+        "mentions_relation_policy_safety",
         "ranking_accuracy",
         "review_approval_rate",
         "temporal_intent_recall",
@@ -1498,6 +1508,8 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["metrics"]["semantic_linking_anchor_disambiguation_rate"] == 0.0
     assert result["metrics"]["semantic_linking_anchor_review_evidence_rate"] == 0.0
     assert result["metrics"]["semantic_linking_high_impact_relation_policy_safety"] == 0.0
+    assert result["metrics"]["semantic_linking_evidence_relation_policy_safety"] == 0.0
+    assert result["metrics"]["semantic_linking_mentions_relation_policy_safety"] == 0.0
     assert result["metrics"]["semantic_linking_false_positive_count"] == 1
     assert result["metrics"]["semantic_linking_cross_scope_leak_count"] == 1
     assert result["gates"]["all_capabilities_ok"] is False

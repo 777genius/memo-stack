@@ -1204,6 +1204,8 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["same_name_person_project_anchors_separate"] is True
     assert result["checks"]["high_impact_relation_requires_explicit_signal"] is True
     assert result["checks"]["weak_overlap_below_review_threshold_denied"] is True
+    assert result["checks"]["evidence_relation_requires_source_signal"] is True
+    assert result["checks"]["mentions_relation_requires_entity_signal"] is True
     assert result["checks"]["document_chunk_evidence_suggested"] is True
     assert result["checks"]["top_suggestion_approves_to_link"] is True
     assert result["checks"]["unrelated_capture_has_no_candidates"] is True
@@ -1221,6 +1223,8 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["metrics"]["anchor_review_evidence_rate"] == 1.0
     assert result["metrics"]["high_impact_relation_policy_safety"] == 1.0
     assert result["metrics"]["weak_overlap_policy_safety"] == 1.0
+    assert result["metrics"]["evidence_relation_policy_safety"] == 1.0
+    assert result["metrics"]["mentions_relation_policy_safety"] == 1.0
     assert result["metrics"]["false_positive_count"] == 0
     assert result["metrics"]["cross_scope_leak_count"] == 0
     assert set(SEMANTIC_LINKING_REQUIRED_CASE_IDS) <= {
