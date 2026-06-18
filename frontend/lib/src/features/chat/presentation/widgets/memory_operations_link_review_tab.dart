@@ -39,6 +39,9 @@ class _MemoryOperationsLinkReviewTabState
             (_statusFilter == 'all' || item.status == _statusFilter) &&
             (_typeFilter == 'all' || _typeKey(item) == _typeFilter))
         .toList(growable: false);
+    final visiblePending = visible.where((item) => item.isPending).toList(
+          growable: false,
+        );
     final statusCounts = _statusCounts(suggestions);
     final typeCounts = _typeCounts(suggestions);
 
@@ -56,11 +59,18 @@ class _MemoryOperationsLinkReviewTabState
         ),
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            'Showing ${visible.length} of ${suggestions.length}',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Showing ${visible.length} of ${suggestions.length}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
+              ),
+              _BatchReviewActions(visiblePending: visiblePending),
+            ],
           ),
         ),
         Expanded(
@@ -80,6 +90,61 @@ class _MemoryOperationsLinkReviewTabState
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _BatchReviewActions extends StatelessWidget {
+  final List<MemoryContextLinkSuggestion> visiblePending;
+
+  const _BatchReviewActions({required this.visiblePending});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.read<ChatStore?>();
+    if (store == null) return const SizedBox.shrink();
+    if (visiblePending.isEmpty) {
+      return _approveVisibleButton(
+        count: 0,
+        busy: false,
+        onPressed: null,
+      );
+    }
+    return Observer(
+      builder: (_) {
+        final busy = visiblePending.any(
+          (item) => store.contextLinkSuggestionReviewing[item.id] == true,
+        );
+        return _approveVisibleButton(
+          count: visiblePending.length,
+          busy: busy,
+          onPressed: busy
+              ? null
+              : () => store.reviewContextLinkSuggestionsBatch(
+                    visiblePending,
+                    approve: true,
+                  ),
+        );
+      },
+    );
+  }
+
+  Widget _approveVisibleButton({
+    required int count,
+    required bool busy,
+    required VoidCallback? onPressed,
+  }) {
+    return FilledButton.icon(
+      key: const ValueKey('memory_link_batch_approve_visible_button'),
+      onPressed: onPressed,
+      icon: busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.done_all_outlined, size: 16),
+      label: Text('Approve visible ($count)'),
     );
   }
 }

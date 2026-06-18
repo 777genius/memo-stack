@@ -116,6 +116,11 @@ abstract class ChatRepository {
     required String action,
     String? reason,
   });
+  Future<List<MemoryContextLinkSuggestion>> reviewContextLinkSuggestionsBatch({
+    required List<String> suggestionIds,
+    required String action,
+    String? reason,
+  });
 }
 
 abstract class ConversationStateRepository {

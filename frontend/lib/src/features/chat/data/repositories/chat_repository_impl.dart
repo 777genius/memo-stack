@@ -402,6 +402,22 @@ class ChatRepositoryImpl
   }
 
   @override
+  Future<List<MemoryContextLinkSuggestion>> reviewContextLinkSuggestionsBatch({
+    required List<String> suggestionIds,
+    required String action,
+    String? reason,
+  }) async {
+    final rows = await _rest.reviewContextLinkSuggestionsBatch(
+      suggestionIds: suggestionIds,
+      action: action,
+      reason: reason,
+    );
+    return rows
+        .map(MemoryContextLinkSuggestion.fromMap)
+        .toList(growable: false);
+  }
+
+  @override
   Future<void> cancelJob(String jobId) async {
     if (_currentJobId == jobId) {
       await cancelCurrentJob();

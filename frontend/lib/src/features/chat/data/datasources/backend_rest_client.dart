@@ -497,6 +497,51 @@ class BackendRestClient {
     return const <String, dynamic>{};
   }
 
+  Future<List<Map<String, dynamic>>> reviewContextLinkSuggestionsBatch({
+    required List<String> suggestionIds,
+    required String action,
+    String? reason,
+  }) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/context-link-suggestions/review-batch',
+      data: {
+        'items': [
+          for (final suggestionId in suggestionIds)
+            {
+              'suggestion_id': suggestionId,
+              'action': action,
+              if (reason != null && reason.trim().isNotEmpty)
+                'reason': reason.trim(),
+            },
+        ],
+      },
+    );
+    final data = _data(resp.data);
+    final results = data['results'];
+    if (results is! List) return const <Map<String, dynamic>>[];
+    final suggestions = <Map<String, dynamic>>[];
+    final failed = <String>[];
+    for (final item in results) {
+      if (item is! Map) continue;
+      if (item['status'] != 'applied') {
+        failed.add(item['suggestion_id']?.toString() ?? 'unknown');
+        continue;
+      }
+      final suggestion = item['suggestion'];
+      if (suggestion is Map<String, dynamic>) {
+        suggestions.add(suggestion);
+      } else if (suggestion is Map) {
+        suggestions.add(
+          suggestion.map((key, value) => MapEntry(key.toString(), value)),
+        );
+      }
+    }
+    if (failed.isNotEmpty) {
+      throw Exception('Batch review failed for ${failed.join(', ')}');
+    }
+    return suggestions;
+  }
+
   Future<List<Map<String, dynamic>>> listContextLinks({
     required String spaceSlug,
     required String memoryScopeExternalRef,

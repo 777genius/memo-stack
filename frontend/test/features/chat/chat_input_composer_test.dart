@@ -409,6 +409,22 @@ class _RecordingChatRepository implements ChatRepository {
       reviewReason: reason,
     );
   }
+
+  @override
+  Future<List<MemoryContextLinkSuggestion>> reviewContextLinkSuggestionsBatch({
+    required List<String> suggestionIds,
+    required String action,
+    String? reason,
+  }) async {
+    return [
+      for (final suggestionId in suggestionIds)
+        await reviewContextLinkSuggestion(
+          suggestionId: suggestionId,
+          action: action,
+          reason: reason,
+        ),
+    ];
+  }
 }
 
 MemoryScope _scope({String? id, String? externalRef, String? name}) {

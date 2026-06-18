@@ -838,6 +838,54 @@ abstract class ChatStoreBase with Store {
     }
   }
 
+  Future<void> reviewContextLinkSuggestionsBatch(
+    List<MemoryContextLinkSuggestion> suggestions, {
+    required bool approve,
+  }) async {
+    final pending = suggestions.where((item) => item.isPending).toList();
+    if (pending.isEmpty) return;
+    final action = approve ? 'approve' : 'reject';
+    final reason = approve
+        ? _approvedContextLinkReviewReason
+        : _rejectedContextLinkReviewReason;
+    runInAction(() {
+      for (final suggestion in pending) {
+        contextLinkSuggestionReviewing[suggestion.id] = true;
+      }
+      contextLinkSuggestionError.value = null;
+    });
+    try {
+      final reviewedSuggestions = await repo.reviewContextLinkSuggestionsBatch(
+        suggestionIds: pending.map((item) => item.id).toList(growable: false),
+        action: action,
+        reason: reason,
+      );
+      runInAction(() {
+        for (final suggestion in pending) {
+          _removeContextLinkSuggestion(suggestion.id);
+        }
+        for (final reviewed in reviewedSuggestions) {
+          if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
+        }
+      });
+      if (approve) {
+        unawaited(refreshMemoryCaptures(showLoading: false));
+      }
+      unawaited(refreshOperationsConsole(showLoading: false));
+      unawaited(refreshMemoryBrowser(showLoading: false));
+    } catch (e) {
+      runInAction(() {
+        contextLinkSuggestionError.value = 'Batch review failed: $e';
+      });
+    } finally {
+      runInAction(() {
+        for (final suggestion in pending) {
+          contextLinkSuggestionReviewing.remove(suggestion.id);
+        }
+      });
+    }
+  }
+
   Future<bool> createManualContextLinkFromSuggestion(
     MemoryContextLinkSuggestion suggestion, {
     required String targetType,

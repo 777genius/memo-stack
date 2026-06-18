@@ -428,6 +428,87 @@ void main() {
     expect(find.textContaining('key: alex'), findsOneWidget);
   });
 
+  testWidgets('operations console batch approves only visible pending links', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.contextLinkSuggestions = [
+      _suggestion(
+        'ctxlinksug-pending-fact',
+        metadata: const {
+          'target_label': 'Q3 roadmap',
+          'target_preview': 'Alex confirmed Q3 rollout.',
+        },
+      ),
+      _suggestion(
+        'ctxlinksug-pending-anchor',
+        targetType: 'anchor',
+        targetId: 'anchor-alex',
+        metadata: const {
+          'target_label': 'Alex',
+          'target_preview': 'Person anchor observed from capture text.',
+          'anchor_kind': 'person',
+          'normalized_key': 'alex',
+        },
+      ),
+      _suggestion(
+        'ctxlinksug-rejected-anchor',
+        status: 'rejected',
+        targetType: 'anchor',
+        targetId: 'anchor-old-alex',
+        metadata: const {
+          'target_label': 'Old Alex',
+          'target_preview': 'Rejected person anchor.',
+          'anchor_kind': 'person',
+          'normalized_key': 'old-alex',
+        },
+      ),
+    ];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshOperationsConsole();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link suggestions'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_link_type_filter_person_anchor')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Approve visible (1)'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_link_batch_approve_visible_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.batchReviewedSuggestionIds, [
+      ['ctxlinksug-pending-anchor'],
+    ]);
+    expect(repo.reviewedSuggestions, ['ctxlinksug-pending-anchor:approve']);
+    expect(
+      repo.contextLinkSuggestions.map((item) => item.id),
+      contains('ctxlinksug-pending-fact'),
+    );
+    expect(
+      repo.contextLinkSuggestions.map((item) => item.id),
+      contains('ctxlinksug-rejected-anchor'),
+    );
+  });
+
   testWidgets('operations console opens suggestion evidence modal', (
     tester,
   ) async {
@@ -959,6 +1040,7 @@ class _UxFakeChatRepository implements ChatRepository {
   final downloadedArtifactIds = <String>[];
   final createdContextLinks = <Map<String, String>>[];
   final reviewedSuggestions = <String>[];
+  final batchReviewedSuggestionIds = <List<String>>[];
   final reviewedSuggestionReasons = <String, String?>{};
   final Map<String, MemoryScope> scopesByRef = {
     'default': _scope('scope-default', 'default', 'Default'),
@@ -1361,6 +1443,26 @@ class _UxFakeChatRepository implements ChatRepository {
       'reviewed_at': DateTime.now().toIso8601String(),
       'review_reason': reason,
     });
+  }
+
+  @override
+  Future<List<MemoryContextLinkSuggestion>> reviewContextLinkSuggestionsBatch({
+    required List<String> suggestionIds,
+    required String action,
+    String? reason,
+  }) async {
+    batchReviewedSuggestionIds.add(List<String>.from(suggestionIds));
+    final reviewed = <MemoryContextLinkSuggestion>[];
+    for (final suggestionId in suggestionIds) {
+      reviewed.add(
+        await reviewContextLinkSuggestion(
+          suggestionId: suggestionId,
+          action: action,
+          reason: reason,
+        ),
+      );
+    }
+    return reviewed;
   }
 }
 

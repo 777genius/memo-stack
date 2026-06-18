@@ -639,6 +639,25 @@ class FakeMarionetteChatRepository implements ChatRepository {
       'review_reason': reason,
     });
   }
+
+  @override
+  Future<List<MemoryContextLinkSuggestion>> reviewContextLinkSuggestionsBatch({
+    required List<String> suggestionIds,
+    required String action,
+    String? reason,
+  }) async {
+    final reviewed = <MemoryContextLinkSuggestion>[];
+    for (final suggestionId in suggestionIds) {
+      reviewed.add(
+        await reviewContextLinkSuggestion(
+          suggestionId: suggestionId,
+          action: action,
+          reason: reason,
+        ),
+      );
+    }
+    return reviewed;
+  }
 }
 
 MemoryContextLinkSuggestion marionetteSuggestion(
