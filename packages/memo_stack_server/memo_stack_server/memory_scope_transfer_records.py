@@ -16,6 +16,8 @@ from memo_stack_adapters.postgres.models import (
     MemorySourceRefRow,
 )
 from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
+from memo_stack_core.domain.entities import Confidence
+from memo_stack_core.domain.errors import MemoryValidationError
 
 from memo_stack_server.memory_scope_transfer_temporal import validate_temporal_window
 
@@ -227,7 +229,7 @@ def fact_from_json(
         kind=str(item.get("kind", "note")),
         text=str(item.get("text") or "[redacted]"),
         status=str(item.get("status", "active")),
-        confidence=str(item.get("confidence", "medium")),
+        confidence=_confidence_value(item.get("confidence")),
         trust_level=str(item.get("trust_level", "medium")),
         classification=str(item.get("classification", "internal")),
         category=bounded_optional_text(item.get("category"), 80),
@@ -418,7 +420,7 @@ def anchor_from_json(
         aliases_json=_bounded_string_list(item.get("aliases"), limit=20, item_limit=120),
         description=bounded_optional_text(item.get("description"), 500),
         status=str(item.get("status", "active")),
-        confidence=str(item.get("confidence", "medium")),
+        confidence=_confidence_value(item.get("confidence")),
         evidence_refs_json=_anchor_evidence_refs_from_json(item.get("evidence_refs")),
         observed_at=_parse_optional_dt(item.get("observed_at")) or created_at,
         valid_from=valid_from,
@@ -445,7 +447,7 @@ def context_link_from_json(
         target_type=str(item.get("target_type", "unknown")),
         target_id=str(item.get("target_id", item["id"])),
         relation_type=str(item.get("relation_type", "related_to")),
-        confidence=str(item.get("confidence", "medium")),
+        confidence=_confidence_value(item.get("confidence")),
         reason=str(item.get("reason", "Imported context link")),
         status=str(item.get("status", "active")),
         metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
@@ -490,6 +492,17 @@ def _anchor_evidence_refs_from_json(value: object) -> list[dict[str, object]]:
             }
         )
     return refs
+
+
+def _confidence_value(value: object) -> str:
+    raw = str(value or Confidence.MEDIUM.value).strip().lower()
+    try:
+        return Confidence(raw).value
+    except ValueError as exc:
+        supported = ", ".join(item.value for item in Confidence)
+        raise MemoryValidationError(
+            f"Unsupported anchor confidence. Supported: {supported}"
+        ) from exc
 
 
 def bounded_optional_text(value: object, limit: int) -> str | None:

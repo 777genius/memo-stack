@@ -31,6 +31,26 @@ def test_legacy_snapshot_anchor_defaults_new_lifecycle_fields() -> None:
     assert row.valid_to is None
 
 
+def test_snapshot_anchor_import_rejects_invalid_confidence() -> None:
+    try:
+        anchor_from_json(
+            {
+                "id": "anchor_invalid_confidence",
+                "kind": "organization",
+                "normalized_key": "acme",
+                "label": "Acme",
+                "confidence": "certain",
+            },
+            space_id="space_legacy",
+            memory_scope_id="scope_legacy",
+            now=datetime(2026, 6, 18, 12, 0, tzinfo=UTC),
+        )
+    except MemoryValidationError as exc:
+        assert "Unsupported anchor confidence" in str(exc)
+    else:
+        raise AssertionError("Expected invalid anchor confidence to fail")
+
+
 def test_legacy_anchor_export_uses_created_at_when_observed_at_missing() -> None:
     created_at = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     exported = anchor_to_json(
