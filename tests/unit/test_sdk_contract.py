@@ -1827,6 +1827,81 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
     }
 
 
+def test_sdk_sends_anchor_evidence_and_temporal_contract_fields() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, request.url.path, body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    evidence_refs = [
+        {"source_type": "capture", "source_id": "cap_1"},
+        {"source_type": "asset", "source_id": "asset_1"},
+    ]
+
+    client.create_anchor(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        kind="project",
+        label="Atlas",
+        confidence="high",
+        evidence_refs=evidence_refs,
+        observed_at="2026-06-05T12:00:00+00:00",
+        valid_from="2026-06-01T00:00:00+00:00",
+        valid_to="2026-07-01T00:00:00+00:00",
+        metadata={"source": "sdk-contract"},
+    )
+    client.update_anchor(
+        "anchor_project",
+        confidence="medium",
+        evidence_refs=[],
+        observed_at="2026-06-06T12:00:00+00:00",
+        valid_from="2026-06-02T00:00:00+00:00",
+        valid_to="2026-08-01T00:00:00+00:00",
+        metadata={"source": "sdk-contract-update"},
+    )
+
+    assert seen == [
+        (
+            "POST",
+            "/v1/anchors",
+            {
+                "space_slug": "client-app",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "label": "Atlas",
+                "aliases": [],
+                "confidence": "high",
+                "evidence_refs": evidence_refs,
+                "observed_at": "2026-06-05T12:00:00+00:00",
+                "valid_from": "2026-06-01T00:00:00+00:00",
+                "valid_to": "2026-07-01T00:00:00+00:00",
+                "metadata": {"source": "sdk-contract"},
+            },
+        ),
+        (
+            "PATCH",
+            "/v1/anchors/anchor_project",
+            {
+                "aliases": [],
+                "confidence": "medium",
+                "evidence_refs": [],
+                "observed_at": "2026-06-06T12:00:00+00:00",
+                "valid_from": "2026-06-02T00:00:00+00:00",
+                "valid_to": "2026-08-01T00:00:00+00:00",
+                "metadata": {"source": "sdk-contract-update"},
+            },
+        ),
+    ]
+
+
 def test_sdk_supports_typed_scope_dtos() -> None:
     seen: list[tuple[str, dict[str, object]]] = []
 
