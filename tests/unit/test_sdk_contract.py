@@ -479,9 +479,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "vector_status": "ok",
                         "graph_status": "degraded",
                         "rag_status": "skipped",
-                        "retrieval_sources_used": [
-                            f"source_{index}" for index in range(12)
-                        ],
+                        "retrieval_sources_used": [f"source_{index}" for index in range(12)],
                         "facts_considered": 5,
                         "keyword_chunks_considered": 6,
                         "vector_candidate_count": 9,
@@ -554,7 +552,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                 "retrieval_sources": ["facts"],
                                 "review_only": "false",
                             },
-                        }
+                        },
                     ],
                 },
             },
@@ -685,6 +683,56 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     assert bundle.diagnostics.dropped_by_budget == 0
     assert bundle.diagnostics.dropped_by_source_cap == 0
     assert bundle.diagnostics.dropped_by_char_cap == 0
+
+
+def test_sdk_typed_context_defaults_legacy_item_diagnostics() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "bundle_id": "ctx_legacy_item",
+                    "rendered_text": "Legacy evidence.",
+                    "diagnostics": {},
+                    "items": [
+                        {
+                            "item_id": "fact_legacy",
+                            "item_type": "fact",
+                            "text": "Legacy fact evidence.",
+                            "score": 0.5,
+                        }
+                    ],
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    bundle = client.build_typed_context(
+        space_id="space_client_app",
+        memory_scope_ids=["memory_scope_default"],
+        query="legacy item diagnostics",
+    )
+
+    item = bundle.items[0]
+    assert item.memory_scope_id is None
+    assert item.source_refs == ()
+    assert item.is_instruction is False
+    assert item.diagnostics.retrieval_source is None
+    assert item.diagnostics.retrieval_sources == ()
+    assert item.diagnostics.ranking_reason == "matched without retrieval channel diagnostics"
+    assert item.diagnostics.score_signals == {}
+    assert item.diagnostics.provenance == {}
+    assert item.diagnostics.review_only is False
+    assert item.diagnostics.stale_reason is None
+    assert item.diagnostics.raw["retrieval_sources"] == []
+    assert item.diagnostics.raw["ranking_reason"] == (
+        "matched without retrieval channel diagnostics"
+    )
 
 
 def test_sdk_typed_context_ignores_redacted_retrieval_sources() -> None:
@@ -1560,9 +1608,7 @@ def test_sdk_rejects_blank_context_link_batch_review_id() -> None:
     )
 
     try:
-        client.review_context_link_suggestions_batch(
-            [{"suggestion_id": "  ", "action": "approve"}]
-        )
+        client.review_context_link_suggestions_batch([{"suggestion_id": "  ", "action": "approve"}])
     except ValueError as exc:
         assert "requires suggestion_id" in str(exc)
     else:
