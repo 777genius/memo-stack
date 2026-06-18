@@ -20,6 +20,18 @@ MAX_DENIED_DIAGNOSTIC_TEXT_CHARS = 160
 
 _AUTO_APPROVE_TARGET_TYPES = frozenset({"anchor", "fact", "episode", "document", "chunk"})
 _REVIEW_BLOCKED_TARGET_TYPES = frozenset({"suggestion"})
+_ALLOWED_RELATION_TYPES = frozenset(
+    {
+        "related_to",
+        "supports",
+        "mentions",
+        "evidence_of",
+        "duplicates",
+        "supersedes",
+        "contradicts",
+    }
+)
+_HIGH_IMPACT_RELATION_TYPES = frozenset({"supersedes", "contradicts"})
 _REASON_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _STRONG_REVIEW_SIGNAL_CODES = frozenset(
     {
@@ -31,6 +43,15 @@ _STRONG_REVIEW_SIGNAL_CODES = frozenset(
         "person_name",
         "organization_reference",
         "rule_signal",
+    }
+)
+_HIGH_IMPACT_RELATION_SIGNAL_CODES = frozenset(
+    {
+        "temporal_intent_match",
+        "supersedes_signal",
+        "contradicts_signal",
+        "explicit_user_update",
+        "explicit_correction",
     }
 )
 
@@ -119,11 +140,12 @@ def apply_context_link_policy(
 
 def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLinkPolicyDecision:
     reason_codes = _reason_codes(candidate)
-    deny_codes = _deny_reason_codes(candidate, reason_codes)
+    relation_type, relation_error = _relation_type_for_candidate(candidate)
+    deny_codes = _deny_reason_codes(candidate, reason_codes, relation_type, relation_error)
     if deny_codes:
         return ContextLinkPolicyDecision(
             outcome="deny",
-            relation_type="related_to",
+            relation_type=relation_type,
             confidence="low",
             reason_codes=deny_codes,
             requires_review=True,
@@ -134,6 +156,7 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
     auto_approve_eligible = (
         candidate.score >= AUTO_APPROVE_ELIGIBLE_SCORE
         and candidate.target_type in _AUTO_APPROVE_TARGET_TYPES
+        and relation_type not in _HIGH_IMPACT_RELATION_TYPES
         and "text_match" in reason_codes
         and "recent_context" not in reason_codes
     )
@@ -152,7 +175,7 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
         decision_codes.append("review_required")
     return ContextLinkPolicyDecision(
         outcome=outcome,
-        relation_type="related_to",
+        relation_type=relation_type,
         confidence=confidence,
         reason_codes=tuple(dict.fromkeys(decision_codes)),
         requires_review=True,
@@ -164,6 +187,12 @@ def policy_confidence_for_candidate(candidate: ContextLinkCandidate) -> str | No
     metadata = candidate.metadata or {}
     value = metadata.get("policy_confidence")
     return str(value) if value in {"low", "medium", "high"} else None
+
+
+def policy_relation_type_for_candidate(candidate: ContextLinkCandidate) -> str | None:
+    metadata = candidate.metadata or {}
+    value = metadata.get("policy_relation_type")
+    return str(value) if value in _ALLOWED_RELATION_TYPES else None
 
 
 def _with_policy_metadata(
@@ -188,8 +217,12 @@ def _with_policy_metadata(
 def _deny_reason_codes(
     candidate: ContextLinkCandidate,
     reason_codes: tuple[str, ...],
+    relation_type: str,
+    relation_error: str | None,
 ) -> tuple[str, ...]:
     codes: list[str] = []
+    if relation_error is not None:
+        codes.append(relation_error)
     if candidate.score < MIN_REVIEW_SCORE:
         codes.append("score_below_review_threshold")
     if not reason_codes:
@@ -202,7 +235,29 @@ def _deny_reason_codes(
         and not _STRONG_REVIEW_SIGNAL_CODES.intersection(reason_codes)
     ):
         codes.append("weak_signal_below_review_threshold")
+    if relation_type in _HIGH_IMPACT_RELATION_TYPES and not (
+        _HIGH_IMPACT_RELATION_SIGNAL_CODES.intersection(reason_codes)
+    ):
+        codes.append("high_impact_relation_requires_explicit_signal")
     return tuple(codes)
+
+
+def _relation_type_for_candidate(candidate: ContextLinkCandidate) -> tuple[str, str | None]:
+    metadata = candidate.metadata or {}
+    raw_relation = metadata.get("relation_type", metadata.get("suggested_relation_type"))
+    if raw_relation is None:
+        return "related_to", None
+    relation_type = _normalize_relation_type(raw_relation)
+    if relation_type:
+        return relation_type, None
+    return "related_to", "unsupported_relation_type"
+
+
+def _normalize_relation_type(value: object) -> str:
+    raw = str(value).strip().lower().replace("-", "_")
+    if not _REASON_CODE_PATTERN.fullmatch(raw):
+        return ""
+    return raw if raw in _ALLOWED_RELATION_TYPES else ""
 
 
 def _reason_codes(candidate: ContextLinkCandidate) -> tuple[str, ...]:

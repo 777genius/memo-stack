@@ -41,6 +41,7 @@ from memo_stack_core.application.context_link_candidate_policy import (
 from memo_stack_core.application.context_link_policy import (
     apply_context_link_policy,
     policy_confidence_for_candidate,
+    policy_relation_type_for_candidate,
 )
 from memo_stack_core.application.dto import (
     ContextLinkCandidate,
@@ -658,6 +659,7 @@ class SuggestContextLinksUseCase:
                 role="source",
             )
             for candidate in candidates:
+                relation_type = _suggestion_relation_type(candidate)
                 existing_link = await uow.context_links.find_active(
                     space_id=str(command.space_id),
                     memory_scope_id=str(command.memory_scope_id),
@@ -665,7 +667,7 @@ class SuggestContextLinksUseCase:
                     source_id=command.source_id,
                     target_type=candidate.target_type,
                     target_id=candidate.target_id,
-                    relation_type="related_to",
+                    relation_type=relation_type,
                 )
                 if existing_link is not None:
                     skipped_existing_links += 1
@@ -677,7 +679,7 @@ class SuggestContextLinksUseCase:
                     source_id=command.source_id,
                     target_type=candidate.target_type,
                     target_id=candidate.target_id,
-                    relation_type="related_to",
+                    relation_type=relation_type,
                 )
                 if existing is not None and existing.status in {
                     ContextLinkSuggestionStatus.APPROVED,
@@ -698,7 +700,7 @@ class SuggestContextLinksUseCase:
                         source_id=command.source_id,
                         target_type=candidate.target_type,
                         target_id=candidate.target_id,
-                        relation_type="related_to",
+                        relation_type=relation_type,
                         confidence=_suggestion_confidence(candidate),
                         reason=_candidate_reason(candidate),
                         score=candidate.score,
@@ -733,6 +735,10 @@ def _confidence_for_observed_anchor(score_boost: int) -> Confidence:
 
 def _suggestion_confidence(candidate: ContextLinkCandidate) -> str:
     return policy_confidence_for_candidate(candidate) or _confidence_for_candidate(candidate)
+
+
+def _suggestion_relation_type(candidate: ContextLinkCandidate) -> str:
+    return policy_relation_type_for_candidate(candidate) or "related_to"
 
 
 def _same_scope(entity: object, command: SuggestContextLinksCommand) -> bool:

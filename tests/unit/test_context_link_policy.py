@@ -15,7 +15,11 @@ def _candidate(
     score: float,
     reason_codes: list[str] | None = None,
     target_type: str = "fact",
+    metadata: dict[str, object] | None = None,
 ) -> ContextLinkCandidate:
+    candidate_metadata = {"reason_codes": reason_codes or ["text_match"]}
+    if metadata:
+        candidate_metadata.update(metadata)
     return ContextLinkCandidate(
         target_type=target_type,
         target_id=target_id,
@@ -24,7 +28,7 @@ def _candidate(
         score=score,
         tier="likely" if score >= 75 else "possible" if score >= 55 else "weak",
         reasons=("matching text",),
-        metadata={"reason_codes": reason_codes or ["text_match"]},
+        metadata=candidate_metadata,
     )
 
 
@@ -125,6 +129,69 @@ def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
     assert first_metadata["review_gate"] == "required"
     assert first_metadata["auto_approve_eligible"] is True
     assert first_metadata["policy_confidence"] == "high"
+
+
+def test_policy_keeps_allowed_relation_type_and_dedupes_per_relation() -> None:
+    related = _candidate(target_id="same", score=90)
+    supporting = _candidate(
+        target_id="same",
+        score=89,
+        metadata={"relation_type": "supports"},
+    )
+
+    result = apply_context_link_policy((related, supporting), limit=10, persist=True)
+
+    assert len(result.candidates) == 2
+    assert result.diagnostics["link_policy_duplicate_suppressed_count"] == 0
+    relation_types = {
+        item.metadata["policy_relation_type"] for item in result.candidates if item.metadata
+    }
+    assert relation_types == {"related_to", "supports"}
+
+
+def test_policy_denies_unsupported_relation_type() -> None:
+    candidate = _candidate(
+        target_id="unsafe-relation",
+        score=95,
+        metadata={"relation_type": "delete_target"},
+    )
+
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "deny"
+    assert decision.reason_codes == ("unsupported_relation_type",)
+    assert result.candidates == ()
+
+
+def test_policy_blocks_high_impact_relation_without_explicit_signal() -> None:
+    weak_supersedes = _candidate(
+        target_id="old-fact",
+        score=96,
+        metadata={"relation_type": "supersedes"},
+    )
+    explicit_supersedes = _candidate(
+        target_id="old-fact",
+        score=96,
+        reason_codes=["temporal_intent_match"],
+        metadata={"relation_type": "supersedes"},
+    )
+
+    weak_decision = decide_context_link_candidate(weak_supersedes)
+    explicit_decision = decide_context_link_candidate(explicit_supersedes)
+    result = apply_context_link_policy(
+        (weak_supersedes, explicit_supersedes),
+        limit=10,
+        persist=True,
+    )
+
+    assert weak_decision.outcome == "deny"
+    assert weak_decision.reason_codes == ("high_impact_relation_requires_explicit_signal",)
+    assert explicit_decision.outcome == "needs_review"
+    assert explicit_decision.relation_type == "supersedes"
+    assert explicit_decision.auto_approve_eligible is False
+    assert result.candidates[0].metadata["policy_relation_type"] == "supersedes"
+    assert result.candidates[0].metadata["review_gate"] == "required"
 
 
 def test_policy_caps_candidates_considered_before_review_decisions() -> None:
