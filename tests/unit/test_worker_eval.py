@@ -1206,7 +1206,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["top_suggestion_approves_to_link"] is True
     assert result["checks"]["unrelated_capture_has_no_candidates"] is True
     assert result["checks"]["cross_scope_fact_not_suggested"] is True
-    assert result["metrics"]["case_count"] >= 4
+    assert result["metrics"]["case_count"] >= 10
     assert result["gates"]["case_count"] is True
     assert result["metrics"]["event_linking_accuracy"] == 1.0
     assert result["metrics"]["temporal_intent_recall"] == 1.0
@@ -1217,6 +1217,8 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["metrics"]["cross_scope_leak_count"] == 0
     assert {
         "specific_target_beats_similar_project",
+        "person_project_and_org_anchors_suggested",
+        "anchor_evidence_confidence_and_observed_at_exposed",
         "event_call_beats_recent_chat",
         "temporal_intent_links_recent_fact_without_text_match",
         "same_name_person_project_anchors_separate",
