@@ -277,6 +277,16 @@ def test_capabilities_return_noop_adapters() -> None:
         body["extraction"]["optional_extras"]["transcription_api"]["max_provider_upload_bytes"]
         == OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
     )
+    assert (
+        body["extraction"]["optional_extras"]["transcription_api"][
+            "diarization_model_configured"
+        ]
+        is False
+    )
+    assert (
+        body["extraction"]["providers"]["transcription_api"]["diarization_model_configured"]
+        is False
+    )
     assert isinstance(
         body["extraction"]["optional_extras"]["transcription_local"]["installed"], bool
     )
@@ -334,6 +344,11 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["optional_extras"]["transcription_api"]["configured"] is True
     assert extraction["optional_extras"]["transcription_api"]["provider"] == "openai"
     assert extraction["optional_extras"]["transcription_api"]["model"] == "gpt-4o-transcribe"
+    assert (
+        extraction["optional_extras"]["transcription_api"]["diarization_model_configured"]
+        is False
+    )
+    assert extraction["providers"]["transcription_api"]["diarization_model_configured"] is False
     assert extraction["optional_extras"]["transcription_api"]["max_provider_upload_bytes"] == 12_345
     assert extraction["limits"]["max_bytes"] == 123_456
     assert extraction["limits"]["max_pages"] == 7
@@ -355,6 +370,37 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert body["limits"]["max_asset_upload_bytes"] == 77_777
     assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == 3_600
     assert "sk-capabilities-secret" not in response.text
+
+
+def test_capabilities_expose_configured_diarization_transcription_model(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'diarize-capabilities.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            extraction_default_profile="media_api",
+            extraction_external_ai_enabled=True,
+            transcription_provider="openai",
+            transcription_openai_model="gpt-4o-transcribe-diarize",
+            openai_api_key="sk-diarize-capabilities-secret",
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/capabilities")
+
+    assert response.status_code == 200
+    extraction = response.json()["extraction"]
+    assert (
+        extraction["optional_extras"]["transcription_api"]["diarization_model_configured"]
+        is True
+    )
+    assert extraction["providers"]["transcription_api"]["diarization_model_configured"] is True
+    assert "sk-diarize-capabilities-secret" not in response.text
 
 
 def test_adapter_diagnostics_include_extraction_policy_without_credentials(tmp_path: Path) -> None:

@@ -268,6 +268,9 @@ def _provider_states(settings: Settings) -> dict[str, _ProviderState]:
                 "provider": settings.transcription_provider,
                 "model": settings.transcription_openai_model,
                 "max_provider_upload_bytes": settings.transcription_openai_max_upload_bytes,
+                "diarization_model_configured": _transcription_model_supports_diarization(
+                    settings.transcription_openai_model
+                ),
             },
         ),
         "transcription_local": _ProviderState(
@@ -463,6 +466,9 @@ def _legacy_optional_extras(
             "profiles": ["media_api", "standard_asr", "standard_full"],
             "model": settings.transcription_openai_model,
             "max_provider_upload_bytes": settings.transcription_openai_max_upload_bytes,
+            "diarization_model_configured": _transcription_model_supports_diarization(
+                settings.transcription_openai_model
+            ),
         },
         "transcription_local": {
             "installed": providers["transcription_local"].installed,
@@ -607,6 +613,10 @@ def _transcription_reason(
         external_ai_enabled=external_ai_enabled,
         credential_present=credential_present,
     )
+
+
+def _transcription_model_supports_diarization(model: str) -> bool:
+    return "diarize" in model.strip().lower()
 
 
 def _module_available(module_name: str) -> bool:
