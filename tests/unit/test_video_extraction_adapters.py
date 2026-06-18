@@ -6,9 +6,13 @@ from typing import Any
 import pytest
 from memo_stack_adapters.extraction import content as content_module
 from memo_stack_adapters.extraction import transcription_engine as transcription_engine_module
-from memo_stack_adapters.extraction.content import MediaMetadataExtractionEngine
+from memo_stack_adapters.extraction.content import (
+    MediaMetadataExtractionEngine,
+    StandardExtractionRouter,
+)
 from memo_stack_adapters.extraction.media_tools import (
     MediaProbeResult,
+    MediaStreamSummary,
     VideoKeyframe,
     _selected_keyframe_windows_ms,
 )
@@ -113,6 +117,75 @@ def test_media_metadata_engine_emits_video_keyframe_timeline(
         "media_metadata",
         "video_keyframe",
     ]
+
+
+def test_video_without_audio_skips_transcription_provider_and_keeps_keyframes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_called = False
+
+    def client_factory() -> _FakeTranscriptionClient:
+        nonlocal provider_called
+        provider_called = True
+        return _FakeTranscriptionClient()
+
+    probe = MediaProbeResult(
+        status="succeeded",
+        duration_seconds=8.0,
+        stream_summaries=("video/h264 640x360",),
+        streams=(
+            MediaStreamSummary(
+                index=0,
+                codec_type="video",
+                codec_name="h264",
+                width=640,
+                height=360,
+            ),
+        ),
+        metadata={
+            "probe_status": "succeeded",
+            "video_width": 640,
+            "video_height": 360,
+        },
+    )
+    monkeypatch.setattr(transcription_engine_module, "probe_media_with_ffprobe", lambda _: probe)
+    monkeypatch.setattr(content_module, "probe_media_with_ffprobe", lambda _: probe)
+    monkeypatch.setattr(content_module, "extract_selected_video_keyframes", _fake_video_keyframes)
+    monkeypatch.setattr(content_module, "analyze_video_keyframes", _fake_video_frame_evidence)
+    router = StandardExtractionRouter(
+        engines=(
+            SpeechTranscriptionExtractionEngine(
+                transcription=OpenAISpeechTranscriptionAdapter(
+                    api_key=None,
+                    model="gpt-4o-mini-transcribe",
+                    client_factory=client_factory,
+                )
+            ),
+            MediaMetadataExtractionEngine(),
+        )
+    )
+    request = _request(
+        parser_profile="media_api",
+        enable_external_ai=True,
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert provider_called is False
+    assert result.status == "succeeded"
+    assert result.parser_name == "media_metadata"
+    assert result.diagnostics["speech_transcription_fallback"] is True
+    assert result.technical_metadata["transcript_status"] == "not_applicable"
+    assert (
+        result.technical_metadata["transcript_error_code"]
+        == "asset_extraction.transcription_no_audio_stream"
+    )
+    assert result.technical_metadata["keyframe_status"] == "extracted"
+    assert {artifact.artifact_type for artifact in result.artifacts} == {
+        "keyframe",
+        "media_manifest",
+        "video_frame_timeline",
+    }
 
 
 def test_selected_keyframe_windows_cover_video_duration() -> None:

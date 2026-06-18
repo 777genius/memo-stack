@@ -29,6 +29,7 @@ from memo_stack_adapters.extraction.content import (
     _unsupported,
 )
 from memo_stack_adapters.extraction.media_tools import (
+    MediaProbeResult,
     extract_selected_video_keyframes,
     media_manifest_artifact,
     probe_media_with_ffprobe,
@@ -75,6 +76,17 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                 code="asset_extraction.transcription_external_ai_disabled",
                 message="External AI speech transcription is disabled",
                 metadata=probe.metadata,
+            )
+        if request.detected_content_type.startswith("video/") and _probe_confirms_no_audio(probe):
+            return _fallback_unsupported(
+                request,
+                code="asset_extraction.transcription_no_audio_stream",
+                message="Video contains no audio stream to transcribe",
+                metadata={
+                    "duration_seconds": probe.duration_seconds,
+                    "stream_summaries": list(probe.stream_summaries),
+                    **(probe.metadata or {}),
+                },
             )
 
         result = await self._transcription.transcribe(
@@ -259,6 +271,18 @@ def _profile_wants_api_transcription(parser_profile: str) -> bool:
     normalized = parser_profile.strip().lower()
     return normalized in _API_TRANSCRIPTION_PROFILES or normalized.startswith(
         ("media_api:", "transcribe:", "openai_transcribe:")
+    )
+
+
+def _probe_confirms_no_audio(probe: MediaProbeResult) -> bool:
+    if probe.status != "succeeded":
+        return False
+    if any(stream.codec_type == "audio" for stream in probe.streams):
+        return False
+    if any(summary.startswith("audio/") for summary in probe.stream_summaries):
+        return False
+    return any(stream.codec_type == "video" for stream in probe.streams) or any(
+        summary.startswith("video/") for summary in probe.stream_summaries
     )
 
 

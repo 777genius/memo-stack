@@ -116,6 +116,8 @@ def _transcript_fallback_status(code: str) -> str:
         "asset_extraction.transcription_media_too_long",
     }:
         return "skipped"
+    if code == "asset_extraction.transcription_no_audio_stream":
+        return "not_applicable"
     if code == "asset_extraction.transcription_unsupported_content_type":
         return "unsupported"
     return "failed"
