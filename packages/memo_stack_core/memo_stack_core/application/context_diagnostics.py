@@ -51,7 +51,18 @@ _BUNDLE_COUNTER_KEYS = (
     "max_rendered_chars",
 )
 _BUNDLE_COUNTER_DEFAULTS = {
+    "facts_considered": 0,
+    "keyword_chunks_considered": 0,
+    "vector_candidate_count": 0,
+    "vector_hydrated_count": 0,
+    "graph_candidate_count": 0,
+    "graph_hydrated_count": 0,
+    "stale_vector_drop_count": 0,
+    "stale_graph_drop_count": 0,
+    "stale_rag_drop_count": 0,
+    "temporal_relations_considered": 0,
     "temporal_replacements_applied": 0,
+    "temporal_contradictions_considered": 0,
     "temporal_relations_skipped_by_validity": 0,
     "stale_facts_considered": 0,
     "stale_facts_used": 0,
@@ -59,11 +70,24 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "superseded_facts_used": 0,
     "pending_conflict_suggestions_considered": 0,
     "hybrid_items_used": 0,
+    "items_considered": 0,
+    "items_used": 0,
+    "dropped_by_instruction_flag": 0,
+    "dropped_by_budget": 0,
+    "dropped_by_source_cap": 0,
+    "dropped_by_char_cap": 0,
     "multimodal_source_ref_count": 0,
     "items_with_multimodal_source_refs": 0,
     "source_refs_with_page_count": 0,
     "source_refs_with_bbox_count": 0,
     "source_refs_with_time_range_count": 0,
+    "rendered_chars": 0,
+    "max_rendered_chars": 0,
+}
+_BUNDLE_STATUS_DEFAULTS = {
+    "vector_status": "unknown",
+    "graph_status": "unknown",
+    "rag_status": "unknown",
 }
 _RETRIEVAL_SOURCE_PRIORITY = {
     "vector_chunks": 0,
@@ -170,6 +194,11 @@ def normalize_context_bundle_diagnostics(
         )
         or "unknown"
     )
+    for key, default in _BUNDLE_STATUS_DEFAULTS.items():
+        normalized[key] = (
+            _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+            or default
+        )
     retrieval_sources = _bundle_retrieval_sources(items)
     normalized["retrieval_sources_used"] = list(retrieval_sources)
     normalized["diagnostics_truncated"] = len(raw) > _MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS

@@ -45,6 +45,32 @@ def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:
     assert "SECRET_VALUE_SHOULD_NOT_LEAK" not in str(diagnostics)
 
 
+def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "consistency_mode": "best_effort",
+        },
+        items=(),
+    )
+
+    assert diagnostics["context_assembly_version"] == "context-v2-hybrid-explainable"
+    assert diagnostics["consistency_mode"] == "best_effort"
+    assert diagnostics["retrieval_sources_used"] == []
+    assert diagnostics["vector_status"] == "unknown"
+    assert diagnostics["graph_status"] == "unknown"
+    assert diagnostics["rag_status"] == "unknown"
+    assert diagnostics["facts_considered"] == 0
+    assert diagnostics["keyword_chunks_considered"] == 0
+    assert diagnostics["hybrid_items_used"] == 0
+    assert diagnostics["temporal_replacements_applied"] == 0
+    assert diagnostics["items_considered"] == 0
+    assert diagnostics["items_used"] == 0
+    assert diagnostics["dropped_by_instruction_flag"] == 0
+    assert diagnostics["dropped_by_budget"] == 0
+    assert diagnostics["source_refs_with_bbox_count"] == 0
+
+
 def test_context_bundle_retrieval_sources_use_stable_priority_order() -> None:
     keyword = ContextItem(
         item_id="chunk_keyword",

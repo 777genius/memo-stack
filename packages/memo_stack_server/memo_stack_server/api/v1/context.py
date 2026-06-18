@@ -8,6 +8,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from memo_stack_core.application import BuildContextQuery, ConsistencyMode
+from memo_stack_core.application.context_diagnostics import normalize_context_bundle_diagnostics
 from pydantic import BaseModel, ConfigDict, Field
 
 from memo_stack_server.api.auth import require_service_token
@@ -79,6 +80,7 @@ async def build_context(
         response = _empty_context_response(
             policy_mode=container.settings.policy_mode.value,
             request_id=request_id,
+            consistency_mode=request.consistency_mode.value,
         )
         container.runtime_metrics.record_context(
             latency_ms=_elapsed_ms(started),
@@ -101,6 +103,7 @@ async def build_context(
         response = _empty_context_response(
             policy_mode=container.settings.policy_mode.value,
             request_id=request_id,
+            consistency_mode=request.consistency_mode.value,
             scope_not_found=True,
         )
         container.runtime_metrics.record_context(
@@ -162,10 +165,11 @@ async def search_memory(
             "data": {
                 "items": [],
                 "next_cursor": None,
-                "diagnostics": {
-                    "policy_mode": container.settings.policy_mode.value,
-                    "retrieval_disabled": True,
-                },
+                "diagnostics": _empty_context_diagnostics(
+                    policy_mode=container.settings.policy_mode.value,
+                    consistency_mode=request.consistency_mode.value,
+                    retrieval_disabled=True,
+                ),
             },
         }
         container.runtime_metrics.record_context(
@@ -189,6 +193,7 @@ async def search_memory(
         response = _empty_search_response(
             policy_mode=container.settings.policy_mode.value,
             request_id=request_id,
+            consistency_mode=request.consistency_mode.value,
             scope_not_found=True,
         )
         container.runtime_metrics.record_context(
@@ -240,25 +245,21 @@ def _empty_context_response(
     *,
     policy_mode: str,
     request_id: str,
+    consistency_mode: str,
     scope_not_found: bool = False,
 ) -> dict[str, Any]:
-    diagnostics: dict[str, object] = {
-        "policy_mode": policy_mode,
-        "retrieval_disabled": True,
-    }
-    if scope_not_found:
-        diagnostics = {
-            "policy_mode": policy_mode,
-            "scope_not_found": True,
-            "retrieval_disabled": False,
-        }
     return {
         "meta": {"request_id": request_id},
         "data": {
             "bundle_id": "ctx_disabled",
             "rendered_text": "",
             "items": [],
-            "diagnostics": diagnostics,
+            "diagnostics": _empty_context_diagnostics(
+                policy_mode=policy_mode,
+                consistency_mode=consistency_mode,
+                retrieval_disabled=not scope_not_found,
+                scope_not_found=scope_not_found,
+            ),
         },
     }
 
@@ -267,26 +268,48 @@ def _empty_search_response(
     *,
     policy_mode: str,
     request_id: str,
+    consistency_mode: str,
     scope_not_found: bool = False,
 ) -> dict[str, Any]:
-    diagnostics: dict[str, object] = {
-        "policy_mode": policy_mode,
-        "retrieval_disabled": True,
-    }
-    if scope_not_found:
-        diagnostics = {
-            "policy_mode": policy_mode,
-            "scope_not_found": True,
-            "retrieval_disabled": False,
-        }
     return {
         "meta": {"request_id": request_id},
         "data": {
             "items": [],
             "next_cursor": None,
-            "diagnostics": diagnostics,
+            "diagnostics": _empty_context_diagnostics(
+                policy_mode=policy_mode,
+                consistency_mode=consistency_mode,
+                retrieval_disabled=not scope_not_found,
+                scope_not_found=scope_not_found,
+            ),
         },
     }
+
+
+def _empty_context_diagnostics(
+    *,
+    policy_mode: str,
+    consistency_mode: str,
+    retrieval_disabled: bool,
+    scope_not_found: bool = False,
+) -> dict[str, object]:
+    reason = "scope_not_found" if scope_not_found else "retrieval_disabled"
+    return normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "consistency_mode": consistency_mode,
+            "policy_mode": policy_mode,
+            "retrieval_disabled": retrieval_disabled,
+            "scope_not_found": scope_not_found,
+            "vector_status": "skipped",
+            "vector_skip_reason": reason,
+            "graph_status": "skipped",
+            "graph_skip_reason": reason,
+            "rag_status": "skipped",
+            "rag_skip_reason": reason,
+        },
+        items=(),
+    )
 
 
 def _elapsed_ms(started: float) -> float:

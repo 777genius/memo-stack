@@ -1863,7 +1863,14 @@ def test_disabled_policy_returns_no_legacy_memory_or_public_context(tmp_path: Pa
     assert ingest.json()["data"]["durability"] == "ignore"
     assert context.status_code == 200
     assert context.json()["data"]["items"] == []
-    assert context.json()["data"]["diagnostics"]["retrieval_disabled"] is True
+    diagnostics = context.json()["data"]["diagnostics"]
+    assert diagnostics["retrieval_disabled"] is True
+    assert diagnostics["context_assembly_version"] == "context-v2-hybrid-explainable"
+    assert diagnostics["retrieval_sources_used"] == []
+    assert diagnostics["hybrid_items_used"] == 0
+    assert diagnostics["temporal_replacements_applied"] == 0
+    assert diagnostics["rag_status"] == "skipped"
+    assert diagnostics["rag_skip_reason"] == "retrieval_disabled"
     assert legacy_context.status_code == 200
     assert "current hard context only" in legacy_context.json()["data"]["text"]
     assert "POLICY_DISABLED_MARKER" not in legacy_context.json()["data"]["text"]

@@ -272,10 +272,24 @@ def test_read_routes_do_not_create_missing_external_scope(tmp_path: Path) -> Non
     assert suggestions.json() == {"data": []}
     assert context.status_code == 200
     assert context.json()["data"]["rendered_text"] == ""
-    assert context.json()["data"]["diagnostics"]["scope_not_found"] is True
+    context_diagnostics = context.json()["data"]["diagnostics"]
+    assert context_diagnostics["scope_not_found"] is True
+    assert context_diagnostics["context_assembly_version"] == "context-v2-hybrid-explainable"
+    assert context_diagnostics["retrieval_sources_used"] == []
+    assert context_diagnostics["hybrid_items_used"] == 0
+    assert context_diagnostics["temporal_replacements_applied"] == 0
+    assert context_diagnostics["vector_status"] == "skipped"
+    assert context_diagnostics["vector_skip_reason"] == "scope_not_found"
     assert search.status_code == 200
     assert search.json()["data"]["items"] == []
-    assert search.json()["data"]["diagnostics"]["scope_not_found"] is True
+    search_diagnostics = search.json()["data"]["diagnostics"]
+    assert search_diagnostics["scope_not_found"] is True
+    assert search_diagnostics["context_assembly_version"] == "context-v2-hybrid-explainable"
+    assert search_diagnostics["retrieval_sources_used"] == []
+    assert search_diagnostics["hybrid_items_used"] == 0
+    assert search_diagnostics["temporal_replacements_applied"] == 0
+    assert search_diagnostics["graph_status"] == "skipped"
+    assert search_diagnostics["graph_skip_reason"] == "scope_not_found"
     assert after_spaces.status_code == 200
     assert after_spaces.json()["data"] == []
 
