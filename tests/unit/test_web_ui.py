@@ -1,3 +1,7 @@
+import shutil
+import subprocess
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from memo_stack_server.config import DeployProfile, Settings
 from memo_stack_server.main import create_app
@@ -141,3 +145,274 @@ def test_web_ui_can_be_disabled(tmp_path) -> None:
         response = client.get("/ui/")
 
     assert response.status_code == 404
+
+
+def test_review_modal_focus_trap_and_escape_keyboard_flow() -> None:
+    node = shutil.which("node")
+    if not node:
+        return
+    review_js = (
+        Path(__file__).resolve().parents[2]
+        / "packages/memo_stack_server/memo_stack_server/web/assets/memory-browser-review.js"
+    )
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const reviewJsPath = process.argv[1];
+
+class Element {
+  constructor(tagName) {
+    this.tagName = tagName.toUpperCase();
+    this.children = [];
+    this.parentNode = null;
+    this.hidden = false;
+    this.disabled = false;
+    this.isConnected = true;
+    this.textContent = "";
+    this.className = "";
+    this.attributes = {};
+    this.listeners = {};
+  }
+  append(...children) {
+    for (const child of children.flat()) {
+      if (!child) {
+        continue;
+      }
+      child.parentNode = this;
+      this.children.push(child);
+    }
+  }
+  replaceChildren(...children) {
+    for (const child of this.children) {
+      child.parentNode = null;
+      child.isConnected = false;
+    }
+    this.children = [];
+    this.append(...children);
+  }
+  addEventListener(type, handler) {
+    this.listeners[type] = this.listeners[type] || [];
+    this.listeners[type].push(handler);
+  }
+  dispatchEvent(event) {
+    for (const handler of this.listeners[event.type] || []) {
+      handler(event);
+    }
+  }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+  contains(target) {
+    let current = target;
+    while (current) {
+      if (current === this) {
+        return true;
+      }
+      current = current.parentNode;
+    }
+    return false;
+  }
+  focus() {
+    document.activeElement = this;
+  }
+  getClientRects() {
+    return [{}];
+  }
+  querySelectorAll() {
+    const results = [];
+    const visit = (node) => {
+      for (const child of node.children) {
+        if (child.tagName === "BUTTON" && !child.disabled) {
+          results.push(child);
+        }
+        visit(child);
+      }
+    };
+    visit(this);
+    return results;
+  }
+}
+
+const document = {
+  activeElement: null,
+  createElement: (tagName) => new Element(tagName),
+};
+const window = {
+  listeners: {},
+  addEventListener(type, handler) {
+    this.listeners[type] = this.listeners[type] || [];
+    this.listeners[type].push(handler);
+  },
+  dispatchEvent(event) {
+    for (const handler of this.listeners[event.type] || []) {
+      handler(event);
+    }
+  },
+  setTimeout(callback) {
+    callback();
+  },
+};
+
+const modal = new Element("div");
+modal.hidden = true;
+const close = new Element("button");
+const title = new Element("h2");
+const body = new Element("div");
+modal.append(close, title, body);
+const opener = new Element("button");
+document.activeElement = opener;
+
+function actionButton(text, handler, className = "") {
+  const button = new Element("button");
+  button.textContent = text;
+  button.className = className;
+  button.addEventListener("click", handler);
+  return button;
+}
+
+window.memoStackBrowser = {
+  els: {
+    reviewModal: modal,
+    reviewModalClose: close,
+    reviewModalTitle: title,
+    reviewModalBody: body,
+  },
+  state: {
+    anchors: [],
+    chunks: [],
+    contextLinks: [],
+    contextLinkSuggestions: [],
+    documents: [],
+    episodes: [],
+    facts: [],
+    suggestions: [],
+    memoryBrowser: {},
+  },
+  actionButton,
+  arrayOf: (value) => Array.isArray(value) ? value : [],
+  contextLinkEditForm: () => new Element("form"),
+  emptyItem: (text) => {
+    const item = new Element("div");
+    item.textContent = text;
+    return item;
+  },
+  formatContextLinkReviewAudit: () => "created by policy",
+  formatDate: (value) => value || "",
+  keyValueItem: (key, value) => {
+    const item = new Element("div");
+    item.textContent = `${key}: ${value}`;
+    return item;
+  },
+  scoreLabel: (score) => String(score),
+  shortId: (value) => String(value).slice(0, 8),
+  sourceSection: () => new Element("section"),
+  temporalWindowLabel: () => "",
+  reviewContextLinkSuggestion: () => {},
+};
+
+const context = { window, document, console };
+context.globalThis = context;
+vm.runInNewContext(fs.readFileSync(reviewJsPath, "utf8"), context);
+window.memoStackReview.bindModalEvents();
+window.memoStackReview.openContextLinkReviewModal({
+  id: "suggestion_123456",
+  source_type: "asset",
+  source_id: "asset_1",
+  target_type: "fact",
+  target_id: "fact_1",
+  relation_type: "supports",
+  status: "pending",
+  confidence: "medium",
+  score: 0.9,
+  reason: "bbox evidence matched",
+  metadata: { target_preview: "Target fact preview" },
+  review_audit: [{ action: "created" }],
+  updated_at: "2026-06-18T00:00:00Z",
+});
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+function keydown(key, shiftKey = false) {
+  const event = {
+    type: "keydown",
+    key,
+    shiftKey,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+  window.dispatchEvent(event);
+  return event;
+}
+
+assert(modal.hidden === false, "modal should open");
+assert(document.activeElement === close, "first modal control should receive focus");
+const focusable = modal.querySelectorAll();
+const first = focusable[0];
+const last = focusable[focusable.length - 1];
+last.focus();
+assert(keydown("Tab").defaultPrevented === true, "tab on last control should be trapped");
+assert(document.activeElement === first, "tab on last control should wrap to first");
+first.focus();
+assert(
+  keydown("Tab", true).defaultPrevented === true,
+  "shift-tab on first control should be trapped",
+);
+assert(document.activeElement === last, "shift-tab on first control should wrap to last");
+opener.focus();
+assert(keydown("Tab").defaultPrevented === true, "tab from outside modal should be trapped");
+assert(document.activeElement === first, "outside tab should return to modal");
+const escape = keydown("Escape");
+assert(escape.defaultPrevented === true, "escape should prevent default");
+assert(modal.hidden === true, "escape should close modal");
+assert(document.activeElement === opener, "close should restore previous focus");
+"""
+    subprocess.run(
+        [node, "-e", script, str(review_js)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+
+def test_review_actions_keep_confirmed_refresh_and_bounded_batch_contract() -> None:
+    js = (
+        Path(__file__).resolve().parents[2]
+        / "packages/memo_stack_server/memo_stack_server/web/assets/memory-browser.js"
+    ).read_text()
+
+    assert "async function withReviewActionLock" in js
+    assert js.index("inFlightReviewActions.add(lockKey)") < js.index("await handler();")
+    assert js.index("finally") < js.index("inFlightReviewActions.delete(lockKey);")
+
+    review_context_link = _function_body(js, "reviewContextLinkSuggestion")
+    assert review_context_link.index("await apiJson") < review_context_link.index(
+        "await refreshAll();"
+    )
+    assert review_context_link.index("await refreshAll();") < review_context_link.index(
+        "closeReviewModal"
+    )
+    assert "withReviewActionLock(`context-link-suggestion:${suggestionId}`" in (
+        review_context_link
+    )
+
+    batch_review = _function_body(js, "reviewPendingContextLinkSuggestionsBatch")
+    assert "window.memoStackReview.visiblePendingContextLinkReviews()" in batch_review
+    assert "pending.slice(0, 50)" in batch_review
+    assert "if (!visibleFilter)" in batch_review
+    assert "visible_filter: visibleFilter" in batch_review
+    assert batch_review.index("window.prompt") < batch_review.index("apiJson")
+    assert batch_review.index("window.confirm") < batch_review.index("apiJson")
+
+
+def _function_body(source: str, name: str) -> str:
+    start = source.index(f"async function {name}")
+    next_function = source.find("\n  async function ", start + 1)
+    if next_function < 0:
+        next_function = source.find("\n  function ", start + 1)
+    return source[start:next_function]
