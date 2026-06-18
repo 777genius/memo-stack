@@ -444,6 +444,47 @@ def test_text_asset_extraction_indexes_document_chunks_and_artifacts(tmp_path: P
         assert b"quick capture attached to memory scopes" in downloaded.content
 
 
+def test_spoofed_image_mime_text_asset_extracts_as_text_with_mismatch_metadata(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "mime-mismatch",
+                "filename": "not-really-a-screenshot.png",
+                "extract": "true",
+            },
+            content=b"Plain text capture mislabeled as image/png must remain evidence.",
+            headers=auth_headers({"Content-Type": "image/png"}),
+        )
+        assert upload.status_code == 201, upload.text
+        uploaded = upload.json()["data"]
+        extraction = uploaded["extraction"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction['id']}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["parser_name"] == "simple_text"
+        assert extracted["metadata"]["normalized_content_type"] == "text/plain"
+        assert extracted["metadata"]["detected_content_type"] == "text/plain"
+        assert extracted["metadata"]["mime_declared_content_type"] == "image/png"
+        assert extracted["metadata"]["mime_extension_content_type"] == "image/png"
+        assert extracted["metadata"]["mime_magic_content_type"] == "text/plain"
+        assert extracted["metadata"]["mime_content_type_mismatch"] is True
+        assert extracted["metadata"]["mime_extension_mismatch"] is True
+        assert extracted["metadata"]["mime_detector_reason"] == "magic"
+
+
 def test_asset_extraction_size_limit_keeps_source_asset_downloadable(tmp_path: Path) -> None:
     with make_client(tmp_path, max_asset_upload_bytes=100, extraction_max_bytes=4) as client:
         upload = client.post(
@@ -1889,7 +1930,7 @@ def test_invalid_media_asset_extraction_finishes_unsupported(tmp_path: Path) -> 
                 "extract": "true",
                 "estimated_media_seconds": 30,
             },
-            content=b"not a real mp4 file",
+            content=b"\x00\x01not a real mp4 file\x00\x02",
             headers=auth_headers({"Content-Type": "video/mp4"}),
         )
         assert upload.status_code == 201, upload.text

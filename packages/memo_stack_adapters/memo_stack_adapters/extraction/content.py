@@ -84,6 +84,13 @@ _VIDEO_TYPES = {
     "video/x-matroska",
 }
 _MEDIA_TYPES = _AUDIO_TYPES | _VIDEO_TYPES
+_GENERIC_CONTENT_TYPES = {
+    "",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-binary",
+}
+_TEXT_MAGIC_OVERRIDE_TYPES = _TEXT_TYPES | _TIMED_TEXT_TYPES
 _SUBTITLE_TIMESTAMP_RE = re.compile(
     r"(?P<start>\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*"
     r"(?P<end>\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})"
@@ -94,16 +101,32 @@ class SimpleFileTypeDetector(FileTypeDetectorPort):
     async def detect(self, request: FileTypeDetectionRequest) -> FileTypeDetectionResult:
         declared = _normalize_content_type(request.declared_content_type)
         extension = _extension(request.filename)
-        detected = _choose_detected_content_type(
-            magic_type=_magic_content_type(request.content),
-            extension_type=_extension_content_type(extension),
+        magic_type = _magic_content_type(request.content)
+        extension_type = _extension_content_type(extension)
+        choice = _choose_detected_content_type(
+            magic_type=magic_type,
+            extension_type=extension_type,
+            declared_type=declared,
+        )
+        confidence = _detection_confidence(
+            choice=choice,
+            magic_type=magic_type,
+            extension_type=extension_type,
             declared_type=declared,
         )
         return FileTypeDetectionResult(
-            content_type=detected or "application/octet-stream",
+            content_type=choice.content_type or "application/octet-stream",
             extension=extension,
-            confidence="high" if detected != declared else "medium",
-            diagnostics={"declared_content_type": declared},
+            confidence=confidence,
+            diagnostics=_detection_diagnostics(
+                choice=choice,
+                declared_type=declared,
+                extension=extension,
+                extension_type=extension_type,
+                magic_type=magic_type,
+                byte_size=len(request.content),
+                confidence=confidence,
+            ),
         )
 
 
@@ -111,6 +134,12 @@ class SimpleFileTypeDetector(FileTypeDetectorPort):
 class SupportDecision:
     supported: bool
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _ContentTypeChoice:
+    content_type: str
+    reason: str
 
 
 class ExtractionEngine:
@@ -651,18 +680,30 @@ def _choose_detected_content_type(
     magic_type: str | None,
     extension_type: str | None,
     declared_type: str,
-) -> str:
+) -> _ContentTypeChoice:
     if extension_type and _extension_should_override_magic(
         magic_type=magic_type,
         extension_type=extension_type,
     ):
-        return extension_type
+        reason = (
+            "extension_overrides_zip_magic"
+            if magic_type == "application/zip"
+            else "extension_overrides_magic"
+        )
+        return _ContentTypeChoice(content_type=extension_type, reason=reason)
     if _declared_should_override_magic(
         magic_type=magic_type,
         declared_type=declared_type,
     ):
-        return declared_type
-    return magic_type or extension_type or declared_type
+        return _ContentTypeChoice(
+            content_type=declared_type,
+            reason="declared_text_subtype",
+        )
+    if magic_type:
+        return _ContentTypeChoice(content_type=magic_type, reason="magic")
+    if extension_type:
+        return _ContentTypeChoice(content_type=extension_type, reason="extension")
+    return _ContentTypeChoice(content_type=declared_type, reason="declared")
 
 
 def _declared_should_override_magic(
@@ -672,15 +713,7 @@ def _declared_should_override_magic(
 ) -> bool:
     if magic_type != "text/plain":
         return False
-    known_declared_types = (
-        _TIMED_TEXT_TYPES
-        | _TEXT_TYPES
-        | _PDF_TYPES
-        | _STRUCTURED_DOCUMENT_TYPES
-        | _IMAGE_TYPES
-        | _MEDIA_TYPES
-    )
-    return declared_type in known_declared_types
+    return declared_type in _TEXT_MAGIC_OVERRIDE_TYPES
 
 
 def _extension_should_override_magic(
@@ -690,20 +723,74 @@ def _extension_should_override_magic(
 ) -> bool:
     if magic_type is None:
         return True
-    if (
-        magic_type == "text/plain"
-        and extension_type
-        in _TIMED_TEXT_TYPES
-        | _TEXT_TYPES
-        | _PDF_TYPES
-        | _STRUCTURED_DOCUMENT_TYPES
-        | _IMAGE_TYPES
-        | _MEDIA_TYPES
-    ):
+    if magic_type == "text/plain" and extension_type in _TEXT_MAGIC_OVERRIDE_TYPES:
         return True
     if magic_type == "application/zip" and extension_type in _STRUCTURED_DOCUMENT_TYPES:
         return True
     return magic_type == "video/mp4" and extension_type == "audio/mp4"
+
+
+def _detection_confidence(
+    *,
+    choice: _ContentTypeChoice,
+    magic_type: str | None,
+    extension_type: str | None,
+    declared_type: str,
+) -> str:
+    if choice.content_type in _GENERIC_CONTENT_TYPES:
+        return "low"
+    if choice.reason == "magic":
+        return "high"
+    if choice.reason in {
+        "extension_overrides_zip_magic",
+        "extension_overrides_magic",
+    }:
+        return "high" if magic_type is not None else "medium"
+    if choice.reason == "declared_text_subtype":
+        return "medium"
+    if choice.reason == "extension":
+        return "medium"
+    if declared_type == choice.content_type and declared_type not in _GENERIC_CONTENT_TYPES:
+        return "low"
+    if extension_type and extension_type == choice.content_type:
+        return "medium"
+    return "low"
+
+
+def _detection_diagnostics(
+    *,
+    choice: _ContentTypeChoice,
+    declared_type: str,
+    extension: str | None,
+    extension_type: str | None,
+    magic_type: str | None,
+    byte_size: int,
+    confidence: str,
+) -> dict[str, object]:
+    declared_mismatch = (
+        declared_type not in _GENERIC_CONTENT_TYPES and declared_type != choice.content_type
+    )
+    magic_mismatch = magic_type is not None and magic_type != choice.content_type
+    extension_mismatch = extension_type is not None and extension_type != choice.content_type
+    diagnostics: dict[str, object] = {
+        "mime_declared_content_type": declared_type,
+        "mime_detected_content_type": choice.content_type,
+        "mime_detector_confidence": confidence,
+        "mime_detector_reason": choice.reason,
+        "mime_content_type_mismatch": declared_mismatch,
+        "mime_magic_mismatch": magic_mismatch,
+        "mime_extension_mismatch": extension_mismatch,
+        "asset_empty_content": byte_size == 0,
+    }
+    if magic_type is not None:
+        diagnostics["mime_magic_content_type"] = magic_type
+    if extension is not None:
+        diagnostics["mime_filename_extension"] = extension
+    if extension_type is not None:
+        diagnostics["mime_extension_content_type"] = extension_type
+    if declared_mismatch:
+        diagnostics["mime_mismatch_kind"] = "declared_vs_detected"
+    return diagnostics
 
 
 def _extension_content_type(extension: str | None) -> str | None:

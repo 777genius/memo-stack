@@ -46,6 +46,43 @@ def test_file_type_detector_prefers_office_extension_over_zip_magic() -> None:
         result.content_type
         == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
+    assert result.diagnostics["mime_detector_reason"] == "extension_overrides_zip_magic"
+
+
+def test_file_type_detector_prefers_text_magic_over_spoofed_image_metadata() -> None:
+    result = asyncio.run(
+        SimpleFileTypeDetector().detect(
+            FileTypeDetectionRequest(
+                filename="screenshot.png",
+                declared_content_type="image/png",
+                content=b"This is actually a plain text note, not a png.",
+            )
+        )
+    )
+
+    assert result.content_type == "text/plain"
+    assert result.confidence == "high"
+    assert result.diagnostics["mime_declared_content_type"] == "image/png"
+    assert result.diagnostics["mime_extension_content_type"] == "image/png"
+    assert result.diagnostics["mime_magic_content_type"] == "text/plain"
+    assert result.diagnostics["mime_content_type_mismatch"] is True
+    assert result.diagnostics["mime_extension_mismatch"] is True
+    assert result.diagnostics["mime_detector_reason"] == "magic"
+
+
+def test_file_type_detector_keeps_textual_subtype_for_plain_text_magic() -> None:
+    result = asyncio.run(
+        SimpleFileTypeDetector().detect(
+            FileTypeDetectionRequest(
+                filename="capture.md",
+                declared_content_type="application/octet-stream",
+                content=b"# Memory Scope\n\nQuick capture note.",
+            )
+        )
+    )
+
+    assert result.content_type == "text/markdown"
+    assert result.diagnostics["mime_detector_reason"] == "extension_overrides_magic"
 
 
 def test_tesseract_tsv_parser_groups_words_into_ocr_blocks() -> None:

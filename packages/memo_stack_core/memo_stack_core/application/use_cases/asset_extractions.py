@@ -85,6 +85,7 @@ from memo_stack_core.ports.extraction import (
     ExtractionRequest,
     ExtractionResult,
     FileTypeDetectionRequest,
+    FileTypeDetectionResult,
     FileTypeDetectorPort,
 )
 from memo_stack_core.ports.ids import IdGeneratorPort
@@ -399,6 +400,10 @@ class RunAssetExtractionUseCase:
                     declared_content_type=asset.content_type,
                     content=content,
                 )
+            )
+            job = await self._update_job_metadata(
+                job,
+                metadata=_file_type_detection_metadata(detection),
             )
             job = await self._save_progress(
                 job,
@@ -961,6 +966,16 @@ def _datetime_after(value: datetime, reference: datetime) -> bool:
 def _artifact_byte_limit(limits: ExtractionLimits) -> int:
     requested = max(1, int(limits.max_output_chars)) * 4
     return min(max(requested, _MIN_ARTIFACT_BYTE_LIMIT), _MAX_ARTIFACT_BYTE_LIMIT)
+
+
+def _file_type_detection_metadata(
+    detection: FileTypeDetectionResult,
+) -> dict[str, object]:
+    return {
+        "detected_content_type": safe_metadata_text(detection.content_type),
+        "detector_confidence": safe_metadata_text(detection.confidence),
+        **safe_metadata(detection.diagnostics),
+    }
 
 
 def _bounded_artifact_candidate(
