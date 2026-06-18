@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import shlex
@@ -414,6 +415,13 @@ def _prove_extraction_flow(
             expected_text=marker,
         ),
         _AssetCase(
+            filename="docker-proof.pdf",
+            content_type="application/pdf",
+            content=_sample_pdf_bytes(f"{marker} document extraction proof from Docker worker"),
+            expected_artifacts={"extracted_json", "markdown"},
+            expected_text=marker,
+        ),
+        _AssetCase(
             filename="docker-proof.png",
             content_type="image/png",
             content=_sample_png_bytes(),
@@ -426,6 +434,19 @@ def _prove_extraction_flow(
             content=_sample_wav_bytes(),
             expected_artifacts={"extracted_json", "markdown", "media_manifest"},
             expected_text="Media asset evidence",
+        ),
+        _AssetCase(
+            filename="docker-proof.mp4",
+            content_type="video/mp4",
+            content=_sample_mp4_bytes(),
+            expected_artifacts={
+                "extracted_json",
+                "keyframe",
+                "markdown",
+                "media_manifest",
+                "video_frame_timeline",
+            },
+            expected_text="Media asset",
         ),
     )
     completed: list[dict[str, Any]] = []
@@ -754,6 +775,65 @@ def _sample_wav_bytes() -> bytes:
         wav.setframerate(8000)
         wav.writeframes(b"\x00\x00" * 8000)
     return output.getvalue()
+
+
+def _sample_pdf_bytes(text: str) -> bytes:
+    safe_text = "".join(ch if ch.isalnum() or ch in " ._-" else " " for ch in text)
+    stream = f"BT /F1 18 Tf 72 720 Td ({safe_text}) Tj ET".encode("latin-1")
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n"
+        + f"5 0 obj << /Length {len(stream)} >> stream\n".encode("ascii")
+        + stream
+        + b"\nendstream endobj\nxref\n0 6\n0000000000 65535 f \n"
+        b"0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n"
+        b"0000000241 00000 n \n0000000311 00000 n \n"
+        b"trailer << /Root 1 0 R /Size 6 >>\nstartxref\n449\n%%EOF\n"
+    )
+
+
+def _sample_mp4_bytes() -> bytes:
+    return base64.b64decode(
+        "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAA21tZGF0AAACrgYF"
+        "//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4y"
+        "NjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cu"
+        "dmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9j"
+        "az0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9"
+        "MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9"
+        "MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3Fw"
+        "X29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFk"
+        "cz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0"
+        "cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9"
+        "MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBr"
+        "ZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9"
+        "NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02"
+        "OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAA7//73Tr8Cm1TC"
+        "YQAAAAhBmiRsQ3/+4AAAAAhBnkJ4hf/BgQAAAAgBnmF0Qr/EgAAAAAgBnmNqQr/EgQAAAA5"
+        "BmmhJqEFomUwIZ//+4QAAAApBnoZFESwv/8GBAAAACAGepXRCv8SBAAAACAGep2pCv8SAAAA"
+        "ADkGarEmoQWyZTAhX//7AAAAACkGeykUVLC//wYEAAAAIAZ7pdEK/xIAAAAAIAZ7rakK/xIA"
+        "AAAPUbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAggAAQAAAQAAAAAAAAAAAAAAAAE"
+        "AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAg"
+        "AAAv90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAggAAAAAAAAAAAAAAAAAAAAA"
+        "AAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAA"
+        "ABxlbHN0AAAAAAAAAAEAAAIIAAAEAAABAAAAAAJ3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAA"
+        "AAAyAAAAGgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRs"
+        "ZXIAAAACIm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAA"
+        "AQAAAAx1cmwgAAAAAQAAAeJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEA"
+        "AAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4xMS4xMDAgbGlieDI2"
+        "NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZY"
+        "AQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAADQ5AAAAAAAAABhz"
+        "dHRzAAAAAAAAAAEAAAANAAACAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAeGN0dHMAAAAAAAAA"
+        "DQAAAAEAAAQAAAAAAQAACgAAAAABAAAEAAAAAAEAAAAAAAAAAQAAAgAAAAABAAAKAAAAAAEA"
+        "AAQAAAAAAQAAAAAAAAABAAACAAAAAAEAAAoAAAAAAQAABAAAAAABAAAAAAAAAAEAAAIAAAAA"
+        "HHN0c2MAAAAAAAAAAQAAAAEAAAANAAAAAQAAAEhzdHN6AAAAAAAAAAAAAAANAAACxQAAAAwA"
+        "AAAMAAAADAAAAAwAAAASAAAADgAAAAwAAAAMAAAAEgAAAA4AAAAMAAAADAAAABRzdGNvAAAA"
+        "AAAAAAEAAAAwAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwA"
+        "AAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2Mi4zLjEwMA=="
+    )
 
 
 def _sample_png_bytes() -> bytes:

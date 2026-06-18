@@ -96,13 +96,23 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
             filename = item["filename"]
             artifact_map = {
                 "docker-proof.txt": ["extracted_json", "markdown"],
+                "docker-proof.pdf": ["extracted_json", "markdown"],
                 "docker-proof.png": ["extracted_json", "image_regions", "markdown"],
                 "docker-proof.wav": ["extracted_json", "markdown", "media_manifest"],
+                "docker-proof.mp4": [
+                    "extracted_json",
+                    "keyframe",
+                    "markdown",
+                    "media_manifest",
+                    "video_frame_timeline",
+                ],
             }
             parser_map = {
                 "docker-proof.txt": "simple_text",
+                "docker-proof.pdf": "pypdf_text",
                 "docker-proof.png": "image_metadata",
                 "docker-proof.wav": "media_metadata",
+                "docker-proof.mp4": "media_metadata",
             }
             return {
                 "data": {
@@ -117,11 +127,15 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
             }
         if method == "GET" and parsed.path.startswith("/v1/documents/"):
             document_id = parsed.path.split("/")[3]
-            item = next(value for value in uploaded.values() if value["document_id"] == document_id)
+            item = next(
+                value for value in uploaded.values() if value["document_id"] == document_id
+            )
             chunk_text = {
                 "docker-proof.txt": item["content"],
+                "docker-proof.pdf": item["content"],
                 "docker-proof.png": "Image asset evidence with OCR metadata",
                 "docker-proof.wav": "Media asset evidence with ffprobe metadata",
+                "docker-proof.mp4": "Media asset evidence with keyframe metadata",
             }[item["filename"]]
             return {"data": [{"text": chunk_text}]}
         raise AssertionError(f"Unexpected request: {method} {url}")
@@ -135,7 +149,15 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
 
     assert report["ok"] is True
     assert report["components"]["container_dependencies"]["versions"]["ffmpeg"]
-    assert len(report["components"]["extraction_flow"]["cases"]) == 3
+    cases = report["components"]["extraction_flow"]["cases"]
+    assert len(cases) == 5
+    filenames = {case["filename"] for case in cases}
+    assert {
+        "docker-proof.pdf",
+        "docker-proof.png",
+        "docker-proof.wav",
+        "docker-proof.mp4",
+    }.issubset(filenames)
     assert any("--profile" in command and "lite" in command for command in commands)
     assert any(
         "up" in command and "memo_stack_extraction_worker" in command
