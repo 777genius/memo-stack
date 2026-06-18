@@ -307,6 +307,35 @@ def test_multimodal_production_goal_audit_rejects_bad_provider_failure_policy(
     assert any("failure policy for rate_limited" in failure for failure in result.failures)
 
 
+def test_multimodal_production_goal_audit_rejects_missing_provider_proof_matrix(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    provider.pop("proof_matrix")
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["live_provider_proof_matrix_present"] is False
+    assert result.checks["live_provider_proof_matrix_vision_real_provider"] is False
+    assert any("provider proof matrix" in failure for failure in result.failures)
+
+
 def test_multimodal_production_goal_audit_rejects_docker_without_provider_contract(
     tmp_path: Path,
 ) -> None:
@@ -490,6 +519,7 @@ def _provider_report() -> dict[str, object]:
         "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "provider_key_present": True,
         "failure_policy_contract": _failure_policy_contract(),
+        "proof_matrix": _provider_proof_matrix(),
         "provider_contract": {
             "external_ai_required": True,
             "timeout_seconds": 60.0,
@@ -522,6 +552,65 @@ def _provider_report() -> dict[str, object]:
             "provider_key": {"status": "configured"},
             "vision": {"status": "succeeded"},
             "transcription": {"status": "succeeded"},
+        },
+    }
+
+
+def _provider_proof_matrix() -> dict[str, object]:
+    return {
+        "schema_version": "multimodal-provider-proof-matrix-v1",
+        "requirements": {
+            "vision_real_provider": {
+                "status": "succeeded",
+                "proof": "live_provider_call",
+                "requires_provider_key": True,
+                "ok": True,
+            },
+            "audio_transcription_real_provider": {
+                "status": "succeeded",
+                "proof": "live_provider_call",
+                "requires_provider_key": True,
+                "ok": True,
+            },
+            "invalid_key_classification": {
+                "status": "contract_covered",
+                "proof": "adapter_contract_test",
+                "requires_provider_key": False,
+                "ok": True,
+                "operator_action": "replace_provider_credential",
+                "reason": "asset_extraction.vision.invalid_api_key",
+                "user_retryable": False,
+            },
+            "rate_limit_classification": {
+                "status": "contract_covered",
+                "proof": "adapter_contract_test",
+                "requires_provider_key": False,
+                "ok": True,
+                "operator_action": "retry_later",
+                "reason": "asset_extraction.transcription.rate_limited",
+                "user_retryable": True,
+            },
+            "timeout_classification": {
+                "status": "contract_covered",
+                "proof": "adapter_contract_test",
+                "requires_provider_key": False,
+                "ok": True,
+                "operator_action": "retry_later",
+                "reason": "asset_extraction.vision.timeout",
+                "user_retryable": True,
+            },
+            "no_secret_leak_guard": {
+                "status": "contract_covered",
+                "proof": "bounded_report_redaction",
+                "requires_provider_key": False,
+                "ok": True,
+            },
+        },
+        "summary": {
+            "live_requirements_passed": 2,
+            "live_requirements_total": 2,
+            "contract_requirements_passed": 4,
+            "contract_requirements_total": 4,
         },
     }
 

@@ -84,6 +84,38 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "supported_file_types": [".gif", ".jpeg", ".jpg", ".png", ".webp"],
     }
     assert file_report["failure_policy_contract"] == _expected_failure_policy_contract()
+    proof = file_report["proof_matrix"]
+    assert proof["schema_version"] == "multimodal-provider-proof-matrix-v1"
+    assert proof["summary"] == {
+        "contract_requirements_passed": 4,
+        "contract_requirements_total": 4,
+        "live_requirements_passed": 0,
+        "live_requirements_total": 2,
+    }
+    requirements = proof["requirements"]
+    assert requirements["vision_real_provider"] == {
+        "ok": False,
+        "proof": "live_provider_call",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
+    assert requirements["audio_transcription_real_provider"] == {
+        "ok": False,
+        "proof": "live_provider_call",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
+    assert requirements["invalid_key_classification"]["status"] == "contract_covered"
+    assert requirements["rate_limit_classification"]["status"] == "contract_covered"
+    assert requirements["timeout_classification"]["status"] == "contract_covered"
+    assert requirements["no_secret_leak_guard"] == {
+        "ok": True,
+        "proof": "bounded_report_redaction",
+        "requires_provider_key": False,
+        "status": "contract_covered",
+    }
     assert file_report["components"]["provider_key"] == {
         "message": (
             "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running the live provider canary"

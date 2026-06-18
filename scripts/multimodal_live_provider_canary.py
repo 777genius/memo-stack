@@ -38,6 +38,7 @@ from infinity_context_core.ports.transcription import SpeechTranscriptionRequest
 from infinity_context_core.ports.vision import ImageVisionRequest
 
 SUITE = "infinity-context-multimodal-live-provider-canary"
+PROOF_MATRIX_VERSION = "multimodal-provider-proof-matrix-v1"
 REQUIRED_ENV = "MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"
 DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
 DEFAULT_VISION_MODEL = "gpt-4.1-mini"
@@ -115,6 +116,7 @@ async def run_multimodal_live_provider_canary(
             reason="provider_credential_missing",
         )
         report["ok"] = False
+        _update_proof_matrix(report)
         return report
 
     report["components"]["provider_key"] = _component("configured")
@@ -123,6 +125,7 @@ async def run_multimodal_live_provider_canary(
     report["components"]["vision"] = vision
     report["components"]["transcription"] = transcription
     report["ok"] = vision["status"] == "succeeded" and transcription["status"] == "succeeded"
+    _update_proof_matrix(report)
     return report
 
 
@@ -353,6 +356,12 @@ def _base_report(
             },
         },
         "failure_policy_contract": _failure_policy_contract(),
+        "proof_matrix": _proof_matrix(
+            components={},
+            failure_policy_contract={},
+            provider_key_present=has_provider_key,
+            secrets_redacted=True,
+        ),
         "models": {
             "vision": args.vision_model,
             "transcription": args.transcription_model,
@@ -362,6 +371,145 @@ def _base_report(
             "vision": _component("unknown"),
             "transcription": _component("unknown"),
         },
+    }
+
+
+def _update_proof_matrix(report: dict[str, object]) -> None:
+    components = report.get("components") if isinstance(report.get("components"), dict) else {}
+    failure_policy_contract = (
+        report.get("failure_policy_contract")
+        if isinstance(report.get("failure_policy_contract"), dict)
+        else {}
+    )
+    report["proof_matrix"] = _proof_matrix(
+        components=components,
+        failure_policy_contract=failure_policy_contract,
+        provider_key_present=bool(report.get("provider_key_present")),
+        secrets_redacted=report.get("secrets_redacted") is True,
+    )
+
+
+def _proof_matrix(
+    *,
+    components: dict[object, object],
+    failure_policy_contract: dict[object, object],
+    provider_key_present: bool,
+    secrets_redacted: bool,
+) -> dict[str, object]:
+    requirements = {
+        "vision_real_provider": _live_component_requirement(
+            components,
+            "vision",
+            requires_provider_key=True,
+            provider_key_present=provider_key_present,
+        ),
+        "audio_transcription_real_provider": _live_component_requirement(
+            components,
+            "transcription",
+            requires_provider_key=True,
+            provider_key_present=provider_key_present,
+        ),
+        "invalid_key_classification": _contract_requirement(
+            failure_policy_contract,
+            "invalid_api_key",
+            expected_operator_action="replace_provider_credential",
+            expected_retryable=False,
+        ),
+        "rate_limit_classification": _contract_requirement(
+            failure_policy_contract,
+            "rate_limited",
+            expected_operator_action="retry_later",
+            expected_retryable=True,
+        ),
+        "timeout_classification": _contract_requirement(
+            failure_policy_contract,
+            "timeout",
+            expected_operator_action="retry_later",
+            expected_retryable=True,
+        ),
+        "no_secret_leak_guard": {
+            "status": "contract_covered" if secrets_redacted else "failed",
+            "proof": "bounded_report_redaction",
+            "requires_provider_key": False,
+            "ok": secrets_redacted,
+        },
+    }
+    live_names = ("vision_real_provider", "audio_transcription_real_provider")
+    contract_names = tuple(name for name in requirements if name not in live_names)
+    return {
+        "schema_version": PROOF_MATRIX_VERSION,
+        "requirements": requirements,
+        "summary": {
+            "live_requirements_passed": sum(
+                1 for name in live_names if requirements[name].get("ok") is True
+            ),
+            "live_requirements_total": len(live_names),
+            "contract_requirements_passed": sum(
+                1 for name in contract_names if requirements[name].get("ok") is True
+            ),
+            "contract_requirements_total": len(contract_names),
+        },
+    }
+
+
+def _live_component_requirement(
+    components: dict[object, object],
+    name: str,
+    *,
+    requires_provider_key: bool,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    component = components.get(name)
+    if not isinstance(component, dict):
+        status = "not_run" if provider_key_present else "skipped"
+        return {
+            "status": status,
+            "proof": "live_provider_call",
+            "requires_provider_key": requires_provider_key,
+            "ok": False,
+        }
+    component_status = str(component.get("status") or "unknown")
+    return {
+        "status": component_status,
+        "proof": "live_provider_call",
+        "requires_provider_key": requires_provider_key,
+        "ok": component_status == "succeeded",
+        **(
+            {"reason": component.get("reason")}
+            if isinstance(component.get("reason"), str)
+            else {}
+        ),
+    }
+
+
+def _contract_requirement(
+    contract: dict[object, object],
+    name: str,
+    *,
+    expected_operator_action: str,
+    expected_retryable: bool,
+) -> dict[str, object]:
+    case = contract.get(name)
+    if not isinstance(case, dict):
+        return {
+            "status": "missing",
+            "proof": "adapter_contract_test",
+            "requires_provider_key": False,
+            "ok": False,
+        }
+    ok = (
+        case.get("reason") is not None
+        and case.get("operator_action") == expected_operator_action
+        and case.get("user_retryable") is expected_retryable
+    )
+    return {
+        "status": "contract_covered" if ok else "failed",
+        "proof": "adapter_contract_test",
+        "requires_provider_key": False,
+        "ok": ok,
+        "reason": case.get("reason"),
+        "operator_action": case.get("operator_action"),
+        "user_retryable": case.get("user_retryable"),
     }
 
 

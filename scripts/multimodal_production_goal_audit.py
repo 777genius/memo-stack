@@ -419,6 +419,9 @@ def _audit_provider_report(
         if isinstance(report.get("failure_policy_contract"), dict)
         else {}
     )
+    proof_matrix = (
+        report.get("proof_matrix") if isinstance(report.get("proof_matrix"), dict) else {}
+    )
     _check(
         checks,
         failures,
@@ -458,6 +461,11 @@ def _audit_provider_report(
     _audit_provider_contract(provider_contract, checks=checks, failures=failures)
     _audit_provider_failure_policy(
         failure_policy_contract,
+        checks=checks,
+        failures=failures,
+    )
+    _audit_provider_proof_matrix(
+        proof_matrix,
         checks=checks,
         failures=failures,
     )
@@ -554,6 +562,42 @@ def _audit_provider_failure_policy(
             and case.get("user_retryable") is retryable
             and case.get("operator_action") == action,
             f"Live provider failure policy for {reason} is missing or wrong",
+        )
+
+
+def _audit_provider_proof_matrix(
+    matrix: Mapping[str, object],
+    *,
+    checks: dict[str, bool],
+    failures: list[str],
+) -> None:
+    requirements = (
+        matrix.get("requirements") if isinstance(matrix.get("requirements"), dict) else {}
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_proof_matrix_present",
+        matrix.get("schema_version") == "multimodal-provider-proof-matrix-v1"
+        and bool(requirements),
+        "Live provider proof must include the multimodal provider proof matrix",
+    )
+    expected = {
+        "vision_real_provider": "succeeded",
+        "audio_transcription_real_provider": "succeeded",
+        "invalid_key_classification": "contract_covered",
+        "rate_limit_classification": "contract_covered",
+        "timeout_classification": "contract_covered",
+        "no_secret_leak_guard": "contract_covered",
+    }
+    for name, status in expected.items():
+        case = requirements.get(name) if isinstance(requirements.get(name), dict) else {}
+        _check(
+            checks,
+            failures,
+            f"live_provider_proof_matrix_{name}",
+            case.get("status") == status and case.get("ok") is True,
+            f"Live provider proof matrix requirement {name} is missing or not proven",
         )
 
 
