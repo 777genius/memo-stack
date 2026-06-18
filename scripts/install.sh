@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PREFIX="${MEMO_STACK_HOME:-${HOME}/.memo-stack}"
-REPO_URL="${MEMO_STACK_INSTALL_REPO:-https://github.com/belief-ai/memo-stack.git}"
-REF="${MEMO_STACK_INSTALL_REF:-main}"
+PREFIX="${INFINITY_CONTEXT_HOME:-${HOME}/.infinity-context}"
+REPO_URL="${INFINITY_CONTEXT_INSTALL_REPO:-https://github.com/belief-ai/infinity-context.git}"
+REF="${INFINITY_CONTEXT_INSTALL_REF:-main}"
 NO_START=0
 DRY_RUN=0
 FORCE=0
@@ -12,14 +12,14 @@ RESET_DATA=0
 
 usage() {
   cat <<'USAGE'
-Memo Stack local installer.
+Infinity Context local installer.
 
 Usage:
   scripts/install.sh [options]
 
 Options:
   --dry-run             Print actions without writing files.
-  --prefix PATH         Install home. Defaults to ~/.memo-stack.
+  --prefix PATH         Install home. Defaults to ~/.infinity-context.
   --repo URL_OR_PATH    Git repo URL or local path.
   --ref REF             Git ref to checkout. Defaults to main.
   --no-start            Install files only, do not start Docker stack.
@@ -31,7 +31,7 @@ USAGE
 }
 
 log() {
-  printf '%s\n' "memo-stack install: $*" >&2
+  printf '%s\n' "infinity-context install: $*" >&2
 }
 
 run() {
@@ -155,7 +155,7 @@ default_memory_scope_external_ref = "default"
 [runtime]
 mode = "docker_compose"
 compose_profile = "lite"
-compose_project_name = "memo_stack"
+compose_project_name = "infinity_context"
 
 [mcp]
 write_mode = "suggest"
@@ -186,7 +186,7 @@ PY
 }
 
 install_cli_shim() {
-  local shim="${PREFIX}/bin/memo-stack"
+  local shim="${PREFIX}/bin/infinity-context"
   local src_dir="${PREFIX}/src"
   if [ "${DRY_RUN}" = "1" ]; then
     log "would write ${shim}"
@@ -203,19 +203,19 @@ if [ ! -x "\${python_bin}" ]; then
   elif command -v python >/dev/null 2>&1; then
     python_bin="\$(command -v python)"
   else
-    printf '%s\n' "memo-stack: python not found" >&2
+    printf '%s\n' "infinity-context: python not found" >&2
     exit 127
   fi
 fi
-export MEMO_STACK_HOME="${PREFIX}"
-export MEMO_STACK_REPO_ROOT="\${repo_root}"
-memo_stack_pythonpath="\${repo_root}/packages/memo_stack_core:\${repo_root}/packages/memo_stack_server:\${repo_root}/packages/memo_stack_adapters:\${repo_root}/packages/memo_stack_sdk:\${repo_root}/packages/memo_stack_obsidian:\${repo_root}/packages/memo_stack_mcp:\${repo_root}/packages/memo_stack_cli"
+export INFINITY_CONTEXT_HOME="${PREFIX}"
+export INFINITY_CONTEXT_REPO_ROOT="\${repo_root}"
+infinity_context_pythonpath="\${repo_root}/packages/infinity_context_core:\${repo_root}/packages/infinity_context_server:\${repo_root}/packages/infinity_context_adapters:\${repo_root}/packages/infinity_context_sdk:\${repo_root}/packages/infinity_context_obsidian:\${repo_root}/packages/infinity_context_mcp:\${repo_root}/packages/infinity_context_cli"
 if [ -n "\${PYTHONPATH:-}" ]; then
-  export PYTHONPATH="\${memo_stack_pythonpath}:\${PYTHONPATH}"
+  export PYTHONPATH="\${infinity_context_pythonpath}:\${PYTHONPATH}"
 else
-  export PYTHONPATH="\${memo_stack_pythonpath}"
+  export PYTHONPATH="\${infinity_context_pythonpath}"
 fi
-exec "\${python_bin}" -m memo_stack_cli "\$@"
+exec "\${python_bin}" -m infinity_context_cli "\$@"
 EOF
   chmod +x "${shim}"
 }
@@ -224,19 +224,19 @@ start_if_requested() {
   if [ "${NO_START}" = "1" ]; then
     return 0
   fi
-  run "${PREFIX}/bin/memo-stack" up --lite
-  run "${PREFIX}/bin/memo-stack" doctor
+  run "${PREFIX}/bin/infinity-context" up --lite
+  run "${PREFIX}/bin/infinity-context" doctor
 }
 
 print_next_steps() {
   cat <<EOF
-Memo Stack installed.
+Infinity Context installed.
 
 Next:
   export PATH="${PREFIX}/bin:\$PATH"
-  memo-stack status
-  memo-stack mcp-config --agent codex
-  memo-stack digest "current architecture decisions" --space default --memory_scope default
+  infinity-context status
+  infinity-context mcp-config --agent codex
+  infinity-context digest "current architecture decisions" --space default --memory_scope default
 EOF
 }
 

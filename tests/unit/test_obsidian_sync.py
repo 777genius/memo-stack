@@ -3,18 +3,18 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
-from memo_stack_obsidian.conflicts import CONFLICTS_DIR, WriteConflictArtifactsUseCase
-from memo_stack_obsidian.domain import ExportStatus, ImportStatus, SyncMode
-from memo_stack_obsidian.layout import ObsidianVaultLayout
-from memo_stack_obsidian.note_format import (
+from infinity_context_obsidian.conflicts import CONFLICTS_DIR, WriteConflictArtifactsUseCase
+from infinity_context_obsidian.domain import ExportStatus, ImportStatus, SyncMode
+from infinity_context_obsidian.layout import ObsidianVaultLayout
+from infinity_context_obsidian.note_format import (
     FACTS_DIR,
     TEXT_END,
     TEXT_START,
     render_fact_note,
 )
-from memo_stack_obsidian.setup import SETUP_README, SetupVaultUseCase
-from memo_stack_obsidian.state import SqliteSyncStateStore
-from memo_stack_obsidian.sync import (
+from infinity_context_obsidian.setup import SETUP_README, SetupVaultUseCase
+from infinity_context_obsidian.state import SqliteSyncStateStore
+from infinity_context_obsidian.sync import (
     INBOX_DIR,
     ExportFactsToVaultUseCase,
     ImportInboxSuggestionsUseCase,
@@ -22,7 +22,7 @@ from memo_stack_obsidian.sync import (
     PreviewVaultSyncUseCase,
     SyncVaultOnceUseCase,
 )
-from memo_stack_obsidian.vault import FilesystemVault
+from infinity_context_obsidian.vault import FilesystemVault
 
 
 def test_setup_vault_writes_onboarding_notes(tmp_path: Path) -> None:
@@ -200,7 +200,7 @@ def test_sync_once_apply_import_then_exports_clean_backend_projection(
     assert result.import_result.updated == 1
     assert result.export_result.exported == 1
     assert "Use Graphiti for temporal graph recall." in note_text
-    assert "memo_stack_version: 2" in note_text
+    assert "infinity_context_version: 2" in note_text
 
 
 def test_deleted_generated_fact_is_recreated_on_next_export(tmp_path: Path) -> None:
@@ -301,7 +301,7 @@ def test_sync_once_skips_export_when_managed_note_is_corrupt(
     syncer = syncer_use_case(tmp_path, gateway)
     exporter.execute(space_slug="default", memory_scope_external_ref="me")
     fact_path = tmp_path / FACTS_DIR / "fact_123.md"
-    fact_path.write_text("not a memo stack fact note", encoding="utf-8")
+    fact_path.write_text("not a infinity context fact note", encoding="utf-8")
     gateway.fact["text"] = "Backend text that must not overwrite corrupt note."
     gateway.fact["version"] = 2
 
@@ -315,7 +315,7 @@ def test_sync_once_skips_export_when_managed_note_is_corrupt(
     assert result.export_skipped is True
     assert result.import_result.conflicts == 1
     assert result.export_result.changes == ()
-    assert fact_path.read_text(encoding="utf-8") == "not a memo stack fact note"
+    assert fact_path.read_text(encoding="utf-8") == "not a infinity context fact note"
 
 
 def test_import_detects_duplicate_fact_id_and_sync_skips_export(tmp_path: Path) -> None:
@@ -337,14 +337,14 @@ def test_import_detects_duplicate_fact_id_and_sync_skips_export(tmp_path: Path) 
     assert result.export_skipped is True
     assert result.import_result.conflicts == 1
     assert result.import_result.changes[-1].status == ImportStatus.CONFLICT
-    assert "Duplicate memo_stack_id" in result.import_result.changes[-1].message
+    assert "Duplicate infinity_context_id" in result.import_result.changes[-1].message
 
 
 def test_v2_scoped_layout_does_not_import_other_memory_scope_edits(tmp_path: Path) -> None:
     gateway = FakeMemoryGateway()
     layout = ObsidianVaultLayout.from_values(version="v2")
     vault = FilesystemVault(tmp_path)
-    state = SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3")
+    state = SqliteSyncStateStore(tmp_path / ".infinity-context" / "obsidian-sync.sqlite3")
     exporter = ExportFactsToVaultUseCase(
         memory=gateway,
         vault=vault,
@@ -399,7 +399,7 @@ def test_export_conflict_writes_obsidian_visible_artifact(tmp_path: Path) -> Non
     artifact_text = next((tmp_path / CONFLICTS_DIR).glob("*.md")).read_text(encoding="utf-8")
 
     assert artifacts.written == 1
-    assert "Memo Stack Sync Conflict" in artifact_text
+    assert "Infinity Context Sync Conflict" in artifact_text
     assert "unimported local edits" in artifact_text
 
 
@@ -446,7 +446,7 @@ def test_import_apply_updates_backend_and_rewrites_note_version(tmp_path: Path) 
     assert gateway.fact["version"] == 2
     assert gateway.fact["source_refs"][0]["source_type"] == "manual"
     assert gateway.fact["source_refs"][1]["source_type"] == "obsidian"
-    assert "memo_stack_version: 2" in note_text
+    assert "infinity_context_version: 2" in note_text
     assert imported.changes[0].status == ImportStatus.UPDATED
 
 
@@ -500,7 +500,7 @@ def test_import_conflict_writes_obsidian_visible_artifact(tmp_path: Path) -> Non
     artifact_text = next((tmp_path / CONFLICTS_DIR).glob("*.md")).read_text(encoding="utf-8")
 
     assert artifacts.written == 1
-    assert "Memo Stack Sync Conflict" in artifact_text
+    assert "Infinity Context Sync Conflict" in artifact_text
     assert "Stale version" in artifact_text
 
 
@@ -570,12 +570,12 @@ def test_inbox_import_uses_stable_fingerprint_after_state_loss(tmp_path: Path) -
     first_importer = ImportInboxSuggestionsUseCase(
         memory=gateway,
         vault=FilesystemVault(tmp_path),
-        state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "first.sqlite3"),
+        state=SqliteSyncStateStore(tmp_path / ".infinity-context" / "first.sqlite3"),
     )
     second_importer = ImportInboxSuggestionsUseCase(
         memory=gateway,
         vault=FilesystemVault(tmp_path),
-        state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "second.sqlite3"),
+        state=SqliteSyncStateStore(tmp_path / ".infinity-context" / "second.sqlite3"),
     )
 
     first_importer.execute(space_slug="default", memory_scope_external_ref="me", apply=True)
@@ -606,7 +606,7 @@ def use_cases(
     gateway: FakeMemoryGateway,
 ) -> tuple[ExportFactsToVaultUseCase, ImportVaultChangesUseCase]:
     vault = FilesystemVault(tmp_path)
-    state = SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3")
+    state = SqliteSyncStateStore(tmp_path / ".infinity-context" / "obsidian-sync.sqlite3")
     return (
         ExportFactsToVaultUseCase(memory=gateway, vault=vault, state=state),
         ImportVaultChangesUseCase(memory=gateway, vault=vault, state=state),
@@ -617,7 +617,7 @@ def inbox_importer(tmp_path: Path, gateway: FakeMemoryGateway) -> ImportInboxSug
     return ImportInboxSuggestionsUseCase(
         memory=gateway,
         vault=FilesystemVault(tmp_path),
-        state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3"),
+        state=SqliteSyncStateStore(tmp_path / ".infinity-context" / "obsidian-sync.sqlite3"),
     )
 
 
@@ -625,13 +625,13 @@ def previewer_use_case(tmp_path: Path, gateway: FakeMemoryGateway) -> PreviewVau
     return PreviewVaultSyncUseCase(
         memory=gateway,
         vault=FilesystemVault(tmp_path),
-        state=SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3"),
+        state=SqliteSyncStateStore(tmp_path / ".infinity-context" / "obsidian-sync.sqlite3"),
     )
 
 
 def syncer_use_case(tmp_path: Path, gateway: FakeMemoryGateway) -> SyncVaultOnceUseCase:
     vault = FilesystemVault(tmp_path)
-    state = SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3")
+    state = SqliteSyncStateStore(tmp_path / ".infinity-context" / "obsidian-sync.sqlite3")
     return SyncVaultOnceUseCase(
         importer=ImportVaultChangesUseCase(memory=gateway, vault=vault, state=state),
         inbox_importer=ImportInboxSuggestionsUseCase(

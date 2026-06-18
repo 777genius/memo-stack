@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memo_stack_server import official_public_benchmark as canary
+from infinity_context_server import official_public_benchmark as canary
 
 ROOT = Path(__file__).parents[2]
 
@@ -95,7 +95,7 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["dataset_sources"]["locomo"]["size_bytes"] == locomo.stat().st_size
     assert result["dataset_sources"]["locomo"]["case_count"] == 1
     assert result["provenance"]["generated_by"] == (
-        "memo_stack_server.official_public_benchmark"
+        "infinity_context_server.official_public_benchmark"
     )
     assert result["provenance"]["suite"] == "public-memory-benchmark"
     assert result["provenance"]["git"]["dirty"] in {True, False}
@@ -103,7 +103,7 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["ok"] is True
     assert written["provenance"]["generated_by"] == (
-        "memo_stack_server.official_public_benchmark"
+        "infinity_context_server.official_public_benchmark"
     )
 
 
@@ -160,6 +160,6 @@ def test_official_public_benchmark_script_is_thin_wrapper() -> None:
         encoding="utf-8"
     )
 
-    assert "from memo_stack_server.official_public_benchmark import main" in script
+    assert "from infinity_context_server.official_public_benchmark import main" in script
     assert "run_public_memory_benchmark" not in script
     assert "urllib.request" not in script

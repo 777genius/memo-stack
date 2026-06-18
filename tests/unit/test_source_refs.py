@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from memo_stack_core.application.source_refs import chunk_source_refs
-from memo_stack_core.domain.entities import (
+from infinity_context_core.application.source_refs import chunk_source_refs
+from infinity_context_core.domain.entities import (
     LifecycleStatus,
     MemoryChunk,
     MemoryChunkId,
@@ -13,7 +13,7 @@ from memo_stack_core.domain.entities import (
     SpaceId,
     ThreadId,
 )
-from memo_stack_core.domain.errors import MemoryValidationError
+from infinity_context_core.domain.errors import MemoryValidationError
 
 NOW = datetime(2026, 6, 18, tzinfo=UTC)
 

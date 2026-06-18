@@ -1,4 +1,4 @@
-from memo_stack_core.application.context_link_candidate_policy import (
+from infinity_context_core.application.context_link_candidate_policy import (
     _MAX_QUERY_TERM_CHARS,
     _MAX_QUERY_TERMS,
     candidate,
@@ -10,7 +10,7 @@ from memo_stack_core.application.context_link_candidate_policy import (
     source_text_risk_metadata_from_mapping,
     terms,
 )
-from memo_stack_core.domain.entities import SourceRef
+from infinity_context_core.domain.entities import SourceRef
 
 
 def test_candidate_reason_codes_keep_specific_rule_signals() -> None:

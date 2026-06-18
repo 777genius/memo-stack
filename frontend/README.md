@@ -1,4 +1,4 @@
-Memo Stack Frontend
+Infinity Context Frontend
 ===================
 
 Flutter desktop/web client for quick memory capture.
@@ -7,7 +7,7 @@ The default flow is intentionally simple:
 
 - open a chat-like capture screen;
 - type a note or attach screenshots/files;
-- save the input through Memo Stack REST APIs;
+- save the input through Infinity Context REST APIs;
 - show suggested related context as selectable chips;
 - let the user link one capture to several existing facts, captures, suggestions or assets.
 
@@ -49,8 +49,8 @@ flutter build macos --debug
 From the repository root:
 
 ```bash
-make memo-stack-frontend-check
-make memo-stack-frontend-build-macos
+make infinity-context-frontend-check
+make infinity-context-frontend-build-macos
 ```
 
 Notes

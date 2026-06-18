@@ -2,7 +2,7 @@
 
 ## Project Intent
 
-This repository is the reusable Memo Stack extracted from client application planning docs.
+This repository is the reusable Infinity Context extracted from client application planning docs.
 
 Implement according to:
 
@@ -20,24 +20,24 @@ Implement according to:
 Start with:
 
 ```text
-docs/memo-stack-core-lite-plan.md
+docs/infinity-context-core-lite-plan.md
 ```
 
 Global reference:
 
 ```text
-docs/memo-stack-architecture-plan.md
+docs/infinity-context-architecture-plan.md
 ```
 
 Client compatibility notes:
 
 ```text
-docs/client-integration/interview-memo-stack-clean-architecture-plan.md
+docs/client-integration/interview-infinity-context-clean-architecture-plan.md
 ```
 
 ## Implementation Rule
 
-Do not let `memo_stack_core` import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI or client application code.
+Do not let `infinity_context_core` import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI or client application code.
 
 Keep files small enough to review and maintain:
 

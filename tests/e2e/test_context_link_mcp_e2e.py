@@ -3,20 +3,20 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from memo_stack_mcp.adapters.http_gateway import HttpMemoryGateway
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_sdk import MemoStackClient
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_mcp.adapters.http_gateway import HttpMemoryGateway
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_sdk import InfinityContextClient
+from infinity_context_server_harness import run_infinity_context_server
 
 
 def test_context_link_review_mcp_service_e2e(tmp_path: Path) -> None:
-    with run_memo_stack_server(
+    with run_infinity_context_server(
         tmp_path,
         database_name="context-link-mcp-review.db",
         extra_env={"MEMORY_CAPTURE_MODE": "suggest"},
     ) as server:
-        client = MemoStackClient(base_url=server.base_url, token=server.token)
+        client = InfinityContextClient(base_url=server.base_url, token=server.token)
         fact = client.remember_fact(
             space_slug="context-link-mcp-e2e",
             memory_scope_external_ref="default",

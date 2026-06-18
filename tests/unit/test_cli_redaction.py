@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from memo_stack_cli import cli
-from memo_stack_cli.config import init_local_config
-from memo_stack_cli.runtime import RuntimeResult
+from infinity_context_cli import cli
+from infinity_context_cli.config import init_local_config
+from infinity_context_cli.runtime import RuntimeResult
 
 
 def test_cli_top_level_errors_are_redacted(monkeypatch, capsys) -> None:
@@ -76,4 +76,4 @@ def _configure(tmp_path: Path, monkeypatch) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     init_local_config(home=home, repo_dir=repo)
-    monkeypatch.setenv("MEMO_STACK_HOME", str(home))
+    monkeypatch.setenv("INFINITY_CONTEXT_HOME", str(home))

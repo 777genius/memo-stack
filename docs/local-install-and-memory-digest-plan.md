@@ -1,4 +1,4 @@
-# Memo Stack Local Install And Memory Digest Plan
+# Infinity Context Local Install And Memory Digest Plan
 
 ## Status
 
@@ -7,18 +7,18 @@ Implemented.
 Current implementation evidence:
 
 - `scripts/install.sh` provides the curl/local installer path.
-- `memo-stack` CLI provides `init`, `up`, `down`, `restart`, `status`, `doctor`, `logs`,
+- `infinity-context` CLI provides `init`, `up`, `down`, `restart`, `status`, `doctor`, `logs`,
   `mcp-config` and `digest`.
 - `POST /v1/digest` exposes Memory Digest over HTTP.
-- `MemoStackClient.build_digest` exposes the SDK contract.
+- `InfinityContextClient.build_digest` exposes the SDK contract.
 - `memory_digest` exposes the read-only MCP tool.
-- `make memo-stack-test-quality` passes with the digest/API/SDK/MCP/CLI implementation.
+- `make infinity-context-test-quality` passes with the digest/API/SDK/MCP/CLI implementation.
 
 This plan is intentionally narrower than the global SaaS/platform plan. It focuses on two product
-surfaces that make Memo Stack usable by real users quickly:
+surfaces that make Infinity Context usable by real users quickly:
 
 1. One-command local install through `curl`.
-2. Local mode that starts a usable Memo Stack runtime on a developer machine.
+2. Local mode that starts a usable Infinity Context runtime on a developer machine.
 3. A `Memory Digest` style tool that gives agents and humans a compact, source-bound summary of
    relevant memory.
 
@@ -35,14 +35,14 @@ The implementation must keep the existing Clean Architecture shape:
 Observed current state:
 
 - `pyproject.toml` exposes MCP scripts only:
-  - `memo-stack-mcp`
-  - `memo-stack-mcp-bench`
-  - `memo-stack-mcp-agent-bench`
+  - `infinity-context-mcp`
+  - `infinity-context-mcp-bench`
+  - `infinity-context-mcp-agent-bench`
 - `Makefile` already has local runtime targets:
-  - `memo-stack-up-lite`
-  - `memo-stack-up-full`
-  - `memo-stack-smoke`
-  - `memo-stack-mcp-smoke`
+  - `infinity-context-up-lite`
+  - `infinity-context-up-full`
+  - `infinity-context-smoke`
+  - `infinity-context-mcp-smoke`
   - plugin/agent validation and smoke targets
 - `BuildContextUseCase` already composes:
   - `CanonicalContextCollector`
@@ -74,24 +74,24 @@ API, SDK, MCP and CLI adapters.
 Target UX:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<org>/memo-stack/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<org>/infinity-context/main/scripts/install.sh | bash
 ```
 
 Safer documented UX:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<org>/memo-stack/main/scripts/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/<org>/infinity-context/main/scripts/install.sh -o install.sh
 bash install.sh
 ```
 
 After install:
 
 ```bash
-memo-stack up
-memo-stack status
-memo-stack doctor
-memo-stack mcp-config --agent codex
-memo-stack digest "current architecture decisions" --space default --memory_scope hackinterview
+infinity-context up
+infinity-context status
+infinity-context doctor
+infinity-context mcp-config --agent codex
+infinity-context digest "current architecture decisions" --space default --memory_scope hackinterview
 ```
 
 The first version is local-only. It does not need OAuth, hosted billing, multi-tenant cloud, remote
@@ -102,7 +102,7 @@ MCP auth or team admin.
 Target UX through CLI:
 
 ```bash
-memo-stack digest "Graphiti and Qdrant decisions" \
+infinity-context digest "Graphiti and Qdrant decisions" \
   --space hackinterview \
   --memory_scope engineering \
   --format markdown
@@ -133,7 +133,7 @@ The digest is evidence-only. It must not produce commands for the agent to follo
 | Option | Score | Approx LOC | Notes |
 | --- | --- | ---: | --- |
 | A. `curl install.sh` clones repo and uses docker compose | 🎯 10 🛡️ 8 🧠 4 | 700-1500 | Recommended now. Fastest path to real local usage. |
-| B. `pipx install memo-stack` with bundled CLI and compose templates | 🎯 8 🛡️ 8 🧠 6 | 1200-2500 | Good later when packaging is stable. |
+| B. `pipx install infinity-context` with bundled CLI and compose templates | 🎯 8 🛡️ 8 🧠 6 | 1200-2500 | Good later when packaging is stable. |
 | C. Homebrew/tap/native binary | 🎯 7 🛡️ 8 🧠 7 | 1500-3000 | Good distribution UX, but release ops are not needed yet. |
 
 Decision: implement A first, but design the CLI so B/C can reuse it later.
@@ -166,30 +166,30 @@ Decision: implement A.
 scripts/install.sh
   -> local files, git, docker, shell
 
-memo_stack_cli
+infinity_context_cli
   -> local runtime adapter
   -> HTTP API client
   -> generated MCP config helpers
 
-memo_stack_mcp
+infinity_context_mcp
   -> HTTP gateway
   -> memory_digest tool
 
-memo_stack_sdk
+infinity_context_sdk
   -> HTTP API client
 
-memo_stack_server
+infinity_context_server
   -> FastAPI delivery adapter
   -> BuildMemoryDigestUseCase
 
-memo_stack_core
+infinity_context_core
   -> domain entities
   -> application DTOs
   -> BuildMemoryDigestUseCase
   -> MemoryDigestPacker / MemoryDigestRenderer
   -> ports only
 
-memo_stack_adapters
+infinity_context_adapters
   -> Postgres repositories
   -> Graphiti graph adapter
   -> Qdrant vector adapter
@@ -202,7 +202,7 @@ memo_stack_adapters
 SRP:
 
 - `install.sh` installs and delegates. It does not implement domain behavior.
-- `memo_stack_cli` owns local UX and process orchestration.
+- `infinity_context_cli` owns local UX and process orchestration.
 - `BuildMemoryDigestUseCase` owns digest assembly.
 - `MemoryDigestRenderer` owns output formatting.
 - `ContextCollector` classes continue to own retrieval candidate collection.
@@ -236,13 +236,13 @@ DIP:
 
 ```text
 scripts/install.sh
-packages/memo_stack_cli/memo_stack_cli/__init__.py
-packages/memo_stack_cli/memo_stack_cli/__main__.py
-packages/memo_stack_cli/memo_stack_cli/cli.py
-packages/memo_stack_cli/memo_stack_cli/config.py
-packages/memo_stack_cli/memo_stack_cli/runtime.py
-packages/memo_stack_cli/memo_stack_cli/doctor.py
-packages/memo_stack_cli/memo_stack_cli/mcp_config.py
+packages/infinity_context_cli/infinity_context_cli/__init__.py
+packages/infinity_context_cli/infinity_context_cli/__main__.py
+packages/infinity_context_cli/infinity_context_cli/cli.py
+packages/infinity_context_cli/infinity_context_cli/config.py
+packages/infinity_context_cli/infinity_context_cli/runtime.py
+packages/infinity_context_cli/infinity_context_cli/doctor.py
+packages/infinity_context_cli/infinity_context_cli/mcp_config.py
 tests/unit/test_cli_config.py
 tests/unit/test_cli_runtime.py
 tests/unit/test_install_script_contract.py
@@ -253,7 +253,7 @@ Also update:
 
 ```toml
 [project.scripts]
-memo-stack = "memo_stack_cli.cli:main"
+infinity-context = "infinity_context_cli.cli:main"
 ```
 
 And package discovery:
@@ -261,12 +261,12 @@ And package discovery:
 ```toml
 [tool.setuptools.packages.find]
 where = [
-  "packages/memo_stack_core",
-  "packages/memo_stack_server",
-  "packages/memo_stack_adapters",
-  "packages/memo_stack_sdk",
-  "packages/memo_stack_mcp",
-  "packages/memo_stack_cli",
+  "packages/infinity_context_core",
+  "packages/infinity_context_server",
+  "packages/infinity_context_adapters",
+  "packages/infinity_context_sdk",
+  "packages/infinity_context_mcp",
+  "packages/infinity_context_cli",
 ]
 ```
 
@@ -275,13 +275,13 @@ where = [
 Default:
 
 ```text
-~/.memo-stack
+~/.infinity-context
 ```
 
 Layout:
 
 ```text
-~/.memo-stack/
+~/.infinity-context/
   config.toml
   .env
   src/
@@ -306,7 +306,7 @@ The script should:
    - repo URL
    - install ref
    - install dir
-4. Clone or update repo into `~/.memo-stack/src`.
+4. Clone or update repo into `~/.infinity-context/src`.
 5. Create local config if missing.
 6. Generate a local service token if missing.
 7. Avoid overwriting existing `.env` unless `--force`.
@@ -319,9 +319,9 @@ Supported flags:
 
 ```bash
 scripts/install.sh --dry-run
-scripts/install.sh --prefix "$HOME/.memo-stack"
+scripts/install.sh --prefix "$HOME/.infinity-context"
 scripts/install.sh --ref main
-scripts/install.sh --repo https://github.com/<org>/memo-stack.git
+scripts/install.sh --repo https://github.com/<org>/infinity-context.git
 scripts/install.sh --no-start
 scripts/install.sh --force
 scripts/install.sh --reset
@@ -346,8 +346,8 @@ main() {
   ensure_local_env
   install_cli_shim
   if [ "$NO_START" != "1" ]; then
-    memo-stack up
-    memo-stack doctor
+    infinity-context up
+    infinity-context doctor
   fi
   print_next_steps
 }
@@ -367,15 +367,15 @@ Running install twice should:
 ### Local CLI Contract
 
 ```bash
-memo-stack init
-memo-stack up [--lite|--full]
-memo-stack down
-memo-stack restart
-memo-stack status [--json]
-memo-stack doctor [--json]
-memo-stack logs [--service server|worker|postgres|qdrant|neo4j]
-memo-stack mcp-config --agent codex|claude|cursor|gemini|opencode [--print|--write]
-memo-stack digest <topic> [--space <slug>] [--memory_scope <ref>] [--format json|markdown]
+infinity-context init
+infinity-context up [--lite|--full]
+infinity-context down
+infinity-context restart
+infinity-context status [--json]
+infinity-context doctor [--json]
+infinity-context logs [--service server|worker|postgres|qdrant|neo4j]
+infinity-context mcp-config --agent codex|claude|cursor|gemini|opencode [--print|--write]
+infinity-context digest <topic> [--space <slug>] [--memory_scope <ref>] [--format json|markdown]
 ```
 
 For v1:
@@ -415,8 +415,8 @@ This keeps future local runtimes open:
 
 ```toml
 [local]
-home = "~/.memo-stack"
-repo_dir = "~/.memo-stack/src"
+home = "~/.infinity-context"
+repo_dir = "~/.infinity-context/src"
 api_url = "http://127.0.0.1:7788"
 service_token_env = "MEMORY_SERVICE_TOKEN"
 default_memory_scope = "default"
@@ -424,7 +424,7 @@ default_memory_scope = "default"
 [runtime]
 mode = "docker_compose"
 compose_profile = "lite"
-compose_project_name = "memo_stack"
+compose_project_name = "infinity_context"
 
 [mcp]
 write_mode = "suggest"
@@ -456,7 +456,7 @@ It is:
 
 ### Domain Model
 
-Initial DTOs in `memo_stack_core.application.dto`:
+Initial DTOs in `infinity_context_core.application.dto`:
 
 ```python
 @dataclass(frozen=True)
@@ -688,8 +688,8 @@ MCP description must tell agents:
 ### CLI Surface
 
 ```bash
-memo-stack digest "topic" --space default --memory_scope engineering --format markdown
-memo-stack digest "topic" --space default --memory_scope engineering --format json
+infinity-context digest "topic" --space default --memory_scope engineering --format markdown
+infinity-context digest "topic" --space default --memory_scope engineering --format json
 ```
 
 CLI should call API, not import server internals.
@@ -701,10 +701,10 @@ Even though this plan implements local mode first, the contracts should make rem
 The same CLI should support:
 
 ```bash
-memo-stack login https://memo.example.com
-memo-stack use-space hackinterview
-memo-stack status
-memo-stack digest "current architecture"
+infinity-context login https://memo.example.com
+infinity-context use-space hackinterview
+infinity-context status
+infinity-context digest "current architecture"
 ```
 
 Do not bake local paths into application or MCP contracts. MCP should accept:
@@ -742,9 +742,9 @@ Steps:
 2. Decide final endpoint name:
    - recommended: `POST /v1/digest`
 3. Decide final CLI package name:
-   - recommended: `memo_stack_cli`
+   - recommended: `infinity_context_cli`
 4. Decide install home:
-   - recommended: `~/.memo-stack`
+   - recommended: `~/.infinity-context`
 
 Acceptance:
 
@@ -756,25 +756,25 @@ Acceptance:
 
 Goal:
 
-- add `memo-stack` command without changing server internals.
+- add `infinity-context` command without changing server internals.
 
 Steps:
 
-1. Add `packages/memo_stack_cli`.
-2. Add `memo-stack` console script.
+1. Add `packages/infinity_context_cli`.
+2. Add `infinity-context` console script.
 3. Implement:
-   - `memo-stack --version`
-   - `memo-stack status --json`
-   - `memo-stack doctor --json`
+   - `infinity-context --version`
+   - `infinity-context status --json`
+   - `infinity-context doctor --json`
 4. Add HTTP client wrapper or reuse SDK.
 5. Add unit tests for config/env resolution.
 
 Acceptance:
 
 ```bash
-memo-stack --version
-memo-stack status --json
-memo-stack doctor --json
+infinity-context --version
+infinity-context status --json
+infinity-context doctor --json
 ```
 
 ### Phase 2 - Local Runtime Mode
@@ -788,10 +788,10 @@ Steps:
 1. Add `RuntimePort`.
 2. Add `DockerComposeRuntime`.
 3. Implement:
-   - `memo-stack init`
-   - `memo-stack up --lite`
-   - `memo-stack down`
-   - `memo-stack logs`
+   - `infinity-context init`
+   - `infinity-context up --lite`
+   - `infinity-context down`
+   - `infinity-context logs`
 4. Reuse existing compose profiles.
 5. Add doctor checks:
    - Docker installed
@@ -805,10 +805,10 @@ Steps:
 Acceptance:
 
 ```bash
-memo-stack init
-memo-stack up --lite
-memo-stack doctor
-memo-stack down
+infinity-context init
+infinity-context up --lite
+infinity-context doctor
+infinity-context down
 ```
 
 ### Phase 3 - Curl Installer
@@ -839,7 +839,7 @@ Acceptance:
 
 ```bash
 bash scripts/install.sh --dry-run
-bash scripts/install.sh --prefix /tmp/memo-stack-test --no-start
+bash scripts/install.sh --prefix /tmp/infinity-context-test --no-start
 ```
 
 ### Phase 4 - Digest Core
@@ -881,7 +881,7 @@ Goal:
 
 Steps:
 
-1. Add `memo_stack_server/api/v1/digest.py`.
+1. Add `infinity_context_server/api/v1/digest.py`.
 2. Register router.
 3. Add OpenAPI contract tests.
 4. Add SDK method `build_digest`.
@@ -915,8 +915,8 @@ Steps:
 Acceptance:
 
 ```bash
-make memo-stack-mcp-smoke
-pytest tests/e2e/test_memo_stack_mcp_e2e.py -q
+make infinity-context-mcp-smoke
+pytest tests/e2e/test_infinity_context_mcp_e2e.py -q
 ```
 
 ### Phase 7 - CLI Digest
@@ -927,7 +927,7 @@ Goal:
 
 Steps:
 
-1. Add `memo-stack digest`.
+1. Add `infinity-context digest`.
 2. Support `--format markdown|json`.
 3. Support scope flags.
 4. Add CLI tests.
@@ -935,7 +935,7 @@ Steps:
 Acceptance:
 
 ```bash
-memo-stack digest "architecture decisions" --format markdown
+infinity-context digest "architecture decisions" --format markdown
 ```
 
 ### Phase 8 - Docs And Release Hardening
@@ -956,9 +956,9 @@ Steps:
 Acceptance:
 
 ```bash
-make memo-stack-test-quality
+make infinity-context-test-quality
 git diff --check
-make memo-stack-secret-scan
+make infinity-context-secret-scan
 ```
 
 ## Edge Cases
@@ -992,8 +992,8 @@ make memo-stack-secret-scan
 - Old containers from previous project name exist.
 - Compose project name changed.
 - Full profile starts Qdrant/Neo4j but embeddings key is missing.
-- `memo-stack down` must not remove data by default.
-- `memo-stack doctor` should return machine-readable JSON for support.
+- `infinity-context down` must not remove data by default.
+- `infinity-context doctor` should return machine-readable JSON for support.
 
 ### Digest Edge Cases
 
@@ -1040,10 +1040,10 @@ pytest tests/unit/test_mcp_adapter.py -q
 ### E2E
 
 ```bash
-make memo-stack-smoke
+make infinity-context-smoke
 pytest tests/e2e/test_cli_local_mode_e2e.py -q
 pytest tests/e2e/test_memory_digest_e2e.py -q
-pytest tests/e2e/test_memo_stack_mcp_e2e.py -q
+pytest tests/e2e/test_infinity_context_mcp_e2e.py -q
 ```
 
 ### Full Provider Canary
@@ -1051,7 +1051,7 @@ pytest tests/e2e/test_memo_stack_mcp_e2e.py -q
 Run only when API key is explicitly provided through env:
 
 ```bash
-MEMORY_OPENAI_API_KEY=... make memo-stack-full-provider-canary
+MEMORY_OPENAI_API_KEY=... make infinity-context-full-provider-canary
 ```
 
 This verifies Graphiti/Qdrant/OpenAI wiring, but digest must also pass in lite mode with degraded
@@ -1060,9 +1060,9 @@ provider diagnostics.
 ### Release Gate
 
 ```bash
-make memo-stack-test-quality
+make infinity-context-test-quality
 git diff --check
-make memo-stack-secret-scan
+make infinity-context-secret-scan
 ```
 
 ## Acceptance Criteria
@@ -1072,13 +1072,13 @@ The feature is done when all of this is true:
 - A fresh user can install locally with one curl command.
 - The install is idempotent.
 - Local data is preserved by default.
-- `memo-stack up` starts the lite stack.
-- `memo-stack doctor` diagnoses common setup problems.
-- `memo-stack mcp-config` prints or writes agent config safely.
+- `infinity-context up` starts the lite stack.
+- `infinity-context doctor` diagnoses common setup problems.
+- `infinity-context mcp-config` prints or writes agent config safely.
 - `POST /v1/digest` returns a structured evidence-only digest.
 - SDK exposes the same digest operation.
 - MCP exposes `memory_digest`.
-- CLI exposes `memo-stack digest`.
+- CLI exposes `infinity-context digest`.
 - Digest excludes deleted facts.
 - Digest marks pending suggestions as non-canonical.
 - Digest does not leak secrets from env/config.
@@ -1089,12 +1089,12 @@ The feature is done when all of this is true:
 
 Do this first:
 
-1. `memo_stack_cli` package with `status`, `doctor`, `up`, `down`.
+1. `infinity_context_cli` package with `status`, `doctor`, `up`, `down`.
 2. `scripts/install.sh --dry-run` and idempotent local config.
 3. `BuildMemoryDigestUseCase` using existing `BuildContextUseCase`.
 4. `POST /v1/digest`.
 5. `memory_digest`.
-6. `memo-stack digest`.
+6. `infinity-context digest`.
 
 Expected first slice size:
 

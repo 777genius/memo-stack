@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from memo_stack_core.application.temporal_validity import is_temporal_window_current
+from infinity_context_core.application.temporal_validity import is_temporal_window_current
 
 
 def test_temporal_window_current_handles_open_and_bounded_ranges() -> None:

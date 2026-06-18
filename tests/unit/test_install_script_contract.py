@@ -37,7 +37,7 @@ def test_install_script_dry_run_does_not_write_files(tmp_path: Path) -> None:
             "--prefix",
             str(prefix),
             "--repo",
-            "https://example.invalid/memo-stack.git",
+            "https://example.invalid/infinity-context.git",
             "--no-start",
         ],
         cwd=Path(__file__).resolve().parents[2],

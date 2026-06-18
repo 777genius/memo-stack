@@ -359,7 +359,7 @@ class BackendRestClient {
         'space_slug': spaceSlug,
         'memory_scope_external_ref': memoryScopeExternalRef,
         'thread_external_ref': threadExternalRef,
-        'source_agent': 'memo-stack-frontend',
+        'source_agent': 'infinity-context-frontend',
         'source_kind': 'manual',
         'event_type': 'QuickCapture',
         'actor_role': 'user',

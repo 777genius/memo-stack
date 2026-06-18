@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from memo_stack_cli import cli
-from memo_stack_cli.config import init_local_config
+from infinity_context_cli import cli
+from infinity_context_cli.config import init_local_config
 
 
-class FakeMemoStackClient:
-    instances: list[FakeMemoStackClient] = []
+class FakeInfinityContextClient:
+    instances: list[FakeInfinityContextClient] = []
 
     def __init__(self, *, base_url: str, token: str, **_kwargs: Any) -> None:
         self.base_url = base_url
@@ -86,8 +86,8 @@ def test_cli_insights_prints_summary_and_uses_default_scope(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
 
     exit_code = cli.main(["insights", "--max-activity", "9"])
 
@@ -97,7 +97,7 @@ def test_cli_insights_prints_summary_and_uses_default_scope(
     assert "pending_suggestions: 3" in captured.out
     assert "consolidation_plan: 1" in captured.out
     assert "similar_fact_review: fact_1 <- fact_2" in captured.out
-    call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
+    call_name, kwargs = FakeInfinityContextClient.instances[0].calls[0]
     assert call_name == "build_insights"
     assert kwargs["scope"].space_slug == "default"
     assert kwargs["scope"].memory_scope_external_ref == "default"
@@ -110,8 +110,8 @@ def test_cli_memory_scope_export_is_redacted_by_default(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
     out_path = tmp_path / "snapshot.json"
 
     exit_code = cli.main(["memory_scope-export", "--out", str(out_path)])
@@ -125,11 +125,11 @@ def test_cli_memory_scope_export_is_redacted_by_default(
     assert str(manifest_path) in captured.out
     assert written["redacted"] is True
     assert written["facts"][0]["text"] is None
-    assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
+    assert manifest["schema_version"] == "infinity_context.memory_scope_snapshot_manifest.v1"
     assert manifest["snapshot_file"] == "snapshot.json"
     assert manifest["redacted"] is True
     assert manifest["snapshot_sha256"]
-    call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
+    call_name, kwargs = FakeInfinityContextClient.instances[0].calls[0]
     assert call_name == "export_memory_scope_snapshot"
     assert kwargs["redacted"] is True
 
@@ -140,8 +140,8 @@ def test_cli_memory_scope_verify_accepts_manifest_and_rejects_tamper(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
     out_path = tmp_path / "snapshot.json"
 
     export_exit = cli.main(["memory_scope-export", "--out", str(out_path)])
@@ -167,8 +167,8 @@ def test_cli_memory_scope_import_dry_run_and_apply_confirmation(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
 
@@ -183,8 +183,8 @@ def test_cli_memory_scope_import_dry_run_and_apply_confirmation(
     assert rejected_exit == 1
     assert apply_exit == 0
     assert "requires --confirmed" in captured.err
-    first_call = FakeMemoStackClient.instances[0].calls[0]
-    second_call = FakeMemoStackClient.instances[1].calls[0]
+    first_call = FakeInfinityContextClient.instances[0].calls[0]
+    second_call = FakeInfinityContextClient.instances[1].calls[0]
     assert first_call[0] == "import_memory_scope_snapshot"
     assert first_call[1]["dry_run"] is True
     assert second_call[1]["dry_run"] is False
@@ -197,8 +197,8 @@ def test_cli_memory_scope_import_verifies_manifest_before_client_call(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
     out_path = tmp_path / "snapshot.json"
     manifest_path = tmp_path / "snapshot.json.manifest.json"
 
@@ -218,9 +218,9 @@ def test_cli_memory_scope_import_verifies_manifest_before_client_call(
     assert export_exit == 0
     assert import_exit == 0
     assert '"dry_run": true' in good_output.out
-    assert FakeMemoStackClient.instances[-1].calls[0][0] == "import_memory_scope_snapshot"
+    assert FakeInfinityContextClient.instances[-1].calls[0][0] == "import_memory_scope_snapshot"
 
-    client_count = len(FakeMemoStackClient.instances)
+    client_count = len(FakeInfinityContextClient.instances)
     out_path.write_text('{"tampered": true}\n', encoding="utf-8")
     tampered_exit = cli.main(
         [
@@ -236,7 +236,7 @@ def test_cli_memory_scope_import_verifies_manifest_before_client_call(
     assert tampered_exit == 1
     assert "manifest verification failed" in tampered_output.err
     assert "snapshot_sha256_mismatch" in tampered_output.err
-    assert len(FakeMemoStackClient.instances) == client_count
+    assert len(FakeInfinityContextClient.instances) == client_count
 
 
 def test_cli_memory_scope_import_preview_uses_read_only_preview_endpoint(
@@ -245,8 +245,8 @@ def test_cli_memory_scope_import_preview_uses_read_only_preview_endpoint(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
 
@@ -267,7 +267,7 @@ def test_cli_memory_scope_import_preview_uses_read_only_preview_endpoint(
     assert "would_import:" in captured.out
     assert "would_supersede:" in captured.out
     assert "conflicts_block_import" in captured.out
-    call_name, kwargs = FakeMemoStackClient.instances[0].calls[0]
+    call_name, kwargs = FakeInfinityContextClient.instances[0].calls[0]
     assert call_name == "preview_memory_scope_snapshot_import"
     assert kwargs["merge_strategy"] == "supersede_matching_facts"
     assert kwargs["manifest"] is None
@@ -279,8 +279,8 @@ def test_cli_memory_scope_import_preview_verifies_manifest_before_client_call(
     capsys,
 ) -> None:
     _configure(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli, "MemoStackClient", FakeMemoStackClient)
-    FakeMemoStackClient.instances.clear()
+    monkeypatch.setattr(cli, "InfinityContextClient", FakeInfinityContextClient)
+    FakeInfinityContextClient.instances.clear()
     out_path = tmp_path / "snapshot.json"
     manifest_path = tmp_path / "snapshot.json.manifest.json"
 
@@ -301,11 +301,11 @@ def test_cli_memory_scope_import_preview_verifies_manifest_before_client_call(
     assert export_exit == 0
     assert preview_exit == 0
     assert '"dry_run": true' in preview_output.out
-    preview_call = FakeMemoStackClient.instances[-1].calls[0]
+    preview_call = FakeInfinityContextClient.instances[-1].calls[0]
     assert preview_call[0] == "preview_memory_scope_snapshot_import"
     assert isinstance(preview_call[1]["manifest"], dict)
 
-    client_count = len(FakeMemoStackClient.instances)
+    client_count = len(FakeInfinityContextClient.instances)
     out_path.write_text('{"tampered": true}\n', encoding="utf-8")
     tampered_exit = cli.main(
         [
@@ -321,7 +321,7 @@ def test_cli_memory_scope_import_preview_verifies_manifest_before_client_call(
     assert tampered_exit == 1
     assert "manifest verification failed" in tampered_output.err
     assert "snapshot_sha256_mismatch" in tampered_output.err
-    assert len(FakeMemoStackClient.instances) == client_count
+    assert len(FakeInfinityContextClient.instances) == client_count
 
 
 def _configure(tmp_path: Path, monkeypatch) -> None:
@@ -329,4 +329,4 @@ def _configure(tmp_path: Path, monkeypatch) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     init_local_config(home=home, repo_dir=repo)
-    monkeypatch.setenv("MEMO_STACK_HOME", str(home))
+    monkeypatch.setenv("INFINITY_CONTEXT_HOME", str(home))

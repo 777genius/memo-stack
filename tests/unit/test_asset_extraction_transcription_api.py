@@ -9,12 +9,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from memo_stack_adapters.extraction.transcription.openai_adapter import (
+from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OpenAISpeechTranscriptionAdapter,
 )
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 
 _PROVIDER_SECRET = "sk-proj-transcript-secret-value1234567890"
 
@@ -172,6 +172,31 @@ class _FailingTranscriptionClient:
         return None
 
 
+class _EmptyTranscriptionResponse:
+    text = ""
+    language = None
+    duration = 1.0
+    segments: list[dict[str, object]] = []
+
+
+class _EmptyAudioTranscriptions:
+    async def create(self, **kwargs: Any) -> _EmptyTranscriptionResponse:
+        assert kwargs["model"] == "gpt-4o-mini-transcribe"
+        assert kwargs["file"].name == "silent-note.wav"
+        return _EmptyTranscriptionResponse()
+
+
+class _EmptyAudioClient:
+    transcriptions = _EmptyAudioTranscriptions()
+
+
+class _EmptyTranscriptionClient:
+    audio = _EmptyAudioClient()
+
+    async def aclose(self) -> None:
+        return None
+
+
 def test_audio_asset_extraction_uses_api_first_transcription(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -240,7 +265,7 @@ def test_audio_asset_extraction_uses_api_first_transcription(
         )
         assert transcript_download.status_code == 200, transcript_download.text
         transcript_payload = json.loads(transcript_download.content.decode("utf-8"))
-        assert transcript_payload["schema_name"] == "memo_stack.transcript"
+        assert transcript_payload["schema_name"] == "infinity_context.transcript"
         assert transcript_payload["features"] == {
             "transcript_features": ["segments", "time_ranges"],
             "transcript_feature_names": "segments,time_ranges",
@@ -340,7 +365,7 @@ def test_video_asset_extraction_uses_api_transcript_and_keyframes(
         )
         assert transcript_download.status_code == 200, transcript_download.text
         transcript_payload = json.loads(transcript_download.content.decode("utf-8"))
-        assert transcript_payload["schema_name"] == "memo_stack.transcript"
+        assert transcript_payload["schema_name"] == "infinity_context.transcript"
         assert transcript_payload["segments"][0]["start_ms"] == 0
         assert transcript_payload["segments"][0]["end_ms"] == 1000
 
@@ -355,7 +380,7 @@ def test_video_asset_extraction_uses_api_transcript_and_keyframes(
         )
         assert timeline_download.status_code == 200, timeline_download.text
         timeline_payload = json.loads(timeline_download.content.decode("utf-8"))
-        assert timeline_payload["schema_name"] == "memo_stack.video_frame_timeline"
+        assert timeline_payload["schema_name"] == "infinity_context.video_frame_timeline"
         assert timeline_payload["frames"]
 
         chunks = client.get(
@@ -369,6 +394,81 @@ def test_video_asset_extraction_uses_api_transcript_and_keyframes(
         source_refs = [ref for chunk in chunk_payload for ref in chunk["source_refs"]]
         assert any(ref.get("time_start_ms") == 0 for ref in source_refs)
         assert any(ref.get("time_end_ms") == 1000 for ref in source_refs)
+
+
+def test_audio_asset_extraction_empty_transcript_falls_back_without_false_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if not shutil.which("ffprobe"):
+        pytest.skip("ffprobe is not available")
+
+    monkeypatch.setattr(
+        OpenAISpeechTranscriptionAdapter,
+        "_client",
+        lambda self: _EmptyTranscriptionClient(),
+    )
+    with make_client(
+        tmp_path,
+        extraction_external_ai_enabled=True,
+        extraction_default_profile="media_api",
+        openai_api_key="test-key",
+        transcription_provider="openai",
+        transcription_openai_model="gpt-4o-mini-transcribe",
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "voice-notes",
+                "filename": "silent-note.wav",
+                "extract": "true",
+                "estimated_media_seconds": 1,
+            },
+            content=sample_wav_bytes(),
+            headers=auth_headers({"Content-Type": "audio/wav"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["parser_profile"] == "media_api"
+        assert extracted["parser_name"] == "media_metadata"
+        assert extracted["metadata"]["degraded_fallback"] is True
+        assert extracted["metadata"]["fallback_parser_name"] == "speech_transcription"
+        assert (
+            extracted["metadata"]["fallback_safe_error_code"]
+            == "asset_extraction.transcription_empty_output"
+        )
+        assert extracted["metadata"]["transcript_status"] == "empty"
+        assert (
+            extracted["metadata"]["transcript_error_code"]
+            == "asset_extraction.transcription_empty_output"
+        )
+        assert extracted["metadata"]["transcription_provider"] == "openai_transcription"
+        assert extracted["metadata"]["transcription_model"] == "gpt-4o-mini-transcribe"
+        assert extracted["metadata"]["duration_seconds"] > 0
+        assert {item["artifact_type"] for item in extracted["artifacts"]} == {
+            "extracted_json",
+            "markdown",
+            "media_manifest",
+        }
+        chunks = client.get(
+            f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",
+            headers=auth_headers(),
+        )
+        assert chunks.status_code == 200, chunks.text
+        assert "silent-note.wav" in chunks.json()["data"][0]["text"]
 
 
 def test_audio_asset_extraction_provider_failure_falls_back_to_media_metadata(

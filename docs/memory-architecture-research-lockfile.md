@@ -1,6 +1,6 @@
 # Memory Architecture Research Lockfile
 
-Status: locked product rules for Memo Stack memory architecture.
+Status: locked product rules for Infinity Context memory architecture.
 
 Date: 2026-06-18.
 
@@ -11,7 +11,7 @@ ADR, migration notes and eval coverage.
 ## External Inputs Reviewed
 
 Checked again on 2026-06-18. These sources are used as product signals, not as
-implementation authority. Memo Stack rules below are the authority for this
+implementation authority. Infinity Context rules below are the authority for this
 repository.
 
 - [Mem0 memory types](https://docs.mem0.ai/core-concepts/memory-types) and
@@ -25,7 +25,7 @@ repository.
   outdated facts.
 - [Qdrant payload and filtering docs](https://qdrant.tech/documentation/manage-data/payload/)
   treat payloads, filters and payload indexes as retrieval infrastructure.
-  Memo Stack uses them only as derived recall aids.
+  Infinity Context uses them only as derived recall aids.
 - [OWASP LLM Prompt Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html)
   identifies instruction/data mixing as the core prompt injection hazard. Memo
   Stack applies this by keeping retrieved memory and extracted files as
@@ -35,7 +35,7 @@ repository.
   treat retrieved text, files, tool output and connector data as untrusted input
   that can contain prompt injection or exfiltration attempts.
 - [OpenAI Model Spec](https://model-spec.openai.com/) recommends isolating
-  untrusted data from instructions. Memo Stack applies this by rendering memory
+  untrusted data from instructions. Infinity Context applies this by rendering memory
   as evidence only.
 - [LangMem conceptual guidance](https://langchain-ai.github.io/langmem/concepts/conceptual_guide/)
   treats semantic, episodic and procedural memory as distinct write/retrieval
@@ -48,9 +48,9 @@ repository.
 This is the research lock, not a general bibliography. External systems can
 inspire product rules, but cannot override them.
 
-| Source signal | Locked Memo Stack rule |
+| Source signal | Locked Infinity Context rule |
 | --- | --- |
-| Mem0 separates memory layers and has an explicit add-memory operation | Memo Stack keeps semantic, episodic, procedural and archival behavior separate at write admission and retrieval time |
+| Mem0 separates memory layers and has an explicit add-memory operation | Infinity Context keeps semantic, episodic, procedural and archival behavior separate at write admission and retrieval time |
 | Graphiti/Zep models changing relationships over time with provenance | Postgres stores canonical temporal fields and evidence refs; Graphiti can only project or suggest temporal graph candidates |
 | Qdrant relies on payload/filter/index metadata for efficient scoped recall | Qdrant payloads must contain scope/provenance needed for recall, but every hit is rehydrated through Postgres before visibility |
 | OWASP frames prompt injection as instruction/data confusion | Retrieved memory, file text, OCR, transcripts and tool output are always rendered as untrusted evidence, never as hidden policy |
@@ -79,7 +79,7 @@ parallel memory model and needs an ADR before implementation.
 
 ## Locked Product Model
 
-Memo Stack stores memory as canonical evidence plus derived retrieval indexes.
+Infinity Context stores memory as canonical evidence plus derived retrieval indexes.
 The user experience can look like quick capture, chat, project inbox or review
 queue, but the storage model stays the same.
 
@@ -201,7 +201,7 @@ Plain text-only extractions may skip the manifest.
 Locked manifest schema:
 
 ```text
-schema_version: memo_stack.multimodal_manifest.v1
+schema_version: infinity_context.multimodal_manifest.v1
 asset: id, filename, content_type, normalized_content_type, byte_size, sha256, classification
 extraction: job_id, parser_profile, parser_name, parser_version, model_version, language, status
 modalities: bounded ordered list of text, document, image, audio, video
@@ -238,7 +238,7 @@ filenames. They must use the public `/v1/capabilities` extraction payload.
 Locked public fields:
 
 ```text
-extraction.evidence_contract.schema_version: memo_stack.extraction_evidence_contract.v1
+extraction.evidence_contract.schema_version: infinity_context.extraction_evidence_contract.v1
 extraction.evidence_contract.source_ref_coordinate_fields:
   char_start, char_end, page_number, bbox, time_start_ms, time_end_ms
 extraction.profiles_v2[].input_modalities
@@ -251,7 +251,7 @@ extraction.profiles_v2[].video_features
 extraction.profiles_v2[].external_provider_egress
 extraction.profiles_v2[].requires_explicit_external_ai
 extraction.profiles_v2[].may_run_local_asr
-extraction.feature_contract.schema_version: memo_stack.extraction_feature_contract.v1
+extraction.feature_contract.schema_version: infinity_context.extraction_feature_contract.v1
 ```
 
 Contract rules:
@@ -345,7 +345,7 @@ Anchor lifecycle rules:
 
 Every prompt-impacting semantic item must be compatible with bitemporal-lite:
 
-- `observed_at` records when Memo Stack learned or observed the claim.
+- `observed_at` records when Infinity Context learned or observed the claim.
 - `valid_from` records when the claim becomes true in the user's world.
 - `valid_to` records when the claim stops being true in the user's world.
 - Missing `valid_from` means valid from observation time unless a stronger
@@ -384,7 +384,7 @@ policy allows safe auto-approval for the exact relation.
 
 ## Review Gates
 
-Memo Stack must prefer safe review over silent automation.
+Infinity Context must prefer safe review over silent automation.
 
 Auto-link is allowed only when all are true:
 
@@ -898,8 +898,8 @@ Prompt-impacting changes require deterministic evals for:
 Minimum gate before major memory behavior changes:
 
 ```bash
-.venv/bin/python -m memo_stack_server.eval run --suite quality-golden
-.venv/bin/python -m memo_stack_server.eval run --suite semantic-linking-golden
+.venv/bin/python -m infinity_context_server.eval run --suite quality-golden
+.venv/bin/python -m infinity_context_server.eval run --suite semantic-linking-golden
 ```
 
 ## Feature Slice Readiness Gates
@@ -928,7 +928,7 @@ Definition of done:
 - Any prompt-impacting behavior has deterministic eval coverage.
 - Any provider-derived content is evidence-first and review-gated when
   ambiguous.
-- `memo_stack_core` still depends only on domain/application ports, not
+- `infinity_context_core` still depends only on domain/application ports, not
   provider SDKs or server frameworks.
 
 ## Implementation Traceability Matrix
@@ -940,7 +940,7 @@ green.
 
 | Locked rule | Implementation surface | Required regression evidence |
 | --- | --- | --- |
-| Semantic, episodic, procedural and archival memory stay separate | `memo_stack_core.application`, capture/document/asset ingestion, procedural review policy | extractor, capture consolidation and context tests prove untrusted evidence is not promoted silently |
+| Semantic, episodic, procedural and archival memory stay separate | `infinity_context_core.application`, capture/document/asset ingestion, procedural review policy | extractor, capture consolidation and context tests prove untrusted evidence is not promoted silently |
 | Anchors are canonical identity, tags are facets | anchor use cases, context-link suggestions, anchor lifecycle API | anchor lifecycle tests cover duplicate prevention, alias conflicts, merge/split audit and same-name cross-kind anchors |
 | Temporal validity controls prompt visibility | fact relation use cases, context assembly, memory digest | context provider tests cover supersedes, future/expired relations, disputed facts and review-only stale evidence |
 | Review beats weak automation | context link policy, suggestions API, SDK review flows, frontend review queue | policy tests prove low/medium confidence stays pending or denied, batch review is bounded and rejection reasons are preserved |

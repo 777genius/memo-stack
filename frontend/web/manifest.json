@@ -1,11 +1,11 @@
 {
-    "name": "Memo Stack",
-    "short_name": "Memo Stack",
+    "name": "Infinity Context",
+    "short_name": "Infinity Context",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Quick capture client for Memo Stack.",
+    "description": "Quick capture client for Infinity Context.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

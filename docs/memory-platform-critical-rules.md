@@ -36,7 +36,7 @@ Useful references checked during planning:
 
 ## Non-negotiable architecture rules
 
-1. `memo_stack_core` must not import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI,
+1. `infinity_context_core` must not import FastAPI, SQLAlchemy, Qdrant, Graphiti, OpenAI,
    Docling, browser, Flutter, or app-specific code.
 2. Postgres remains the canonical source of truth. Qdrant, Graphiti, and external
    providers are derived indexes/adapters.

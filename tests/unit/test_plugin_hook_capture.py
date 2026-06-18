@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from memo_stack_mcp.plugin_hook import (
+from infinity_context_mcp.plugin_hook import (
     HookEvent,
     HookGatewayError,
     HookSettings,

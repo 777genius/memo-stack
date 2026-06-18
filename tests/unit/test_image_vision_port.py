@@ -1,13 +1,13 @@
 import asyncio
 import json
 
-from memo_stack_adapters.extraction.openai_vision import (
+from infinity_context_adapters.extraction.openai_vision import (
     OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
     OpenAIImageVisionAdapter,
     OpenAIVisionImageExtractionEngine,
 )
-from memo_stack_core.ports.extraction import ExtractionLimits, ExtractionRequest
-from memo_stack_core.ports.vision import ImageVisionRequest, ImageVisionResult
+from infinity_context_core.ports.extraction import ExtractionLimits, ExtractionRequest
+from infinity_context_core.ports.vision import ImageVisionRequest, ImageVisionResult
 
 _VISION_SECRET = "sk-proj-vision-secret-value1234567890"
 
@@ -82,7 +82,7 @@ class _FakeImageVisionPort:
         return ImageVisionResult(
             status="succeeded",
             payload={
-                "schema_name": "memo_stack.vision_image_evidence",
+                "schema_name": "infinity_context.vision_image_evidence",
                 "schema_version": "1.0",
                 "summary": "Custom provider saw a memory review screenshot.",
                 "visible_text": ["Review links"],

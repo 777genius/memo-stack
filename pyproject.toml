@@ -3,9 +3,9 @@ requires = ["setuptools>=80", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "memo-stack"
+name = "infinity-context"
 version = "0.1.0"
-description = "Reusable memo stack core lite"
+description = "Reusable infinity context core lite"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.18.4,<2.0.0",
@@ -50,48 +50,49 @@ dev = [
 ]
 
 [project.scripts]
-memo-stack = "memo_stack_cli.cli:main"
-memo-stack-mcp = "memo_stack_mcp.server:main"
-memo-stack-mcp-bench = "memo_stack_mcp.bench:main"
-memo-stack-mcp-agent-bench = "memo_stack_mcp.agent_behavior_bench:main"
-memo-stack-obsidian = "memo_stack_obsidian.cli:main"
+infinity-context = "infinity_context_cli.cli:main"
+infinity-context-mcp = "infinity_context_mcp.server:main"
+infinity-context-mcp-bench = "infinity_context_mcp.bench:main"
+infinity-context-mcp-agent-bench = "infinity_context_mcp.agent_behavior_bench:main"
+infinity-context-obsidian = "infinity_context_obsidian.cli:main"
 
 [tool.setuptools.packages.find]
 where = [
-  "packages/memo_stack_core",
-  "packages/memo_stack_server",
-  "packages/memo_stack_adapters",
-  "packages/memo_stack_sdk",
-  "packages/memo_stack_mcp",
-  "packages/memo_stack_cli",
-  "packages/memo_stack_obsidian",
+  "packages/infinity_context_core",
+  "packages/infinity_context_server",
+  "packages/infinity_context_adapters",
+  "packages/infinity_context_sdk",
+  "packages/infinity_context_mcp",
+  "packages/infinity_context_cli",
+  "packages/infinity_context_obsidian",
 ]
 
 [tool.setuptools.package-data]
-memo_stack_adapters = [
+infinity_context_adapters = [
   "extraction/prompts/*.md",
   "extraction/schemas/*.json",
   "postgres/migrations/*.sql",
 ]
-memo_stack_server = [
+infinity_context_server = [
   "web/*.html",
   "web/assets/*.css",
   "web/assets/*.js",
 ]
-memo_stack_obsidian = [
+infinity_context_obsidian = [
   "plugin_bundle/*",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [
-  "packages/memo_stack_core",
-  "packages/memo_stack_server",
-  "packages/memo_stack_adapters",
-  "packages/memo_stack_sdk",
-  "packages/memo_stack_mcp",
-  "packages/memo_stack_cli",
-  "packages/memo_stack_obsidian",
+  ".",
+  "packages/infinity_context_core",
+  "packages/infinity_context_server",
+  "packages/infinity_context_adapters",
+  "packages/infinity_context_sdk",
+  "packages/infinity_context_mcp",
+  "packages/infinity_context_cli",
+  "packages/infinity_context_obsidian",
 ]
 
 [tool.ruff]

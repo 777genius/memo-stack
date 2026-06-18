@@ -2,15 +2,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from memo_stack_core.agent_behavior_contract import (
+from infinity_context_core.agent_behavior_contract import (
     AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
-from memo_stack_server.eval import (
+from infinity_context_server.eval import (
     build_memory_quality_scorecard,
     memory_quality_scorecard_policy_snapshot,
     run_memory_quality_scorecard,
 )
-from memo_stack_server.eval_constants import (
+from infinity_context_server.eval_constants import (
     QUALITY_GOLDEN_REQUIRED_CASE_IDS,
     SEMANTIC_LINKING_REQUIRED_CASE_IDS,
 )
@@ -235,11 +235,11 @@ def _scorecard_provenance(
 
 def _full_provider_canary_report() -> dict[str, Any]:
     return {
-        "suite": "memo-stack-full-provider-canary",
+        "suite": "infinity-context-full-provider-canary",
         "ok": True,
         "provenance": _scorecard_provenance(
             generated_by="scripts/clean_full_smoke.py",
-            suite="memo-stack-full-provider-canary",
+            suite="infinity-context-full-provider-canary",
         ),
         "checks": {
             "fact_created": True,
@@ -270,7 +270,7 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
         "suite": "memory_mcp_agent_behavior",
         "ok": True,
         "provenance": _scorecard_provenance(
-            generated_by="memo_stack_mcp.agent_behavior_bench",
+            generated_by="infinity_context_mcp.agent_behavior_bench",
             suite="memory_mcp_agent_behavior",
         ),
         "scenario_set": "all",
@@ -317,11 +317,11 @@ def _agent_behavior_benchmark_report() -> dict[str, Any]:
 
 def _agent_live_smoke_report() -> dict[str, Any]:
     return {
-        "suite": "memo-stack-agent-live-smoke",
+        "suite": "infinity-context-agent-live-smoke",
         "ok": True,
         "provenance": _scorecard_provenance(
             generated_by="scripts/agent_install_verification.py",
-            suite="memo-stack-agent-live-smoke",
+            suite="infinity-context-agent-live-smoke",
         ),
         "strict_agent_cli": True,
         "checks": {
@@ -407,7 +407,7 @@ def _public_benchmark_report() -> dict[str, Any]:
         "suite": "public-memory-benchmark",
         "ok": True,
         "provenance": _scorecard_provenance(
-            generated_by="memo_stack_server.official_public_benchmark",
+            generated_by="infinity_context_server.official_public_benchmark",
             suite="public-memory-benchmark",
         ),
         "benchmarks": [
@@ -608,7 +608,7 @@ def test_memory_quality_scorecard_loads_existing_suite_reports(tmp_path: Path) -
 
 def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results)
@@ -648,7 +648,7 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
 
 def test_memory_quality_scorecard_requires_live_agent_smoke_for_top_ready() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -662,11 +662,11 @@ def test_memory_quality_scorecard_requires_live_agent_smoke_for_top_ready() -> N
 
 def test_memory_quality_scorecard_rejects_weak_live_agent_smoke_evidence() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
-    live_smoke = suite_results["memo-stack-agent-live-smoke"]
+    live_smoke = suite_results["infinity-context-agent-live-smoke"]
     live_smoke["strict_agent_cli"] = False
     live_smoke["checks"]["agent_cli"]["gemini"] = {
         "status": "blocked",
@@ -688,9 +688,9 @@ def test_memory_quality_scorecard_rejects_weak_live_agent_smoke_evidence() -> No
 
 def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmarks() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results)
@@ -712,9 +712,9 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
 
 def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["locomo"] = {
         "suite": "locomo",
         "ok": True,
@@ -729,7 +729,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
             }
         },
         "provenance": _scorecard_provenance(
-            generated_by="memo_stack_server.public_benchmark",
+            generated_by="infinity_context_server.public_benchmark",
             suite="locomo",
         ),
         "metrics": {"accuracy": 0.947, "case_count": 600},
@@ -748,7 +748,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
             }
         },
         "provenance": _scorecard_provenance(
-            generated_by="memo_stack_server.public_benchmark",
+            generated_by="infinity_context_server.public_benchmark",
             suite="longmemeval",
         ),
         "metrics": {"accuracy": 0.902, "case_count": 500},
@@ -768,7 +768,7 @@ def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> No
 
 def test_memory_quality_scorecard_requires_public_benchmark_dataset_fingerprint() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark.pop("dataset_hashes")
@@ -789,7 +789,7 @@ def test_memory_quality_scorecard_requires_public_benchmark_dataset_fingerprint(
 
 def test_memory_quality_scorecard_requires_public_benchmark_dataset_source() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark.pop("dataset_sources")
@@ -810,7 +810,7 @@ def test_memory_quality_scorecard_requires_public_benchmark_dataset_source() -> 
 
 def test_memory_quality_scorecard_rejects_public_benchmark_source_hash_mismatch() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark["dataset_sources"]["locomo"]["sha256"] = "different-sha256"
@@ -832,7 +832,7 @@ def test_memory_quality_scorecard_rejects_public_benchmark_source_hash_mismatch(
 
 def test_memory_quality_scorecard_rejects_invalid_public_benchmark_source_metadata() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark["dataset_sources"]["locomo"].pop("official_url")
@@ -853,7 +853,7 @@ def test_memory_quality_scorecard_rejects_invalid_public_benchmark_source_metada
 
 def test_memory_quality_scorecard_requires_official_url_for_official_sources() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark["dataset_sources"]["locomo"].pop("official_url")
@@ -872,7 +872,7 @@ def test_memory_quality_scorecard_requires_official_url_for_official_sources() -
 
 def test_memory_quality_scorecard_rejects_public_benchmark_source_case_count_mismatch() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark["dataset_sources"]["locomo"]["case_count"] = 599
@@ -891,7 +891,7 @@ def test_memory_quality_scorecard_rejects_public_benchmark_source_case_count_mis
 
 def test_memory_quality_scorecard_requires_public_benchmark_source_case_count() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark["dataset_sources"]["locomo"].pop("case_count")
@@ -910,7 +910,7 @@ def test_memory_quality_scorecard_requires_public_benchmark_source_case_count() 
 
 def test_memory_quality_scorecard_rejects_public_benchmark_raw_dataset_path() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     public_benchmark = _public_benchmark_report()
     public_benchmark["dataset_path"] = "/Users/alice/private/locomo.json"
@@ -929,7 +929,7 @@ def test_memory_quality_scorecard_rejects_public_benchmark_raw_dataset_path() ->
 
 def test_memory_quality_scorecard_rejects_underpowered_public_benchmark_evidence() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["public-memory-benchmark"] = {
         "suite": "public-memory-benchmark",
@@ -967,7 +967,7 @@ def test_memory_quality_scorecard_rejects_shallow_full_provider_evidence() -> No
     suite_results = _scorecard_fixture_results()
     full_provider = _full_provider_canary_report()
     full_provider["checks"]["mcp_search_has_graphiti_fact_after_worker"] = False
-    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["infinity-context-full-provider-canary"] = full_provider
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -987,7 +987,7 @@ def test_memory_quality_scorecard_requires_full_provider_mcp_lifecycle() -> None
     suite_results = _scorecard_fixture_results()
     full_provider = _full_provider_canary_report()
     full_provider["mcp"] = {"skipped": True, "reason": "manual skip"}
-    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["infinity-context-full-provider-canary"] = full_provider
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1006,7 +1006,7 @@ def test_memory_quality_scorecard_rejects_weak_agent_behavior_evidence() -> None
     agent_behavior["metrics"]["secret_leak_count"] = 1
     agent_behavior["gates"]["answer_support_rate_min_0_80"] = False
     agent_behavior["gates"]["secret_leak_count_zero"] = False
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1030,7 +1030,7 @@ def test_memory_quality_scorecard_requires_non_core_agent_scenario_set() -> None
     suite_results = _scorecard_fixture_results()
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior["scenario_set"] = "core"
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1048,7 +1048,7 @@ def test_memory_quality_scorecard_requires_all_agent_scenarios_for_top_evidence(
     suite_results = _scorecard_fixture_results()
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior["scenario_set"] = "realistic"
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1075,7 +1075,7 @@ def test_memory_quality_scorecard_requires_nonzero_agent_case_counts_for_top_evi
         transcript_corpus_count=4,
         adversarial_count=8,
     )
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1097,7 +1097,7 @@ def test_memory_quality_scorecard_requires_agent_scenario_reports_for_top_eviden
     suite_results = _scorecard_fixture_results()
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior["scenarios"] = []
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1137,7 +1137,7 @@ def test_memory_quality_scorecard_requires_canonical_agent_scenario_ids() -> Non
     for index, scenario in enumerate(agent_behavior["scenarios"]):
         scenarios.append({**scenario, "id": f"synthetic-agent-scenario-{index}"})
     agent_behavior["scenarios"] = scenarios
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1162,7 +1162,7 @@ def test_memory_quality_scorecard_rejects_malformed_agent_scenario_reports() -> 
     scenarios[2] = {key: value for key, value in scenarios[2].items() if key != "id"}
     scenarios[-1] = "invalid-scenario"
     agent_behavior["scenarios"] = scenarios
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -1206,7 +1206,7 @@ def test_memory_quality_scorecard_can_use_nested_agent_evidence() -> None:
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior["scenario_set"] = "realistic"
     full_provider["agent_behavior"] = agent_behavior
-    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["infinity-context-full-provider-canary"] = full_provider
 
     result = build_memory_quality_scorecard(suite_results)
 
@@ -1220,9 +1220,9 @@ def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> 
     suite_results = _scorecard_fixture_results()
     full_provider = _full_provider_canary_report()
     full_provider["public_benchmark"] = _public_benchmark_report()
-    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["infinity-context-full-provider-canary"] = full_provider
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
 
@@ -1244,7 +1244,7 @@ def test_memory_quality_scorecard_warns_on_failed_external_evidence() -> None:
     suite_results = _scorecard_fixture_results()
     full_provider = _full_provider_canary_report()
     full_provider["checks"]["providers_are_healthy"] = False
-    suite_results["memo-stack-full-provider-canary"] = full_provider
+    suite_results["infinity-context-full-provider-canary"] = full_provider
 
     result = build_memory_quality_scorecard(suite_results)
 
@@ -1273,9 +1273,9 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_provenance() -> N
     suite_results = _scorecard_fixture_results()
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior.pop("provenance")
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
-    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
@@ -1303,12 +1303,12 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_provenance() -> N
 def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_provenance() -> None:
     for target, summary_key, failed_gap in (
         (
-            "memo-stack-full-provider-canary",
+            "infinity-context-full-provider-canary",
             "full_provider_canary",
             "full_provider_canary_provenance_failed",
         ),
         (
-            "memo-stack-agent-live-smoke",
+            "infinity-context-agent-live-smoke",
             "agent_live_smoke",
             "agent_live_smoke_provenance_failed",
         ),
@@ -1319,9 +1319,9 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_proven
         ),
     ):
         suite_results = _scorecard_fixture_results()
-        suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-        suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+        suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
         suite_results[target].pop("provenance")
 
@@ -1338,7 +1338,7 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_proven
 def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports() -> None:
     for target, summary_key, failed_gap in (
         (
-            "memo-stack-full-provider-canary",
+            "infinity-context-full-provider-canary",
             "full_provider_canary",
             "full_provider_canary_safety_failed",
         ),
@@ -1348,7 +1348,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
             "agent_behavior_benchmark_safety_failed",
         ),
         (
-            "memo-stack-agent-live-smoke",
+            "infinity-context-agent-live-smoke",
             "agent_live_smoke",
             "agent_live_smoke_safety_failed",
         ),
@@ -1359,9 +1359,9 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
         ),
     ):
         suite_results = _scorecard_fixture_results()
-        suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-        suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+        suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
         suite_results[target]["debug"] = {"unsafe_note": "REPORT_TOKEN=abcdefghijklmnopqrstuvwxyz"}
 
@@ -1380,7 +1380,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
 def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths() -> None:
     for target, summary_key, failed_gap in (
         (
-            "memo-stack-full-provider-canary",
+            "infinity-context-full-provider-canary",
             "full_provider_canary",
             "full_provider_canary_safety_failed",
         ),
@@ -1390,7 +1390,7 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
             "agent_behavior_benchmark_safety_failed",
         ),
         (
-            "memo-stack-agent-live-smoke",
+            "infinity-context-agent-live-smoke",
             "agent_live_smoke",
             "agent_live_smoke_safety_failed",
         ),
@@ -1401,9 +1401,9 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
         ),
     ):
         suite_results = _scorecard_fixture_results()
-        suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-        suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+        suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
         suite_results[target]["debug"] = {"local_path": "/Users/alice/private/report.json"}
 
@@ -1423,9 +1423,9 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
 
 def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["memo-stack-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
-    suite_results["memo-stack-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
     result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
@@ -1581,7 +1581,7 @@ def test_memory_quality_scorecard_fails_when_report_omits_required_case_ids() ->
     assert result["ok"] is False
     assert result["capabilities"]["coverage_floors"]["ok"] is False
     assert (
-        "quality-golden_case_count"
+        "quality_required_case_hybrid_document_beats_single_source"
         in result["capabilities"]["coverage_floors"]["failed_checks"]
     )
     assert (

@@ -1,8 +1,8 @@
 import asyncio
 import json
 
-from memo_stack_core.domain.errors import MemoryValidationError
-from memo_stack_server.api.errors import memory_error_handler
+from infinity_context_core.domain.errors import MemoryValidationError
+from infinity_context_server.api.errors import memory_error_handler
 
 
 def test_memory_error_handler_redacts_sensitive_message_text() -> None:

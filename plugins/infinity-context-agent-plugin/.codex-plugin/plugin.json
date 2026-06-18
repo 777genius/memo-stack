@@ -1,0 +1,7 @@
+{
+  "description": "Infinity Context universal agent plugin for durable project memory.",
+  "mcpServers": "./.mcp.json",
+  "name": "infinity-context-agent-plugin",
+  "skills": "./skills/",
+  "version": "0.1.0"
+}

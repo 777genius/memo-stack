@@ -7,13 +7,13 @@ from pathlib import Path
 
 import httpx
 import pytest
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_server_harness import run_infinity_context_server
 from PIL import Image, ImageDraw, ImageFont
 
 
 def test_image_asset_extraction_persists_region_artifact_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="image-asset-extraction.db",
             extra_env={"MEMORY_ASSET_STORAGE_DIR": str(tmp_path / "assets")},
@@ -43,7 +43,7 @@ def test_image_asset_extraction_persists_region_artifact_e2e(tmp_path: Path) -> 
             [
                 sys.executable,
                 "-m",
-                "memo_stack_server.worker",
+                "infinity_context_server.worker",
                 "--once",
                 "--limit",
                 "10",
@@ -77,7 +77,7 @@ def test_image_asset_extraction_persists_region_artifact_e2e(tmp_path: Path) -> 
         download = client.get(f"/v1/extraction-artifacts/{regions['id']}/download")
         assert download.status_code == 200, download.text
         payload = json.loads(download.content.decode("utf-8"))
-        assert payload["schema_name"] == "memo_stack.image_regions"
+        assert payload["schema_name"] == "infinity_context.image_regions"
         assert payload["image"]["image_width"] == 120
         assert payload["regions"][0]["bbox"] == [0.0, 0.0, 120.0, 40.0]
 
@@ -87,7 +87,7 @@ def test_image_asset_extraction_persists_region_artifact_e2e(tmp_path: Path) -> 
         manifest_download = client.get(f"/v1/extraction-artifacts/{manifest['id']}/download")
         assert manifest_download.status_code == 200, manifest_download.text
         manifest_payload = manifest_download.json()
-        assert manifest_payload["schema_version"] == "memo_stack.multimodal_manifest.v1"
+        assert manifest_payload["schema_version"] == "infinity_context.multimodal_manifest.v1"
         assert manifest_payload["features"]["modalities"] == ["text", "image"]
         assert manifest_payload["features"]["coordinate_fields_present"] == ["bbox"]
         assert manifest_payload["features"]["has_bbox_refs"] is True
@@ -96,7 +96,7 @@ def test_image_asset_extraction_persists_region_artifact_e2e(tmp_path: Path) -> 
 @pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract is not installed")
 def test_image_asset_extraction_persists_ocr_regions_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="image-ocr-extraction.db",
             extra_env={"MEMORY_ASSET_STORAGE_DIR": str(tmp_path / "assets")},
@@ -126,7 +126,7 @@ def test_image_asset_extraction_persists_ocr_regions_e2e(tmp_path: Path) -> None
             [
                 sys.executable,
                 "-m",
-                "memo_stack_server.worker",
+                "infinity_context_server.worker",
                 "--once",
                 "--limit",
                 "10",

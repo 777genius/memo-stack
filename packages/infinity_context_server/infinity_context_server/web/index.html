@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Infinity Context Browser</title>
+    <link rel="stylesheet" href="/ui/assets/memory-browser.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <div class="brand">Infinity Context Browser</div>
+          <div class="subtle" id="scopeSummary">default / default</div>
+        </div>
+        <div class="top-status">
+          <span class="status-chip" id="liveStatus">Live</span>
+          <span class="status-chip" id="serverStatus">Server unknown</span>
+          <span class="status-chip" id="adapterStatus">Adapters unknown</span>
+        </div>
+      </header>
+
+      <section class="controlbar" aria-label="Connection and scope">
+        <label>
+          API
+          <input id="apiBaseInput" type="url" placeholder="same origin" autocomplete="off" />
+        </label>
+        <label>
+          Token
+          <input id="tokenInput" type="password" autocomplete="off" />
+        </label>
+        <label>
+          Space
+          <input id="spaceInput" list="spacesList" autocomplete="off" />
+          <datalist id="spacesList"></datalist>
+        </label>
+        <label>
+          MemoryScope
+          <input id="memory_scopeInput" list="memory_scopesList" autocomplete="off" />
+          <datalist id="memory_scopesList"></datalist>
+        </label>
+        <label>
+          Topic
+          <input id="topicInput" type="search" autocomplete="off" />
+        </label>
+        <button id="saveSettingsButton" class="primary-button" type="button">Save</button>
+        <button id="refreshButton" type="button">Refresh</button>
+        <button id="pauseButton" type="button">Pause</button>
+      </section>
+
+      <section class="metrics-band" aria-label="Memory metrics">
+        <div><strong id="factCount">0</strong><span>Facts</span></div>
+        <div><strong id="suggestionCount">0</strong><span>Suggestions</span></div>
+        <div><strong id="linkSuggestionCount">0</strong><span>Link Reviews</span></div>
+        <div><strong id="contextLinkCount">0</strong><span>Links</span></div>
+        <div><strong id="anchorCount">0</strong><span>Anchors</span></div>
+        <div><strong id="sourceCount">0</strong><span>Sources</span></div>
+        <div><strong id="pendingCount">0</strong><span>Pending</span></div>
+        <div><strong id="lastRefresh">Never</strong><span>Updated</span></div>
+      </section>
+
+      <section class="workspace">
+        <section class="graph-panel" aria-label="Knowledge graph">
+          <div class="graph-toolbar">
+            <input id="graphSearchInput" type="search" placeholder="Filter graph" autocomplete="off" />
+            <select id="typeFilter" aria-label="Node type">
+              <option value="all">All types</option>
+              <option value="fact">Facts</option>
+              <option value="episode">Episodes</option>
+              <option value="document">Documents</option>
+              <option value="chunk">Chunks</option>
+              <option value="suggestion">Suggestions</option>
+              <option value="context_link_suggestion">Link Reviews</option>
+              <option value="context_link">Links</option>
+              <option value="anchor">Anchors</option>
+              <option value="source">Sources</option>
+              <option value="tag">Tags</option>
+              <option value="kind">Kinds</option>
+            </select>
+            <select id="statusFilter" aria-label="Status">
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="deleted">Deleted</option>
+              <option value="superseded">Superseded</option>
+            </select>
+            <button id="zoomInButton" type="button">+</button>
+            <button id="zoomOutButton" type="button">-</button>
+            <button id="fitButton" type="button">Fit</button>
+          </div>
+          <svg id="graphSvg" role="img" aria-label="Infinity Context graph"></svg>
+        </section>
+
+        <aside class="side-panel">
+          <nav class="tabs" aria-label="Memory panels">
+            <button class="active" data-tab="details" type="button">Details</button>
+            <button data-tab="digest" type="button">Digest</button>
+            <button data-tab="suggestions" type="button">Review</button>
+            <button data-tab="operations" type="button">Operations</button>
+            <button data-tab="timeline" type="button">Timeline</button>
+          </nav>
+
+          <section class="tab-panel active" id="detailsPanel"></section>
+
+          <section class="tab-panel" id="digestPanel">
+            <div class="panel-actions">
+              <button id="buildDigestButton" class="primary-button" type="button">Build Digest</button>
+              <button id="runRecallButton" type="button">Recall</button>
+            </div>
+            <div id="digestOutput" class="prelike empty-state">No digest yet.</div>
+            <div id="recallOutput" class="list-stack"></div>
+          </section>
+
+          <section class="tab-panel" id="suggestionsPanel">
+            <div class="panel-actions">
+              <button id="createAnchorButton" class="primary-button" type="button">Create Anchor</button>
+              <button id="backfillAnchorsButton" type="button">Backfill Anchors</button>
+            </div>
+            <div class="review-filters" aria-label="Review filters">
+              <label>
+                Status
+                <select id="reviewStatusFilter">
+                  <option value="pending">Pending</option>
+                  <option value="all">All</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </label>
+              <label>
+                Type
+                <select id="reviewTypeFilter">
+                  <option value="all">All</option>
+                  <option value="link">Links</option>
+                  <option value="fact">Facts</option>
+                  <option value="anchor_merge">Anchor Merges</option>
+                </select>
+              </label>
+              <label>
+                Relation
+                <select id="reviewRelationFilter">
+                  <option value="all">All</option>
+                  <option value="related_to">Related To</option>
+                  <option value="mentions">Mentions</option>
+                  <option value="supports">Supports</option>
+                  <option value="duplicates">Duplicates</option>
+                  <option value="contradicts">Contradicts</option>
+                  <option value="supersedes">Supersedes</option>
+                </select>
+              </label>
+              <label>
+                Target
+                <input id="reviewTargetFilter" type="search" placeholder="Target, reason, evidence" autocomplete="off" />
+              </label>
+            </div>
+            <div id="suggestionList" class="list-stack"></div>
+          </section>
+
+          <section class="tab-panel" id="operationsPanel">
+            <div id="operationsList" class="list-stack"></div>
+          </section>
+
+          <section class="tab-panel" id="timelinePanel">
+            <div id="timelineList" class="list-stack"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="log-band" aria-live="polite">
+        <span id="errorOutput"></span>
+      </section>
+    </main>
+    <div id="reviewModal" class="modal-overlay" hidden>
+      <section class="review-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+        <header class="modal-header">
+          <h2 id="reviewModalTitle">Review details</h2>
+          <button id="reviewModalClose" type="button">Close</button>
+        </header>
+        <div id="reviewModalBody" class="modal-body"></div>
+      </section>
+    </div>
+    <script src="/ui/assets/memory-browser.js"></script>
+    <script src="/ui/assets/memory-browser-review.js"></script>
+    <script src="/ui/assets/memory-browser-operations.js"></script>
+  </body>
+</html>

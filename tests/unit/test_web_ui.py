@@ -3,8 +3,8 @@ import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 
 def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
@@ -31,7 +31,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert redirect.status_code in {307, 308}
     assert redirect.headers["location"] == "/ui/"
     assert index.status_code == 200
-    assert "Memo Stack Browser" in index.text
+    assert "Infinity Context Browser" in index.text
     assert "memory-browser.js" in index.text
     assert "memory-browser-review.js" in index.text
     assert "memory-browser-operations.js" in index.text
@@ -153,7 +153,7 @@ def test_review_modal_focus_trap_and_escape_keyboard_flow() -> None:
         return
     review_js = (
         Path(__file__).resolve().parents[2]
-        / "packages/memo_stack_server/memo_stack_server/web/assets/memory-browser-review.js"
+        / "packages/infinity_context_server/infinity_context_server/web/assets/memory-browser-review.js"
     )
     script = r"""
 const fs = require("fs");
@@ -383,7 +383,7 @@ assert(document.activeElement === opener, "close should restore previous focus")
 def test_review_actions_keep_confirmed_refresh_and_bounded_batch_contract() -> None:
     js = (
         Path(__file__).resolve().parents[2]
-        / "packages/memo_stack_server/memo_stack_server/web/assets/memory-browser.js"
+        / "packages/infinity_context_server/infinity_context_server/web/assets/memory-browser.js"
     ).read_text()
 
     assert "async function withReviewActionLock" in js

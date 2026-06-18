@@ -4,8 +4,8 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
-from memo_stack_core.ports.extraction import ExtractionLimits, ExtractionRequest
+from infinity_context_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
+from infinity_context_core.ports.extraction import ExtractionLimits, ExtractionRequest
 from resource_guards import apply_stable_ml_env, skip_if_low_temp_space
 
 pytest.importorskip("docling")

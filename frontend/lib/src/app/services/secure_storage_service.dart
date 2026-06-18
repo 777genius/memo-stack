@@ -38,14 +38,14 @@ class SecureStorageService {
     final host = Platform.localHostname;
     final user =
         Platform.environment['USER'] ?? Platform.environment['USERNAME'] ?? '';
-    final raw = 'memo-stack:$host:$user:f7a3c9e1-salt';
+    final raw = 'infinity-context:$host:$user:f7a3c9e1-salt';
     final hash = sha256.convert(utf8.encode(raw));
     return enc.Key(Uint8List.fromList(hash.bytes));
   }
 
   /// Fixed 16-byte IV derived from salt (stable across runs).
   enc.IV _deriveIV() {
-    final raw = 'memo-stack-iv:stable-vector';
+    final raw = 'infinity-context-iv:stable-vector';
     final hash = md5.convert(utf8.encode(raw));
     return enc.IV(Uint8List.fromList(hash.bytes));
   }
@@ -149,7 +149,7 @@ class SecureStorageService {
   Future<String?> getUserPreferences() => _get(_userPreferencesKey);
   Future<void> deleteUserPreferences() => _remove(_userPreferencesKey);
 
-  // Memo Stack server settings
+  // Infinity Context server settings
 
   Future<void> saveBackendHost(String host) => _set(_backendHostKey, host);
   Future<String?> getBackendHost() => _get(_backendHostKey);

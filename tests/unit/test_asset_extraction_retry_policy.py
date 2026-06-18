@@ -4,15 +4,15 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import MemoryOutboxRow
-from memo_stack_core.application.use_cases.asset_extraction_support import (
+from infinity_context_adapters.postgres.models import MemoryOutboxRow
+from infinity_context_core.application.use_cases.asset_extraction_support import (
     ExtractionRetryPolicy,
 )
-from memo_stack_core.domain.extraction import ExtractionRetryDisposition
-from memo_stack_core.ports.extraction import ExtractionResult
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_core.domain.extraction import ExtractionRetryDisposition
+from infinity_context_core.ports.extraction import ExtractionResult
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

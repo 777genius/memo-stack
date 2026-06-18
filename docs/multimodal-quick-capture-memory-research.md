@@ -6,7 +6,7 @@ Date: 2026-06-09.
 
 ## Question
 
-Can Memo Stack support a fast user workflow where a user opens a frontend, drops a
+Can Infinity Context support a fast user workflow where a user opens a frontend, drops a
 screenshot/file plus a short note, and AI proposes where to save it, which
 existing memory it relates to, or stores it separately for future linking?
 
@@ -25,7 +25,7 @@ User screenshot/file/note
   -> facts, relations and projections after approval or strict auto-apply
 ```
 
-This aligns with current Memo Stack direction:
+This aligns with current Infinity Context direction:
 
 - `Capture is not Memory` in `docs/auto-memory-capture-platform-plan.md`.
 - Postgres remains canonical truth.
@@ -99,8 +99,8 @@ Already present or planned:
   operation, category, tags, TTL, review payload and capture origin.
 - `MemoryFactRelation` can link saved facts.
 - `MemoryDocument` and `MemoryChunk` support text ingestion and source refs.
-- `docs/memo-stack-core-lite-plan.md` already defines `BlobStoragePort`.
-- `docs/client-integration/interview-memo-stack-clean-architecture-plan.md`
+- `docs/infinity-context-core-lite-plan.md` already defines `BlobStoragePort`.
+- `docs/client-integration/interview-infinity-context-clean-architecture-plan.md`
   already says screenshots should use a separate `ImageTextExtractor` port.
 
 Not yet sufficient:
@@ -625,7 +625,7 @@ extraction.
 Local v1:
 
 ```text
-~/.memo-stack/assets/{space_id}/{memory_scope_id}/{sha256-prefix}/{asset_id}.blob
+~/.infinity-context/assets/{space_id}/{memory_scope_id}/{sha256-prefix}/{asset_id}.blob
 ```
 
 Rules:

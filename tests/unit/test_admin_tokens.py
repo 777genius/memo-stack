@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import (
+from infinity_context_adapters.postgres.models import (
     MemoryChunkRow,
     MemoryDocumentRow,
     MemoryEpisodeRow,
@@ -15,7 +15,7 @@ from memo_stack_adapters.postgres.models import (
     MemorySpaceRow,
     MemoryThreadRow,
 )
-from memo_stack_server.admin import (
+from infinity_context_server.admin import (
     export_memory_scope_command,
     import_memory_scope_command,
     reset_local,
@@ -23,10 +23,10 @@ from memo_stack_server.admin import (
     token_list,
     token_revoke,
 )
-from memo_stack_server.auth_tokens import token_hash
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.db import upgrade
-from memo_stack_server.main import create_app
+from infinity_context_server.auth_tokens import token_hash
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.db import upgrade
+from infinity_context_server.main import create_app
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

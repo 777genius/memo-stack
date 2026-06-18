@@ -1,4 +1,4 @@
-from memo_stack_core.application.anchor_extraction import extract_observed_anchors
+from infinity_context_core.application.anchor_extraction import extract_observed_anchors
 
 
 def test_anchor_extraction_ignores_document_metadata_as_people() -> None:

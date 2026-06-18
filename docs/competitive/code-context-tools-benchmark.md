@@ -4,7 +4,7 @@ Date: 2026-06-13
 
 Repository snapshot: `b942f92`
 
-Benchmark worktree: `/private/tmp/memo-stack-context-bench-1781366224`
+Benchmark worktree: `/private/tmp/infinity-context-context-bench-1781366224`
 
 Repo size in the temporary worktree:
 
@@ -102,30 +102,30 @@ CodeGraphContext in the local 777genius code-intelligence workflow is routed for
 
 ```bash
 npx -y @colbymchenry/codegraph@1.0.0 init .
-npx -y codebase-memory-mcp@0.8.1 cli index_repository '{"repo_path":"/private/tmp/memo-stack-context-bench-1781366224"}'
+npx -y codebase-memory-mcp@0.8.1 cli index_repository '{"repo_path":"/private/tmp/infinity-context-context-bench-1781366224"}'
 codanna init
 codanna index . --no-progress
 npm exec --yes --package=sverklo@0.29.1 -- sverklo prove --no-write --guided --markdown .
-cgc index . --context memo-stack-bench-1781366224
+cgc index . --context infinity-context-bench-1781366224
 ```
 
 ```bash
 npx -y @colbymchenry/codegraph@1.0.0 query MemoryScope --json
-npx -y codebase-memory-mcp@0.8.1 cli search_graph '{"project":"private-tmp-memo-stack-context-bench-1781366224","name_pattern":".*MemoryScope.*","limit":10}'
+npx -y codebase-memory-mcp@0.8.1 cli search_graph '{"project":"private-tmp-infinity-context-context-bench-1781366224","name_pattern":".*MemoryScope.*","limit":10}'
 codanna retrieve search MemoryScope --limit 10 --json
-cgc find pattern MemoryScope --context memo-stack-bench-1781366224
+cgc find pattern MemoryScope --context infinity-context-bench-1781366224
 ```
 
 ```bash
 npx -y @colbymchenry/codegraph@1.0.0 explore asset extraction --max-files 5
-npx -y codebase-memory-mcp@0.8.1 cli search_code '{"project":"private-tmp-memo-stack-context-bench-1781366224","pattern":"asset extraction","limit":5}'
+npx -y codebase-memory-mcp@0.8.1 cli search_code '{"project":"private-tmp-infinity-context-context-bench-1781366224","pattern":"asset extraction","limit":5}'
 codanna mcp semantic_search_with_context query:"asset extraction" limit:5 --json
-cgc find content "asset extraction" --context memo-stack-bench-1781366224
+cgc find content "asset extraction" --context infinity-context-bench-1781366224
 ```
 
 ```bash
 npx -y @colbymchenry/codegraph@1.0.0 callers build_container --json
-npx -y codebase-memory-mcp@0.8.1 cli trace_path '{"project":"private-tmp-memo-stack-context-bench-1781366224","function_name":"build_container","direction":"inbound","depth":2}'
+npx -y codebase-memory-mcp@0.8.1 cli trace_path '{"project":"private-tmp-infinity-context-context-bench-1781366224","function_name":"build_container","direction":"inbound","depth":2}'
 codanna mcp find_callers build_container --json
-cgc analyze callers build_container --context memo-stack-bench-1781366224
+cgc analyze callers build_container --context infinity-context-bench-1781366224
 ```

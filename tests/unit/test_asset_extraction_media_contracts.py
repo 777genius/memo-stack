@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 
 
 def make_client(tmp_path: Path, **overrides: Any) -> TestClient:
@@ -334,7 +334,7 @@ def test_video_media_api_without_external_ai_keeps_keyframe_evidence(
         )
         assert timeline_download.status_code == 200, timeline_download.text
         timeline_payload = json.loads(timeline_download.content.decode("utf-8"))
-        assert timeline_payload["schema_name"] == "memo_stack.video_frame_timeline"
+        assert timeline_payload["schema_name"] == "infinity_context.video_frame_timeline"
         assert timeline_payload["frames"]
 
         chunks = client.get(
@@ -344,3 +344,53 @@ def test_video_media_api_without_external_ai_keeps_keyframe_evidence(
         assert chunks.status_code == 200, chunks.text
         source_refs = [ref for chunk in chunks.json()["data"] for ref in chunk["source_refs"]]
         assert any(ref.get("time_start_ms") is not None for ref in source_refs)
+
+
+def test_corrupted_media_probe_failure_is_terminal_without_artifacts(
+    tmp_path: Path,
+) -> None:
+    if not shutil.which("ffprobe"):
+        pytest.skip("ffprobe is not available")
+
+    with make_client(
+        tmp_path,
+        extraction_default_profile="media_api",
+        extraction_external_ai_enabled=False,
+        transcription_provider="openai",
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "screen-recordings",
+                "filename": "broken-recording.mp4",
+                "extract": "true",
+                "estimated_media_seconds": 1,
+            },
+            content=b"\x00\x00\x00\x18ftypmp42not-a-real-media-file",
+            headers=auth_headers({"Content-Type": "video/mp4"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "unsupported"
+        assert extracted["parser_profile"] == "media_api"
+        assert extracted["parser_name"] == "media_metadata"
+        assert extracted["safe_error_code"] == "asset_extraction.media_probe_failed"
+        assert extracted["safe_error_message"] == "Media file could not be probed locally"
+        assert extracted["metadata"]["mime_detected"] == "video/mp4"
+        assert extracted["result_document_ids"] == []
+        assert extracted["artifacts"] == []
+        assert extracted["execution"]["retry_after_at"] is None
+        assert extracted["execution"]["retry_disposition"] == "permanent"
+        assert "Traceback" not in fetched.text

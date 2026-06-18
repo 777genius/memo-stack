@@ -1,0 +1,29 @@
+"""Resolve or create canonical memory scope."""
+
+from __future__ import annotations
+
+from infinity_context_core.application.dto import EnsureScopeCommand, ScopeResult
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
+from infinity_context_core.ports.clock import ClockPort
+from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
+
+
+class EnsureScopeUseCase:
+    def __init__(self, *, uow_factory: UnitOfWorkFactoryPort, clock: ClockPort) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    async def execute(self, command: EnsureScopeCommand) -> ScopeResult:
+        async with self._uow_factory() as uow:
+            scope = await uow.scope.ensure_scope(
+                space_slug=command.space_slug,
+                memory_scope_external_ref=command.memory_scope_external_ref,
+                thread_external_ref=command.thread_external_ref,
+                now=self._clock.now(),
+            )
+            await uow.commit()
+        return ScopeResult(
+            space_id=SpaceId(scope.space_id),
+            memory_scope_id=MemoryScopeId(scope.memory_scope_id),
+            thread_id=ThreadId(scope.thread_id) if scope.thread_id else None,
+        )

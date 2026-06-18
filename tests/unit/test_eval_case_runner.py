@@ -1,11 +1,11 @@
-from memo_stack_server.eval_case_runner import (
+from infinity_context_server.eval_case_runner import (
     _MAX_DIAGNOSTIC_MISMATCH_FAILURES,
     _case_failures,
     _required_case_metrics,
     _required_diagnostic_mismatches,
     _required_diagnostics_ok,
 )
-from memo_stack_server.eval_types import EvalCase
+from infinity_context_server.eval_types import EvalCase
 
 
 def test_required_diagnostic_failures_are_bounded_and_redacted() -> None:

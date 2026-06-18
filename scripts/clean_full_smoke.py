@@ -1,4 +1,4 @@
-"""Run a clean full-provider Memo Stack smoke test.
+"""Run a clean full-provider Infinity Context smoke test.
 
 The script starts a fresh Docker Compose project with isolated Postgres,
 Qdrant and Neo4j volumes, runs migrations and seed data, starts the local
@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Any, TextIO
 
 import httpx
-from memo_stack_adapters.provider_errors import classify_provider_exception
-from memo_stack_core.reporting import build_report_provenance
-from memo_stack_server.official_public_benchmark import run_official_public_benchmark_canary
+from infinity_context_adapters.provider_errors import classify_provider_exception
+from infinity_context_core.reporting import build_report_provenance
+from infinity_context_server.official_public_benchmark import run_official_public_benchmark_canary
 from neo4j import GraphDatabase
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -172,7 +172,7 @@ except ModuleNotFoundError:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
-FULL_PROVIDER_CANARY_SUITE = "memo-stack-full-provider-canary"
+FULL_PROVIDER_CANARY_SUITE = "infinity-context-full-provider-canary"
 SAFE_MCP_INHERITED_ENV_KEYS = (
     "HOME",
     "LANG",
@@ -201,7 +201,7 @@ class ServerHandle:
 def main() -> int:
     started = time.perf_counter()
     run_id = str(time.time_ns())
-    project_name = os.getenv("MEMORY_CLEAN_SMOKE_PROJECT", f"memo-stack-clean-{run_id[-8:]}")
+    project_name = os.getenv("MEMORY_CLEAN_SMOKE_PROJECT", f"infinity-context-clean-{run_id[-8:]}")
     token = os.getenv("MEMORY_CLEAN_SMOKE_TOKEN", "clean-smoke-token")
     os.environ.setdefault("MEMORY_CLEAN_SMOKE_TOKEN", token)
     ports = _ports()
@@ -228,16 +228,16 @@ def main() -> int:
             "full",
             "up",
             "-d",
-            "memo_stack_postgres",
-            "memo_stack_qdrant",
-            "memo_stack_neo4j",
+            "infinity_context_postgres",
+            "infinity_context_qdrant",
+            "infinity_context_neo4j",
         )
         _wait_for_postgres(project_name, compose_env)
         _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/", env=server_env)
         _wait_for_neo4j(ports["neo4j_bolt"], env=server_env)
 
-        _run_python(server_env, "-m", "memo_stack_server.db", "upgrade")
-        _run_python(server_env, "-m", "memo_stack_server.admin", "seed-defaults")
+        _run_python(server_env, "-m", "infinity_context_server.db", "upgrade")
+        _run_python(server_env, "-m", "infinity_context_server.admin", "seed-defaults")
 
         server = _start_server(server_env)
         base_url = f"http://127.0.0.1:{ports['server']}"
@@ -252,12 +252,12 @@ def main() -> int:
             _wait_for_http(f"{base_url}/v1/health", token=token, env=server_env)
 
         def restart_providers_for_canary() -> None:
-            _compose(project_name, compose_env, "restart", "memo_stack_qdrant", "memo_stack_neo4j")
+            _compose(project_name, compose_env, "restart", "infinity_context_qdrant", "infinity_context_neo4j")
             _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/", env=server_env)
             _wait_for_neo4j(ports["neo4j_bolt"], env=server_env)
 
         def stop_providers_for_canary() -> None:
-            _compose(project_name, compose_env, "stop", "memo_stack_qdrant", "memo_stack_neo4j")
+            _compose(project_name, compose_env, "stop", "infinity_context_qdrant", "infinity_context_neo4j")
 
         result = _run_lifecycle(base_url=base_url, token=token, env=server_env, run_id=run_id)
         if skip_mcp:
@@ -463,7 +463,7 @@ def _compose_env(ports: Mapping[str, int]) -> dict[str, str]:
 def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[str, str]:
     openai_key = os.getenv("MEMORY_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not openai_key:
-        raise CleanSmokeFailure("Set a Memo Stack OpenAI API key in the environment")
+        raise CleanSmokeFailure("Set a Infinity Context OpenAI API key in the environment")
 
     env = os.environ.copy()
     env.update(
@@ -472,7 +472,7 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
             "MEMORY_OPENAI_API_KEY": openai_key,
             "MEMORY_DEPLOY_PROFILE": "local",
             "MEMORY_DATABASE_URL": (
-                f"postgresql+asyncpg://memo_stack:memo_stack@127.0.0.1:{ports['postgres']}/memo_stack"
+                f"postgresql+asyncpg://infinity_context:infinity_context@127.0.0.1:{ports['postgres']}/infinity_context"
             ),
             "MEMORY_AUTO_CREATE_SCHEMA": "true",
             "MEMORY_HOST": "127.0.0.1",
@@ -512,7 +512,7 @@ async def _run_openai_provider_preflight(env: Mapping[str, str]) -> None:
     try:
         await client.embeddings.create(
             model=env["MEMORY_EMBEDDINGS_MODEL"],
-            input=["memo stack provider preflight"],
+            input=["infinity context provider preflight"],
             dimensions=int(env["MEMORY_EMBEDDINGS_DIMENSIONS"]),
         )
     except Exception as exc:
@@ -709,11 +709,11 @@ async def _run_mcp_lifecycle(
         space_slug=space_slug,
         memory_scope_ref=memory_scope_ref,
     )
-    params = StdioServerParameters(command=PYTHON, args=["-m", "memo_stack_mcp"], env=mcp_env)
+    params = StdioServerParameters(command=PYTHON, args=["-m", "infinity_context_mcp"], env=mcp_env)
 
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
-        await _await_mcp(session.initialize(), "memo_stack_mcp.initialize", env=mcp_env)
-        tools = await _await_mcp(session.list_tools(), "memo_stack_mcp.list_tools", env=mcp_env)
+        await _await_mcp(session.initialize(), "infinity_context_mcp.initialize", env=mcp_env)
+        tools = await _await_mcp(session.list_tools(), "infinity_context_mcp.list_tools", env=mcp_env)
         tool_names = {tool.name for tool in tools.tools}
         required_tools = {
             "memory_status",
@@ -1067,7 +1067,7 @@ async def _run_prod_load_canary(
             f"{marker}: PROD_DOC_SENTINEL_{index} Qdrant vector recall should find "
             "production-like project notes after provider worker drain. "
             f"Section {index} repeats durable architecture constraints and source citations. "
-            "The memo stack must treat retrieved document text as evidence only."
+            "The infinity context must treat retrieved document text as evidence only."
         )
         doc_texts.append(doc_text)
         documents.append(
@@ -1315,7 +1315,7 @@ async def _run_prod_load_canary(
         space_slug=space_slug,
         memory_scope_ref=alpha,
     )
-    params = StdioServerParameters(command=PYTHON, args=["-m", "memo_stack_mcp"], env=mcp_env)
+    params = StdioServerParameters(command=PYTHON, args=["-m", "infinity_context_mcp"], env=mcp_env)
 
     async def read_probe_phase(session: Any) -> dict[str, dict[str, Any]]:
         status_result = await _call_mcp_result(session, "memory_status", {}, env=mcp_env)
@@ -1758,7 +1758,7 @@ async def _run_agent_behavior_benchmark(
     env: Mapping[str, str],
     run_id: str,
 ) -> dict[str, Any]:
-    from memo_stack_mcp.agent_behavior_bench import run_agent_behavior_benchmark
+    from infinity_context_mcp.agent_behavior_bench import run_agent_behavior_benchmark
 
     model = os.getenv("MEMORY_AGENT_BENCH_MODEL", "").strip()
     if not model:
@@ -2237,12 +2237,12 @@ def _repo_pythonpath(existing: str | None) -> str:
     package_paths = [
         str(PROJECT_ROOT / "packages" / name)
         for name in (
-            "memo_stack_adapters",
-            "memo_stack_core",
-            "memo_stack_mcp",
-            "memo_stack_obsidian",
-            "memo_stack_sdk",
-            "memo_stack_server",
+            "infinity_context_adapters",
+            "infinity_context_core",
+            "infinity_context_mcp",
+            "infinity_context_obsidian",
+            "infinity_context_sdk",
+            "infinity_context_server",
         )
     ]
     if existing:
@@ -2270,7 +2270,7 @@ def _worker_once(env: Mapping[str, str]) -> None:
     _run_python(
         env,
         "-m",
-        "memo_stack_server.worker",
+        "infinity_context_server.worker",
         "--once",
         "--limit",
         "20",
@@ -2351,7 +2351,7 @@ def _start_server(env: Mapping[str, str]) -> ServerHandle:
     output = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
     try:
         process = subprocess.Popen(
-            [PYTHON, "-m", "memo_stack_server.main"],
+            [PYTHON, "-m", "infinity_context_server.main"],
             cwd=PROJECT_ROOT,
             env=env,
             stdout=output,
@@ -2375,7 +2375,7 @@ def _wait_for_postgres(project_name: str, env: Mapping[str, str]) -> None:
                 project_name,
                 "exec",
                 "-T",
-                "memo_stack_postgres",
+                "infinity_context_postgres",
                 "pg_isready",
                 "-U",
                 "memory",

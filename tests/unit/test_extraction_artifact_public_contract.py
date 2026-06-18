@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 
 
 def test_extraction_artifact_public_contract_hides_storage_key(tmp_path: Path) -> None:

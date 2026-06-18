@@ -1,12 +1,12 @@
 import asyncio
 from datetime import UTC, datetime
 
-from memo_stack_core.application.dto import SuggestContextLinksCommand
-from memo_stack_core.application.use_cases.context_link_suggestions import (
+from infinity_context_core.application.dto import SuggestContextLinksCommand
+from infinity_context_core.application.use_cases.context_link_suggestions import (
     MAX_CONTEXT_LINK_SUGGESTION_LIMIT,
     SuggestContextLinksUseCase,
 )
-from memo_stack_core.domain.entities import (
+from infinity_context_core.domain.entities import (
     LifecycleStatus,
     MemoryChunk,
     MemoryChunkId,

@@ -1,12 +1,12 @@
 import pytest
-from memo_stack_core.application.sensitive_text import (
+from infinity_context_core.application.sensitive_text import (
     contains_sensitive_text,
     redact_sensitive_text,
 )
-from memo_stack_mcp.domain.models import (
+from infinity_context_mcp.domain.models import (
     contains_sensitive_value,
 )
-from memo_stack_mcp.domain.models import (
+from infinity_context_mcp.domain.models import (
     redact_sensitive_text as redact_mcp_sensitive_text,
 )
 
@@ -35,7 +35,7 @@ def test_shared_sensitive_text_policy_covers_common_credentials(raw: str) -> Non
 
 
 def test_shared_sensitive_text_policy_keeps_non_secret_memory_text() -> None:
-    text = "Remember: Memo Stack uses Graphiti for temporal graph projection."
+    text = "Remember: Infinity Context uses Graphiti for temporal graph projection."
 
     assert contains_sensitive_text(text) is False
     assert contains_sensitive_value(text) is False

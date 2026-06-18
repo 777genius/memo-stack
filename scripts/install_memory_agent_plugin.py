@@ -9,15 +9,15 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memo-stack-agent-plugin"
-GEMINI_HOOK_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memo-stack-agent-plugin-gemini-hooks"
+PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "infinity-context-agent-plugin"
+GEMINI_HOOK_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "infinity-context-agent-plugin-gemini-hooks"
 PLUGIN_KIT = PROJECT_ROOT / "scripts" / "plugin-kit-ai-local"
-INTEGRATION_ID = "memo-stack-agent-plugin"
-GEMINI_HOOK_INTEGRATION_ID = "memo-stack-agent-plugin-gemini-hooks"
+INTEGRATION_ID = "infinity-context-agent-plugin"
+GEMINI_HOOK_INTEGRATION_ID = "infinity-context-agent-plugin-gemini-hooks"
 INSTALL_TARGETS = ("codex", "claude", "opencode", "cursor")
 GEMINI_HOOK_INSTALL_TARGETS = ("gemini",)
 InstallSpec = tuple[str, Path, tuple[str, ...]]
-SOURCE_ROOT_MARKER = ".memo-stack-source-root"
+SOURCE_ROOT_MARKER = ".infinity-context-source-root"
 
 
 def main() -> int:

@@ -4,8 +4,8 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memo_stack_adapters.postgres import build_async_engine, create_schema
-from memo_stack_adapters.postgres.models import (
+from infinity_context_adapters.postgres import build_async_engine, create_schema
+from infinity_context_adapters.postgres.models import (
     MemoryAnchorRow,
     MemoryContextLinkRow,
     MemoryContextLinkSuggestionRow,
@@ -13,7 +13,7 @@ from memo_stack_adapters.postgres.models import (
     MemorySpaceRow,
     MemoryThreadRow,
 )
-from memo_stack_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
+from infinity_context_server.memory_scope_transfer_conflicts import memory_scope_snapshot_conflicts
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

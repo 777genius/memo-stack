@@ -1,23 +1,23 @@
-x-memo-stack-server-common: &memo-stack-server-common
+x-infinity-context-server-common: &infinity-context-server-common
   build:
     context: .
     args:
-      MEMO_STACK_EXTRAS: dev,qdrant,openai,graphiti,mcp,docling
-      MEMO_STACK_PREINSTALL_TORCH_CPU: ${MEMO_STACK_PREINSTALL_TORCH_CPU:-true}
-      MEMO_STACK_TORCH_INDEX_URL: ${MEMO_STACK_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
-  image: memo-stack:local
+      INFINITY_CONTEXT_EXTRAS: dev,qdrant,openai,graphiti,mcp,docling
+      INFINITY_CONTEXT_PREINSTALL_TORCH_CPU: ${INFINITY_CONTEXT_PREINSTALL_TORCH_CPU:-true}
+      INFINITY_CONTEXT_TORCH_INDEX_URL: ${INFINITY_CONTEXT_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+  image: infinity-context:local
   working_dir: /app
   volumes:
     - ./:/app
-    - memo_stack_assets:/var/lib/memo-stack/assets
+    - infinity_context_assets:/var/lib/infinity-context/assets
   depends_on:
-    memo_stack_postgres:
+    infinity_context_postgres:
       condition: service_healthy
 
-x-memo-stack-server-base-env: &memo-stack-server-base-env
+x-infinity-context-server-base-env: &infinity-context-server-base-env
   MEMORY_DEPLOY_PROFILE: local
-  PYTHONPATH: /app/packages/memo_stack_core:/app/packages/memo_stack_server:/app/packages/memo_stack_adapters:/app/packages/memo_stack_sdk:/app/packages/memo_stack_mcp:/app/packages/memo_stack_cli:/app/packages/memo_stack_obsidian
-  MEMORY_DATABASE_URL: postgresql+asyncpg://memo_stack:memo_stack@memo_stack_postgres:5432/memo_stack
+  PYTHONPATH: /app/packages/infinity_context_core:/app/packages/infinity_context_server:/app/packages/infinity_context_adapters:/app/packages/infinity_context_sdk:/app/packages/infinity_context_mcp:/app/packages/infinity_context_cli:/app/packages/infinity_context_obsidian
+  MEMORY_DATABASE_URL: postgresql+asyncpg://infinity_context:infinity_context@infinity_context_postgres:5432/infinity_context
   MEMORY_AUTO_CREATE_SCHEMA: "true"
   MEMORY_HOST: 0.0.0.0
   MEMORY_PORT: "7788"
@@ -27,7 +27,7 @@ x-memo-stack-server-base-env: &memo-stack-server-base-env
   MEMORY_LEGACY_CLIENT_ENABLED: ${MEMORY_LEGACY_CLIENT_ENABLED:-false}
   MEMORY_DEFAULT_SPACE_SLUG: ${MEMORY_DEFAULT_SPACE_SLUG:-default}
   MEMORY_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF: ${MEMORY_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF:-default}
-  MEMORY_ASSET_STORAGE_DIR: /var/lib/memo-stack/assets
+  MEMORY_ASSET_STORAGE_DIR: /var/lib/infinity-context/assets
   MEMORY_EXTRACTION_EXECUTION_LEASE_SECONDS: ${MEMORY_EXTRACTION_EXECUTION_LEASE_SECONDS:-900}
   MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS: ${MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS:-1}
   MEMORY_EXTRACTION_HEARTBEAT_SECONDS: ${MEMORY_EXTRACTION_HEARTBEAT_SECONDS:-15}
@@ -40,9 +40,9 @@ x-memo-stack-server-base-env: &memo-stack-server-base-env
   MEMORY_PROVIDER_CIRCUIT_RESET_AFTER_SECONDS: "60"
   MEMORY_COGNEE_ENABLED: ${MEMORY_COGNEE_ENABLED:-false}
   MEMORY_COGNEE_RUNTIME_CONFIGURED: ${MEMORY_COGNEE_RUNTIME_CONFIGURED:-false}
-  MEMORY_COGNEE_DATASET_PREFIX: ${MEMORY_COGNEE_DATASET_PREFIX:-memo_stack}
+  MEMORY_COGNEE_DATASET_PREFIX: ${MEMORY_COGNEE_DATASET_PREFIX:-infinity_context}
 
-x-memo-stack-server-healthcheck: &memo-stack-server-healthcheck
+x-infinity-context-server-healthcheck: &infinity-context-server-healthcheck
   test:
     [
       "CMD",
@@ -56,29 +56,29 @@ x-memo-stack-server-healthcheck: &memo-stack-server-healthcheck
   start_period: 20s
 
 services:
-  memo_stack_postgres:
+  infinity_context_postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: memo_stack
-      POSTGRES_PASSWORD: memo_stack
-      POSTGRES_DB: memo_stack
+      POSTGRES_USER: infinity_context
+      POSTGRES_PASSWORD: infinity_context
+      POSTGRES_DB: infinity_context
     ports:
       - "${MEMORY_POSTGRES_PORT:-54329}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U memo_stack -d memo_stack"]
+      test: ["CMD-SHELL", "pg_isready -U infinity_context -d infinity_context"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  memo_stack_qdrant:
+  infinity_context_qdrant:
     image: qdrant/qdrant:v1.18.0
     profiles: ["full"]
     ports:
       - "${MEMORY_QDRANT_PORT:-6333}:6333"
     volumes:
-      - memo_stack_qdrant_data:/qdrant/storage
+      - infinity_context_qdrant_data:/qdrant/storage
 
-  memo_stack_neo4j:
+  infinity_context_neo4j:
     image: neo4j:5.26-community
     profiles: ["full"]
     environment:
@@ -87,77 +87,77 @@ services:
       - "${MEMORY_NEO4J_HTTP_PORT:-7474}:7474"
       - "${MEMORY_NEO4J_BOLT_PORT:-7687}:7687"
     volumes:
-      - memo_stack_neo4j_data:/data
+      - infinity_context_neo4j_data:/data
 
-  memo_stack_server:
-    <<: *memo-stack-server-common
+  infinity_context_server:
+    <<: *infinity-context-server-common
     profiles: ["lite"]
-    command: sh -c "pip install -e '.[dev,docling]' && python -m memo_stack_server.db upgrade && python -m memo_stack_server.admin seed-defaults && python -m memo_stack_server.main"
+    command: sh -c "pip install -e '.[dev,docling]' && python -m infinity_context_server.db upgrade && python -m infinity_context_server.admin seed-defaults && python -m infinity_context_server.main"
     environment:
-      <<: *memo-stack-server-base-env
+      <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "false"
-      MEMORY_QDRANT_URL: http://memo_stack_qdrant:6333
-      MEMORY_QDRANT_COLLECTION: memo_stack_chunks_v1
+      MEMORY_QDRANT_URL: http://infinity_context_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: infinity_context_chunks_v1
       MEMORY_EMBEDDINGS_ENABLED: "false"
       MEMORY_EMBEDDINGS_PROVIDER: noop
       MEMORY_GRAPHITI_ENABLED: "false"
-      MEMORY_GRAPHITI_NEO4J_URI: bolt://memo_stack_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
       MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "false"
     ports:
       - "${MEMORY_SERVER_PORT:-7788}:7788"
-    healthcheck: *memo-stack-server-healthcheck
+    healthcheck: *infinity-context-server-healthcheck
 
-  memo_stack_worker:
-    <<: *memo-stack-server-common
+  infinity_context_worker:
+    <<: *infinity-context-server-common
     profiles: ["lite"]
-    command: sh -c "pip install -e '.[dev,docling]' && python -m memo_stack_server.worker --loop --role projection --sleep-seconds 2"
+    command: sh -c "pip install -e '.[dev,docling]' && python -m infinity_context_server.worker --loop --role projection --sleep-seconds 2"
     environment:
-      <<: *memo-stack-server-base-env
+      <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "false"
-      MEMORY_QDRANT_URL: http://memo_stack_qdrant:6333
-      MEMORY_QDRANT_COLLECTION: memo_stack_chunks_v1
+      MEMORY_QDRANT_URL: http://infinity_context_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: infinity_context_chunks_v1
       MEMORY_EMBEDDINGS_ENABLED: "false"
       MEMORY_EMBEDDINGS_PROVIDER: noop
       MEMORY_GRAPHITI_ENABLED: "false"
-      MEMORY_GRAPHITI_NEO4J_URI: bolt://memo_stack_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
       MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "false"
     depends_on:
-      memo_stack_server:
+      infinity_context_server:
         condition: service_healthy
 
-  memo_stack_extraction_worker:
-    <<: *memo-stack-server-common
+  infinity_context_extraction_worker:
+    <<: *infinity-context-server-common
     profiles: ["lite"]
-    command: sh -c "pip install -e '.[dev,docling]' && python -m memo_stack_server.worker --loop --role extraction --limit 2 --sleep-seconds 2"
+    command: sh -c "pip install -e '.[dev,docling]' && python -m infinity_context_server.worker --loop --role extraction --limit 2 --sleep-seconds 2"
     environment:
-      <<: *memo-stack-server-base-env
+      <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "false"
-      MEMORY_QDRANT_URL: http://memo_stack_qdrant:6333
-      MEMORY_QDRANT_COLLECTION: memo_stack_chunks_v1
+      MEMORY_QDRANT_URL: http://infinity_context_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: infinity_context_chunks_v1
       MEMORY_EMBEDDINGS_ENABLED: "false"
       MEMORY_EMBEDDINGS_PROVIDER: noop
       MEMORY_GRAPHITI_ENABLED: "false"
-      MEMORY_GRAPHITI_NEO4J_URI: bolt://memo_stack_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
       MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "false"
     depends_on:
-      memo_stack_server:
+      infinity_context_server:
         condition: service_healthy
 
-  memo_stack_server_full:
-    <<: *memo-stack-server-common
+  infinity_context_server_full:
+    <<: *infinity-context-server-common
     profiles: ["full"]
-    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m memo_stack_server.db upgrade && python -m memo_stack_server.admin seed-defaults && python -m memo_stack_server.main"
+    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m infinity_context_server.db upgrade && python -m infinity_context_server.admin seed-defaults && python -m infinity_context_server.main"
     environment:
-      <<: *memo-stack-server-base-env
+      <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "true"
-      MEMORY_QDRANT_URL: http://memo_stack_qdrant:6333
-      MEMORY_QDRANT_COLLECTION: ${MEMORY_QDRANT_COLLECTION:-memo_stack_chunks_v1}
+      MEMORY_QDRANT_URL: http://infinity_context_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: ${MEMORY_QDRANT_COLLECTION:-infinity_context_chunks_v1}
       MEMORY_EMBEDDINGS_ENABLED: "true"
       MEMORY_EMBEDDINGS_PROVIDER: openai
       MEMORY_EMBEDDINGS_MODEL: ${MEMORY_EMBEDDINGS_MODEL:-text-embedding-3-small}
@@ -166,30 +166,30 @@ services:
       MEMORY_OPENAI_API_KEY: ${MEMORY_OPENAI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MEMORY_GRAPHITI_ENABLED: "true"
-      MEMORY_GRAPHITI_NEO4J_URI: bolt://memo_stack_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
       MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "true"
     ports:
       - "${MEMORY_SERVER_PORT:-7788}:7788"
     depends_on:
-      memo_stack_postgres:
+      infinity_context_postgres:
         condition: service_healthy
-      memo_stack_qdrant:
+      infinity_context_qdrant:
         condition: service_started
-      memo_stack_neo4j:
+      infinity_context_neo4j:
         condition: service_started
-    healthcheck: *memo-stack-server-healthcheck
+    healthcheck: *infinity-context-server-healthcheck
 
-  memo_stack_worker_full:
-    <<: *memo-stack-server-common
+  infinity_context_worker_full:
+    <<: *infinity-context-server-common
     profiles: ["full"]
-    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m memo_stack_server.worker --loop --role projection --sleep-seconds 2"
+    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m infinity_context_server.worker --loop --role projection --sleep-seconds 2"
     environment:
-      <<: *memo-stack-server-base-env
+      <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "true"
-      MEMORY_QDRANT_URL: http://memo_stack_qdrant:6333
-      MEMORY_QDRANT_COLLECTION: ${MEMORY_QDRANT_COLLECTION:-memo_stack_chunks_v1}
+      MEMORY_QDRANT_URL: http://infinity_context_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: ${MEMORY_QDRANT_COLLECTION:-infinity_context_chunks_v1}
       MEMORY_EMBEDDINGS_ENABLED: "true"
       MEMORY_EMBEDDINGS_PROVIDER: openai
       MEMORY_EMBEDDINGS_MODEL: ${MEMORY_EMBEDDINGS_MODEL:-text-embedding-3-small}
@@ -198,23 +198,23 @@ services:
       MEMORY_OPENAI_API_KEY: ${MEMORY_OPENAI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MEMORY_GRAPHITI_ENABLED: "true"
-      MEMORY_GRAPHITI_NEO4J_URI: bolt://memo_stack_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
       MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "true"
     depends_on:
-      memo_stack_server_full:
+      infinity_context_server_full:
         condition: service_healthy
 
-  memo_stack_extraction_worker_full:
-    <<: *memo-stack-server-common
+  infinity_context_extraction_worker_full:
+    <<: *infinity-context-server-common
     profiles: ["full"]
-    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m memo_stack_server.worker --loop --role extraction --limit 2 --sleep-seconds 2"
+    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m infinity_context_server.worker --loop --role extraction --limit 2 --sleep-seconds 2"
     environment:
-      <<: *memo-stack-server-base-env
+      <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "true"
-      MEMORY_QDRANT_URL: http://memo_stack_qdrant:6333
-      MEMORY_QDRANT_COLLECTION: ${MEMORY_QDRANT_COLLECTION:-memo_stack_chunks_v1}
+      MEMORY_QDRANT_URL: http://infinity_context_qdrant:6333
+      MEMORY_QDRANT_COLLECTION: ${MEMORY_QDRANT_COLLECTION:-infinity_context_chunks_v1}
       MEMORY_EMBEDDINGS_ENABLED: "true"
       MEMORY_EMBEDDINGS_PROVIDER: openai
       MEMORY_EMBEDDINGS_MODEL: ${MEMORY_EMBEDDINGS_MODEL:-text-embedding-3-small}
@@ -223,15 +223,15 @@ services:
       MEMORY_OPENAI_API_KEY: ${MEMORY_OPENAI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MEMORY_GRAPHITI_ENABLED: "true"
-      MEMORY_GRAPHITI_NEO4J_URI: bolt://memo_stack_neo4j:7687
+      MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
       MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "true"
     depends_on:
-      memo_stack_server_full:
+      infinity_context_server_full:
         condition: service_healthy
 
 volumes:
-  memo_stack_assets:
-  memo_stack_qdrant_data:
-  memo_stack_neo4j_data:
+  infinity_context_assets:
+  infinity_context_qdrant_data:
+  infinity_context_neo4j_data:

@@ -5,15 +5,15 @@ import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'marionette_e2e_test_support.dart';
 
 void main() {
-  group('MemoStackMarionetteE2eCommandHandler', () {
+  group('InfinityContextMarionetteE2eCommandHandler', () {
     late FakeMarionetteChatRepository repo;
     late ChatStore store;
-    late MemoStackMarionetteE2eCommandHandler handler;
+    late InfinityContextMarionetteE2eCommandHandler handler;
 
     setUp(() {
       repo = FakeMarionetteChatRepository();
       store = ChatStore(repo, null);
-      handler = MemoStackMarionetteE2eCommandHandler(() => store);
+      handler = InfinityContextMarionetteE2eCommandHandler(() => store);
     });
 
     tearDown(() async {

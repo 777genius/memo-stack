@@ -6,16 +6,16 @@ Date: 2026-06-07.
 
 ## Summary
 
-The Obsidian Connector should make Memo Stack usable as an editable Obsidian-facing
+The Obsidian Connector should make Infinity Context usable as an editable Obsidian-facing
 memory surface without letting Obsidian become the canonical memory database.
 
 Recommended shape:
 
 ```text
 Obsidian vault
-  <-> memo_stack_obsidian daemon / CLI
-  <-> memo_stack_sdk
-  <-> memo_stack_server HTTP API
+  <-> infinity_context_obsidian daemon / CLI
+  <-> infinity_context_sdk
+  <-> infinity_context_server HTTP API
   <-> Postgres canonical lifecycle
   -> Qdrant / Graphiti derived indexes through existing outbox workers
 ```
@@ -38,23 +38,23 @@ Community Plugin review.
 First user flow:
 
 ```bash
-memo-stack up
-memo-stack-obsidian connect --vault ~/Notes --space default --memory_scope default
-memo-stack-obsidian preview --vault ~/Notes --space default --memory_scope default
-memo-stack-obsidian sync --vault ~/Notes --space default --memory_scope default --apply-import
-memo-stack-obsidian watch --vault ~/Notes --space default --memory_scope default --apply-import
+infinity-context up
+infinity-context-obsidian connect --vault ~/Notes --space default --memory_scope default
+infinity-context-obsidian preview --vault ~/Notes --space default --memory_scope default
+infinity-context-obsidian sync --vault ~/Notes --space default --memory_scope default --apply-import
+infinity-context-obsidian watch --vault ~/Notes --space default --memory_scope default --apply-import
 ```
 
 Later plugin flow:
 
 ```text
-Install Memo Stack plugin -> connect local daemon or API -> choose memory scope -> start sync
+Install Infinity Context plugin -> connect local daemon or API -> choose memory scope -> start sync
 ```
 
 MVP plugin flow:
 
 ```text
-memo-stack-obsidian install-plugin --vault ~/Notes --enable --space default --memory_scope default
+infinity-context-obsidian install-plugin --vault ~/Notes --enable --space default --memory_scope default
 -> open Obsidian -> Connect this vault -> Preview sync -> Sync now
 ```
 
@@ -64,18 +64,18 @@ Plugin value:
 - sync status;
 - conflict review;
 - `Sync now`;
-- `Open in Memo Stack`;
+- `Open in Infinity Context`;
 - safe edit affordances.
 
 Thin plugin boundary:
 
-- the plugin can run `memo-stack-obsidian connect`, `preview` and `sync`;
+- the plugin can run `infinity-context-obsidian connect`, `preview` and `sync`;
 - the plugin can call `/v1/health`;
 - the plugin must not parse managed notes or implement merge policy;
 - service token is passed to the CLI through environment variables, not command
   arguments.
 - `install-plugin` copies the bundled plugin assets into
-  `.obsidian/plugins/memo-stack`, can add the plugin id to
+  `.obsidian/plugins/infinity-context`, can add the plugin id to
   `.obsidian/community-plugins.json`, and can prefill plugin settings.
 
 Daemon value:
@@ -106,13 +106,13 @@ Obsidian Sync Context
   SyncChange
 ```
 
-It is not part of `memo_stack_core`. It is an outer application over the public
-Memo Stack API/SDK.
+It is not part of `infinity_context_core`. It is an outer application over the public
+Infinity Context API/SDK.
 
 Canonical rule:
 
 ```text
-Memo Stack Postgres remains source of truth.
+Infinity Context Postgres remains source of truth.
 Obsidian files are editable projections with optimistic write-back.
 ```
 
@@ -121,19 +121,19 @@ Obsidian files are editable projections with optimistic write-back.
 Dependency direction:
 
 ```text
-memo_stack_obsidian.domain
+infinity_context_obsidian.domain
   stdlib only
 
-memo_stack_obsidian.application
+infinity_context_obsidian.application
   domain + ports only
 
-memo_stack_obsidian.ports
+infinity_context_obsidian.ports
   Protocols over vault, state store and memory gateway
 
-memo_stack_obsidian.adapters
-  filesystem, sqlite, memo_stack_sdk
+infinity_context_obsidian.adapters
+  filesystem, sqlite, infinity_context_sdk
 
-memo_stack_obsidian.cli
+infinity_context_obsidian.cli
   composition root only
 ```
 
@@ -176,7 +176,7 @@ conflict  connector could not safely apply a change
 Inbox notes:
 
 ```text
-Memo Stack/inbox/*.md
+Infinity Context/inbox/*.md
 ```
 
 Inbox notes are free-form human input. They must not update canonical facts
@@ -186,11 +186,11 @@ spam duplicate suggestions for unchanged notes.
 
 Direct write is allowed only when:
 
-- the note has a valid `memo_stack_id`;
+- the note has a valid `infinity_context_id`;
 - the note kind is `fact`;
 - the note schema is supported;
 - the managed text block parses cleanly;
-- the backend fact version equals the note `memo_stack_version`;
+- the backend fact version equals the note `infinity_context_version`;
 - the connector-origin hash does not indicate its own last write;
 - source refs can be attached.
 
@@ -210,8 +210,8 @@ canonical or conflict before fresh backend projections are written.
 Conflict artifacts:
 
 ```text
-Memo Stack/conflicts/import-<fact-id>.md
-Memo Stack/conflicts/export-<fact-id>.md
+Infinity Context/conflicts/import-<fact-id>.md
+Infinity Context/conflicts/export-<fact-id>.md
 ```
 
 The connector writes conflict artifacts for stale versions, invalid managed
@@ -240,10 +240,10 @@ Must handle:
 - corrupted managed block markers;
 - user edits generated metadata instead of text block;
 - concurrent edit on two devices;
-- stale `memo_stack_version`;
+- stale `infinity_context_version`;
 - deleted generated note;
 - renamed generated note;
-- duplicate `memo_stack_id` across files;
+- duplicate `infinity_context_id` across files;
 - Obsidian Sync / LiveSync conflict merge;
 - daemon crash between API update and file rewrite;
 - backend unavailable;
@@ -281,8 +281,8 @@ Allowed in MVP:
 - side-effect-free sync preview;
 - one-shot import-then-export sync;
 - desktop Obsidian plugin shell over the local connector CLI;
-- fact export to `Memo Stack/generated/facts/*.md`;
-- inbox import from `Memo Stack/inbox/*.md` to pending suggestions;
+- fact export to `Infinity Context/generated/facts/*.md`;
+- inbox import from `Infinity Context/inbox/*.md` to pending suggestions;
 - managed text block parsing;
 - direct update dry-run and apply;
 - Obsidian-visible conflict artifacts;
@@ -328,9 +328,9 @@ Current Obsidian constraints:
 Target user flow:
 
 ```text
-Install Memo Stack once
+Install Infinity Context once
 Open Obsidian
-Enable Memo Stack plugin
+Enable Infinity Context plugin
 Click Connect
 Done
 ```
@@ -338,7 +338,7 @@ Done
 Target agent flow:
 
 ```text
-User: connect this vault to Memo Stack
+User: connect this vault to Infinity Context
 Agent calls memory_obsidian_status
 Agent calls memory_obsidian_setup in dry-run mode
 Agent shows planned folder/settings writes
@@ -363,7 +363,7 @@ plugin are installed.
      open conflicts, choose space/memory scope/root folder.
    - MCP owns agent UX: `memory_obsidian_status`, `memory_obsidian_setup`,
      `memory_obsidian_preview`, `memory_obsidian_sync`.
-   - Sync remains in `memo_stack_obsidian` use cases. Plugin and MCP call the
+   - Sync remains in `infinity_context_obsidian` use cases. Plugin and MCP call the
      same application layer, not separate merge code.
    - No always-on process by default. Commands run one-shot and exit.
    - Optional watcher is explicit: user toggles "watch this vault" or runs a
@@ -413,23 +413,23 @@ plugin are installed.
 
 #### First Run From Obsidian
 
-1. User installs/enables Memo Stack plugin.
+1. User installs/enables Infinity Context plugin.
 2. Plugin loads settings with defaults:
    - API URL: `http://127.0.0.1:7788`
    - space: `default`
    - memory scope: `default`
-   - root folder: `Memo Stack`
+   - root folder: `Infinity Context`
    - sync mode: preview-first
 3. Plugin runs a health check.
 4. If backend is unavailable:
-   - show "Memo Stack is not running";
-   - offer "Start local stack" only if `memo-stack` CLI is available;
+   - show "Infinity Context is not running";
+   - offer "Start local stack" only if `infinity-context` CLI is available;
    - never auto-start Docker/server on plugin load.
 5. User clicks "Connect".
 6. Plugin runs connector setup dry-run.
 7. User sees exact folders/settings that will be created.
 8. User clicks "Apply".
-9. Plugin writes setup files and opens `Memo Stack/README.md`.
+9. Plugin writes setup files and opens `Infinity Context/README.md`.
 10. Plugin runs `preview` and shows:
     - facts to export;
     - inbox notes to suggest;
@@ -458,7 +458,7 @@ This prevents accidental filesystem writes in generic agent sessions.
 Current MVP layout:
 
 ```text
-Memo Stack/
+Infinity Context/
   generated/facts/*.md
   inbox/*.md
   conflicts/*.md
@@ -482,9 +482,9 @@ Recommended V2 layout:
 Example:
 
 ```text
-Memo Stack/
+Infinity Context/
   spaces/
-    memo-stack/
+    infinity-context/
       memory scopes/
         belief/
           generated/facts/fact_123.md
@@ -513,7 +513,7 @@ User controls where knowledge goes through three settings:
 
 ```text
 vault path      - which Obsidian vault
-root folder     - where inside the vault, default Memo Stack
+root folder     - where inside the vault, default Infinity Context
 space/memory scope   - which project and person/context namespace
 ```
 
@@ -521,7 +521,7 @@ Recommended UI labels:
 
 ```text
 Vault: current vault
-Folder: Memo Stack
+Folder: Infinity Context
 Project: default
 Memory Scope: default
 ```
@@ -567,7 +567,7 @@ memory_obsidian_sync
 - skips export on import conflict.
 
 MCP tools must not spawn arbitrary shell commands. They should call
-`memo_stack_obsidian` application use cases directly or a narrow adapter with a
+`infinity_context_obsidian` application use cases directly or a narrow adapter with a
 fixed command allowlist.
 
 ### Backend Start Policy
@@ -577,9 +577,9 @@ Do not start background services automatically on plugin load or MCP status.
 Allowed start paths:
 
 - user clicks "Start local stack" in plugin;
-- user asks agent to start Memo Stack and MCP calls a future explicit local-stack
+- user asks agent to start Infinity Context and MCP calls a future explicit local-stack
   tool;
-- user runs `memo-stack up`.
+- user runs `infinity-context up`.
 
 Guardrails:
 
@@ -615,9 +615,9 @@ Start local stack
 Add protocol handler:
 
 ```text
-obsidian://memo-stack?action=connect
-obsidian://memo-stack?action=preview
-obsidian://memo-stack?action=open-conflicts
+obsidian://infinity-context?action=connect
+obsidian://infinity-context?action=preview
+obsidian://infinity-context?action=open-conflicts
 ```
 
 Use protocol links only for deep-linking into Obsidian. Do not use them for
@@ -627,7 +627,7 @@ background automation because they can focus the app.
 
 Onboarding:
 
-- plugin enabled before Memo Stack backend exists;
+- plugin enabled before Infinity Context backend exists;
 - CLI package missing;
 - backend offline;
 - wrong token;
@@ -651,7 +651,7 @@ Sync:
 - dry-run setup has no side effects;
 - local generated note deleted;
 - generated note renamed;
-- duplicate `memo_stack_id`;
+- duplicate `infinity_context_id`;
 - stale backend version;
 - corrupted frontmatter or managed block;
 - Obsidian Sync creates conflict copies;
@@ -699,7 +699,7 @@ Security:
    - Add status/control panel. Done.
    - Add scoped README/Inbox/Conflicts open actions. Done.
    - Add panel setup checklist and busy-state disabled buttons. Done.
-   - Add explicit `memo-stack init` local config action. Done.
+   - Add explicit `infinity-context init` local config action. Done.
    - Add setup dry-run/apply flow. Done via `memory_obsidian_prepare`, plugin
      Prepare action and real Obsidian prepare E2E.
    - Keep real Obsidian E2E opt-in.
@@ -718,14 +718,14 @@ Security:
    🎯 7   🛡️ 7   🧠 7
    Approx changes: `250-500` lines.
 
-   - Plugin can run `memo-stack status`, `memo-stack doctor` and explicit
-     `memo-stack up --lite`. Done.
+   - Plugin can run `infinity-context status`, `infinity-context doctor` and explicit
+     `infinity-context up --lite`. Done.
    - Never auto-start on load. Done.
    - Add cooldown and clear user notice. Done.
 
 ### Completion Gates
 
-- `memo-stack-obsidian doctor --json` proves a connected vault.
+- `infinity-context-obsidian doctor --json` proves a connected vault.
 - MCP `memory_obsidian_status` works with temp vault and disabled-gate cases.
 - `scripts/obsidian_mcp_smoke.py` proves real stdio MCP Obsidian setup,
   plugin install/enable and sync gate behavior without opening Obsidian.

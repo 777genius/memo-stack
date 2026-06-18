@@ -4,24 +4,24 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from memo_stack_adapters.extraction import content as content_module
-from memo_stack_adapters.extraction import transcription_engine as transcription_engine_module
-from memo_stack_adapters.extraction.content import (
+from infinity_context_adapters.extraction import content as content_module
+from infinity_context_adapters.extraction import transcription_engine as transcription_engine_module
+from infinity_context_adapters.extraction.content import (
     MediaMetadataExtractionEngine,
     StandardExtractionRouter,
 )
-from memo_stack_adapters.extraction.media_tools import (
+from infinity_context_adapters.extraction.media_tools import (
     MediaProbeResult,
     MediaStreamSummary,
     VideoKeyframe,
     _selected_keyframe_windows_ms,
 )
-from memo_stack_adapters.extraction.transcription.openai_adapter import (
+from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OpenAISpeechTranscriptionAdapter,
 )
-from memo_stack_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
-from memo_stack_adapters.extraction.video_evidence import VideoFrameEvidence
-from memo_stack_core.ports.extraction import (
+from infinity_context_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
+from infinity_context_adapters.extraction.video_evidence import VideoFrameEvidence
+from infinity_context_core.ports.extraction import (
     ExtractedElement,
     ExtractionArtifactCandidate,
     ExtractionLimits,
@@ -304,7 +304,7 @@ def _fake_video_frame_evidence(
             content_type="application/json",
             content=(
                 b'{"frames":[{"ocr_status":"extracted","time_start_ms":1250}],'
-                b'"schema_name":"memo_stack.video_frame_timeline"}'
+                b'"schema_name":"infinity_context.video_frame_timeline"}'
             ),
             metadata={
                 "parser": parser_name,

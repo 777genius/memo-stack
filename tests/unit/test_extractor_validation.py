@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
-from memo_stack_core.application.extractor import validate_extractor_candidates
-from memo_stack_core.domain.entities import Confidence, MemoryKind, SourceRef
-from memo_stack_core.ports.auto_memory import CandidateOperation, MemoryCandidate
+from infinity_context_core.application.extractor import validate_extractor_candidates
+from infinity_context_core.domain.entities import Confidence, MemoryKind, SourceRef
+from infinity_context_core.ports.auto_memory import CandidateOperation, MemoryCandidate
 
 
 def test_extractor_validation_rejects_invalid_validity_window() -> None:

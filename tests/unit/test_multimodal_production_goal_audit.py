@@ -42,7 +42,7 @@ def test_multimodal_production_goal_audit_accepts_complete_proof(tmp_path: Path)
     assert result.ok is True
     assert result.failures == ()
     assert all(result.checks.values())
-    assert payload["suite"] == "memo-stack-multimodal-production-goal-audit"
+    assert payload["suite"] == "infinity-context-multimodal-production-goal-audit"
     assert payload["secrets_redacted"] is True
 
 
@@ -58,7 +58,7 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     docker_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-multimodal-docker-live-proof",
+                "suite": "infinity-context-multimodal-docker-live-proof",
                 "ok": False,
                 "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
                 "components": {
@@ -74,7 +74,7 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     provider_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-multimodal-live-provider-canary",
+                "suite": "infinity-context-multimodal-live-provider-canary",
                 "ok": False,
                 "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
                 "provider_key_present": False,
@@ -107,6 +107,8 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     assert result.checks["live_provider_key_present"] is False
     assert any("Docker multimodal live proof" in failure for failure in result.failures)
     assert any("Live provider canary" in failure for failure in result.failures)
+    assert any("docker_daemon_timeout" in failure for failure in result.failures)
+    assert any("provider_credential_missing" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_frontend_runtime_log_failure(
@@ -297,9 +299,13 @@ def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
     tmp_path: Path,
 ) -> None:
     module = _load_module()
-    core = tmp_path / "packages/memo_stack_core/memo_stack_core"
+    core = tmp_path / "packages/infinity_context_core/infinity_context_core"
     core.mkdir(parents=True)
     (core / "bad.py").write_text("from fastapi import FastAPI\n", encoding="utf-8")
+    (core / "adapter_bad.py").write_text(
+        "from infinity_context_adapters.noop import adapters\n",
+        encoding="utf-8",
+    )
     frontend_report = tmp_path / "frontend.json"
     docker_report = tmp_path / "docker.json"
     provider_report = tmp_path / "provider.json"
@@ -321,26 +327,29 @@ def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
     assert result.ok is False
     assert result.checks["core_boundary_clean"] is False
     assert result.checks["proof_reports_do_not_leak_secrets"] is False
-    assert any("memo_stack_core imports forbidden" in failure for failure in result.failures)
+    assert any(
+        "infinity_context_core imports forbidden" in failure
+        for failure in result.failures
+    )
     assert any("secret-like value" in failure for failure in result.failures)
 
 
 def test_makefile_exposes_multimodal_production_goal_audit_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-multimodal-production-goal-audit" in makefile
+    assert ".PHONY: infinity-context-multimodal-production-goal-audit" in makefile
     assert "$(PYTHON) scripts/multimodal_production_goal_audit.py" in makefile
 
 
 def _write_core(root: Path) -> None:
-    core = root / "packages/memo_stack_core/memo_stack_core"
+    core = root / "packages/infinity_context_core/infinity_context_core"
     core.mkdir(parents=True)
     (core / "__init__.py").write_text("# clean core\n", encoding="utf-8")
 
 
 def _frontend_report() -> dict[str, object]:
     return {
-        "suite": "memo-stack-frontend-marionette-local-e2e",
+        "suite": "infinity-context-frontend-marionette-local-e2e",
         "ok": True,
         "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "components": {
@@ -365,7 +374,7 @@ def _frontend_report() -> dict[str, object]:
 
 def _docker_report() -> dict[str, object]:
     return {
-        "suite": "memo-stack-multimodal-docker-live-proof",
+        "suite": "infinity-context-multimodal-docker-live-proof",
         "ok": True,
         "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "components": {
@@ -425,7 +434,7 @@ def _docker_report() -> dict[str, object]:
 
 def _provider_report() -> dict[str, object]:
     return {
-        "suite": "memo-stack-multimodal-live-provider-canary",
+        "suite": "infinity-context-multimodal-live-provider-canary",
         "ok": True,
         "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "provider_key_present": True,

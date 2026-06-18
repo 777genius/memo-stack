@@ -3,16 +3,16 @@ import json
 from dataclasses import replace
 from typing import Any
 
-from memo_stack_adapters.extraction.openai_vision import OpenAIImageVisionAdapter
-from memo_stack_adapters.extraction.transcription.openai_adapter import (
+from infinity_context_adapters.extraction.openai_vision import OpenAIImageVisionAdapter
+from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
     OpenAISpeechTranscriptionAdapter,
 )
-from memo_stack_core.application.use_cases.asset_extraction_support import (
+from infinity_context_core.application.use_cases.asset_extraction_support import (
     is_permanent_error_code,
 )
-from memo_stack_core.ports.transcription import SpeechTranscriptionRequest
-from memo_stack_core.ports.vision import ImageVisionRequest
+from infinity_context_core.ports.transcription import SpeechTranscriptionRequest
+from infinity_context_core.ports.vision import ImageVisionRequest
 
 
 class _ProviderError(Exception):

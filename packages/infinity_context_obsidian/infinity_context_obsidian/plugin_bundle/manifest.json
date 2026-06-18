@@ -1,0 +1,10 @@
+{
+  "id": "infinity-context",
+  "name": "Infinity Context",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Thin Obsidian control surface for the local Infinity Context connector.",
+  "author": "Infinity Context",
+  "authorUrl": "https://github.com/belief-ai/infinity-context",
+  "isDesktopOnly": true
+}

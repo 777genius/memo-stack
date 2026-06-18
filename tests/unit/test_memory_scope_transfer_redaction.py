@@ -4,19 +4,19 @@ import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from memo_stack_server.memory_scope_transfer_assets import asset_from_json, asset_to_json
-from memo_stack_server.memory_scope_transfer_context import context_link_suggestion_from_json
-from memo_stack_server.memory_scope_transfer_extractions import (
+from infinity_context_server.memory_scope_transfer_assets import asset_from_json, asset_to_json
+from infinity_context_server.memory_scope_transfer_context import context_link_suggestion_from_json
+from infinity_context_server.memory_scope_transfer_extractions import (
     extraction_artifact_from_json,
     extraction_job_from_json,
     extraction_job_to_json,
 )
-from memo_stack_server.memory_scope_transfer_records import (
+from infinity_context_server.memory_scope_transfer_records import (
     anchor_from_json,
     capture_from_json,
     capture_to_json,
 )
-from memo_stack_server.memory_scope_transfer_relations import relation_from_json
+from infinity_context_server.memory_scope_transfer_relations import relation_from_json
 
 
 def test_snapshot_asset_import_redacts_metadata() -> None:

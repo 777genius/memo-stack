@@ -11,7 +11,7 @@ class AutoUpdaterService {
   final Dio _dio;
 
   static const String _owner = '777genius';
-  static const String _repo = 'memo-stack';
+  static const String _repo = 'infinity-context';
   static const String _apiUrl =
       'https://api.github.com/repos/$_owner/$_repo/releases/latest';
 

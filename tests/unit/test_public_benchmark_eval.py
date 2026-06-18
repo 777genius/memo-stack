@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memo_stack_server.public_benchmark import (
+from infinity_context_server.public_benchmark import (
     load_public_benchmark_case_count,
     run_public_memory_benchmark,
 )
@@ -67,7 +67,7 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     }
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
     assert all(case["status"] == "ok" for case in result["cases"])
-    assert result["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
+    assert result["provenance"]["generated_by"] == "infinity_context_server.public_benchmark"
     assert result["provenance"]["suite"] == "public-memory-benchmark"
     assert result["provenance"]["run_id"] == result["dataset_hash"][:16]
     assert result["provenance"]["git"]["dirty"] in {True, False}
@@ -79,7 +79,7 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert str(tmp_path) not in report.read_text(encoding="utf-8")
     assert written["dataset_hash"] == result["dataset_hash"]
     assert written["dataset_sources"] == result["dataset_sources"]
-    assert written["provenance"]["generated_by"] == "memo_stack_server.public_benchmark"
+    assert written["provenance"]["generated_by"] == "infinity_context_server.public_benchmark"
 
 
 def test_public_memory_benchmark_counts_normalized_cases_without_running(

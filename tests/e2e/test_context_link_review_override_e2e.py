@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_server_harness import run_infinity_context_server
 
 
 def test_context_link_review_override_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="context-link-override.db",
             extra_env={"MEMORY_CAPTURE_MODE": "suggest"},

@@ -5,12 +5,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from memo_stack_obsidian import cli, doctor
-from memo_stack_obsidian.conflicts import WriteConflictArtifactsUseCase
-from memo_stack_obsidian.note_format import FACTS_DIR, TEXT_END, TEXT_START
-from memo_stack_obsidian.setup import SETUP_README, SetupVaultUseCase
-from memo_stack_obsidian.state import SqliteSyncStateStore
-from memo_stack_obsidian.sync import (
+from infinity_context_obsidian import cli, doctor
+from infinity_context_obsidian.conflicts import WriteConflictArtifactsUseCase
+from infinity_context_obsidian.note_format import FACTS_DIR, TEXT_END, TEXT_START
+from infinity_context_obsidian.setup import SETUP_README, SetupVaultUseCase
+from infinity_context_obsidian.state import SqliteSyncStateStore
+from infinity_context_obsidian.sync import (
     INBOX_DIR,
     ExportFactsToVaultUseCase,
     ImportInboxSuggestionsUseCase,
@@ -18,7 +18,7 @@ from memo_stack_obsidian.sync import (
     PreviewVaultSyncUseCase,
     SyncVaultOnceUseCase,
 )
-from memo_stack_obsidian.vault import FilesystemVault
+from infinity_context_obsidian.vault import FilesystemVault
 
 
 def test_cli_connect_preview_export_import_dry_run_smoke(
@@ -71,7 +71,7 @@ def test_cli_install_plugin_copies_bundle_into_vault(
 ) -> None:
     assert cli.main(["install-plugin", "--vault", str(tmp_path), "--json"]) == 0
     payload = read_json(capsys)
-    plugin_dir = tmp_path / ".obsidian/plugins/memo-stack"
+    plugin_dir = tmp_path / ".obsidian/plugins/infinity-context"
 
     assert payload["ok"] is True
     assert payload["target_dir"] == str(plugin_dir.resolve())
@@ -80,7 +80,7 @@ def test_cli_install_plugin_copies_bundle_into_vault(
     assert (plugin_dir / "styles.css").exists()
     settings = json.loads((plugin_dir / "data.json").read_text(encoding="utf-8"))
     assert settings["vaultPathOverride"] == str(tmp_path.resolve())
-    assert settings["localCliPath"] == "memo-stack"
+    assert settings["localCliPath"] == "infinity-context"
 
     assert cli.main(["install-plugin", "--vault", str(tmp_path), "--json"]) == 0
     second_payload = read_json(capsys)
@@ -106,26 +106,26 @@ def test_cli_install_plugin_can_enable_and_configure_plugin(
                 "backend",
                 "--apply-import",
                 "--local-cli-path",
-                "/usr/local/bin/memo-stack",
+                "/usr/local/bin/infinity-context",
                 "--json",
             ]
         )
         == 0
     )
     payload = read_json(capsys)
-    plugin_dir = tmp_path / ".obsidian/plugins/memo-stack"
+    plugin_dir = tmp_path / ".obsidian/plugins/infinity-context"
     enabled = json.loads(
         (tmp_path / ".obsidian/community-plugins.json").read_text(encoding="utf-8")
     )
     settings = json.loads((plugin_dir / "data.json").read_text(encoding="utf-8"))
 
     assert payload["enabled"] is True
-    assert enabled == ["memo-stack"]
+    assert enabled == ["infinity-context"]
     assert settings["apiUrl"] == "http://127.0.0.1:17788"
     assert settings["spaceSlug"] == "team"
     assert settings["memoryScopeExternalRef"] == "backend"
     assert settings["applyImportOnSync"] is True
-    assert settings["localCliPath"] == "/usr/local/bin/memo-stack"
+    assert settings["localCliPath"] == "/usr/local/bin/infinity-context"
 
 
 def test_cli_install_plugin_supports_custom_obsidian_config_dir(
@@ -158,16 +158,16 @@ def test_cli_install_plugin_supports_custom_obsidian_config_dir(
         == 0
     )
     payload = read_json(capsys)
-    plugin_dir = tmp_path / ".obsidian-dev/plugins/memo-stack"
+    plugin_dir = tmp_path / ".obsidian-dev/plugins/infinity-context"
     enabled = json.loads(
         (tmp_path / ".obsidian-dev/community-plugins.json").read_text(encoding="utf-8")
     )
 
     assert payload["target_dir"] == str(plugin_dir.resolve())
     assert payload["obsidian_config_dir"] == ".obsidian-dev"
-    assert enabled == ["memo-stack"]
+    assert enabled == ["infinity-context"]
     assert (plugin_dir / "main.js").exists()
-    assert not (tmp_path / ".obsidian/plugins/memo-stack").exists()
+    assert not (tmp_path / ".obsidian/plugins/infinity-context").exists()
 
     monkeypatch.setattr(doctor.httpx, "get", fake_health_get)
 
@@ -345,7 +345,7 @@ def test_cli_watch_runs_one_loop_without_opening_obsidian(
 
     assert result == 130
     assert sleeps == [0.5]
-    assert "memo-stack-obsidian: watching vault." in captured.out
+    assert "infinity-context-obsidian: watching vault." in captured.out
     assert (
         "import updated=0 would_update=0 suggested=1 would_suggest=0 "
         "conflicts=0 conflict_artifacts=0"
@@ -359,7 +359,7 @@ def test_cli_watch_runs_one_loop_without_opening_obsidian(
 def context_factory(tmp_path: Path, gateway: FakeMemoryGateway) -> Any:
     def _context(args: Any) -> dict[str, object]:
         vault = FilesystemVault(args.vault)
-        state = SqliteSyncStateStore(tmp_path / ".memo-stack" / "obsidian-sync.sqlite3")
+        state = SqliteSyncStateStore(tmp_path / ".infinity-context" / "obsidian-sync.sqlite3")
         exporter = ExportFactsToVaultUseCase(memory=gateway, vault=vault, state=state)
         importer = ImportVaultChangesUseCase(memory=gateway, vault=vault, state=state)
         inbox_importer = ImportInboxSuggestionsUseCase(

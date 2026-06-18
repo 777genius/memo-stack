@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memo_stack_core import reporting
-from memo_stack_core.reporting import build_report_provenance, with_report_provenance
+from infinity_context_core import reporting
+from infinity_context_core.reporting import build_report_provenance, with_report_provenance
 
 
 def test_build_report_provenance_is_safe_and_reproducible(tmp_path: Path) -> None:

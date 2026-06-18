@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_server_harness import run_infinity_context_server
 from PIL import Image
 
 pytest.importorskip("docling")
@@ -18,7 +18,7 @@ pytest.importorskip("docx")
 @pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe is not installed")
 def test_multimodal_asset_memory_acceptance_flow(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="multimodal-acceptance.db",
             extra_env={
@@ -121,7 +121,7 @@ def test_multimodal_asset_memory_acceptance_flow(tmp_path: Path) -> None:
             [
                 sys.executable,
                 "-m",
-                "memo_stack_server.worker",
+                "infinity_context_server.worker",
                 "--once",
                 "--limit",
                 "20",

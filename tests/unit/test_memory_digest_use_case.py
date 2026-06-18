@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from memo_stack_core.application import BuildMemoryDigestQuery, ConsistencyMode
-from memo_stack_core.application.dto import ContextBundle, ContextItem
-from memo_stack_core.application.use_cases.build_memory_digest import BuildMemoryDigestUseCase
-from memo_stack_core.domain.entities import (
+from infinity_context_core.application import BuildMemoryDigestQuery, ConsistencyMode
+from infinity_context_core.application.dto import ContextBundle, ContextItem
+from infinity_context_core.application.use_cases.build_memory_digest import BuildMemoryDigestUseCase
+from infinity_context_core.domain.entities import (
     Confidence,
     FactStatus,
     MemoryFact,

@@ -1,8 +1,8 @@
 import asyncio
 from typing import Any
 
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
 
 
 class RelatedGateway:

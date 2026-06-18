@@ -1,9 +1,9 @@
 import asyncio
 from typing import Any
 
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.domain.models import MemoryGraphExportResponse
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.domain.models import MemoryGraphExportResponse
 
 
 class GraphExportGateway:
@@ -14,7 +14,7 @@ class GraphExportGateway:
         self.calls.append(kwargs)
         return {
             "data": {
-                "schema_version": "memo_stack.graph_export.v1",
+                "schema_version": "infinity_context.graph_export.v1",
                 "scope": {"space_id": "space_1", "memory_scope_id": "memory_scope_1"},
                 "nodes": [{"id": "fact:fact_1", "type": "fact", "label": "Fact", "data": {}}],
                 "edges": [],
@@ -47,7 +47,7 @@ def test_memory_export_graph_uses_default_scope_and_preserves_payload() -> None:
     parsed = MemoryGraphExportResponse.model_validate(response)
     assert parsed.ok is True
     assert parsed.data is not None
-    assert parsed.data.schema_version == "memo_stack.graph_export.v1"
+    assert parsed.data.schema_version == "infinity_context.graph_export.v1"
     assert parsed.data.counts["facts"] == 1
     assert gateway.calls[0]["scope"].space_slug == "client-app"
     assert gateway.calls[0]["scope"].memory_scope_external_ref == "default"

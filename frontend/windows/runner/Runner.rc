@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "Memo Stack" "\0"
-            VALUE "FileDescription", "Memo Stack" "\0"
+            VALUE "CompanyName", "Infinity Context" "\0"
+            VALUE "FileDescription", "Infinity Context" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "Memo Stack" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 Memo Stack. All rights reserved." "\0"
-            VALUE "OriginalFilename", "memo_stack.exe" "\0"
-            VALUE "ProductName", "Memo Stack" "\0"
+            VALUE "InternalName", "Infinity Context" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Infinity Context. All rights reserved." "\0"
+            VALUE "OriginalFilename", "infinity_context.exe" "\0"
+            VALUE "ProductName", "Infinity Context" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

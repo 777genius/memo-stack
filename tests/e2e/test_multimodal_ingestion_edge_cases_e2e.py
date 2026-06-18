@@ -6,12 +6,12 @@ import sys
 from pathlib import Path
 
 import httpx
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_server_harness import run_infinity_context_server
 
 
 def test_multimodal_ingestion_cancel_retry_and_dedupe_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="multimodal-ingestion-lifecycle.db",
             extra_env={"MEMORY_ASSET_STORAGE_DIR": str(tmp_path / "assets")},
@@ -110,7 +110,7 @@ def test_multimodal_ingestion_bad_inputs_limits_and_mime_review_gate_e2e(
 ) -> None:
     raw_secret = "sk-proj-" + "edgecasee2esecret123"
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="multimodal-ingestion-bad-inputs.db",
             extra_env={
@@ -235,7 +235,7 @@ def test_multimodal_ingestion_bad_inputs_limits_and_mime_review_gate_e2e(
 
 def test_extracted_prompt_injection_evidence_is_review_gated_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="multimodal-prompt-injection-risk.db",
             extra_env={"MEMORY_ASSET_STORAGE_DIR": str(tmp_path / "assets")},
@@ -343,7 +343,7 @@ def test_extracted_prompt_injection_evidence_is_review_gated_e2e(tmp_path: Path)
 
 def test_context_link_review_rejects_deleted_target_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="context-link-deleted-target.db",
             extra_env={"MEMORY_CAPTURE_MODE": "suggest"},
@@ -487,7 +487,7 @@ def _run_worker(env: dict[str, str], *, limit: int) -> None:
         [
             sys.executable,
             "-m",
-            "memo_stack_server.worker",
+            "infinity_context_server.worker",
             "--once",
             "--limit",
             str(limit),

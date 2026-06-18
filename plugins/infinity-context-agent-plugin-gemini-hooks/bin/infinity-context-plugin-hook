@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+plugin_root="$(cd "${script_dir}/.." && pwd)"
+repo_root_candidate="${INFINITY_CONTEXT_REPO_ROOT:-${MEMORY_MCP_REPO_ROOT:-}}"
+if [ -z "${repo_root_candidate}" ] && [ -f "${plugin_root}/.infinity-context-source-root" ]; then
+  repo_root_candidate="$(sed -n '1p' "${plugin_root}/.infinity-context-source-root")"
+fi
+if [ -z "${repo_root_candidate}" ]; then
+  repo_root_candidate="${plugin_root}/../.."
+fi
+if ! repo_root="$(cd "${repo_root_candidate}" 2>/dev/null && pwd)"; then
+  printf '%s\n' "infinity-context-plugin-hook: Infinity Context repo root not found. Set INFINITY_CONTEXT_REPO_ROOT." >&2
+  exit 127
+fi
+if [ ! -d "${repo_root}/packages/infinity_context_mcp" ]; then
+  printf '%s\n' "infinity-context-plugin-hook: Infinity Context packages not found under ${repo_root}. Set INFINITY_CONTEXT_REPO_ROOT." >&2
+  exit 127
+fi
+
+python_bin="${repo_root}/.venv/bin/python"
+if [ ! -x "${python_bin}" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    python_bin="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    python_bin="$(command -v python)"
+  else
+    printf '%s\n' "infinity-context-plugin-hook: Python not found. Create ${repo_root}/.venv or install python3." >&2
+    exit 127
+  fi
+fi
+
+memory_pythonpath="${repo_root}/packages/infinity_context_core:${repo_root}/packages/infinity_context_server:${repo_root}/packages/infinity_context_adapters:${repo_root}/packages/infinity_context_sdk:${repo_root}/packages/infinity_context_obsidian:${repo_root}/packages/infinity_context_mcp:${repo_root}/packages/infinity_context_cli"
+if [ -n "${PYTHONPATH:-}" ]; then
+  export PYTHONPATH="${memory_pythonpath}:${PYTHONPATH}"
+else
+  export PYTHONPATH="${memory_pythonpath}"
+fi
+
+case "${MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF:-}" in
+  "__INFINITY_CONTEXT_NO_DEFAULT_THREAD__")
+    unset MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF
+    ;;
+esac
+
+exec "${python_bin}" -m infinity_context_mcp.plugin_hook "$@"

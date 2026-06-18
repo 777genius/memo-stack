@@ -3,13 +3,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import (
+from infinity_context_adapters.postgres.models import (
     MemoryChunkRow,
     MemoryFactRow,
     MemoryIdempotencyRecordRow,
     MemoryOutboxRow,
 )
-from memo_stack_server.admin import (
+from infinity_context_server.admin import (
     _adapter_check,
     compact_done_outbox,
     invariant_check,
@@ -18,8 +18,8 @@ from memo_stack_server.admin import (
     repair_projections,
     replay_outbox,
 )
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

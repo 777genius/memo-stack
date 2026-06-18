@@ -1,6 +1,6 @@
 import asyncio
 
-from memo_stack_core.application.dto import (
+from infinity_context_core.application.dto import (
     ContextLinkSuggestionVisibleFilter,
     CreateSuggestionCommand,
     CreateSuggestionsBatchCommand,
@@ -9,15 +9,15 @@ from memo_stack_core.application.dto import (
     ReviewSuggestionBatchItemCommand,
     ReviewSuggestionsBatchCommand,
 )
-from memo_stack_core.application.use_cases.context_link_reviews import (
+from infinity_context_core.application.use_cases.context_link_reviews import (
     ReviewContextLinkSuggestionsBatchUseCase,
 )
-from memo_stack_core.application.use_cases.suggestions import (
+from infinity_context_core.application.use_cases.suggestions import (
     CreateSuggestionsBatchUseCase,
     ReviewSuggestionsBatchUseCase,
 )
-from memo_stack_core.domain.entities import MemoryKind, MemoryScopeId, SourceRef, SpaceId
-from memo_stack_core.domain.errors import MemoryValidationError
+from infinity_context_core.domain.entities import MemoryKind, MemoryScopeId, SourceRef, SpaceId
+from infinity_context_core.domain.errors import MemoryValidationError
 
 
 class _FailingUseCase:

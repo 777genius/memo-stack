@@ -3,9 +3,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.fact_repositories import PostgresFactRelationRepository
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_adapters.postgres.fact_repositories import PostgresFactRelationRepository
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

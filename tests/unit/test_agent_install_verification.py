@@ -10,11 +10,11 @@ from typing import Any
 ROOT = Path(__file__).parents[2]
 SCRIPT_PATH = ROOT / "scripts" / "agent_install_verification.py"
 PLUGIN_SKILL_PATHS = (
-    ROOT / "plugins" / "memo-stack-agent-plugin" / "skills" / "memory" / "SKILL.md",
-    ROOT / "plugins" / "memo-stack-agent-plugin" / "plugin" / "skills" / "memory" / "SKILL.md",
+    ROOT / "plugins" / "infinity-context-agent-plugin" / "skills" / "memory" / "SKILL.md",
+    ROOT / "plugins" / "infinity-context-agent-plugin" / "plugin" / "skills" / "memory" / "SKILL.md",
     ROOT
     / "plugins"
-    / "memo-stack-agent-plugin"
+    / "infinity-context-agent-plugin"
     / ".opencode"
     / "skills"
     / "memory"
@@ -30,7 +30,7 @@ def test_agent_install_verifier_accepts_codex_activation_pending(tmp_path, monke
             {
                 "installations": [
                     {
-                        "integration_id": "memo-stack-agent-plugin",
+                        "integration_id": "infinity-context-agent-plugin",
                         "targets": {
                             "claude": _target("installed"),
                             "cursor": _target("installed"),
@@ -42,7 +42,7 @@ def test_agent_install_verifier_accepts_codex_activation_pending(tmp_path, monke
                         },
                     },
                     {
-                        "integration_id": "memo-stack-agent-plugin-gemini-hooks",
+                        "integration_id": "infinity-context-agent-plugin-gemini-hooks",
                         "targets": {"gemini": _target("installed")},
                     },
                 ]
@@ -115,7 +115,7 @@ def test_agent_install_verifier_accepts_gemini_json_on_stderr(monkeypatch) -> No
         lambda *_args, **_kwargs: {
             "ok": True,
             "stdout": "",
-            "stderr": json.dumps([{"name": "memo-stack-agent-plugin-gemini-hooks"}]),
+            "stderr": json.dumps([{"name": "infinity-context-agent-plugin-gemini-hooks"}]),
         },
     )
 
@@ -134,9 +134,9 @@ def test_gemini_runtime_config_blocks_mismatched_installed_api_url(monkeypatch) 
             "stdout": json.dumps(
                 [
                     {
-                        "name": "memo-stack-agent-plugin-gemini-hooks",
+                        "name": "infinity-context-agent-plugin-gemini-hooks",
                         "mcpServers": {
-                            "memo-stack": {
+                            "infinity-context": {
                                 "env": {
                                     "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
                                     "MEMORY_MCP_AUTH_TOKEN": "unit-token",
@@ -178,9 +178,9 @@ def test_gemini_runtime_config_accepts_runtime_override_for_installed_mismatch(
             "stdout": json.dumps(
                 [
                     {
-                        "name": "memo-stack-agent-plugin-gemini-hooks",
+                        "name": "infinity-context-agent-plugin-gemini-hooks",
                         "mcpServers": {
-                            "memo-stack": {
+                            "infinity-context": {
                                 "env": {
                                     "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
                                     "MEMORY_MCP_AUTH_TOKEN": "old-token",
@@ -224,8 +224,8 @@ def test_gemini_runtime_config_accepts_matching_or_inherited_env(monkeypatch) ->
             "stdout": json.dumps(
                 [
                     {
-                        "name": "memo-stack-agent-plugin-gemini-hooks",
-                        "mcpServers": {"memo-stack": {"env": {}}},
+                        "name": "infinity-context-agent-plugin-gemini-hooks",
+                        "mcpServers": {"infinity-context": {"env": {}}},
                     }
                 ]
             ),
@@ -276,7 +276,7 @@ def test_agent_install_doctor_fails_when_plugin_kit_doctor_fails(
             {
                 "installations": [
                     {
-                        "integration_id": "memo-stack-agent-plugin",
+                        "integration_id": "infinity-context-agent-plugin",
                         "targets": {
                             "claude": _target("installed"),
                             "cursor": _target("installed"),
@@ -285,7 +285,7 @@ def test_agent_install_doctor_fails_when_plugin_kit_doctor_fails(
                         },
                     },
                     {
-                        "integration_id": "memo-stack-agent-plugin-gemini-hooks",
+                        "integration_id": "infinity-context-agent-plugin-gemini-hooks",
                         "targets": {"gemini": _target("installed")},
                     },
                 ]
@@ -419,11 +419,11 @@ def test_agent_cli_smokes_run_agent_commands_in_parallel(monkeypatch) -> None:
     assert set(calls) == {"claude", "gemini", "opencode", "codex"}
     assert "--allowed-mcp-server-names" in calls["gemini"]
     assert module.GEMINI_HOOK_INTEGRATION_ID in calls["gemini"]
-    assert "memo-stack" in calls["gemini"]
+    assert "infinity-context" in calls["gemini"]
     assert "--output-format" in calls["gemini"]
-    assert "mcp_memo-stack_memory_status" in " ".join(calls["gemini"])
+    assert "mcp_infinity-context_memory_status" in " ".join(calls["gemini"])
     assert "--plugin-dir" in calls["claude"]
-    assert f'mcp_servers.memo-stack.command="{module.PLUGIN_ROOT / "bin" / "memo-stack-mcp"}"' in (
+    assert f'mcp_servers.infinity-context.command="{module.PLUGIN_ROOT / "bin" / "infinity-context-mcp"}"' in (
         calls["codex"]
     )
     assert "unit-live-token" not in " ".join(calls["codex"])
@@ -589,7 +589,7 @@ def test_agent_command_blocks_success_marker_with_mcp_tool_error(monkeypatch) ->
         lambda *_args, **_kwargs: {
             "returncode": 0,
             "stdout": "memory_status_checked\n",
-            "stderr": "Error executing tool mcp_memo-stack_memory_status",
+            "stderr": "Error executing tool mcp_infinity-context_memory_status",
             "timed_out": False,
         },
     )
@@ -710,9 +710,9 @@ def test_live_smoke_strict_agent_cli_failures_make_result_not_ok(monkeypatch) ->
     )
 
     assert result["ok"] is False
-    assert result["suite"] == "memo-stack-agent-live-smoke"
+    assert result["suite"] == "infinity-context-agent-live-smoke"
     assert result["provenance"]["generated_by"] == "scripts/agent_install_verification.py"
-    assert result["provenance"]["suite"] == "memo-stack-agent-live-smoke"
+    assert result["provenance"]["suite"] == "infinity-context-agent-live-smoke"
     assert result["generated_mcp_failures"] == []
     assert result["agent_cli_failures"] == ["gemini"]
     assert result["failures"] == ["agent_cli:gemini"]

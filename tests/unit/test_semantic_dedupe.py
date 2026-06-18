@@ -1,4 +1,4 @@
-from memo_stack_core.application.semantic_dedupe import (
+from infinity_context_core.application.semantic_dedupe import (
     looks_conflicting_fact,
     looks_equivalent_fact,
     normalize_memory_text,

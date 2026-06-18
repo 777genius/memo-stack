@@ -19,22 +19,22 @@ part 'marionette_e2e_extension_support.dart';
 
 typedef ChatStoreResolver = ChatStore Function();
 
-class MemoStackMarionetteE2eBridge extends StatefulWidget {
+class InfinityContextMarionetteE2eBridge extends StatefulWidget {
   final Widget child;
 
-  const MemoStackMarionetteE2eBridge({
+  const InfinityContextMarionetteE2eBridge({
     required this.child,
     super.key,
   });
 
   @override
-  State<MemoStackMarionetteE2eBridge> createState() =>
-      _MemoStackMarionetteE2eBridgeState();
+  State<InfinityContextMarionetteE2eBridge> createState() =>
+      _InfinityContextMarionetteE2eBridgeState();
 }
 
-class _MemoStackMarionetteE2eBridgeState
-    extends State<MemoStackMarionetteE2eBridge> {
-  static MemoStackMarionetteE2eCommandHandler? _activeHandler;
+class _InfinityContextMarionetteE2eBridgeState
+    extends State<InfinityContextMarionetteE2eBridge> {
+  static InfinityContextMarionetteE2eCommandHandler? _activeHandler;
   static final Set<String> _registeredExtensions = <String>{};
 
   @override
@@ -46,9 +46,9 @@ class _MemoStackMarionetteE2eBridgeState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _activeHandler = MemoStackMarionetteE2eCommandHandler(() {
+    _activeHandler = InfinityContextMarionetteE2eCommandHandler(() {
       if (!mounted) {
-        throw StateError('Memo Stack E2E bridge is not mounted');
+        throw StateError('Infinity Context E2E bridge is not mounted');
       }
       return context.read<ChatStore>();
     });
@@ -146,7 +146,7 @@ class _MemoStackMarionetteE2eBridgeState
   static void _register(
     String name,
     Future<Map<String, dynamic>> Function(
-      MemoStackMarionetteE2eCommandHandler handler,
+      InfinityContextMarionetteE2eCommandHandler handler,
       Map<String, String> params,
     ) callback,
   ) {
@@ -158,7 +158,7 @@ class _MemoStackMarionetteE2eBridgeState
         final handler = _activeHandler;
         if (handler == null) {
           return _errorResponse(
-            StateError('Memo Stack E2E bridge is not ready'),
+            StateError('Infinity Context E2E bridge is not ready'),
             StackTrace.current,
           );
         }
@@ -174,10 +174,10 @@ class _MemoStackMarionetteE2eBridgeState
 }
 
 @visibleForTesting
-class MemoStackMarionetteE2eCommandHandler {
+class InfinityContextMarionetteE2eCommandHandler {
   final ChatStoreResolver _store;
 
-  MemoStackMarionetteE2eCommandHandler(this._store);
+  InfinityContextMarionetteE2eCommandHandler(this._store);
 
   Future<Map<String, dynamic>> state() async {
     return _state(_store());
@@ -333,7 +333,7 @@ class MemoStackMarionetteE2eCommandHandler {
       );
     }
 
-    final filename = _optional(params, 'filename') ?? 'memo-stack-e2e-note.txt';
+    final filename = _optional(params, 'filename') ?? 'infinity-context-e2e-note.txt';
     final content = _attachmentBytes(params);
     final uploadedAssetIds =
         await AttachmentUploadService(repo: store.repo).uploadAll([

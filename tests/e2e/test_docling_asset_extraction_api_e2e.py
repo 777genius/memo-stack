@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_server_harness import run_infinity_context_server
 from resource_guards import docling_worker_timeout_seconds, skip_if_low_temp_space
 
 pytest.importorskip("docling")
@@ -16,7 +16,7 @@ def test_docling_asset_extraction_persists_structured_artifacts(tmp_path: Path) 
     skip_if_low_temp_space(tmp_path, label="Docling asset e2e")
     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     with (
-        run_memo_stack_server(
+        run_infinity_context_server(
             tmp_path,
             database_name="docling-asset-extraction.db",
             extra_env={
@@ -49,7 +49,7 @@ def test_docling_asset_extraction_persists_structured_artifacts(tmp_path: Path) 
             [
                 sys.executable,
                 "-m",
-                "memo_stack_server.worker",
+                "infinity_context_server.worker",
                 "--once",
                 "--limit",
                 "10",
@@ -74,6 +74,7 @@ def test_docling_asset_extraction_persists_structured_artifacts(tmp_path: Path) 
         assert artifact_types == {
             "extracted_json",
             "markdown",
+            "media_manifest",
             "normalized_json",
             "table_html",
         }

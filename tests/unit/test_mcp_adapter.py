@@ -5,20 +5,20 @@ from typing import Any
 import pytest
 from mcp.shared.version import LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
 from mcp_adapter_fakes import RecordingGateway
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import (
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import (
     MemoryMcpDeleteMode,
     MemoryMcpIngestMode,
     MemoryMcpSettings,
     MemoryMcpWriteMode,
     load_settings,
 )
-from memo_stack_mcp.domain.models import (
+from infinity_context_mcp.domain.models import (
     MemoryGatewayError,
     MemoryReadScope,
     MemoryScope,
 )
-from memo_stack_mcp.server import create_mcp_server
+from infinity_context_mcp.server import create_mcp_server
 
 
 def test_load_settings_uses_memory_service_token_fallback() -> None:
@@ -136,7 +136,7 @@ def test_service_memory_scope_snapshot_export_and_import_are_policy_gated() -> N
         assert exported["data"]["manifest"] == {}
         assert dry_run["data"]["dry_run"] is True
         assert refused["ok"] is False
-        assert refused["error"]["code"] == "memo_stack_mcp.policy.explicit_confirmation_required"
+        assert refused["error"]["code"] == "infinity_context_mcp.policy.explicit_confirmation_required"
         assert imported["ok"] is True
         assert imported["diagnostics"]["side_effects"] == ["imported_memory_scope_snapshot"]
         assert (
@@ -219,7 +219,7 @@ def test_service_remember_fact_dedupes_existing_active_fact() -> None:
         assert result["ok"] is True
         assert result["data"]["id"] == "fact_existing"
         assert result["data"]["status"] == "duplicate"
-        assert result["data"]["safe_reason"] == "memo_stack_mcp.duplicate.existing_memory"
+        assert result["data"]["safe_reason"] == "infinity_context_mcp.duplicate.existing_memory"
         assert result["diagnostics"]["side_effects"] == []
         assert "remember_fact" not in [name for name, _ in gateway.calls]
 
@@ -256,7 +256,7 @@ def test_service_remember_fact_dedupes_semantic_equivalent_active_fact() -> None
         assert result["ok"] is True
         assert result["data"]["id"] == "fact_qdrant_documents"
         assert result["data"]["status"] == "duplicate"
-        assert result["data"]["safe_reason"] == "memo_stack_mcp.duplicate.existing_memory"
+        assert result["data"]["safe_reason"] == "infinity_context_mcp.duplicate.existing_memory"
         assert [name for name, _ in gateway.calls] == ["list_facts"]
 
     asyncio.run(run())
@@ -293,7 +293,7 @@ def test_service_remember_fact_routes_negated_semantic_neighbor_to_review() -> N
         assert result["data"]["id"] == "sug_1"
         assert result["data"]["status"] == "pending"
         assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
-        assert result["diagnostics"]["warnings"] == ["memo_stack_mcp.conflict.requires_review"]
+        assert result["diagnostics"]["warnings"] == ["infinity_context_mcp.conflict.requires_review"]
         assert [name for name, _ in gateway.calls] == [
             "list_facts",
             "list_suggestions",
@@ -381,7 +381,7 @@ def test_service_remember_fact_routes_conflicting_existing_fact_to_review() -> N
         assert result["ok"] is True
         assert result["data"]["id"] == "sug_1"
         assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
-        assert result["diagnostics"]["warnings"] == ["memo_stack_mcp.conflict.requires_review"]
+        assert result["diagnostics"]["warnings"] == ["infinity_context_mcp.conflict.requires_review"]
         assert "remember_fact" not in [name for name, _ in gateway.calls]
         assert [name for name, _ in gateway.calls] == [
             "list_facts",
@@ -413,7 +413,7 @@ def test_service_remember_fact_routes_low_trust_source_to_suggestion() -> None:
         assert result["data"]["status"] == "pending"
         assert result["diagnostics"]["policy"]["decision"] == "allow_suggestion"
         assert gateway.calls[0][0] == "create_suggestion"
-        assert gateway.calls[0][1]["safe_reason"] == "memo_stack_mcp.policy.source_requires_review"
+        assert gateway.calls[0][1]["safe_reason"] == "infinity_context_mcp.policy.source_requires_review"
 
     asyncio.run(run())
 
@@ -428,12 +428,12 @@ def test_service_blocks_destructive_tools_when_disabled() -> None:
         result = await service.forget_fact(fact_id="fact_1")
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.policy.delete_mode_off"
+        assert result["error"]["code"] == "infinity_context_mcp.policy.delete_mode_off"
         assert (
             result["error"]["safe_message"]
-            == "Memo Stack MCP deletes are disabled by local policy"
+            == "Infinity Context MCP deletes are disabled by local policy"
         )
-        assert result["diagnostics"]["schema_version"] == "mcp.memo_stack.v1"
+        assert result["diagnostics"]["schema_version"] == "mcp.infinity_context.v1"
 
     asyncio.run(run())
 
@@ -448,7 +448,7 @@ def test_service_status_surfaces_capability_diagnostics() -> None:
         result = await service.status()
 
         assert result["ok"] is True
-        assert result["diagnostics"]["schema_version"] == "mcp.memo_stack.v1"
+        assert result["diagnostics"]["schema_version"] == "mcp.infinity_context.v1"
         assert result["data"]["readiness"]["read_ready"] is True
         assert result["data"]["readiness"]["write_ready"] is True
         assert result["data"]["readiness"]["projection_ready"] is True
@@ -745,7 +745,7 @@ def test_service_search_rejects_thread_scope_with_multiple_memory_scopes() -> No
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.validation.invalid_scope"
+        assert result["error"]["code"] == "infinity_context_mcp.validation.invalid_scope"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -776,7 +776,7 @@ def test_service_status_degrades_when_capabilities_unavailable() -> None:
         assert "capabilities.unavailable" in result["data"]["readiness"]["degraded_reasons"]
         assert result["diagnostics"]["degraded"] is True
         assert result["diagnostics"]["backend"]["capabilities_error"]["code"] == (
-            "memo_stack_mcp.gateway.backend_error"
+            "infinity_context_mcp.gateway.backend_error"
         )
 
     asyncio.run(run())
@@ -793,7 +793,7 @@ def test_service_rejects_invalid_kind_before_gateway() -> None:
         result = await service.remember_fact(text="A durable fact.", kind="runbook")
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.validation.invalid_input"
+        assert result["error"]["code"] == "infinity_context_mcp.validation.invalid_input"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -836,9 +836,9 @@ def test_service_rejects_token_source_id_and_quote_preview() -> None:
         )
 
         assert source_result["ok"] is False
-        assert source_result["error"]["code"] == "memo_stack_mcp.validation.invalid_source_ref"
+        assert source_result["error"]["code"] == "infinity_context_mcp.validation.invalid_source_ref"
         assert quote_result["ok"] is False
-        assert quote_result["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
+        assert quote_result["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -856,7 +856,7 @@ def test_service_rejects_invalid_source_type() -> None:
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.validation.invalid_source_ref"
+        assert result["error"]["code"] == "infinity_context_mcp.validation.invalid_source_ref"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -882,9 +882,9 @@ def test_service_write_mode_off_blocks_write_paths() -> None:
         )
 
         assert remembered["ok"] is False
-        assert remembered["error"]["code"] == "memo_stack_mcp.policy.write_mode_off"
+        assert remembered["error"]["code"] == "infinity_context_mcp.policy.write_mode_off"
         assert suggested["ok"] is False
-        assert suggested["error"]["code"] == "memo_stack_mcp.policy.write_mode_off"
+        assert suggested["error"]["code"] == "infinity_context_mcp.policy.write_mode_off"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -910,7 +910,7 @@ def test_service_secret_text_is_rejected_before_gateway(secret: str) -> None:
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
+        assert result["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -924,7 +924,7 @@ def test_service_secret_search_query_is_rejected_before_gateway() -> None:
         result = await service.search(query="Find password=bench-secret-project-alpha")
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
+        assert result["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
         assert result["error"]["safe_message"] == "Search query contains a credential-like value"
         assert gateway.calls == []
 
@@ -960,10 +960,10 @@ def test_service_rejects_private_key_generic_secret_and_invisible_text() -> None
             source_id="note-4",
         )
 
-        assert private_key["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
-        assert generic_secret["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
-        assert invisible["error"]["code"] == "memo_stack_mcp.policy.invisible_characters"
-        assert bidi["error"]["code"] == "memo_stack_mcp.policy.control_characters"
+        assert private_key["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
+        assert generic_secret["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
+        assert invisible["error"]["code"] == "infinity_context_mcp.policy.invisible_characters"
+        assert bidi["error"]["code"] == "infinity_context_mcp.policy.control_characters"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -983,7 +983,7 @@ def test_service_small_doc_ingest_mode_blocks_large_docs() -> None:
         result = await service.ingest_document(title="doc", text="x" * 11)
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.policy.ingest_too_large"
+        assert result["error"]["code"] == "infinity_context_mcp.policy.ingest_too_large"
         assert gateway.calls == []
 
     asyncio.run(run())

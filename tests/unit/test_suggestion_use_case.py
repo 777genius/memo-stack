@@ -1,8 +1,8 @@
 import asyncio
 from datetime import UTC, datetime
 
-from memo_stack_core.application import CreateSuggestionCommand, CreateSuggestionUseCase
-from memo_stack_core.domain.entities import (
+from infinity_context_core.application import CreateSuggestionCommand, CreateSuggestionUseCase
+from infinity_context_core.domain.entities import (
     MAX_SOURCE_REFS_PER_ITEM,
     MAX_SUGGESTION_REVIEW_EVENTS,
     Confidence,
@@ -14,7 +14,7 @@ from memo_stack_core.domain.entities import (
     SpaceId,
     TrustLevel,
 )
-from memo_stack_core.domain.errors import MemoryConflictError
+from infinity_context_core.domain.errors import MemoryConflictError
 
 
 def test_create_suggestion_recovers_existing_pending_after_commit_conflict() -> None:

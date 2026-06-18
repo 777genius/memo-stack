@@ -5,16 +5,16 @@ from typing import Any
 
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp_adapter_fakes import RecordingGateway
-from memo_stack_mcp import bench as memory_mcp_bench
-from memo_stack_mcp.application.service import MEMORY_USAGE_GUIDE, MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.domain.models import (
+from infinity_context_mcp import bench as memory_mcp_bench
+from infinity_context_mcp.application.service import MEMORY_USAGE_GUIDE, MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.domain.models import (
     contains_sensitive_value,
     has_control_characters,
     has_zero_width_characters,
     public_error_code,
 )
-from memo_stack_mcp.server import create_mcp_server
+from infinity_context_mcp.server import create_mcp_server
 
 
 def test_mcp_fact_resource_bounds_large_payload_text() -> None:
@@ -438,52 +438,52 @@ def test_memory_usage_guide_forbids_quoting_excluded_transcript_text() -> None:
 def test_mcp_public_error_taxonomy_is_stable_and_documented() -> None:
     documented = (Path(__file__).resolve().parents[2] / "docs" / "mcp-adapter.md").read_text()
     expected_codes = {
-        "memo_stack_mcp.validation.invalid_input",
-        "memo_stack_mcp.validation.invalid_scope",
-        "memo_stack_mcp.validation.invalid_source_ref",
-        "memo_stack_mcp.validation.input_too_large",
-        "memo_stack_mcp.validation.backend_rejected",
-        "memo_stack_mcp.policy.secret_detected",
-        "memo_stack_mcp.policy.control_characters",
-        "memo_stack_mcp.policy.invisible_characters",
-        "memo_stack_mcp.policy.evidence_required",
-        "memo_stack_mcp.policy.evidence_mismatch",
-        "memo_stack_mcp.policy.write_mode_off",
-        "memo_stack_mcp.policy.delete_mode_off",
-        "memo_stack_mcp.policy.ingest_mode_off",
-        "memo_stack_mcp.policy.ingest_too_large",
-        "memo_stack_mcp.gateway.network_error",
-        "memo_stack_mcp.gateway.connect_timeout",
-        "memo_stack_mcp.gateway.read_timeout",
-        "memo_stack_mcp.gateway.write_timeout",
-        "memo_stack_mcp.gateway.invalid_json",
-        "memo_stack_mcp.gateway.auth_failed",
-        "memo_stack_mcp.gateway.backend_error",
-        "memo_stack_mcp.conflict.version_stale",
-        "memo_stack_mcp.conflict.idempotency_mismatch",
-        "memo_stack_mcp.conflict.same_target_in_batch",
-        "memo_stack_mcp.conflict.requires_review",
-        "memo_stack_mcp.degraded.backpressure",
-        "memo_stack_mcp.internal.unexpected",
+        "infinity_context_mcp.validation.invalid_input",
+        "infinity_context_mcp.validation.invalid_scope",
+        "infinity_context_mcp.validation.invalid_source_ref",
+        "infinity_context_mcp.validation.input_too_large",
+        "infinity_context_mcp.validation.backend_rejected",
+        "infinity_context_mcp.policy.secret_detected",
+        "infinity_context_mcp.policy.control_characters",
+        "infinity_context_mcp.policy.invisible_characters",
+        "infinity_context_mcp.policy.evidence_required",
+        "infinity_context_mcp.policy.evidence_mismatch",
+        "infinity_context_mcp.policy.write_mode_off",
+        "infinity_context_mcp.policy.delete_mode_off",
+        "infinity_context_mcp.policy.ingest_mode_off",
+        "infinity_context_mcp.policy.ingest_too_large",
+        "infinity_context_mcp.gateway.network_error",
+        "infinity_context_mcp.gateway.connect_timeout",
+        "infinity_context_mcp.gateway.read_timeout",
+        "infinity_context_mcp.gateway.write_timeout",
+        "infinity_context_mcp.gateway.invalid_json",
+        "infinity_context_mcp.gateway.auth_failed",
+        "infinity_context_mcp.gateway.backend_error",
+        "infinity_context_mcp.conflict.version_stale",
+        "infinity_context_mcp.conflict.idempotency_mismatch",
+        "infinity_context_mcp.conflict.same_target_in_batch",
+        "infinity_context_mcp.conflict.requires_review",
+        "infinity_context_mcp.degraded.backpressure",
+        "infinity_context_mcp.internal.unexpected",
     }
     mapping_cases = {
-        "network_error": "memo_stack_mcp.gateway.network_error",
-        "invalid_json": "memo_stack_mcp.gateway.invalid_json",
-        "invalid_scope": "memo_stack_mcp.validation.invalid_scope",
-        "writes_disabled": "memo_stack_mcp.policy.write_mode_off",
-        "deletes_disabled": "memo_stack_mcp.policy.delete_mode_off",
-        "memory.backpressure": "memo_stack_mcp.degraded.backpressure",
-        "provider.version_conflict": "memo_stack_mcp.conflict.version_stale",
-        "idempotency conflict": "memo_stack_mcp.conflict.idempotency_mismatch",
-        "raw.sql": "memo_stack_mcp.gateway.backend_error",
+        "network_error": "infinity_context_mcp.gateway.network_error",
+        "invalid_json": "infinity_context_mcp.gateway.invalid_json",
+        "invalid_scope": "infinity_context_mcp.validation.invalid_scope",
+        "writes_disabled": "infinity_context_mcp.policy.write_mode_off",
+        "deletes_disabled": "infinity_context_mcp.policy.delete_mode_off",
+        "memory.backpressure": "infinity_context_mcp.degraded.backpressure",
+        "provider.version_conflict": "infinity_context_mcp.conflict.version_stale",
+        "idempotency conflict": "infinity_context_mcp.conflict.idempotency_mismatch",
+        "raw.sql": "infinity_context_mcp.gateway.backend_error",
     }
 
     for raw_code, expected in mapping_cases.items():
         status = 500 if raw_code == "raw.sql" else 0
         assert public_error_code(raw_code, status_code=status) == expected
-    assert public_error_code("auth", status_code=401) == "memo_stack_mcp.gateway.auth_failed"
-    assert public_error_code("bad", status_code=422) == "memo_stack_mcp.validation.backend_rejected"
-    assert public_error_code("too_many", status_code=429) == "memo_stack_mcp.degraded.backpressure"
+    assert public_error_code("auth", status_code=401) == "infinity_context_mcp.gateway.auth_failed"
+    assert public_error_code("bad", status_code=422) == "infinity_context_mcp.validation.backend_rejected"
+    assert public_error_code("too_many", status_code=429) == "infinity_context_mcp.degraded.backpressure"
 
     for code in expected_codes:
         assert code in documented
@@ -506,7 +506,7 @@ def test_mcp_whole_call_failures_are_tool_errors_with_structured_envelope() -> N
 
         assert result.isError is True
         assert result.structuredContent["ok"] is False
-        assert result.structuredContent["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
+        assert result.structuredContent["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
         assert "sk-test" not in result.content[0].text
 
     asyncio.run(run())

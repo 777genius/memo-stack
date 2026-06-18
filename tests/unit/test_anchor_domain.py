@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from memo_stack_core.domain.entities import (
+from infinity_context_core.domain.entities import (
     Confidence,
     MemoryAnchor,
     MemoryAnchorId,

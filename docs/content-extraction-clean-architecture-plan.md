@@ -4,14 +4,14 @@ Date: 2026-06-11
 
 ## Goal
 
-Implement file, document, audio and video extraction as a reliable Memo Stack
+Implement file, document, audio and video extraction as a reliable Infinity Context
 capability without breaking Clean Architecture, SOLID, DDD or the current
 Postgres-canonical model.
 
 This plan builds on:
 
 - `docs/content-extraction-parser-library-research.md`;
-- `docs/memo-stack-core-lite-plan.md`;
+- `docs/infinity-context-core-lite-plan.md`;
 - `docs/adr/ADR-0006-multimodal-ingestion-provider-policy.md`;
 - current `MemoryAsset`, `MemoryDocument`, `MemoryChunk`, outbox and UoW code.
 
@@ -65,13 +65,13 @@ Approx changes: `2500-4500` lines for robust MVP.
 Add a clean extraction capability to current packages:
 
 ```text
-memo_stack_core
+infinity_context_core
   domain/extraction.py
   ports/extraction.py
   application/use_cases/request_asset_extraction.py
   application/use_cases/run_asset_extraction.py
 
-memo_stack_adapters
+infinity_context_adapters
   extraction/router.py
   extraction/engines/docling.py
   extraction/engines/unstructured.py
@@ -81,7 +81,7 @@ memo_stack_adapters
   extraction/transcription/faster_whisper.py
   postgres extraction repositories + migrations
 
-memo_stack_server
+infinity_context_server
   API endpoints
   composition wiring
   outbox worker handler
@@ -96,7 +96,7 @@ does not require new infrastructure before the product proves the flow.
 Approx changes: `5000-9000` lines.
 
 Create a separate service/process that owns parser dependencies, queues,
-containers and GPU/cloud integrations. Memo Stack core still owns canonical
+containers and GPU/cloud integrations. Infinity Context core still owns canonical
 state and jobs.
 
 Use this when extraction becomes heavy enough that API/server deploys should not
@@ -149,7 +149,7 @@ canonical document/chunk lifecycle.
 
 ## Domain model
 
-Add `packages/memo_stack_core/memo_stack_core/domain/extraction.py`.
+Add `packages/infinity_context_core/infinity_context_core/domain/extraction.py`.
 
 ### Entities
 
@@ -206,7 +206,7 @@ Keep parser objects out of domain entities.
 
 ## Core ports
 
-Add `packages/memo_stack_core/memo_stack_core/ports/extraction.py`.
+Add `packages/infinity_context_core/infinity_context_core/ports/extraction.py`.
 
 ### Extraction DTOs
 
@@ -418,10 +418,10 @@ caption, header and row groups with the table HTML stored as an artifact.
 
 ## Adapter design
 
-All parser dependencies live under `memo_stack_adapters`.
+All parser dependencies live under `infinity_context_adapters`.
 
 ```text
-memo_stack_adapters/extraction/
+infinity_context_adapters/extraction/
   router.py
   metadata.py
   sanitizer.py
@@ -631,7 +631,7 @@ The convenience flag should call `CreateAssetUseCase` and then
 return the asset and a safe extraction error. Asset storage must remain valid.
 For audio/video assets, clients should pass `estimated_media_seconds` when known
 so product-plan admission can reserve media analysis quota before enqueueing
-expensive extraction work. If the client cannot know duration yet, Memo Stack
+expensive extraction work. If the client cannot know duration yet, Infinity Context
 reserves `MEMORY_EXTRACTION_MAX_MEDIA_SECONDS` as the conservative unknown-media
 estimate and can later reconcile against extractor metadata.
 
@@ -714,12 +714,12 @@ standard_local
   Pillow/tesseract metadata/OCR hooks, ffprobe/ffmpeg media metadata/keyframes.
 
 standard_docling
-  Optional high-fidelity document path. Install `memo-stack[docling]` and use
+  Optional high-fidelity document path. Install `infinity-context[docling]` and use
   this profile to try Docling first for PDF/Office/HTML/images, with fallback
   to `standard_local` engines when Docling is unavailable or fails.
 
 standard_vision
-  Optional external image understanding path. Install `memo-stack[openai]`, set
+  Optional external image understanding path. Install `infinity-context[openai]`, set
   `MEMORY_OPENAI_API_KEY`, and enable `MEMORY_EXTRACTION_EXTERNAL_AI_ENABLED`.
   Uses the Responses API with image input to extract screenshot/photo meaning as
   evidence, with fallback to OCR/image metadata when egress is disabled,
@@ -903,7 +903,7 @@ ExtractionRouter(ContentExtractionPort)
       -> FasterWhisperLocalAdapter
 ```
 
-`memo_stack_core` must not import parser libraries.
+`infinity_context_core` must not import parser libraries.
 
 ### DRY
 
@@ -969,7 +969,7 @@ Security tests:
 
 Architecture tests:
 
-- `memo_stack_core` imports no Docling, Unstructured, Tika, ffmpeg, Whisper,
+- `infinity_context_core` imports no Docling, Unstructured, Tika, ffmpeg, Whisper,
   Marker, MinerU, NVIDIA, cloud SDKs, FastAPI or SQLAlchemy;
 - parser adapters import core ports, not the other way around.
 
@@ -1045,28 +1045,28 @@ Approx changes: `2000-5000` lines.
 The final dependency direction:
 
 ```text
-memo_stack_core.domain
+infinity_context_core.domain
   AssetExtractionJob, ExtractionArtifact
 
-memo_stack_core.ports
+infinity_context_core.ports
   FileTypeDetectorPort, ContentExtractionPort, AssetExtractionRepositoryPort
 
-memo_stack_core.application
+infinity_context_core.application
   RequestAssetExtractionUseCase
   RunAssetExtractionUseCase
   ListAssetExtractionsUseCase
   RetryAssetExtractionUseCase
 
-memo_stack_adapters
+infinity_context_adapters
   Postgres extraction repositories
   Local artifact storage via BlobStoragePort
   Parser engines and router
 
-memo_stack_server
+infinity_context_server
   API, settings, worker event handler, composition root
 ```
 
-This keeps Memo Stack aligned with the main invariant:
+This keeps Infinity Context aligned with the main invariant:
 
 ```text
 Postgres is canonical.

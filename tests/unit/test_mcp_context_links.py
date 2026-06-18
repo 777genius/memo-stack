@@ -5,10 +5,10 @@ import json
 from typing import Any
 
 import httpx
-from memo_stack_mcp.adapters.http_gateway import HttpMemoryGateway
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.server import create_mcp_server
+from infinity_context_mcp.adapters.http_gateway import HttpMemoryGateway
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.server import create_mcp_server
 
 
 class ContextLinkGateway:
@@ -165,7 +165,7 @@ def test_service_suggest_context_links_rejects_secret_text() -> None:
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.policy.secret_detected"
+        assert result["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -255,7 +255,7 @@ def test_service_rejects_duplicate_context_link_batch_items() -> None:
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.conflict.duplicate_batch_item"
+        assert result["error"]["code"] == "infinity_context_mcp.conflict.duplicate_batch_item"
         assert gateway.calls == []
 
     asyncio.run(run())

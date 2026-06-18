@@ -30,7 +30,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-SUITE = "memo-stack-multimodal-docker-live-proof"
+SUITE = "infinity-context-multimodal-docker-live-proof"
 DEFAULT_REPORT = ".e2e-artifacts/multimodal-docker-live-proof.json"
 
 RunCommand = Callable[[list[str]], subprocess.CompletedProcess[str]]
@@ -71,7 +71,7 @@ def run_multimodal_docker_live_proof(
     sleep: Sleep = time.sleep,
 ) -> dict[str, Any]:
     ports = _ports(args)
-    project_name = args.project_name or f"memo-stack-multimodal-{int(time.time() * 1000)}"
+    project_name = args.project_name or f"infinity-context-multimodal-{int(time.time() * 1000)}"
     token = args.service_token or f"local-proof-{uuid.uuid4().hex}"
     env = _compose_env(args, ports=ports, token=token)
     run_cmd = run_cmd or _command_runner(args, env=env)
@@ -80,8 +80,8 @@ def run_multimodal_docker_live_proof(
     stack_started = False
 
     try:
-        _prove_docker_daemon(args, run_cmd=run_cmd, report=report, env=env)
         _prove_compose_config(args, project_name, run_cmd=run_cmd, report=report, env=env)
+        _prove_docker_daemon(args, run_cmd=run_cmd, report=report, env=env)
         _start_stack(args, project_name, run_cmd=run_cmd, report=report, env=env)
         stack_started = True
         _prove_container_dependencies(
@@ -267,7 +267,15 @@ def _prove_compose_config(
     env: dict[str, str],
 ) -> None:
     command = [*_compose_base(args, project_name), "config", "--quiet"]
-    result = run_cmd(command)
+    try:
+        result = run_cmd(command)
+    except subprocess.TimeoutExpired as exc:
+        raise DockerProofFailure(
+            "compose_config",
+            "compose_config_timeout",
+            f"Docker Compose config did not answer within {args.compose_timeout_seconds}s",
+            degraded=True,
+        ) from exc
     if result.returncode != 0:
         raise DockerProofFailure(
             "compose_config",
@@ -313,7 +321,11 @@ def _prove_container_dependencies(
     report: dict[str, Any],
     env: dict[str, str],
 ) -> None:
-    service = "memo_stack_server_full" if args.profile == "full" else "memo_stack_server"
+    service = (
+        "infinity_context_server_full"
+        if args.profile == "full"
+        else "infinity_context_server"
+    )
     checks = {
         "ffmpeg": "ffmpeg -version | head -n 1",
         "ffprobe": "ffprobe -version | head -n 1",
@@ -737,11 +749,15 @@ def _compose_base(args: argparse.Namespace, project_name: str) -> list[str]:
 def _profile_services(profile: str) -> tuple[str, ...]:
     if profile == "full":
         return (
-            "memo_stack_server_full",
-            "memo_stack_worker_full",
-            "memo_stack_extraction_worker_full",
+            "infinity_context_server_full",
+            "infinity_context_worker_full",
+            "infinity_context_extraction_worker_full",
         )
-    return ("memo_stack_server", "memo_stack_worker", "memo_stack_extraction_worker")
+    return (
+        "infinity_context_server",
+        "infinity_context_worker",
+        "infinity_context_extraction_worker",
+    )
 
 
 def _compose_env(args: argparse.Namespace, *, ports: dict[str, int], token: str) -> dict[str, str]:

@@ -1,17 +1,17 @@
 import json
 from datetime import UTC, datetime
 
-from memo_stack_core.application.multimodal_manifest import (
+from infinity_context_core.application.multimodal_manifest import (
     MULTIMODAL_MANIFEST_CONTRACT_SCHEMA_VERSION,
     MULTIMODAL_MANIFEST_SCHEMA_VERSION,
     multimodal_manifest_artifact_candidate,
     multimodal_manifest_payload,
     should_store_generic_multimodal_manifest,
 )
-from memo_stack_core.domain.assets import MemoryAsset, MemoryAssetId
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
-from memo_stack_core.domain.extraction import AssetExtractionJob, AssetExtractionJobId
-from memo_stack_core.ports.extraction import (
+from infinity_context_core.domain.assets import MemoryAsset, MemoryAssetId
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
+from infinity_context_core.domain.extraction import AssetExtractionJob, AssetExtractionJobId
+from infinity_context_core.ports.extraction import (
     ExtractedElement,
     ExtractionArtifactCandidate,
     ExtractionResult,

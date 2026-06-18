@@ -2,7 +2,7 @@
 
 Status: implementation plan, not an ADR yet.
 
-Owner: Memo Stack.
+Owner: Infinity Context.
 
 Goal: add safe automatic memory capture for coding agents without putting
 business logic into hooks, MCP tools or provider adapters. The design must stay
@@ -41,7 +41,7 @@ Agent Host
 ```
 
 This keeps hooks fast, keeps the domain independent from agent-specific payloads
-and lets Memo Stack replay captures later if extractor prompts, provider
+and lets Infinity Context replay captures later if extractor prompts, provider
 models, policies or projection adapters improve.
 
 ## 2. Research Conclusions To Preserve
@@ -159,7 +159,7 @@ Do not include these in the first auto-memory foundation:
 14. Capture deletion/redaction is a privacy lifecycle, not a fact lifecycle.
 15. Scope is resolved before application use cases run. Adapters never get to
     write naked memory scope ids.
-16. Existing Memo Stack Core modes remain compatible. Auto-memory modes are an
+16. Existing Infinity Context Core modes remain compatible. Auto-memory modes are an
     extension, not a replacement for `disabled`, `manual_only`, `suggestions`
     and `active_context`.
 17. User consent and external-provider egress policy are evaluated before any
@@ -174,7 +174,7 @@ Do not include these in the first auto-memory foundation:
     suggestion was created until its canonical transaction committed.
 22. Hooks must feature-detect server capabilities before using new capture
     endpoints.
-23. If Memo Stack Server is unavailable, hooks fail open and do not create a raw
+23. If Infinity Context Server is unavailable, hooks fail open and do not create a raw
     local prompt queue by default.
 24. Capture admission happens before storage. Capture mode is permission to
     collect eligible events, not permission to store every byte of every prompt.
@@ -227,7 +227,7 @@ Use these terms consistently:
 | Taxonomy policy | Allowlist and mapping rules for category, tags, memory kind and TTL policy. |
 | TTL policy | Rule deciding whether a candidate is durable, temporary, task-local or expires automatically. |
 | Review queue | Pending suggestions visible for approval/rejection/expiry. It is not active memory. |
-| Client minimization | Best-effort local stripping/truncation before a hook sends data to Memo Stack Server. |
+| Client minimization | Best-effort local stripping/truncation before a hook sends data to Infinity Context Server. |
 
 Do not use "memory" to mean capture, candidate, suggestion and fact
 interchangeably in code. That ambiguity is where duplicate writes and unsafe
@@ -345,50 +345,50 @@ Reasons to change:
 Add these modules incrementally:
 
 ```text
-packages/memo_stack_core/memo_stack_core/domain/capture.py
-packages/memo_stack_core/memo_stack_core/domain/candidate.py
-packages/memo_stack_core/memo_stack_core/domain/resolution.py
-packages/memo_stack_core/memo_stack_core/domain/capture_policy.py
-packages/memo_stack_core/memo_stack_core/domain/taxonomy.py
-packages/memo_stack_core/memo_stack_core/domain/suggestion_retention.py
+packages/infinity_context_core/infinity_context_core/domain/capture.py
+packages/infinity_context_core/infinity_context_core/domain/candidate.py
+packages/infinity_context_core/infinity_context_core/domain/resolution.py
+packages/infinity_context_core/infinity_context_core/domain/capture_policy.py
+packages/infinity_context_core/infinity_context_core/domain/taxonomy.py
+packages/infinity_context_core/infinity_context_core/domain/suggestion_retention.py
 
-packages/memo_stack_core/memo_stack_core/application/use_cases/receive_capture.py
-packages/memo_stack_core/memo_stack_core/application/use_cases/list_captures.py
-packages/memo_stack_core/memo_stack_core/application/use_cases/consolidate_capture.py
-packages/memo_stack_core/memo_stack_core/application/use_cases/resolve_candidate.py
-packages/memo_stack_core/memo_stack_core/application/use_cases/rebuild_capture_projection.py
-packages/memo_stack_core/memo_stack_core/application/use_cases/expire_suggestions.py
+packages/infinity_context_core/infinity_context_core/application/use_cases/receive_capture.py
+packages/infinity_context_core/infinity_context_core/application/use_cases/list_captures.py
+packages/infinity_context_core/infinity_context_core/application/use_cases/consolidate_capture.py
+packages/infinity_context_core/infinity_context_core/application/use_cases/resolve_candidate.py
+packages/infinity_context_core/infinity_context_core/application/use_cases/rebuild_capture_projection.py
+packages/infinity_context_core/infinity_context_core/application/use_cases/expire_suggestions.py
 
-packages/memo_stack_core/memo_stack_core/ports/capture_repository.py
-packages/memo_stack_core/memo_stack_core/ports/capture_sources.py
-packages/memo_stack_core/memo_stack_core/ports/capture_admission.py
-packages/memo_stack_core/memo_stack_core/ports/capture_ingress_limits.py
-packages/memo_stack_core/memo_stack_core/ports/capture_minimization.py
-packages/memo_stack_core/memo_stack_core/ports/extraction.py
-packages/memo_stack_core/memo_stack_core/ports/secret_scanner.py
-packages/memo_stack_core/memo_stack_core/ports/memory_search.py
-packages/memo_stack_core/memo_stack_core/ports/capabilities.py
-packages/memo_stack_core/memo_stack_core/ports/taxonomy.py
+packages/infinity_context_core/infinity_context_core/ports/capture_repository.py
+packages/infinity_context_core/infinity_context_core/ports/capture_sources.py
+packages/infinity_context_core/infinity_context_core/ports/capture_admission.py
+packages/infinity_context_core/infinity_context_core/ports/capture_ingress_limits.py
+packages/infinity_context_core/infinity_context_core/ports/capture_minimization.py
+packages/infinity_context_core/infinity_context_core/ports/extraction.py
+packages/infinity_context_core/infinity_context_core/ports/secret_scanner.py
+packages/infinity_context_core/infinity_context_core/ports/memory_search.py
+packages/infinity_context_core/infinity_context_core/ports/capabilities.py
+packages/infinity_context_core/infinity_context_core/ports/taxonomy.py
 
-packages/memo_stack_adapters/memo_stack_adapters/capture/claude_hook.py
-packages/memo_stack_adapters/memo_stack_adapters/capture/codex_hook.py
-packages/memo_stack_adapters/memo_stack_adapters/capture/gemini_hook.py
-packages/memo_stack_adapters/memo_stack_adapters/capture/opencode_event.py
-packages/memo_stack_adapters/memo_stack_adapters/capture/cursor_mcp.py
-packages/memo_stack_adapters/memo_stack_adapters/capture/transcript_tail.py
+packages/infinity_context_adapters/infinity_context_adapters/capture/claude_hook.py
+packages/infinity_context_adapters/infinity_context_adapters/capture/codex_hook.py
+packages/infinity_context_adapters/infinity_context_adapters/capture/gemini_hook.py
+packages/infinity_context_adapters/infinity_context_adapters/capture/opencode_event.py
+packages/infinity_context_adapters/infinity_context_adapters/capture/cursor_mcp.py
+packages/infinity_context_adapters/infinity_context_adapters/capture/transcript_tail.py
 
-packages/memo_stack_adapters/memo_stack_adapters/extraction/openai_json.py
-packages/memo_stack_adapters/memo_stack_adapters/extraction/anthropic_json.py
-packages/memo_stack_adapters/memo_stack_adapters/extraction/local_json.py
+packages/infinity_context_adapters/infinity_context_adapters/extraction/openai_json.py
+packages/infinity_context_adapters/infinity_context_adapters/extraction/anthropic_json.py
+packages/infinity_context_adapters/infinity_context_adapters/extraction/local_json.py
 
-packages/memo_stack_server/memo_stack_server/api/v1/captures.py
-packages/memo_stack_server/memo_stack_server/worker/consolidation.py
+packages/infinity_context_server/infinity_context_server/api/v1/captures.py
+packages/infinity_context_server/infinity_context_server/worker/consolidation.py
 
-packages/memo_stack_sdk/memo_stack_sdk/captures.py
+packages/infinity_context_sdk/infinity_context_sdk/captures.py
 
-packages/memo_stack_mcp/memo_stack_mcp/plugin_hook.py
-packages/memo_stack_mcp/memo_stack_mcp/hook_stdout.py
-packages/memo_stack_mcp/memo_stack_mcp/plugin_doctor.py
+packages/infinity_context_mcp/infinity_context_mcp/plugin_hook.py
+packages/infinity_context_mcp/infinity_context_mcp/hook_stdout.py
+packages/infinity_context_mcp/infinity_context_mcp/plugin_doctor.py
 ```
 
 The current `plugin_hook.py` should remain a thin adapter and gradually switch
@@ -399,23 +399,23 @@ from optional episode ingestion to capture ingestion.
 Dependency direction must stay boring:
 
 ```text
-memo_stack_core
+infinity_context_core
   imports: standard library, domain/application/ports only
   must not import: FastAPI, SQLAlchemy, httpx, MCP, OpenAI, Anthropic, Graphiti, Qdrant
 
-memo_stack_adapters
-  imports: memo_stack_core ports/domain plus provider SDKs/infrastructure
+infinity_context_adapters
+  imports: infinity_context_core ports/domain plus provider SDKs/infrastructure
   must not own: business decisions, policy final decisions, fact lifecycle
 
-memo_stack_server
-  imports: memo_stack_core use cases, adapters, API DTOs, composition root
+infinity_context_server
+  imports: infinity_context_core use cases, adapters, API DTOs, composition root
   owns: HTTP mapping, auth/scope resolution, dependency wiring
 
-memo_stack_sdk
+infinity_context_sdk
   imports: DTOs/client helpers
   must not own: host parsing, capture admission, resolver rules
 
-memo_stack_mcp
+infinity_context_mcp
   imports: SDK/HTTP gateway and MCP models
   must not own: canonical lifecycle, extractor logic, provider adapters
 ```
@@ -775,7 +775,7 @@ class CapabilityDiscoveryPort(Protocol):
 
 Hooks and MCP adapters use this to detect whether `/v1/captures`, consolidation
 and review tools are available. New plugin builds must degrade safely against
-older Memo Stack Server versions.
+older Infinity Context Server versions.
 
 ### 9.5 CaptureIngressLimitPort
 
@@ -869,7 +869,7 @@ Request:
   "source_kind": "hook",
   "source_event_id": "claude-session-123-turn-4",
   "source_actor_external_ref": "user-local",
-  "client_instance_id": "memo-stack-agent-plugin:local:abc123",
+  "client_instance_id": "infinity-context-agent-plugin:local:abc123",
   "event_type": "UserPromptSubmit",
   "actor_role": "user",
   "text": "Remember that we use Graphiti for temporal facts.",
@@ -967,7 +967,7 @@ Plugin behavior:
 
 ### 10.6 Plugin Doctor And Status Contract
 
-`memo-stack-mcp-doctor` and MCP `memory_status` should expose enough safe state for
+`infinity-context-mcp-doctor` and MCP `memory_status` should expose enough safe state for
 users to understand whether auto-memory is active.
 
 Required fields:
@@ -1570,8 +1570,8 @@ Extractor prompt/schema versions should live in code, not mutable runtime
 strings:
 
 ```text
-packages/memo_stack_adapters/memo_stack_adapters/extraction/prompts/semantic_memory_v1.md
-packages/memo_stack_adapters/memo_stack_adapters/extraction/schemas/semantic_memory_v1.json
+packages/infinity_context_adapters/infinity_context_adapters/extraction/prompts/semantic_memory_v1.md
+packages/infinity_context_adapters/infinity_context_adapters/extraction/schemas/semantic_memory_v1.json
 ```
 
 Rules:
@@ -1663,7 +1663,7 @@ Recommended v1 taxonomy:
 
 Rules:
 
-- `MemoryKind` remains the small canonical enum already used by Memo Stack Core;
+- `MemoryKind` remains the small canonical enum already used by Infinity Context Core;
 - `category` is one stable memory-scope-level grouping label;
 - `tags` are optional filters, max 10 tags, normalized to lowercase slug form;
 - tags cannot grant permissions, widen scope or override retention policy;
@@ -2317,7 +2317,7 @@ Rules:
 ## 19.5 Client-Side Minimization
 
 The plugin should reduce obvious sensitive or useless data before sending a
-capture to Memo Stack Server, especially when the server is remote. This is a
+capture to Infinity Context Server, especially when the server is remote. This is a
 privacy optimization, not the source of truth.
 
 Rules:
@@ -2619,7 +2619,7 @@ Rules:
 | Import tries to create active fact | reject or suggestion only | unit |
 | Debug export requested | redacted ids/statuses only | unit |
 | Server lacks `/v1/captures` | plugin falls back to retrieve-only | e2e |
-| Memo Stack Server down during hook | fail open, no local raw spool | e2e |
+| Infinity Context Server down during hook | fail open, no local raw spool | e2e |
 | Ordinary prompt with broad capture disabled | metadata-only or ignore | unit |
 | Compaction summary without source refs | low-authority suggestion or ignore | unit |
 | Stop event arrives before prompt event | idempotent capture handling | unit |
@@ -2648,7 +2648,7 @@ Rules:
 | Plugin doctor against old server | reports retrieve-only degraded state | e2e |
 | Hook tries to print capture status to stdout | stdout renderer contract test fails | unit |
 | Review queue cleanup races with approval | optimistic lock prevents double transition | e2e |
-| Adapter imports provider SDK into memo_stack_core | architecture test fails | unit |
+| Adapter imports provider SDK into infinity_context_core | architecture test fails | unit |
 
 ## 24. Evaluation Plan
 
@@ -2747,7 +2747,7 @@ Each JSONL row:
   "description": "User corrects an existing architecture decision.",
   "scope": {
     "space_slug": "personal",
-    "memory_scope_external_ref": "memo-stack",
+    "memory_scope_external_ref": "infinity-context",
     "thread_external_ref": "fixture-thread"
   },
   "input": {
@@ -3044,7 +3044,7 @@ pause and suggestion cleanup.
 
 Current state:
 
-- Memo Stack already has facts, documents, suggestions, outbox and
+- Infinity Context already has facts, documents, suggestions, outbox and
   projections.
 - MCP adapter can propose/review memory.
 - Plugin hook can retrieve context and optionally ingest episodes.
@@ -3088,33 +3088,33 @@ Backfill acceptance:
 Proposed make targets:
 
 ```text
-memo-stack-capture-test
-memo-stack-capture-e2e
-memo-stack-auto-memory-eval
-memo-stack-hook-capture-smoke
+infinity-context-capture-test
+infinity-context-capture-e2e
+infinity-context-auto-memory-eval
+infinity-context-hook-capture-smoke
 memory-consolidation-worker-smoke
-memo-stack-auto-memory-quality
+infinity-context-auto-memory-quality
 ```
 
 Expected composition:
 
 ```text
-memo-stack-capture-test
+infinity-context-capture-test
   -> unit tests for domain, parser, policy, resolver
 
-memo-stack-capture-e2e
+infinity-context-capture-e2e
   -> API capture create/list/consolidate
 
-memo-stack-hook-capture-smoke
-  -> generated plugin hook -> Memo Stack Server -> capture row
+infinity-context-hook-capture-smoke
+  -> generated plugin hook -> Infinity Context Server -> capture row
 
 memory-hook-stdout-safety
   -> retrieved context rendering snapshots + secret/prompt-injection suppression
 
-memo-stack-auto-memory-eval
+infinity-context-auto-memory-eval
   -> golden corpus metrics
 
-memo-stack-auto-memory-quality
+infinity-context-auto-memory-quality
   -> capture + worker + suggestions + taxonomy + cleanup + stale projection gates
 ```
 

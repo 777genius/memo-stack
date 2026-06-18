@@ -1,24 +1,24 @@
-# Memo Stack Docs
+# Infinity Context Docs
 
 This folder contains the platform planning documents moved out of Client App.
 
 ## Reading Order
 
-1. [Core Lite implementation plan](memo-stack-core-lite-plan.md)
-2. [Global architecture plan](memo-stack-architecture-plan.md)
+1. [Core Lite implementation plan](infinity-context-core-lite-plan.md)
+2. [Global architecture plan](infinity-context-architecture-plan.md)
 3. [MCP memory foundation plan](mcp-memory-foundation-plan.md)
 4. [Auto-memory capture platform plan](auto-memory-capture-platform-plan.md)
 5. [Memory architecture research lockfile](memory-architecture-research-lockfile.md)
 6. [Multimodal quick capture research](multimodal-quick-capture-memory-research.md)
 7. [Content extraction clean architecture plan](content-extraction-clean-architecture-plan.md)
 8. [Parser library research](content-extraction-parser-library-research.md)
-9. [Client compatibility notes](client-integration/interview-memo-stack-clean-architecture-plan.md)
+9. [Client compatibility notes](client-integration/interview-infinity-context-clean-architecture-plan.md)
 10. [Client integration run notes](client-integration/current-integration-run-notes.md)
 11. [Self-hosted team deployment](self-hosted-team-deployment.md)
 
 ## Architecture Decisions
 
-- [ADR-0001 - Memo Stack Core Lite Boundaries](adr/ADR-0001-memo-stack-core-lite-boundaries.md)
+- [ADR-0001 - Infinity Context Core Lite Boundaries](adr/ADR-0001-infinity-context-core-lite-boundaries.md)
 - [ADR-0002 - Postgres Is Canonical Truth](adr/ADR-0002-postgres-canonical-truth.md)
 - [ADR-0003 - Canonical Fact Lifecycle](adr/ADR-0003-canonical-fact-lifecycle.md)
 - [ADR-0004 - Derived Retrieval Adapters](adr/ADR-0004-derived-retrieval-adapters.md)
@@ -30,7 +30,7 @@ This folder contains the platform planning documents moved out of Client App.
 These docs now belong to:
 
 ```text
-/Users/belief/dev/projects/ai/memo-stack
+/Users/belief/dev/projects/ai/infinity-context
 ```
 
 Client App should keep only integration notes and pointers to this project.
@@ -40,32 +40,32 @@ Client App should keep only integration notes and pointers to this project.
 Start the local platform stack through explicit profiles:
 
 ```bash
-make memo-stack-up-lite
-make memo-stack-up-full
+make infinity-context-up-lite
+make infinity-context-up-full
 ```
 
-`lite` runs Postgres plus the Memo Stack Server, projection worker and extraction
+`lite` runs Postgres plus the Infinity Context Server, projection worker and extraction
 worker with provider adapters disabled. `full` also runs Qdrant, Neo4j and full
 provider workers, and requires `OPENAI_API_KEY` plus `MEMORY_OPENAI_API_KEY`.
 
 Local smokes:
 
 ```bash
-make memo-stack-smoke
-make memo-stack-smoke-full
-make memo-stack-mcp-smoke
-make memo-stack-multimodal-production-e2e
-make memo-stack-frontend-marionette-memory-e2e
+make infinity-context-smoke
+make infinity-context-smoke-full
+make infinity-context-mcp-smoke
+make infinity-context-multimodal-production-e2e
+make infinity-context-frontend-marionette-memory-e2e
 ```
 
 Quality gates:
 
 ```bash
-make memo-stack-test-quality
-make memo-stack-desktop-confidence
-make memo-stack-plugin-test
-.venv/bin/python -m memo_stack_server.eval run --suite quality-golden
-.venv/bin/python -m memo_stack_server.eval run --suite semantic-linking-golden
+make infinity-context-test-quality
+make infinity-context-desktop-confidence
+make infinity-context-plugin-test
+.venv/bin/python -m infinity_context_server.eval run --suite quality-golden
+.venv/bin/python -m infinity_context_server.eval run --suite semantic-linking-golden
 ```
 
 `quality-golden` is the prompt-impacting memory benchmark. It checks recall,
@@ -78,47 +78,47 @@ specific target ranking against a similar distractor, event-like call linking
 against a recent chat distractor, person/project anchor suggestions, same-name
 person/project disambiguation, review approval, high-impact relation review
 gates, and the no-candidate path for unrelated captures.
-`memo-stack-multimodal-production-e2e` is the local multimodal acceptance gate.
+`infinity-context-multimodal-production-e2e` is the local multimodal acceptance gate.
 It uploads document, image, audio and video assets into an isolated server,
 runs extraction, checks artifacts/source chunks and approves semantic links
 without requiring paid provider keys. It also covers ingestion edge cases:
 duplicate uploads, cancel/retry, wrong MIME detection, extraction size limits,
 corrupted input diagnostics and deleted review targets.
-`memo-stack-frontend-marionette-memory-e2e` starts the Flutter debug app against
+`infinity-context-frontend-marionette-memory-e2e` starts the Flutter debug app against
 the local Docker backend and validates the frontend memory save/review path
 through VM service extensions: create scope, save capture, approve a context-link
 suggestion, upload attachment evidence, wait for asset extraction,
 create/update/split anchors, merge duplicate anchors and cleanup.
-`memo-stack-frontend-marionette-local-e2e` runs the same frontend proof against
+`infinity-context-frontend-marionette-local-e2e` runs the same frontend proof against
 a temporary local SQLite server and worker, without Docker, and writes a bounded
 JSON proof report to `.e2e-artifacts/frontend-marionette-local-e2e.json` by
 default.
-`memo-stack-test-quality` is the deterministic backend quality gate. It runs
+`infinity-context-test-quality` is the deterministic backend quality gate. It runs
 lint, the full pytest suite, memory evals, prompt snapshots and the repository
 secret scan without requiring Docker or paid provider keys.
-`memo-stack-desktop-confidence` is the local desktop product gate. It combines
+`infinity-context-desktop-confidence` is the local desktop product gate. It combines
 the deterministic backend quality suite, Flutter analyze/tests, the live
 Marionette frontend memory E2E, `git diff --check` and the repository secret
-scan. It starts the lite Docker stack for the live E2E and runs `memo-stack-down`
+scan. It starts the lite Docker stack for the live E2E and runs `infinity-context-down`
 on exit.
 
 Fresh full-provider canary with isolated Docker volumes:
 
 ```bash
-make memo-stack-clean-full-smoke
-make memo-stack-clean-full-mcp-smoke
-make memo-stack-full-provider-canary-interactive
-make memo-stack-multimodal-live-provider-canary
+make infinity-context-clean-full-smoke
+make infinity-context-clean-full-mcp-smoke
+make infinity-context-full-provider-canary-interactive
+make infinity-context-multimodal-live-provider-canary
 ```
 
 This is a manual paid canary. It requires Docker plus `MEMORY_OPENAI_API_KEY`
 or `OPENAI_API_KEY`, starts isolated Postgres, Qdrant and Neo4j containers,
 uses OpenAI embeddings, and tears the stack down unless
 `MEMORY_CLEAN_SMOKE_KEEP_STACK=true`.
-Use `memo-stack-full-provider-canary-interactive` when the key is not already
+Use `infinity-context-full-provider-canary-interactive` when the key is not already
 exported; it reads the key with terminal echo disabled and passes it only via
 process environment.
-`memo-stack-multimodal-live-provider-canary` is the direct multimodal provider
+`infinity-context-multimodal-live-provider-canary` is the direct multimodal provider
 canary for image vision and audio transcription adapters. It requires
 `MEMORY_OPENAI_API_KEY` or `OPENAI_API_KEY`, uses
 `MEMORY_EXTRACTION_VISION_MODEL`, `MEMORY_EXTRACTION_VISION_DETAIL` and
@@ -129,22 +129,22 @@ macOS `say` command to synthesize a short speech fixture. Missing keys or missin
 speech fixture are reported as degraded diagnostics, not fake success, and the
 report never includes API key values.
 
-`memo-stack-clean-full-smoke` now runs the real stdio MCP canary by default. To
+`infinity-context-clean-full-smoke` now runs the real stdio MCP canary by default. To
 run only the historical HTTP/API full-provider smoke, set:
 
 ```bash
-MEMORY_CLEAN_SMOKE_SKIP_MCP=true make memo-stack-clean-full-smoke
+MEMORY_CLEAN_SMOKE_SKIP_MCP=true make infinity-context-clean-full-smoke
 ```
 
 Publishable top-library evidence should use the stricter bundle gate:
 
 ```bash
-make memo-stack-top-evidence-preflight
+make infinity-context-top-evidence-preflight
 MEMORY_AGENT_BENCH_MODEL="$MODEL" \
 MEMORY_OPENAI_API_KEY="$KEY" \
 MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET=/path/to/locomo.json \
 MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET=/path/to/longmemeval.json \
-make memo-stack-top-evidence-bundle
+make infinity-context-top-evidence-bundle
 ```
 
 The preflight fails before Docker/OpenAI work if the worktree is dirty, Docker
@@ -182,7 +182,7 @@ health, space/memory-scope creation, remember, update, document ingest, search,
 context and forget.
 
 The MCP smoke starts a real stdio MCP client and verifies status, search,
-remember, update and forget through MCP tools. `memo_stack_server` runs database
+remember, update and forget through MCP tools. `infinity_context_server` runs database
 upgrade and `seed-defaults` during Docker startup. The Compose file waits for
 Postgres health before starting the server and exposes a server healthcheck on
 `/v1/health`.
@@ -191,61 +191,61 @@ The plugin gate validates repo-local agent packaging for Codex, Claude, Gemini,
 OpenCode, Cursor package config and Cursor workspace config:
 
 ```bash
-make memo-stack-plugin-test
-make memo-stack-prod-confidence
-make memo-stack-prod-confidence-strict-preflight
-make memo-stack-prod-confidence-strict
+make infinity-context-plugin-test
+make infinity-context-prod-confidence
+make infinity-context-prod-confidence-strict-preflight
+make infinity-context-prod-confidence-strict
 ```
 
 It runs `plugin-kit-ai generate --check`, strict target validation and generated
-MCP e2e coverage. Use `make memo-stack-plugin-doctor` after
-`make memo-stack-up-lite` for the live API readiness check.
-`memo-stack-prod-confidence` is the one-command unpaid release gate. It runs plugin
+MCP e2e coverage. Use `make infinity-context-plugin-doctor` after
+`make infinity-context-up-lite` for the live API readiness check.
+`infinity-context-prod-confidence` is the one-command unpaid release gate. It runs plugin
 validation/e2e, the full deterministic memory quality suite, install doctor,
 isolated live MCP smoke, advisory real-agent smoke, advisory auth doctor,
 `git diff --check` and a repository secret scan. It also installs a cleanup trap
-and runs `memo-stack-down` on exit.
-`memo-stack-prod-confidence-strict` is the paid/local-auth hard gate for a fully
+and runs `infinity-context-down` on exit.
+`infinity-context-prod-confidence-strict` is the paid/local-auth hard gate for a fully
 green release. It runs the strict top-evidence bundle, which requires
 `MEMORY_OPENAI_API_KEY` or `OPENAI_API_KEY`, `MEMORY_AGENT_BENCH_MODEL`,
 representative LoCoMo and LongMemEval dataset files, a clean worktree, the
 isolated Graphiti/Qdrant/OpenAI MCP canary, real agent-behavior evidence and the
 public benchmark evidence bundle. It also treats real
 Codex/Claude/Gemini/OpenCode CLI auth failures as hard failures.
-`memo-stack-prod-confidence-strict-preflight` runs first and fails before paid
+`infinity-context-prod-confidence-strict-preflight` runs first and fails before paid
 provider/model work when top-evidence config or real-agent auth is missing.
-`memo-stack-prod-confidence-full` is an alias for the strict gate.
+`infinity-context-prod-confidence-full` is an alias for the strict gate.
 
 Agent install verification is separate from package validation because
 `plugin-kit-ai validate` and `plugin-kit-ai add` use different target names:
 
 ```bash
-make memo-stack-agent-install-dry-run
-make memo-stack-agent-install
-make memo-stack-agent-install-doctor
-make memo-stack-agent-live-smoke
-make memo-stack-agent-live-smoke-agents
-make memo-stack-agent-live-smoke-agents-strict
-make memo-stack-agent-auth-doctor
-make memo-stack-agent-auth-doctor-strict
-make memo-stack-agent-auth-repair
-make memo-stack-prod-confidence-strict-preflight
+make infinity-context-agent-install-dry-run
+make infinity-context-agent-install
+make infinity-context-agent-install-doctor
+make infinity-context-agent-live-smoke
+make infinity-context-agent-live-smoke-agents
+make infinity-context-agent-live-smoke-agents-strict
+make infinity-context-agent-auth-doctor
+make infinity-context-agent-auth-doctor-strict
+make infinity-context-agent-auth-repair
+make infinity-context-prod-confidence-strict-preflight
 ```
 
 The managed install targets are `codex`, `claude`, `gemini`, `opencode` and
 `cursor`. Cursor workspace config remains a generated workspace-copy lane and
 is covered by plugin e2e, not by `plugin-kit-ai integrations`.
-`memo-stack-agent-live-smoke` is the stable hard gate for generated MCP configs. It
+`infinity-context-agent-live-smoke` is the stable hard gate for generated MCP configs. It
 starts the local lite stack and verifies stdio `memory_status` through the
 package, Gemini, OpenCode and Cursor workspace generated configs. Real agent
-CLI evidence is separated into `memo-stack-agent-live-smoke-agents`; that target
+CLI evidence is separated into `infinity-context-agent-live-smoke-agents`; that target
 reports missing Claude/Gemini/OpenCode/Codex auth/session state as advisory
-blocked evidence. Use `memo-stack-agent-live-smoke-agents-strict` only on a machine
+blocked evidence. Use `infinity-context-agent-live-smoke-agents-strict` only on a machine
 where every local agent CLI is authenticated and expected to pass.
 The live-smoke targets use isolated default host ports
 `MEMORY_AGENT_SMOKE_SERVER_PORT=17788` and
 `MEMORY_AGENT_SMOKE_POSTGRES_PORT=55429`, so they do not accidentally verify
-against another local Memo Stack Server already running on `7788`.
+against another local Infinity Context Server already running on `7788`.
 Gemini installed extensions persist MCP env inside the extension config. The
 real-agent smoke keeps that persisted config intact and passes
 `MEMORY_MCP_RUNTIME_*` overrides through the repo-local wrapper, so an installed
@@ -255,23 +255,23 @@ persisted Gemini URL remains a blocked preflight.
 Gemini CLI can inject a `wait_for_previous` sequencing argument into MCP tool
 calls. The MCP adapter ignores only that known host argument before strict input
 validation; arbitrary unknown arguments remain rejected.
-`memo-stack-agent-auth-doctor` runs plain agent prompts without Memo Stack MCP. If it
+`infinity-context-agent-auth-doctor` runs plain agent prompts without Infinity Context MCP. If it
 reports Claude or OpenCode 401, fix the local agent credentials before blaming
-the Memory plugin or MCP transport. `memo-stack-agent-auth-repair` is an
+the Memory plugin or MCP transport. `infinity-context-agent-auth-repair` is an
 interactive helper for the local machine; it runs the official Claude and
 OpenCode login flows and then re-runs the strict auth doctor.
-Run `memo-stack-prod-confidence-strict-preflight` before paid canaries on a fresh
+Run `infinity-context-prod-confidence-strict-preflight` before paid canaries on a fresh
 machine; it catches missing OpenAI env and local agent auth problems before the
 Graphiti/Qdrant/OpenAI full-provider stack starts.
-`memo-stack-agent-install-doctor` also treats `plugin-kit-ai integrations list` and
+`infinity-context-agent-install-doctor` also treats `plugin-kit-ai integrations list` and
 `plugin-kit-ai integrations doctor` failures as hard failures, even when the
 local structured state file still looks valid.
 
 Auto-memory capture quality has its own deterministic gate:
 
 ```bash
-make memo-stack-auto-memory-eval
-make memo-stack-auto-memory-quality
+make infinity-context-auto-memory-eval
+make infinity-context-auto-memory-quality
 ```
 
 The eval suite runs against public server APIs and verifies that review-gated
@@ -284,13 +284,13 @@ The clean full MCP canary uses the same isolated full-provider stack and
 verifies MCP status/readiness, fact lifecycle, document chunk recall through
 Qdrant, Graphiti projection updates/deletes, outbox drain, provider
 diagnostics and token redaction. It is intentionally not part of
-`make memo-stack-test-quality`. `make memo-stack-full-provider-canary` is an alias for
+`make infinity-context-test-quality`. `make infinity-context-full-provider-canary` is an alias for
 the same paid gate.
 
 For production-like scale, chaos and load coverage:
 
 ```bash
-MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-prod-load-canary
+MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-prod-load-canary
 ```
 
 This uses the same clean Docker full stack, then adds concurrent fact writes,
@@ -299,22 +299,22 @@ validation floods, worker drain checks, API and stdio MCP retrieval, update,
 delete, Qdrant/Graphiti recall and context latency p95. The regular free e2e
 gate also covers concurrent document idempotency, outbox backpressure, mutation
 storms, stale outbox lag alerting with worker drain recovery, dead outbox
-runbook recovery through `memo_stack_server.admin replay-outbox`, expired worker
+runbook recovery through `infinity_context_server.admin replay-outbox`, expired worker
 lease recovery through the worker CLI, and poison outbox handling where an
 unknown projection job must become `dead`, raise a safe alert, fail
-`memo_stack_server.doctor` as degraded without leaking payload, and leave canonical
-read/write paths available. The same free gate also verifies Memo Stack Server
+`infinity_context_server.doctor` as degraded without leaking payload, and leave canonical
+read/write paths available. The same free gate also verifies Infinity Context Server
 process restart continuity: canonical facts/documents survive restart,
 idempotency retries do not create duplicates, updated/deleted facts stay
 filtered and restricted facts remain hidden. Maintenance coverage includes
-`memo_stack_server.admin compact-outbox`: dry-run stays non-mutating, actual
+`infinity_context_server.admin compact-outbox`: dry-run stays non-mutating, actual
 compaction redacts done-job payloads, diagnostics stay safe and canonical
 context retrieval still works.
 The paid full-stack canary additionally verifies thread-scoped isolation, large
-multi-chunk document recall, Memo Stack Server restart continuity, Qdrant/Neo4j
+multi-chunk document recall, Infinity Context Server restart continuity, Qdrant/Neo4j
 provider restart recovery, and provider outage recovery where projection jobs
 must enter retry and drain after providers return. It is paid/manual and does
-not run in `make memo-stack-test-quality`.
+not run in `make infinity-context-test-quality`.
 
 Useful knobs for larger runs:
 
@@ -331,20 +331,20 @@ Useful knobs for larger runs:
 - `MEMORY_CLEAN_SMOKE_LOAD_PROVIDER_OUTAGE` - default `true`.
 
 The real LLM agent-behavior benchmark is a stricter paid/manual gate. It uses
-the same fresh full-provider stack, exposes `memo_stack_mcp` tools to an OpenAI
+the same fresh full-provider stack, exposes `infinity_context_mcp` tools to an OpenAI
 Responses API model as function tools, executes chosen calls through real stdio
 MCP, then scores whether the model searched before writes, updated instead of
 duplicating, avoided secrets, respected scope isolation and treated retrieved
 memory as evidence.
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-behavior-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-behavior-bench
 ```
 
 For noisier, more production-like scenarios:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-realistic-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-realistic-bench
 ```
 
 The realistic suite covers noisy transcripts, semantic duplicates, similar
@@ -354,7 +354,7 @@ secrets, prompt-injected retrieved memory and immediate recall after writes.
 For long live-agent sessions and adversarial transcript tails:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-live-session-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-live-session-bench
 ```
 
 The live suite covers long transcript rollups, update plus delete chains,
@@ -365,7 +365,7 @@ long-tail transcript recall. The report includes `live_session_pass_rate` and
 For transcript-corpus driven long conversation checks:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-transcript-corpus-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-transcript-corpus-bench
 ```
 
 This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=transcript`. The built-in corpus
@@ -384,7 +384,7 @@ To build a safe corpus from local agent logs, first redact them into fixtures:
 ```bash
 MEMORY_AGENT_TRANSCRIPT_INPUT=/path/to/raw-agent-logs \
 MEMORY_AGENT_TRANSCRIPT_OUTPUT=/path/to/redacted-corpus \
-make memo-stack-agent-transcript-corpus-redact
+make infinity-context-agent-transcript-corpus-redact
 ```
 
 The redactor reads explicit files or a non-recursive directory, masks common
@@ -397,7 +397,7 @@ Then audit the redacted corpus before running it as evidence:
 
 ```bash
 MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR=/path/to/redacted-corpus \
-make memo-stack-agent-transcript-corpus-audit
+make infinity-context-agent-transcript-corpus-audit
 ```
 
 Use `MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT=true` when a corpus must be
@@ -408,12 +408,12 @@ high-signal expected checks such as `required_memory_checks`,
 For the broad paid/manual "real memory in battle" gate:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-real-memory-confidence
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-real-memory-confidence
 ```
 
 That gate runs the full-provider MCP canary, prod-load canary, live-session
 agent benchmark and transcript-corpus benchmark before `git diff --check` and
-secret scan. It uses `memo-stack-top-evidence-bundle` for the full-provider plus
+secret scan. It uses `infinity-context-top-evidence-bundle` for the full-provider plus
 public benchmark path, so the scorecard only becomes top-library-comparison-ready
 when strict provenance, Graphiti/Qdrant/OpenAI, agent behavior and public
 benchmark evidence are all present. Paid agent benchmark targets default
@@ -456,4 +456,4 @@ embeddings. `MEMORY_AGENT_BENCH_LLM_TIMEOUT_SECONDS`,
 `MEMORY_AGENT_BENCH_SCENARIO_TIMEOUT_SECONDS` and
 `MEMORY_CLEAN_SMOKE_WORKER_TIMEOUT_SECONDS` can tune the paid/manual gate. The
 benchmark prints one redacted JSON report and is intentionally not part of
-`make memo-stack-test-quality`.
+`make infinity-context-test-quality`.

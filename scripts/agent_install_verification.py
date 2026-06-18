@@ -22,19 +22,19 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from memo_stack_core.reporting import with_report_provenance
+from infinity_context_core.reporting import with_report_provenance
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memo-stack-agent-plugin"
-CURSOR_WORKSPACE_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memo-stack-agent-plugin-cursor-workspace"
-GEMINI_HOOK_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "memo-stack-agent-plugin-gemini-hooks"
-NO_DEFAULT_THREAD_SENTINEL = "__MEMO_STACK_NO_DEFAULT_THREAD__"
-MCP_SERVER_ALIAS = "memo-stack"
-INTEGRATION_ID = "memo-stack-agent-plugin"
-GEMINI_HOOK_INTEGRATION_ID = "memo-stack-agent-plugin-gemini-hooks"
+PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "infinity-context-agent-plugin"
+CURSOR_WORKSPACE_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "infinity-context-agent-plugin-cursor-workspace"
+GEMINI_HOOK_PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "infinity-context-agent-plugin-gemini-hooks"
+NO_DEFAULT_THREAD_SENTINEL = "__INFINITY_CONTEXT_NO_DEFAULT_THREAD__"
+MCP_SERVER_ALIAS = "infinity-context"
+INTEGRATION_ID = "infinity-context-agent-plugin"
+GEMINI_HOOK_INTEGRATION_ID = "infinity-context-agent-plugin-gemini-hooks"
 DEFAULT_API_URL = "http://127.0.0.1:7788"
 DEFAULT_AUTH_TOKEN = "local-dev-token"
-AGENT_LIVE_SMOKE_SUITE = "memo-stack-agent-live-smoke"
+AGENT_LIVE_SMOKE_SUITE = "infinity-context-agent-live-smoke"
 SENSITIVE_KEY_RE = re.compile(
     r"(TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL|DATABASE_URL|DB_URL|DSN)$",
     re.IGNORECASE,
@@ -155,10 +155,10 @@ def run_install_doctor(*, strict_codex: bool, skip_cli_lists: bool) -> dict[str,
     gemini_hook_installation = load_plugin_installation(GEMINI_HOOK_INTEGRATION_ID)
     targets = installation.get("targets", {})
     if not isinstance(targets, dict):
-        raise VerificationFailure("memo-stack-agent-plugin targets must be an object")
+        raise VerificationFailure("infinity-context-agent-plugin targets must be an object")
     gemini_hook_targets = gemini_hook_installation.get("targets", {})
     if not isinstance(gemini_hook_targets, dict):
-        raise VerificationFailure("memo-stack-agent-plugin-gemini-hooks targets must be an object")
+        raise VerificationFailure("infinity-context-agent-plugin-gemini-hooks targets must be an object")
 
     required_installed = ("claude", "cursor", "opencode")
     target_checks: dict[str, dict[str, Any]] = {}
@@ -184,7 +184,7 @@ def run_install_doctor(*, strict_codex: bool, skip_cli_lists: bool) -> dict[str,
         pass
     elif codex_check["state"] == "activation_pending":
         message = (
-            "codex native activation is pending: install memo-stack-agent-plugin from "
+            "codex native activation is pending: install infinity-context-agent-plugin from "
             "the Codex Plugin Directory and start a new Codex thread"
         )
         if strict_codex:
@@ -310,7 +310,7 @@ async def run_live_smoke(
         report,
         generated_by="scripts/agent_install_verification.py",
         suite=AGENT_LIVE_SMOKE_SUITE,
-        project="memo-stack",
+        project="infinity-context",
         cwd=PROJECT_ROOT,
     )
 
@@ -378,15 +378,15 @@ def run_agent_cli_smokes(
     timeout: float,
 ) -> dict[str, Any]:
     prompt = (
-        "Call the Memo Stack MCP tool memory_status. "
+        "Call the Infinity Context MCP tool memory_status. "
         "Then reply with exactly: memory_status_checked."
     )
     gemini_prompt = (
-        "Use the Gemini MCP tool named mcp_memo-stack_memory_status with empty args. "
+        "Use the Gemini MCP tool named mcp_infinity-context_memory_status with empty args. "
         "Do not call shell tools, subagents, or file tools. "
         "After the MCP call succeeds, reply with exactly: memory_status_checked."
     )
-    memory_mcp_bin = str(PLUGIN_ROOT / "bin" / "memo-stack-mcp")
+    memory_mcp_bin = str(PLUGIN_ROOT / "bin" / "infinity-context-mcp")
     agent_env = {
         "MEMORY_MCP_API_URL": api_url,
         "MEMORY_MCP_AUTH_TOKEN": auth_token,
@@ -422,7 +422,7 @@ def run_agent_cli_smokes(
             "--extensions",
             GEMINI_HOOK_INTEGRATION_ID,
             "--allowed-mcp-server-names",
-            "memo-stack",
+            "infinity-context",
             "--output-format",
             "json",
         ],
@@ -430,7 +430,7 @@ def run_agent_cli_smokes(
         "codex": [
             "codex",
             "-c",
-            f'mcp_servers.memo-stack.command="{memory_mcp_bin}"',
+            f'mcp_servers.infinity-context.command="{memory_mcp_bin}"',
             "exec",
             "--ephemeral",
             "--sandbox",
@@ -743,7 +743,7 @@ def check_gemini_extension_runtime_config(
         }
     return {
         "status": "blocked",
-        "reason": "gemini memo-stack-agent-plugin-gemini-hooks extension not installed",
+        "reason": "gemini infinity-context-agent-plugin-gemini-hooks extension not installed",
     }
 
 

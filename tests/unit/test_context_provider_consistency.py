@@ -3,13 +3,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.noop import (
+from infinity_context_adapters.noop import (
     NoopEmbeddingAdapter,
     NoopGraphMemoryAdapter,
     NoopVectorMemoryAdapter,
 )
-from memo_stack_adapters.postgres.models import MemoryFactRow
-from memo_stack_core.application import (
+from infinity_context_adapters.postgres.models import MemoryFactRow
+from infinity_context_core.application import (
     BuildContextQuery,
     BuildContextUseCase,
     ConsistencyMode,
@@ -17,8 +17,8 @@ from memo_stack_core.application import (
     EnsureScopeCommand,
     ForgetFactCommand,
 )
-from memo_stack_core.domain.entities import MemoryScopeId, SourceRef, SpaceId
-from memo_stack_core.ports.adapters import (
+from infinity_context_core.domain.entities import MemoryScopeId, SourceRef, SpaceId
+from infinity_context_core.ports.adapters import (
     AdapterCapabilities,
     EmbeddingResult,
     GraphCandidate,
@@ -27,17 +27,17 @@ from memo_stack_core.ports.adapters import (
     VectorCandidate,
     VectorSearchResult,
 )
-from memo_stack_core.ports.capabilities import (
+from infinity_context_core.ports.capabilities import (
     CapabilityRecallCandidate,
     CapabilityRecallQuery,
     CapabilityRecallResult,
     CapabilityStatus,
     MemoryCapability,
 )
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
-from memo_stack_server.provider_budget import QueryEmbeddingBudgetAdapter
-from memo_stack_server.provider_circuit import (
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
+from infinity_context_server.provider_budget import QueryEmbeddingBudgetAdapter
+from infinity_context_server.provider_circuit import (
     CircuitBreakingEmbeddingAdapter,
     CircuitBreakingGraphMemoryAdapter,
     CircuitBreakingVectorMemoryAdapter,

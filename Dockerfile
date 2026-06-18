@@ -6,9 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-ARG MEMO_STACK_EXTRAS="qdrant,openai,graphiti,mcp,docling"
-ARG MEMO_STACK_PREINSTALL_TORCH_CPU="true"
-ARG MEMO_STACK_TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
+ARG INFINITY_CONTEXT_EXTRAS="qdrant,openai,graphiti,mcp,docling"
+ARG INFINITY_CONTEXT_PREINSTALL_TORCH_CPU="true"
+ARG INFINITY_CONTEXT_TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
 
 WORKDIR /app
 
@@ -20,29 +20,29 @@ COPY pyproject.toml README.md ./
 COPY packages ./packages
 
 RUN python -m pip install --upgrade pip setuptools wheel \
-    && case ",${MEMO_STACK_EXTRAS}," in \
+    && case ",${INFINITY_CONTEXT_EXTRAS}," in \
         *,docling,*) \
-            if [ "$MEMO_STACK_PREINSTALL_TORCH_CPU" = "true" ]; then \
-                python -m pip install --index-url "$MEMO_STACK_TORCH_INDEX_URL" torch torchvision; \
+            if [ "$INFINITY_CONTEXT_PREINSTALL_TORCH_CPU" = "true" ]; then \
+                python -m pip install --index-url "$INFINITY_CONTEXT_TORCH_INDEX_URL" torch torchvision; \
             fi; \
             ;; \
     esac \
-    && if [ -n "$MEMO_STACK_EXTRAS" ]; then \
-        python -m pip install ".[${MEMO_STACK_EXTRAS}]"; \
+    && if [ -n "$INFINITY_CONTEXT_EXTRAS" ]; then \
+        python -m pip install ".[${INFINITY_CONTEXT_EXTRAS}]"; \
     else \
         python -m pip install .; \
     fi
 
 RUN useradd --create-home --home-dir /home/memo --shell /usr/sbin/nologin memo \
-    && mkdir -p /var/lib/memo-stack/assets \
-    && chown -R memo:memo /var/lib/memo-stack /home/memo
+    && mkdir -p /var/lib/infinity-context/assets \
+    && chown -R memo:memo /var/lib/infinity-context /home/memo
 
-COPY docker/memo-stack-entrypoint.sh /usr/local/bin/memo-stack-entrypoint
+COPY docker/infinity-context-entrypoint.sh /usr/local/bin/infinity-context-entrypoint
 
-RUN chmod 0755 /usr/local/bin/memo-stack-entrypoint
+RUN chmod 0755 /usr/local/bin/infinity-context-entrypoint
 
-ENTRYPOINT ["memo-stack-entrypoint"]
+ENTRYPOINT ["infinity-context-entrypoint"]
 
 EXPOSE 7788
 
-CMD ["python", "-m", "memo_stack_server.main"]
+CMD ["python", "-m", "infinity_context_server.main"]

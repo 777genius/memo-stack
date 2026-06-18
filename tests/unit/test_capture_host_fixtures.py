@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from memo_stack_mcp.plugin_hook import (
+from infinity_context_mcp.plugin_hook import (
     HookSettings,
     MemoryHookGateway,
     MemoryPluginHookApp,

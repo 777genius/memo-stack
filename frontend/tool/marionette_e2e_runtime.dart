@@ -117,12 +117,12 @@ class VmServiceClient {
   }
 }
 
-class MemoStackExtensionClient {
+class InfinityContextExtensionClient {
   final VmServiceClient _vm;
   final Duration _callTimeout;
   String? _isolateId;
 
-  MemoStackExtensionClient(this._vm, this._callTimeout);
+  InfinityContextExtensionClient(this._vm, this._callTimeout);
 
   Future<void> init() async {
     final response = await _vm.request('getVM');
@@ -160,7 +160,7 @@ class MemoStackExtensionClient {
       await Future<void>.delayed(const Duration(milliseconds: 400));
     }
     throw StateError(
-      'Memo Stack E2E extension not ready: '
+      'Infinity Context E2E extension not ready: '
       'lastState=$lastState lastError=$lastError',
     );
   }
@@ -171,7 +171,7 @@ class MemoStackExtensionClient {
   ) async {
     final isolateId = _isolateId;
     if (isolateId == null) {
-      throw StateError('Memo Stack extension client is not initialized');
+      throw StateError('Infinity Context extension client is not initialized');
     }
     final response = await _vm.request(
       'ext.flutter.$extension',
@@ -182,7 +182,7 @@ class MemoStackExtensionClient {
     );
     final payload = _decodeExtensionPayload(response['result']);
     if (payload['ok'] != true) {
-      throw StateError('Memo Stack extension failed: $extension $payload');
+      throw StateError('Infinity Context extension failed: $extension $payload');
     }
     return payload;
   }
@@ -196,11 +196,11 @@ Future<FlutterRunHandle> _startFlutterApp(
     '-d',
     config.device,
     '--debug',
-    '--dart-define=MEMO_STACK_BACKEND_HOST=${config.backendHost}',
-    '--dart-define=MEMO_STACK_BACKEND_PORT=${config.backendPort}',
-    '--dart-define=MEMO_STACK_SERVICE_TOKEN=${config.serviceToken}',
-    '--dart-define=MEMO_STACK_SPACE_SLUG=${config.spaceSlug}',
-    '--dart-define=MEMO_STACK_MEMORY_SCOPE_EXTERNAL_REF=${config.scopeRef}',
+    '--dart-define=INFINITY_CONTEXT_BACKEND_HOST=${config.backendHost}',
+    '--dart-define=INFINITY_CONTEXT_BACKEND_PORT=${config.backendPort}',
+    '--dart-define=INFINITY_CONTEXT_SERVICE_TOKEN=${config.serviceToken}',
+    '--dart-define=INFINITY_CONTEXT_SPACE_SLUG=${config.spaceSlug}',
+    '--dart-define=INFINITY_CONTEXT_MEMORY_SCOPE_EXTERNAL_REF=${config.scopeRef}',
   ];
   _log('starting ${config.flutterBin} ${args.join(' ')}');
   final process = await Process.start(

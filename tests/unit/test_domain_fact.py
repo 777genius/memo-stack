@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from memo_stack_core.domain.entities import (
+from infinity_context_core.domain.entities import (
     MAX_SOURCE_REFS_PER_ITEM,
     FactStatus,
     MemoryFact,
@@ -11,7 +11,7 @@ from memo_stack_core.domain.entities import (
     SourceRef,
     SpaceId,
 )
-from memo_stack_core.domain.errors import MemoryConflictError, MemoryValidationError
+from infinity_context_core.domain.errors import MemoryConflictError, MemoryValidationError
 
 
 def test_active_fact_requires_source_refs() -> None:

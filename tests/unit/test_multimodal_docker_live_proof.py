@@ -13,7 +13,7 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
         [
             "--no-build",
             "--project-name",
-            "memo-stack-proof-test",
+            "infinity-context-proof-test",
             "--service-token",
             "secret-proof-token",
             "--server-port",
@@ -198,7 +198,7 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
     }.issubset(filenames)
     assert any("--profile" in command and "lite" in command for command in commands)
     assert any(
-        "up" in command and "memo_stack_extraction_worker" in command
+        "up" in command and "infinity_context_extraction_worker" in command
         for command in commands
     )
     assert any("down" in command and "-v" in command for command in commands)
@@ -207,11 +207,11 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
 
 def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     monkeypatch.setenv("DOCKER_CONTEXT", "desktop-linux")
-    monkeypatch.setenv("DOCKER_HOST", "unix:///tmp/memo-stack-secret-docker.sock")
+    monkeypatch.setenv("DOCKER_HOST", "unix:///tmp/infinity-context-secret-docker.sock")
     args = proof._parse_args(
         [
             "--project-name",
-            "memo-stack-proof-test",
+            "infinity-context-proof-test",
             "--docker-timeout-seconds",
             "1",
             "--server-port",
@@ -228,6 +228,8 @@ def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     )
 
     def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "config" in command:
+            return _completed(command)
         raise subprocess.TimeoutExpired(command, timeout=1)
 
     report = proof.run_multimodal_docker_live_proof(
@@ -243,6 +245,7 @@ def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     assert report["failure"]["degraded"] is True
     assert report["failure"]["user_retryable"] is True
     assert report["failure"]["operator_action"] == "start_or_restart_docker_daemon"
+    assert report["components"]["compose_config"]["status"] == "succeeded"
     assert report["failure"]["diagnostics"]["docker_context"] == "desktop-linux"
     assert report["failure"]["diagnostics"]["docker_host"] == {
         "configured": True,
@@ -265,14 +268,56 @@ def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     ]
     assert report["components"]["cleanup"]["status"] == "unknown"
     rendered = json.dumps(report)
-    assert "memo-stack-secret-docker.sock" not in rendered
+    assert "infinity-context-secret-docker.sock" not in rendered
     assert "secret-proof-token" not in rendered
+
+
+def test_docker_live_proof_degrades_on_compose_config_timeout() -> None:
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--compose-timeout-seconds",
+            "1",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        assert "config" in command
+        raise subprocess.TimeoutExpired(command, timeout=1)
+
+    report = proof.run_multimodal_docker_live_proof(
+        args,
+        run_cmd=run_cmd,
+        request_json=lambda *_args, **_kwargs: {},
+        sleep=lambda _: None,
+    )
+
+    assert report["ok"] is False
+    assert report["failure"]["component"] == "compose_config"
+    assert report["failure"]["reason"] == "compose_config_timeout"
+    assert report["failure"]["degraded"] is True
+    assert report["failure"]["user_retryable"] is False
+    assert report["failure"]["operator_action"] == "inspect_compose_stack"
+    assert report["components"]["compose_config"]["status"] == "degraded"
+    assert report["components"]["docker_daemon"]["status"] == "unknown"
+    assert report["components"]["cleanup"]["status"] == "unknown"
 
 
 def test_makefile_exposes_multimodal_docker_live_proof_target() -> None:
     makefile = (proof.ROOT / "Makefile").read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-multimodal-docker-live-proof" in makefile
+    assert ".PHONY: infinity-context-multimodal-docker-live-proof" in makefile
     assert "$(PYTHON) scripts/multimodal_docker_live_proof.py" in makefile
 
 

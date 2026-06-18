@@ -11,6 +11,6 @@ import 'package:frontend/src/presentation/app/app.dart';
 void main() {
   testWidgets('AppRoot builds', (tester) async {
     await tester.pumpWidget(const AppRoot());
-    expect(find.textContaining('Memo Stack'), findsOneWidget);
+    expect(find.textContaining('Infinity Context'), findsOneWidget);
   });
 }

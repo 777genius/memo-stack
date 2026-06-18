@@ -3,10 +3,10 @@ import json
 from typing import Any
 
 from mcp.types import Tool
-from memo_stack_core.agent_behavior_contract import (
+from infinity_context_core.agent_behavior_contract import (
     AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
-from memo_stack_mcp.agent_behavior_bench import (
+from infinity_context_mcp.agent_behavior_bench import (
     AgentBenchConfig,
     AgentBenchRunner,
     AgentBenchScenario,
@@ -766,7 +766,7 @@ def test_tool_loop_repairs_missing_expected_memory_tool_once() -> None:
         assert [name for name, _ in session.calls] == ["memory_search"]
         assert len(llm.calls) == 3
         repair_prompt = json.dumps(llm.calls[1]["input_items"], ensure_ascii=False)
-        assert "skipped required Memo Stack MCP tool" in repair_prompt
+        assert "skipped required Infinity Context MCP tool" in repair_prompt
         assert "Missing required tool pattern(s): memory_search" in repair_prompt
 
     asyncio.run(run())
@@ -2048,7 +2048,7 @@ def test_runner_reports_unexpected_scenario_exception_as_redacted_failure(
     rendered = json.dumps(report, ensure_ascii=False)
 
     assert report["ok"] is False
-    assert report["provenance"]["generated_by"] == "memo_stack_mcp.agent_behavior_bench"
+    assert report["provenance"]["generated_by"] == "infinity_context_mcp.agent_behavior_bench"
     assert report["provenance"]["suite"] == "memory_mcp_agent_behavior"
     assert report["provenance"]["run_id"] == "unit"
     assert report["provenance"]["git"]["dirty"] in {True, False}

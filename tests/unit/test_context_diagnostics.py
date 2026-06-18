@@ -1,9 +1,9 @@
-from memo_stack_core.application.context_diagnostics import (
+from infinity_context_core.application.context_diagnostics import (
     normalize_context_bundle_diagnostics,
     normalize_context_item_diagnostics,
 )
-from memo_stack_core.application.dto import ContextItem
-from memo_stack_core.domain.entities import SourceRef
+from infinity_context_core.application.dto import ContextItem
+from infinity_context_core.domain.entities import SourceRef
 
 
 def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:

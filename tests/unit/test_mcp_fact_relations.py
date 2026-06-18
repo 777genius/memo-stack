@@ -1,9 +1,9 @@
 import asyncio
 from typing import Any
 
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.domain.policy import MemoryMcpDeleteMode
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.domain.policy import MemoryMcpDeleteMode
 
 
 class RelationGateway:
@@ -92,6 +92,6 @@ def test_mcp_unlink_fact_relation_respects_delete_mode_off() -> None:
         ).unlink_fact_relation(relation_id="relation_1")
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.policy.delete_mode_off"
+        assert result["error"]["code"] == "infinity_context_mcp.policy.delete_mode_off"
 
     asyncio.run(run())

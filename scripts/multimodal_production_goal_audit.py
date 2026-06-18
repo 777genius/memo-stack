@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-SUITE = "memo-stack-multimodal-production-goal-audit"
+SUITE = "infinity-context-multimodal-production-goal-audit"
 
 DEFAULT_FRONTEND_REPORT = ".e2e-artifacts/frontend-marionette-local-e2e.json"
 DEFAULT_DOCKER_REPORT = ".e2e-artifacts/multimodal-docker-live-proof.json"
@@ -55,6 +55,9 @@ REQUIRED_OPENAI_AUDIO_SUFFIXES = frozenset(
 REQUIRED_OPENAI_VISION_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
 REQUIRED_OPENAI_VISION_BASE_DETAIL_LEVELS = frozenset({"low", "high", "auto"})
 ALLOWED_OPENAI_VISION_DETAIL_LEVELS = frozenset({"low", "high", "original", "auto"})
+CORE_BOUNDARY_RELATIVE_PATHS = (
+    Path("packages/infinity_context_core/infinity_context_core"),
+)
 FORBIDDEN_CORE_IMPORT_MARKERS = (
     "import fastapi",
     "from fastapi",
@@ -68,8 +71,8 @@ FORBIDDEN_CORE_IMPORT_MARKERS = (
     "from graphiti",
     "import openai",
     "from openai",
-    "memo_stack_server",
-    "memo_stack_adapters",
+    "infinity_context_server",
+    "infinity_context_adapters",
 )
 SECRET_MARKERS = ("sk-", "Bearer ")
 
@@ -149,13 +152,13 @@ def run_goal_audit(
         "Working tree must be clean for final multimodal production proof",
     )
 
-    core_boundary_ok = _core_boundary_ok(root / "packages/memo_stack_core/memo_stack_core")
+    core_boundary_ok = _core_boundaries_ok(root)
     _check(
         checks,
         failures,
         "core_boundary_clean",
         core_boundary_ok,
-        "memo_stack_core imports forbidden server/adapters/provider dependencies",
+        "infinity_context_core imports forbidden server/adapters/provider dependencies",
     )
 
     current_commit = str(git.get("commit") or "")
@@ -299,7 +302,8 @@ def _audit_docker_report(
         failures,
         "docker_live_proof_passed",
         report.get("ok") is True,
-        "Docker multimodal live proof did not pass",
+        "Docker multimodal live proof did not pass"
+        + _failure_suffix(report, components, preferred_component="docker_daemon"),
     )
     _check(
         checks,
@@ -394,7 +398,8 @@ def _audit_provider_report(
         failures,
         "live_provider_proof_passed",
         report.get("ok") is True,
-        "Live provider canary did not pass",
+        "Live provider canary did not pass"
+        + _failure_suffix(report, components, preferred_component="provider_key"),
     )
     _check(
         checks,
@@ -527,6 +532,13 @@ def _core_boundary_ok(path: Path) -> bool:
     return True
 
 
+def _core_boundaries_ok(root: Path) -> bool:
+    existing = [root / path for path in CORE_BOUNDARY_RELATIVE_PATHS if (root / path).exists()]
+    if not existing:
+        return False
+    return all(_core_boundary_ok(path) for path in existing)
+
+
 def _components_succeeded(
     components: Mapping[str, object],
     required: set[str] | frozenset[str],
@@ -548,6 +560,32 @@ def _check(
     checks[name] = bool(ok)
     if not ok:
         failures.append(failure)
+
+
+def _failure_suffix(
+    report: Mapping[str, object],
+    components: Mapping[str, object],
+    *,
+    preferred_component: str,
+) -> str:
+    payload = report.get("failure") if isinstance(report.get("failure"), dict) else None
+    if payload is None:
+        component = components.get(preferred_component)
+        payload = component if isinstance(component, dict) else None
+    if payload is None:
+        return ""
+
+    reason = payload.get("reason")
+    action = payload.get("operator_action")
+    message = payload.get("message")
+    parts = [
+        str(value).strip()
+        for value in (reason, action, message)
+        if isinstance(value, str) and value.strip()
+    ]
+    if not parts:
+        return ""
+    return ": " + "; ".join(_safe_text(part, limit=96) or "" for part in parts[:3])
 
 
 def _report_summary(report: Mapping[str, object] | None) -> dict[str, object]:

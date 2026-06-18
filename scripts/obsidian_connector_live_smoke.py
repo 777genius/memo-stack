@@ -1,4 +1,4 @@
-"""Live E2E smoke for the Memo Stack Obsidian connector.
+"""Live E2E smoke for the Infinity Context Obsidian connector.
 
 This starts a real FastAPI server over a temporary SQLite database, creates a
 temporary Obsidian-style vault folder, then drives the connector through its CLI.
@@ -21,20 +21,20 @@ from typing import Any
 
 import httpx
 import uvicorn
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 TOKEN = "obsidian-e2e-token"
 SPACE = "obsidian-e2e"
 PROFILE = "default"
-PLUGIN_ID = "memo-stack"
-TEXT_START = "<!-- memo-stack-managed:fact-text:start -->"
-TEXT_END = "<!-- memo-stack-managed:fact-text:end -->"
+PLUGIN_ID = "infinity-context"
+TEXT_START = "<!-- infinity-context-managed:fact-text:start -->"
+TEXT_END = "<!-- infinity-context-managed:fact-text:end -->"
 
 
 def main() -> int:
     args = parse_args()
-    root = args.work_dir or Path(tempfile.mkdtemp(prefix="memo-stack-obsidian-e2e-"))
+    root = args.work_dir or Path(tempfile.mkdtemp(prefix="infinity-context-obsidian-e2e-"))
     root.mkdir(parents=True, exist_ok=True)
     vault = root / "Vault"
     vault.mkdir(exist_ok=True)
@@ -50,7 +50,7 @@ def main() -> int:
 
         connect = run_connector(root, vault, base_url, "connect")
         assert_true(connect["ok"] is True, "connect should succeed")
-        assert_true((vault / "Memo Stack/README.md").exists(), "connect should write README")
+        assert_true((vault / "Infinity Context/README.md").exists(), "connect should write README")
 
         preview = run_connector(root, vault, base_url, "preview")
         assert_true(preview["export"]["would_export"] >= 1, "preview should see backend fact")
@@ -156,7 +156,7 @@ def main() -> int:
         plugin_install = install_plugin(root, vault, base_url)
         assert_true(plugin_install["enabled"] is True, "plugin should be enabled in vault")
         assert_true(
-            (vault / ".obsidian/plugins/memo-stack/main.js").exists(),
+            (vault / ".obsidian/plugins/infinity-context/main.js").exists(),
             "plugin bundle should be installable into the vault",
         )
         enabled_plugins = json.loads(
@@ -180,7 +180,7 @@ def main() -> int:
                 "conflict_artifacts_written"
             ],
             "doctor_ok": doctor["ok"],
-            "plugin_install_dir": str(vault / ".obsidian/plugins/memo-stack"),
+            "plugin_install_dir": str(vault / ".obsidian/plugins/infinity-context"),
         }
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
@@ -232,7 +232,7 @@ def wait_for_health(base_url: str) -> None:
                 return
         except httpx.HTTPError:
             time.sleep(0.2)
-    raise RuntimeError(f"Memo Stack server did not become healthy at {base_url}")
+    raise RuntimeError(f"Infinity Context server did not become healthy at {base_url}")
 
 
 def headers() -> dict[str, str]:
@@ -343,7 +343,7 @@ def run_connector_with_exit(
     cmd = [
         sys.executable,
         "-m",
-        "memo_stack_obsidian.cli",
+        "infinity_context_obsidian.cli",
         command,
         "--vault",
         str(vault),
@@ -384,7 +384,7 @@ def install_plugin(root: Path, vault: Path, base_url: str) -> dict[str, Any]:
     cmd = [
         sys.executable,
         "-m",
-        "memo_stack_obsidian.cli",
+        "infinity_context_obsidian.cli",
         "install-plugin",
         "--vault",
         str(vault),
@@ -421,11 +421,11 @@ def install_plugin(root: Path, vault: Path, base_url: str) -> dict[str, Any]:
 def pythonpath() -> str:
     repo = Path(__file__).resolve().parents[1]
     paths = [
-        repo / "packages/memo_stack_core",
-        repo / "packages/memo_stack_adapters",
-        repo / "packages/memo_stack_server",
-        repo / "packages/memo_stack_sdk",
-        repo / "packages/memo_stack_obsidian",
+        repo / "packages/infinity_context_core",
+        repo / "packages/infinity_context_adapters",
+        repo / "packages/infinity_context_server",
+        repo / "packages/infinity_context_sdk",
+        repo / "packages/infinity_context_obsidian",
     ]
     existing = os.environ.get("PYTHONPATH")
     values = [path.as_posix() for path in paths]
@@ -435,7 +435,7 @@ def pythonpath() -> str:
 
 
 def only_fact_file(vault: Path) -> Path:
-    files = sorted((vault / "Memo Stack").glob("**/generated/facts/*.md"))
+    files = sorted((vault / "Infinity Context").glob("**/generated/facts/*.md"))
     files = [path for path in files if not path.name.startswith(".")]
     assert_true(len(files) == 1, f"expected exactly one exported fact note, got {files}")
     return files[0]
@@ -449,7 +449,7 @@ def replace_managed_text(path: Path, text: str) -> None:
 
 
 def write_inbox_note(vault: Path, text: str) -> None:
-    path = vault / "Memo Stack/spaces/obsidian-e2e/memory_scopes/default/inbox/e2e-inbox.md"
+    path = vault / "Infinity Context/spaces/obsidian-e2e/memory_scopes/default/inbox/e2e-inbox.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 

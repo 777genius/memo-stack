@@ -6,12 +6,12 @@ import time
 from pathlib import Path
 
 import httpx
-from memo_stack_server_harness import python_env, run_memo_stack_server
+from infinity_context_server_harness import python_env, run_infinity_context_server
 
 
 def test_memory_digest_http_and_cli_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(tmp_path, database_name="digest.db") as server,
+        run_infinity_context_server(tmp_path, database_name="digest.db") as server,
         httpx.Client(
             base_url=server.base_url,
             headers={"Authorization": f"Bearer {server.token}"},
@@ -69,14 +69,14 @@ def test_memory_digest_http_and_cli_e2e(tmp_path: Path) -> None:
             {
                 "MEMORY_MCP_API_URL": server.base_url,
                 "MEMORY_MCP_AUTH_TOKEN": server.token,
-                "MEMO_STACK_HOME": str(tmp_path / "cli-home"),
+                "INFINITY_CONTEXT_HOME": str(tmp_path / "cli-home"),
             }
         )
         cli = subprocess.run(
             [
                 sys.executable,
                 "-m",
-                "memo_stack_cli",
+                "infinity_context_cli",
                 "digest",
                 marker,
                 "--space",

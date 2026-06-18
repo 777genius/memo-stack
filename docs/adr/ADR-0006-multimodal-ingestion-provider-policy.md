@@ -10,7 +10,7 @@ Accepted.
 
 ## Context
 
-Memo Stack is moving from text-only memory into multimodal quick capture:
+Infinity Context is moving from text-only memory into multimodal quick capture:
 documents, screenshots, images, audio and video. The system must keep Clean
 Architecture boundaries while still supporting strong extraction quality.
 
@@ -29,7 +29,7 @@ That would create several problems:
 - hosted/team deployments need independent scaling for long media jobs;
 - self-hosted/private deployments still need a local/offline option;
 - external provider calls need policy, audit, redaction and usage accounting;
-- `memo_stack_core` must not import OpenAI, Docling, ffmpeg, Whisper or other
+- `infinity_context_core` must not import OpenAI, Docling, ffmpeg, Whisper or other
   provider/runtime packages.
 
 ## Decision
@@ -41,13 +41,13 @@ The default for audio/video transcription is **API-first**, with local ASR only
 as an explicit opt-in profile.
 
 ```text
-memo_stack_core
+infinity_context_core
   ContentExtractionPort
   SpeechTranscriptionPort
   ImageUnderstandingPort
   neutral DTOs only
 
-memo_stack_adapters
+infinity_context_adapters
   docling document adapter
   local text/pdf/image/media metadata adapters
   OpenAI transcription adapter
@@ -56,7 +56,7 @@ memo_stack_adapters
   OpenAI vision adapter
   ffmpeg/ffprobe media adapter
 
-memo_stack_server
+infinity_context_server
   config, policy, provider registry, composition root, diagnostics
 ```
 
@@ -150,7 +150,7 @@ PDF/DOCX/PPTX/XLSX/HTML/text/image-like document
 ```
 
 Docling is the primary optional document parser because it gives structured
-document output, but parser-specific objects never cross into `memo_stack_core`.
+document output, but parser-specific objects never cross into `infinity_context_core`.
 
 ### Images And Screenshots
 

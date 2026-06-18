@@ -1,5 +1,5 @@
 import pytest
-from memo_stack_core.application.capture_policy import CaptureAdmissionService
+from infinity_context_core.application.capture_policy import CaptureAdmissionService
 
 
 @pytest.mark.parametrize(

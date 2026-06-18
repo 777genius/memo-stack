@@ -3,8 +3,8 @@ import json
 from typing import Any
 
 import httpx
-from memo_stack_mcp.adapters.http_gateway import HttpMemoryGateway
-from memo_stack_mcp.domain.models import (
+from infinity_context_mcp.adapters.http_gateway import HttpMemoryGateway
+from infinity_context_mcp.domain.models import (
     MemoryGatewayError,
     MemoryReadScope,
     MemoryScope,
@@ -82,7 +82,7 @@ def test_http_gateway_sends_read_scope_memory_scope_external_refs() -> None:
                 space_slug="client-app",
                 memory_scope_external_refs=("default", "candidate"),
             ),
-            query="memo stack",
+            query="infinity context",
             token_budget=512,
             max_facts=4,
             max_chunks=8,
@@ -122,7 +122,7 @@ def test_http_gateway_redacts_backend_error_messages() -> None:
         else:
             raise AssertionError("expected gateway error")
 
-        assert error.code == "memo_stack_mcp.gateway.backend_error"
+        assert error.code == "infinity_context_mcp.gateway.backend_error"
         assert error.message == "Authorization: [redacted] leaked"
 
     asyncio.run(run())
@@ -130,11 +130,11 @@ def test_http_gateway_redacts_backend_error_messages() -> None:
 
 def test_http_gateway_maps_public_error_taxonomy_for_common_statuses() -> None:
     cases = (
-        (400, "backend.raw", "memo_stack_mcp.validation.backend_rejected", False),
-        (401, "backend.raw", "memo_stack_mcp.gateway.auth_failed", False),
-        (409, "backend.raw", "memo_stack_mcp.conflict.version_stale", False),
-        (429, "memory.backpressure", "memo_stack_mcp.degraded.backpressure", True),
-        (500, "backend.raw", "memo_stack_mcp.gateway.backend_error", True),
+        (400, "backend.raw", "infinity_context_mcp.validation.backend_rejected", False),
+        (401, "backend.raw", "infinity_context_mcp.gateway.auth_failed", False),
+        (409, "backend.raw", "infinity_context_mcp.conflict.version_stale", False),
+        (429, "memory.backpressure", "infinity_context_mcp.degraded.backpressure", True),
+        (500, "backend.raw", "infinity_context_mcp.gateway.backend_error", True),
     )
 
     async def run_case(
@@ -188,7 +188,7 @@ def test_http_gateway_classifies_invalid_json_and_connect_timeout() -> None:
         else:
             raise AssertionError("expected invalid json error")
 
-        assert error.code == "memo_stack_mcp.gateway.invalid_json"
+        assert error.code == "infinity_context_mcp.gateway.invalid_json"
         assert error.retryable is False
 
     async def connect_timeout() -> None:
@@ -208,7 +208,7 @@ def test_http_gateway_classifies_invalid_json_and_connect_timeout() -> None:
         else:
             raise AssertionError("expected connect timeout error")
 
-        assert error.code == "memo_stack_mcp.gateway.connect_timeout"
+        assert error.code == "infinity_context_mcp.gateway.connect_timeout"
         assert error.retryable is True
         assert error.unknown_commit_state is False
 
@@ -241,7 +241,7 @@ def test_http_gateway_marks_429_backpressure_retryable() -> None:
         else:
             raise AssertionError("expected backpressure error")
 
-        assert error.code == "memo_stack_mcp.degraded.backpressure"
+        assert error.code == "infinity_context_mcp.degraded.backpressure"
         assert error.retryable is True
 
     asyncio.run(run())
@@ -273,7 +273,7 @@ def test_http_gateway_marks_write_read_timeout_unknown_commit_state() -> None:
         else:
             raise AssertionError("expected timeout error")
 
-        assert error.code == "memo_stack_mcp.gateway.read_timeout"
+        assert error.code == "infinity_context_mcp.gateway.read_timeout"
         assert error.retryable is True
         assert error.unknown_commit_state is True
 
@@ -306,7 +306,7 @@ def test_http_gateway_marks_write_body_timeout_unknown_commit_state() -> None:
         else:
             raise AssertionError("expected write timeout error")
 
-        assert error.code == "memo_stack_mcp.gateway.write_timeout"
+        assert error.code == "infinity_context_mcp.gateway.write_timeout"
         assert error.retryable is True
         assert error.unknown_commit_state is True
 

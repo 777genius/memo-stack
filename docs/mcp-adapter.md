@@ -1,28 +1,28 @@
-# Memo Stack MCP Adapter
+# Infinity Context MCP Adapter
 
-The MCP adapter is an outer adapter over the Memo Stack HTTP API. It does
-not depend on `memo_stack_core` internals and does not contain persistence or
+The MCP adapter is an outer adapter over the Infinity Context HTTP API. It does
+not depend on `infinity_context_core` internals and does not contain persistence or
 retrieval business rules.
 
 ## Architecture
 
 ```text
 Agent / MCP client
-  -> memo_stack_mcp.server FastMCP composition root
-  -> memo_stack_mcp.application.MemoryToolService
+  -> infinity_context_mcp.server FastMCP composition root
+  -> infinity_context_mcp.application.MemoryToolService
   -> MemoryGatewayPort
-  -> memo_stack_mcp.adapters.HttpMemoryGateway
-  -> memo_stack_server HTTP API
-  -> memo_stack_core use cases
+  -> infinity_context_mcp.adapters.HttpMemoryGateway
+  -> infinity_context_server HTTP API
+  -> infinity_context_core use cases
 ```
 
 Rules:
 
-- `memo_stack_core` stays framework-free and has no MCP dependency.
-- `memo_stack_mcp.application` depends on a port, not on `httpx` or FastMCP.
-- `memo_stack_mcp.adapters` owns HTTP transport details, auth headers, timeouts,
+- `infinity_context_core` stays framework-free and has no MCP dependency.
+- `infinity_context_mcp.application` depends on a port, not on `httpx` or FastMCP.
+- `infinity_context_mcp.adapters` owns HTTP transport details, auth headers, timeouts,
   idempotency headers, and error mapping.
-- `memo_stack_mcp.server` only registers MCP tools/resources/prompts.
+- `infinity_context_mcp.server` only registers MCP tools/resources/prompts.
 - Facts are managed through canonical lifecycle: remember, update with
   `expected_version`, forget by `fact_id`.
 
@@ -92,7 +92,7 @@ MEMORY_MCP_MAX_TOKEN_BUDGET=6000
 MEMORY_MCP_MAX_SEARCH_ITEMS=50
 ```
 
-`MEMORY_MCP_AUTH_TOKEN` is required for protected Memo Stack Server instances. Set
+`MEMORY_MCP_AUTH_TOKEN` is required for protected Infinity Context Server instances. Set
 it from your environment or secret manager before launching the adapter.
 
 Safe defaults are `write_mode=suggest`, `delete_mode=off`, and
@@ -104,10 +104,10 @@ If `MEMORY_MCP_AUTH_TOKEN` is absent, the adapter falls back to
 `MEMORY_SERVICE_TOKEN` for local development.
 
 Generated agent plugin configs use
-`MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=__MEMO_STACK_NO_DEFAULT_THREAD__`
+`MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF=__INFINITY_CONTEXT_NO_DEFAULT_THREAD__`
 instead of an empty value because `plugin-kit-ai` removes empty env values from
-generated artifacts. The repo-local `bin/memo-stack-mcp` wrappers unset this sentinel
-before starting the Memo Stack MCP module, so runtime behavior is the same as an
+generated artifacts. The repo-local `bin/infinity-context-mcp` wrappers unset this sentinel
+before starting the Infinity Context MCP module, so runtime behavior is the same as an
 unset default thread.
 
 Recommended agent workflow:
@@ -140,7 +140,7 @@ intact.
 Run locally:
 
 ```bash
-memo-stack-mcp
+infinity-context-mcp
 ```
 
 For local agents, prefer stdio. For a future shared remote MCP endpoint, use
@@ -152,10 +152,10 @@ scoping at the deployment edge.
 ```json
 {
   "mcpServers": {
-    "memo-stack": {
-      "command": "/Users/belief/dev/projects/ai/memo-stack/.venv/bin/memo-stack-mcp",
+    "infinity-context": {
+      "command": "/Users/belief/dev/projects/ai/infinity-context/.venv/bin/infinity-context-mcp",
       "env": {
-        "PYTHONPATH": "/Users/belief/dev/projects/ai/memo-stack/packages/memo_stack_core:/Users/belief/dev/projects/ai/memo-stack/packages/memo_stack_server:/Users/belief/dev/projects/ai/memo-stack/packages/memo_stack_adapters:/Users/belief/dev/projects/ai/memo-stack/packages/memo_stack_sdk:/Users/belief/dev/projects/ai/memo-stack/packages/memo_stack_mcp",
+        "PYTHONPATH": "/Users/belief/dev/projects/ai/infinity-context/packages/infinity_context_core:/Users/belief/dev/projects/ai/infinity-context/packages/infinity_context_server:/Users/belief/dev/projects/ai/infinity-context/packages/infinity_context_adapters:/Users/belief/dev/projects/ai/infinity-context/packages/infinity_context_sdk:/Users/belief/dev/projects/ai/infinity-context/packages/infinity_context_mcp",
         "MEMORY_MCP_API_URL": "http://127.0.0.1:7788",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "project-alpha",
         "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
@@ -188,46 +188,46 @@ client configs.
 - Forget requires a concrete `fact_id`; this adapter intentionally has no bulk
   delete tool.
 - MCP tool annotations are hints for clients, not a security boundary. The HTTP
-  API token scope and Memo Stack permissions remain the enforcement layer.
+  API token scope and Infinity Context permissions remain the enforcement layer.
 
 ## Public Error And Decision Codes
 
 MCP clients should branch on these public codes, not raw backend/provider
 messages:
 
-- `memo_stack_mcp.validation.invalid_input`
-- `memo_stack_mcp.validation.invalid_scope`
-- `memo_stack_mcp.validation.invalid_source_ref`
-- `memo_stack_mcp.validation.input_too_large`
-- `memo_stack_mcp.validation.backend_rejected`
-- `memo_stack_mcp.policy.secret_detected`
-- `memo_stack_mcp.policy.control_characters`
-- `memo_stack_mcp.policy.invisible_characters`
-- `memo_stack_mcp.policy.evidence_required`
-- `memo_stack_mcp.policy.evidence_mismatch`
-- `memo_stack_mcp.policy.write_mode_off`
-- `memo_stack_mcp.policy.delete_mode_off`
-- `memo_stack_mcp.policy.ingest_mode_off`
-- `memo_stack_mcp.policy.ingest_too_large`
-- `memo_stack_mcp.gateway.network_error`
-- `memo_stack_mcp.gateway.connect_timeout`
-- `memo_stack_mcp.gateway.read_timeout`
-- `memo_stack_mcp.gateway.write_timeout`
-- `memo_stack_mcp.gateway.invalid_json`
-- `memo_stack_mcp.gateway.auth_failed`
-- `memo_stack_mcp.gateway.backend_error`
-- `memo_stack_mcp.conflict.version_stale`
-- `memo_stack_mcp.conflict.idempotency_mismatch`
-- `memo_stack_mcp.conflict.same_target_in_batch`
-- `memo_stack_mcp.conflict.duplicate_batch_item`
-- `memo_stack_mcp.conflict.requires_review`
-- `memo_stack_mcp.degraded.backpressure`
-- `memo_stack_mcp.internal.unexpected`
+- `infinity_context_mcp.validation.invalid_input`
+- `infinity_context_mcp.validation.invalid_scope`
+- `infinity_context_mcp.validation.invalid_source_ref`
+- `infinity_context_mcp.validation.input_too_large`
+- `infinity_context_mcp.validation.backend_rejected`
+- `infinity_context_mcp.policy.secret_detected`
+- `infinity_context_mcp.policy.control_characters`
+- `infinity_context_mcp.policy.invisible_characters`
+- `infinity_context_mcp.policy.evidence_required`
+- `infinity_context_mcp.policy.evidence_mismatch`
+- `infinity_context_mcp.policy.write_mode_off`
+- `infinity_context_mcp.policy.delete_mode_off`
+- `infinity_context_mcp.policy.ingest_mode_off`
+- `infinity_context_mcp.policy.ingest_too_large`
+- `infinity_context_mcp.gateway.network_error`
+- `infinity_context_mcp.gateway.connect_timeout`
+- `infinity_context_mcp.gateway.read_timeout`
+- `infinity_context_mcp.gateway.write_timeout`
+- `infinity_context_mcp.gateway.invalid_json`
+- `infinity_context_mcp.gateway.auth_failed`
+- `infinity_context_mcp.gateway.backend_error`
+- `infinity_context_mcp.conflict.version_stale`
+- `infinity_context_mcp.conflict.idempotency_mismatch`
+- `infinity_context_mcp.conflict.same_target_in_batch`
+- `infinity_context_mcp.conflict.duplicate_batch_item`
+- `infinity_context_mcp.conflict.requires_review`
+- `infinity_context_mcp.degraded.backpressure`
+- `infinity_context_mcp.internal.unexpected`
 
 Proposal-only duplicate decisions are not whole-call errors:
 
-- `memo_stack_mcp.duplicate.same_batch`
-- `memo_stack_mcp.duplicate.existing_memory`
+- `infinity_context_mcp.duplicate.same_batch`
+- `infinity_context_mcp.duplicate.existing_memory`
 
 ## Verification
 
@@ -235,14 +235,14 @@ Targeted tests:
 
 ```bash
 .venv/bin/pytest tests/unit/test_mcp_adapter.py tests/unit/test_facts_api.py tests/unit/test_sdk_contract.py -q
-.venv/bin/pytest tests/e2e/test_memo_stack_mcp_e2e.py -q
+.venv/bin/pytest tests/e2e/test_infinity_context_mcp_e2e.py -q
 ```
 
-Live stdio smoke against a running Memo Stack server:
+Live stdio smoke against a running Infinity Context server:
 
 ```bash
-make memo-stack-up-lite
-make memo-stack-mcp-smoke
+make infinity-context-up-lite
+make infinity-context-mcp-smoke
 ```
 
 Free production-shape scale/chaos/load e2e:
@@ -256,41 +256,41 @@ document idempotency, mutation storms, backpressure, expired worker lease
 recovery, stale outbox lag alerting, worker drain recovery and poison outbox
 handling. The lag case verifies `outbox_pending_lag_seconds`, drains through a
 real worker CLI run, clears the alert and keeps canonical read/write paths
-available. The replay case verifies `memo_stack_server.admin replay-outbox` moves a
-dead job back to `pending`, worker drain clears it, `memo_stack_server.doctor`
+available. The replay case verifies `infinity_context_server.admin replay-outbox` moves a
+dead job back to `pending`, worker drain clears it, `infinity_context_server.doctor`
 returns to ok and raw payload stays redacted. The poison case verifies the
 unknown job becomes `dead`, checks the operational alert, checks
-`memo_stack_server.doctor` degraded output, checks raw payload redaction and proves
+`infinity_context_server.doctor` degraded output, checks raw payload redaction and proves
 canonical read/write paths still work. The restart case verifies canonical
-facts/documents and idempotency records survive Memo Stack Server process restart,
+facts/documents and idempotency records survive Infinity Context Server process restart,
 while stale, deleted and restricted memory stays filtered. The compaction case
-verifies `memo_stack_server.admin compact-outbox` dry-run, actual redaction of
+verifies `infinity_context_server.admin compact-outbox` dry-run, actual redaction of
 done-job payloads and continued context retrieval after maintenance.
 
 Real-stack canary with Graphiti, Qdrant and embeddings:
 
 ```bash
-make memo-stack-clean-full-mcp-smoke
-make memo-stack-full-provider-canary
-make memo-stack-full-provider-canary-interactive
-make memo-stack-prod-confidence-strict-preflight
-make memo-stack-prod-confidence-strict
+make infinity-context-clean-full-mcp-smoke
+make infinity-context-full-provider-canary
+make infinity-context-full-provider-canary-interactive
+make infinity-context-prod-confidence-strict-preflight
+make infinity-context-prod-confidence-strict
 ```
 
 This is a manual paid gate. It requires Docker and `MEMORY_OPENAI_API_KEY` or
 `OPENAI_API_KEY`, starts fresh isolated Postgres, Qdrant and Neo4j resources,
 then runs the HTTP lifecycle smoke plus a real stdio MCP client against the
-same Memo Stack Server. The MCP part verifies status/readiness, search, remember,
+same Infinity Context Server. The MCP part verifies status/readiness, search, remember,
 update, document ingest, forget, Graphiti projection, Qdrant chunk recall,
 outbox drain, provider diagnostics and token redaction.
-Use `memo-stack-full-provider-canary-interactive` when the key is not already
+Use `infinity-context-full-provider-canary-interactive` when the key is not already
 exported; it reads the key with terminal echo disabled and passes it only via
 process environment.
-Use `memo-stack-prod-confidence-strict` when the final release gate must include
+Use `infinity-context-prod-confidence-strict` when the final release gate must include
 publishable top-evidence plus strict real-agent CLI auth. It requires the OpenAI
 key in process env, `MEMORY_AGENT_BENCH_MODEL`, representative LoCoMo and
 LongMemEval dataset files, a clean worktree and authenticated Codex, Claude,
-Gemini and OpenCode CLIs. It runs `memo-stack-prod-confidence-strict-preflight`
+Gemini and OpenCode CLIs. It runs `infinity-context-prod-confidence-strict-preflight`
 before paid provider/model work, so missing key/model/datasets/auth fails before
 starting the full stack. The top-evidence path also requires
 `MEMORY_AGENT_BENCH_SCENARIO_SET=all` so the agent behavior report covers core,
@@ -300,17 +300,17 @@ live-session cases, 5 transcript-corpus cases and 9 adversarial cases, and it
 requires the scenario list tag counts to match the published metrics. Scenario
 entries must be well-formed, have unique ids, have `passed` status and include
 every built-in canonical scenario id.
-`memo-stack-prod-confidence-full` is an alias for the same gate.
+`infinity-context-prod-confidence-full` is an alias for the same gate.
 
 The historical clean full smoke target also runs MCP checks by default. Use
-`MEMORY_CLEAN_SMOKE_SKIP_MCP=true make memo-stack-clean-full-smoke` only when you
+`MEMORY_CLEAN_SMOKE_SKIP_MCP=true make infinity-context-clean-full-smoke` only when you
 need to isolate a provider/API issue from the MCP adapter. This canary is
-intentionally not part of `make memo-stack-test-quality`.
+intentionally not part of `make infinity-context-test-quality`.
 
 Production-like scale/chaos/load canary:
 
 ```bash
-MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-prod-load-canary
+MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-prod-load-canary
 ```
 
 This is a heavier manual paid gate over the same isolated full stack. It keeps
@@ -325,7 +325,7 @@ MCP enabled and adds:
 - document delete with stale chunks hidden;
 - large multi-chunk document recall through API and MCP;
 - thread-scoped memory isolation with neighboring thread leakage checks;
-- Memo Stack Server restart continuity before MCP reads;
+- Infinity Context Server restart continuity before MCP reads;
 - Qdrant and Neo4j provider restart recovery before MCP reads;
 - Qdrant and Neo4j outage while projection jobs are pending, followed by retry
   drain and API/MCP recall recovery;
@@ -337,13 +337,13 @@ accidentally creating thousands of paid provider jobs.
 Real LLM agent-behavior benchmark:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-behavior-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-behavior-bench
 ```
 
 More realistic/adversarial agent-behavior benchmark:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-realistic-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-realistic-bench
 ```
 
 This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=realistic`: noisy meeting transcripts,
@@ -356,7 +356,7 @@ than the core behavioral suite.
 Long live-session/adversarial agent-behavior benchmark:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-live-session-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-live-session-bench
 ```
 
 This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=live`: long coding-agent session
@@ -369,7 +369,7 @@ with hard gates for live-session and adversarial behavior.
 Transcript-corpus long conversation benchmark:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-agent-transcript-corpus-bench
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-agent-transcript-corpus-bench
 ```
 
 This runs `MEMORY_AGENT_BENCH_SCENARIO_SET=transcript`: sanitized long agent
@@ -389,7 +389,7 @@ To create a safe corpus from local real agent logs:
 ```bash
 MEMORY_AGENT_TRANSCRIPT_INPUT=/path/to/raw-agent-logs \
 MEMORY_AGENT_TRANSCRIPT_OUTPUT=/path/to/redacted-corpus \
-make memo-stack-agent-transcript-corpus-redact
+make infinity-context-agent-transcript-corpus-redact
 ```
 
 The redactor accepts explicit files or a non-recursive directory, masks common
@@ -402,7 +402,7 @@ Audit the corpus before using it as a confidence signal:
 
 ```bash
 MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR=/path/to/redacted-corpus \
-make memo-stack-agent-transcript-corpus-audit
+make infinity-context-agent-transcript-corpus-audit
 ```
 
 Set `MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT=true` to fail safe-but-unready
@@ -413,7 +413,7 @@ durable recall, stale handling or safety behavior.
 Full real-memory confidence gate:
 
 ```bash
-MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make memo-stack-real-memory-confidence
+MEMORY_AGENT_BENCH_MODEL="$MODEL" MEMORY_OPENAI_API_KEY="$KEY" make infinity-context-real-memory-confidence
 ```
 
 This is the broad paid/manual gate for "real memory in battle": full-provider
@@ -429,7 +429,7 @@ provider/worker availability.
 
 Important production reading:
 
-- A passing MCP real-stack canary proves the Memo Stack Server, canonical Postgres
+- A passing MCP real-stack canary proves the Infinity Context Server, canonical Postgres
   lifecycle, Graphiti projection, Qdrant projection, worker drain and stdio MCP
   adapter are functioning.
 - A failing real LLM agent-behavior benchmark is not automatically a storage
@@ -462,7 +462,7 @@ Important production reading:
 This extends the clean full canary with an agent behavior block. The benchmark
 uses OpenAI Responses API function calling, converts public MCP tool schemas to
 function tools, lets the model choose tools with `tool_choice=auto`, executes
-calls through real stdio `memo_stack_mcp`, returns `function_call_output` items, and
+calls through real stdio `infinity_context_mcp`, returns `function_call_output` items, and
 deterministically evaluates the trace. The report includes `tool_choice_accuracy`,
 `search_before_write_rate`, `update_vs_duplicate_rate`, `document_routing_accuracy`,
 `answer_support_rate`, `live_session_pass_rate`, `adversarial_pass_rate`, unsafe
@@ -484,15 +484,15 @@ separate from the embeddings key. Long paid runs can be bounded with
 Agent install verification:
 
 ```bash
-make memo-stack-agent-install-dry-run
-make memo-stack-agent-install
-make memo-stack-agent-install-doctor
-make memo-stack-agent-live-smoke
-make memo-stack-agent-live-smoke-agents
-make memo-stack-agent-live-smoke-agents-strict
-make memo-stack-agent-auth-doctor
-make memo-stack-agent-auth-doctor-strict
-make memo-stack-agent-auth-repair
+make infinity-context-agent-install-dry-run
+make infinity-context-agent-install
+make infinity-context-agent-install-doctor
+make infinity-context-agent-live-smoke
+make infinity-context-agent-live-smoke-agents
+make infinity-context-agent-live-smoke-agents-strict
+make infinity-context-agent-auth-doctor
+make infinity-context-agent-auth-doctor-strict
+make infinity-context-agent-auth-repair
 ```
 
 `plugin-kit-ai add` uses managed install targets `codex`, `claude`, `gemini`,
@@ -501,22 +501,22 @@ the current plugin-kit-ai release; keep it as the generated `.cursor/mcp.json`
 workspace-copy lane and verify it through plugin e2e. Codex may report native
 activation pending until the plugin is installed from the Codex Plugin Directory
 and a new Codex thread is started.
-`memo-stack-agent-install-doctor` is a hard gate over both structured install state
+`infinity-context-agent-install-doctor` is a hard gate over both structured install state
 and `plugin-kit-ai integrations list/doctor`; a failed plugin-kit-ai doctor run
 does not pass just because `state.json` still looks healthy.
 
-`memo-stack-agent-live-smoke` runs the generated MCP config hard gate and does not
+`infinity-context-agent-live-smoke` runs the generated MCP config hard gate and does not
 depend on local Claude/Gemini/OpenCode/Codex model auth. It proves the package,
 Gemini, OpenCode and Cursor workspace generated configs can start stdio MCP and
-verify `memory_status` over that transport. `memo-stack-agent-live-smoke-agents`
+verify `memory_status` over that transport. `infinity-context-agent-live-smoke-agents`
 adds real agent CLI prompts and reports auth/session failures as advisory
 blocked states while keeping generated MCP strict. Use
-`memo-stack-agent-live-smoke-agents-strict` when local agent auth/session state is
+`infinity-context-agent-live-smoke-agents-strict` when local agent auth/session state is
 ready and every real agent CLI must pass end to end.
 The live-smoke targets default to isolated host ports
 `MEMORY_AGENT_SMOKE_SERVER_PORT=17788` and
 `MEMORY_AGENT_SMOKE_POSTGRES_PORT=55429`. This prevents false positives when a
-different local Memo Stack Server is already listening on `7788`.
+different local Infinity Context Server is already listening on `7788`.
 Gemini persists MCP env in the installed extension config, so process env may
 not override `MEMORY_MCP_API_URL` directly. The repo-local wrapper therefore
 supports `MEMORY_MCP_RUNTIME_*` overrides. Real-agent smoke can verify the
@@ -526,15 +526,15 @@ mismatched persisted Gemini API URL is still reported as a blocked preflight.
 Gemini CLI can also inject a host sequencing argument named `wait_for_previous`
 into MCP calls. The MCP boundary ignores only that known host argument before
 strict Pydantic validation; unknown user/tool arguments remain rejected.
-`memo-stack-agent-auth-doctor` runs plain model prompts without the Memory plugin.
+`infinity-context-agent-auth-doctor` runs plain model prompts without the Memory plugin.
 Use it to separate local agent credential failures from MCP/plugin failures.
-`memo-stack-agent-auth-repair` is an interactive local helper that runs the official
+`infinity-context-agent-auth-repair` is an interactive local helper that runs the official
 Claude and OpenCode login flows, then re-runs strict auth verification.
 
 Benchmark:
 
 ```bash
-MEMORY_MCP_API_URL=http://127.0.0.1:7788 MEMORY_MCP_AUTH_TOKEN="${MEMORY_MCP_AUTH_TOKEN}" memo-stack-mcp-bench --iterations 10
+MEMORY_MCP_API_URL=http://127.0.0.1:7788 MEMORY_MCP_AUTH_TOKEN="${MEMORY_MCP_AUTH_TOKEN}" infinity-context-mcp-bench --iterations 10
 ```
 
 The benchmark intentionally uses direct write/delete lifecycle settings inside

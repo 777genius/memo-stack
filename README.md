@@ -1,18 +1,18 @@
-# Memo Stack
+# Infinity Context
 
-Reusable memo stack for coding agents and future team/project memory workflows.
+Reusable infinity context for coding agents and future team/project memory workflows.
 
-This project is the new source of truth for the memo stack architecture and implementation plan.
+This project is the new source of truth for the infinity context architecture and implementation plan.
 
 ## Current Status
 
-This README describes the standalone Memo Stack repository, its local run
+This README describes the standalone Infinity Context repository, its local run
 modes and the supported integration contracts.
 
 Implementation target:
 
 ```text
-Memo Stack Core Lite = Postgres canonical truth + Qdrant RAG + thin Graphiti adapter + compatibility gateway
+Infinity Context Core Lite = Postgres canonical truth + Qdrant RAG + thin Graphiti adapter + compatibility gateway
 ```
 
 Core principles:
@@ -27,22 +27,22 @@ Core principles:
 
 ## Docs
 
-- [Core Lite implementation plan](docs/memo-stack-core-lite-plan.md)
+- [Core Lite implementation plan](docs/infinity-context-core-lite-plan.md)
 - [Local install and Memory Digest plan](docs/local-install-and-memory-digest-plan.md)
-- [Global architecture plan](docs/memo-stack-architecture-plan.md)
-- [Client compatibility notes](docs/client-integration/interview-memo-stack-clean-architecture-plan.md)
+- [Global architecture plan](docs/infinity-context-architecture-plan.md)
+- [Client compatibility notes](docs/client-integration/interview-infinity-context-clean-architecture-plan.md)
 - [Client integration run notes](docs/client-integration/current-integration-run-notes.md)
 
 ## Intended Package Layout
 
 ```text
 packages/
-  memo_stack_core/
-  memo_stack_server/
-  memo_stack_adapters/
-  memo_stack_sdk/
-  memo_stack_mcp/
-  memo_stack_cli/
+  infinity_context_core/
+  infinity_context_server/
+  infinity_context_adapters/
+  infinity_context_sdk/
+  infinity_context_mcp/
+  infinity_context_cli/
 
 tests/
   unit/
@@ -57,13 +57,13 @@ Client applications should consume this project through HTTP or SDK, not by impo
 
 Core Lite is implemented as a reusable service/library baseline:
 
-- `memo_stack_core` owns domain entities, application use cases and ports only;
-- `memo_stack_server` owns FastAPI routes, composition root, auth, config, admin CLI, worker CLI and eval CLI;
-- `memo_stack_server` also serves the optional local memory browser at `/ui/`;
-- `memo_stack_adapters` owns Postgres, optional Qdrant/OpenAI/Graphiti adapters and disabled noop adapters;
-- `memo_stack_sdk` owns HTTP client calls and typed error handling for other apps;
-- `memo_stack_mcp` owns the agent-facing MCP adapter over the HTTP API;
-- `memo_stack_cli` owns local install/runtime UX and calls the HTTP API instead of importing server internals;
+- `infinity_context_core` owns domain entities, application use cases and ports only;
+- `infinity_context_server` owns FastAPI routes, composition root, auth, config, admin CLI, worker CLI and eval CLI;
+- `infinity_context_server` also serves the optional local memory browser at `/ui/`;
+- `infinity_context_adapters` owns Postgres, optional Qdrant/OpenAI/Graphiti adapters and disabled noop adapters;
+- `infinity_context_sdk` owns HTTP client calls and typed error handling for other apps;
+- `infinity_context_mcp` owns the agent-facing MCP adapter over the HTTP API;
+- `infinity_context_cli` owns local install/runtime UX and calls the HTTP API instead of importing server internals;
 - Postgres is canonical truth for spaces, memory_scopes, facts, source refs, fact versions, episodes, documents, chunks, suggestions, outbox and idempotency;
 - Qdrant vectors and Graphiti graph memory are derived projections behind ports;
 - Qdrant adapter creates its collection on first upsert/search when enabled;
@@ -94,7 +94,7 @@ Implemented API surface:
 Local browser UI:
 
 - open `http://127.0.0.1:7788/ui/` after the server starts;
-- enter the service token from local config, for example `~/.memo-stack/.env`;
+- enter the service token from local config, for example `~/.infinity-context/.env`;
 - browse graph nodes for facts, suggestions, sources, kinds, tags and statuses;
 - review pending suggestions and relation suggestions with approve/reject/edit actions;
 - build source-bound digest and recall results through the existing `/v1` API;
@@ -109,7 +109,7 @@ Operational pieces:
 - admin commands for doctor, invariant check, projection repair dry-run and dead-job replay;
 - admin service-token create/list/revoke stores token hashes only; raw token is printed once on creation;
 - database service tokens support expiry and last-used tracking without storing raw tokens;
-- `memo_stack_server.db upgrade`, `admin seed-defaults` and guarded `admin reset-local`;
+- `infinity_context_server.db upgrade`, `admin seed-defaults` and guarded `admin reset-local`;
 - schema upgrade is additive for Core Lite local databases and repairs missing
   fact/document/chunk classification columns without dropping canonical data;
 - document delete hides chunks immediately and also deletes active facts whose
@@ -125,28 +125,28 @@ Operational pieces:
 One-command local install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/belief-ai/memo-stack/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/belief-ai/infinity-context/main/scripts/install.sh | bash
 ```
 
 Safer inspectable install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/belief-ai/memo-stack/main/scripts/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/belief-ai/infinity-context/main/scripts/install.sh -o install.sh
 bash install.sh --no-start
 ```
 
 After install:
 
 ```bash
-export PATH="$HOME/.memo-stack/bin:$PATH"
-memo-stack up --lite
-memo-stack status
-memo-stack doctor
-memo-stack mcp-config --agent codex
-memo-stack digest "current architecture decisions" --space default --memory_scope default
+export PATH="$HOME/.infinity-context/bin:$PATH"
+infinity-context up --lite
+infinity-context status
+infinity-context doctor
+infinity-context mcp-config --agent codex
+infinity-context digest "current architecture decisions" --space default --memory_scope default
 ```
 
-`memo-stack mcp-config` redacts the generated local service token by default. Use
+`infinity-context mcp-config` redacts the generated local service token by default. Use
 `--include-token` only when intentionally writing a private local config file.
 
 Agent-assisted local setup is also available through MCP, but it is off by
@@ -154,7 +154,7 @@ default so agents do not create files or start background services unexpectedly:
 
 ```bash
 export MEMORY_MCP_LOCAL_RUNTIME_ENABLED=true
-export MEMORY_MCP_LOCAL_RUNTIME_HOME="$HOME/.memo-stack"
+export MEMORY_MCP_LOCAL_RUNTIME_HOME="$HOME/.infinity-context"
 export MEMORY_MCP_LOCAL_RUNTIME_REPO_DIR="$(pwd)"
 ```
 
@@ -173,13 +173,13 @@ export MEMORY_MCP_LOCAL_RUNTIME_START_ENABLED=true
 Obsidian connector verification:
 
 ```bash
-make memo-stack-obsidian-test
-make memo-stack-obsidian-ui-e2e
+make infinity-context-obsidian-test
+make infinity-context-obsidian-ui-e2e
 ```
 
-`memo-stack-obsidian-test` covers the Python connector, live HTTP sync smoke,
+`infinity-context-obsidian-test` covers the Python connector, live HTTP sync smoke,
 MCP stdio setup/sync smoke, and plugin typecheck/build without opening Obsidian.
-`memo-stack-obsidian-ui-e2e` opens the real desktop Obsidian app and runs the
+`infinity-context-obsidian-ui-e2e` opens the real desktop Obsidian app and runs the
 full WDIO plugin suite. Vaults with a custom Obsidian config folder are supported
 through `--obsidian-config-dir` or `MEMORY_MCP_OBSIDIAN_CONFIG_DIR`.
 
@@ -193,8 +193,8 @@ python3 -m venv .venv
 The Docker compose file has two practical profiles:
 
 ```text
-lite           Postgres + Memo Stack Server, provider adapters disabled.
-full           Postgres + Qdrant + Neo4j + Memo Stack Server + workers, with OpenAI embeddings and Graphiti enabled.
+lite           Postgres + Infinity Context Server, provider adapters disabled.
+full           Postgres + Qdrant + Neo4j + Infinity Context Server + workers, with OpenAI embeddings and Graphiti enabled.
 ```
 
 Both profiles run separate projection and extraction workers. The extraction
@@ -204,12 +204,12 @@ scaled independently from vector, graph and auto-memory projection work.
 Recommended local MVP:
 
 ```bash
-make memo-stack-up-lite
-make memo-stack-smoke
-make memo-stack-mcp-smoke
+make infinity-context-up-lite
+make infinity-context-smoke
+make infinity-context-mcp-smoke
 ```
 
-`memo-stack-smoke` covers the SDK lifecycle path plus MemoryScope snapshot thread transfer.
+`infinity-context-smoke` covers the SDK lifecycle path plus MemoryScope snapshot thread transfer.
 
 Full provider mode needs OpenAI for embeddings and Graphiti. Do not paste the
 key into commands that will be saved in shell history. Read it silently or use
@@ -219,8 +219,8 @@ an ignored local env file:
 read -s OPENAI_API_KEY
 export OPENAI_API_KEY
 export MEMORY_OPENAI_API_KEY="$OPENAI_API_KEY"
-make memo-stack-up-full
-make memo-stack-smoke-full
+make infinity-context-up-full
+make infinity-context-smoke-full
 ```
 
 Small-team self-hosting uses a production-oriented Compose file with a built
@@ -229,13 +229,13 @@ image, server deploy profile, explicit migrations and persistent volumes:
 ```bash
 cp .env.selfhost.example .env.selfhost
 docker compose --env-file .env.selfhost -f docker-compose.selfhost.yml up -d --build
-make memo-stack-selfhost-smoke
+make infinity-context-selfhost-smoke
 ```
 
 See `docs/self-hosted-team-deployment.md` for the runbook, full provider mode
 and backup notes.
 
-`MEMORY_OPENAI_API_KEY` is used by the Memo Stack embeddings adapter.
+`MEMORY_OPENAI_API_KEY` is used by the Infinity Context embeddings adapter.
 `OPENAI_API_KEY` is also required because Graphiti reads the standard OpenAI
 environment variable internally.
 
@@ -245,7 +245,7 @@ migrations, seeds defaults, starts the server, verifies Graphiti/Qdrant/OpenAI
 behavior, then tears everything down:
 
 ```bash
-make memo-stack-clean-full-smoke
+make infinity-context-clean-full-smoke
 ```
 
 If the key is not already exported in the current shell, use the interactive
@@ -253,7 +253,7 @@ wrapper. It reads the key with terminal echo disabled and passes it only through
 the canary process environment:
 
 ```bash
-make memo-stack-full-provider-canary-interactive
+make infinity-context-full-provider-canary-interactive
 ```
 
 For local defaults, copy `.env.example` to `.env` and adjust non-secret provider
@@ -261,12 +261,12 @@ flags. Secrets should stay in your shell, `.env.local`, `.env.full`, or another
 ignored file. Cognee is available as an optional adapter boundary, but the MVP
 RAG path is Qdrant directly and the MVP temporal fact path is Graphiti directly.
 
-Common local targets are available in `Makefile`, for example `make memo-stack-lint`,
-`make memo-stack-test-unit`, `make memo-stack-eval`, `make memo-stack-db-upgrade`,
-`make memo-stack-seed-defaults`, `make memo-stack-doctor`, `make memo-stack-up`,
-`make memo-stack-server`, `make memo-stack-up-lite`, `make memo-stack-up-full`,
-`make memo-stack-clean-full-smoke`, `make memo-stack-auto-memory-eval`,
-`make memo-stack-auto-memory-quality` and `make memo-stack-mcp-smoke`.
+Common local targets are available in `Makefile`, for example `make infinity-context-lint`,
+`make infinity-context-test-unit`, `make infinity-context-eval`, `make infinity-context-db-upgrade`,
+`make infinity-context-seed-defaults`, `make infinity-context-doctor`, `make infinity-context-up`,
+`make infinity-context-server`, `make infinity-context-up-lite`, `make infinity-context-up-full`,
+`make infinity-context-clean-full-smoke`, `make infinity-context-auto-memory-eval`,
+`make infinity-context-auto-memory-quality` and `make infinity-context-mcp-smoke`.
 
 Memory Digest can be called through API, SDK, MCP or CLI. It is derived evidence,
 not canonical memory, and pending suggestions are clearly marked as non-canonical.
@@ -274,7 +274,7 @@ For exact lookups or write/update/forget flows, agents should still call
 `memory_search` or `memory_get_fact`.
 
 GitHub Actions runs the same prompt-impacting gate on push and pull requests:
-`make PYTHON=python RUFF=ruff memo-stack-test-quality`. Keep quality changes green
+`make PYTHON=python RUFF=ruff infinity-context-test-quality`. Keep quality changes green
 there before relying on memory in an agent prompt path.
 
 Policy modes:
@@ -301,7 +301,7 @@ MEMORY_MAX_PENDING_SUGGESTIONS_PER_MEMORY_SCOPE=500 # review queue ingress guard
 ```
 
 `MEMORY_AUTO_MEMORY_MODE` is accepted as a compatibility alias for
-`MEMORY_CAPTURE_MODE` on both Memo Stack Server and plugin hooks. When both are set,
+`MEMORY_CAPTURE_MODE` on both Infinity Context Server and plugin hooks. When both are set,
 `MEMORY_AUTO_MEMORY_MODE` wins.
 
 Media extraction has product-plan usage guards in addition to parser limits:
@@ -311,7 +311,7 @@ MEMORY_PRODUCT_PLAN_TIER=free
 MEMORY_PLAN_MEDIA_ANALYSIS_SECONDS_PER_MONTH=36000 # 10 hours
 ```
 
-Audio/video uploads can pass `estimated_media_seconds` so Memo Stack can reserve
+Audio/video uploads can pass `estimated_media_seconds` so Infinity Context can reserve
 monthly media-analysis quota before enqueueing extraction. Clients can poll
 `/v1/asset-extractions/{job_id}` for `progress` and `/v1/usage?space_slug=...`
 for the current plan meter.
@@ -324,7 +324,7 @@ requests through `MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS` plus
 behind `MemoryExtractorPort`, but it requires both
 `MEMORY_CAPTURE_EXTERNAL_AI_ENABLED=true` and `MEMORY_OPENAI_API_KEY`; otherwise
 startup or consolidation fails closed without sending capture text to a provider.
-Auto-memory quality is checked by `make memo-stack-auto-memory-quality`, which
+Auto-memory quality is checked by `make infinity-context-auto-memory-quality`, which
 includes deterministic golden capture metrics for review gating, redaction,
 duplicate suppression, replay idempotency and `auto_apply_safe` safety.
 The Python SDK exposes `create_capture`, `get_capture`, `list_captures`,
@@ -343,22 +343,22 @@ restricted  # canonical storage only, excluded from context by default
 Worker and operational commands:
 
 ```bash
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memo_stack_server.worker --once
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memo_stack_server.doctor
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memo_stack_server.admin repair-projections --space project-alpha --memory_scope default --dry-run
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memo_stack_server.admin import-memory_scope --space project-alpha --memory_scope default --file memory_scope-export.json --dry-run
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memo_stack_server.eval run --suite small-golden
-MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m memo_stack_server.eval run --suite quality-golden
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m infinity_context_server.worker --once
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m infinity_context_server.doctor
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m infinity_context_server.admin repair-projections --space project-alpha --memory_scope default --dry-run
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m infinity_context_server.admin import-memory_scope --space project-alpha --memory_scope default --file memory_scope-export.json --dry-run
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m infinity_context_server.eval run --suite small-golden
+MEMORY_SERVICE_TOKEN=local-dev-token .venv/bin/python -m infinity_context_server.eval run --suite quality-golden
 ```
 
 Service tokens:
 
 ```bash
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memo_stack_server.admin token create --description app
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memo_stack_server.admin token create --space space_project_alpha --description project-alpha --expires-at 2026-12-31T23:59:59+00:00
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memo_stack_server.admin token create --space space_project_alpha --memory_scope memory_scope_default --description project-alpha-default
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memo_stack_server.admin token list
-MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m memo_stack_server.admin token revoke --token-id tok_...
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m infinity_context_server.admin token create --description app
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m infinity_context_server.admin token create --space space_project_alpha --description project-alpha --expires-at 2026-12-31T23:59:59+00:00
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m infinity_context_server.admin token create --space space_project_alpha --memory_scope memory_scope_default --description project-alpha-default
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m infinity_context_server.admin token list
+MEMORY_SERVICE_TOKEN=root-token .venv/bin/python -m infinity_context_server.admin token revoke --token-id tok_...
 ```
 
 The static `MEMORY_SERVICE_TOKEN` is a root token. Database service tokens are
@@ -378,17 +378,17 @@ MEMORY_GRAPHITI_NEO4J_USER=neo4j \
 MEMORY_GRAPHITI_NEO4J_PASSWORD=<password> \
 MEMORY_GRAPHITI_BUILD_INDICES=true \
 MEMORY_SERVICE_TOKEN=local-dev-token \
-.venv/bin/python -m memo_stack_server.main
+.venv/bin/python -m infinity_context_server.main
 ```
 
 The client compatibility gateway is opt-in for older client integrations that
 still call `/api/v1/interview-memory/*`. New integrations should prefer the
-canonical `/v1/*` API or `memo_stack_sdk`.
+canonical `/v1/*` API or `infinity_context_sdk`.
 
 ```bash
 MEMORY_DEFAULT_SPACE_SLUG=client-app \
 MEMORY_LEGACY_CLIENT_ENABLED=true \
-make memo-stack-up-lite
+make infinity-context-up-lite
 ```
 
 Smoke the client compatibility gateway directly:
@@ -440,9 +440,9 @@ curl -X POST http://127.0.0.1:7788/v1/context \
 SDK example:
 
 ```python
-from memo_stack_sdk import MemoStackClient
+from infinity_context_sdk import InfinityContextClient
 
-client = MemoStackClient(token="local-dev-token")
+client = InfinityContextClient(token="local-dev-token")
 client.remember_fact(
     space_id="space_project_alpha",
     memory_scope_id="memory_scope_default",
@@ -487,6 +487,6 @@ python -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 .venv/bin/ruff check .
 .venv/bin/python -m pytest
-.venv/bin/python -m memo_stack_server.eval run --suite small-golden
-.venv/bin/python -m memo_stack_server.eval run --suite quality-golden
+.venv/bin/python -m infinity_context_server.eval run --suite small-golden
+.venv/bin/python -m infinity_context_server.eval run --suite quality-golden
 ```

@@ -26,7 +26,7 @@ The missing part is a first-class extraction layer:
 MemoryAsset -> AssetExtractionJob -> ExtractedContent -> MemoryDocument -> MemoryChunk
 ```
 
-The extraction layer must stay outside `memo_stack_core` provider dependencies.
+The extraction layer must stay outside `infinity_context_core` provider dependencies.
 Core should only know neutral DTOs and ports. Docling, Unstructured, Tika,
 ffmpeg, ASR and OCR libraries should live in adapters or a separate worker.
 
@@ -108,7 +108,7 @@ Important caveat:
 
 - title/authors/references/language metadata extraction is still listed by
   Docling as coming soon, so do not rely on Docling alone for metadata.
-- even where Docling supports media-like inputs, Memo Stack routes audio/video
+- even where Docling supports media-like inputs, Infinity Context routes audio/video
   through the media pipeline and `SpeechTranscriptionPort`, not through the
   document parser path.
 
@@ -352,7 +352,7 @@ Primary sources:
 
 These are useful RAG/LLM orchestration frameworks. They include loaders,
 converters, ingestion pipelines, transformations and splitters. They should not
-be the canonical parser boundary for Memo Stack.
+be the canonical parser boundary for Infinity Context.
 
 Use them only if they save adapter work around optional pipelines. Keep our own
 `ContentExtractionPort` and our own canonical DTOs.
@@ -549,7 +549,7 @@ can reprocess assets safely after upgrades.
 
 Scale: 10 is best, except implementation complexity where 10 is hardest.
 
-| Option | Extraction quality | Product reliability | Local privacy | License safety | Ops simplicity | Scale potential | Memo Stack fit | Complexity |
+| Option | Extraction quality | Product reliability | Local privacy | License safety | Ops simplicity | Scale potential | Infinity Context fit | Complexity |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Extraction Router, local default plus optional profiles | 9 | 9 | 9 | 8 | 7 | 9 | 10 | 8 |
 | NVIDIA NeMo Retriever service | 9 | 8 | 7 | 8 | 4 | 10 | 8 | 9 |
@@ -578,7 +578,7 @@ local deterministic extraction, add Docling as the first high-quality document
 profile, and add Unstructured/Tika/Marker/MinerU/NVIDIA/LlamaParse/cloud
 Document AI only as explicitly configured profiles or sidecars.
 
-Best fit for Memo Stack because it avoids betting canonical memory on one
+Best fit for Infinity Context because it avoids betting canonical memory on one
 vendor/library while still allowing high-quality parsing when needed.
 
 Approx implementation size:

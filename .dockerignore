@@ -20,8 +20,8 @@ frontend/.dart_tool
 frontend/build
 frontend/.packages
 frontend/pubspec.lock
-packages/memo_stack_obsidian_plugin/node_modules
-packages/memo_stack_obsidian_plugin/dist
-packages/memo_stack_obsidian_plugin/.wdio
+packages/infinity_context_obsidian_plugin/node_modules
+packages/infinity_context_obsidian_plugin/dist
+packages/infinity_context_obsidian_plugin/.wdio
 **/node_modules
 **/.DS_Store

@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from memo_stack_core.application import context_diagnostics, context_link_policy
-from memo_stack_core.application.use_cases import context_link_reviews
-from memo_stack_core.domain import assets
-from memo_stack_server.api.v1 import context as context_api
+from infinity_context_core.application import context_diagnostics, context_link_policy
+from infinity_context_core.application.use_cases import context_link_reviews
+from infinity_context_core.domain import assets
+from infinity_context_server.api.v1 import context as context_api
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -62,7 +62,7 @@ def test_memory_architecture_lockfile_covers_core_product_rules() -> None:
         "`multimodal-evidence-first`",
         "`public-multimodal-contract`",
         "### Public Capabilities Contract",
-        "memo_stack.extraction_evidence_contract.v1",
+        "infinity_context.extraction_evidence_contract.v1",
         "source_ref_coordinate_fields",
         "input_modalities",
         "evidence_coordinates",

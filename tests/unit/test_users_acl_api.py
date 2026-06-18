@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 
 def make_client(tmp_path: Path, **overrides: Any) -> TestClient:

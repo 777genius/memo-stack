@@ -1571,7 +1571,7 @@ MemoryCapture _capture(String id, {String threadId = 'thread-1'}) {
     'space_id': 'space-1',
     'memory_scope_id': 'scope-default',
     'thread_id': threadId,
-    'source_agent': 'memo-stack-frontend',
+    'source_agent': 'infinity-context-frontend',
     'source_kind': 'manual',
     'event_type': 'QuickCapture',
     'actor_role': 'user',

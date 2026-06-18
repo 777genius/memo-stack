@@ -4,16 +4,16 @@ import asyncio
 from datetime import UTC, datetime
 from hashlib import sha256
 
-from memo_stack_core.application.use_cases.asset_extractions import RunAssetExtractionUseCase
-from memo_stack_core.domain.assets import MemoryAssetId
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
-from memo_stack_core.domain.extraction import (
+from infinity_context_core.application.use_cases.asset_extractions import RunAssetExtractionUseCase
+from infinity_context_core.domain.assets import MemoryAssetId
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
+from infinity_context_core.domain.extraction import (
     AssetExtractionJob,
     AssetExtractionJobId,
     AssetExtractionStatus,
     ExtractionRetryDisposition,
 )
-from memo_stack_core.ports.extraction import ExtractionLimits, ExtractionResult
+from infinity_context_core.ports.extraction import ExtractionLimits, ExtractionResult
 
 
 class _Clock:

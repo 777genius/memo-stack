@@ -12,30 +12,30 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
-from memo_stack_adapters.postgres.models import MemoryOutboxRow
-from memo_stack_core.application.dto import (
+from infinity_context_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from infinity_context_adapters.postgres.models import MemoryOutboxRow
+from infinity_context_core.application.dto import (
     CancelAssetExtractionCommand,
     RunAssetExtractionCommand,
 )
-from memo_stack_core.application.use_cases.asset_extraction_support import (
+from infinity_context_core.application.use_cases.asset_extraction_support import (
     ActiveAssetExtractionLeaseError,
 )
-from memo_stack_core.domain.assets import MemoryAssetId
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId
-from memo_stack_core.domain.errors import MemoryQuotaExceededError
-from memo_stack_core.domain.extraction import AssetExtractionJob, AssetExtractionJobId
-from memo_stack_core.ports.extraction import (
+from infinity_context_core.domain.assets import MemoryAssetId
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId
+from infinity_context_core.domain.errors import MemoryQuotaExceededError
+from infinity_context_core.domain.extraction import AssetExtractionJob, AssetExtractionJobId
+from infinity_context_core.ports.extraction import (
     ExtractedElement,
     ExtractionArtifactCandidate,
     ExtractionResult,
 )
-from memo_stack_server.admin import token_create
-from memo_stack_server.api.v1.assets import asset_extraction_to_response
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.db import upgrade
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_server.admin import token_create
+from infinity_context_server.api.v1.assets import asset_extraction_to_response
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.db import upgrade
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1515,7 +1515,7 @@ def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> 
         )
         assert manifest_download.status_code == 200, manifest_download.text
         manifest = json.loads(manifest_download.content)
-        assert manifest["schema_version"] == "memo_stack.multimodal_manifest.v1"
+        assert manifest["schema_version"] == "infinity_context.multimodal_manifest.v1"
         assert manifest["modalities"] == ["text", "document"]
         assert manifest["evidence_items"][0]["page_number"] == 1
 
@@ -1637,7 +1637,7 @@ def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
         )
         assert manifest_download.status_code == 200, manifest_download.text
         manifest = json.loads(manifest_download.content)
-        assert manifest["schema_version"] == "memo_stack.multimodal_manifest.v1"
+        assert manifest["schema_version"] == "infinity_context.multimodal_manifest.v1"
         assert manifest["modalities"] == ["text", "image"]
         assert manifest["evidence_items"][0]["bbox"] == [0.0, 0.0, 120.0, 40.0]
 
@@ -1831,7 +1831,7 @@ def test_standard_vision_profile_uses_provider_and_preserves_bbox_evidence(
         )
         assert vision_download.status_code == 200, vision_download.text
         vision_payload = json.loads(vision_download.content.decode("utf-8"))
-        assert vision_payload["schema_name"] == "memo_stack.vision_image_evidence"
+        assert vision_payload["schema_name"] == "infinity_context.vision_image_evidence"
         assert vision_payload["regions"][0]["bbox"] == [12.0, 4.0, 118.0, 36.0]
         assert "raw_provider_payload" not in vision_payload
         assert _VISION_PROVIDER_SECRET not in vision_download.text
@@ -1846,7 +1846,7 @@ def test_standard_vision_profile_uses_provider_and_preserves_bbox_evidence(
         )
         assert regions_download.status_code == 200, regions_download.text
         regions_payload = json.loads(regions_download.content.decode("utf-8"))
-        assert regions_payload["schema_name"] == "memo_stack.image_regions"
+        assert regions_payload["schema_name"] == "infinity_context.image_regions"
         assert any(
             region["bbox"] == [12.0, 4.0, 118.0, 36.0]
             for region in regions_payload["regions"]

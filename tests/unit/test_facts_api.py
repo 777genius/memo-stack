@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import MemoryOutboxRow, MemoryScopeRow, MemoryThreadRow
-from memo_stack_core.domain.errors import MemoryConflictError
-from memo_stack_core.domain.idempotency import IdempotencyRecord
-from memo_stack_server.config import DeployProfile, MemoryPolicyMode, Settings
-from memo_stack_server.main import create_app
+from infinity_context_adapters.postgres.models import MemoryOutboxRow, MemoryScopeRow, MemoryThreadRow
+from infinity_context_core.domain.errors import MemoryConflictError
+from infinity_context_core.domain.idempotency import IdempotencyRecord
+from infinity_context_server.config import DeployProfile, MemoryPolicyMode, Settings
+from infinity_context_server.main import create_app
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

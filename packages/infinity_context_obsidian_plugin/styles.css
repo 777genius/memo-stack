@@ -1,0 +1,123 @@
+.infinity-context-settings-warning {
+  color: var(--text-warning);
+}
+
+.infinity-context-settings-code {
+  font-family: var(--font-monospace);
+}
+
+.infinity-context-panel {
+  padding: 12px;
+}
+
+.infinity-context-panel h2,
+.infinity-context-panel h3 {
+  margin: 0 0 10px;
+}
+
+.infinity-context-panel h3 {
+  margin-top: 18px;
+  font-size: var(--font-ui-medium);
+}
+
+.infinity-context-status-grid,
+.infinity-context-path-list {
+  display: grid;
+  gap: 6px;
+}
+
+.infinity-context-status-row,
+.infinity-context-path-row {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+}
+
+.infinity-context-status-row {
+  grid-template-columns: minmax(72px, 0.4fr) minmax(0, 1fr);
+}
+
+.infinity-context-path-row {
+  grid-template-columns: 52px 72px minmax(0, 1fr);
+}
+
+.infinity-context-status-label,
+.infinity-context-muted {
+  color: var(--text-muted);
+}
+
+.infinity-context-ok {
+  color: var(--text-success);
+}
+
+.infinity-context-bad {
+  color: var(--text-error);
+}
+
+.infinity-context-path-row code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.infinity-context-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.infinity-context-action-grid button {
+  width: 100%;
+}
+
+.infinity-context-setup-list {
+  display: grid;
+  gap: 8px;
+}
+
+.infinity-context-setup-primary button {
+  width: 100%;
+}
+
+.infinity-context-setup-row {
+  display: grid;
+  grid-template-columns: 24px minmax(72px, 0.8fr) minmax(0, 1fr) minmax(74px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.infinity-context-setup-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+.infinity-context-setup-row button {
+  min-width: 74px;
+}
+
+.infinity-context-busy {
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+}
+
+.infinity-context-last-run {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.infinity-context-last-run pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  white-space: pre-wrap;
+}

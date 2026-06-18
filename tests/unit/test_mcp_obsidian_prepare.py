@@ -4,10 +4,10 @@ import asyncio
 import json
 from pathlib import Path
 
-from memo_stack_mcp.application.local_runtime import LocalRuntimeMcpService
-from memo_stack_mcp.application.obsidian import ObsidianMcpService
-from memo_stack_mcp.application.prepare import ObsidianPrepareMcpService
-from memo_stack_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.application.local_runtime import LocalRuntimeMcpService
+from infinity_context_mcp.application.obsidian import ObsidianMcpService
+from infinity_context_mcp.application.prepare import ObsidianPrepareMcpService
+from infinity_context_mcp.config import MemoryMcpSettings
 
 
 def test_obsidian_prepare_dry_run_does_not_write(tmp_path: Path) -> None:
@@ -25,7 +25,7 @@ def test_obsidian_prepare_dry_run_does_not_write(tmp_path: Path) -> None:
             local_runtime_repo_dir=str(repo),
             obsidian_enabled=True,
             obsidian_vault_path=str(vault),
-            default_space_slug="memo-stack",
+            default_space_slug="infinity-context",
             default_memory_scope_external_ref="belief",
         )
     )
@@ -38,8 +38,8 @@ def test_obsidian_prepare_dry_run_does_not_write(tmp_path: Path) -> None:
     assert payload["data"]["local_runtime"]["would_write"]
     assert payload["data"]["obsidian_setup"]["would_install_plugin"] is True
     assert not (home / "config.toml").exists()
-    assert not (vault / "Memo Stack").exists()
-    assert not (vault / ".obsidian/plugins/memo-stack").exists()
+    assert not (vault / "Infinity Context").exists()
+    assert not (vault / ".obsidian/plugins/infinity-context").exists()
 
 
 def test_obsidian_prepare_apply_stops_before_preview_when_backend_not_ready(
@@ -59,7 +59,7 @@ def test_obsidian_prepare_apply_stops_before_preview_when_backend_not_ready(
             local_runtime_repo_dir=str(repo),
             obsidian_enabled=True,
             obsidian_vault_path=str(vault),
-            default_space_slug="memo-stack",
+            default_space_slug="infinity-context",
             default_memory_scope_external_ref="belief",
         )
     )
@@ -74,9 +74,9 @@ def test_obsidian_prepare_apply_stops_before_preview_when_backend_not_ready(
     assert (home / "config.toml").exists()
     assert (home / ".env").exists()
     assert (
-        vault / "Memo Stack/spaces/memo-stack/memory_scopes/belief/generated/facts"
+        vault / "Infinity Context/spaces/infinity-context/memory_scopes/belief/generated/facts"
     ).exists()
-    assert (vault / ".obsidian/plugins/memo-stack/main.js").exists()
+    assert (vault / ".obsidian/plugins/infinity-context/main.js").exists()
     assert "local_runtime_started" not in payload["diagnostics"]["side_effects"]
     assert "obsidian_sync" not in payload["diagnostics"]["side_effects"]
     assert "MEMORY_SERVICE_TOKEN" not in serialized
@@ -100,9 +100,9 @@ def test_obsidian_prepare_requires_local_runtime_gate(tmp_path: Path) -> None:
 
     assert payload["ok"] is False
     assert payload["data"]["status"] == "local_runtime_init_failed"
-    assert payload["error"]["code"] == "memo_stack_mcp.local_runtime.disabled"
+    assert payload["error"]["code"] == "infinity_context_mcp.local_runtime.disabled"
     assert not home.exists()
-    assert not (vault / "Memo Stack").exists()
+    assert not (vault / "Infinity Context").exists()
 
 
 def _service(settings: MemoryMcpSettings) -> ObsidianPrepareMcpService:

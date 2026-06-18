@@ -648,12 +648,12 @@ abstract class ChatStoreBase with Store {
     MemoryBrowserAnchor anchor, {
     required String alias,
     String? newLabel,
-    String reason = 'split alias in Memo Stack frontend',
+    String reason = 'split alias in Infinity Context frontend',
   }) async {
     final cleanAlias = alias.trim();
     final cleanLabel = newLabel?.trim();
     final cleanReason = reason.trim().isEmpty
-        ? 'split alias in Memo Stack frontend'
+        ? 'split alias in Infinity Context frontend'
         : reason.trim();
     if (cleanAlias.isEmpty) {
       runInAction(() {
@@ -792,7 +792,7 @@ abstract class ChatStoreBase with Store {
 
   Future<bool> deleteMemoryAnchor(
     MemoryBrowserAnchor anchor, {
-    String reason = 'deleted in Memo Stack frontend',
+    String reason = 'deleted in Infinity Context frontend',
   }) async {
     final cleanReason = reason.trim().isEmpty ? 'manual delete' : reason.trim();
     runInAction(() {

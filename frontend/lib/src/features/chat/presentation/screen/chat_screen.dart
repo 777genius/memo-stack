@@ -256,7 +256,7 @@ class _AppBarTitle extends StatelessWidget {
               statusTooltip,
               const SizedBox(width: 6),
               Text(
-                'Memo Stack',
+                'Infinity Context',
                 style: Theme.of(
                   context,
                 ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -331,7 +331,7 @@ class _AppBarTitle extends StatelessWidget {
               children: [
                 Flexible(
                   child: Text(
-                    'Memo Stack',
+                    'Infinity Context',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(

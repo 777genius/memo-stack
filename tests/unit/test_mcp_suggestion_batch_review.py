@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.server import create_mcp_server
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.server import create_mcp_server
 
 
 class BatchReviewGateway:
@@ -155,7 +155,7 @@ def test_service_review_suggestions_batch_rejects_duplicate_targets() -> None:
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.conflict.duplicate_batch_item"
+        assert result["error"]["code"] == "infinity_context_mcp.conflict.duplicate_batch_item"
         assert gateway.calls == []
 
     asyncio.run(run())

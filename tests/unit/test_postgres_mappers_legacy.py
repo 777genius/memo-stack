@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from memo_stack_adapters.postgres.mappers import (
+from infinity_context_adapters.postgres.mappers import (
     anchor_row_to_domain,
     fact_relation_row_to_domain,
     fact_row_to_domain,
     source_ref_row_to_domain,
 )
-from memo_stack_core.domain.entities import Confidence, FactStatus, TrustLevel
+from infinity_context_core.domain.entities import Confidence, FactStatus, TrustLevel
 
 
 def test_anchor_row_to_domain_defaults_missing_lifecycle_fields() -> None:

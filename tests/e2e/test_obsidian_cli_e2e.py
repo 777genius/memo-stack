@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from memo_stack_obsidian.layout import ObsidianVaultLayout
-from memo_stack_obsidian.note_format import TEXT_END, TEXT_START
-from memo_stack_server_harness import PROJECT_ROOT, python_env, run_memo_stack_server
+from infinity_context_obsidian.layout import ObsidianVaultLayout
+from infinity_context_obsidian.note_format import TEXT_END, TEXT_START
+from infinity_context_server_harness import PROJECT_ROOT, python_env, run_infinity_context_server
 
 
 def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path) -> None:
@@ -25,7 +25,7 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
     backend_update_text = f"{marker}: Obsidian CLI backend update wins stale race."
 
     with (
-        run_memo_stack_server(tmp_path, database_name="obsidian-cli.db") as server,
+        run_infinity_context_server(tmp_path, database_name="obsidian-cli.db") as server,
         httpx.Client(
             base_url=server.base_url,
             headers={"Authorization": f"Bearer {server.token}"},
@@ -80,10 +80,10 @@ def test_obsidian_cli_syncs_real_backend_without_opening_obsidian(tmp_path: Path
         assert applied["import"]["updated"] == 1
         assert updated_fact["text"] == local_update_text
         assert updated_fact["version"] == 2
-        assert "memo_stack_version: 2" in fact_path.read_text(encoding="utf-8")
+        assert "infinity_context_version: 2" in fact_path.read_text(encoding="utf-8")
 
         inbox_path = (
-            vault_path / "Memo Stack/spaces/obsidian-cli-e2e/memory_scopes/default/inbox/idea.md"
+            vault_path / "Infinity Context/spaces/obsidian-cli-e2e/memory_scopes/default/inbox/idea.md"
         )
         inbox_path.parent.mkdir(parents=True, exist_ok=True)
         inbox_path.write_text(inbox_text, encoding="utf-8")
@@ -141,7 +141,7 @@ def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
     space_slug = "obsidian-custom-config-e2e"
     memory_scope_ref = "default"
 
-    with run_memo_stack_server(
+    with run_infinity_context_server(
         tmp_path,
         database_name="obsidian-custom-config.db",
     ) as server:
@@ -189,7 +189,7 @@ def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
             ]
         )
 
-    plugin_dir = vault_path / config_dir / "plugins/memo-stack"
+    plugin_dir = vault_path / config_dir / "plugins/infinity-context"
     enabled_path = vault_path / config_dir / "community-plugins.json"
 
     assert connected["ok"] is True
@@ -197,8 +197,8 @@ def test_obsidian_cli_doctor_supports_custom_obsidian_config_dir(
     assert installed["target_dir"] == str(plugin_dir.resolve())
     assert doctor["ok"] is True
     assert (plugin_dir / "main.js").exists()
-    assert json.loads(enabled_path.read_text(encoding="utf-8")) == ["memo-stack"]
-    assert not (vault_path / ".obsidian/plugins/memo-stack").exists()
+    assert json.loads(enabled_path.read_text(encoding="utf-8")) == ["infinity-context"]
+    assert not (vault_path / ".obsidian/plugins/infinity-context").exists()
 
 
 def _run_obsidian_cli(
@@ -207,7 +207,7 @@ def _run_obsidian_cli(
     expected_returncode: int = 0,
 ) -> dict[str, Any]:
     result = subprocess.run(
-        [sys.executable, "-m", "memo_stack_obsidian.cli", *args],
+        [sys.executable, "-m", "infinity_context_obsidian.cli", *args],
         cwd=PROJECT_ROOT,
         env=python_env({}),
         text=True,

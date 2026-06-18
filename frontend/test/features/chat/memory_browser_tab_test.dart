@@ -171,7 +171,7 @@ void main() {
     expect(repo.deletedAnchors.single.anchorId, 'anchor-1');
     expect(
       repo.deletedAnchors.single.reason,
-      'deleted in Memo Stack frontend',
+      'deleted in Infinity Context frontend',
     );
 
     await tester

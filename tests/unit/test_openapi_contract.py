@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 
 def build_test_client() -> TestClient:
@@ -18,7 +18,7 @@ def build_test_client() -> TestClient:
 def test_openapi_contains_stable_v1_fields() -> None:
     body = build_test_client().get("/openapi.json").json()
 
-    assert body["info"] == {"title": "Memo Stack", "version": "0.1.0"}
+    assert body["info"] == {"title": "Infinity Context", "version": "0.1.0"}
     paths = body["paths"]
     assert "/v1/facts" in paths
     assert "/v1/facts/{fact_id}" in paths

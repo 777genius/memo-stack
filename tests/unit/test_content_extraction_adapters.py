@@ -4,7 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 
-from memo_stack_adapters.extraction.content import (
+from infinity_context_adapters.extraction.content import (
     ExtractionEngine,
     ImageMetadataExtractionEngine,
     PdfTextExtractionEngine,
@@ -12,23 +12,23 @@ from memo_stack_adapters.extraction.content import (
     StandardExtractionRouter,
     SupportDecision,
 )
-from memo_stack_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
-from memo_stack_adapters.extraction.image_evidence import parse_tesseract_tsv
-from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
-from memo_stack_adapters.extraction.transcription.openai_adapter import (
+from infinity_context_adapters.extraction.docling_engine import DoclingDocumentExtractionEngine
+from infinity_context_adapters.extraction.image_evidence import parse_tesseract_tsv
+from infinity_context_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
     OpenAISpeechTranscriptionAdapter,
 )
-from memo_stack_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
-from memo_stack_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
-from memo_stack_core.ports.extraction import (
+from infinity_context_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
+from infinity_context_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
+from infinity_context_core.ports.extraction import (
     ExtractedElement,
     ExtractionLimits,
     ExtractionRequest,
     ExtractionResult,
     FileTypeDetectionRequest,
 )
-from memo_stack_core.ports.transcription import (
+from infinity_context_core.ports.transcription import (
     SpeechTranscriptionRequest,
     SpeechTranscriptionResult,
     SpeechTranscriptSegment,

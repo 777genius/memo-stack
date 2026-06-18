@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from memo_stack_server_harness import run_memo_stack_server
+from infinity_context_server_harness import run_infinity_context_server
 
 MAX_P95_REQUEST_MS = 1_800.0
 
@@ -74,7 +74,7 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
     tmp_path: Path,
 ) -> None:
     with (
-        run_memo_stack_server(tmp_path, database_name="quality-facts.db") as server,
+        run_infinity_context_server(tmp_path, database_name="quality-facts.db") as server,
         httpx.Client(
             base_url=server.base_url,
             headers={"Authorization": f"Bearer {server.token}"},
@@ -236,7 +236,7 @@ def test_memory_quality_fact_lifecycle_scope_isolation_and_latency_e2e(
 
 def test_memory_quality_document_recall_restriction_and_delete_e2e(tmp_path: Path) -> None:
     with (
-        run_memo_stack_server(tmp_path, database_name="quality-docs.db") as server,
+        run_infinity_context_server(tmp_path, database_name="quality-docs.db") as server,
         httpx.Client(
             base_url=server.base_url,
             headers={"Authorization": f"Bearer {server.token}"},

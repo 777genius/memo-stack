@@ -1,14 +1,14 @@
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from memo_stack_core.domain.assets import (
+from infinity_context_core.domain.assets import (
     MAX_CONTEXT_LINK_REVIEW_EVENTS,
     MemoryContextLink,
     MemoryContextLinkId,
     MemoryContextLinkSuggestion,
     MemoryContextLinkSuggestionId,
 )
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId
 
 
 def test_context_link_suggestion_review_events_are_bounded_for_legacy_metadata() -> None:

@@ -1,9 +1,9 @@
 import asyncio
 from datetime import UTC, datetime
 
-from memo_stack_core.application.context_hydration import ContextHydrator
-from memo_stack_core.application.dto import BuildContextQuery, ContextItem
-from memo_stack_core.domain.entities import (
+from infinity_context_core.application.context_hydration import ContextHydrator
+from infinity_context_core.application.dto import BuildContextQuery, ContextItem
+from infinity_context_core.domain.entities import (
     MemoryFact,
     MemoryFactId,
     MemoryKind,

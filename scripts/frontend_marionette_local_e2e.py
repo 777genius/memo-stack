@@ -18,7 +18,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-SUITE = "memo-stack-frontend-marionette-local-e2e"
+SUITE = "infinity-context-frontend-marionette-local-e2e"
 MAX_RUNTIME_LOG_MARKERS = 12
 MAX_RUNTIME_LOG_SNIPPET_CHARS = 240
 FLUTTER_RUNTIME_ERROR_MARKERS = (
@@ -50,7 +50,7 @@ def main() -> int:
     )
     exit_code = 1
 
-    tmp_ctx = tempfile.TemporaryDirectory(prefix="memo-stack-marionette.")
+    tmp_ctx = tempfile.TemporaryDirectory(prefix="infinity-context-marionette.")
     tmp_root = Path(tmp_ctx.name)
     flow_report_path = tmp_root / "marionette-flow-report.json"
     processes: list[subprocess.Popen[bytes]] = []
@@ -62,7 +62,7 @@ def main() -> int:
             service_token=args.service_token,
         )
         server = _start(
-            [str(python_bin), "-m", "memo_stack_server.main"],
+            [str(python_bin), "-m", "infinity_context_server.main"],
             cwd=root,
             env=server_env,
         )
@@ -78,7 +78,7 @@ def main() -> int:
             [
                 str(python_bin),
                 "-m",
-                "memo_stack_server.worker",
+                "infinity_context_server.worker",
                 "--loop",
                 "--role",
                 "all",
@@ -97,16 +97,16 @@ def main() -> int:
         marionette_env.update(
             {
                 "FLUTTER_BIN": str(flutter_bin),
-                "MEMO_STACK_BACKEND_HOST": args.host,
-                "MEMO_STACK_BACKEND_PORT": str(args.port),
-                "MEMO_STACK_SERVICE_TOKEN": args.service_token,
-                "MEMO_STACK_SPACE_SLUG": args.space_slug,
-                "MEMO_STACK_MEMORY_SCOPE_EXTERNAL_REF": scope_ref,
-                "MEMO_STACK_E2E_STARTUP_TIMEOUT": str(args.flutter_startup_timeout),
-                "MEMO_STACK_E2E_CALL_TIMEOUT": str(args.call_timeout),
-                "MEMO_STACK_E2E_DEVICE": args.device,
-                "MEMO_STACK_E2E_RUN_ID": run_id,
-                "MEMO_STACK_E2E_FLOW_REPORT_OUT": str(flow_report_path),
+                "INFINITY_CONTEXT_BACKEND_HOST": args.host,
+                "INFINITY_CONTEXT_BACKEND_PORT": str(args.port),
+                "INFINITY_CONTEXT_SERVICE_TOKEN": args.service_token,
+                "INFINITY_CONTEXT_SPACE_SLUG": args.space_slug,
+                "INFINITY_CONTEXT_MEMORY_SCOPE_EXTERNAL_REF": scope_ref,
+                "INFINITY_CONTEXT_E2E_STARTUP_TIMEOUT": str(args.flutter_startup_timeout),
+                "INFINITY_CONTEXT_E2E_CALL_TIMEOUT": str(args.call_timeout),
+                "INFINITY_CONTEXT_E2E_DEVICE": args.device,
+                "INFINITY_CONTEXT_E2E_RUN_ID": run_id,
+                "INFINITY_CONTEXT_E2E_FLOW_REPORT_OUT": str(flow_report_path),
             }
         )
         marionette_exit_code, runtime_log = _run_streaming_process_and_collect_runtime_log(
@@ -147,7 +147,7 @@ def main() -> int:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Memo Stack frontend Marionette E2E with local server and worker."
+        description="Run Infinity Context frontend Marionette E2E with local server and worker."
     )
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--flutter", default=os.environ.get("FLUTTER", "flutter"))

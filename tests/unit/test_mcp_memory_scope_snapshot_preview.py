@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.domain.models import MemoryScope
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.domain.models import MemoryScope
 
 
 class PreviewGateway:
@@ -43,7 +43,7 @@ def test_service_preview_memory_scope_snapshot_import_is_read_only_and_scoped() 
             ),
         )
         snapshot = {"schema_version": 1, "facts": [{"id": "fact_1"}]}
-        manifest = {"schema_version": "memo_stack.memory_scope_snapshot_manifest.v1"}
+        manifest = {"schema_version": "infinity_context.memory_scope_snapshot_manifest.v1"}
 
         result = await service.preview_memory_scope_snapshot_import(
             snapshot=snapshot,

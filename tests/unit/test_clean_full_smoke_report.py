@@ -13,7 +13,7 @@ def test_clean_full_smoke_writes_redacted_report_out(tmp_path, monkeypatch, caps
 
     _emit_report(
         {
-            "suite": "memo-stack-full-provider-canary",
+            "suite": "infinity-context-full-provider-canary",
             "ok": True,
             "token": token,
             "checks": {"providers_are_healthy": True},
@@ -26,7 +26,7 @@ def test_clean_full_smoke_writes_redacted_report_out(tmp_path, monkeypatch, caps
     report_text = report.read_text(encoding="utf-8")
     payload = json.loads(report_text)
 
-    assert payload["suite"] == "memo-stack-full-provider-canary"
+    assert payload["suite"] == "infinity-context-full-provider-canary"
     assert payload["ok"] is True
     assert token not in stdout
     assert token not in report_text

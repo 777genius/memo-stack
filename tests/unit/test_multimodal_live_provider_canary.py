@@ -12,12 +12,12 @@ from types import SimpleNamespace
 ROOT = Path(__file__).parents[2]
 SCRIPT = ROOT / "scripts" / "multimodal_live_provider_canary.py"
 PACKAGE_PATHS = (
-    "packages/memo_stack_core",
-    "packages/memo_stack_server",
-    "packages/memo_stack_adapters",
-    "packages/memo_stack_sdk",
-    "packages/memo_stack_mcp",
-    "packages/memo_stack_cli",
+    "packages/infinity_context_core",
+    "packages/infinity_context_server",
+    "packages/infinity_context_adapters",
+    "packages/infinity_context_sdk",
+    "packages/infinity_context_mcp",
+    "packages/infinity_context_cli",
 )
 
 
@@ -49,7 +49,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     file_report = json.loads(report_path.read_text(encoding="utf-8"))
     assert stdout_report == file_report
     assert file_report["ok"] is False
-    assert file_report["suite"] == "memo-stack-multimodal-live-provider-canary"
+    assert file_report["suite"] == "infinity-context-multimodal-live-provider-canary"
     assert file_report["required_env"] == ["MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"]
     assert file_report["secrets_redacted"] is True
     assert isinstance(file_report["generated_at"], str)
@@ -133,6 +133,24 @@ def test_multimodal_live_provider_canary_has_local_fixtures_and_redaction() -> N
     assert safe["usage"] == {"input_tokens": 1, "output_tokens": 2}
 
 
+def test_multimodal_live_provider_canary_maps_invalid_key_to_operator_action() -> None:
+    module = _load_canary_module()
+
+    component = module._component(
+        "failed",
+        reason="asset_extraction.vision.invalid_api_key",
+        message="provider rejected credential",
+    )
+
+    assert component == {
+        "message": "provider rejected credential",
+        "operator_action": "replace_provider_credential",
+        "reason": "asset_extraction.vision.invalid_api_key",
+        "status": "failed",
+        "user_retryable": False,
+    }
+
+
 def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
     monkeypatch,
 ) -> None:
@@ -200,14 +218,14 @@ def test_multimodal_live_provider_canary_requires_strong_synthetic_transcript() 
 
     weak = module._transcript_check("memo", audio_path=None)
     strong = module._transcript_check(
-        "Memo Stack live transcription canary",
+        "Infinity Context live transcription canary",
         audio_path=None,
     )
     explicit_fixture = module._transcript_check("user supplied fixture", audio_path="voice.wav")
 
     assert weak == {
         "message": "Synthetic speech transcript missed expected canary terms",
-        "missing_terms": ["canary", "stack"],
+        "missing_terms": ["canary", "context", "infinity"],
         "operator_action": "inspect_provider_canary",
         "reason": "synthetic_transcript_mismatch",
         "status": "failed",

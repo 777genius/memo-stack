@@ -19,14 +19,14 @@ import httpx
 import uvicorn
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 TOKEN = "obsidian-mcp-e2e-token"
 LIVE_SPACE = "mcp-live"
 PROFILE = "default"
-TEXT_START = "<!-- memo-stack-managed:fact-text:start -->"
-TEXT_END = "<!-- memo-stack-managed:fact-text:end -->"
+TEXT_START = "<!-- infinity-context-managed:fact-text:start -->"
+TEXT_END = "<!-- infinity-context-managed:fact-text:end -->"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args(argv)
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="memo-stack-obsidian-mcp-"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="infinity-context-obsidian-mcp-"))
     try:
         payload = asyncio.run(_run(temp_dir))
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -147,7 +147,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     )
     _assert(
         local_start_blocked["error"]["code"]
-        == "memo_stack_mcp.local_runtime.start_disabled",
+        == "infinity_context_mcp.local_runtime.start_disabled",
         "local runtime start should require the start env gate",
     )
 
@@ -160,7 +160,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
         "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "false",
         "MEMORY_MCP_OBSIDIAN_VAULT": str(prepare_vault),
-        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
+        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Infinity Context",
         "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "prepare-smoke",
         "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
@@ -172,7 +172,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     )
     prepare_facts = (
         prepare_vault
-        / "Memo Stack/spaces/prepare-smoke/memory_scopes/default/generated/facts"
+        / "Infinity Context/spaces/prepare-smoke/memory_scopes/default/generated/facts"
     )
     _assert(prepare_dry_run["ok"] is True, "prepare dry-run should succeed")
     _assert(
@@ -195,7 +195,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     _assert((prepare_home / "config.toml").exists(), "prepare apply should write config")
     _assert(prepare_facts.exists(), "prepare apply should write V2 facts dir")
     _assert(
-        (prepare_vault / ".obsidian/plugins/memo-stack/main.js").exists(),
+        (prepare_vault / ".obsidian/plugins/infinity-context/main.js").exists(),
         "prepare apply should install plugin bundle",
     )
     _assert(
@@ -212,7 +212,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "false",
         "MEMORY_MCP_OBSIDIAN_VAULT": str(custom_config_vault),
         "MEMORY_MCP_OBSIDIAN_CONFIG_DIR": ".obsidian-dev",
-        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
+        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Infinity Context",
         "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "custom-config-smoke",
         "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
@@ -226,7 +226,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
             {"apply": True, "install_plugin": True, "enable_plugin": True},
         ),
     )
-    custom_config_plugin = custom_config_vault / ".obsidian-dev/plugins/memo-stack"
+    custom_config_plugin = custom_config_vault / ".obsidian-dev/plugins/infinity-context"
     _assert(custom_config_setup["ok"] is True, "custom config setup should succeed")
     _assert(
         custom_config_setup["data"]["obsidian_config_dir"] == ".obsidian-dev",
@@ -241,7 +241,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "custom config setup should enable plugin under the configured dir",
     )
     _assert(
-        not (custom_config_vault / ".obsidian/plugins/memo-stack").exists(),
+        not (custom_config_vault / ".obsidian/plugins/infinity-context").exists(),
         "custom config setup must not write the default .obsidian plugin dir",
     )
     custom_config_status = await _with_session(
@@ -275,7 +275,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
         "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "false",
         "MEMORY_MCP_OBSIDIAN_VAULT": str(vault),
-        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
+        "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Infinity Context",
         "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": "mcp-smoke",
         "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": "default",
@@ -289,7 +289,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
             {"apply": False, "install_plugin": True, "enable_plugin": True},
         ),
     )
-    expected_facts = vault / "Memo Stack/spaces/mcp-smoke/memory_scopes/default/generated/facts"
+    expected_facts = vault / "Infinity Context/spaces/mcp-smoke/memory_scopes/default/generated/facts"
     _assert(dry_run["ok"] is True, "dry-run setup should succeed")
     _assert(dry_run["data"]["dry_run"] is True, "dry-run setup should remain dry")
     _assert(dry_run["data"]["would_install_plugin"] is True, "dry-run should plan plugin install")
@@ -308,15 +308,15 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
     _assert(applied["data"]["plugin_installed"] is True, "plugin should be installed")
     _assert(applied["data"]["plugin_enabled"] is True, "plugin should be enabled")
     _assert(expected_facts.exists(), "applied setup should write V2 facts dir")
-    _assert((vault / "Memo Stack/README.md").exists(), "applied setup should write README")
+    _assert((vault / "Infinity Context/README.md").exists(), "applied setup should write README")
     _assert(
-        (vault / ".obsidian/plugins/memo-stack/main.js").exists(),
+        (vault / ".obsidian/plugins/infinity-context/main.js").exists(),
         "applied setup should install plugin bundle",
     )
     plugin_settings = json.loads(
-        (vault / ".obsidian/plugins/memo-stack/data.json").read_text(encoding="utf-8")
+        (vault / ".obsidian/plugins/infinity-context/data.json").read_text(encoding="utf-8")
     )
-    _assert(plugin_settings["localCliPath"] == "memo-stack", "plugin settings need local CLI")
+    _assert(plugin_settings["localCliPath"] == "infinity-context", "plugin settings need local CLI")
 
     status = await _with_session(
         repo_root=repo_root,
@@ -336,7 +336,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         ),
     )
     _assert(
-        sync_disabled["error"]["code"] == "memo_stack_mcp.obsidian.sync_disabled",
+        sync_disabled["error"]["code"] == "infinity_context_mcp.obsidian.sync_disabled",
         "mutating sync should require the sync env gate",
     )
 
@@ -353,7 +353,7 @@ async def _run(temp_dir: Path) -> dict[str, Any]:
         ),
     )
     _assert(
-        unsafe_layout["error"]["code"] == "memo_stack_mcp.obsidian.error",
+        unsafe_layout["error"]["code"] == "infinity_context_mcp.obsidian.error",
         "unsafe root folder should return an Obsidian MCP error",
     )
     _assert(
@@ -409,7 +409,7 @@ async def _run_live_backend_sync(
             "MEMORY_MCP_OBSIDIAN_ENABLED": "true",
             "MEMORY_MCP_OBSIDIAN_SYNC_ENABLED": "true",
             "MEMORY_MCP_OBSIDIAN_VAULT": str(vault),
-            "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Memo Stack",
+            "MEMORY_MCP_OBSIDIAN_ROOT_FOLDER": "Infinity Context",
             "MEMORY_MCP_OBSIDIAN_LAYOUT": "v2",
             "MEMORY_MCP_DEFAULT_SPACE_SLUG": LIVE_SPACE,
             "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": PROFILE,
@@ -425,14 +425,14 @@ async def _run_live_backend_sync(
             ),
         )
         live_facts_dir = (
-            vault / f"Memo Stack/spaces/{LIVE_SPACE}/memory_scopes/{PROFILE}/generated/facts"
+            vault / f"Infinity Context/spaces/{LIVE_SPACE}/memory_scopes/{PROFILE}/generated/facts"
         )
         _assert(setup["ok"] is True, "live MCP setup should succeed")
         _assert(setup["data"]["plugin_installed"] is True, "live setup should install plugin")
         _assert(setup["data"]["plugin_enabled"] is True, "live setup should enable plugin")
         _assert(live_facts_dir.exists(), "live setup should write scoped facts directory")
         plugin_settings = json.loads(
-            (vault / ".obsidian/plugins/memo-stack/data.json").read_text(encoding="utf-8")
+            (vault / ".obsidian/plugins/infinity-context/data.json").read_text(encoding="utf-8")
         )
         _assert(plugin_settings["apiUrl"] == base_url, "plugin settings should use live API URL")
         _assert(
@@ -665,7 +665,7 @@ def _wait_for_health(base_url: str) -> None:
                 return
         except httpx.HTTPError:
             time.sleep(0.2)
-    raise RuntimeError(f"Memo Stack server did not become healthy at {base_url}")
+    raise RuntimeError(f"Infinity Context server did not become healthy at {base_url}")
 
 
 def _headers() -> dict[str, str]:
@@ -745,7 +745,7 @@ def _list_suggestions(base_url: str) -> list[dict[str, Any]]:
 
 
 def _fact_files(vault: Path) -> list[Path]:
-    files = sorted((vault / "Memo Stack").glob("**/generated/facts/*.md"))
+    files = sorted((vault / "Infinity Context").glob("**/generated/facts/*.md"))
     return [path for path in files if not path.name.startswith(".")]
 
 
@@ -763,7 +763,7 @@ def _replace_managed_text(path: Path, text: str) -> None:
 
 
 def _write_inbox_note(vault: Path, text: str) -> None:
-    path = vault / f"Memo Stack/spaces/{LIVE_SPACE}/memory_scopes/{PROFILE}/inbox/mcp-live-inbox.md"
+    path = vault / f"Infinity Context/spaces/{LIVE_SPACE}/memory_scopes/{PROFILE}/inbox/mcp-live-inbox.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -776,7 +776,7 @@ async def _with_session(
 ) -> dict[str, Any]:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "memo_stack_mcp"],
+        args=["-m", "infinity_context_mcp"],
         env=_python_env(repo_root, env),
         cwd=str(repo_root),
     )
@@ -828,13 +828,13 @@ def _structured(result: Any) -> dict[str, Any]:
 
 def _python_env(repo_root: Path, extra: dict[str, str]) -> dict[str, str]:
     package_paths = [
-        "packages/memo_stack_core",
-        "packages/memo_stack_adapters",
-        "packages/memo_stack_server",
-        "packages/memo_stack_sdk",
-        "packages/memo_stack_cli",
-        "packages/memo_stack_obsidian",
-        "packages/memo_stack_mcp",
+        "packages/infinity_context_core",
+        "packages/infinity_context_adapters",
+        "packages/infinity_context_server",
+        "packages/infinity_context_sdk",
+        "packages/infinity_context_cli",
+        "packages/infinity_context_obsidian",
+        "packages/infinity_context_mcp",
     ]
     return {
         **os.environ,

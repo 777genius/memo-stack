@@ -3,7 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from memo_stack_server.memora_comparison import (
+from infinity_context_server.memora_comparison import (
     DIRECT_MEMORA_SMOKE_REQUIREMENTS,
     build_memora_agent_memory_comparison,
 )
@@ -32,7 +32,7 @@ def _passing_memora_smoke() -> dict[str, object]:
             "generated_by": "scripts/memora_direct_mcp_smoke.py",
             "suite": "memora-direct-mcp-smoke",
             "run_id": "prod_realistic_coding_agent_memory_v1",
-            "project": "memo-stack-competitor-evidence",
+            "project": "infinity-context-competitor-evidence",
             "git": {"commit": "abc123", "short_commit": "abc123", "dirty": False},
             "runtime": {"python_version": "3.13.0", "platform": "unit"},
         },
@@ -41,12 +41,12 @@ def _passing_memora_smoke() -> dict[str, object]:
     }
 
 
-def test_comparison_prefers_memo_stack_for_governed_agent_memory() -> None:
+def test_comparison_prefers_infinity_context_for_governed_agent_memory() -> None:
     report = build_memora_agent_memory_comparison(memora_direct_smoke=_passing_memora_smoke())
 
-    assert report["overall"]["winner"] == "memo_stack"
-    assert report["overall"]["memo_stack_score"] > report["overall"]["memora_score"]
-    assert report["recommendations"][1]["winner"] == "memo_stack"
+    assert report["overall"]["winner"] == "infinity_context"
+    assert report["overall"]["infinity_context_score"] > report["overall"]["memora_score"]
+    assert report["recommendations"][1]["winner"] == "infinity_context"
 
 
 def test_comparison_credits_memora_direct_smoke_strengths() -> None:
@@ -61,10 +61,10 @@ def test_comparison_credits_memora_direct_smoke_strengths() -> None:
     assert smoke["provenance"]["git"]["commit"] == "abc123"
 
     by_id = {item["id"]: item for item in report["dimensions"]}
-    assert by_id["retrieval_and_digest_quality"]["winner"] == "memo_stack"
-    assert by_id["large_docs_and_architecture_notes"]["winner"] == "memo_stack"
-    assert by_id["large_docs_and_architecture_notes"]["memo_stack_score"] >= 9.4
-    assert by_id["graph_relationships"]["memo_stack_score"] > by_id["graph_relationships"][
+    assert by_id["retrieval_and_digest_quality"]["winner"] == "infinity_context"
+    assert by_id["large_docs_and_architecture_notes"]["winner"] == "infinity_context"
+    assert by_id["large_docs_and_architecture_notes"]["infinity_context_score"] >= 9.4
+    assert by_id["graph_relationships"]["infinity_context_score"] > by_id["graph_relationships"][
         "memora_score"
     ]
 
@@ -85,8 +85,8 @@ def test_comparison_module_does_not_import_competitor_runtime() -> None:
     module_path = (
         Path(__file__).parents[2]
         / "packages"
-        / "memo_stack_server"
-        / "memo_stack_server"
+        / "infinity_context_server"
+        / "infinity_context_server"
         / "memora_comparison.py"
     )
     tree = ast.parse(module_path.read_text(encoding="utf-8"))

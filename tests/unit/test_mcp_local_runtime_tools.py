@@ -4,10 +4,10 @@ import asyncio
 import json
 from pathlib import Path
 
-from memo_stack_cli.runtime import RuntimeResult
-from memo_stack_mcp.application import local_runtime
-from memo_stack_mcp.application.local_runtime import LocalRuntimeMcpService
-from memo_stack_mcp.config import MemoryMcpSettings
+from infinity_context_cli.runtime import RuntimeResult
+from infinity_context_mcp.application import local_runtime
+from infinity_context_mcp.application.local_runtime import LocalRuntimeMcpService
+from infinity_context_mcp.config import MemoryMcpSettings
 
 
 def test_local_runtime_status_disabled_does_not_touch_home(tmp_path: Path) -> None:
@@ -82,9 +82,9 @@ def test_local_runtime_start_dry_run_is_plan_only(tmp_path: Path) -> None:
         "lite",
         "up",
         "-d",
-        "memo_stack_server",
-        "memo_stack_worker",
-        "memo_stack_extraction_worker",
+        "infinity_context_server",
+        "infinity_context_worker",
+        "infinity_context_extraction_worker",
     ]
     assert not (tmp_path / "home").exists()
 
@@ -101,7 +101,7 @@ def test_local_runtime_start_apply_requires_separate_start_gate(tmp_path: Path) 
     payload = asyncio.run(service.start(compose_profile="lite", apply=True))
 
     assert payload["ok"] is False
-    assert payload["error"]["code"] == "memo_stack_mcp.local_runtime.start_disabled"
+    assert payload["error"]["code"] == "infinity_context_mcp.local_runtime.start_disabled"
 
 
 def test_local_runtime_start_redacts_provider_tokens_in_output(

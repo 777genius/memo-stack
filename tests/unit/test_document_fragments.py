@@ -1,8 +1,8 @@
-from memo_stack_core.application.document_fragments import (
+from infinity_context_core.application.document_fragments import (
     document_fragment_summary,
     fragment_document_text,
 )
-from memo_stack_core.domain.entities import MemoryChunkKind
+from infinity_context_core.domain.entities import MemoryChunkKind
 
 
 def test_fragment_document_text_extracts_typed_markdown_nodes() -> None:

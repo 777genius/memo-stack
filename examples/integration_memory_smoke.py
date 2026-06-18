@@ -1,6 +1,6 @@
-"""Generic local Memo Stack smoke test.
+"""Generic local Infinity Context smoke test.
 
-Run after `docker compose up` or `make memo-stack-up`.
+Run after `docker compose up` or `make infinity-context-up`.
 The script uses only the public SDK and HTTP API.
 """
 
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from time import time
 from typing import Any
 
-from memo_stack_sdk import MemoStackClient, MemoStackError
+from infinity_context_sdk import InfinityContextClient, InfinityContextError
 
 
 class SmokeFailure(RuntimeError):
@@ -39,7 +39,7 @@ class SmokeConfig:
                 "MEMORY_SMOKE_AUTH_TOKEN",
                 os.getenv("MEMORY_SERVICE_TOKEN", "local-dev-token"),
             ),
-            space_slug=os.getenv("MEMORY_SMOKE_SPACE", "memo-stack-smoke"),
+            space_slug=os.getenv("MEMORY_SMOKE_SPACE", "infinity-context-smoke"),
             memory_scope_external_ref=os.getenv("MEMORY_SMOKE_MEMORY_SCOPE", "default"),
             thread_external_ref=os.getenv(
                 "MEMORY_SMOKE_THREAD",
@@ -78,7 +78,7 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
             space_slug=config.space_slug,
             memory_scope_external_ref=config.memory_scope_external_ref,
             thread_external_ref=config.thread_external_ref,
-            text=f"{fact_marker}: initial smoke fact for Memo Stack.",
+            text=f"{fact_marker}: initial smoke fact for Infinity Context.",
             kind="note",
             classification="internal",
             source_refs=[
@@ -94,7 +94,7 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
         client.update_fact(
             str(fact["id"]),
             expected_version=int(fact.get("version", 1)),
-            text=f"{updated_marker}: updated smoke fact for Memo Stack.",
+            text=f"{updated_marker}: updated smoke fact for Infinity Context.",
             reason="integration smoke update",
             source_refs=[
                 {
@@ -109,8 +109,8 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
             space_slug=config.space_slug,
             memory_scope_external_ref=config.memory_scope_external_ref,
             thread_external_ref=config.thread_external_ref,
-            title=f"Memo Stack smoke document {config.run_id}",
-            text=f"{document_marker}: document recall smoke for Memo Stack.",
+            title=f"Infinity Context smoke document {config.run_id}",
+            text=f"{document_marker}: document recall smoke for Infinity Context.",
             source_external_id=f"smoke-doc-{config.run_id}",
             classification="internal",
             idempotency_key=f"smoke-doc-{config.run_id}",
@@ -179,14 +179,14 @@ def run_smoke(client: Any, config: SmokeConfig) -> dict[str, Any]:
 
 def main() -> int:
     config = SmokeConfig.from_env()
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url=config.api_url,
         token=config.auth_token,
         timeout=config.timeout,
     )
     try:
         result = run_smoke(client, config)
-    except MemoStackError as exc:
+    except InfinityContextError as exc:
         print(
             json.dumps(
                 {

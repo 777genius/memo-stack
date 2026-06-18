@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.extraction.openai_vision import (
+from infinity_context_adapters.extraction.openai_vision import (
     OPENAI_VISION_DOCS_URL,
     OPENAI_VISION_ENDPOINT_FAMILY,
     OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
@@ -10,16 +10,16 @@ from memo_stack_adapters.extraction.openai_vision import (
     OPENAI_VISION_SUPPORTED_CONTENT_TYPES,
     OPENAI_VISION_SUPPORTED_FILE_SUFFIXES,
 )
-from memo_stack_adapters.extraction.transcription.openai_adapter import (
+from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_DOCS_URL,
     OPENAI_TRANSCRIPTION_ENDPOINT,
     OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
     OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES,
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
 )
-from memo_stack_core.domain.entities import SourceRef
-from memo_stack_core.domain.errors import MemoryInfrastructureError, MemoryInvariantError
-from memo_stack_core.ports import (
+from infinity_context_core.domain.entities import SourceRef
+from infinity_context_core.domain.errors import MemoryInfrastructureError, MemoryInvariantError
+from infinity_context_core.ports import (
     CapabilityDescriptor,
     CapabilityMode,
     CapabilityRecallCandidate,
@@ -36,8 +36,8 @@ from memo_stack_core.ports import (
     TemporalFactGraphPort,
     VectorRecallPort,
 )
-from memo_stack_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
+from infinity_context_server.main import create_app
 
 
 def build_test_client() -> TestClient:
@@ -58,7 +58,7 @@ def test_health_returns_ok() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "memo-stack",
+        "service": "infinity-context",
         "deploy_profile": "test",
     }
 
@@ -82,7 +82,7 @@ def test_capabilities_return_noop_adapters() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["service_name"] == "memo-stack"
+    assert body["service_name"] == "infinity-context"
     assert body["deploy_profile"] == "test"
     assert body["policy_mode"] == "active_context"
     assert set(body["adapters"]) == {"qdrant", "graphiti", "embeddings", "cognee"}
@@ -237,7 +237,7 @@ def test_capabilities_return_noop_adapters() -> None:
         "derived_indexes": ["qdrant", "graphiti"],
     }
     assert body["extraction"]["evidence_contract"] == {
-        "schema_version": "memo_stack.extraction_evidence_contract.v1",
+        "schema_version": "infinity_context.extraction_evidence_contract.v1",
         "source_ref_coordinate_fields": [
             "char_start",
             "char_end",
@@ -257,7 +257,7 @@ def test_capabilities_return_noop_adapters() -> None:
         "source_text_policy": "untrusted_evidence",
     }
     assert body["extraction"]["feature_contract"] == {
-        "schema_version": "memo_stack.extraction_feature_contract.v1",
+        "schema_version": "infinity_context.extraction_feature_contract.v1",
         "profile_feature_fields": [
             "document_features",
             "vision_features",
@@ -270,7 +270,7 @@ def test_capabilities_return_noop_adapters() -> None:
         "local_asr_does_not_provide_speaker_labels": True,
     }
     assert body["extraction"]["provider_contract"] == {
-        "schema_version": "memo_stack.extraction_provider_contract.v1",
+        "schema_version": "infinity_context.extraction_provider_contract.v1",
         "provider_output_policy": "evidence_not_truth",
         "raw_provider_payloads_in_public_api": False,
         "external_ai_requires_explicit_profile": True,
@@ -313,10 +313,10 @@ def test_capabilities_return_noop_adapters() -> None:
         "supported_file_types"
     ]
     assert body["extraction"]["manifest_contract"]["schema_version"] == (
-        "memo_stack.multimodal_manifest_contract.v1"
+        "infinity_context.multimodal_manifest_contract.v1"
     )
     assert body["extraction"]["manifest_contract"]["manifest_schema_version"] == (
-        "memo_stack.multimodal_manifest.v1"
+        "infinity_context.multimodal_manifest.v1"
     )
     assert body["extraction"]["manifest_contract"]["artifact_type"] == "media_manifest"
     assert body["extraction"]["manifest_contract"]["coordinate_fields"] == [
@@ -329,7 +329,7 @@ def test_capabilities_return_noop_adapters() -> None:
     )
     assert body["extraction"]["manifest_contract"]["raw_provider_payloads_in_public_api"] is False
     assert body["extraction"]["file_type_detection"] == {
-        "schema_version": "memo_stack.file_type_detection_contract.v1",
+        "schema_version": "infinity_context.file_type_detection_contract.v1",
         "declared_content_type_trusted": False,
         "filename_extension_trusted": False,
         "magic_bytes_preferred_for_binary_mismatch": True,
@@ -804,7 +804,7 @@ def test_capability_recall_contract_validates_scope_and_score() -> None:
     candidate = CapabilityRecallCandidate(
         item_id="fact-1",
         item_type="fact",
-        text="Use Memo Stack Core as canonical source of truth.",
+        text="Use Infinity Context Core as canonical source of truth.",
         score=0.91,
         source_refs=(SourceRef(source_type="manual", source_id="note-1"),),
         capability=MemoryCapability.FACT_PROJECTION,

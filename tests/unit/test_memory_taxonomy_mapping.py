@@ -1,9 +1,9 @@
 import asyncio
 
-from memo_stack_core.application.auto_memory import RuleBasedMemoryClassifier
-from memo_stack_core.domain.entities import Confidence, MemoryKind, TrustLevel
-from memo_stack_core.domain.taxonomy import DefaultTaxonomyPolicy
-from memo_stack_core.ports.auto_memory import (
+from infinity_context_core.application.auto_memory import RuleBasedMemoryClassifier
+from infinity_context_core.domain.entities import Confidence, MemoryKind, TrustLevel
+from infinity_context_core.domain.taxonomy import DefaultTaxonomyPolicy
+from infinity_context_core.ports.auto_memory import (
     ALLOWED_TTL_POLICIES,
     CandidateOperation,
     MemoryCandidate,
@@ -76,7 +76,7 @@ def test_rule_based_classifier_marks_current_task_as_temporary() -> None:
 
     candidates = asyncio.run(
         classifier.classify(
-            text="Current task: finish the memo stack hook preflight.",
+            text="Current task: finish the infinity context hook preflight.",
             source=SourceProvenance(
                 source_type="capture:hook",
                 source_id="cap_task",

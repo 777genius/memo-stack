@@ -1,6 +1,6 @@
 # Client App Integration Run Notes
 
-These notes were copied from the Client App project context when Memo Stack docs were moved out.
+These notes were copied from the Client App project context when Infinity Context docs were moved out.
 
 ## Current Client App Memory Integration
 
@@ -75,24 +75,24 @@ FOCUS_COPY_ENABLE_BROWSER_CDP=1 \
 pnpm tauri dev
 ```
 
-## Future Memo Stack Compatibility Goal
+## Future Infinity Context Compatibility Goal
 
-The new Memo Stack should preserve Client App compatibility through an adapter/gateway instead of making Client App own the memory engine.
+The new Infinity Context should preserve Client App compatibility through an adapter/gateway instead of making Client App own the memory engine.
 
 Target boundary:
 
 ```text
 Client App desktop/backend
   -> HTTP or SDK
-  -> memo_stack_server compatibility routes
-  -> memo_stack_core use cases
+  -> infinity_context_server compatibility routes
+  -> infinity_context_core use cases
   -> Postgres canonical truth + Qdrant/Graphiti derived indexes
 ```
 
 Rules:
 
 - Client App must not import Qdrant/Graphiti provider SDKs;
-- compatibility DTOs stay in `memo_stack_server`, not `memo_stack_core`;
+- compatibility DTOs stay in `infinity_context_server`, not `infinity_context_core`;
 - fallback behavior remains best-effort and non-blocking;
 - active prompt path must keep kill switches;
 - local-only mode must avoid remote memory calls.

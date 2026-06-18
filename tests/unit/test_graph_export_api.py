@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -153,7 +153,7 @@ def test_export_graph_includes_facts_documents_fragments_and_evidence_edges(
         if node["type"] == "chunk" and node["data"].get("episode_id") == episode_id
     ]
     edge_types = {edge["type"] for edge in data["edges"]}
-    assert data["schema_version"] == "memo_stack.graph_export.v1"
+    assert data["schema_version"] == "infinity_context.graph_export.v1"
     assert data["counts"]["facts"] == 3
     assert data["counts"]["documents"] == 1
     assert data["counts"]["episodes"] == 1

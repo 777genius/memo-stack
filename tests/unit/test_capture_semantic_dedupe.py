@@ -2,11 +2,11 @@ import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_core.application import ConsolidateCaptureCommand, ConsolidateCaptureUseCase
-from memo_stack_core.domain.entities import Confidence, MemoryKind, SourceRef
-from memo_stack_core.ports.auto_memory import CandidateOperation, MemoryCandidate, SourceProvenance
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_core.application import ConsolidateCaptureCommand, ConsolidateCaptureUseCase
+from infinity_context_core.domain.entities import Confidence, MemoryKind, SourceRef
+from infinity_context_core.ports.auto_memory import CandidateOperation, MemoryCandidate, SourceProvenance
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.main import create_app
 
 
 class StaticExtractor:

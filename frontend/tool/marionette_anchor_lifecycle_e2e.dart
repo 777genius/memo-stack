@@ -43,31 +43,31 @@ class MarionetteAnchorLifecycleConfig {
   factory MarionetteAnchorLifecycleConfig.fromEnv(
     Map<String, String> env,
   ) {
-    final runId = env['MEMO_STACK_E2E_RUN_ID'] ??
+    final runId = env['INFINITY_CONTEXT_E2E_RUN_ID'] ??
         DateTime.now().millisecondsSinceEpoch.toString();
-    final vmServiceValue = _env(env, 'MEMO_STACK_E2E_VM_SERVICE_URI');
+    final vmServiceValue = _env(env, 'INFINITY_CONTEXT_E2E_VM_SERVICE_URI');
     return MarionetteAnchorLifecycleConfig(
       flutterBin: _env(env, 'FLUTTER_BIN') ??
           _env(env, 'FLUTTER') ??
           _defaultFlutterBin(),
-      device: _env(env, 'MEMO_STACK_E2E_DEVICE') ?? 'macos',
-      backendHost: _env(env, 'MEMO_STACK_BACKEND_HOST') ?? '127.0.0.1',
-      backendPort: _env(env, 'MEMO_STACK_BACKEND_PORT') ?? '7788',
-      serviceToken: _env(env, 'MEMO_STACK_SERVICE_TOKEN') ?? 'local-dev-token',
-      spaceSlug: _env(env, 'MEMO_STACK_SPACE_SLUG') ?? 'marionette-anchor-e2e',
-      scopeRef: _env(env, 'MEMO_STACK_MEMORY_SCOPE_EXTERNAL_REF') ??
+      device: _env(env, 'INFINITY_CONTEXT_E2E_DEVICE') ?? 'macos',
+      backendHost: _env(env, 'INFINITY_CONTEXT_BACKEND_HOST') ?? '127.0.0.1',
+      backendPort: _env(env, 'INFINITY_CONTEXT_BACKEND_PORT') ?? '7788',
+      serviceToken: _env(env, 'INFINITY_CONTEXT_SERVICE_TOKEN') ?? 'local-dev-token',
+      spaceSlug: _env(env, 'INFINITY_CONTEXT_SPACE_SLUG') ?? 'marionette-anchor-e2e',
+      scopeRef: _env(env, 'INFINITY_CONTEXT_MEMORY_SCOPE_EXTERNAL_REF') ??
           'marionette-anchor-e2e-$runId',
       vmServiceUri:
           vmServiceValue == null ? null : _parseWebSocketUri(vmServiceValue),
-      keepAppRunning: _truthy(env['MEMO_STACK_E2E_KEEP_APP_RUNNING']),
+      keepAppRunning: _truthy(env['INFINITY_CONTEXT_E2E_KEEP_APP_RUNNING']),
       startupTimeout: Duration(
         seconds:
-            int.tryParse(env['MEMO_STACK_E2E_STARTUP_TIMEOUT'] ?? '') ?? 120,
+            int.tryParse(env['INFINITY_CONTEXT_E2E_STARTUP_TIMEOUT'] ?? '') ?? 120,
       ),
       callTimeout: Duration(
-        seconds: int.tryParse(env['MEMO_STACK_E2E_CALL_TIMEOUT'] ?? '') ?? 30,
+        seconds: int.tryParse(env['INFINITY_CONTEXT_E2E_CALL_TIMEOUT'] ?? '') ?? 30,
       ),
-      flowReportOut: _env(env, 'MEMO_STACK_E2E_FLOW_REPORT_OUT'),
+      flowReportOut: _env(env, 'INFINITY_CONTEXT_E2E_FLOW_REPORT_OUT'),
     );
   }
 }
@@ -164,7 +164,7 @@ void _writeAscii(Uint8List bytes, int offset, String value) {
 
 String _sampleMp4Base64() {
   final tempDir = Directory.systemTemp.createTempSync(
-    'memo-stack-video-fixture.',
+    'infinity-context-video-fixture.',
   );
   try {
     final video = File('${tempDir.path}/fixture.mp4');
@@ -258,7 +258,7 @@ class MarionetteAnchorLifecycleRunner {
         config.vmServiceUri == null ? await _startFlutterApp(config) : null;
     final vmServiceUri = startedApp?.vmServiceUri ?? config.vmServiceUri!;
     VmServiceClient? client;
-    MemoStackExtensionClient? memoStack;
+    InfinityContextExtensionClient? memoStack;
     final runMarker = _runMarker(config.scopeRef);
     final flowRecorder = MarionetteFlowRecorder(
       path: config.flowReportOut,
@@ -269,7 +269,7 @@ class MarionetteAnchorLifecycleRunner {
     try {
       _log('connecting to VM service at $vmServiceUri');
       client = await VmServiceClient.connect(vmServiceUri, config.callTimeout);
-      memoStack = MemoStackExtensionClient(client, config.callTimeout);
+      memoStack = InfinityContextExtensionClient(client, config.callTimeout);
       await memoStack.init();
 
       final state = await memoStack.waitUntilReady();
@@ -432,7 +432,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runMemoryScopeManagementFlow(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     final tempRef = 'marionette-scope-admin-$runMarker';
@@ -479,7 +479,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runCaptureLinkingFlow(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     final target = await memoStack.call(
@@ -551,7 +551,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runAttachmentCaptureFlow(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     for (final attachment in _attachmentCases(runMarker)) {
@@ -616,7 +616,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runRejectedContextLinkFlow(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     final baseline = await memoStack.call('memoStack.e2eState', {});
@@ -683,7 +683,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runManualContextLinkFlow(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     final baseline = await memoStack.call('memoStack.e2eState', {});
@@ -743,7 +743,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<Map<String, dynamic>> _waitForPendingContextLinkSuggestion(
-    MemoStackExtensionClient memoStack, {
+    InfinityContextExtensionClient memoStack, {
     required String targetAnchorId,
   }) async {
     final deadline = DateTime.now().add(config.callTimeout);
@@ -775,7 +775,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<Map<String, dynamic>> _waitForAssetExtraction(
-    MemoStackExtensionClient memoStack, {
+    InfinityContextExtensionClient memoStack, {
     required String assetId,
   }) async {
     final deadline = DateTime.now().add(
@@ -810,7 +810,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<Map<String, dynamic>> _waitForContextLinkCount(
-    MemoStackExtensionClient memoStack, {
+    InfinityContextExtensionClient memoStack, {
     int minimumCount = 1,
   }) async {
     final deadline = DateTime.now().add(config.callTimeout);
@@ -826,7 +826,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _cleanupRunAnchors(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     final state = await memoStack.call('memoStack.e2eState', {});
@@ -843,7 +843,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _bestEffortCleanup(
-    MemoStackExtensionClient memoStack,
+    InfinityContextExtensionClient memoStack,
     String runMarker,
   ) async {
     try {

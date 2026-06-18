@@ -515,7 +515,7 @@ class _MemoryHistoryRestClient extends BackendRestClient {
         'space_id': 'space-1',
         'memory_scope_id': 'scope-1',
         'thread_id': 'thread-1',
-        'source_agent': 'memo-stack-frontend',
+        'source_agent': 'infinity-context-frontend',
         'source_kind': 'manual',
         'event_type': 'QuickCapture',
         'actor_role': 'user',

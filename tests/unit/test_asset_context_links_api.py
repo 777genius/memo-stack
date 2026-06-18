@@ -5,12 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import MemoryFactRow, MemoryThreadRow
-from memo_stack_server.admin import token_create
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.db import upgrade
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_adapters.postgres.models import MemoryFactRow, MemoryThreadRow
+from infinity_context_server.admin import token_create
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.db import upgrade
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -435,7 +435,7 @@ def test_context_link_suggestions_include_document_and_chunk_targets(tmp_path: P
                 "thread_external_ref": "doc-review",
                 "title": "Qdrant memory architecture",
                 "text": (
-                    "Memo Stack keeps canonical memory in Postgres. "
+                    "Infinity Context keeps canonical memory in Postgres. "
                     "Qdrant stores derived document chunks for retrieval."
                 ),
                 "source_type": "document",

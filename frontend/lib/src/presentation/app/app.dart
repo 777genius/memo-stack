@@ -105,7 +105,7 @@ class AppRoot extends StatelessWidget {
     );
 
     return MaterialApp(
-      title: 'Memo Stack',
+      title: 'Infinity Context',
       theme: light,
       darkTheme: dark,
       themeMode: themeStore.mode,
@@ -171,7 +171,7 @@ class AppRoot extends StatelessWidget {
             ),
           ],
           child: kDebugMode
-              ? MemoStackMarionetteE2eBridge(child: appChild)
+              ? InfinityContextMarionetteE2eBridge(child: appChild)
               : appChild,
         );
       },

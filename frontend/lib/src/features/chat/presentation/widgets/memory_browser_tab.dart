@@ -806,7 +806,7 @@ class _AnchorSplitAliasDialogState extends State<_AnchorSplitAliasDialog> {
         .toList(growable: false);
     _alias = _aliases.isEmpty ? '' : _aliases.first;
     _newLabel = TextEditingController(text: _alias);
-    _reason = TextEditingController(text: 'split alias in Memo Stack frontend');
+    _reason = TextEditingController(text: 'split alias in Infinity Context frontend');
   }
 
   @override

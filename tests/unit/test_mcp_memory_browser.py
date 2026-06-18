@@ -4,10 +4,10 @@ import asyncio
 from typing import Any
 
 import httpx
-from memo_stack_mcp.adapters.http_gateway import HttpMemoryGateway
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings
-from memo_stack_mcp.domain.models import MemoryScope
+from infinity_context_mcp.adapters.http_gateway import HttpMemoryGateway
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings
+from infinity_context_mcp.domain.models import MemoryScope
 
 
 class MemoryBrowserGateway:

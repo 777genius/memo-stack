@@ -3,9 +3,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import MemoryFactRow
-from memo_stack_server.config import DeployProfile, Settings
-from memo_stack_server.main import create_app
+from infinity_context_adapters.postgres.models import MemoryFactRow
+from infinity_context_server.config import DeployProfile, Settings
+from infinity_context_server.main import create_app
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,7 +62,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
                 "space_id": "space_client_app",
                 "memory_scope_id": "memory_scope_default",
                 "text": (
-                    "Memo Stack should use Graphiti as the temporal graph adapter "
+                    "Infinity Context should use Graphiti as the temporal graph adapter "
                     "for coding agent memory."
                 ),
                 "kind": "architecture_decision",
@@ -78,7 +78,7 @@ def test_memory_insights_reports_review_and_taxonomy_state(tmp_path: Path) -> No
                 "space_id": "space_client_app",
                 "memory_scope_id": "memory_scope_default",
                 "text": (
-                    "Memo Stack should use Graphiti as temporal graph engine adapter "
+                    "Infinity Context should use Graphiti as temporal graph engine adapter "
                     "for coding-agent memory."
                 ),
                 "kind": "architecture_decision",

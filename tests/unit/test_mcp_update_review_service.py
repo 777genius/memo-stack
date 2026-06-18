@@ -2,9 +2,9 @@ import asyncio
 from typing import Any
 
 from mcp_adapter_fakes import RecordingGateway
-from memo_stack_mcp.application.service import MemoryToolService
-from memo_stack_mcp.config import MemoryMcpSettings, MemoryMcpWriteMode
-from memo_stack_mcp.domain.models import MemoryGatewayError, MemoryScope
+from infinity_context_mcp.application.service import MemoryToolService
+from infinity_context_mcp.config import MemoryMcpSettings, MemoryMcpWriteMode
+from infinity_context_mcp.domain.models import MemoryGatewayError, MemoryScope
 
 
 def test_service_suggest_fact_creates_pending_review_candidate() -> None:
@@ -139,7 +139,7 @@ def test_service_propose_updates_direct_explicit_requires_confirmation() -> None
         )
 
         assert without_confirmation["data"]["accepted_suggestions"][0]["decision_code"] == (
-            "memo_stack_mcp.policy.explicit_confirmation_required"
+            "infinity_context_mcp.policy.explicit_confirmation_required"
         )
         assert with_confirmation["data"]["direct_writes"][0]["fact_id"] == "fact_1"
         assert [name for name, _ in gateway.calls].count("remember_fact") == 1
@@ -171,7 +171,7 @@ def test_service_propose_updates_uncertain_evidence_needs_review_even_when_confi
 
         assert result["ok"] is True
         assert result["data"]["accepted_suggestions"][0]["decision_code"] == (
-            "memo_stack_mcp.policy.uncertain_claim"
+            "infinity_context_mcp.policy.uncertain_claim"
         )
         assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
         assert [name for name, _ in gateway.calls] == [
@@ -212,7 +212,7 @@ def test_service_propose_updates_dedupes_same_batch() -> None:
         assert result["data"]["direct_writes"][0]["status"] == "direct_write"
         assert (
             result["data"]["duplicates"][0]["decision_code"]
-            == "memo_stack_mcp.duplicate.same_batch"
+            == "infinity_context_mcp.duplicate.same_batch"
         )
         assert [name for name, _ in gateway.calls].count("remember_fact") == 1
 
@@ -253,7 +253,7 @@ def test_service_propose_updates_detects_existing_fact_conflict() -> None:
 
         assert result["ok"] is True
         assert result["data"]["conflicts"][0]["decision_code"] == (
-            "memo_stack_mcp.conflict.requires_review"
+            "infinity_context_mcp.conflict.requires_review"
         )
         assert result["data"]["conflicts"][0]["duplicate_id"] == "fact_mysql"
         assert [name for name, _ in gateway.calls] == ["list_facts", "list_suggestions"]
@@ -296,7 +296,7 @@ def test_service_propose_updates_dedupes_pending_suggestions() -> None:
 
         assert result["ok"] is True
         assert result["data"]["duplicates"][0]["decision_code"] == (
-            "memo_stack_mcp.duplicate.existing_memory"
+            "infinity_context_mcp.duplicate.existing_memory"
         )
         assert result["data"]["duplicates"][0]["duplicate_id"] == "sug_pending"
         assert "create_suggestion" not in [name for name, _ in gateway.calls]
@@ -340,7 +340,7 @@ def test_service_propose_updates_dedupes_semantic_equivalent_pending_suggestion(
 
         assert result["ok"] is True
         assert result["data"]["duplicates"][0]["decision_code"] == (
-            "memo_stack_mcp.duplicate.existing_memory"
+            "infinity_context_mcp.duplicate.existing_memory"
         )
         assert result["data"]["duplicates"][0]["duplicate_id"] == "sug_qdrant_documents"
         assert "create_suggestion" not in [name for name, _ in gateway.calls]
@@ -372,8 +372,8 @@ def test_service_propose_updates_rejects_unsafe_and_invalid_candidates() -> None
         )
 
         assert [item["decision_code"] for item in result["data"]["unsafe_rejected"]] == [
-            "memo_stack_mcp.policy.secret_detected",
-            "memo_stack_mcp.validation.invalid_input",
+            "infinity_context_mcp.policy.secret_detected",
+            "infinity_context_mcp.validation.invalid_input",
         ]
         assert gateway.calls == []
 
@@ -392,7 +392,7 @@ def test_service_propose_updates_dry_run_has_no_side_effects() -> None:
             dry_run=True,
         )
 
-        assert result["data"]["needs_review"][0]["decision_code"] == "memo_stack_mcp.policy.dry_run"
+        assert result["data"]["needs_review"][0]["decision_code"] == "infinity_context_mcp.policy.dry_run"
         assert result["diagnostics"]["side_effects"] == []
         assert gateway.calls == []
 
@@ -415,7 +415,7 @@ def test_service_propose_updates_requires_evidence_for_direct_write() -> None:
 
         assert result["ok"] is True
         assert result["data"]["accepted_suggestions"][0]["decision_code"] == (
-            "memo_stack_mcp.policy.evidence_required"
+            "infinity_context_mcp.policy.evidence_required"
         )
         assert [name for name, _ in gateway.calls] == [
             "list_facts",
@@ -447,7 +447,7 @@ def test_service_propose_updates_detects_evidence_mismatch() -> None:
         )
 
         assert result["data"]["needs_review"][0]["decision_code"] == (
-            "memo_stack_mcp.policy.evidence_mismatch"
+            "infinity_context_mcp.policy.evidence_mismatch"
         )
         assert gateway.calls == []
 
@@ -467,7 +467,7 @@ def test_service_propose_updates_rejects_string_booleans() -> None:
         )
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.validation.invalid_input"
+        assert result["error"]["code"] == "infinity_context_mcp.validation.invalid_input"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -508,7 +508,7 @@ def test_service_propose_updates_maps_stale_expected_version_to_conflict() -> No
 
         assert result["ok"] is True
         assert result["data"]["conflicts"][0]["decision_code"] == (
-            "memo_stack_mcp.conflict.version_stale"
+            "infinity_context_mcp.conflict.version_stale"
         )
         assert result["data"]["conflicts"][0]["target_fact_id"] == "fact_1"
         assert [name for name, _ in gateway.calls] == ["update_fact"]
@@ -548,7 +548,7 @@ def test_service_propose_updates_conflicts_same_target_in_batch() -> None:
 
         assert result["data"]["direct_writes"][0]["status"] == "direct_update"
         assert result["data"]["conflicts"][0]["decision_code"] == (
-            "memo_stack_mcp.conflict.same_target_in_batch"
+            "infinity_context_mcp.conflict.same_target_in_batch"
         )
         assert [name for name, _ in gateway.calls].count("update_fact") == 1
 
@@ -636,7 +636,7 @@ def test_service_review_suggestion_rejects_invalid_action() -> None:
         result = await service.review_suggestion(suggestion_id="sug_1", action="merge")
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.validation.invalid_input"
+        assert result["error"]["code"] == "infinity_context_mcp.validation.invalid_input"
         assert gateway.calls == []
 
     asyncio.run(run())
@@ -723,7 +723,7 @@ def test_service_list_captures_rejects_unknown_statuses() -> None:
         result = await service.list_captures(status="active")
 
         assert result["ok"] is False
-        assert result["error"]["code"] == "memo_stack_mcp.validation.invalid_input"
+        assert result["error"]["code"] == "infinity_context_mcp.validation.invalid_input"
         assert gateway.calls == []
 
     asyncio.run(run())

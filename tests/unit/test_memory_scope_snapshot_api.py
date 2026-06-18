@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres.models import MemoryContextLinkSuggestionRow
-from memo_stack_core.memory_scope_snapshots import verify_snapshot_manifest_payload
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import OutboxWorker
+from infinity_context_adapters.postgres.models import MemoryContextLinkSuggestionRow
+from infinity_context_core.memory_scope_snapshots import verify_snapshot_manifest_payload
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import OutboxWorker
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -358,7 +358,7 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     assert exported.json()["counts"]["context_link_suggestions"] == 1
     assert exported.json()["counts"]["relations"] == 1
     assert snapshot["schema_version"] == 9
-    assert manifest["schema_version"] == "memo_stack.memory_scope_snapshot_manifest.v1"
+    assert manifest["schema_version"] == "infinity_context.memory_scope_snapshot_manifest.v1"
     assert manifest["counts"]["threads"] == 1
     assert manifest["counts"]["episodes"] == 1
     assert manifest["counts"]["documents"] == 1

@@ -3,12 +3,12 @@ import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
-from memo_stack_core.application.dto import CreateAssetCommand
-from memo_stack_core.application.use_cases.assets import CreateAssetUseCase
-from memo_stack_core.domain.assets import MemoryAsset, MemoryAssetId
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
-from memo_stack_core.domain.errors import MemoryConflictError
-from memo_stack_core.ports.assets import StoredBlob
+from infinity_context_core.application.dto import CreateAssetCommand
+from infinity_context_core.application.use_cases.assets import CreateAssetUseCase
+from infinity_context_core.domain.assets import MemoryAsset, MemoryAssetId
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
+from infinity_context_core.domain.errors import MemoryConflictError
+from infinity_context_core.ports.assets import StoredBlob
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 SPACE_ID = SpaceId("space_asset_tests")

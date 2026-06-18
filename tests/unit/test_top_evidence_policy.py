@@ -1,4 +1,4 @@
-from memo_stack_server.top_evidence_policy import (
+from infinity_context_server.top_evidence_policy import (
     AGENT_LIVE_SMOKE_TOP_EVIDENCE_GENERATORS,
     AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES,
     FULL_PROVIDER_TOP_EVIDENCE_GENERATORS,
@@ -183,7 +183,7 @@ def test_top_evidence_policy_rejects_wrong_generator_and_missing_runtime() -> No
         "suite": "memory_mcp_agent_behavior",
         "provenance": {
             "schema_version": 1,
-            "generated_by": "memo_stack_server.public_benchmark",
+            "generated_by": "infinity_context_server.public_benchmark",
             "suite": "memory_mcp_agent_behavior",
             "git": {"commit": "abc123", "dirty": False},
         },

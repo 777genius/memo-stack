@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memo_stack_core.agent_behavior_contract import (
+from infinity_context_core.agent_behavior_contract import (
     AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
-from memo_stack_server.evidence_bundle import build_quality_evidence_bundle
+from infinity_context_server.evidence_bundle import build_quality_evidence_bundle
 
 
 def _strict_provenance(
@@ -40,11 +40,11 @@ def _minimal_full_provider_report(
     public_benchmark: dict[str, object] | None = None,
 ) -> dict[str, object]:
     report: dict[str, object] = {
-        "suite": "memo-stack-full-provider-canary",
+        "suite": "infinity-context-full-provider-canary",
         "ok": True,
         "provenance": _strict_provenance(
             generated_by="scripts/clean_full_smoke.py",
-            suite="memo-stack-full-provider-canary",
+            suite="infinity-context-full-provider-canary",
         ),
         "checks": {
             "fact_created": True,
@@ -125,7 +125,7 @@ def _minimal_agent_behavior_report(
     }
     if include_provenance:
         report["provenance"] = _strict_provenance(
-            generated_by="memo_stack_mcp.agent_behavior_bench",
+            generated_by="infinity_context_mcp.agent_behavior_bench",
             suite="memory_mcp_agent_behavior",
             commit=commit,
             dirty=dirty,
@@ -184,7 +184,7 @@ def _minimal_agent_live_smoke_report(
     dirty: bool = False,
 ) -> dict[str, object]:
     report: dict[str, object] = {
-        "suite": "memo-stack-agent-live-smoke",
+        "suite": "infinity-context-agent-live-smoke",
         "ok": True,
         "strict_agent_cli": True,
         "checks": {
@@ -208,7 +208,7 @@ def _minimal_agent_live_smoke_report(
     if include_provenance:
         report["provenance"] = _strict_provenance(
             generated_by="scripts/agent_install_verification.py",
-            suite="memo-stack-agent-live-smoke",
+            suite="infinity-context-agent-live-smoke",
             commit=commit,
             dirty=dirty,
         )
@@ -261,7 +261,7 @@ def _minimal_public_benchmark_report(
     }
     if include_provenance:
         report["provenance"] = _strict_provenance(
-            generated_by="memo_stack_server.official_public_benchmark",
+            generated_by="infinity_context_server.official_public_benchmark",
             suite="public-memory-benchmark",
             commit=commit,
             dirty=dirty,
@@ -296,7 +296,7 @@ def test_quality_evidence_bundle_writes_scorecard_artifacts(tmp_path: Path) -> N
     artifact_names = {item["relative_path"] for item in manifest["artifacts"]}
     artifact_hashes = {item["sha256"] for item in manifest["artifacts"]}
     assert manifest["schema_version"] == 1
-    assert manifest["suite"] == "memo-stack-quality-evidence-manifest"
+    assert manifest["suite"] == "infinity-context-quality-evidence-manifest"
     assert manifest["runtime"]["python_version"]
     assert manifest["policy"]["schema_version"] == 1
     assert manifest["policy"]["suite"] == "memory-quality-scorecard"
@@ -345,12 +345,12 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     external_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-full-provider-canary",
+                "suite": "infinity-context-full-provider-canary",
                 "ok": True,
                 "provenance": {
                     "schema_version": 1,
                     "generated_by": "scripts/clean_full_smoke.py",
-                    "suite": "memo-stack-full-provider-canary",
+                    "suite": "infinity-context-full-provider-canary",
                     "run_id": "unit-run",
                     "project": "unit-project",
                     "git": {
@@ -389,7 +389,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                     "ok": True,
                     "scenario_set": "all",
                     "provenance": _strict_provenance(
-                        generated_by="memo_stack_mcp.agent_behavior_bench",
+                        generated_by="infinity_context_mcp.agent_behavior_bench",
                         suite="memory_mcp_agent_behavior",
                     ),
                     "metrics": {
@@ -434,7 +434,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
                     "suite": "public-memory-benchmark",
                     "ok": True,
                     "provenance": _strict_provenance(
-                        generated_by="memo_stack_server.official_public_benchmark",
+                        generated_by="infinity_context_server.official_public_benchmark",
                         suite="public-memory-benchmark",
                     ),
                     "benchmarks": [
@@ -534,13 +534,13 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     assert len(external_artifacts) == 2
     assert external_artifacts[0]["path"] == str(external_report)
     assert external_artifacts[0]["relative_path"] is None
-    assert external_artifacts[0]["report"]["suite"] == "memo-stack-full-provider-canary"
+    assert external_artifacts[0]["report"]["suite"] == "infinity-context-full-provider-canary"
     assert external_artifacts[0]["report"]["provenance"]["generated_by"] == (
         "scripts/clean_full_smoke.py"
     )
     assert external_artifacts[0]["report"]["provenance"]["git"]["commit"] == "abc123"
     assert external_artifacts[1]["path"] == str(live_smoke_report)
-    assert external_artifacts[1]["report"]["suite"] == "memo-stack-agent-live-smoke"
+    assert external_artifacts[1]["report"]["suite"] == "infinity-context-agent-live-smoke"
     assert external_artifacts[1]["report"]["provenance"]["generated_by"] == (
         "scripts/agent_install_verification.py"
     )
@@ -638,11 +638,11 @@ def test_quality_evidence_bundle_rejects_stale_top_evidence_report(
     external_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-full-provider-canary",
+                "suite": "infinity-context-full-provider-canary",
                 "ok": True,
                 "provenance": _strict_provenance(
                     generated_by="scripts/clean_full_smoke.py",
-                    suite="memo-stack-full-provider-canary",
+                    suite="infinity-context-full-provider-canary",
                     commit="old-commit",
                 ),
             }
@@ -671,11 +671,11 @@ def test_quality_evidence_bundle_rejects_dirty_top_evidence_report(
     external_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-full-provider-canary",
+                "suite": "infinity-context-full-provider-canary",
                 "ok": True,
                 "provenance": _strict_provenance(
                     generated_by="scripts/clean_full_smoke.py",
-                    suite="memo-stack-full-provider-canary",
+                    suite="infinity-context-full-provider-canary",
                     dirty=True,
                 ),
             }
@@ -703,11 +703,11 @@ def test_quality_evidence_bundle_can_allow_dirty_top_evidence_for_local_diagnost
     external_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-full-provider-canary",
+                "suite": "infinity-context-full-provider-canary",
                 "ok": True,
                 "provenance": _strict_provenance(
                     generated_by="scripts/clean_full_smoke.py",
-                    suite="memo-stack-full-provider-canary",
+                    suite="infinity-context-full-provider-canary",
                     dirty=True,
                 ),
             }
@@ -740,11 +740,11 @@ def test_quality_evidence_bundle_requires_top_evidence_dirty_state(
     external_report.write_text(
         json.dumps(
             {
-                "suite": "memo-stack-full-provider-canary",
+                "suite": "infinity-context-full-provider-canary",
                 "ok": True,
                 "provenance": _strict_provenance(
                     generated_by="scripts/clean_full_smoke.py",
-                    suite="memo-stack-full-provider-canary",
+                    suite="infinity-context-full-provider-canary",
                     dirty=None,
                 ),
             }
@@ -770,7 +770,7 @@ def test_quality_evidence_bundle_requires_top_evidence_provenance(
 ) -> None:
     external_report = tmp_path / "missing-provenance-full-provider.json"
     external_report.write_text(
-        json.dumps({"suite": "memo-stack-full-provider-canary", "ok": True}),
+        json.dumps({"suite": "infinity-context-full-provider-canary", "ok": True}),
         encoding="utf-8",
     )
 
@@ -874,7 +874,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                 "ok": True,
                 "scenario_set": "all",
                 "provenance": _strict_provenance(
-                    generated_by="memo_stack_mcp.agent_behavior_bench",
+                    generated_by="infinity_context_mcp.agent_behavior_bench",
                     suite="memory_mcp_agent_behavior",
                 ),
                 "metrics": {
@@ -924,7 +924,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
                 "suite": "public-memory-benchmark",
                 "ok": True,
                 "provenance": _strict_provenance(
-                    generated_by="memo_stack_server.official_public_benchmark",
+                    generated_by="infinity_context_server.official_public_benchmark",
                     suite="public-memory-benchmark",
                 ),
                 "benchmarks": [
@@ -991,7 +991,7 @@ def test_quality_evidence_bundle_rejects_wrong_top_evidence_schema_version(
                 "suite": "memory_mcp_agent_behavior",
                 "ok": True,
                 "provenance": _strict_provenance(
-                    generated_by="memo_stack_mcp.agent_behavior_bench",
+                    generated_by="infinity_context_mcp.agent_behavior_bench",
                     suite="memory_mcp_agent_behavior",
                     schema_version=2,
                 ),
@@ -1023,7 +1023,7 @@ def test_quality_evidence_bundle_rejects_top_evidence_suite_mismatch(
                 "suite": "public-memory-benchmark",
                 "ok": True,
                 "provenance": _strict_provenance(
-                    generated_by="memo_stack_server.official_public_benchmark",
+                    generated_by="infinity_context_server.official_public_benchmark",
                     suite="memory_mcp_agent_behavior",
                 ),
             }
@@ -1054,7 +1054,7 @@ def test_quality_evidence_bundle_requires_top_evidence_runtime(
                 "suite": "memory_mcp_agent_behavior",
                 "ok": True,
                 "provenance": _strict_provenance(
-                    generated_by="memo_stack_mcp.agent_behavior_bench",
+                    generated_by="infinity_context_mcp.agent_behavior_bench",
                     suite="memory_mcp_agent_behavior",
                     include_runtime=False,
                 ),

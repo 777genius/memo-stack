@@ -79,7 +79,7 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                 const SizedBox(height: 16),
 
                 Text(
-                  'Welcome to Memo Stack',
+                  'Welcome to Infinity Context',
                   style: Theme.of(context).textTheme.headlineMedium,
                   textAlign: TextAlign.center,
                 ),

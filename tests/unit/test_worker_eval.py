@@ -5,29 +5,29 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.postgres import create_schema
-from memo_stack_adapters.postgres.models import MemoryFactRow, MemoryOutboxRow
-from memo_stack_core.ports.adapters import (
+from infinity_context_adapters.postgres import create_schema
+from infinity_context_adapters.postgres.models import MemoryFactRow, MemoryOutboxRow
+from infinity_context_core.ports.adapters import (
     AdapterCapabilities,
     EmbeddingResult,
     PortStatus,
     VectorWriteResult,
 )
-from memo_stack_core.ports.capabilities import (
+from infinity_context_core.ports.capabilities import (
     CapabilityStatus,
     ProjectionForgetResult,
     ProjectionWriteResult,
 )
-from memo_stack_server.admin import (
+from infinity_context_server.admin import (
     ACTIVE_CONTEXT_MANUAL_CHECK_NAMES,
     invariant_check,
     seed_defaults,
 )
-from memo_stack_server.composition import build_container
-from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.db import upgrade
-from memo_stack_server.doctor import run_doctor
-from memo_stack_server.eval import (
+from infinity_context_server.composition import build_container
+from infinity_context_server.config import CaptureMode, DeployProfile, Settings
+from infinity_context_server.db import upgrade
+from infinity_context_server.doctor import run_doctor
+from infinity_context_server.eval import (
     _execute_graph_native_golden,
     _execute_long_memory_golden,
     _execute_quality_golden,
@@ -39,17 +39,17 @@ from memo_stack_server.eval import (
     run_semantic_linking_golden,
     run_small_golden,
 )
-from memo_stack_server.eval_constants import (
+from infinity_context_server.eval_constants import (
     QUALITY_GOLDEN_REQUIRED_CASE_IDS,
     SEMANTIC_LINKING_REQUIRED_CASE_IDS,
 )
-from memo_stack_server.eval_graph import (
+from infinity_context_server.eval_graph import (
     EvalGraphMemoryAdapter,
     _install_eval_graph_adapter,
 )
-from memo_stack_server.eval_semantic_linking import _execute_semantic_linking_golden
-from memo_stack_server.main import create_app
-from memo_stack_server.worker import (
+from infinity_context_server.eval_semantic_linking import _execute_semantic_linking_golden
+from infinity_context_server.main import create_app
+from infinity_context_server.worker import (
     OutboxWorker,
     OutboxWorkerFilter,
     _safe_diagnostic_code,
@@ -98,8 +98,8 @@ def test_eval_cli_uses_env_token_not_cli_auth_token() -> None:
     source = (
         Path(__file__).parents[2]
         / "packages"
-        / "memo_stack_server"
-        / "memo_stack_server"
+        / "infinity_context_server"
+        / "infinity_context_server"
         / "eval.py"
     ).read_text(encoding="utf-8")
 

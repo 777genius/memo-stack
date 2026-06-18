@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 
 import pytest
-from memo_stack_obsidian.domain import SyncMode
-from memo_stack_obsidian.layout import LayoutError, ObsidianVaultLayout, safe_scope_segment
-from memo_stack_obsidian.note_format import (
+from infinity_context_obsidian.domain import SyncMode
+from infinity_context_obsidian.layout import LayoutError, ObsidianVaultLayout, safe_scope_segment
+from infinity_context_obsidian.note_format import (
     TEXT_END,
     TEXT_START,
     NoteFormatError,
@@ -31,7 +31,7 @@ def test_fact_note_render_parse_roundtrip() -> None:
         render_fact_note(fact, space_slug="default", memory_scope_external_ref="me"),
     )
 
-    assert note.path == PurePosixPath("Memo Stack/generated/facts/fact_123.md")
+    assert note.path == PurePosixPath("Infinity Context/generated/facts/fact_123.md")
     assert note.fact_id == "fact_123"
     assert note.version == 2
     assert note.sync_mode == SyncMode.DIRECT
@@ -57,12 +57,12 @@ def test_fact_note_rejects_missing_managed_block() -> None:
     markdown = "\n".join(
         [
             "---",
-            "memo_stack_schema: memo_stack.obsidian.fact.v1",
-            "memo_stack_kind: fact",
-            "memo_stack_id: fact_123",
-            "memo_stack_version: 1",
-            "memo_stack_sync_mode: direct",
-            "memo_stack_hash: abc",
+            "infinity_context_schema: infinity_context.obsidian.fact.v1",
+            "infinity_context_kind: fact",
+            "infinity_context_id: fact_123",
+            "infinity_context_version: 1",
+            "infinity_context_sync_mode: direct",
+            "infinity_context_hash: abc",
             "---",
             "# Broken",
             "",
@@ -70,7 +70,7 @@ def test_fact_note_rejects_missing_managed_block() -> None:
     )
 
     with pytest.raises(NoteFormatError, match="Missing managed text start marker"):
-        parse_fact_note(PurePosixPath("Memo Stack/generated/facts/fact_123.md"), markdown)
+        parse_fact_note(PurePosixPath("Infinity Context/generated/facts/fact_123.md"), markdown)
 
 
 def test_v2_layout_groups_facts_by_space_and_memory_scope() -> None:
@@ -82,12 +82,12 @@ def test_v2_layout_groups_facts_by_space_and_memory_scope() -> None:
     path = fact_note_path(
         "fact_123",
         layout=layout,
-        space_slug="memo-stack",
+        space_slug="infinity-context",
         memory_scope_external_ref="belief",
     )
 
     assert path == PurePosixPath(
-        "AI Memory/spaces/memo-stack/memory_scopes/belief/generated/facts/fact_123.md"
+        "AI Memory/spaces/infinity-context/memory_scopes/belief/generated/facts/fact_123.md"
     )
 
 
@@ -106,4 +106,4 @@ def test_layout_rejects_unsafe_root_folder() -> None:
         ObsidianVaultLayout.from_values(root_folder="/tmp/vault", version="v2")
 
     with pytest.raises(LayoutError, match="parent"):
-        ObsidianVaultLayout.from_values(root_folder="../Memo Stack", version="v2")
+        ObsidianVaultLayout.from_values(root_folder="../Infinity Context", version="v2")

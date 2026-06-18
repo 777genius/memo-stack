@@ -3,15 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from memo_stack_core.domain.errors import MemoryValidationError
-from memo_stack_server.memory_scope_transfer_context import remap_context_link_suggestion
-from memo_stack_server.memory_scope_transfer_records import (
+from infinity_context_core.domain.errors import MemoryValidationError
+from infinity_context_server.memory_scope_transfer_context import remap_context_link_suggestion
+from infinity_context_server.memory_scope_transfer_records import (
     anchor_from_json,
     anchor_to_json,
     source_ref_from_json,
     source_ref_to_json,
 )
-from memo_stack_server.memory_scope_transfer_relations import relation_from_json, relation_to_json
+from infinity_context_server.memory_scope_transfer_relations import relation_from_json, relation_to_json
 
 
 def test_legacy_snapshot_anchor_defaults_new_lifecycle_fields() -> None:

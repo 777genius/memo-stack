@@ -4,17 +4,17 @@ import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from memo_stack_core.domain.entities import SourceRef
-from memo_stack_server.api.public_payload import safe_public_metadata
-from memo_stack_server.api.v1.anchors import anchor_to_response
-from memo_stack_server.api.v1.context import context_item_to_response
-from memo_stack_server.api.v1.context_links import (
+from infinity_context_core.domain.entities import SourceRef
+from infinity_context_server.api.public_payload import safe_public_metadata
+from infinity_context_server.api.v1.anchors import anchor_to_response
+from infinity_context_server.api.v1.context import context_item_to_response
+from infinity_context_server.api.v1.context_links import (
     context_link_suggestion_to_response,
     context_link_to_response,
 )
-from memo_stack_server.api.v1.documents import chunk_to_response
-from memo_stack_server.api.v1.facts import fact_relation_to_response, fact_to_response
-from memo_stack_server.api.v1.suggestions import suggestion_to_response
+from infinity_context_server.api.v1.documents import chunk_to_response
+from infinity_context_server.api.v1.facts import fact_relation_to_response, fact_to_response
+from infinity_context_server.api.v1.suggestions import suggestion_to_response
 
 
 def test_safe_public_metadata_redacts_nested_sensitive_values() -> None:

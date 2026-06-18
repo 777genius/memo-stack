@@ -1,4 +1,4 @@
-from memo_stack_core.application.context_link_policy import (
+from infinity_context_core.application.context_link_policy import (
     MAX_DENIED_DIAGNOSTIC_ITEMS,
     MAX_POLICY_CANDIDATES_CONSIDERED,
     MAX_REASON_CODES,
@@ -6,7 +6,7 @@ from memo_stack_core.application.context_link_policy import (
     apply_context_link_policy,
     decide_context_link_candidate,
 )
-from memo_stack_core.application.dto import ContextLinkCandidate
+from infinity_context_core.application.dto import ContextLinkCandidate
 
 
 def _candidate(

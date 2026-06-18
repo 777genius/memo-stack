@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test a self-hosted Memo Stack compose deployment."""
+"""Smoke test a self-hosted Infinity Context compose deployment."""
 
 from __future__ import annotations
 

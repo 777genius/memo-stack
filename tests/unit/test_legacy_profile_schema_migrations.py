@@ -2,7 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from memo_stack_adapters.postgres import build_async_engine, create_schema
+from infinity_context_adapters.postgres import build_async_engine, create_schema
 from sqlalchemy import inspect, text
 
 

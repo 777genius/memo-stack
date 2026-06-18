@@ -1,6 +1,6 @@
 # Self-hosted team deployment
 
-Memo Stack supports a small-team self-hosted deployment where the API, projection
+Infinity Context supports a small-team self-hosted deployment where the API, projection
 worker and extraction worker run as separate processes, while Postgres remains
 the canonical source of truth.
 
@@ -8,11 +8,11 @@ the canonical source of truth.
 
 ```text
 Frontend / SDK / MCP clients
-  -> memo_stack_server
+  -> infinity_context_server
     -> Postgres canonical storage
     -> local asset volume
-    -> memo_stack_projection_worker
-    -> memo_stack_extraction_worker
+    -> infinity_context_projection_worker
+    -> infinity_context_extraction_worker
     -> optional Qdrant / Neo4j projections
 ```
 
@@ -46,7 +46,7 @@ waits for the extraction worker, verifies extracted document chunks and then
 stops the stack unless `--keep-stack` is passed:
 
 ```bash
-make memo-stack-selfhost-smoke
+make infinity-context-selfhost-smoke
 ```
 
 Stop it:
@@ -60,9 +60,9 @@ docker compose --env-file .env.selfhost -f docker-compose.selfhost.yml down
 The same worker binary supports explicit workload roles:
 
 ```bash
-python -m memo_stack_server.worker --loop --role projection
-python -m memo_stack_server.worker --loop --role extraction
-python -m memo_stack_server.worker --loop --role all
+python -m infinity_context_server.worker --loop --role projection
+python -m infinity_context_server.worker --loop --role extraction
+python -m infinity_context_server.worker --loop --role all
 ```
 
 `projection` processes derived index and auto-memory work. `extraction` only
@@ -97,13 +97,13 @@ adapter.
 
 Canonical data:
 
-- Postgres volume: `memo_stack_postgres_data`
-- asset and extraction artifact volume: `memo_stack_assets`
+- Postgres volume: `infinity_context_postgres_data`
+- asset and extraction artifact volume: `infinity_context_assets`
 
 Derived data:
 
-- Qdrant volume: `memo_stack_qdrant_data`
-- Neo4j volume: `memo_stack_neo4j_data`
+- Qdrant volume: `infinity_context_qdrant_data`
+- Neo4j volume: `infinity_context_neo4j_data`
 
 Back up Postgres and assets first. Qdrant and Neo4j are useful to snapshot for
 fast recovery, but they must remain rebuildable from canonical Postgres rows and
@@ -113,8 +113,8 @@ Example Postgres dump:
 
 ```bash
 docker compose --env-file .env.selfhost -f docker-compose.selfhost.yml \
-  exec -T memo_stack_postgres \
-  pg_dump -U memo_stack memo_stack > memo-stack-postgres.sql
+  exec -T infinity_context_postgres \
+  pg_dump -U infinity_context infinity_context > infinity-context-postgres.sql
 ```
 
 ## Production notes
@@ -123,6 +123,6 @@ docker compose --env-file .env.selfhost -f docker-compose.selfhost.yml \
 - Do not expose Postgres, Qdrant or Neo4j directly to the internet.
 - Rotate `MEMORY_SERVICE_TOKEN` when a team member or automation loses access.
 - Keep `MEMORY_AUTO_CREATE_SCHEMA=false` in server mode; migrations run through
-  the `memo_stack_migrate` service.
-- Scale extraction separately by increasing `memo_stack_extraction_worker`
+  the `infinity_context_migrate` service.
+- Scale extraction separately by increasing `infinity_context_extraction_worker`
   replicas or moving it to a larger host.

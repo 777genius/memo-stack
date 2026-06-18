@@ -1,8 +1,8 @@
-from memo_stack_core.application.context_packer import ContextPacker
-from memo_stack_core.application.context_policy import thread_is_visible
-from memo_stack_core.application.context_ranking import dedupe_rank_items
-from memo_stack_core.application.dto import ContextItem
-from memo_stack_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, SourceRef
+from infinity_context_core.application.context_packer import ContextPacker
+from infinity_context_core.application.context_policy import thread_is_visible
+from infinity_context_core.application.context_ranking import dedupe_rank_items
+from infinity_context_core.application.dto import ContextItem
+from infinity_context_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, SourceRef
 
 
 def test_context_packer_keeps_memory_scope_sections_and_caps_chunks_per_source() -> None:

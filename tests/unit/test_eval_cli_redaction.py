@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from memo_stack_server import eval as eval_module
-from memo_stack_server import evidence_bundle
+from infinity_context_server import eval as eval_module
+from infinity_context_server import evidence_bundle
 
 
 def test_eval_scorecard_cli_redacts_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,7 +16,7 @@ import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memo_stack_adapters.extraction.openai_vision import (
+from infinity_context_adapters.extraction.openai_vision import (
     OPENAI_VISION_DOCS_URL,
     OPENAI_VISION_ENDPOINT_FAMILY,
     OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
@@ -26,24 +26,24 @@ from memo_stack_adapters.extraction.openai_vision import (
     OpenAIImageVisionAdapter,
     openai_vision_supported_detail_levels,
 )
-from memo_stack_adapters.extraction.transcription.openai_adapter import (
+from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_DOCS_URL,
     OPENAI_TRANSCRIPTION_ENDPOINT,
     OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
     OpenAISpeechTranscriptionAdapter,
 )
-from memo_stack_core.ports.transcription import SpeechTranscriptionRequest
-from memo_stack_core.ports.vision import ImageVisionRequest
+from infinity_context_core.ports.transcription import SpeechTranscriptionRequest
+from infinity_context_core.ports.vision import ImageVisionRequest
 
-SUITE = "memo-stack-multimodal-live-provider-canary"
+SUITE = "infinity-context-multimodal-live-provider-canary"
 REQUIRED_ENV = "MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"
 DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
 DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
-SYNTHETIC_AUDIO_PHRASE = "memo stack live transcription canary"
+SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
 OPENAI_AUDIO_MAX_UPLOAD_BYTES = OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
 OPENAI_AUDIO_SUPPORTED_SUFFIXES = frozenset(OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES)
 OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset(OPENAI_VISION_SUPPORTED_FILE_SUFFIXES)
@@ -130,7 +130,7 @@ async def _run_vision(
     request = ImageVisionRequest(
         job_id=f"live-canary-{uuid.uuid4()}",
         asset_id=f"asset-{uuid.uuid4()}",
-        filename="memo-stack-live-vision-canary.png",
+        filename="infinity-context-live-vision-canary.png",
         content_type="image/png",
         byte_size=len(image),
         sha256_hex=hashlib.sha256(image).hexdigest(),
@@ -193,7 +193,7 @@ async def _run_transcription(
     api_key: str,
     args: argparse.Namespace,
 ) -> dict[str, object]:
-    with tempfile.TemporaryDirectory(prefix="memo-stack-live-asr-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="infinity-context-live-asr-") as tmp:
         audio_path = _audio_fixture_path(args.audio_fixture, Path(tmp))
         if audio_path is None:
             return _component(
@@ -218,7 +218,7 @@ async def _run_transcription(
             sha256_hex=hashlib.sha256(content).hexdigest(),
             content=content,
             max_output_chars=4000,
-            prompt="This is a short Memo Stack provider canary.",
+            prompt="This is a short Infinity Context provider canary.",
         )
         adapter = OpenAISpeechTranscriptionAdapter(
             api_key=api_key,
@@ -471,7 +471,7 @@ def _synthesize_audio_fixture(tmp_dir: Path) -> Path | None:
     say = shutil.which("say")
     if not say:
         return None
-    output = tmp_dir / "memo-stack-live-transcription-canary.wav"
+    output = tmp_dir / "infinity-context-live-transcription-canary.wav"
     command = [
         say,
         "-o",
@@ -548,7 +548,7 @@ def _transcript_check(
     if audio_path:
         return _component("succeeded")
     normalized_terms = set(transcript.lower().replace("-", " ").split())
-    expected_terms = {"memo", "stack", "canary"}
+    expected_terms = {"infinity", "context", "canary"}
     missing_terms = sorted(expected_terms.difference(normalized_terms))
     if missing_terms:
         return _component(

@@ -173,7 +173,7 @@ List<int> _attachmentBytes(Map<String, String> params) {
     return base64Decode(base64Value);
   }
   return utf8.encode(
-    _optional(params, 'content') ?? 'Memo Stack E2E attachment.',
+    _optional(params, 'content') ?? 'Infinity Context E2E attachment.',
   );
 }
 

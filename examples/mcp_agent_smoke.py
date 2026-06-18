@@ -1,4 +1,4 @@
-"""Run a live MCP client smoke against a running Memo Stack server."""
+"""Run a live MCP client smoke against a running Infinity Context server."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ async def run_smoke() -> dict[str, Any]:
     env.setdefault("MEMORY_MCP_AGENT_NAME", "mcp-live-smoke-agent")
     env.setdefault("MEMORY_MCP_TRANSPORT", "stdio")
 
-    params = StdioServerParameters(command=sys.executable, args=["-m", "memo_stack_mcp"], env=env)
+    params = StdioServerParameters(command=sys.executable, args=["-m", "infinity_context_mcp"], env=env)
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
         await session.initialize()
         tools = await session.list_tools()

@@ -4,25 +4,25 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from memo_stack_adapters.noop import (
+from infinity_context_adapters.noop import (
     NoopEmbeddingAdapter,
     NoopGraphMemoryAdapter,
     NoopVectorMemoryAdapter,
 )
-from memo_stack_adapters.postgres.models import MemoryEpisodeRow, MemoryOutboxRow, MemoryThreadRow
-from memo_stack_core.application import (
+from infinity_context_adapters.postgres.models import MemoryEpisodeRow, MemoryOutboxRow, MemoryThreadRow
+from infinity_context_core.application import (
     BuildContextQuery,
     BuildContextUseCase,
     EnsureScopeCommand,
 )
-from memo_stack_core.application.context_collectors import (
+from infinity_context_core.application.context_collectors import (
     CanonicalCollectionResult,
     CanonicalContextCollector,
 )
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, TrustLevel
-from memo_stack_server.api.legacy_client import _legacy_trust
-from memo_stack_server.config import DeployProfile, MemoryPolicyMode, Settings
-from memo_stack_server.main import create_app
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, TrustLevel
+from infinity_context_server.api.legacy_client import _legacy_trust
+from infinity_context_server.config import DeployProfile, MemoryPolicyMode, Settings
+from infinity_context_server.main import create_app
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -553,7 +553,7 @@ def test_document_ingest_and_public_context_keyword_recall(tmp_path: Path) -> No
                 "space_id": "space_client_app",
                 "memory_scope_id": "memory_scope_default",
                 "title": "Architecture notes",
-                "text": "Memo Stack uses Postgres as canonical truth. Qdrant is derived.",
+                "text": "Infinity Context uses Postgres as canonical truth. Qdrant is derived.",
                 "source_type": "document",
                 "source_external_id": "doc-1",
             },

@@ -3,7 +3,7 @@
 Status: proposed architecture plan
 
 This document fixes the target architecture for a shared team memory server in
-Memo Stack using Clean Architecture, simple DDD, SOLID and port/adapter
+Infinity Context using Clean Architecture, simple DDD, SOLID and port/adapter
 boundaries. It is intentionally scoped to architecture and implementation
 order. It does not replace the Core Lite plan or ADR-0005. It adds the
 team/server layer around the existing canonical memory lifecycle.
@@ -60,7 +60,7 @@ Useful as backup, review and human-readable export. Not sufficient as the
 runtime source of truth because permissions, deletes, PII handling, freshness,
 outbox state and projection repair become ambiguous.
 
-## Relation To Existing Memo Stack
+## Relation To Existing Infinity Context
 
 Existing decisions stay valid:
 
@@ -68,7 +68,7 @@ Existing decisions stay valid:
 - Graphiti is a temporal fact graph projection.
 - Qdrant is a vector/RAG projection.
 - Cognee can be a document/session/RAG adapter.
-- Context is compiled by Memo Stack Core after canonical hydration and policy
+- Context is compiled by Infinity Context Core after canonical hydration and policy
   filtering.
 - There must be no generic universal `MemoryEnginePort`.
 - Capability-specific ports stay the adapter boundary.
@@ -633,7 +633,7 @@ Rules:
 Package target:
 
 ```text
-memo_stack_core.domain.team
+infinity_context_core.domain.team
 ```
 
 Contains:
@@ -683,7 +683,7 @@ class TeamAction(StrEnum):
 Package target:
 
 ```text
-memo_stack_core.application.team
+infinity_context_core.application.team
 ```
 
 Contains use cases:
@@ -724,7 +724,7 @@ class CreateServiceTokenUseCase:
 Package target:
 
 ```text
-memo_stack_core.ports.team
+infinity_context_core.ports.team
 ```
 
 Ports:
@@ -920,16 +920,16 @@ The universal agent plugin remains an MCP client of the server.
 Environment:
 
 ```text
-MEMO_STACK_MCP_API_URL
-MEMO_STACK_MCP_AUTH_TOKEN
-MEMO_STACK_MCP_DEFAULT_WORKSPACE_EXTERNAL_REF
-MEMO_STACK_MCP_DEFAULT_SPACE_SLUG
-MEMO_STACK_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF
-MEMO_STACK_MCP_DEFAULT_THREAD_EXTERNAL_REF
-MEMO_STACK_MCP_AGENT_NAME
-MEMO_STACK_MCP_WRITE_MODE=suggest
-MEMO_STACK_MCP_DELETE_MODE=off
-MEMO_STACK_MCP_INGEST_MODE=small_docs
+INFINITY_CONTEXT_MCP_API_URL
+INFINITY_CONTEXT_MCP_AUTH_TOKEN
+INFINITY_CONTEXT_MCP_DEFAULT_WORKSPACE_EXTERNAL_REF
+INFINITY_CONTEXT_MCP_DEFAULT_SPACE_SLUG
+INFINITY_CONTEXT_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF
+INFINITY_CONTEXT_MCP_DEFAULT_THREAD_EXTERNAL_REF
+INFINITY_CONTEXT_MCP_AGENT_NAME
+INFINITY_CONTEXT_MCP_WRITE_MODE=suggest
+INFINITY_CONTEXT_MCP_DELETE_MODE=off
+INFINITY_CONTEXT_MCP_INGEST_MODE=small_docs
 ```
 
 Tool policy:
@@ -1320,7 +1320,7 @@ Why this slice:
 - keeps local mode alive;
 - gives agents a real central team server path;
 - avoids premature UI and local-first sync complexity;
-- directly strengthens the current Memo Stack architecture instead of replacing
+- directly strengthens the current Infinity Context architecture instead of replacing
   it.
 
 ## Open Questions

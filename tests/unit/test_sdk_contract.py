@@ -2,7 +2,7 @@ import json
 
 import httpx
 import pytest
-from memo_stack_sdk import ContextBundle, MemoryScope, MemoStackClient, MemoStackError, ReadScope
+from infinity_context_sdk import ContextBundle, MemoryScope, InfinityContextClient, InfinityContextError, ReadScope
 
 
 def test_sdk_sends_auth_and_params() -> None:
@@ -13,7 +13,7 @@ def test_sdk_sends_auth_and_params() -> None:
         seen["url"] = str(request.url)
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -40,7 +40,7 @@ def test_sdk_exposes_process_and_diagnostics_facade_methods() -> None:
         seen.append(f"{request.method} {request.url}")
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -91,7 +91,7 @@ def test_sdk_sends_fact_taxonomy_fields_and_filters() -> None:
         seen.append((request.method, str(request.url), body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -199,7 +199,7 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         transport=httpx.MockTransport(handler),
     )
@@ -379,7 +379,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                     },
                     "policy": {"schema_version": 2, "external_ai_allowed": True},
                     "evidence_contract": {
-                        "schema_version": "memo_stack.extraction_evidence_contract.v1",
+                        "schema_version": "infinity_context.extraction_evidence_contract.v1",
                         "source_ref_coordinate_fields": [
                             "char_start",
                             "char_end",
@@ -390,7 +390,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                         ],
                     },
                     "feature_contract": {
-                        "schema_version": "memo_stack.extraction_feature_contract.v1",
+                        "schema_version": "infinity_context.extraction_feature_contract.v1",
                         "profile_feature_fields": [
                             "document_features",
                             "vision_features",
@@ -399,7 +399,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                         ],
                     },
                     "provider_contract": {
-                        "schema_version": "memo_stack.extraction_provider_contract.v1",
+                        "schema_version": "infinity_context.extraction_provider_contract.v1",
                         "vision": {
                             "provider": "openai",
                             "provider_name": "openai_vision",
@@ -431,14 +431,14 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                         },
                     },
                     "manifest_contract": {
-                        "schema_version": "memo_stack.multimodal_manifest_contract.v1",
-                        "manifest_schema_version": "memo_stack.multimodal_manifest.v1",
+                        "schema_version": "infinity_context.multimodal_manifest_contract.v1",
+                        "manifest_schema_version": "infinity_context.multimodal_manifest.v1",
                         "artifact_type": "media_manifest",
                         "coordinate_fields": ["page_number", "bbox", "time_range"],
                         "raw_provider_payloads_in_public_api": False,
                     },
                     "file_type_detection": {
-                        "schema_version": "memo_stack.file_type_detection_contract.v1",
+                        "schema_version": "infinity_context.file_type_detection_contract.v1",
                         "declared_content_type_trusted": False,
                         "diagnostic_fields": [
                             "detected_content_type",
@@ -503,7 +503,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         transport=httpx.MockTransport(handler),
     )
@@ -513,7 +513,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert diagnostics.default_profile == "media_api"
     assert diagnostics.policy["schema_version"] == 2
     assert diagnostics.evidence_contract["schema_version"] == (
-        "memo_stack.extraction_evidence_contract.v1"
+        "infinity_context.extraction_evidence_contract.v1"
     )
     assert diagnostics.evidence_contract["source_ref_coordinate_fields"] == [
         "char_start",
@@ -524,10 +524,10 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         "time_end_ms",
     ]
     assert diagnostics.feature_contract["schema_version"] == (
-        "memo_stack.extraction_feature_contract.v1"
+        "infinity_context.extraction_feature_contract.v1"
     )
     assert diagnostics.provider_contract["schema_version"] == (
-        "memo_stack.extraction_provider_contract.v1"
+        "infinity_context.extraction_provider_contract.v1"
     )
     assert diagnostics.provider_contract["vision"]["supported_file_types"] == [
         ".gif",
@@ -552,7 +552,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         == "/v1/audio/transcriptions"
     )
     assert diagnostics.manifest_contract["schema_version"] == (
-        "memo_stack.multimodal_manifest_contract.v1"
+        "infinity_context.multimodal_manifest_contract.v1"
     )
     assert diagnostics.manifest_contract["artifact_type"] == "media_manifest"
     assert diagnostics.manifest_contract["coordinate_fields"] == [
@@ -562,7 +562,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     ]
     assert diagnostics.manifest_contract["raw_provider_payloads_in_public_api"] is False
     assert diagnostics.file_type_detection["schema_version"] == (
-        "memo_stack.file_type_detection_contract.v1"
+        "infinity_context.file_type_detection_contract.v1"
     )
     assert diagnostics.file_type_detection["declared_content_type_trusted"] is False
     assert diagnostics.file_type_detection["diagnostic_fields"] == [
@@ -689,7 +689,7 @@ def test_sdk_defaults_legacy_extraction_capability_contract_fields() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         transport=httpx.MockTransport(handler),
     )
@@ -723,7 +723,7 @@ def test_sdk_sends_memory_insights_scope_and_limits() -> None:
         seen["body"] = json.loads(request.content.decode("utf-8"))
         return httpx.Response(200, json={"data": {"insights_id": "ins_1"}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -760,9 +760,9 @@ def test_sdk_exports_graph_with_episode_limit() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         seen["method"] = request.method
         seen["url"] = str(request.url)
-        return httpx.Response(200, json={"data": {"schema_version": "memo_stack.graph_export.v1"}})
+        return httpx.Response(200, json={"data": {"schema_version": "infinity_context.graph_export.v1"}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -777,7 +777,7 @@ def test_sdk_exports_graph_with_episode_limit() -> None:
         max_chunks=11,
     )
 
-    assert response == {"data": {"schema_version": "memo_stack.graph_export.v1"}}
+    assert response == {"data": {"schema_version": "infinity_context.graph_export.v1"}}
     assert seen["method"] == "GET"
     assert (
         seen["url"]
@@ -802,7 +802,7 @@ def test_sdk_facade_accepts_additive_response_fields() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -937,7 +937,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1048,7 +1048,7 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1113,7 +1113,7 @@ def test_sdk_typed_context_defaults_legacy_item_diagnostics() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1182,7 +1182,7 @@ def test_sdk_typed_context_ignores_redacted_retrieval_sources() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1214,7 +1214,7 @@ def test_sdk_build_digest_posts_stable_contract() -> None:
         seen["body"] = json.loads(request.content.decode())
         return httpx.Response(200, json={"data": {"digest_id": "dig_1"}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1255,7 +1255,7 @@ def test_sdk_process_document_sends_idempotency_key() -> None:
         seen["idempotency_key"] = request.headers.get("idempotency-key")
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1274,7 +1274,7 @@ def test_sdk_exposes_platform_episode_and_thread_memory_methods() -> None:
         seen.append((request.method, request.url.path, body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1329,7 +1329,7 @@ def test_sdk_exposes_full_capture_facade_methods() -> None:
         seen.append((request.method, str(request.url), body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1432,7 +1432,7 @@ def test_sdk_suggestions_support_external_scope() -> None:
         seen.append((request.method, str(request.url), body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1485,7 +1485,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         seen.append((request.method, request.url.path, body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1513,7 +1513,7 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     client.search(
         space_slug="client-app",
         memory_scope_external_refs=["default", "candidate"],
-        query="memo stack",
+        query="infinity context",
         token_budget=1024,
         max_facts=8,
         max_chunks=10,
@@ -1558,7 +1558,7 @@ def test_sdk_supports_assets_and_extraction_contract() -> None:
             return httpx.Response(200, content=b"downloaded-bytes")
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1657,7 +1657,7 @@ def test_sdk_supports_context_link_suggestion_review_contract() -> None:
         seen.append((request.method, request.url.path, dict(request.url.params), body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1895,7 +1895,7 @@ def test_sdk_preserves_context_link_review_audit_response() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1920,7 +1920,7 @@ def test_sdk_normalizes_context_link_review_ids_and_actions() -> None:
         seen.append((request.method, request.url.path, body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -1983,7 +1983,7 @@ def test_sdk_rejects_invalid_single_context_link_review(
         calls += 1
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2003,7 +2003,7 @@ def test_sdk_rejects_oversized_context_link_batch_review() -> None:
         calls += 1
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2029,7 +2029,7 @@ def test_sdk_rejects_blank_context_link_batch_review_id() -> None:
         calls += 1
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2053,7 +2053,7 @@ def test_sdk_rejects_duplicate_context_link_batch_review_ids() -> None:
         calls += 1
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2082,7 +2082,7 @@ def test_sdk_rejects_blank_context_link_batch_review_action() -> None:
         calls += 1
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2103,7 +2103,7 @@ def test_sdk_supports_context_link_statuses_filters() -> None:
         seen.append((request.method, request.url.path, dict(request.url.params)))
         return httpx.Response(200, json={"data": []})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2166,7 +2166,7 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
         seen.append((request.method, request.url.path, dict(request.url.params), body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2275,7 +2275,7 @@ def test_sdk_sends_anchor_evidence_and_temporal_contract_fields() -> None:
         seen.append((request.method, request.url.path, body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2350,7 +2350,7 @@ def test_sdk_supports_typed_scope_dtos() -> None:
         seen.append((request.url.path, body))
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2407,7 +2407,7 @@ def test_sdk_remember_fact_sends_classification() -> None:
         seen["body"] = json.loads(request.content.decode("utf-8"))
         return httpx.Response(201, json={"data": {"id": "fact_1"}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2433,7 +2433,7 @@ def test_sdk_supports_review_suggestions_batch() -> None:
         seen["body"] = json.loads(request.content.decode("utf-8"))
         return httpx.Response(200, json={"data": {"applied": 2, "failed": 0}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2487,7 +2487,7 @@ def test_sdk_preserves_suggestion_review_audit_response() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2530,7 +2530,7 @@ def test_sdk_rejects_invalid_review_suggestions_batch(
         calls += 1
         return httpx.Response(200, json={"data": {"ok": True}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2550,7 +2550,7 @@ def test_sdk_supports_create_suggestions_batch() -> None:
         seen["body"] = json.loads(request.content.decode("utf-8"))
         return httpx.Response(201, json={"data": {"created": 2, "failed": 0}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2608,14 +2608,14 @@ def test_sdk_supports_memory_scope_snapshot_export_import() -> None:
             )
         return httpx.Response(200, json={"data": {"status": "ok"}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
     )
     snapshot = {"schema_version": 1, "facts": [], "documents": [], "chunks": []}
     manifest = {
-        "schema_version": "memo_stack.memory_scope_snapshot_manifest.v1",
+        "schema_version": "infinity_context.memory_scope_snapshot_manifest.v1",
         "snapshot_sha256": "abc",
     }
 
@@ -2690,7 +2690,7 @@ def test_sdk_sends_search_taxonomy_filters() -> None:
         seen["body"] = json.loads(request.content.decode("utf-8"))
         return httpx.Response(200, json={"data": {"items": []}})
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
@@ -2726,13 +2726,13 @@ def test_sdk_raises_typed_server_error_envelope() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(MemoStackError) as raised:
+    with pytest.raises(InfinityContextError) as raised:
         client.forget_fact("fact_1")
 
     assert raised.value.status_code == 409
@@ -2755,13 +2755,13 @@ def test_sdk_redacts_sensitive_server_error_message() -> None:
             },
         )
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(MemoStackError) as raised:
+    with pytest.raises(InfinityContextError) as raised:
         client.forget_fact("fact_1")
 
     assert raw_secret not in str(raised.value)
@@ -2775,13 +2775,13 @@ def test_sdk_redacts_sensitive_non_json_error_body() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(502, text=f"gateway leaked {raw_secret}")
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(MemoStackError) as raised:
+    with pytest.raises(InfinityContextError) as raised:
         client.forget_fact("fact_1")
 
     assert raw_secret not in str(raised.value)
@@ -2793,13 +2793,13 @@ def test_sdk_maps_transport_error_to_retryable_memory_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    client = MemoStackClient(
+    client = InfinityContextClient(
         base_url="http://memory.test",
         token="test-token",
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(MemoStackError) as raised:
+    with pytest.raises(InfinityContextError) as raised:
         client.build_context(
             space_id="space_client_app",
             memory_scope_ids=["memory_scope_default"],

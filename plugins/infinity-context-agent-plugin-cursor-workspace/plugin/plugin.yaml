@@ -1,0 +1,6 @@
+api_version: v1
+name: infinity-context-agent-plugin-cursor-workspace
+version: 0.1.0
+description: Infinity Context Cursor workspace MCP plugin.
+targets:
+  - cursor-workspace

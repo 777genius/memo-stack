@@ -12,41 +12,41 @@ ROOT = Path(__file__).parents[2]
 def test_docker_compose_bootstraps_local_server_before_http() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
-    assert "pg_isready -U memo_stack -d memo_stack" in compose
+    assert "pg_isready -U infinity_context -d infinity_context" in compose
     assert "condition: service_healthy" in compose
-    assert "python -m memo_stack_server.db upgrade" in compose
-    assert "python -m memo_stack_server.admin seed-defaults" in compose
+    assert "python -m infinity_context_server.db upgrade" in compose
+    assert "python -m infinity_context_server.admin seed-defaults" in compose
     assert "http://127.0.0.1:7788/v1/health" in compose
 
 
 def test_makefile_has_one_command_stack_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    quality_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-test-quality"))
+    quality_recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-test-quality"))
 
-    assert ".PHONY: memo-stack-smoke" in makefile
+    assert ".PHONY: infinity-context-smoke" in makefile
     assert (
-        "$(COMPOSE) --profile lite up -d memo_stack_server memo_stack_worker "
-        "memo_stack_extraction_worker"
+        "$(COMPOSE) --profile lite up -d infinity_context_server infinity_context_worker "
+        "infinity_context_extraction_worker"
     ) in makefile
     assert (
-        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
+        "infinity-context-test-quality: infinity-context-lint infinity-context-test-all infinity-context-eval"
         in makefile
     )
-    assert "$(MAKE) memo-stack-secret-scan" in quality_recipe
-    assert "$(PYTHON) -m memo_stack_server eval run --suite quality-golden" in makefile
-    assert "$(PYTHON) -m memo_stack_server eval run --suite semantic-linking-golden" in makefile
-    assert "$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden" in makefile
+    assert "$(MAKE) infinity-context-secret-scan" in quality_recipe
+    assert "$(PYTHON) -m infinity_context_server eval run --suite quality-golden" in makefile
+    assert "$(PYTHON) -m infinity_context_server eval run --suite semantic-linking-golden" in makefile
+    assert "$(PYTHON) -m infinity_context_server eval run --suite long-memory-golden" in makefile
     assert "$(PYTHON) -m pytest tests/e2e" in makefile
-    assert ".PHONY: memo-stack-multimodal-production-e2e" in makefile
+    assert ".PHONY: infinity-context-multimodal-production-e2e" in makefile
     assert (
         "$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py "
         "tests/e2e/test_multimodal_ingestion_edge_cases_e2e.py -q"
         in makefile
     )
-    assert ".PHONY: memo-stack-multimodal-live-provider-canary" in makefile
+    assert ".PHONY: infinity-context-multimodal-live-provider-canary" in makefile
     assert "$(PYTHON) scripts/multimodal_live_provider_canary.py" in makefile
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
-    assert "$(MAKE) memo-stack-api-smoke" in makefile
+    assert "$(MAKE) infinity-context-api-smoke" in makefile
 
 
 def test_makefile_has_frontend_quality_gate() -> None:
@@ -55,14 +55,14 @@ def test_makefile_has_frontend_quality_gate() -> None:
     assert "FRONTEND_DIR ?= frontend" in makefile
     assert "FLUTTER ?=" in makefile
     assert "MEMORY_FRONTEND_MARIONETTE_REPORT ?=" in makefile
-    assert ".PHONY: memo-stack-frontend-pub-get" in makefile
-    assert ".PHONY: memo-stack-frontend-analyze" in makefile
-    assert ".PHONY: memo-stack-frontend-test" in makefile
-    assert ".PHONY: memo-stack-frontend-build-macos" in makefile
-    assert ".PHONY: memo-stack-frontend-check" in makefile
-    assert ".PHONY: memo-stack-frontend-marionette-local-e2e" in makefile
+    assert ".PHONY: infinity-context-frontend-pub-get" in makefile
+    assert ".PHONY: infinity-context-frontend-analyze" in makefile
+    assert ".PHONY: infinity-context-frontend-test" in makefile
+    assert ".PHONY: infinity-context-frontend-build-macos" in makefile
+    assert ".PHONY: infinity-context-frontend-check" in makefile
+    assert ".PHONY: infinity-context-frontend-marionette-local-e2e" in makefile
     assert (
-        "memo-stack-frontend-check: memo-stack-frontend-analyze memo-stack-frontend-test"
+        "infinity-context-frontend-check: infinity-context-frontend-analyze infinity-context-frontend-test"
     ) in makefile
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) pub get" in makefile
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) analyze" in makefile
@@ -126,7 +126,7 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
     rendered = json.dumps(persisted, ensure_ascii=False)
 
     assert persisted["schema_version"] == 1
-    assert persisted["suite"] == "memo-stack-frontend-marionette-local-e2e"
+    assert persisted["suite"] == "infinity-context-frontend-marionette-local-e2e"
     assert persisted["ok"] is True
     assert persisted["secrets_redacted"] is True
     assert persisted["frontend"]["dir_name"] == "frontend"
@@ -200,20 +200,20 @@ def test_selfhost_compose_has_team_deployment_contract() -> None:
     smoke = (ROOT / "scripts" / "selfhost_smoke.py").read_text(encoding="utf-8")
 
     assert "FROM python:3.12-slim" in dockerfile
-    assert 'CMD ["python", "-m", "memo_stack_server.main"]' in dockerfile
-    assert 'ENTRYPOINT ["memo-stack-entrypoint"]' in dockerfile
+    assert 'CMD ["python", "-m", "infinity_context_server.main"]' in dockerfile
+    assert 'ENTRYPOINT ["infinity-context-entrypoint"]' in dockerfile
     assert 'exec gosu memo "$@"' in dockerfile or (
         'exec gosu memo "$@"'
-        in (ROOT / "docker" / "memo-stack-entrypoint.sh").read_text(encoding="utf-8")
+        in (ROOT / "docker" / "infinity-context-entrypoint.sh").read_text(encoding="utf-8")
     )
     assert "MEMORY_DEPLOY_PROFILE: server" in compose
     assert 'MEMORY_AUTO_CREATE_SCHEMA: "false"' in compose
-    assert "memo_stack_migrate:" in compose
-    assert "memo_stack_projection_worker:" in compose
-    assert "memo_stack_extraction_worker:" in compose
+    assert "infinity_context_migrate:" in compose
+    assert "infinity_context_projection_worker:" in compose
+    assert "infinity_context_extraction_worker:" in compose
     assert "--role projection" in compose
     assert "--role extraction" in compose
-    assert "memo_stack_assets:/var/lib/memo-stack/assets" in compose
+    assert "infinity_context_assets:/var/lib/infinity-context/assets" in compose
     assert (
         "MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS: "
         "${MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS:-1}" in compose
@@ -226,7 +226,7 @@ def test_selfhost_compose_has_team_deployment_contract() -> None:
     assert "MEMORY_POSTGRES_PASSWORD=change-me" in env
     assert "MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS=1" in env
     assert "MEMORY_EXTRACTION_HEARTBEAT_SECONDS=15" in env
-    assert ".PHONY: memo-stack-selfhost-smoke" in makefile
+    assert ".PHONY: infinity-context-selfhost-smoke" in makefile
     assert "$(PYTHON) scripts/selfhost_smoke.py" in makefile
     assert '"postgres/migrations/*.sql"' in pyproject
     assert "Back up Postgres and assets first" in runbook
@@ -237,23 +237,23 @@ def test_selfhost_compose_has_team_deployment_contract() -> None:
 
 def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    eval_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-eval"))
+    eval_recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-eval"))
 
-    assert "$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden" in eval_recipe
-    assert "$(PYTHON) -m memo_stack_server eval run --suite semantic-linking-golden" in eval_recipe
-    assert ".PHONY: memo-stack-graph-native-eval" in makefile
-    assert "$(PYTHON) -m memo_stack_server eval run --suite graph-native-golden" in eval_recipe
+    assert "$(PYTHON) -m infinity_context_server eval run --suite long-memory-golden" in eval_recipe
+    assert "$(PYTHON) -m infinity_context_server eval run --suite semantic-linking-golden" in eval_recipe
+    assert ".PHONY: infinity-context-graph-native-eval" in makefile
+    assert "$(PYTHON) -m infinity_context_server eval run --suite graph-native-golden" in eval_recipe
     assert (
-        "memo-stack-auto-memory-quality: memo-stack-capture-test "
-        "memo-stack-hook-capture-smoke memo-stack-auto-memory-eval "
-        "memo-stack-graph-native-eval"
+        "infinity-context-auto-memory-quality: infinity-context-capture-test "
+        "infinity-context-hook-capture-smoke infinity-context-auto-memory-eval "
+        "infinity-context-graph-native-eval"
     ) in makefile
 
 
 def test_makefile_has_memory_quality_scorecard_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     eval_runner = (
-        ROOT / "packages" / "memo_stack_server" / "memo_stack_server" / "eval.py"
+        ROOT / "packages" / "infinity_context_server" / "infinity_context_server" / "eval.py"
     ).read_text(encoding="utf-8")
     bundle_script = (ROOT / "scripts" / "quality_evidence_bundle.py").read_text(
         encoding="utf-8"
@@ -261,28 +261,28 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     top_evidence_preflight = (
         ROOT
         / "packages"
-        / "memo_stack_server"
-        / "memo_stack_server"
+        / "infinity_context_server"
+        / "infinity_context_server"
         / "top_evidence_preflight.py"
     ).read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-quality-scorecard" in makefile
-    assert "$(PYTHON) -m memo_stack_server eval scorecard" in makefile
-    assert ".PHONY: memo-stack-quality-scorecard-from-reports" in makefile
-    assert ".PHONY: memo-stack-quality-scorecard-top-evidence" in makefile
-    assert ".PHONY: memo-stack-quality-evidence-bundle" in makefile
-    assert ".PHONY: memo-stack-top-evidence-preflight" in makefile
-    assert ".PHONY: memo-stack-top-evidence-bundle" in makefile
+    assert ".PHONY: infinity-context-quality-scorecard" in makefile
+    assert "$(PYTHON) -m infinity_context_server eval scorecard" in makefile
+    assert ".PHONY: infinity-context-quality-scorecard-from-reports" in makefile
+    assert ".PHONY: infinity-context-quality-scorecard-top-evidence" in makefile
+    assert ".PHONY: infinity-context-quality-evidence-bundle" in makefile
+    assert ".PHONY: infinity-context-top-evidence-preflight" in makefile
+    assert ".PHONY: infinity-context-top-evidence-bundle" in makefile
     assert "MEMORY_SCORECARD_SUITE_REPORTS" in makefile
     assert "MEMORY_SCORECARD_EXTRA_REPORTS" in makefile
     assert "MEMORY_QUALITY_EVIDENCE_DIR" in makefile
     assert "MEMORY_QUALITY_EVIDENCE_REQUIRE_TOP" in makefile
     assert "$(PYTHON) scripts/quality_evidence_bundle.py" in makefile
     top_evidence_recipe = "\n".join(
-        _make_target_recipe(makefile, "memo-stack-top-evidence-bundle")
+        _make_target_recipe(makefile, "infinity-context-top-evidence-bundle")
     )
     assert 'MEMORY_CLEAN_SMOKE_REPORT_OUT="$$external_report"' in top_evidence_recipe
-    assert "$(PYTHON) -m memo_stack_server.top_evidence_preflight --json" in (
+    assert "$(PYTHON) -m infinity_context_server.top_evidence_preflight --json" in (
         top_evidence_recipe
     )
     assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in top_evidence_recipe
@@ -313,7 +313,7 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     assert 'scorecard.add_argument(\n        "--suite-report"' in eval_runner
     assert 'scorecard.add_argument(\n        "--require-top-evidence"' in eval_runner
     assert 'snapshots.add_argument("--report-out"' in eval_runner
-    assert "from memo_stack_server.evidence_bundle import main" in bundle_script
+    assert "from infinity_context_server.evidence_bundle import main" in bundle_script
 
 
 def test_makefile_has_clean_full_mcp_smoke_target() -> None:
@@ -322,66 +322,66 @@ def test_makefile_has_clean_full_mcp_smoke_target() -> None:
         encoding="utf-8"
     )
 
-    assert ".PHONY: memo-stack-clean-full-mcp-smoke" in makefile
-    assert "memo-stack-clean-full-mcp-smoke:" in makefile
+    assert ".PHONY: infinity-context-clean-full-mcp-smoke" in makefile
+    assert "infinity-context-clean-full-mcp-smoke:" in makefile
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in makefile
     assert "$(PYTHON) scripts/clean_full_smoke.py" in makefile
     assert "MEMORY_CLEAN_SMOKE_REPORT_OUT" in clean_full_smoke
-    assert "memo-stack-full-provider-canary" in clean_full_smoke
+    assert "infinity-context-full-provider-canary" in clean_full_smoke
 
 
 def test_makefile_has_manual_prod_load_canary_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = _make_target_recipe(makefile, "memo-stack-prod-load-canary")
+    recipe = _make_target_recipe(makefile, "infinity-context-prod-load-canary")
 
-    assert ".PHONY: memo-stack-prod-load-canary" in makefile
+    assert ".PHONY: infinity-context-prod-load-canary" in makefile
     assert "MEMORY_CLEAN_SMOKE_PROD_LOAD=true" in "\n".join(recipe)
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in "\n".join(recipe)
     assert "MEMORY_OPENAI_API_KEY" in "\n".join(recipe)
     assert (
-        "memo-stack-test-quality: memo-stack-lint memo-stack-test-all memo-stack-eval"
+        "infinity-context-test-quality: infinity-context-lint infinity-context-test-all infinity-context-eval"
         in makefile
     )
-    assert "memo-stack-test-quality: memo-stack-prod-load-canary" not in makefile
+    assert "infinity-context-test-quality: infinity-context-prod-load-canary" not in makefile
 
 
 def test_makefile_has_memory_plugin_gate_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-plugin-test" in makefile
+    assert ".PHONY: infinity-context-plugin-test" in makefile
     assert (
-        "memo-stack-plugin-test: memo-stack-plugin-check "
-        "memo-stack-plugin-validate memo-stack-plugin-e2e"
+        "infinity-context-plugin-test: infinity-context-plugin-check "
+        "infinity-context-plugin-validate infinity-context-plugin-e2e"
         in makefile
     )
-    assert "$(PYTHON) -m pytest tests/e2e/test_memo_stack_agent_plugin_e2e.py -q" in makefile
+    assert "$(PYTHON) -m pytest tests/e2e/test_infinity_context_agent_plugin_e2e.py -q" in makefile
 
 
 def test_makefile_has_prod_confidence_gate_with_cleanup() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-prod-confidence"))
+    recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-prod-confidence"))
 
-    assert ".PHONY: memo-stack-prod-confidence" in makefile
-    assert ".PHONY: memo-stack-secret-scan" in makefile
+    assert ".PHONY: infinity-context-prod-confidence" in makefile
+    assert ".PHONY: infinity-context-secret-scan" in makefile
     assert "trap cleanup EXIT INT TERM" in recipe
-    assert "$(MAKE) memo-stack-down" in recipe
-    assert "$(MAKE) memo-stack-plugin-test" in recipe
-    assert "$(MAKE) memo-stack-test-quality" in recipe
-    assert "$(MAKE) memo-stack-agent-install-doctor" in recipe
-    assert "$(MAKE) memo-stack-agent-live-smoke" in recipe
-    assert "$(MAKE) memo-stack-agent-live-smoke-agents" in recipe
+    assert "$(MAKE) infinity-context-down" in recipe
+    assert "$(MAKE) infinity-context-plugin-test" in recipe
+    assert "$(MAKE) infinity-context-test-quality" in recipe
+    assert "$(MAKE) infinity-context-agent-install-doctor" in recipe
+    assert "$(MAKE) infinity-context-agent-live-smoke" in recipe
+    assert "$(MAKE) infinity-context-agent-live-smoke-agents" in recipe
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
     assert "MEMORY_PROD_CONFIDENCE_SERVER_PORT" in recipe
-    assert "$(MAKE) memo-stack-agent-auth-doctor" in recipe
+    assert "$(MAKE) infinity-context-agent-auth-doctor" in recipe
     assert "git diff --check" in recipe
-    assert "$(MAKE) memo-stack-secret-scan" in recipe
-    assert "memo-stack-full-provider-canary" not in recipe
-    assert "memo-stack-agent-live-smoke-agents-strict" not in recipe
+    assert "$(MAKE) infinity-context-secret-scan" in recipe
+    assert "infinity-context-full-provider-canary" not in recipe
+    assert "infinity-context-agent-live-smoke-agents-strict" not in recipe
 
 
 def test_makefile_secret_scan_covers_provider_api_keys() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-secret-scan"))
+    recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-secret-scan"))
 
     assert "rg -n -P" in recipe
     assert r"sk-[A-Za-z0-9_-]{40,}" in recipe
@@ -395,33 +395,33 @@ def test_makefile_secret_scan_covers_provider_api_keys() -> None:
 
 def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-prod-confidence-strict"))
+    recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-prod-confidence-strict"))
     preflight_recipe = "\n".join(
-        _make_target_recipe(makefile, "memo-stack-prod-confidence-strict-preflight")
+        _make_target_recipe(makefile, "infinity-context-prod-confidence-strict-preflight")
     )
 
-    assert ".PHONY: memo-stack-prod-confidence-strict" in makefile
-    assert ".PHONY: memo-stack-prod-confidence-full" in makefile
-    assert ".PHONY: memo-stack-prod-confidence-strict-preflight" in makefile
-    assert "memo-stack-prod-confidence-full: memo-stack-prod-confidence-strict" in makefile
+    assert ".PHONY: infinity-context-prod-confidence-strict" in makefile
+    assert ".PHONY: infinity-context-prod-confidence-full" in makefile
+    assert ".PHONY: infinity-context-prod-confidence-strict-preflight" in makefile
+    assert "infinity-context-prod-confidence-full: infinity-context-prod-confidence-strict" in makefile
     assert "trap cleanup EXIT INT TERM" in recipe
-    assert "$(MAKE) memo-stack-prod-confidence-strict-preflight" in recipe
-    assert "$(MAKE) memo-stack-down" in recipe
-    assert "$(MAKE) memo-stack-plugin-test" in recipe
-    assert "$(MAKE) memo-stack-test-quality" in recipe
-    assert "$(MAKE) memo-stack-agent-install-doctor" in recipe
-    assert "$(MAKE) memo-stack-top-evidence-bundle" in recipe
-    assert "$(MAKE) memo-stack-full-provider-public-benchmark-suite" not in recipe
-    assert "$(MAKE) memo-stack-agent-live-smoke" in recipe
-    assert "$(MAKE) memo-stack-agent-live-smoke-agents-strict" in recipe
+    assert "$(MAKE) infinity-context-prod-confidence-strict-preflight" in recipe
+    assert "$(MAKE) infinity-context-down" in recipe
+    assert "$(MAKE) infinity-context-plugin-test" in recipe
+    assert "$(MAKE) infinity-context-test-quality" in recipe
+    assert "$(MAKE) infinity-context-agent-install-doctor" in recipe
+    assert "$(MAKE) infinity-context-top-evidence-bundle" in recipe
+    assert "$(MAKE) infinity-context-full-provider-public-benchmark-suite" not in recipe
+    assert "$(MAKE) infinity-context-agent-live-smoke" in recipe
+    assert "$(MAKE) infinity-context-agent-live-smoke-agents-strict" in recipe
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
     assert "MEMORY_PROD_CONFIDENCE_SERVER_PORT" in recipe
     assert "git diff --check" in recipe
-    assert "$(MAKE) memo-stack-secret-scan" in recipe
-    assert "$(MAKE) memo-stack-top-evidence-preflight" in preflight_recipe
-    assert "$(MAKE) memo-stack-agent-auth-doctor-strict" in preflight_recipe
-    assert "$(MAKE) memo-stack-agent-live-smoke-agents;" not in recipe
-    assert "$(MAKE) memo-stack-agent-auth-doctor;" not in recipe
+    assert "$(MAKE) infinity-context-secret-scan" in recipe
+    assert "$(MAKE) infinity-context-top-evidence-preflight" in preflight_recipe
+    assert "$(MAKE) infinity-context-agent-auth-doctor-strict" in preflight_recipe
+    assert "$(MAKE) infinity-context-agent-live-smoke-agents;" not in recipe
+    assert "$(MAKE) infinity-context-agent-auth-doctor;" not in recipe
 
 
 def test_makefile_has_agent_install_and_full_canary_targets() -> None:
@@ -430,15 +430,15 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
         encoding="utf-8"
     )
 
-    assert ".PHONY: memo-stack-full-provider-canary" in makefile
-    assert "memo-stack-full-provider-canary: memo-stack-clean-full-mcp-smoke" in makefile
-    assert ".PHONY: memo-stack-full-provider-public-benchmark-canary" in makefile
-    assert ".PHONY: memo-stack-full-provider-public-benchmark-suite" in makefile
+    assert ".PHONY: infinity-context-full-provider-canary" in makefile
+    assert "infinity-context-full-provider-canary: infinity-context-clean-full-mcp-smoke" in makefile
+    assert ".PHONY: infinity-context-full-provider-public-benchmark-canary" in makefile
+    assert ".PHONY: infinity-context-full-provider-public-benchmark-suite" in makefile
     public_recipe = "\n".join(
-        _make_target_recipe(makefile, "memo-stack-full-provider-public-benchmark-canary")
+        _make_target_recipe(makefile, "infinity-context-full-provider-public-benchmark-canary")
     )
     public_suite_recipe = "\n".join(
-        _make_target_recipe(makefile, "memo-stack-full-provider-public-benchmark-suite")
+        _make_target_recipe(makefile, "infinity-context-full-provider-public-benchmark-suite")
     )
     assert "MEMORY_CLEAN_SMOKE_PUBLIC_BENCHMARK=true" in public_recipe
     assert (
@@ -463,7 +463,7 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
         'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"'
         in public_suite_recipe
     )
-    assert "$(MAKE) memo-stack-full-provider-public-benchmark-canary" in public_suite_recipe
+    assert "$(MAKE) infinity-context-full-provider-public-benchmark-canary" in public_suite_recipe
     assert "run_official_public_benchmark_canary" in clean_full_smoke
     assert 'locomo_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET")' in (
         clean_full_smoke
@@ -473,24 +473,24 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
         in clean_full_smoke
     )
     assert "public_benchmark_ok" in clean_full_smoke
-    assert ".PHONY: memo-stack-full-provider-canary-interactive" in makefile
+    assert ".PHONY: infinity-context-full-provider-canary-interactive" in makefile
     interactive_recipe = "\n".join(
-        _make_target_recipe(makefile, "memo-stack-full-provider-canary-interactive")
+        _make_target_recipe(makefile, "infinity-context-full-provider-canary-interactive")
     )
     assert "stty -echo" in interactive_recipe
     assert "IFS= read -r OPENAI_KEY" in interactive_recipe
     assert "OpenAI key (input hidden)" in interactive_recipe
-    assert "$(MAKE) memo-stack-full-provider-canary" in interactive_recipe
+    assert "$(MAKE) infinity-context-full-provider-canary" in interactive_recipe
     assert "sk-" not in interactive_recipe
-    assert ".PHONY: memo-stack-agent-install-dry-run" in makefile
-    assert ".PHONY: memo-stack-agent-install" in makefile
-    assert ".PHONY: memo-stack-agent-install-doctor" in makefile
-    assert ".PHONY: memo-stack-agent-live-smoke" in makefile
-    assert ".PHONY: memo-stack-agent-live-smoke-agents" in makefile
-    assert ".PHONY: memo-stack-agent-live-smoke-agents-strict" in makefile
-    assert ".PHONY: memo-stack-agent-auth-doctor" in makefile
-    assert ".PHONY: memo-stack-agent-auth-doctor-strict" in makefile
-    assert ".PHONY: memo-stack-agent-auth-repair" in makefile
+    assert ".PHONY: infinity-context-agent-install-dry-run" in makefile
+    assert ".PHONY: infinity-context-agent-install" in makefile
+    assert ".PHONY: infinity-context-agent-install-doctor" in makefile
+    assert ".PHONY: infinity-context-agent-live-smoke" in makefile
+    assert ".PHONY: infinity-context-agent-live-smoke-agents" in makefile
+    assert ".PHONY: infinity-context-agent-live-smoke-agents-strict" in makefile
+    assert ".PHONY: infinity-context-agent-auth-doctor" in makefile
+    assert ".PHONY: infinity-context-agent-auth-doctor-strict" in makefile
+    assert ".PHONY: infinity-context-agent-auth-repair" in makefile
     assert "MEMORY_AGENT_SMOKE_POSTGRES_PORT ?= 55429" in makefile
     assert "MEMORY_AGENT_SMOKE_SERVER_PORT ?= 17788" in makefile
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT ?= 55431" in makefile
@@ -510,7 +510,7 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
     assert (
         "MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_AGENT_SMOKE_POSTGRES_PORT)} "
         "MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_AGENT_SMOKE_SERVER_PORT)} "
-        "$(MAKE) memo-stack-up-lite"
+        "$(MAKE) infinity-context-up-lite"
     ) in makefile
     assert (
         "MEMORY_MCP_API_URL=$${MEMORY_MCP_API_URL:-http://127.0.0.1:"
@@ -532,13 +532,13 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
     assert "Run this target from an interactive terminal" in makefile
     assert "claude auth login --claudeai" in makefile
     assert "opencode providers login --provider openai" in makefile
-    assert "$(MAKE) memo-stack-agent-auth-doctor-strict" in makefile
+    assert "$(MAKE) infinity-context-agent-auth-doctor-strict" in makefile
 
 
 def test_memory_agent_plugin_wrappers_support_runtime_env_overrides() -> None:
     wrappers = [
-        ROOT / "plugins" / "memo-stack-agent-plugin" / "bin" / "memo-stack-mcp",
-        ROOT / "plugins" / "memo-stack-agent-plugin-cursor-workspace" / "bin" / "memo-stack-mcp",
+        ROOT / "plugins" / "infinity-context-agent-plugin" / "bin" / "infinity-context-mcp",
+        ROOT / "plugins" / "infinity-context-agent-plugin-cursor-workspace" / "bin" / "infinity-context-mcp",
     ]
 
     for wrapper_path in wrappers:
@@ -556,13 +556,13 @@ def test_memory_agent_plugin_wrappers_support_runtime_env_overrides() -> None:
 def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-agent-behavior-bench" in makefile
-    assert ".PHONY: memo-stack-agent-realistic-bench" in makefile
-    assert ".PHONY: memo-stack-agent-live-session-bench" in makefile
-    assert ".PHONY: memo-stack-agent-transcript-corpus-bench" in makefile
-    assert ".PHONY: memo-stack-agent-transcript-corpus-redact" in makefile
-    assert ".PHONY: memo-stack-agent-transcript-corpus-audit" in makefile
-    assert ".PHONY: memo-stack-real-memory-confidence" in makefile
+    assert ".PHONY: infinity-context-agent-behavior-bench" in makefile
+    assert ".PHONY: infinity-context-agent-realistic-bench" in makefile
+    assert ".PHONY: infinity-context-agent-live-session-bench" in makefile
+    assert ".PHONY: infinity-context-agent-transcript-corpus-bench" in makefile
+    assert ".PHONY: infinity-context-agent-transcript-corpus-redact" in makefile
+    assert ".PHONY: infinity-context-agent-transcript-corpus-audit" in makefile
+    assert ".PHONY: infinity-context-real-memory-confidence" in makefile
     assert "MEMORY_AGENT_BENCH_MODEL" in makefile
     assert "MEMORY_CLEAN_SMOKE_AGENT_BENCH=true" in makefile
     assert "MEMORY_AGENT_BENCH_SCENARIO_SET=realistic" in makefile
@@ -574,28 +574,28 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
     assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_OUTPUT" in makefile
     assert "MEMORY_AGENT_TRANSCRIPT_CORPUS_AUDIT_STRICT" in makefile
-    assert "$(MAKE) memo-stack-top-evidence-bundle" in makefile
-    assert "$(MAKE) memo-stack-prod-load-canary" in makefile
-    assert "$(MAKE) memo-stack-agent-live-session-bench" in makefile
-    assert "$(MAKE) memo-stack-agent-transcript-corpus-bench" in makefile
-    assert "memo-stack-agent-behavior-bench" not in re.search(
-        r"memo-stack-test-quality: (?P<deps>.+)",
+    assert "$(MAKE) infinity-context-top-evidence-bundle" in makefile
+    assert "$(MAKE) infinity-context-prod-load-canary" in makefile
+    assert "$(MAKE) infinity-context-agent-live-session-bench" in makefile
+    assert "$(MAKE) infinity-context-agent-transcript-corpus-bench" in makefile
+    assert "infinity-context-agent-behavior-bench" not in re.search(
+        r"infinity-context-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
-    assert "memo-stack-agent-realistic-bench" not in re.search(
-        r"memo-stack-test-quality: (?P<deps>.+)",
+    assert "infinity-context-agent-realistic-bench" not in re.search(
+        r"infinity-context-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
-    assert "memo-stack-agent-live-session-bench" not in re.search(
-        r"memo-stack-test-quality: (?P<deps>.+)",
+    assert "infinity-context-agent-live-session-bench" not in re.search(
+        r"infinity-context-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
-    assert "memo-stack-agent-transcript-corpus-bench" not in re.search(
-        r"memo-stack-test-quality: (?P<deps>.+)",
+    assert "infinity-context-agent-transcript-corpus-bench" not in re.search(
+        r"infinity-context-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
-    assert "memo-stack-real-memory-confidence" not in re.search(
-        r"memo-stack-test-quality: (?P<deps>.+)",
+    assert "infinity-context-real-memory-confidence" not in re.search(
+        r"infinity-context-test-quality: (?P<deps>.+)",
         makefile,
     ).group("deps")
 
@@ -603,25 +603,25 @@ def test_makefile_has_paid_agent_behavior_benchmark_target() -> None:
 def test_makefile_has_auto_memory_eval_quality_gate() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-auto-memory-eval" in makefile
-    assert "$(PYTHON) -m memo_stack_server eval run --suite auto-memory-golden" in makefile
+    assert ".PHONY: infinity-context-auto-memory-eval" in makefile
+    assert "$(PYTHON) -m infinity_context_server eval run --suite auto-memory-golden" in makefile
     assert re.search(
-        r"memo-stack-eval:\n(?:\t.+\n)+?\t\$\(PYTHON\) "
-        r"-m memo_stack_server eval run --suite auto-memory-golden",
+        r"infinity-context-eval:\n(?:\t.+\n)+?\t\$\(PYTHON\) "
+        r"-m infinity_context_server eval run --suite auto-memory-golden",
         makefile,
     )
     assert (
-        "memo-stack-auto-memory-quality: "
-        "memo-stack-capture-test memo-stack-hook-capture-smoke memo-stack-auto-memory-eval"
+        "infinity-context-auto-memory-quality: "
+        "infinity-context-capture-test infinity-context-hook-capture-smoke infinity-context-auto-memory-eval"
     ) in makefile
 
 
 def test_makefile_has_public_memory_benchmark_gate() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
-    assert ".PHONY: memo-stack-public-benchmark" in makefile
+    assert ".PHONY: infinity-context-public-benchmark" in makefile
     assert "MEMORY_PUBLIC_BENCHMARK_DATASET" in makefile
-    assert "$(PYTHON) -m memo_stack_server eval public-benchmark" in makefile
+    assert "$(PYTHON) -m infinity_context_server eval public-benchmark" in makefile
     assert "MEMORY_PUBLIC_BENCHMARK_REPORT_OUT" in makefile
     assert "MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY" in makefile
     assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in makefile
@@ -630,8 +630,8 @@ def test_makefile_has_public_memory_benchmark_gate() -> None:
 def test_makefile_persists_and_reuses_memora_direct_smoke_report() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    smoke_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-memora-direct-smoke"))
-    compare_recipe = "\n".join(_make_target_recipe(makefile, "memo-stack-compare-memora"))
+    smoke_recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-memora-direct-smoke"))
+    compare_recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-compare-memora"))
 
     assert "MEMORA_DIRECT_SMOKE_REPORT ?= .tmp/memora-direct-smoke.json" in makefile
     assert ".tmp/" in gitignore
@@ -649,26 +649,26 @@ def test_makefile_persists_and_reuses_memora_direct_smoke_report() -> None:
 def test_makefile_has_official_public_benchmark_canary() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     recipe = "\n".join(
-        _make_target_recipe(makefile, "memo-stack-official-public-benchmark-canary")
+        _make_target_recipe(makefile, "infinity-context-official-public-benchmark-canary")
     )
     module = (
         ROOT
         / "packages"
-        / "memo_stack_server"
-        / "memo_stack_server"
+        / "infinity_context_server"
+        / "infinity_context_server"
         / "official_public_benchmark.py"
     ).read_text(encoding="utf-8")
     script = (ROOT / "scripts" / "official_public_benchmark_canary.py").read_text(
         encoding="utf-8"
     )
 
-    assert ".PHONY: memo-stack-official-public-benchmark-canary" in makefile
+    assert ".PHONY: infinity-context-official-public-benchmark-canary" in makefile
     assert "$(PYTHON) scripts/official_public_benchmark_canary.py" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_REPORT_OUT" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_API_URL" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN" in recipe
-    assert "memo_stack_server.official_public_benchmark import main" in script
+    assert "infinity_context_server.official_public_benchmark import main" in script
     assert "snap-research/locomo" in module
     assert "longmemeval_s_cleaned.json" in module
 
@@ -677,14 +677,14 @@ def test_paid_make_targets_do_not_put_openai_keys_in_python_command_line() -> No
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
     for target in (
-        "memo-stack-clean-full-smoke",
-        "memo-stack-clean-full-mcp-smoke",
-        "memo-stack-full-provider-public-benchmark-canary",
-        "memo-stack-top-evidence-bundle",
-        "memo-stack-agent-behavior-bench",
-        "memo-stack-agent-realistic-bench",
-        "memo-stack-agent-live-session-bench",
-        "memo-stack-agent-transcript-corpus-bench",
+        "infinity-context-clean-full-smoke",
+        "infinity-context-clean-full-mcp-smoke",
+        "infinity-context-full-provider-public-benchmark-canary",
+        "infinity-context-top-evidence-bundle",
+        "infinity-context-agent-behavior-bench",
+        "infinity-context-agent-realistic-bench",
+        "infinity-context-agent-live-session-bench",
+        "infinity-context-agent-transcript-corpus-bench",
     ):
         recipe = _make_target_recipe(makefile, target)
         python_lines = [line for line in recipe if "$(PYTHON) scripts/clean_full_smoke.py" in line]
@@ -784,7 +784,7 @@ def test_clean_full_smoke_uses_current_postgres_database_name(monkeypatch) -> No
         run_id="unit-run",
     )
 
-    assert env["MEMORY_DATABASE_URL"].endswith(":15432/memo_stack")
+    assert env["MEMORY_DATABASE_URL"].endswith(":15432/infinity_context")
     assert not env["MEMORY_DATABASE_URL"].endswith(":15432/memory")
 
 
@@ -799,7 +799,7 @@ def test_clean_full_smoke_report_provenance_is_safe_and_auditable() -> None:
 
     assert provenance["schema_version"] == 1
     assert provenance["generated_by"] == "scripts/clean_full_smoke.py"
-    assert provenance["suite"] == "memo-stack-full-provider-canary"
+    assert provenance["suite"] == "infinity-context-full-provider-canary"
     assert provenance["run_id"] == "unit-run"
     assert provenance["project"] == "unit-project"
     assert set(provenance["git"]) == {"commit", "short_commit", "dirty"}
@@ -1222,7 +1222,7 @@ def test_clean_full_smoke_mcp_env_does_not_inherit_provider_secrets(monkeypatch)
     assert env["MEMORY_MCP_API_URL"] == "http://127.0.0.1:7788"
     assert env["MEMORY_MCP_AUTH_TOKEN"] == "unit-mcp-token"
     assert env["MEMORY_MCP_REQUEST_TIMEOUT_SECONDS"] == "90"
-    assert "packages/memo_stack_mcp" in env["PYTHONPATH"]
+    assert "packages/infinity_context_mcp" in env["PYTHONPATH"]
     assert "existing-pythonpath" in env["PYTHONPATH"]
     assert "OPENAI_API_KEY" not in env
     assert "MEMORY_OPENAI_API_KEY" not in env
@@ -1400,18 +1400,18 @@ def test_real_stack_mcp_canary_docs_are_env_based() -> None:
         ]
     )
 
-    assert "memo-stack-clean-full-mcp-smoke" in docs
-    assert "memo-stack-prod-load-canary" in docs
-    assert "memo-stack-agent-live-session-bench" in docs
-    assert "memo-stack-agent-transcript-corpus-bench" in docs
-    assert "memo-stack-agent-transcript-corpus-redact" in docs
-    assert "memo-stack-agent-transcript-corpus-audit" in docs
-    assert "memo-stack-multimodal-live-provider-canary" in docs
+    assert "infinity-context-clean-full-mcp-smoke" in docs
+    assert "infinity-context-prod-load-canary" in docs
+    assert "infinity-context-agent-live-session-bench" in docs
+    assert "infinity-context-agent-transcript-corpus-bench" in docs
+    assert "infinity-context-agent-transcript-corpus-redact" in docs
+    assert "infinity-context-agent-transcript-corpus-audit" in docs
+    assert "infinity-context-multimodal-live-provider-canary" in docs
     assert "MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE" in docs
     assert "MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT" in docs
     assert "MEMORY_AGENT_BENCH_TRANSCRIPT_CORPUS_DIR" in docs
     assert "MEMORY_AGENT_TRANSCRIPT_INPUT" in docs
-    assert "memo-stack-real-memory-confidence" in docs
+    assert "infinity-context-real-memory-confidence" in docs
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=true" in docs
     assert "--auth-token" not in docs
     assert "local-token" not in docs

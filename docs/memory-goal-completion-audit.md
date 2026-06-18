@@ -62,7 +62,7 @@ Backend release gates:
 .venv/bin/python -m pytest tests/e2e/test_semantic_linking_quality_e2e.py
 .venv/bin/python -m pytest tests/unit/test_postgres_mappers_legacy.py
 .venv/bin/python -m pytest tests/e2e/test_context_link_batch_review_sdk_e2e.py tests/e2e/test_manual_context_link_sdk_e2e.py tests/e2e/test_anchor_lifecycle_sdk_e2e.py
-make memo-stack-secret-scan
+make infinity-context-secret-scan
 ```
 
 Frontend review UX gate:

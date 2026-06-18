@@ -30,7 +30,7 @@ def skip_if_low_temp_space(
 ) -> None:
     threshold = int(
         os.environ.get(
-            "MEMO_STACK_DOCLING_E2E_MIN_TEMP_BYTES",
+            "INFINITY_CONTEXT_DOCLING_E2E_MIN_TEMP_BYTES",
             str(DEFAULT_DOCLING_MIN_TEMP_BYTES),
         )
     )
@@ -44,5 +44,5 @@ def skip_if_low_temp_space(
 
 def docling_worker_timeout_seconds(env: dict[str, str]) -> int:
     parser_timeout = int(float(env.get("MEMORY_EXTRACTION_PARSER_TIMEOUT_SECONDS", "300")))
-    configured = int(os.environ.get("MEMO_STACK_DOCLING_E2E_WORKER_TIMEOUT_SECONDS", "0"))
+    configured = int(os.environ.get("INFINITY_CONTEXT_DOCLING_E2E_WORKER_TIMEOUT_SECONDS", "0"))
     return max(configured, parser_timeout + 120, 180)

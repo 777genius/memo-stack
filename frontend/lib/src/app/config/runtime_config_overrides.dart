@@ -1,9 +1,9 @@
 class RuntimeConfigOverrides {
-  static const _defaultBackendHostDefine = 'MEMO_STACK_BACKEND_HOST';
-  static const _defaultBackendPortDefine = 'MEMO_STACK_BACKEND_PORT';
-  static const _defaultServiceTokenDefine = 'MEMO_STACK_SERVICE_TOKEN';
-  static const _defaultSpaceSlugDefine = 'MEMO_STACK_SPACE_SLUG';
-  static const _defaultMemoryScopeDefine = 'MEMO_STACK_MEMORY_SCOPE';
+  static const _defaultBackendHostDefine = 'INFINITY_CONTEXT_BACKEND_HOST';
+  static const _defaultBackendPortDefine = 'INFINITY_CONTEXT_BACKEND_PORT';
+  static const _defaultServiceTokenDefine = 'INFINITY_CONTEXT_SERVICE_TOKEN';
+  static const _defaultSpaceSlugDefine = 'INFINITY_CONTEXT_SPACE_SLUG';
+  static const _defaultMemoryScopeDefine = 'INFINITY_CONTEXT_MEMORY_SCOPE';
 
   final String backendHost;
   final String backendPort;

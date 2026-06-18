@@ -1,14 +1,14 @@
 import json
 from datetime import UTC, datetime, timedelta
 
-from memo_stack_core.application.asset_extraction_mapping import (
+from infinity_context_core.application.asset_extraction_mapping import (
     asset_extraction_chunk_metadata,
     result_json,
 )
-from memo_stack_core.application.safe_payload import safe_metadata
-from memo_stack_core.domain.assets import MemoryAsset, MemoryAssetId
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
-from memo_stack_core.domain.extraction import (
+from infinity_context_core.application.safe_payload import safe_metadata
+from infinity_context_core.domain.assets import MemoryAsset, MemoryAssetId
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
+from infinity_context_core.domain.extraction import (
     AssetExtractionJob,
     AssetExtractionJobId,
     AssetExtractionStatus,
@@ -17,7 +17,7 @@ from memo_stack_core.domain.extraction import (
     ExtractionArtifactType,
     ExtractionRetryDisposition,
 )
-from memo_stack_core.ports.extraction import ExtractedElement, ExtractionResult
+from infinity_context_core.ports.extraction import ExtractedElement, ExtractionResult
 
 
 def test_normalized_json_is_a_supported_extraction_artifact_type() -> None:

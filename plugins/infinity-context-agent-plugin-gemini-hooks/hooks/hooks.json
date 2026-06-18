@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${extensionPath}${/}bin${/}infinity-context-plugin-hook GeminiSessionStart"
+          }
+        ]
+      }
+    ],
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${extensionPath}${/}bin${/}infinity-context-plugin-hook GeminiBeforeAgent"
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${extensionPath}${/}bin${/}infinity-context-plugin-hook GeminiAfterAgent"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${extensionPath}${/}bin${/}infinity-context-plugin-hook GeminiSessionEnd"
+          }
+        ]
+      }
+    ]
+  }
+}

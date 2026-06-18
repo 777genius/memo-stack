@@ -1,4 +1,4 @@
-"""Static architecture checks for Memo Stack package boundaries."""
+"""Static architecture checks for Infinity Context package boundaries."""
 
 from __future__ import annotations
 
@@ -48,15 +48,15 @@ def _assert_file_no_imports(relative_path: str, forbidden_imports: set[str]) -> 
 
 def test_memory_core_has_no_infrastructure_dependencies() -> None:
     _assert_no_imports(
-        "packages/memo_stack_core/memo_stack_core",
+        "packages/infinity_context_core/infinity_context_core",
         {
             "anthropic",
             "fastapi",
             "graphiti",
             "httpx",
-            "memo_stack_adapters",
-            "memo_stack_mcp",
-            "memo_stack_server",
+            "infinity_context_adapters",
+            "infinity_context_mcp",
+            "infinity_context_server",
             "mcp",
             "openai",
             "qdrant_client",
@@ -67,11 +67,11 @@ def test_memory_core_has_no_infrastructure_dependencies() -> None:
 
 def test_memory_adapters_do_not_depend_on_api_or_mcp_layers() -> None:
     _assert_no_imports(
-        "packages/memo_stack_adapters/memo_stack_adapters",
+        "packages/infinity_context_adapters/infinity_context_adapters",
         {
             "fastapi",
-            "memo_stack_mcp",
-            "memo_stack_server",
+            "infinity_context_mcp",
+            "infinity_context_server",
             "mcp",
         },
     )
@@ -79,13 +79,13 @@ def test_memory_adapters_do_not_depend_on_api_or_mcp_layers() -> None:
 
 def test_memory_mcp_does_not_depend_on_server_adapters_or_providers() -> None:
     _assert_no_imports(
-        "packages/memo_stack_mcp/memo_stack_mcp",
+        "packages/infinity_context_mcp/infinity_context_mcp",
         {
             "anthropic",
             "fastapi",
             "graphiti",
-            "memo_stack_adapters",
-            "memo_stack_server",
+            "infinity_context_adapters",
+            "infinity_context_server",
             "openai",
             "qdrant_client",
             "sqlalchemy",
@@ -95,26 +95,26 @@ def test_memory_mcp_does_not_depend_on_server_adapters_or_providers() -> None:
 
 def test_memory_server_does_not_depend_on_mcp_adapter_layer() -> None:
     _assert_no_imports(
-        "packages/memo_stack_server/memo_stack_server",
+        "packages/infinity_context_server/infinity_context_server",
         {
             "mcp",
-            "memo_stack_mcp",
+            "infinity_context_mcp",
         },
     )
 
 
 def test_top_evidence_policy_stays_lightweight() -> None:
     _assert_file_no_imports(
-        "packages/memo_stack_server/memo_stack_server/top_evidence_policy.py",
+        "packages/infinity_context_server/infinity_context_server/top_evidence_policy.py",
         {
             "anthropic",
             "fastapi",
             "graphiti",
             "httpx",
-            "memo_stack_adapters",
-            "memo_stack_mcp",
-            "memo_stack_server.eval",
-            "memo_stack_server.main",
+            "infinity_context_adapters",
+            "infinity_context_mcp",
+            "infinity_context_server.eval",
+            "infinity_context_server.main",
             "mcp",
             "openai",
             "qdrant_client",
@@ -125,15 +125,15 @@ def test_top_evidence_policy_stays_lightweight() -> None:
 
 def test_memory_sdk_stays_transport_client_only() -> None:
     _assert_no_imports(
-        "packages/memo_stack_sdk/memo_stack_sdk",
+        "packages/infinity_context_sdk/infinity_context_sdk",
         {
             "anthropic",
             "fastapi",
             "graphiti",
-            "memo_stack_adapters",
-            "memo_stack_core",
-            "memo_stack_mcp",
-            "memo_stack_server",
+            "infinity_context_adapters",
+            "infinity_context_core",
+            "infinity_context_mcp",
+            "infinity_context_server",
             "mcp",
             "openai",
             "qdrant_client",
