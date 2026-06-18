@@ -145,25 +145,33 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
         raw.get("ranking_reason"),
         limit=MAX_RANKING_REASON_CHARS,
     ) or _ranking_reason_for(retrieval_sources)
+    safe_raw = dict(raw)
+    safe_raw["retrieval_sources"] = list(retrieval_sources)
+    if retrieval_source:
+        safe_raw["retrieval_source"] = retrieval_source
+    safe_raw["ranking_reason"] = ranking_reason
     return ContextItemDiagnostics(
         retrieval_source=retrieval_source,
         retrieval_sources=retrieval_sources,
         ranking_reason=ranking_reason,
         score_signals=_scalar_mapping(raw.get("score_signals")),
         provenance=_bounded_mapping(raw.get("provenance")),
-        raw=raw,
+        raw=safe_raw,
     )
 
 
 def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
     raw = _bounded_mapping(value, max_items=64)
+    retrieval_sources_used = _safe_text_tuple(
+        raw.get("retrieval_sources_used"),
+        limit=MAX_RETRIEVAL_SOURCES,
+    )
+    safe_raw = dict(raw)
+    safe_raw["retrieval_sources_used"] = list(retrieval_sources_used)
     return ContextBundleDiagnostics(
         context_assembly_version=_safe_text(raw.get("context_assembly_version"), default="unknown"),
         consistency_mode=_safe_text(raw.get("consistency_mode"), default="unknown"),
-        retrieval_sources_used=_safe_text_tuple(
-            raw.get("retrieval_sources_used"),
-            limit=MAX_RETRIEVAL_SOURCES,
-        ),
+        retrieval_sources_used=retrieval_sources_used,
         hybrid_items_used=_non_negative_int(raw.get("hybrid_items_used")),
         temporal_replacements_applied=_non_negative_int(
             raw.get("temporal_replacements_applied")
@@ -180,7 +188,7 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         dropped_by_source_cap=_non_negative_int(raw.get("dropped_by_source_cap")),
         dropped_by_char_cap=_non_negative_int(raw.get("dropped_by_char_cap")),
         diagnostics_truncated=bool(raw.get("diagnostics_truncated")),
-        raw=raw,
+        raw=safe_raw,
     )
 
 
@@ -262,7 +270,7 @@ def _safe_text_tuple(value: object, *, limit: int) -> tuple[str, ...]:
     result: list[str] = []
     for item in _as_list(value):
         text = _optional_text(item, limit=MAX_KEY_CHARS)
-        if not text or text in result:
+        if not text or "[redacted]" in text or text in result:
             continue
         result.append(text)
         if len(result) >= limit:

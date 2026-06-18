@@ -591,6 +591,66 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     assert bundle.diagnostics.dropped_by_char_cap == 0
 
 
+def test_sdk_typed_context_ignores_redacted_retrieval_sources() -> None:
+    raw_secret = "Bearer sk-proj-secretvalue1234567890"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "bundle_id": "ctx_noisy_sources",
+                    "rendered_text": "",
+                    "diagnostics": {
+                        "context_assembly_version": "context-v2-hybrid-explainable",
+                        "consistency_mode": "best_effort",
+                        "retrieval_sources_used": [
+                            raw_secret,
+                            *(f"provider_noise_{index}" for index in range(12)),
+                        ],
+                    },
+                    "items": [
+                        {
+                            "item_id": "chunk_1",
+                            "item_type": "chunk",
+                            "text": "Noisy retrieval source evidence.",
+                            "score": 0.9,
+                            "diagnostics": {
+                                "retrieval_source": "keyword_chunks",
+                                "retrieval_sources": [
+                                    raw_secret,
+                                    *(f"provider_noise_{index}" for index in range(12)),
+                                ],
+                            },
+                        }
+                    ],
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    bundle = client.build_typed_context(
+        space_id="space_client_app",
+        memory_scope_ids=["memory_scope_default"],
+        query="noisy retrieval sources",
+    )
+
+    assert bundle.diagnostics.retrieval_sources_used == tuple(
+        f"provider_noise_{index}" for index in range(7)
+    )
+    assert len(bundle.diagnostics.retrieval_sources_used) <= 8
+    item_diagnostics = bundle.items[0].diagnostics
+    assert item_diagnostics.retrieval_source == "keyword_chunks"
+    assert item_diagnostics.retrieval_sources[0] == "keyword_chunks"
+    assert "[redacted]" not in repr(bundle)
+    assert raw_secret not in repr(bundle)
+
+
 def test_sdk_build_digest_posts_stable_contract() -> None:
     seen: dict[str, object] = {}
 
