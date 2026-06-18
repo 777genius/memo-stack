@@ -137,6 +137,8 @@ def test_context_link_batch_review_sdk_e2e(tmp_path: Path) -> None:
     assert diagnostics["visible_filter_statuses"] == ["pending"]
     assert diagnostics["visible_filter_source_type"] == "capture"
     assert diagnostics["visible_filter_has_source_id"] is True
+    assert "visible_filter_source_id" not in diagnostics
+    assert "visible_filter_target_id" not in diagnostics
     assert [item["status"] for item in reviewed["data"]["results"]] == ["applied", "applied"]
     approved_result = reviewed["data"]["results"][0]
     rejected_result = reviewed["data"]["results"][1]
