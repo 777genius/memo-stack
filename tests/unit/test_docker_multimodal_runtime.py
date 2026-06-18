@@ -27,4 +27,12 @@ def test_docker_runtime_includes_multimodal_system_dependencies() -> None:
         compose.count("MEMORY_TRANSCRIPTION_PROVIDER: ${MEMORY_TRANSCRIPTION_PROVIDER:-openai}")
         == 3
     )
+    assert (
+        "MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS: "
+        "${MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS:-1}" in compose
+    )
+    assert (
+        "MEMORY_EXTRACTION_HEARTBEAT_SECONDS: "
+        "${MEMORY_EXTRACTION_HEARTBEAT_SECONDS:-15}" in compose
+    )
     assert "MEMORY_TRANSCRIPTION_OPENAI_MODEL" in compose

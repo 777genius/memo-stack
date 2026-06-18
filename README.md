@@ -315,6 +315,10 @@ Audio/video uploads can pass `estimated_media_seconds` so Memo Stack can reserve
 monthly media-analysis quota before enqueueing extraction. Clients can poll
 `/v1/asset-extractions/{job_id}` for `progress` and `/v1/usage?space_slug=...`
 for the current plan meter.
+Long extraction jobs refresh their lease while parsing and honor cancellation
+requests through `MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS` plus
+`MEMORY_EXTRACTION_HEARTBEAT_SECONDS`; these values are also exposed by
+`/v1/capabilities`.
 
 `rule_based` keeps consolidation local and deterministic. `openai` is available
 behind `MemoryExtractorPort`, but it requires both

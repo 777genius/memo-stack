@@ -94,8 +94,18 @@ def test_selfhost_compose_has_team_deployment_contract() -> None:
     assert "--role projection" in compose
     assert "--role extraction" in compose
     assert "memo_stack_assets:/var/lib/memo-stack/assets" in compose
+    assert (
+        "MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS: "
+        "${MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS:-1}" in compose
+    )
+    assert (
+        "MEMORY_EXTRACTION_HEARTBEAT_SECONDS: "
+        "${MEMORY_EXTRACTION_HEARTBEAT_SECONDS:-15}" in compose
+    )
     assert "MEMORY_SERVICE_TOKEN=change-me" in env
     assert "MEMORY_POSTGRES_PASSWORD=change-me" in env
+    assert "MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS=1" in env
+    assert "MEMORY_EXTRACTION_HEARTBEAT_SECONDS=15" in env
     assert ".PHONY: memo-stack-selfhost-smoke" in makefile
     assert "$(PYTHON) scripts/selfhost_smoke.py" in makefile
     assert '"postgres/migrations/*.sql"' in pyproject
