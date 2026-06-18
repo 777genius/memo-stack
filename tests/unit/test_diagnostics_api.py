@@ -231,6 +231,55 @@ def test_diagnostics_metrics_include_context_runtime_counters(tmp_path: Path) ->
     assert "RUNTIME_METRIC_FACT" not in str(data)
 
 
+def test_diagnostics_metrics_include_context_link_review_counts(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        approved_suggestion_id = _create_context_link_suggestion(
+            client,
+            source_event_id="diagnostics-approved-link-capture",
+            source_id="diagnostics-approved-link-fact",
+            text="diagnostics link approved ledger marker should stay out of metrics",
+        )
+        rejected_suggestion_id = _create_context_link_suggestion(
+            client,
+            source_event_id="diagnostics-rejected-link-capture",
+            source_id="diagnostics-rejected-link-fact",
+            text="diagnostics link rejected ledger marker should stay out of metrics",
+        )
+        approved = client.post(
+            f"/v1/context-link-suggestions/{approved_suggestion_id}/review",
+            json={"action": "approve", "reason": "diagnostics approved review"},
+            headers=auth_headers(),
+        )
+        rejected = client.post(
+            f"/v1/context-link-suggestions/{rejected_suggestion_id}/review",
+            json={"action": "reject", "reason": "diagnostics rejected review"},
+            headers=auth_headers(),
+        )
+        memory_scope = client.get(
+            "/v1/diagnostics/memory-scope/memory_scope_default",
+            headers=auth_headers(),
+        )
+        metrics = client.get("/v1/diagnostics/metrics", headers=auth_headers())
+
+    assert approved.status_code == 200, approved.text
+    assert rejected.status_code == 200, rejected.text
+    assert memory_scope.status_code == 200
+    assert metrics.status_code == 200
+    memory_scope_data = memory_scope.json()["data"]
+    metrics_data = metrics.json()["data"]
+    assert memory_scope_data["context_links"]["active"] == 1
+    assert memory_scope_data["context_link_suggestions"]["approved"] == 1
+    assert memory_scope_data["context_link_suggestions"]["rejected"] == 1
+    assert metrics_data["canonical"]["context_links"]["active"] == 1
+    assert metrics_data["canonical"]["context_link_suggestions"]["approved"] == 1
+    assert metrics_data["canonical"]["context_link_suggestions"]["rejected"] == 1
+    combined = f"{memory_scope_data} {metrics_data}"
+    assert "diagnostics link approved ledger marker" not in combined
+    assert "diagnostics link rejected ledger marker" not in combined
+    assert "review_reason" not in combined
+    assert "metadata_json" not in combined
+
+
 def test_circuit_state_visible_in_safe_diagnostics(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         qdrant_circuit = client.app.state.container.provider_circuits[0]
@@ -323,6 +372,60 @@ def test_trace_attributes_do_not_include_raw_text(tmp_path: Path) -> None:
     assert "TRACE_RAW_TEXT_SECRET" not in str(trace)
     assert "query" not in trace
     assert "rendered_text" not in trace
+
+
+def _create_context_link_suggestion(
+    client: TestClient,
+    *,
+    source_event_id: str,
+    source_id: str,
+    text: str,
+) -> str:
+    target_fact = client.post(
+        "/v1/facts",
+        json={
+            "space_id": "space_client_app",
+            "memory_scope_id": "memory_scope_default",
+            "text": text,
+            "kind": "note",
+            "source_refs": [{"source_type": "manual", "source_id": source_id}],
+        },
+        headers=auth_headers(),
+    )
+    source_fact = client.post(
+        "/v1/facts",
+        json={
+            "space_id": "space_client_app",
+            "memory_scope_id": "memory_scope_default",
+            "text": f"{text} source review note",
+            "kind": "note",
+            "source_refs": [{"source_type": "manual", "source_id": source_event_id}],
+        },
+        headers=auth_headers(),
+    )
+    assert target_fact.status_code == 201, target_fact.text
+    assert source_fact.status_code == 201, source_fact.text
+    suggestions = client.post(
+        "/v1/link-suggestions",
+        json={
+            "space_id": "space_client_app",
+            "memory_scope_id": "memory_scope_default",
+            "source_type": "fact",
+            "source_id": source_fact.json()["data"]["id"],
+            "text": text,
+            "persist": True,
+            "limit": 8,
+        },
+        headers=auth_headers(),
+    )
+    assert suggestions.status_code == 200, suggestions.text
+    fact_id = target_fact.json()["data"]["id"]
+    candidate = next(
+        item
+        for item in suggestions.json()["data"]["candidates"]
+        if item["target_type"] == "fact" and item["target_id"] == fact_id
+    )
+    return str(candidate["suggestion_id"])
 
 
 async def _insert_dead_metrics_outbox(client: TestClient) -> None:

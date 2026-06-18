@@ -7,6 +7,8 @@ from typing import Any
 
 from memo_stack_adapters.postgres.models import (
     MemoryChunkRow,
+    MemoryContextLinkRow,
+    MemoryContextLinkSuggestionRow,
     MemoryDocumentRow,
     MemoryFactRow,
     MemoryOutboxRow,
@@ -115,12 +117,27 @@ async def memory_scope_diagnostics(container: Container, *, memory_scope_id: str
         pending_suggestions = await _count_by_memory_scope(
             session, MemorySuggestionRow, memory_scope_id, "pending"
         )
+        context_links = await _status_counts_by_memory_scope(
+            session,
+            MemoryContextLinkRow,
+            memory_scope_id,
+        )
+        context_link_suggestions = await _status_counts_by_memory_scope(
+            session,
+            MemoryContextLinkSuggestionRow,
+            memory_scope_id,
+        )
     return {
         "memory_scope_id": memory_scope_id,
         "facts": {"active": active_facts, "deleted": deleted_facts},
         "documents": {"active": active_documents, "deleted": deleted_documents},
         "chunks": {"active": active_chunks, "deleted": deleted_chunks},
         "suggestions": {"pending": pending_suggestions},
+        "context_links": _with_status_defaults(context_links, ("active", "deleted")),
+        "context_link_suggestions": _with_status_defaults(
+            context_link_suggestions,
+            ("pending", "approved", "rejected", "expired"),
+        ),
     }
 
 
@@ -137,6 +154,8 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
         documents = await _status_counts(session, MemoryDocumentRow)
         chunks = await _status_counts(session, MemoryChunkRow)
         suggestions = await _status_counts(session, MemorySuggestionRow)
+        context_links = await _status_counts(session, MemoryContextLinkRow)
+        context_link_suggestions = await _status_counts(session, MemoryContextLinkSuggestionRow)
     capabilities = await container.get_capabilities.execute()
     adapter_statuses = {
         adapter.name: {
@@ -166,6 +185,11 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
             "documents": documents,
             "chunks": chunks,
             "suggestions": suggestions,
+            "context_links": _with_status_defaults(context_links, ("active", "deleted")),
+            "context_link_suggestions": _with_status_defaults(
+                context_link_suggestions,
+                ("pending", "approved", "rejected", "expired"),
+            ),
         },
         "adapters": adapter_statuses,
         "circuits": circuit_snapshots,
@@ -183,10 +207,7 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
 
 async def _count_by_memory_scope(
     session: AsyncSession,
-    model: type[MemoryFactRow]
-    | type[MemoryDocumentRow]
-    | type[MemoryChunkRow]
-    | type[MemorySuggestionRow],
+    model: type[Any],
     memory_scope_id: str,
     status: str,
 ) -> int:
@@ -202,19 +223,38 @@ async def _count_by_memory_scope(
     )
 
 
+async def _status_counts_by_memory_scope(
+    session: AsyncSession,
+    model: type[Any],
+    memory_scope_id: str,
+) -> dict[str, int]:
+    return {
+        str(status): int(count)
+        for status, count in (
+            await session.execute(
+                select(model.status, func.count(model.id))
+                .where(model.memory_scope_id == memory_scope_id)
+                .group_by(model.status)
+            )
+        ).all()
+    }
+
+
 async def _status_counts(
     session: AsyncSession,
-    model: type[MemoryOutboxRow]
-    | type[MemoryFactRow]
-    | type[MemoryDocumentRow]
-    | type[MemoryChunkRow]
-    | type[MemorySuggestionRow],
+    model: type[Any],
 ) -> dict[str, int]:
     return {
         str(status): int(count)
         for status, count in (
             await session.execute(select(model.status, func.count(model.id)).group_by(model.status))
         ).all()
+    }
+
+
+def _with_status_defaults(counts: dict[str, int], statuses: tuple[str, ...]) -> dict[str, int]:
+    return {status: counts.get(status, 0) for status in statuses} | {
+        status: count for status, count in counts.items() if status not in statuses
     }
 
 
