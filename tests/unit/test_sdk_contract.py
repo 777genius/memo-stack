@@ -2,7 +2,13 @@ import json
 
 import httpx
 import pytest
-from infinity_context_sdk import ContextBundle, MemoryScope, InfinityContextClient, InfinityContextError, ReadScope
+from infinity_context_sdk import (
+    ContextBundle,
+    InfinityContextClient,
+    InfinityContextError,
+    MemoryScope,
+    ReadScope,
+)
 
 
 def test_sdk_sends_auth_and_params() -> None:
@@ -760,7 +766,10 @@ def test_sdk_exports_graph_with_episode_limit() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         seen["method"] = request.method
         seen["url"] = str(request.url)
-        return httpx.Response(200, json={"data": {"schema_version": "infinity_context.graph_export.v1"}})
+        return httpx.Response(
+            200,
+            json={"data": {"schema_version": "infinity_context.graph_export.v1"}},
+        )
 
     client = InfinityContextClient(
         base_url="http://memory.test",
@@ -875,6 +884,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "source_refs_total": 25,
                         "source_refs_returned": 20,
                         "source_refs_truncated": True,
+                        "citation_quote_previews_rendered": 9,
+                        "sensitive_citation_quote_previews_skipped": 1,
                         "api_key": raw_secret,
                     },
                     "items": [
@@ -1002,6 +1013,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.source_refs_total == 25
     assert bundle.diagnostics.source_refs_returned == 20
     assert bundle.diagnostics.source_refs_truncated is True
+    assert bundle.diagnostics.citation_quote_previews_rendered == 9
+    assert bundle.diagnostics.sensitive_citation_quote_previews_skipped == 1
     assert "api_key" not in bundle.diagnostics.raw
 
     item = bundle.items[0]

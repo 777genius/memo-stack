@@ -115,6 +115,8 @@ class ContextBundleDiagnostics:
     source_refs_total: int = 0
     source_refs_returned: int = 0
     source_refs_truncated: bool = False
+    citation_quote_previews_rendered: int = 0
+    sensitive_citation_quote_previews_skipped: int = 0
 
 
 @dataclass(frozen=True)
@@ -312,6 +314,12 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         source_refs_total=_non_negative_int(raw.get("source_refs_total")),
         source_refs_returned=_non_negative_int(raw.get("source_refs_returned")),
         source_refs_truncated=_safe_bool(raw.get("source_refs_truncated")),
+        citation_quote_previews_rendered=_non_negative_int(
+            raw.get("citation_quote_previews_rendered")
+        ),
+        sensitive_citation_quote_previews_skipped=_non_negative_int(
+            raw.get("sensitive_citation_quote_previews_skipped")
+        ),
     )
 
 
