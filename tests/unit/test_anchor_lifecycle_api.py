@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,68 @@ def overwrite_anchor_aliases(client: TestClient, anchor_id: str, aliases: list[s
             await session.commit()
 
     asyncio.run(run())
+
+
+def insert_legacy_anchor_row(client: TestClient, *, anchor_id: str, created_at: str) -> None:
+    created = datetime.fromisoformat(created_at)
+
+    async def run() -> None:
+        container = client.app.state.container
+        async with AsyncSession(container.engine) as session:
+            session.add(
+                MemoryAnchorRow(
+                    id=anchor_id,
+                    space_id="space_client_app",
+                    memory_scope_id="memory_scope_default",
+                    kind="organization",
+                    normalized_key="legacy-openai",
+                    label="Legacy OpenAI",
+                    aliases_json=[],
+                    description=None,
+                    status="active",
+                    confidence="medium",
+                    evidence_refs_json=[],
+                    observed_at=None,
+                    valid_from=None,
+                    valid_to=None,
+                    metadata_json={},
+                    created_at=created,
+                    updated_at=created,
+                )
+            )
+            await session.commit()
+
+    asyncio.run(run())
+
+
+def test_anchor_public_api_defaults_legacy_lifecycle_fields(tmp_path: Path) -> None:
+    created_at = "2026-06-01T10:00:00+00:00"
+    with make_client(tmp_path) as client:
+        insert_legacy_anchor_row(
+            client,
+            anchor_id="anchor_legacy_openai_api",
+            created_at=created_at,
+        )
+        listed = client.get(
+            "/v1/anchors",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "organization",
+            },
+            headers=auth_headers(),
+        )
+
+    assert listed.status_code == 200, listed.text
+    anchors = listed.json()["data"]
+    anchor = next(item for item in anchors if item["id"] == "anchor_legacy_openai_api")
+    assert anchor["confidence"] == "medium"
+    assert anchor["evidence_refs"] == []
+    assert anchor["observed_at"] == created_at
+    assert anchor["valid_from"] is None
+    assert anchor["valid_to"] is None
+    assert anchor["created_at"] == created_at
+    assert anchor["updated_at"] == created_at
 
 
 def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:

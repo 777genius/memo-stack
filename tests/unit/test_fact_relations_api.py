@@ -117,6 +117,9 @@ def test_fact_relations_link_list_unlink_and_relink(tmp_path: Path) -> None:
     assert deleted_list.json()["data"]["items"][0]["relation"]["status"] == "deleted"
     assert relinked.status_code == 201
     assert relinked.json()["data"]["id"] != linked.json()["data"]["id"]
+    assert relinked.json()["data"]["observed_at"] is not None
+    assert relinked.json()["data"]["valid_from"] is None
+    assert relinked.json()["data"]["valid_to"] is None
 
 
 def test_fact_relations_batch_list_enforces_limit_per_fact(tmp_path: Path) -> None:
