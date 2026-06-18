@@ -268,11 +268,25 @@ def _scorecard_coverage_floors(
     suite_results: Mapping[str, dict[str, object]],
     suites: Mapping[str, dict[str, object]],
 ) -> dict[str, object]:
+    quality_metrics = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
+    semantic_metrics = _scorecard_result_metrics(suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE))
     auto_metrics = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
     checks = {
         f"{suite}_case_count": int(suites[suite].get("case_count", 0)) >= minimum
         for suite, minimum in _MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS.items()
     }
+    checks["quality_required_case_coverage_rate"] = (
+        quality_metrics.get("required_case_coverage_rate") == 1.0
+    )
+    checks["quality_missing_required_case_count"] = (
+        quality_metrics.get("missing_required_case_count") == 0
+    )
+    checks["semantic_linking_required_case_coverage_rate"] = (
+        semantic_metrics.get("required_case_coverage_rate") == 1.0
+    )
+    checks["semantic_linking_missing_required_case_count"] = (
+        semantic_metrics.get("missing_required_case_count") == 0
+    )
     checks["auto_memory_extraction_case_count"] = (
         int(auto_metrics.get("extraction_case_count", 0))
         >= _MEMORY_QUALITY_SCORECARD_MIN_EXTRACTION_CASES
@@ -1375,6 +1389,8 @@ def _scorecard_metrics(
     return {
         "quality_recall_at_5": quality.get("recall_at_5", 0.0),
         "quality_precision_at_5": quality.get("precision_at_5", 0.0),
+        "quality_required_case_coverage_rate": quality.get("required_case_coverage_rate", 0.0),
+        "quality_missing_required_case_count": quality.get("missing_required_case_count", 0),
         "long_multi_session_recall_at_5": long.get("multi_session_recall_at_5", 0.0),
         "long_temporal_update_accuracy": long.get("temporal_update_accuracy", 0.0),
         "auto_extraction_positive_recall_rate": auto.get(
@@ -1416,6 +1432,14 @@ def _scorecard_metrics(
             0.0,
         ),
         "semantic_linking_review_approval_rate": semantic.get("review_approval_rate", 0.0),
+        "semantic_linking_required_case_coverage_rate": semantic.get(
+            "required_case_coverage_rate",
+            0.0,
+        ),
+        "semantic_linking_missing_required_case_count": semantic.get(
+            "missing_required_case_count",
+            0,
+        ),
         "semantic_linking_false_positive_count": semantic.get("false_positive_count", 0),
         "semantic_linking_cross_scope_leak_count": semantic.get("cross_scope_leak_count", 0),
         "graph_recall_rate": graph.get("graph_recall_rate", 0.0),

@@ -35,6 +35,8 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "status": "ok",
             "metrics": {
                 "case_count": 16,
+                "required_case_coverage_rate": 1.0,
+                "missing_required_case_count": 0,
                 "recall_at_5": 0.96,
                 "precision_at_5": 0.95,
                 "answer_support_rate": 1.0,
@@ -58,6 +60,8 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "status": "ok",
             "metrics": {
                 "case_count": 10,
+                "required_case_coverage_rate": 1.0,
+                "missing_required_case_count": 0,
                 "ranking_accuracy": 1.0,
                 "event_linking_accuracy": 1.0,
                 "temporal_intent_recall": 1.0,
@@ -1465,6 +1469,37 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["metrics"]["semantic_linking_false_positive_count"] == 1
     assert result["metrics"]["semantic_linking_cross_scope_leak_count"] == 1
     assert result["gates"]["all_capabilities_ok"] is False
+
+
+def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["quality-golden"]["metrics"].update(
+        {
+            "required_case_coverage_rate": 0.8889,
+            "missing_required_case_count": 1,
+        }
+    )
+    suite_results["semantic-linking-golden"]["metrics"].update(
+        {
+            "required_case_coverage_rate": 0.9,
+            "missing_required_case_count": 1,
+        }
+    )
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    assert result["capabilities"]["coverage_floors"]["ok"] is False
+    assert result["capabilities"]["coverage_floors"]["failed_checks"] == [
+        "quality_missing_required_case_count",
+        "quality_required_case_coverage_rate",
+        "semantic_linking_missing_required_case_count",
+        "semantic_linking_required_case_coverage_rate",
+    ]
+    assert result["metrics"]["quality_required_case_coverage_rate"] == 0.8889
+    assert result["metrics"]["quality_missing_required_case_count"] == 1
+    assert result["metrics"]["semantic_linking_required_case_coverage_rate"] == 0.9
+    assert result["metrics"]["semantic_linking_missing_required_case_count"] == 1
 
 
 def test_memory_quality_scorecard_fails_on_undercovered_semantic_linking_suite() -> None:
