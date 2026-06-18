@@ -33,6 +33,7 @@ def asset_extraction_chunk_metadata(
         result=result,
         extracted_text_value=extracted_text_value,
     )
+    total_ref_candidates = _source_ref_candidate_count(result)
     metadata: dict[str, object] = {
         "source_kind": ASSET_EXTRACTION_SOURCE_TYPE,
         "asset_id": str(asset.id),
@@ -43,6 +44,9 @@ def asset_extraction_chunk_metadata(
         "parser_name": safe_metadata_text(result.parser_name),
         "normalized_content_type": safe_metadata_text(result.normalized_content_type),
         "source_ref_count": len(refs),
+        "source_ref_count_total": total_ref_candidates,
+        "source_refs_limit": _MAX_SOURCE_REFS,
+        "source_refs_truncated": total_ref_candidates > len(refs),
         "source_refs": refs,
     }
     if result.parser_version:
@@ -153,6 +157,11 @@ def _extraction_source_refs(
             "quote_preview": extracted_text_value[:240],
         }
     ]
+
+
+def _source_ref_candidate_count(result: ExtractionResult) -> int:
+    count = sum(1 for element in result.elements if element.text.strip())
+    return count or 1
 
 
 def _element_source_ref(

@@ -161,6 +161,35 @@ def test_asset_extraction_chunk_metadata_redacts_provider_source() -> None:
     assert "[redacted]" in metadata["source_refs"][0]["provider_source"]
 
 
+def test_asset_extraction_chunk_metadata_reports_truncated_source_refs() -> None:
+    now = datetime(2026, 6, 14, 10, tzinfo=UTC)
+    metadata = asset_extraction_chunk_metadata(
+        asset=_asset(now),
+        job=_job(now),
+        result=ExtractionResult(
+            status="succeeded",
+            normalized_content_type="text/plain",
+            title="Many elements",
+            elements=tuple(
+                ExtractedElement(
+                    kind="text",
+                    text=f"element-{index}",
+                    metadata={"source": "provider"},
+                )
+                for index in range(250)
+            ),
+            parser_name="test_parser",
+        ),
+        extracted_text_value="\n".join(f"element-{index}" for index in range(250)),
+    )
+
+    assert metadata["source_ref_count"] == 200
+    assert metadata["source_ref_count_total"] == 250
+    assert metadata["source_refs_limit"] == 200
+    assert metadata["source_refs_truncated"] is True
+    assert len(metadata["source_refs"]) == 200
+
+
 def test_extraction_job_running_records_lease_and_heartbeat() -> None:
     now = datetime(2026, 6, 14, 10, tzinfo=UTC)
     lease_expires_at = now + timedelta(minutes=15)
