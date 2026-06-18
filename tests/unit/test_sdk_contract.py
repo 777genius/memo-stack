@@ -409,6 +409,53 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert diagnostics.profile("missing") is None
 
 
+def test_sdk_defaults_legacy_extraction_capability_contract_fields() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://memory.test/v1/capabilities"
+        return httpx.Response(
+            200,
+            json={
+                "extraction": {
+                    "enabled": True,
+                    "default_profile": "standard_local",
+                    "profiles_v2": [
+                        {
+                            "name": "standard_local",
+                            "enabled": True,
+                            "status": "ok",
+                            "providers": ["local_text"],
+                            "external_provider_egress": False,
+                            "requires_explicit_external_ai": False,
+                            "fallback_profiles": [],
+                            "memory_promotion": "review_required",
+                            "source_text_policy": "untrusted_evidence",
+                            "artifact_payloads_bounded": True,
+                        },
+                    ],
+                    "providers": {},
+                    "policy": {"schema_version": 1},
+                    "limits": {},
+                }
+            },
+        )
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    diagnostics = client.extraction_capability_diagnostics()
+    standard_local = diagnostics.profile("standard_local")
+
+    assert diagnostics.evidence_contract == {}
+    assert standard_local is not None
+    assert standard_local.input_modalities == ()
+    assert standard_local.evidence_coordinates == ()
+    assert standard_local.primary_artifact_types == ()
+    assert standard_local.raw is not None
+    assert "input_modalities" not in standard_local.raw
+
+
 def test_sdk_sends_memory_insights_scope_and_limits() -> None:
     seen: dict[str, object] = {}
 
