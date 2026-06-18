@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import uuid
 import zlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from memo_stack_adapters.extraction.openai_vision import OpenAIImageVisionAdapter
@@ -300,6 +301,8 @@ def _base_report(
         "ok": False,
         "required_env": [REQUIRED_ENV],
         "secrets_redacted": True,
+        "generated_at": _utc_now(),
+        "git": _git_info(),
         "provider_key_present": has_provider_key,
         "models": {
             "vision": args.vision_model,
@@ -375,6 +378,36 @@ def _write_report(report: dict[str, object], report_out: str | None) -> None:
     path = Path(report_out)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _git_info() -> dict[str, object]:
+    return {
+        "commit": _git_output("rev-parse", "HEAD"),
+        "short_commit": _git_output("rev-parse", "--short", "HEAD"),
+        "dirty": bool(_git_output("status", "--short")),
+    }
+
+
+def _git_output(*args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=Path(__file__).resolve().parents[1],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def _audio_fixture_path(configured: str | None, tmp_dir: Path) -> Path | None:

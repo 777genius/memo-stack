@@ -302,12 +302,20 @@ def _audit_provider_report(
     if report is None:
         return
     components = report.get("components") if isinstance(report.get("components"), dict) else {}
+    git = report.get("git") if isinstance(report.get("git"), dict) else {}
     _check(
         checks,
         failures,
         "live_provider_proof_passed",
         report.get("ok") is True,
         "Live provider canary did not pass",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_clean_commit",
+        git.get("dirty") is False and bool(git.get("commit")),
+        "Live provider proof must be tied to a clean git commit",
     )
     _check(
         checks,

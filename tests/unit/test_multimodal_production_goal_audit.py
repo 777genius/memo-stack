@@ -76,6 +76,7 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
             {
                 "suite": "memo-stack-multimodal-live-provider-canary",
                 "ok": False,
+                "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
                 "provider_key_present": False,
                 "components": {
                     "provider_key": {
@@ -102,9 +103,38 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     assert result.ok is False
     assert result.checks["docker_live_proof_passed"] is False
     assert result.checks["live_provider_proof_passed"] is False
+    assert result.checks["live_provider_clean_commit"] is True
     assert result.checks["live_provider_key_present"] is False
     assert any("Docker multimodal live proof" in failure for failure in result.failures)
     assert any("Live provider canary" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_rejects_provider_proof_without_git(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    provider.pop("git")
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["live_provider_clean_commit"] is False
+    assert any("Live provider proof must be tied" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
@@ -207,6 +237,7 @@ def _provider_report() -> dict[str, object]:
     return {
         "suite": "memo-stack-multimodal-live-provider-canary",
         "ok": True,
+        "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "provider_key_present": True,
         "components": {
             "provider_key": {"status": "configured"},

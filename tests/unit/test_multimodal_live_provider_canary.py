@@ -52,6 +52,10 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert file_report["suite"] == "memo-stack-multimodal-live-provider-canary"
     assert file_report["required_env"] == ["MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"]
     assert file_report["secrets_redacted"] is True
+    assert isinstance(file_report["generated_at"], str)
+    assert file_report["git"]["commit"]
+    assert file_report["git"]["short_commit"]
+    assert isinstance(file_report["git"]["dirty"], bool)
     assert file_report["provider_key_present"] is False
     assert file_report["components"]["provider_key"] == {
         "message": (
