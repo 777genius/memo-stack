@@ -73,6 +73,17 @@ Canonical anchors are durable entities:
 - Support merge, split, audit trail and alias conflict checks.
 - Can be linked to facts, captures, assets, chunks, suggestions and threads.
 
+Anchor identity conflict rules:
+
+- Conflicts are scoped by space, MemoryScope and anchor kind.
+- Same-name anchors across different kinds are allowed when evidence supports
+  disambiguation, for example `Alex` as a person and `Alex` as a project.
+- Label and alias conflicts must be checked on create, update, merge and split.
+- Organization and project anchors must also reject compact brand variants such
+  as `OpenAI` vs `Open AI` or `GitHub` vs `Git Hub`.
+- Split into an existing anchor must preserve evidence refs, temporal validity
+  and audit metadata instead of creating a duplicate.
+
 Tags are lightweight facets:
 
 - User-facing labels for filtering, grouping and quick navigation.
@@ -254,7 +265,11 @@ Current context-link guardrails:
 Deterministic ordering:
 
 - Primary sort is score.
+- Duplicate candidates use the highest score first; tied scores use retrieval
+  source priority and then stable source/provenance fields.
 - Tie-breakers must use stable source/provenance fields before generated ids.
+- Provider return order must not decide which duplicate candidate becomes the
+  primary context item.
 - Random ids cannot decide which evidence fits into a capped context.
 
 ## API And SDK Contract
