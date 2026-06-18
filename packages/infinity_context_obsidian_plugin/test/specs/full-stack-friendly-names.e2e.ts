@@ -59,7 +59,7 @@ describe("Infinity Context friendly project names E2E", function () {
     await waitForPluginIdle();
     await waitForConnectedLayout(primaryScope);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.spaceSlug, rawSpaceSlug);
     assert.equal(snapshot.memoryScopeExternalRef, rawMemoryScopeExternalRef);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
@@ -95,7 +95,7 @@ describe("Infinity Context friendly project names E2E", function () {
     await browser.executeObsidianCommand("infinity-context:open-inbox");
     assert.equal(await activeFilePath(), posixPath(path.join(scopedRoot, "inbox", "README.md")));
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.paths.inbox, posixPath(path.join(scopedRoot, "inbox")));
     assert.equal(conflictFiles(vaultPath).length, 0);
 
@@ -151,7 +151,7 @@ describe("Infinity Context friendly project names E2E", function () {
     await waitForPluginIdle();
     await waitForConnectedLayout(secondaryScope);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.spaceSlug, secondaryScope.spaceSlug);
     assert.equal(snapshot.memoryScopeExternalRef, secondaryScope.memoryScopeExternalRef);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(secondaryRoot, "generated", "facts")));
@@ -179,7 +179,7 @@ describe("Infinity Context friendly project names E2E", function () {
 
     await browser.executeObsidianCommand("infinity-context:open-inbox");
     assert.equal(await activeFilePath(), posixPath(path.join(secondaryRoot, "inbox", "README.md")));
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.paths.conflicts, posixPath(path.join(secondaryRoot, "conflicts")));
     assert.equal(conflictFiles(vaultPath, primaryScope).length, 0);
     assert.equal(conflictFiles(vaultPath, secondaryScope).length, 0);
@@ -220,7 +220,7 @@ describe("Infinity Context friendly project names E2E", function () {
     await waitForPluginScope(primaryScope);
     await waitForPluginIdle();
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.apiUrl, baseUrl);
     assert.equal(snapshot.spaceSlug, rawSpaceSlug);
     assert.equal(snapshot.memoryScopeExternalRef, rawMemoryScopeExternalRef);
@@ -243,7 +243,7 @@ describe("Infinity Context friendly project names E2E", function () {
 
     await browser.executeObsidianCommand("infinity-context:open-inbox");
     assert.equal(await activeFilePath(), posixPath(path.join(scopedRoot, "inbox", "README.md")));
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.paths.conflicts, posixPath(path.join(scopedRoot, "conflicts")));
     assert.equal(conflictFiles(vaultPath).length, 0);
 
@@ -272,7 +272,7 @@ describe("Infinity Context friendly project names E2E", function () {
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPluginScope(primaryScope);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.apiUrl, baseUrl);
     assert.equal(snapshot.rootFolder, rootFolder);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
@@ -292,7 +292,7 @@ describe("Infinity Context friendly project names E2E", function () {
 
     await browser.executeObsidianCommand("infinity-context:open-inbox");
     assert.equal(await activeFilePath(), posixPath(path.join(scopedRoot, "inbox", "README.md")));
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.inboxExists, true);
     assert.equal(snapshot.conflictsExists, true);
 
@@ -546,7 +546,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string, scope: Scope =
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -728,7 +728,7 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -738,7 +738,7 @@ async function waitForPluginScope(scope: Scope): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return snapshot.spaceSlug === scope.spaceSlug && snapshot.memoryScopeExternalRef === scope.memoryScopeExternalRef;
       } catch (_error) {
         return false;
@@ -755,7 +755,7 @@ async function waitForConnectedLayout(scope: Scope): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return (
           snapshot.spaceSlug === scope.spaceSlug &&
           snapshot.memoryScopeExternalRef === scope.memoryScopeExternalRef &&
@@ -824,9 +824,9 @@ async function setSettingsInput(name: string, value: string): Promise<void> {
   assert.equal(changed, true, `Could not change Infinity Context settings input ${name}`);
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

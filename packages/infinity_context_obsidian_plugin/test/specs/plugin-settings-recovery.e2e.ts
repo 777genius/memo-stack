@@ -57,7 +57,7 @@ describe("Infinity Context plugin settings recovery E2E", function () {
     };
     await browser.executeObsidian(
       async ({ plugins }, settings) => {
-        const plugin = plugins.memoStack as any;
+        const plugin = plugins.infinityContext as any;
         Object.assign(plugin.settings, settings);
         await plugin.saveSettings();
       },
@@ -300,7 +300,7 @@ async function pluginRuntime(): Promise<{
   snapshot: any;
 }> {
   return await browser.executeObsidian(({ app, plugins }) => {
-    const plugin = (plugins as any).memoStack as any;
+    const plugin = (plugins as any).infinityContext as any;
     return {
       loaded: Boolean(plugin),
       commandIds: Object.keys((app as any).commands.commands)

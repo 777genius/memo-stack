@@ -368,7 +368,7 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -377,7 +377,7 @@ async function waitForPluginIdle(): Promise<void> {
 async function waitForApplyImport(value: boolean): Promise<void> {
   await browser.waitUntil(async () => {
     return await browser.executeObsidian(({ plugins }, expected) => {
-      return (plugins.memoStack as any).settings.applyImportOnSync === expected;
+      return (plugins.infinityContext as any).settings.applyImportOnSync === expected;
     }, value);
   }, {
     timeout: 20000,
@@ -454,9 +454,9 @@ async function setSettingsToggle(name: string, value: boolean): Promise<void> {
   assert.equal(changed, true, `Could not change Infinity Context settings toggle ${name}`);
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

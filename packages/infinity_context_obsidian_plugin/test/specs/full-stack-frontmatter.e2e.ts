@@ -138,7 +138,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -280,15 +280,15 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

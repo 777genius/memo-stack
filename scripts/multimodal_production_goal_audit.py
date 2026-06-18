@@ -84,6 +84,8 @@ class GoalAuditResult:
     failures: tuple[str, ...]
     reports: dict[str, object]
     git: dict[str, object]
+    blocked_requirements: tuple[dict[str, object], ...] = ()
+    not_evaluable_checks: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -92,6 +94,8 @@ class GoalAuditResult:
             "ok": self.ok,
             "checks": dict(self.checks),
             "failures": list(self.failures),
+            "blocked_requirements": list(self.blocked_requirements),
+            "not_evaluable_checks": list(self.not_evaluable_checks),
             "reports": dict(self.reports),
             "git": dict(self.git),
             "secrets_redacted": True,
@@ -197,12 +201,15 @@ def run_goal_audit(
         "docker": _report_summary(docker),
         "provider": _report_summary(provider),
     }
+    blocked_requirements = _blocked_requirements(docker=docker, provider=provider)
     return GoalAuditResult(
         ok=all(checks.values()),
         checks=checks,
         failures=tuple(failures),
         reports=reports,
         git=git,
+        blocked_requirements=blocked_requirements,
+        not_evaluable_checks=_not_evaluable_checks(blocked_requirements),
     )
 
 
@@ -340,9 +347,20 @@ def _audit_docker_report(
         provider_contract.get("ok") is True
         and set(_string_list(provider_contract.get("transcription_supported_file_types")))
         == REQUIRED_OPENAI_AUDIO_SUFFIXES
+        and provider_contract.get("transcription_max_provider_upload_bytes")
+        == 25 * 1024 * 1024
         and set(_string_list(provider_contract.get("vision_supported_file_types")))
         == REQUIRED_OPENAI_VISION_SUFFIXES,
         "Docker live proof provider contract is not aligned with current media providers",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_audio_upload_limit_present",
+        provider_contract.get("transcription_max_provider_upload_bytes") == 25 * 1024 * 1024
+        and _positive_int(provider_contract.get("transcription_effective_max_upload_bytes"))
+        is not None,
+        "Docker live proof provider contract is missing OpenAI audio upload limits",
     )
     docker_vision_detail_levels = set(
         _string_list(provider_contract.get("vision_detail_levels"))
@@ -362,6 +380,16 @@ def _audit_docker_report(
         _positive_int(provider_contract.get("vision_max_provider_binary_upload_bytes"))
         is not None,
         "Docker live proof provider contract is missing OpenAI vision binary upload limit",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_vision_payload_limits_present",
+        _positive_int(provider_contract.get("vision_max_provider_payload_bytes")) is not None
+        and _positive_int(provider_contract.get("vision_max_images_per_request")) is not None
+        and _positive_int(provider_contract.get("vision_effective_max_upload_bytes"))
+        is not None,
+        "Docker live proof provider contract is missing OpenAI vision payload limits",
     )
     _check(
         checks,
@@ -586,6 +614,85 @@ def _failure_suffix(
     if not parts:
         return ""
     return ": " + "; ".join(_safe_text(part, limit=96) or "" for part in parts[:3])
+
+
+def _blocked_requirements(
+    *,
+    docker: Mapping[str, object] | None,
+    provider: Mapping[str, object] | None,
+) -> tuple[dict[str, object], ...]:
+    blocked: list[dict[str, object]] = []
+    docker_blocker = _proof_blocker(
+        docker,
+        area="docker_live_proof",
+        preferred_component="docker_daemon",
+    )
+    if docker_blocker is not None:
+        docker_blocker["downstream_checks"] = [
+            "docker_live_capabilities_provider_contract_present",
+            "docker_live_capabilities_provider_contract_docs_aligned",
+            "docker_live_capabilities_audio_upload_limit_present",
+            "docker_live_capabilities_vision_detail_contract_docs_aligned",
+            "docker_live_capabilities_vision_binary_limit_present",
+            "docker_live_capabilities_vision_payload_limits_present",
+            "docker_live_extraction_cases_complete",
+        ]
+        blocked.append(docker_blocker)
+
+    provider_blocker = _proof_blocker(
+        provider,
+        area="live_provider_proof",
+        preferred_component="provider_key",
+    )
+    if provider_blocker is not None:
+        provider_blocker["downstream_checks"] = [
+            "live_provider_components_succeeded",
+        ]
+        blocked.append(provider_blocker)
+    return tuple(blocked)
+
+
+def _proof_blocker(
+    report: Mapping[str, object] | None,
+    *,
+    area: str,
+    preferred_component: str,
+) -> dict[str, object] | None:
+    if not isinstance(report, Mapping) or report.get("ok") is True:
+        return None
+    components = report.get("components") if isinstance(report.get("components"), dict) else {}
+    failure = report.get("failure") if isinstance(report.get("failure"), dict) else None
+    component = components.get(preferred_component)
+    component = component if isinstance(component, dict) else None
+    payload = failure or component
+    if not isinstance(payload, Mapping):
+        return None
+
+    status = str(payload.get("status") or "")
+    degraded = payload.get("degraded") is True or status in {"degraded", "skipped"}
+    reason = _safe_text(payload.get("reason"))
+    action = _safe_text(payload.get("operator_action"))
+    if not degraded and not reason:
+        return None
+
+    return {
+        "area": area,
+        "component": _safe_text(payload.get("component")) or preferred_component,
+        "reason": reason,
+        "operator_action": action,
+        "user_retryable": payload.get("user_retryable") is True,
+    }
+
+
+def _not_evaluable_checks(
+    blocked_requirements: tuple[dict[str, object], ...],
+) -> tuple[str, ...]:
+    checks: list[str] = []
+    for blocker in blocked_requirements:
+        downstream = blocker.get("downstream_checks")
+        if isinstance(downstream, list):
+            checks.extend(str(item) for item in downstream)
+    return tuple(dict.fromkeys(checks))
 
 
 def _report_summary(report: Mapping[str, object] | None) -> dict[str, object]:

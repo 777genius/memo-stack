@@ -58,7 +58,7 @@ describe("Infinity Context path safety E2E", function () {
     await waitForPluginIdle();
     await sleep(500);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.match(snapshot.pathError, /Folder must be relative to the vault/);
     assert.equal(snapshot.lastCommand, null);
     assert.equal(readCliCalls(vaultPath).length, 0);
@@ -74,7 +74,7 @@ describe("Infinity Context path safety E2E", function () {
     await waitForPluginIdle();
     await sleep(500);
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.match(snapshot.pathError, /Project or memory_scope contains unsafe formatting characters/);
     assert.equal(snapshot.lastCommand, null);
     assert.equal(readCliCalls(vaultPath).length, 0);
@@ -95,7 +95,7 @@ describe("Infinity Context path safety E2E", function () {
     const exportedFact = factFileForId(vaultPath, fact.id);
     assert.match(fs.readFileSync(exportedFact, "utf8"), /path safety exported backend fact/);
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.pathError, "");
     assert.equal(snapshot.rootFolder, rootFolder);
     assert.equal(snapshot.spaceSlug, spaceSlug);
@@ -186,7 +186,7 @@ describe("Infinity Context path safety E2E", function () {
     await waitForPluginIdle();
     await sleep(500);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.pathError, "");
     assert.equal(snapshot.lastCommand, "sync");
     assert.equal(snapshot.lastResult.exitCode, 1);
@@ -206,7 +206,7 @@ describe("Infinity Context path safety E2E", function () {
     const exportedFact = factFileForId(vaultPath, fact.id);
     assert.match(fs.readFileSync(exportedFact, "utf8"), /connector path recovery backend fact/);
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.lastCommand, "sync");
     assert.equal(snapshot.lastResult.exitCode, 0);
     assert.equal(snapshot.generatedFactsExists, true);
@@ -238,7 +238,7 @@ describe("Infinity Context path safety E2E", function () {
     await setSettingsInput("commandTimeoutMs", "20000");
     await waitForPathReady(rootFolder, spaceSlug);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.vaultPath, vaultPath);
     assert.equal(snapshot.pathError, "");
 
@@ -252,7 +252,7 @@ describe("Infinity Context path safety E2E", function () {
     const exportedFact = factFileForId(vaultPath, fact.id);
     assert.match(fs.readFileSync(exportedFact, "utf8"), /default vault path backend fact/);
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.vaultPath, vaultPath);
     assert.equal(snapshot.generatedFactsExists, true);
 
@@ -294,7 +294,7 @@ describe("Infinity Context path safety E2E", function () {
     await waitForCliCalls(wrongVaultPath, 2);
     await waitForPluginIdle();
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.vaultPath, wrongVaultPath);
     assert.equal(snapshot.pathError, "");
     assert.equal(snapshot.generatedFactsExists, false);
@@ -324,7 +324,7 @@ describe("Infinity Context path safety E2E", function () {
     assert.equal(factFiles(vaultPath).length, 1);
     assert.equal(factFiles(wrongVaultPath).length, 1);
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.vaultPath, vaultPath);
     assert.equal(snapshot.generatedFactsExists, true);
 
@@ -360,7 +360,7 @@ describe("Infinity Context path safety E2E", function () {
     await browser.reloadObsidian();
     await waitForPathReady(rootFolder, spaceSlug);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.vaultPath, vaultPath);
     assert.equal(snapshot.pathError, "");
     assert.equal(readCliCalls(vaultPath).length, 0);
@@ -375,7 +375,7 @@ describe("Infinity Context path safety E2E", function () {
     const exportedFact = factFileForId(vaultPath, fact.id);
     assert.match(fs.readFileSync(exportedFact, "utf8"), /blank override reload backend fact/);
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.vaultPath, vaultPath);
     assert.equal(snapshot.generatedFactsExists, true);
 
@@ -522,7 +522,7 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -532,7 +532,7 @@ async function waitForPathError(pattern: RegExp): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        return pattern.test((await memoStackSnapshot()).pathError);
+        return pattern.test((await infinityContextSnapshot()).pathError);
       } catch (_error) {
         return false;
       }
@@ -548,7 +548,7 @@ async function waitForPathReady(expectedRoot: string, expectedSpace: string): Pr
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return (
           snapshot.pathError === "" &&
           snapshot.rootFolder === expectedRoot &&
@@ -569,7 +569,7 @@ async function waitForVaultPath(expectedVaultPath: string): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return snapshot.pathError === "" && snapshot.vaultPath === expectedVaultPath;
       } catch (_error) {
         return false;
@@ -710,9 +710,9 @@ async function vaultActionButtonState(buttonText: string): Promise<{ exists: boo
   }, buttonText);
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

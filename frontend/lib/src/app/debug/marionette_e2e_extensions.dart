@@ -65,80 +65,80 @@ class _InfinityContextMarionetteE2eBridgeState
 
   static void _registerExtensions() {
     _register(
-      'memoStack.e2eState',
+      'infinityContext.e2eState',
       (handler, params) => handler.state(),
     );
     _register(
-      'memoStack.refresh',
+      'infinityContext.refresh',
       (handler, params) => handler.refresh(),
     );
     _register(
-      'memoStack.createMemoryScope',
+      'infinityContext.createMemoryScope',
       (handler, params) => handler.createMemoryScope(params),
     );
     _register(
-      'memoStack.switchMemoryScope',
+      'infinityContext.switchMemoryScope',
       (handler, params) => handler.switchMemoryScope(params),
     );
     _register(
-      'memoStack.updateMemoryScope',
+      'infinityContext.updateMemoryScope',
       (handler, params) => handler.updateMemoryScope(params),
     );
     _register(
-      'memoStack.deleteMemoryScope',
+      'infinityContext.deleteMemoryScope',
       (handler, params) => handler.deleteMemoryScope(params),
     );
     _register(
-      'memoStack.createThread',
+      'infinityContext.createThread',
       (handler, params) => handler.createThread(params),
     );
     _register(
-      'memoStack.submitCapture',
+      'infinityContext.submitCapture',
       (handler, params) => handler.submitCapture(params),
     );
     _register(
-      'memoStack.submitAttachmentCapture',
+      'infinityContext.submitAttachmentCapture',
       (handler, params) => handler.submitAttachmentCapture(params),
     );
     _register(
-      'memoStack.retryAssetExtraction',
+      'infinityContext.retryAssetExtraction',
       (handler, params) => handler.retryAssetExtraction(params),
     );
     _register(
-      'memoStack.cancelAssetExtraction',
+      'infinityContext.cancelAssetExtraction',
       (handler, params) => handler.cancelAssetExtraction(params),
     );
     _register(
-      'memoStack.reviewFirstPendingLinkSuggestion',
+      'infinityContext.reviewFirstPendingLinkSuggestion',
       (handler, params) => handler.reviewFirstPendingLinkSuggestion(params),
     );
     _register(
-      'memoStack.createManualContextLinkFromSuggestion',
+      'infinityContext.createManualContextLinkFromSuggestion',
       (handler, params) =>
           handler.createManualContextLinkFromSuggestion(params),
     );
     _register(
-      'memoStack.createMemoryAnchor',
+      'infinityContext.createMemoryAnchor',
       (handler, params) => handler.createMemoryAnchor(params),
     );
     _register(
-      'memoStack.updateMemoryAnchor',
+      'infinityContext.updateMemoryAnchor',
       (handler, params) => handler.updateMemoryAnchor(params),
     );
     _register(
-      'memoStack.deleteMemoryAnchor',
+      'infinityContext.deleteMemoryAnchor',
       (handler, params) => handler.deleteMemoryAnchor(params),
     );
     _register(
-      'memoStack.splitMemoryAnchorAlias',
+      'infinityContext.splitMemoryAnchorAlias',
       (handler, params) => handler.splitMemoryAnchorAlias(params),
     );
     _register(
-      'memoStack.mergeFirstAnchorSuggestion',
+      'infinityContext.mergeFirstAnchorSuggestion',
       (handler, params) => handler.mergeFirstAnchorSuggestion(params),
     );
     _register(
-      'memoStack.backfillMemoryAnchors',
+      'infinityContext.backfillMemoryAnchors',
       (handler, params) => handler.backfillMemoryAnchors(params),
     );
   }

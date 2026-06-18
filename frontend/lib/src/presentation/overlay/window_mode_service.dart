@@ -9,7 +9,7 @@ import 'package:window_manager/window_manager.dart';
 /// macOS: uses MethodChannel to control NSPanel properties natively.
 /// Windows/Linux: uses window_manager for alwaysOnTop + resize.
 class WindowModeService extends ChangeNotifier {
-  static const _channel = MethodChannel('com.memostack/window_mode');
+  static const _channel = MethodChannel('com.infinitycontext/window_mode');
 
   bool _isOverlay = false;
   bool get isOverlay => _isOverlay;

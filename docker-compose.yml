@@ -82,7 +82,7 @@ services:
     image: neo4j:5.26-community
     profiles: ["full"]
     environment:
-      NEO4J_AUTH: neo4j/memostackgraph
+      NEO4J_AUTH: neo4j/infinitycontextgraph
     ports:
       - "${MEMORY_NEO4J_HTTP_PORT:-7474}:7474"
       - "${MEMORY_NEO4J_BOLT_PORT:-7687}:7687"
@@ -103,7 +103,7 @@ services:
       MEMORY_GRAPHITI_ENABLED: "false"
       MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
-      MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: infinitycontextgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "false"
     ports:
       - "${MEMORY_SERVER_PORT:-7788}:7788"
@@ -123,7 +123,7 @@ services:
       MEMORY_GRAPHITI_ENABLED: "false"
       MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
-      MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: infinitycontextgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "false"
     depends_on:
       infinity_context_server:
@@ -143,7 +143,7 @@ services:
       MEMORY_GRAPHITI_ENABLED: "false"
       MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
-      MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: infinitycontextgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "false"
     depends_on:
       infinity_context_server:
@@ -168,7 +168,7 @@ services:
       MEMORY_GRAPHITI_ENABLED: "true"
       MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
-      MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: infinitycontextgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "true"
     ports:
       - "${MEMORY_SERVER_PORT:-7788}:7788"
@@ -200,7 +200,7 @@ services:
       MEMORY_GRAPHITI_ENABLED: "true"
       MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
-      MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: infinitycontextgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "true"
     depends_on:
       infinity_context_server_full:
@@ -225,7 +225,7 @@ services:
       MEMORY_GRAPHITI_ENABLED: "true"
       MEMORY_GRAPHITI_NEO4J_URI: bolt://infinity_context_neo4j:7687
       MEMORY_GRAPHITI_NEO4J_USER: neo4j
-      MEMORY_GRAPHITI_NEO4J_PASSWORD: memostackgraph
+      MEMORY_GRAPHITI_NEO4J_PASSWORD: infinitycontextgraph
       MEMORY_GRAPHITI_BUILD_INDICES: "true"
     depends_on:
       infinity_context_server_full:

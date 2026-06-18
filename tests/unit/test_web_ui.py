@@ -46,7 +46,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert operations_js.status_code == 200
     assert "localStorage" in js.text
     assert "Authorization" in js.text
-    assert "memoStackBrowser" in js.text
+    assert "infinityContextBrowser" in js.text
     assert "anchorCount" in index.text
     assert "Create Anchor" in index.text
     assert "Backfill Anchors" in index.text
@@ -124,7 +124,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "/retry" in operations_js.text
     assert "/cancel" in operations_js.text
     assert "renderOperations" in operations_js.text
-    assert "memoStackOperations" in operations_js.text
+    assert "infinityContextOperations" in operations_js.text
     assert "/ui/" not in openapi.text
 
 
@@ -270,7 +270,7 @@ function actionButton(text, handler, className = "") {
   return button;
 }
 
-window.memoStackBrowser = {
+window.infinityContextBrowser = {
   els: {
     reviewModal: modal,
     reviewModalClose: close,
@@ -313,8 +313,8 @@ window.memoStackBrowser = {
 const context = { window, document, console };
 context.globalThis = context;
 vm.runInNewContext(fs.readFileSync(reviewJsPath, "utf8"), context);
-window.memoStackReview.bindModalEvents();
-window.memoStackReview.openContextLinkReviewModal({
+window.infinityContextReview.bindModalEvents();
+window.infinityContextReview.openContextLinkReviewModal({
   id: "suggestion_123456",
   source_type: "asset",
   source_id: "asset_1",
@@ -402,7 +402,7 @@ def test_review_actions_keep_confirmed_refresh_and_bounded_batch_contract() -> N
     )
 
     batch_review = _function_body(js, "reviewPendingContextLinkSuggestionsBatch")
-    assert "window.memoStackReview.visiblePendingContextLinkReviews()" in batch_review
+    assert "window.infinityContextReview.visiblePendingContextLinkReviews()" in batch_review
     assert "pending.slice(0, 50)" in batch_review
     assert "if (!visibleFilter)" in batch_review
     assert "visible_filter: visibleFilter" in batch_review

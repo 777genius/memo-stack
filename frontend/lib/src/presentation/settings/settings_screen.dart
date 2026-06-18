@@ -812,7 +812,7 @@ class _PermissionsSection extends StatefulWidget {
 }
 
 class _PermissionsSectionState extends State<_PermissionsSection> {
-  static const _channel = MethodChannel('com.memostack/permissions');
+  static const _channel = MethodChannel('com.infinitycontext/permissions');
 
   bool? _accessibility;
   bool? _screenRecording;

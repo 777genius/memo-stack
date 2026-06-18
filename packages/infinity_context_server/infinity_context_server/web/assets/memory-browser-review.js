@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  window.memoStackReview = {
+  window.infinityContextReview = {
     bindModalEvents,
     closeReviewModal,
     openAnchorMergeReviewModal,
@@ -24,7 +24,7 @@
   let previousModalFocus = null;
 
   function browser() {
-    return window.memoStackBrowser;
+    return window.infinityContextBrowser;
   }
 
   function bindModalEvents() {

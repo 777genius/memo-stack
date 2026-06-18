@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -47,6 +48,10 @@ SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
 OPENAI_AUDIO_MAX_UPLOAD_BYTES = OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
 OPENAI_AUDIO_SUPPORTED_SUFFIXES = frozenset(OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES)
 OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset(OPENAI_VISION_SUPPORTED_FILE_SUFFIXES)
+SECRET_VALUE_PATTERNS = (
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
+    re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
+)
 
 _CONTENT_TYPES_BY_SUFFIX = {
     ".m4a": "audio/m4a",
@@ -370,7 +375,7 @@ def _component(status: str, **values: object) -> dict[str, object]:
     component = {"status": status}
     for key, value in values.items():
         if value is not None:
-            component[key] = value
+            component[key] = _safe_report_value(value)
     component.update(
         _recovery_policy(
             status=status,
@@ -577,33 +582,69 @@ def _vision_evidence_check(
 def _safe_diagnostics(diagnostics: dict[str, object]) -> dict[str, object]:
     safe: dict[str, object] = {}
     for key, value in diagnostics.items():
-        normalized_key = key.lower()
-        if any(
-            marker in normalized_key for marker in ("api_key", "authorization", "token", "secret")
-        ):
+        if _is_sensitive_report_key(key):
             continue
-        if isinstance(value, str):
-            safe[key] = value[:200]
-        elif isinstance(value, (int, float, bool)) or value is None:
-            safe[key] = value
-        elif isinstance(value, list):
-            safe[key] = value[:10]
-        elif isinstance(value, dict):
+        safe_value = _safe_report_value(value)
+        if isinstance(safe_value, str):
+            safe[key] = safe_value[:200]
+        elif isinstance(safe_value, (int, float, bool)) or safe_value is None:
+            safe[key] = safe_value
+        elif isinstance(safe_value, list):
+            safe[key] = safe_value[:10]
+        elif isinstance(safe_value, dict):
             safe[key] = {
                 str(child_key): child_value
-                for child_key, child_value in list(value.items())[:10]
+                for child_key, child_value in list(safe_value.items())[:10]
                 if isinstance(child_value, (str, int, float, bool)) or child_value is None
             }
         else:
-            safe[key] = value.__class__.__name__
+            safe[key] = safe_value.__class__.__name__
     return safe
+
+
+def _safe_report_value(value: object) -> object:
+    if isinstance(value, str):
+        return _redact_secret_fragments(value)
+    if isinstance(value, list):
+        return [_safe_report_value(item) for item in value[:10]]
+    if isinstance(value, dict):
+        safe: dict[str, object] = {}
+        for child_key, child_value in list(value.items())[:10]:
+            if _is_sensitive_report_key(str(child_key)):
+                continue
+            safe[str(child_key)] = _safe_report_value(child_value)
+        return safe
+    return value
+
+
+def _is_sensitive_report_key(key: str) -> bool:
+    normalized = key.lower()
+    return normalized in {
+        "api_key",
+        "apikey",
+        "authorization",
+        "access_token",
+        "refresh_token",
+        "bearer_token",
+        "token",
+        "secret",
+        "password",
+        "credential",
+    } or normalized.endswith(("_api_key", "_secret", "_password", "_credential"))
+
+
+def _redact_secret_fragments(value: str) -> str:
+    redacted = value
+    for pattern in SECRET_VALUE_PATTERNS:
+        redacted = pattern.sub("<redacted>", redacted)
+    return redacted
 
 
 def _sample_png_bytes() -> bytes:
     width = 180
     height = 64
     pixels = bytearray([255, 255, 255] * width * height)
-    _draw_text(pixels, width, x=14, y=18, text="MEMO STACK 24", scale=3)
+    _draw_text(pixels, width, x=14, y=18, text="INFINITY CONTEXT 24", scale=3)
     return _encode_png(width, height, bytes(pixels))
 
 

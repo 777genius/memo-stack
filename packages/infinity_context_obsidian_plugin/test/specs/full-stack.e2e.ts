@@ -679,7 +679,7 @@ async function configurePlugin(
   );
   await browser.executeObsidian(
     async ({ plugins }, settings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, settings);
       await plugin.saveSettings();
     },
@@ -745,22 +745,22 @@ async function waitForHealth(apiUrl: string): Promise<void> {
 }
 
 async function waitForInfinityContextApiUrl(apiUrl: string): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).apiUrl === apiUrl, {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).apiUrl === apiUrl, {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not reload persisted API URL",
   });
 }
 
 async function waitForInfinityContextIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

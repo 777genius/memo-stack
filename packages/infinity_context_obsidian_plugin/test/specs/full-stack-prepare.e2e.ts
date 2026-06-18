@@ -86,7 +86,7 @@ describe("Infinity Context prepare flow E2E", function () {
     assert.ok(prepareCalls.every((call) => call.args.includes("--layout")));
     assert.ok(prepareCalls.every((call) => call.args.includes("v2")));
 
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.busyLabel, "");
     assert.equal(snapshot.lastStackCommand, "status");
     assert.equal(snapshot.lastStackResult.exitCode, 0);
@@ -141,7 +141,7 @@ describe("Infinity Context prepare flow E2E", function () {
       connectorCalls.map((call) => `${call.command}:${call.status}`),
       ["connect:0"],
     );
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.lastStackCommand, "status");
     assert.equal(snapshot.lastStackResult.exitCode, 0);
     assert.equal(snapshot.lastStackResult.payload.health.status_code, 503);
@@ -168,7 +168,7 @@ describe("Infinity Context prepare flow E2E", function () {
       connectorCalls.map((call) => `${call.command}:${call.status}`),
       ["connect:0", "connect:0", "preview:0"],
     );
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.lastStackResult.payload.health.status_code, 200);
     assert.equal(snapshot.lastCommand, "preview");
     assert.equal(snapshot.lastResult.exitCode, 0);
@@ -214,7 +214,7 @@ describe("Infinity Context prepare flow E2E", function () {
     await waitForPluginIdle();
     await sleep(500);
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.busyLabel, "");
     assert.equal(snapshot.lastStackCommand, "init");
     assert.equal(snapshot.lastStackResult.exitCode, 1);
@@ -248,7 +248,7 @@ describe("Infinity Context prepare flow E2E", function () {
     assert.ok(connectorCalls.every((call) => call.args.includes(baseUrl)));
     assert.ok(connectorCalls.every((call) => call.args.includes(spaceSlug)));
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.lastStackCommand, "status");
     assert.equal(snapshot.lastStackResult.exitCode, 0);
     assert.equal(snapshot.lastCommand, "preview");
@@ -308,7 +308,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -457,7 +457,7 @@ async function waitForLocalStackCalls(vaultPath: string, count: number): Promise
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -536,9 +536,9 @@ async function clickSettingsButton(settingName: string, buttonText: string): Pro
   assert.equal(clicked, true, `Could not click Infinity Context settings button ${settingName}/${buttonText}`);
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

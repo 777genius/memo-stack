@@ -108,7 +108,7 @@ services:
     profiles: ["full"]
     restart: unless-stopped
     environment:
-      NEO4J_AUTH: ${MEMORY_GRAPHITI_NEO4J_USER:-neo4j}/${MEMORY_GRAPHITI_NEO4J_PASSWORD:-memostackgraph}
+      NEO4J_AUTH: ${MEMORY_GRAPHITI_NEO4J_USER:-neo4j}/${MEMORY_GRAPHITI_NEO4J_PASSWORD:-infinitycontextgraph}
     volumes:
       - infinity_context_neo4j_data:/data
 

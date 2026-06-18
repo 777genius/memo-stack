@@ -83,7 +83,7 @@ class MainFlutterWindow: NSPanel {
     setupWindowModeChannel(messenger: container.flutterViewController.engine.binaryMessenger)
     setupPermissionsChannel(messenger: container.flutterViewController.engine.binaryMessenger)
     hotkeyChannel = FlutterMethodChannel(
-      name: "com.memostack/hotkeys",
+      name: "com.infinitycontext/hotkeys",
       binaryMessenger: container.flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: container.flutterViewController)
@@ -252,7 +252,7 @@ class MainFlutterWindow: NSPanel {
   }
 
   private func setupPermissionsChannel(messenger: FlutterBinaryMessenger) {
-    let channel = FlutterMethodChannel(name: "com.memostack/permissions", binaryMessenger: messenger)
+    let channel = FlutterMethodChannel(name: "com.infinitycontext/permissions", binaryMessenger: messenger)
     channel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "checkAccessibility":
@@ -293,7 +293,7 @@ class MainFlutterWindow: NSPanel {
 
   private func setupWindowModeChannel(messenger: FlutterBinaryMessenger) {
     windowModeChannel = FlutterMethodChannel(
-      name: "com.memostack/window_mode",
+      name: "com.infinitycontext/window_mode",
       binaryMessenger: messenger
     )
 

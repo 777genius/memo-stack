@@ -313,7 +313,7 @@ async function pluginRuntime(): Promise<{
   snapshot: any;
 }> {
   return await browser.executeObsidian(({ app, plugins }) => {
-    const plugin = (plugins as any).memoStack as any;
+    const plugin = (plugins as any).infinityContext as any;
     const enabledPlugins = Array.from(((app as any).plugins.enabledPlugins ?? []) as Iterable<string>);
     return {
       loaded: Boolean(plugin),

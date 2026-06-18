@@ -114,7 +114,7 @@ function timeoutSetting(value: unknown): number {
 }
 
 function markSettingInput(inputEl: HTMLInputElement, name: string): void {
-  inputEl.dataset.memoStackSetting = name;
+  inputEl.dataset.infinityContextSetting = name;
 }
 
 export default class InfinityContextPlugin extends Plugin {
@@ -869,7 +869,7 @@ class InfinityContextSettingTab extends PluginSettingTab {
       .setName("Apply imports on sync")
       .setDesc("When disabled, Sync now reports direct note edits without updating Infinity Context.")
       .addToggle((toggle) => {
-        toggle.toggleEl.dataset.memoStackSetting = "applyImportOnSync";
+        toggle.toggleEl.dataset.infinityContextSetting = "applyImportOnSync";
         toggle.setValue(this.plugin.settings.applyImportOnSync).onChange(async (value) => {
           this.plugin.settings.applyImportOnSync = value;
           await this.plugin.saveSettings();

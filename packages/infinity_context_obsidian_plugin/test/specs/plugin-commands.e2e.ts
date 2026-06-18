@@ -163,7 +163,7 @@ describe("Infinity Context Obsidian plugin", function () {
     await setFakeEnv({ INFINITY_CONTEXT_FAKE_OBSIDIAN_DELAY_MS: "1200" });
 
     const snapshots = await browser.executeObsidian(async ({ plugins }) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       void plugin.syncNow();
       await new Promise((resolve) => setTimeout(resolve, 100));
       const duringFirst = plugin.snapshot();
@@ -234,7 +234,7 @@ describe("Infinity Context Obsidian plugin", function () {
 
     await browser.executeObsidianCommand("infinity-context:preview-sync");
     await waitForCliCalls(vaultPath, 1);
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
     const calls = readCliCalls(vaultPath);
 
     assert.equal(calls[0].command, "preview");
@@ -267,7 +267,7 @@ describe("Infinity Context Obsidian plugin", function () {
     await waitForLocalStackCalls(vaultPath, 1);
     await waitForPluginIdle();
 
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
     const rendered = JSON.stringify(snapshot);
 
     assert.equal(snapshot.lastResult.exitCode, 1);
@@ -286,7 +286,7 @@ describe("Infinity Context Obsidian plugin", function () {
 
     await browser.executeObsidianCommand("infinity-context:preview-sync");
     await waitForPluginIdle();
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
 
     assert.equal(readCliCalls(vaultPath).length, 0);
     assert.equal(snapshot.busyLabel, "");
@@ -300,7 +300,7 @@ describe("Infinity Context Obsidian plugin", function () {
 
     await browser.executeObsidianCommand("infinity-context:preview-sync");
     await waitForPluginIdle();
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
 
     assert.equal(readCliCalls(vaultPath).length, 0);
     assert.equal(snapshot.busyLabel, "");
@@ -315,7 +315,7 @@ describe("Infinity Context Obsidian plugin", function () {
     await browser.executeObsidianCommand("infinity-context:prepare-vault");
     await waitForLocalStackCalls(vaultPath, 1);
     await browser.pause(150);
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
 
     assert.deepEqual(
       readLocalStackCalls(vaultPath).map((call) => `${call.command}:${call.status}`),
@@ -346,7 +346,7 @@ describe("Infinity Context Obsidian plugin", function () {
       ["connect:0"],
     );
 
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.busyLabel, "");
     assert.equal(snapshot.lastCommand, "connect");
     assert.equal(snapshot.lastStackCommand, "status");
@@ -406,12 +406,12 @@ describe("Infinity Context Obsidian plugin", function () {
     );
 
     await browser.reloadObsidian();
-    await browser.waitUntil(async () => (await memoStackSnapshot()).spaceSlug === persistedSpaceSlug, {
+    await browser.waitUntil(async () => (await infinityContextSnapshot()).spaceSlug === persistedSpaceSlug, {
       timeout: 20000,
       timeoutMsg: "Infinity Context plugin did not reload persisted settings",
     });
 
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.apiUrl, "http://127.0.0.1:65534");
     assert.equal(snapshot.spaceSlug, persistedSpaceSlug);
     assert.equal(snapshot.memoryScopeExternalRef, persistedMemoryScopeRef);
@@ -469,12 +469,12 @@ describe("Infinity Context Obsidian plugin", function () {
     );
 
     await browser.reloadObsidian();
-    await browser.waitUntil(async () => (await memoStackSnapshot()).rootFolder === "../escape", {
+    await browser.waitUntil(async () => (await infinityContextSnapshot()).rootFolder === "../escape", {
       timeout: 20000,
       timeoutMsg: "Infinity Context plugin did not reload invalid persisted settings",
     });
 
-    const snapshot = await memoStackSnapshot();
+    const snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.busyLabel, "");
     assert.equal(snapshot.rootFolder, "../escape");
     assert.match(snapshot.pathError, /Folder cannot contain/);
@@ -500,7 +500,7 @@ async function resetVaultAndConfigure(
   const vaultPath = obsidianPage.getVaultPath();
   await browser.executeObsidian(
     async ({ plugins }, settings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, settings);
       await plugin.saveSettings();
     },
@@ -543,14 +543,14 @@ async function clearFakeEnv(): Promise<void> {
   await setFakeEnv({});
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 10000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -558,7 +558,7 @@ async function waitForPluginIdle(): Promise<void> {
 
 async function resetStartLiteCooldown(): Promise<void> {
   await browser.executeObsidian(({ plugins }) => {
-    (plugins.memoStack as any).lastStartLiteAt = 0;
+    (plugins.infinityContext as any).lastStartLiteAt = 0;
   });
 }
 

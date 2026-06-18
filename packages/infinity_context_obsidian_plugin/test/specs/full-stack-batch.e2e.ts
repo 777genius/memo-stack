@@ -171,7 +171,7 @@ describe("Infinity Context batch sync E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(calls.at(-1)?.command, "sync");
     assert.equal(calls.at(-1)?.status, 1);
     assert.equal(snapshot.lastCommand, "sync");
@@ -188,7 +188,7 @@ describe("Infinity Context batch sync E2E", function () {
     await waitForBackendFactText(baseUrl, fact.id, localDraft);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(calls.at(-1)?.command, "sync");
     assert.equal(calls.at(-1)?.status, 0);
     assert.equal(snapshot.lastResult.exitCode, 0);
@@ -232,7 +232,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -409,15 +409,15 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

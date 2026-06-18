@@ -492,7 +492,7 @@ def _server_env(*, ports: Mapping[str, int], token: str, run_id: str) -> dict[st
             "MEMORY_GRAPHITI_ENABLED": "true",
             "MEMORY_GRAPHITI_NEO4J_URI": f"bolt://127.0.0.1:{ports['neo4j_bolt']}",
             "MEMORY_GRAPHITI_NEO4J_USER": "neo4j",
-            "MEMORY_GRAPHITI_NEO4J_PASSWORD": "memostackgraph",
+            "MEMORY_GRAPHITI_NEO4J_PASSWORD": "infinitycontextgraph",
             "MEMORY_GRAPHITI_BUILD_INDICES": "true",
             "MEMORY_PROVIDER_CIRCUIT_FAILURE_THRESHOLD": "2",
             "MEMORY_PROVIDER_CIRCUIT_RESET_AFTER_SECONDS": "30",
@@ -2427,7 +2427,7 @@ def _wait_for_neo4j(port: int, *, env: Mapping[str, str] | None = None) -> None:
     while time.monotonic() < deadline:
         driver = GraphDatabase.driver(
             f"bolt://127.0.0.1:{port}",
-            auth=("neo4j", "memostackgraph"),
+            auth=("neo4j", "infinitycontextgraph"),
         )
         try:
             driver.verify_connectivity()

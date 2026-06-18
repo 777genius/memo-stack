@@ -56,7 +56,7 @@ describe("Infinity Context real sync race E2E", function () {
     await setRealEnv({ INFINITY_CONTEXT_REAL_OBSIDIAN_DELAY_MS: "1200" });
 
     const snapshots = await browser.executeObsidian(async ({ plugins }) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       void plugin.syncNow();
       await new Promise((resolve) => setTimeout(resolve, 100));
       const duringFirst = plugin.snapshot();
@@ -102,7 +102,7 @@ describe("Infinity Context real sync race E2E", function () {
     await setRealEnv({ INFINITY_CONTEXT_REAL_OBSIDIAN_DELAY_MS: "900" });
 
     const duringSync = await browser.executeObsidian(async ({ plugins }) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       void plugin.syncNow();
       await new Promise((resolve) => setTimeout(resolve, 100));
       return plugin.snapshot();
@@ -171,7 +171,7 @@ describe("Infinity Context real sync race E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:1"]);
     assert.equal(snapshot.lastCommand, "sync");
     assert.equal(snapshot.lastResult.exitCode, 1);
@@ -193,7 +193,7 @@ describe("Infinity Context real sync race E2E", function () {
     await sleep(300);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.deepEqual(
       calls.map((call) => `${call.command}:${call.status}`),
       ["connect:0", "sync:1", "sync:0", "sync:0"],
@@ -229,7 +229,7 @@ describe("Infinity Context real sync race E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:1"]);
     assert.equal(snapshot.lastCommand, "sync");
     assert.equal(snapshot.lastResult.exitCode, 1);
@@ -248,7 +248,7 @@ describe("Infinity Context real sync race E2E", function () {
     await sleep(300);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:1", "sync:0"]);
     assert.equal(snapshot.lastResult.exitCode, 0);
     assert.equal((await suggestionsContaining(baseUrl, marker)).length, 0);
@@ -285,7 +285,7 @@ describe("Infinity Context real sync race E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(
       calls.map((call) => call.command),
       ["connect", "sync"],
@@ -304,7 +304,7 @@ describe("Infinity Context real sync race E2E", function () {
     await waitForBackendFactText(baseUrl, fact.id, recoveredText);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(calls.at(-1)?.command, "sync");
     assert.equal(calls.at(-1)?.status, 0);
     assert.equal(snapshot.lastResult.exitCode, 0);
@@ -335,7 +335,7 @@ describe("Infinity Context real sync race E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(
       calls.map((call) => call.command),
       ["connect", "sync"],
@@ -355,7 +355,7 @@ describe("Infinity Context real sync race E2E", function () {
     await waitForBackendFactText(baseUrl, fact.id, recoveredText);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(calls.at(-1)?.command, "sync");
     assert.equal(calls.at(-1)?.status, 0);
     assert.equal(snapshot.lastResult.exitCode, 0);
@@ -409,7 +409,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -597,22 +597,22 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 
 async function updatePluginSettings(values: Record<string, unknown>): Promise<void> {
   await browser.executeObsidian(
     async ({ plugins }, payload) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, payload);
       await plugin.saveSettings();
     },
@@ -624,7 +624,7 @@ async function waitForCommandTimeout(expectedMs: number): Promise<void> {
   await browser.waitUntil(
     async () =>
       await browser.executeObsidian(
-        ({ plugins }, expected) => (plugins.memoStack as any).settings.commandTimeoutMs === expected,
+        ({ plugins }, expected) => (plugins.infinityContext as any).settings.commandTimeoutMs === expected,
         expectedMs,
       ),
     {

@@ -87,7 +87,7 @@ describe("Infinity Context root folder control E2E", function () {
       sourceId: "wdio-root-secondary-seed",
     });
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.rootFolder, secondaryRoot);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRootFor(secondaryRoot), "generated", "facts")));
     assert.equal(snapshot.generatedFactsExists, false);
@@ -121,7 +121,7 @@ describe("Infinity Context root folder control E2E", function () {
 
     await browser.executeObsidianCommand("infinity-context:open-inbox");
     assert.equal(await activeFilePath(), posixPath(path.join(scopedRootFor(secondaryRoot), "inbox", "README.md")));
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.inboxExists, true);
     assert.equal(snapshot.conflictsExists, true);
     assert.equal(snapshot.paths.conflicts, posixPath(path.join(scopedRootFor(secondaryRoot), "conflicts")));
@@ -270,7 +270,7 @@ describe("Infinity Context root folder control E2E", function () {
     await waitForCliCalls(vaultPath, 1);
     await waitForPluginIdle();
     await waitForConnectedLegacyLayout(legacyRoot);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.layoutVersion, "v1");
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(legacyRoot, "generated", "facts")));
     assert.equal(snapshot.paths.inbox, posixPath(path.join(legacyRoot, "inbox")));
@@ -305,7 +305,7 @@ describe("Infinity Context root folder control E2E", function () {
     await browser.executeObsidianCommand("infinity-context:open-conflicts");
     assert.equal(await activeFilePath(), posixPath(path.join(legacyRoot, "conflicts", "README.md")));
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.layoutVersion, "v1");
     assert.equal(legacyConflictFiles(vaultPath, legacyRoot).length, 0);
 
@@ -495,7 +495,7 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -505,7 +505,7 @@ async function waitForPluginRoot(rootFolder: string): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return snapshot.rootFolder === rootFolder;
       } catch (_error) {
         return false;
@@ -522,7 +522,7 @@ async function waitForPluginLayout(layoutVersion: "v1" | "v2"): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return snapshot.layoutVersion === layoutVersion;
       } catch (_error) {
         return false;
@@ -539,7 +539,7 @@ async function waitForConnectedLegacyLayout(rootFolder: string): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        const snapshot = await memoStackSnapshot();
+        const snapshot = await infinityContextSnapshot();
         return (
           snapshot.layoutVersion === "v1" &&
           snapshot.rootFolder === rootFolder &&
@@ -657,9 +657,9 @@ async function setSettingsToggle(name: string, value: boolean): Promise<void> {
   assert.equal(changed, true, `Could not change Infinity Context settings toggle ${name}`);
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

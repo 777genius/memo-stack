@@ -41,6 +41,10 @@ def test_multimodal_production_goal_audit_accepts_complete_proof(tmp_path: Path)
     payload = result.as_dict()
     assert result.ok is True
     assert result.failures == ()
+    assert result.blocked_requirements == ()
+    assert result.not_evaluable_checks == ()
+    assert payload["blocked_requirements"] == []
+    assert payload["not_evaluable_checks"] == []
     assert all(result.checks.values())
     assert payload["suite"] == "infinity-context-multimodal-production-goal-audit"
     assert payload["secrets_redacted"] is True
@@ -105,6 +109,21 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     assert result.checks["live_provider_proof_passed"] is False
     assert result.checks["live_provider_clean_commit"] is True
     assert result.checks["live_provider_key_present"] is False
+    blocked_by_area = {item["area"]: item for item in result.blocked_requirements}
+    assert blocked_by_area["docker_live_proof"]["reason"] == "docker_daemon_timeout"
+    assert blocked_by_area["docker_live_proof"]["operator_action"] is None
+    assert blocked_by_area["live_provider_proof"]["reason"] == "provider_credential_missing"
+    assert "docker_live_extraction_cases_complete" in result.not_evaluable_checks
+    assert "docker_live_capabilities_audio_upload_limit_present" in (
+        result.not_evaluable_checks
+    )
+    assert "docker_live_capabilities_vision_payload_limits_present" in (
+        result.not_evaluable_checks
+    )
+    assert "docker_live_capabilities_provider_contract_present" in (
+        result.not_evaluable_checks
+    )
+    assert "live_provider_components_succeeded" in result.not_evaluable_checks
     assert any("Docker multimodal live proof" in failure for failure in result.failures)
     assert any("Live provider canary" in failure for failure in result.failures)
     assert any("docker_daemon_timeout" in failure for failure in result.failures)
@@ -290,8 +309,10 @@ def test_multimodal_production_goal_audit_rejects_docker_without_provider_contra
     assert result.checks["docker_live_components_succeeded"] is True
     assert result.checks["docker_live_capabilities_provider_contract_present"] is False
     assert result.checks["docker_live_capabilities_provider_contract_docs_aligned"] is False
+    assert result.checks["docker_live_capabilities_audio_upload_limit_present"] is False
     assert result.checks["docker_live_capabilities_vision_detail_contract_docs_aligned"] is False
     assert result.checks["docker_live_capabilities_vision_binary_limit_present"] is False
+    assert result.checks["docker_live_capabilities_vision_payload_limits_present"] is False
     assert any("provider capability contract" in failure for failure in result.failures)
 
 
@@ -395,6 +416,8 @@ def _docker_report() -> dict[str, object]:
                 "provider_contract": {
                     "ok": True,
                     "transcription_endpoint": "/v1/audio/transcriptions",
+                    "transcription_max_provider_upload_bytes": 25 * 1024 * 1024,
+                    "transcription_effective_max_upload_bytes": 25 * 1024 * 1024,
                     "transcription_supported_file_types": [
                         ".m4a",
                         ".mp3",
@@ -408,6 +431,9 @@ def _docker_report() -> dict[str, object]:
                     "vision_model": "gpt-4.1-mini",
                     "vision_detail_levels": ["low", "high", "auto"],
                     "vision_max_provider_binary_upload_bytes": 402650094,
+                    "vision_max_provider_payload_bytes": 536870912,
+                    "vision_max_images_per_request": 1500,
+                    "vision_effective_max_upload_bytes": 25 * 1024 * 1024,
                     "vision_supported_file_types": [
                         ".gif",
                         ".jpeg",

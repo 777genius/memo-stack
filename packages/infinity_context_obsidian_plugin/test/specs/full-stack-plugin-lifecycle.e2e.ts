@@ -83,7 +83,7 @@ describe("Infinity Context plugin lifecycle full-stack E2E", function () {
     await waitForPluginScope();
     await waitForPluginIdle();
 
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.spaceSlug, spaceSlug);
     assert.equal(snapshot.memoryScopeExternalRef, memoryScopeExternalRef);
     assert.equal(snapshot.paths.generatedFacts, posixPath(path.join(scopedRoot, "generated", "facts")));
@@ -122,7 +122,7 @@ describe("Infinity Context plugin lifecycle full-stack E2E", function () {
     await waitForCliCalls(vaultPath, 5);
     await waitForPluginIdle();
 
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(snapshot.lastCommand, "sync");
     assert.equal(snapshot.lastResult.exitCode, 0);
     assert.equal((await suggestionsContaining(baseUrl, disabledInboxMarker)).length, 1);
@@ -170,7 +170,7 @@ async function configurePlugin(vaultPath: string, apiUrl: string): Promise<void>
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -347,7 +347,7 @@ async function waitForCliCalls(vaultPath: string, count: number): Promise<void> 
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -378,15 +378,15 @@ async function waitForPluginScope(): Promise<void> {
   );
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 
 async function pluginRuntime(): Promise<{ loaded: boolean; enabled: boolean; snapshot: any }> {
   return await browser.executeObsidian(({ app, plugins }) => {
-    const plugin = (plugins as any).memoStack as any;
+    const plugin = (plugins as any).infinityContext as any;
     const enabledPlugins = Array.from(((app as any).plugins.enabledPlugins ?? []) as Iterable<string>);
     return {
       loaded: Boolean(plugin),

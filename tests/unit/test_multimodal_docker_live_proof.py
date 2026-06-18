@@ -8,7 +8,8 @@ from typing import Any
 from scripts import multimodal_docker_live_proof as proof
 
 
-def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
+def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> None:
+    monkeypatch.setattr(proof, "_docker_context_show", lambda _command: "desktop-linux")
     args = proof._parse_args(
         [
             "--no-build",
@@ -77,6 +78,8 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
                     "provider_contract": {
                         "transcription": {
                             "endpoint": "/v1/audio/transcriptions",
+                            "max_provider_upload_bytes": 26214400,
+                            "effective_max_upload_bytes": 26214400,
                             "supported_file_types": [
                                 ".m4a",
                                 ".mp3",
@@ -92,6 +95,9 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
                             "model": "gpt-4.1-mini",
                             "detail_levels": ["low", "high", "auto"],
                             "max_provider_binary_upload_bytes": 402650094,
+                            "max_provider_payload_bytes": 536870912,
+                            "max_images_per_request": 1500,
+                            "effective_max_upload_bytes": 26214400,
                             "supported_file_types": [
                                 ".gif",
                                 ".jpeg",
@@ -175,8 +181,22 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
     )
 
     assert report["ok"] is True
+    assert report["components"]["compose_stack"]["status"] == "succeeded"
+    assert report["components"]["compose_stack"]["state"] == "running"
     assert report["components"]["container_dependencies"]["versions"]["ffmpeg"]
     assert report["components"]["capabilities"]["provider_contract"]["ok"] is True
+    assert (
+        report["components"]["capabilities"]["provider_contract"][
+            "transcription_max_provider_upload_bytes"
+        ]
+        == 26214400
+    )
+    assert (
+        report["components"]["capabilities"]["provider_contract"][
+            "transcription_effective_max_upload_bytes"
+        ]
+        == 26214400
+    )
     assert report["components"]["capabilities"]["provider_contract"][
         "vision_detail_levels"
     ] == ["low", "high", "auto"]
@@ -185,6 +205,18 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
             "vision_max_provider_binary_upload_bytes"
         ]
         == 402650094
+    )
+    assert (
+        report["components"]["capabilities"]["provider_contract"][
+            "vision_max_provider_payload_bytes"
+        ]
+        == 536870912
+    )
+    assert (
+        report["components"]["capabilities"]["provider_contract"][
+            "vision_max_images_per_request"
+        ]
+        == 1500
     )
     assert "provider_contract" in report["components"]["capabilities"]["contract_names"]
     cases = report["components"]["extraction_flow"]["cases"]
@@ -208,6 +240,7 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
 def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     monkeypatch.setenv("DOCKER_CONTEXT", "desktop-linux")
     monkeypatch.setenv("DOCKER_HOST", "unix:///tmp/infinity-context-secret-docker.sock")
+    monkeypatch.setattr(proof, "_docker_context_show", lambda _command: "desktop-linux")
     args = proof._parse_args(
         [
             "--project-name",
@@ -247,6 +280,7 @@ def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     assert report["failure"]["operator_action"] == "start_or_restart_docker_daemon"
     assert report["components"]["compose_config"]["status"] == "succeeded"
     assert report["failure"]["diagnostics"]["docker_context"] == "desktop-linux"
+    assert report["failure"]["diagnostics"]["docker_context_current"] == "desktop-linux"
     assert report["failure"]["diagnostics"]["docker_host"] == {
         "configured": True,
         "kind": "unix",
@@ -272,7 +306,8 @@ def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     assert "secret-proof-token" not in rendered
 
 
-def test_docker_live_proof_degrades_on_compose_config_timeout() -> None:
+def test_docker_live_proof_degrades_on_compose_config_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(proof, "_docker_context_show", lambda _command: "desktop-linux")
     args = proof._parse_args(
         [
             "--project-name",

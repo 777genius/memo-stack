@@ -889,7 +889,7 @@ def test_clean_full_smoke_redacts_explicit_canary_env_without_process_env() -> N
                 "message": (
                     "token=explicit-service-token "
                     "postgresql+asyncpg://memory:secret-db-pass@127.0.0.1/memory "
-                    "neo4j password memostackgraph"
+                    "neo4j password infinitycontextgraph"
                 )
             },
             env={
@@ -897,7 +897,7 @@ def test_clean_full_smoke_redacts_explicit_canary_env_without_process_env() -> N
                 "MEMORY_DATABASE_URL": (
                     "postgresql+asyncpg://memory:secret-db-pass@127.0.0.1/memory"
                 ),
-                "MEMORY_GRAPHITI_NEO4J_PASSWORD": "memostackgraph",
+                "MEMORY_GRAPHITI_NEO4J_PASSWORD": "infinitycontextgraph",
             },
         ),
         ensure_ascii=False,
@@ -905,7 +905,7 @@ def test_clean_full_smoke_redacts_explicit_canary_env_without_process_env() -> N
 
     assert "explicit-service-token" not in rendered
     assert "secret-db-pass" not in rendered
-    assert "memostackgraph" not in rendered
+    assert "infinitycontextgraph" not in rendered
     assert "<redacted>" in rendered
 
 
@@ -954,7 +954,7 @@ def test_clean_full_smoke_neo4j_readiness_error_is_redacted(monkeypatch) -> None
 
     class Driver:
         def verify_connectivity(self):
-            raise RuntimeError("auth failed for password memostackgraph")
+            raise RuntimeError("auth failed for password infinitycontextgraph")
 
         def close(self):
             return None
@@ -967,11 +967,11 @@ def test_clean_full_smoke_neo4j_readiness_error_is_redacted(monkeypatch) -> None
     try:
         module._wait_for_neo4j(
             17687,
-            env={"MEMORY_GRAPHITI_NEO4J_PASSWORD": "memostackgraph"},
+            env={"MEMORY_GRAPHITI_NEO4J_PASSWORD": "infinitycontextgraph"},
         )
     except module.CleanSmokeFailure as exc:
         message = str(exc)
-        assert "memostackgraph" not in message
+        assert "infinitycontextgraph" not in message
         assert "<redacted>" in message
     else:
         raise AssertionError("Expected CleanSmokeFailure")

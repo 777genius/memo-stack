@@ -121,16 +121,31 @@ def test_multimodal_live_provider_canary_has_local_fixtures_and_redaction() -> N
             "api_key": "sk-test-secret",
             "access_token": "secret-token",
             "authorization": "Bearer secret",
+            "message": "provider echoed sk-test-secret-value and Bearer live-secret",
             "request_timeout_seconds": 10,
+            "nested": {
+                "detail": "Authorization failed for Bearer nested-secret",
+                "api_key": "sk-nested-secret-value",
+            },
+            "events": ["ok", "sk-list-secret-value"],
             "usage": {"input_tokens": 1, "output_tokens": 2},
         }
+    )
+    component = module._component(
+        "failed",
+        reason="asset_extraction.vision.invalid_api_key",
+        message="request used Bearer component-secret and sk-component-secret-value",
     )
 
     assert "api_key" not in safe
     assert "access_token" not in safe
     assert "authorization" not in safe
+    assert safe["message"] == "provider echoed <redacted> and <redacted>"
     assert safe["request_timeout_seconds"] == 10
+    assert safe["nested"] == {"detail": "Authorization failed for <redacted>"}
+    assert safe["events"] == ["ok", "<redacted>"]
     assert safe["usage"] == {"input_tokens": 1, "output_tokens": 2}
+    assert component["message"] == "request used <redacted> and <redacted>"
 
 
 def test_multimodal_live_provider_canary_maps_invalid_key_to_operator_action() -> None:

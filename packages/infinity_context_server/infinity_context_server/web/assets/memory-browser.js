@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const SETTINGS_KEY = "memoStack.browser.settings.v1";
+  const SETTINGS_KEY = "infinityContext.browser.settings.v1";
   const GRAPH_NODE_LIMIT = 320;
   const POLL_MS = 5000;
   const CONTEXT_ENDPOINT_TYPES = [
@@ -60,7 +60,7 @@
   const els = {};
   const inFlightReviewActions = new Set();
 
-  window.memoStackBrowser = {
+  window.infinityContextBrowser = {
     state,
     els,
     apiJson: (...args) => apiJson(...args),
@@ -199,7 +199,7 @@
       saveSettings();
       renderSuggestionList();
     });
-    window.memoStackReview.bindModalEvents();
+    window.infinityContextReview.bindModalEvents();
     els.zoomInButton.addEventListener("click", () => {
       state.graphScale = Math.max(0.55, state.graphScale * 0.86);
       renderGraph();
@@ -655,7 +655,7 @@
           },
         });
         await refreshAll();
-        window.memoStackReview.closeReviewModal();
+        window.infinityContextReview.closeReviewModal();
         selectNode(`anchor:${candidate.target_anchor.id}`);
       } catch (error) {
         setError(error.message);
@@ -753,7 +753,7 @@
           body: { reason: reason || `Reviewed in Infinity Context Browser` },
         });
         await refreshAll();
-        window.memoStackReview.closeReviewModal();
+        window.infinityContextReview.closeReviewModal();
       } catch (error) {
         setError(error.message);
       }
@@ -784,7 +784,7 @@
           }),
         });
         await refreshAll();
-        window.memoStackReview.closeReviewModal();
+        window.infinityContextReview.closeReviewModal();
       } catch (error) {
         setError(error.message);
       }
@@ -793,7 +793,7 @@
 
   async function reviewPendingContextLinkSuggestionsBatch(action) {
     await withReviewActionLock("context-link-batch-review", async () => {
-      const pending = window.memoStackReview.visiblePendingContextLinkReviews();
+      const pending = window.infinityContextReview.visiblePendingContextLinkReviews();
       const batch = pending.slice(0, 50);
       if (!batch.length) {
         setError("No pending link reviews.");
@@ -1016,7 +1016,7 @@
     renderGraph();
     renderDetails();
     renderSuggestionList();
-    window.memoStackOperations?.renderOperations();
+    window.infinityContextOperations?.renderOperations();
     renderTimeline();
   }
 
@@ -2089,7 +2089,7 @@
   }
 
   function renderSuggestionList() {
-    window.memoStackReview.renderSuggestionList();
+    window.infinityContextReview.renderSuggestionList();
   }
 
   function renderTimeline() {

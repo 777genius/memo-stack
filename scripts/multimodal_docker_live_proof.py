@@ -310,7 +310,7 @@ def _start_stack(
             "compose_up_failed",
             _safe_completed(result, env=env),
         )
-    _mark_component(report, "compose_stack", "running", services=services)
+    _mark_component(report, "compose_stack", "succeeded", state="running", services=services)
 
 
 def _prove_container_dependencies(
@@ -453,11 +453,22 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
     audio_suffixes = _string_list(transcription.get("supported_file_types"))
     vision_suffixes = _string_list(vision.get("supported_file_types"))
     vision_detail_levels = _string_list(vision.get("detail_levels"))
+    transcription_max_upload_bytes = _positive_int(
+        transcription.get("max_provider_upload_bytes")
+    )
+    transcription_effective_max_upload_bytes = _positive_int(
+        transcription.get("effective_max_upload_bytes")
+    )
     vision_max_binary_upload_bytes = _positive_int(
         vision.get("max_provider_binary_upload_bytes")
     )
+    vision_max_payload_bytes = _positive_int(vision.get("max_provider_payload_bytes"))
+    vision_max_images_per_request = _positive_int(vision.get("max_images_per_request"))
+    vision_effective_max_upload_bytes = _positive_int(vision.get("effective_max_upload_bytes"))
     audio_ok = (
         transcription.get("endpoint") == "/v1/audio/transcriptions"
+        and transcription_max_upload_bytes == 25 * 1024 * 1024
+        and transcription_effective_max_upload_bytes is not None
         and set(audio_suffixes)
         == {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
     )
@@ -467,15 +478,23 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
         and {"low", "high", "auto"}.issubset(set(vision_detail_levels))
         and set(vision_detail_levels).issubset({"low", "high", "original", "auto"})
         and vision_max_binary_upload_bytes is not None
+        and vision_max_payload_bytes is not None
+        and vision_max_images_per_request is not None
+        and vision_effective_max_upload_bytes is not None
     )
     return {
         "ok": audio_ok and vision_ok and not ({".flac", ".ogg"} & set(audio_suffixes)),
         "transcription_endpoint": transcription.get("endpoint"),
+        "transcription_max_provider_upload_bytes": transcription_max_upload_bytes,
+        "transcription_effective_max_upload_bytes": transcription_effective_max_upload_bytes,
         "transcription_supported_file_types": audio_suffixes,
         "vision_endpoint_family": vision.get("endpoint_family"),
         "vision_model": vision.get("model"),
         "vision_detail_levels": vision_detail_levels,
         "vision_max_provider_binary_upload_bytes": vision_max_binary_upload_bytes,
+        "vision_max_provider_payload_bytes": vision_max_payload_bytes,
+        "vision_max_images_per_request": vision_max_images_per_request,
+        "vision_effective_max_upload_bytes": vision_effective_max_upload_bytes,
         "vision_supported_file_types": vision_suffixes,
     }
 
@@ -818,6 +837,7 @@ def _docker_client_diagnostics(args: argparse.Namespace) -> dict[str, Any]:
         "docker_cli": _cli_diagnostic(docker_cmd),
         "compose_cli": _cli_diagnostic(compose_cmd),
         "docker_context": _safe_diagnostic_value(os.environ.get("DOCKER_CONTEXT")),
+        "docker_context_current": _safe_diagnostic_value(_docker_context_show(args.docker)),
         "docker_host": _docker_host_diagnostic(docker_host),
         "known_sockets": {
             "var_run": _socket_status(Path("/var/run/docker.sock")),
@@ -844,6 +864,28 @@ def _cli_diagnostic(command: str) -> dict[str, Any]:
         "command": Path(command).name,
         "found": bool(resolved or Path(command).exists()),
     }
+
+
+def _docker_context_show(docker_command: str) -> str | None:
+    try:
+        command = [*shlex.split(docker_command), "context", "show"]
+    except ValueError:
+        return None
+    try:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _docker_host_diagnostic(value: str) -> dict[str, Any]:
@@ -888,7 +930,9 @@ def _docker_diagnostic_summary(diagnostics: dict[str, Any]) -> str:
     docker_host_configured = (
         docker_host.get("configured") if isinstance(docker_host, dict) else False
     )
-    docker_context = diagnostics.get("docker_context")
+    docker_context = diagnostics.get("docker_context") or diagnostics.get(
+        "docker_context_current"
+    )
     return (
         f"docker_context_configured={bool(docker_context)}; "
         f"docker_host_configured={bool(docker_host_configured)}; "

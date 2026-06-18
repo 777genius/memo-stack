@@ -60,7 +60,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
     assert.equal(calls.at(-1)?.status, 1);
     assert.equal(snapshot.lastResult.exitCode, 1);
@@ -75,7 +75,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(calls.at(-1)?.command, "sync");
     assert.equal(calls.at(-1)?.status, 0);
     assert.equal(snapshot.lastResult.exitCode, 0);
@@ -112,7 +112,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
     assert.equal(calls.at(-1)?.status, 1);
     assert.equal(snapshot.lastCommand, "sync");
@@ -128,7 +128,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "sync"]);
     assert.equal(calls.at(-1)?.status, 0);
     assert.equal(snapshot.lastResult.exitCode, 0);
@@ -170,7 +170,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0", "sync:1"]);
     assert.equal(snapshot.lastCommand, "sync");
     assert.equal(snapshot.lastResult.exitCode, 1);
@@ -195,7 +195,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await sleep(300);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.deepEqual(
       calls.map((call) => `${call.command}:${call.status}`),
       ["connect:0", "sync:0", "sync:1", "sync:0", "sync:0"],
@@ -228,7 +228,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
     assert.ok(calls.every((call) => call.args.includes(deadUrl)));
     assert.equal(calls.at(-1)?.status, 1);
@@ -244,7 +244,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.equal(calls.at(-1)?.command, "sync");
     assert.equal(calls.at(-1)?.status, 0);
     assert.ok(calls.at(-1)?.args.includes(baseUrl));
@@ -283,7 +283,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync"]);
     assert.ok(calls.every((call) => call.args.includes(deadUrl)));
     assert.equal(calls.at(-1)?.status, 1);
@@ -305,7 +305,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => call.command), ["connect", "sync", "connect", "sync"]);
     assert.ok(calls.slice(2).every((call) => call.args.includes(baseUrl)));
     assert.ok(calls.slice(2).every((call) => call.status === 0));
@@ -350,7 +350,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await waitForPluginIdle();
 
     let calls = readCliCalls(vaultPath);
-    let snapshot = await memoStackSnapshot();
+    let snapshot = await infinityContextSnapshot();
     assert.deepEqual(calls.map((call) => `${call.command}:${call.status}`), ["connect:0", "sync:0", "sync:1"]);
     assert.ok(calls.at(-1)?.args.includes(deadUrl));
     assert.equal(snapshot.lastCommand, "sync");
@@ -377,7 +377,7 @@ describe("Infinity Context settings rotation E2E", function () {
     await sleep(300);
 
     calls = readCliCalls(vaultPath);
-    snapshot = await memoStackSnapshot();
+    snapshot = await infinityContextSnapshot();
     assert.deepEqual(
       calls.map((call) => `${call.command}:${call.status}`),
       ["connect:0", "sync:0", "sync:1", "sync:0", "sync:0"],
@@ -441,7 +441,7 @@ async function updatePluginSettings({
   );
   await browser.executeObsidian(
     async ({ plugins }, persistedSettings) => {
-      const plugin = plugins.memoStack as any;
+      const plugin = plugins.infinityContext as any;
       Object.assign(plugin.settings, persistedSettings);
       await plugin.saveSettings();
     },
@@ -507,14 +507,14 @@ async function waitForHealth(apiUrl: string): Promise<void> {
 }
 
 async function waitForInfinityContextApiUrl(apiUrl: string): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).apiUrl === apiUrl, {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).apiUrl === apiUrl, {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not reload corrected API URL",
   });
 }
 
 async function waitForPluginIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await memoStackSnapshot()).busyLabel === "", {
+  await browser.waitUntil(async () => (await infinityContextSnapshot()).busyLabel === "", {
     timeout: 20000,
     timeoutMsg: "Infinity Context plugin did not become idle",
   });
@@ -568,9 +568,9 @@ async function setSettingsInput(name: string, value: string): Promise<void> {
   assert.equal(changed, true, `Could not change Infinity Context settings input ${name}`);
 }
 
-async function memoStackSnapshot(): Promise<any> {
+async function infinityContextSnapshot(): Promise<any> {
   return await browser.executeObsidian(({ plugins }) => {
-    return (plugins.memoStack as any).snapshot();
+    return (plugins.infinityContext as any).snapshot();
   });
 }
 

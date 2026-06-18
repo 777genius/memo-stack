@@ -22,7 +22,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   HotKey? _overlayHotKey;
   HotKey? _stopHotKey;
-  static const _hotkeyChannel = MethodChannel('com.memostack/hotkeys');
+  static const _hotkeyChannel = MethodChannel('com.infinitycontext/hotkeys');
 
   @override
   void initState() {

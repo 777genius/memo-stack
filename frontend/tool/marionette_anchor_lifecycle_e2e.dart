@@ -258,7 +258,7 @@ class MarionetteAnchorLifecycleRunner {
         config.vmServiceUri == null ? await _startFlutterApp(config) : null;
     final vmServiceUri = startedApp?.vmServiceUri ?? config.vmServiceUri!;
     VmServiceClient? client;
-    InfinityContextExtensionClient? memoStack;
+    InfinityContextExtensionClient? infinityContext;
     final runMarker = _runMarker(config.scopeRef);
     final flowRecorder = MarionetteFlowRecorder(
       path: config.flowReportOut,
@@ -269,39 +269,39 @@ class MarionetteAnchorLifecycleRunner {
     try {
       _log('connecting to VM service at $vmServiceUri');
       client = await VmServiceClient.connect(vmServiceUri, config.callTimeout);
-      memoStack = InfinityContextExtensionClient(client, config.callTimeout);
-      await memoStack.init();
+      infinityContext = InfinityContextExtensionClient(client, config.callTimeout);
+      await infinityContext.init();
 
-      final state = await memoStack.waitUntilReady();
+      final state = await infinityContext.waitUntilReady();
       _expect(
         state['connection'] == 'connected',
         'frontend did not report backend connection',
       );
 
-      await memoStack.call(
-        'memoStack.createMemoryScope',
+      await infinityContext.call(
+        'infinityContext.createMemoryScope',
         {
           'externalRef': config.scopeRef,
           'name': 'Marionette Anchor E2E $runMarker',
         },
       );
 
-      await _runMemoryScopeManagementFlow(memoStack, runMarker);
+      await _runMemoryScopeManagementFlow(infinityContext, runMarker);
       await flowRecorder.markCompleted('memory_scope_management');
-      await _runCaptureLinkingFlow(memoStack, runMarker);
+      await _runCaptureLinkingFlow(infinityContext, runMarker);
       await flowRecorder.markCompleted('capture_link_approve');
-      await _runRejectedContextLinkFlow(memoStack, runMarker);
+      await _runRejectedContextLinkFlow(infinityContext, runMarker);
       await flowRecorder.markCompleted('context_link_reject');
-      await _runAttachmentCaptureFlow(memoStack, runMarker);
+      await _runAttachmentCaptureFlow(infinityContext, runMarker);
       await flowRecorder.markCompleted('attachment_capture_extraction');
-      await _runManualContextLinkFlow(memoStack, runMarker);
+      await _runManualContextLinkFlow(infinityContext, runMarker);
       await flowRecorder.markCompleted('manual_context_link_override');
       final anchorBaselineState =
-          await memoStack.call('memoStack.e2eState', {});
+          await infinityContext.call('infinityContext.e2eState', {});
       final anchorBaseline =
           _int(anchorBaselineState['memoryBrowserAnchorCount']);
-      final created = await memoStack.call(
-        'memoStack.createMemoryAnchor',
+      final created = await infinityContext.call(
+        'infinityContext.createMemoryAnchor',
         {
           'memoryScopeExternalRef': config.scopeRef,
           'kind': 'person',
@@ -317,8 +317,8 @@ class MarionetteAnchorLifecycleRunner {
       );
       _log('created anchor $targetAnchorId');
 
-      final updated = await memoStack.call(
-        'memoStack.updateMemoryAnchor',
+      final updated = await infinityContext.call(
+        'infinityContext.updateMemoryAnchor',
         {
           'anchorId': targetAnchorId,
           'label': 'Alex Script $runMarker Updated',
@@ -331,8 +331,8 @@ class MarionetteAnchorLifecycleRunner {
         'update anchor did not return updated label',
       );
 
-      final split = await memoStack.call(
-        'memoStack.splitMemoryAnchorAlias',
+      final split = await infinityContext.call(
+        'infinityContext.splitMemoryAnchorAlias',
         {
           'anchorId': targetAnchorId,
           'alias': 'AS-$runMarker',
@@ -347,8 +347,8 @@ class MarionetteAnchorLifecycleRunner {
       );
       _log('split alias into anchor $splitAnchorId');
 
-      final duplicate = await memoStack.call(
-        'memoStack.createMemoryAnchor',
+      final duplicate = await infinityContext.call(
+        'infinityContext.createMemoryAnchor',
         {
           'memoryScopeExternalRef': config.scopeRef,
           'kind': 'person',
@@ -362,8 +362,8 @@ class MarionetteAnchorLifecycleRunner {
 
       var reviewState = duplicate;
       if (_int(reviewState['pendingAnchorMergeSuggestionCount']) == 0) {
-        reviewState = await memoStack.call(
-          'memoStack.backfillMemoryAnchors',
+        reviewState = await infinityContext.call(
+          'infinityContext.backfillMemoryAnchors',
           {'limitPerSource': '25'},
         );
       }
@@ -372,16 +372,16 @@ class MarionetteAnchorLifecycleRunner {
         'backend did not produce an anchor merge suggestion',
       );
 
-      var merged = await memoStack.call(
-        'memoStack.mergeFirstAnchorSuggestion',
+      var merged = await infinityContext.call(
+        'infinityContext.mergeFirstAnchorSuggestion',
         {
           'sourceAnchorId': duplicateAnchorId,
           'targetAnchorId': targetAnchorId,
         },
       );
       if (merged['merged'] != true) {
-        merged = await memoStack.call(
-          'memoStack.mergeFirstAnchorSuggestion',
+        merged = await infinityContext.call(
+          'infinityContext.mergeFirstAnchorSuggestion',
           {
             'sourceAnchorId': targetAnchorId,
             'targetAnchorId': duplicateAnchorId,
@@ -408,8 +408,8 @@ class MarionetteAnchorLifecycleRunner {
         'with ${merged['pendingAnchorMergeSuggestionCount']} suggestions left',
       );
 
-      await _cleanupRunAnchors(memoStack, runMarker);
-      final cleanState = await memoStack.call('memoStack.e2eState', {});
+      await _cleanupRunAnchors(infinityContext, runMarker);
+      final cleanState = await infinityContext.call('infinityContext.e2eState', {});
       final remaining = _anchorsWithMarker(cleanState, runMarker);
       _expect(
         remaining.isEmpty,
@@ -421,8 +421,8 @@ class MarionetteAnchorLifecycleRunner {
       _log('anchor lifecycle e2e passed');
     } finally {
       await flowRecorder.write(status: flowStatus);
-      if (memoStack != null) {
-        await _bestEffortCleanup(memoStack, runMarker);
+      if (infinityContext != null) {
+        await _bestEffortCleanup(infinityContext, runMarker);
       }
       await client?.close();
       if (startedApp != null && !config.keepAppRunning) {
@@ -432,21 +432,21 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runMemoryScopeManagementFlow(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
     final tempRef = 'marionette-scope-admin-$runMarker';
     final renamedRef = '$tempRef-renamed';
-    final created = await memoStack.call(
-      'memoStack.createMemoryScope',
+    final created = await infinityContext.call(
+      'infinityContext.createMemoryScope',
       {
         'externalRef': tempRef,
         'name': 'Marionette Scope Admin $runMarker',
       },
     );
     final createdScopeId = _field(_map(created['memoryScope']), 'id');
-    final updated = await memoStack.call(
-      'memoStack.updateMemoryScope',
+    final updated = await infinityContext.call(
+      'infinityContext.updateMemoryScope',
       {
         'memoryScopeId': createdScopeId,
         'externalRef': renamedRef,
@@ -457,33 +457,33 @@ class MarionetteAnchorLifecycleRunner {
       _field(_map(updated['memoryScope']), 'externalRef') == renamedRef,
       'memory scope update did not return the renamed external ref',
     );
-    final deleted = await memoStack.call(
-      'memoStack.deleteMemoryScope',
+    final deleted = await infinityContext.call(
+      'infinityContext.deleteMemoryScope',
       {'externalRef': renamedRef},
     );
     _expect(
       deleted['deletedMemoryScopeExternalRef'] == renamedRef,
       'memory scope delete did not delete the renamed scope',
     );
-    final state = await memoStack.call('memoStack.e2eState', {});
+    final state = await infinityContext.call('infinityContext.e2eState', {});
     final refs = _list(state['memoryScopes'])
         .map(_map)
         .map((scope) => _field(scope, 'externalRef'))
         .toSet();
     _expect(!refs.contains(renamedRef), 'renamed test scope is still listed');
-    await memoStack.call(
-      'memoStack.switchMemoryScope',
+    await infinityContext.call(
+      'infinityContext.switchMemoryScope',
       {'externalRef': config.scopeRef},
     );
     _log('created, renamed, and deleted temporary memory scope $renamedRef');
   }
 
   Future<void> _runCaptureLinkingFlow(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
-    final target = await memoStack.call(
-      'memoStack.createMemoryAnchor',
+    final target = await infinityContext.call(
+      'infinityContext.createMemoryAnchor',
       {
         'memoryScopeExternalRef': config.scopeRef,
         'kind': 'project',
@@ -495,8 +495,8 @@ class MarionetteAnchorLifecycleRunner {
     final targetAnchorId = _field(_map(target['anchor']), 'id');
     _log('created capture link target $targetAnchorId');
 
-    final captured = await memoStack.call(
-      'memoStack.submitCapture',
+    final captured = await infinityContext.call(
+      'infinityContext.submitCapture',
       {
         'memoryScopeExternalRef': config.scopeRef,
         'threadTitle': 'Capture Link Thread $runMarker',
@@ -514,7 +514,7 @@ class MarionetteAnchorLifecycleRunner {
     );
 
     final pending = await _waitForPendingContextLinkSuggestion(
-      memoStack,
+      infinityContext,
       targetAnchorId: targetAnchorId,
     );
     _expect(
@@ -526,8 +526,8 @@ class MarionetteAnchorLifecycleRunner {
       'context-link suggestions',
     );
 
-    final reviewed = await memoStack.call(
-      'memoStack.reviewFirstPendingLinkSuggestion',
+    final reviewed = await infinityContext.call(
+      'infinityContext.reviewFirstPendingLinkSuggestion',
       {
         'approve': 'true',
         'targetId': targetAnchorId,
@@ -539,7 +539,7 @@ class MarionetteAnchorLifecycleRunner {
       reviewed['reviewedTargetId'] == targetAnchorId,
       'reviewed suggestion target did not match the capture target anchor',
     );
-    final linked = await _waitForContextLinkCount(memoStack);
+    final linked = await _waitForContextLinkCount(infinityContext);
     _expect(
       _int(linked['memoryBrowserContextLinkCount']) > 0,
       'approved context-link suggestion did not create a visible link',
@@ -551,7 +551,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runAttachmentCaptureFlow(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
     for (final attachment in _attachmentCases(runMarker)) {
@@ -568,8 +568,8 @@ class MarionetteAnchorLifecycleRunner {
       if (attachment.contentBase64 != null) {
         params['contentBase64'] = attachment.contentBase64!;
       }
-      final captured = await memoStack.call(
-        'memoStack.submitAttachmentCapture',
+      final captured = await infinityContext.call(
+        'infinityContext.submitAttachmentCapture',
         params,
       );
       final uploadedAssetIds =
@@ -588,7 +588,7 @@ class MarionetteAnchorLifecycleRunner {
       );
 
       final extraction = await _waitForAssetExtraction(
-        memoStack,
+        infinityContext,
         assetId: assetId,
       );
       final parserName = _field(extraction, 'parserName');
@@ -616,13 +616,13 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runRejectedContextLinkFlow(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
-    final baseline = await memoStack.call('memoStack.e2eState', {});
+    final baseline = await infinityContext.call('infinityContext.e2eState', {});
     final baselineLinkCount = _int(baseline['memoryBrowserContextLinkCount']);
-    final target = await memoStack.call(
-      'memoStack.createMemoryAnchor',
+    final target = await infinityContext.call(
+      'infinityContext.createMemoryAnchor',
       {
         'memoryScopeExternalRef': config.scopeRef,
         'kind': 'project',
@@ -634,8 +634,8 @@ class MarionetteAnchorLifecycleRunner {
     final targetAnchorId = _field(_map(target['anchor']), 'id');
     _log('created rejected link target $targetAnchorId');
 
-    await memoStack.call(
-      'memoStack.submitCapture',
+    await infinityContext.call(
+      'infinityContext.submitCapture',
       {
         'memoryScopeExternalRef': config.scopeRef,
         'threadTitle': 'Rejected Link Thread $runMarker',
@@ -644,12 +644,12 @@ class MarionetteAnchorLifecycleRunner {
       },
     );
     await _waitForPendingContextLinkSuggestion(
-      memoStack,
+      infinityContext,
       targetAnchorId: targetAnchorId,
     );
 
-    final reviewed = await memoStack.call(
-      'memoStack.reviewFirstPendingLinkSuggestion',
+    final reviewed = await infinityContext.call(
+      'infinityContext.reviewFirstPendingLinkSuggestion',
       {
         'approve': 'false',
         'targetId': targetAnchorId,
@@ -666,7 +666,7 @@ class MarionetteAnchorLifecycleRunner {
       'rejected suggestion target did not match the requested anchor',
     );
 
-    final rejectedState = await memoStack.call('memoStack.refresh', {});
+    final rejectedState = await infinityContext.call('infinityContext.refresh', {});
     final remainingForTarget = _pendingSuggestionsForTarget(
       rejectedState,
       targetAnchorId,
@@ -683,13 +683,13 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _runManualContextLinkFlow(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
-    final baseline = await memoStack.call('memoStack.e2eState', {});
+    final baseline = await infinityContext.call('infinityContext.e2eState', {});
     final baselineLinkCount = _int(baseline['memoryBrowserContextLinkCount']);
-    final target = await memoStack.call(
-      'memoStack.createMemoryAnchor',
+    final target = await infinityContext.call(
+      'infinityContext.createMemoryAnchor',
       {
         'memoryScopeExternalRef': config.scopeRef,
         'kind': 'project',
@@ -701,8 +701,8 @@ class MarionetteAnchorLifecycleRunner {
     final targetAnchorId = _field(_map(target['anchor']), 'id');
     _log('created manual link target $targetAnchorId');
 
-    await memoStack.call(
-      'memoStack.submitCapture',
+    await infinityContext.call(
+      'infinityContext.submitCapture',
       {
         'memoryScopeExternalRef': config.scopeRef,
         'threadTitle': 'Manual Link Thread $runMarker',
@@ -711,12 +711,12 @@ class MarionetteAnchorLifecycleRunner {
       },
     );
     await _waitForPendingContextLinkSuggestion(
-      memoStack,
+      infinityContext,
       targetAnchorId: targetAnchorId,
     );
 
-    final manual = await memoStack.call(
-      'memoStack.createManualContextLinkFromSuggestion',
+    final manual = await infinityContext.call(
+      'infinityContext.createManualContextLinkFromSuggestion',
       {
         'suggestionTargetId': targetAnchorId,
         'targetType': 'anchor',
@@ -736,20 +736,20 @@ class MarionetteAnchorLifecycleRunner {
     );
 
     await _waitForContextLinkCount(
-      memoStack,
+      infinityContext,
       minimumCount: baselineLinkCount + 1,
     );
     _log('created manual context link for $targetAnchorId');
   }
 
   Future<Map<String, dynamic>> _waitForPendingContextLinkSuggestion(
-    InfinityContextExtensionClient memoStack, {
+    InfinityContextExtensionClient infinityContext, {
     required String targetAnchorId,
   }) async {
     final deadline = DateTime.now().add(config.callTimeout);
     Map<String, dynamic>? lastState;
     while (DateTime.now().isBefore(deadline)) {
-      lastState = await memoStack.call('memoStack.refresh', {});
+      lastState = await infinityContext.call('infinityContext.refresh', {});
       final matching = _list(lastState['pendingLinkSuggestions'])
           .map(_map)
           .where((item) => _field(item, 'targetId') == targetAnchorId)
@@ -775,7 +775,7 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<Map<String, dynamic>> _waitForAssetExtraction(
-    InfinityContextExtensionClient memoStack, {
+    InfinityContextExtensionClient infinityContext, {
     required String assetId,
   }) async {
     final deadline = DateTime.now().add(
@@ -784,7 +784,7 @@ class MarionetteAnchorLifecycleRunner {
     Map<String, dynamic>? lastState;
     Map<String, dynamic>? lastJob;
     while (DateTime.now().isBefore(deadline)) {
-      lastState = await memoStack.call('memoStack.refresh', {});
+      lastState = await infinityContext.call('infinityContext.refresh', {});
       for (final item in _list(lastState['assetExtractions'])) {
         final job = _map(item);
         if (_field(job, 'assetId') != assetId) continue;
@@ -810,13 +810,13 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<Map<String, dynamic>> _waitForContextLinkCount(
-    InfinityContextExtensionClient memoStack, {
+    InfinityContextExtensionClient infinityContext, {
     int minimumCount = 1,
   }) async {
     final deadline = DateTime.now().add(config.callTimeout);
     Map<String, dynamic>? lastState;
     while (DateTime.now().isBefore(deadline)) {
-      lastState = await memoStack.call('memoStack.refresh', {});
+      lastState = await infinityContext.call('infinityContext.refresh', {});
       if (_int(lastState['memoryBrowserContextLinkCount']) >= minimumCount) {
         return lastState;
       }
@@ -826,14 +826,14 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _cleanupRunAnchors(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
-    final state = await memoStack.call('memoStack.e2eState', {});
+    final state = await infinityContext.call('infinityContext.e2eState', {});
     final anchors = _anchorsWithMarker(state, runMarker);
     for (final anchor in anchors) {
-      await memoStack.call(
-        'memoStack.deleteMemoryAnchor',
+      await infinityContext.call(
+        'infinityContext.deleteMemoryAnchor',
         {
           'anchorId': _field(anchor, 'id'),
           'reason': 'automated Marionette anchor lifecycle e2e cleanup',
@@ -843,17 +843,17 @@ class MarionetteAnchorLifecycleRunner {
   }
 
   Future<void> _bestEffortCleanup(
-    InfinityContextExtensionClient memoStack,
+    InfinityContextExtensionClient infinityContext,
     String runMarker,
   ) async {
     try {
-      await memoStack.call(
-        'memoStack.switchMemoryScope',
+      await infinityContext.call(
+        'infinityContext.switchMemoryScope',
         {'externalRef': config.scopeRef},
       );
-      await _cleanupRunAnchors(memoStack, runMarker);
-      await memoStack.call(
-        'memoStack.deleteMemoryScope',
+      await _cleanupRunAnchors(infinityContext, runMarker);
+      await infinityContext.call(
+        'infinityContext.deleteMemoryScope',
         {'externalRef': config.scopeRef},
       );
       _log('deleted memory scope ${config.scopeRef}');

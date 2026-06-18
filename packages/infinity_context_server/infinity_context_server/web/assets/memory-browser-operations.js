@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const browser = window.memoStackBrowser;
+  const browser = window.infinityContextBrowser;
   if (!browser) {
     return;
   }
@@ -20,7 +20,7 @@
     setError,
   } = browser;
 
-  window.memoStackOperations = {
+  window.infinityContextOperations = {
     renderOperations,
   };
 

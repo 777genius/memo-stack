@@ -749,7 +749,7 @@ def test_configured_graphiti_without_client_degrades_instead_of_disabling(monkey
         adapter = GraphitiGraphMemoryAdapter(
             neo4j_uri="bolt://graphiti.test:7687",
             neo4j_user="neo4j",
-            neo4j_password="memostackgraph",
+            neo4j_password="infinitycontextgraph",
         )
         try:
             capabilities = await adapter.capabilities()

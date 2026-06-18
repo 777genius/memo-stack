@@ -142,13 +142,13 @@ class InfinityContextExtensionClient {
     Map<String, dynamic>? lastState;
     while (DateTime.now().isBefore(deadline)) {
       try {
-        final state = await call('memoStack.e2eState', {});
+        final state = await call('infinityContext.e2eState', {});
         lastState = state;
         if (state['activeChatId'] != null &&
             state['connection'] == 'connected') {
           return state;
         }
-        final refreshed = await call('memoStack.refresh', {});
+        final refreshed = await call('infinityContext.refresh', {});
         lastState = refreshed;
         if (refreshed['activeChatId'] != null &&
             refreshed['connection'] == 'connected') {
