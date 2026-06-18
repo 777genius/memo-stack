@@ -15,6 +15,7 @@ from memo_stack_core.application.asset_extraction_mapping import (
     extracted_text,
     result_json,
 )
+from memo_stack_core.application.context_link_candidate_policy import source_text_risk_metadata
 from memo_stack_core.application.dto import (
     AssetExtractionResult,
     AssetExtractionsResult,
@@ -525,6 +526,7 @@ class RunAssetExtractionUseCase:
             succeeded = await self._mark_succeeded(
                 await self._reconcile_media_usage(job, result=result),
                 result=result,
+                extracted_text_value=extracted_text_value,
                 result_document_ids=(str(ingest.document.id),),
             )
             return AssetExtractionResult(
@@ -820,6 +822,7 @@ class RunAssetExtractionUseCase:
         job: AssetExtractionJob,
         *,
         result: ExtractionResult,
+        extracted_text_value: str,
         result_document_ids: tuple[str, ...],
     ) -> AssetExtractionJob:
         async with self._uow_factory() as uow:
@@ -848,6 +851,7 @@ class RunAssetExtractionUseCase:
                     "language": safe_metadata_text(result.language) if result.language else None,
                     "element_count": len(result.elements),
                     **safe_metadata(result.technical_metadata),
+                    **source_text_risk_metadata(extracted_text_value),
                 },
             )
             saved = await uow.asset_extractions.save(succeeded)

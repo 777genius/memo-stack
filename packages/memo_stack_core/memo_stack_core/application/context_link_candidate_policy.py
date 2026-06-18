@@ -340,6 +340,31 @@ def source_text_risk_metadata(text: str) -> dict[str, object]:
     }
 
 
+def source_text_risk_metadata_from_mapping(metadata: Mapping[str, object]) -> dict[str, object]:
+    if metadata.get("prompt_injection_signals_detected") is not True:
+        return {}
+    signal_codes = _safe_prompt_injection_signal_codes(
+        metadata.get("prompt_injection_signal_codes")
+    )
+    signal_count = (
+        len(signal_codes)
+        if signal_codes
+        else _safe_prompt_injection_signal_count(
+            metadata.get("prompt_injection_signal_count"),
+            fallback=0,
+        )
+    )
+    result: dict[str, object] = {
+        "source_text_policy": "untrusted_evidence",
+        "prompt_injection_signals_detected": True,
+        "prompt_injection_signal_count": signal_count,
+        "review_gate_reason": "prompt_injection_evidence",
+    }
+    if signal_codes:
+        result["prompt_injection_signal_codes"] = signal_codes
+    return result
+
+
 def candidate(
     *,
     target_type: str,
@@ -766,6 +791,31 @@ def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
         else:
             codes.append("rule_signal")
     return list(dict.fromkeys(codes))
+
+
+def _safe_prompt_injection_signal_codes(value: object) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    codes: list[str] = []
+    for raw in value:
+        if not isinstance(raw, str):
+            continue
+        code = raw.strip().lower()
+        if (
+            1 <= len(code) <= _MAX_QUERY_TERM_CHARS
+            and re.fullmatch(r"[a-z0-9_:-]+", code)
+            and code not in codes
+        ):
+            codes.append(code)
+        if len(codes) >= _MAX_PROMPT_INJECTION_SIGNAL_CODES:
+            break
+    return codes
+
+
+def _safe_prompt_injection_signal_count(value: object, *, fallback: int) -> int:
+    if isinstance(value, int) and value >= 0:
+        return min(value, _MAX_PROMPT_INJECTION_SIGNAL_CODES)
+    return min(max(fallback, 0), _MAX_PROMPT_INJECTION_SIGNAL_CODES)
 
 
 def _tier(score: float) -> str:

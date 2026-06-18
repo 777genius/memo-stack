@@ -45,6 +45,9 @@ from memo_stack_core.application.context_link_candidate_policy import (
     source_text_risk_metadata as _source_text_risk_metadata,
 )
 from memo_stack_core.application.context_link_candidate_policy import (
+    source_text_risk_metadata_from_mapping as _source_text_risk_metadata_from_mapping,
+)
+from memo_stack_core.application.context_link_candidate_policy import (
     temporal_hints as _temporal_hints,
 )
 from memo_stack_core.application.context_link_candidate_policy import (
@@ -549,6 +552,7 @@ class SuggestContextLinksUseCase:
                         "matched_terms": list(matched_terms),
                         **_evidence_summary(_chunk_source_refs(chunk, text_preview=chunk.text)),
                         **_chunk_multimodal_evidence_metadata(chunk.metadata),
+                        **_source_text_risk_metadata_from_mapping(chunk.metadata),
                     },
                 )
             )
@@ -821,9 +825,13 @@ def _with_source_text_risk_metadata(
 
 
 def _source_extraction_risk_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    prompt_risk_metadata = _source_text_risk_metadata_from_mapping(metadata)
     if metadata.get("mime_content_type_mismatch") is not True:
-        return {}
-    risk_metadata: dict[str, object] = {"mime_content_type_mismatch": True}
+        return prompt_risk_metadata
+    risk_metadata: dict[str, object] = {
+        **prompt_risk_metadata,
+        "mime_content_type_mismatch": True,
+    }
     for key in (
         "mime_declared_content_type",
         "mime_detected_content_type",

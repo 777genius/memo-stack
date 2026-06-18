@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from memo_stack_core.application.context_link_candidate_policy import source_text_risk_metadata
 from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.domain.assets import MemoryAsset
 from memo_stack_core.domain.extraction import AssetExtractionJob
@@ -48,6 +49,7 @@ def asset_extraction_chunk_metadata(
         "source_refs_limit": _MAX_SOURCE_REFS,
         "source_refs_truncated": total_ref_candidates > len(refs),
         "source_refs": refs,
+        **source_text_risk_metadata(extracted_text_value),
     }
     if result.parser_version:
         metadata["parser_version"] = safe_metadata_text(result.parser_version)

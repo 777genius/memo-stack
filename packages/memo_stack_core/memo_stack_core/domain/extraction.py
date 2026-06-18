@@ -17,6 +17,7 @@ ExtractionArtifactId = NewType("ExtractionArtifactId", str)
 
 MAX_EXTRACTION_METADATA_KEYS = 120
 MAX_EXTRACTION_ERROR_CHARS = 500
+MAX_EXTRACTION_METADATA_LIST_ITEMS = 50
 
 
 class AssetExtractionStatus(StrEnum):
@@ -450,4 +451,18 @@ def _safe_metadata(metadata: Mapping[str, object] | None) -> dict[str, object]:
             safe[key_text] = value[:500]
         elif isinstance(value, (int, float, bool)) or value is None:
             safe[key_text] = value
+        elif isinstance(value, (list, tuple)):
+            safe_items = tuple(_safe_metadata_list_items(value))
+            if safe_items:
+                safe[key_text] = list(safe_items)
     return safe
+
+
+def _safe_metadata_list_items(value: list[object] | tuple[object, ...]) -> list[object]:
+    safe_items: list[object] = []
+    for item in value[:MAX_EXTRACTION_METADATA_LIST_ITEMS]:
+        if isinstance(item, str):
+            safe_items.append(item[:500])
+        elif isinstance(item, (int, float, bool)) or item is None:
+            safe_items.append(item)
+    return safe_items
