@@ -38,6 +38,8 @@ from memo_stack_server.worker import OutboxWorker
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+_VISION_PROVIDER_SECRET = "sk-proj-vision-secret-value1234567890"
+
 
 def make_client(tmp_path: Path, **overrides: Any) -> TestClient:
     app = create_app(
@@ -127,6 +129,48 @@ def sample_wav_bytes(seconds: int = 1) -> bytes:
 class _FailingVisionResponses:
     async def create(self, **kwargs: Any) -> object:
         raise RuntimeError("simulated vision provider outage")
+
+
+class _SuccessfulVisionResponse:
+    output_text = json.dumps(
+        {
+            "summary": "Quick capture links this screenshot to MemoryScope frontend.",
+            "visible_text": ["Save to MemoryScope", "Review links"],
+            "screenshot_ui_summary": "A memory review panel is open.",
+            "suggested_tags": ["memory", "frontend"],
+            "regions": [
+                {
+                    "kind": "visible_text",
+                    "text": "Save to MemoryScope",
+                    "bbox": [12, 4, 118, 36],
+                    "confidence": 0.94,
+                }
+            ],
+            "raw_provider_payload": {
+                "api_key": _VISION_PROVIDER_SECRET,
+                "debug": f"Bearer {_VISION_PROVIDER_SECRET}",
+            },
+        }
+    )
+
+
+class _SuccessfulVisionResponses:
+    async def create(self, **kwargs: Any) -> object:
+        assert kwargs["model"] == "gpt-4.1-mini"
+        assert kwargs["store"] is False
+        assert kwargs["text"]["format"]["strict"] is True
+        content = kwargs["input"][0]["content"]
+        assert "untrusted evidence" in content[0]["text"]
+        assert content[1]["detail"] == "low"
+        assert content[1]["image_url"].startswith("data:image/png;base64,")
+        return _SuccessfulVisionResponse()
+
+
+class _SuccessfulVisionClient:
+    responses = _SuccessfulVisionResponses()
+
+    async def aclose(self) -> None:
+        return None
 
 
 class _FailingVisionClient:
@@ -1281,9 +1325,154 @@ def test_standard_vision_profile_falls_back_to_local_image_metadata(
         assert extracted["status"] == "succeeded"
         assert extracted["parser_profile"] == "standard_vision"
         assert extracted["parser_name"] == "image_metadata"
+        assert extracted["metadata"]["degraded_fallback"] is True
+        assert extracted["metadata"]["fallback_parser_name"] == "openai_vision_image"
+        assert (
+            extracted["metadata"]["fallback_safe_error_code"]
+            == "asset_extraction.vision_external_ai_disabled"
+        )
+        assert extracted["metadata"]["vision_status"] == "disabled"
+        assert (
+            extracted["metadata"]["vision_error_code"]
+            == "asset_extraction.vision_external_ai_disabled"
+        )
+        assert extracted["metadata"]["vision_model"] == "gpt-4.1-mini"
         assert extracted["metadata"]["image_width"] == 120
         assert extracted["metadata"]["image_height"] == 40
         assert extracted["metadata"]["image_region_count"] >= 1
+
+
+def test_standard_vision_profile_uses_provider_and_preserves_bbox_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        OpenAIVisionImageExtractionEngine,
+        "_client",
+        lambda self: _SuccessfulVisionClient(),
+    )
+    with make_client(
+        tmp_path,
+        extraction_external_ai_enabled=True,
+        extraction_vision_detail="low",
+        openai_api_key="test-key",
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "screenshots",
+                "filename": "memory-screenshot.png",
+                "parser_profile": "standard_vision",
+                "extract": "true",
+            },
+            content=sample_png_bytes(),
+            headers=auth_headers({"Content-Type": "image/png"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        extracted = fetched.json()["data"]
+        assert extracted["status"] == "succeeded"
+        assert extracted["parser_profile"] == "standard_vision"
+        assert extracted["parser_name"] == "openai_vision_image"
+        assert extracted["model_version"] == "gpt-4.1-mini"
+        assert extracted["metadata"]["vision_status"] == "extracted"
+        assert extracted["metadata"]["vision_detail"] == "low"
+        assert extracted["metadata"]["vision_json_status"] == "parsed"
+        assert extracted["metadata"]["vision_region_count"] == 1
+        assert extracted["metadata"]["vision_prompt_policy"] == (
+            "image_text_is_untrusted_evidence"
+        )
+        assert "degraded_fallback" not in extracted["metadata"]
+        artifact_types = {item["artifact_type"] for item in extracted["artifacts"]}
+        assert {
+            "extracted_json",
+            "image_regions",
+            "markdown",
+            "media_manifest",
+            "vision_json",
+        } == artifact_types
+        assert _VISION_PROVIDER_SECRET not in fetched.text
+        assert "api_key" not in fetched.text
+
+        vision_artifact = next(
+            item for item in extracted["artifacts"] if item["artifact_type"] == "vision_json"
+        )
+        vision_download = client.get(
+            f"/v1/extraction-artifacts/{vision_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert vision_download.status_code == 200, vision_download.text
+        vision_payload = json.loads(vision_download.content.decode("utf-8"))
+        assert vision_payload["schema_name"] == "memo_stack.vision_image_evidence"
+        assert vision_payload["regions"][0]["bbox"] == [12.0, 4.0, 118.0, 36.0]
+        assert "raw_provider_payload" not in vision_payload
+        assert _VISION_PROVIDER_SECRET not in vision_download.text
+        assert "api_key" not in vision_download.text
+
+        region_artifact = next(
+            item for item in extracted["artifacts"] if item["artifact_type"] == "image_regions"
+        )
+        regions_download = client.get(
+            f"/v1/extraction-artifacts/{region_artifact['id']}/download",
+            headers=auth_headers(),
+        )
+        assert regions_download.status_code == 200, regions_download.text
+        regions_payload = json.loads(regions_download.content.decode("utf-8"))
+        assert regions_payload["schema_name"] == "memo_stack.image_regions"
+        assert any(
+            region["bbox"] == [12.0, 4.0, 118.0, 36.0]
+            for region in regions_payload["regions"]
+        )
+        assert _VISION_PROVIDER_SECRET not in regions_download.text
+
+        chunks = client.get(
+            f"/v1/documents/{extracted['result_document_ids'][0]}/chunks",
+            headers=auth_headers(),
+        )
+        assert chunks.status_code == 200, chunks.text
+        chunk_payload = chunks.json()["data"]
+        chunk_text = " ".join(item["text"] for item in chunk_payload)
+        assert "Quick capture links this screenshot" in chunk_text
+        source_refs = [ref for chunk in chunk_payload for ref in chunk["source_refs"]]
+        assert any(ref.get("bbox") == [12.0, 4.0, 118.0, 36.0] for ref in source_refs)
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "screenshots",
+                "source_type": "asset",
+                "source_id": upload.json()["data"]["id"],
+                "text": "Quick capture screenshot Save to MemoryScope Review links",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        chunk_candidate = next(
+            item
+            for item in suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "chunk"
+        )
+        assert chunk_candidate["metadata"]["evidence_has_bbox_ref"] is True
+        assert "image" in chunk_candidate["metadata"]["evidence_modalities"]
+        assert any(
+            ref.get("bbox") == [12.0, 4.0, 118.0, 36.0]
+            for ref in chunk_candidate["metadata"]["evidence_refs"]
+        )
 
 
 def test_standard_vision_provider_failure_falls_back_to_local_image_metadata(
@@ -1329,6 +1518,19 @@ def test_standard_vision_provider_failure_falls_back_to_local_image_metadata(
         assert extracted["parser_profile"] == "standard_vision"
         assert extracted["parser_name"] == "image_metadata"
         assert extracted["safe_error_code"] is None
+        assert extracted["metadata"]["degraded_fallback"] is True
+        assert extracted["metadata"]["fallback_parser_name"] == "openai_vision_image"
+        assert (
+            extracted["metadata"]["fallback_safe_error_code"]
+            == "asset_extraction.vision_provider_error"
+        )
+        assert extracted["metadata"]["vision_status"] == "failed"
+        assert (
+            extracted["metadata"]["vision_error_code"]
+            == "asset_extraction.vision_provider_error"
+        )
+        assert extracted["metadata"]["vision_provider"] == "openai_vision"
+        assert extracted["metadata"]["vision_model"] == "gpt-4.1-mini"
         assert extracted["metadata"]["image_width"] == 120
         assert extracted["metadata"]["image_height"] == 40
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {

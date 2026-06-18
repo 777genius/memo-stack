@@ -19,6 +19,7 @@ def merge_fallback_context(
     if fallback_result.safe_error_message:
         technical_metadata["fallback_safe_error_message"] = fallback_result.safe_error_message
     technical_metadata.update(_speech_transcription_fallback_metadata(fallback_result))
+    technical_metadata.update(_image_vision_fallback_metadata(fallback_result))
     return ExtractionResult(
         status=result.status,
         normalized_content_type=result.normalized_content_type,
@@ -58,6 +59,27 @@ def _speech_transcription_fallback_metadata(
     return metadata
 
 
+def _image_vision_fallback_metadata(
+    fallback_result: ExtractionResult,
+) -> dict[str, object]:
+    if fallback_result.parser_name != "openai_vision_image":
+        return {}
+    code = fallback_result.safe_error_code or "asset_extraction.vision_failed"
+    metadata: dict[str, object] = {
+        "vision_status": _vision_fallback_status(code),
+        "vision_error_code": code,
+    }
+    if fallback_result.safe_error_message:
+        metadata["vision_error_message"] = fallback_result.safe_error_message
+    provider = fallback_result.technical_metadata.get("vision_provider")
+    if provider:
+        metadata["vision_provider"] = provider
+    model = fallback_result.technical_metadata.get("vision_model")
+    if model:
+        metadata["vision_model"] = model
+    return metadata
+
+
 def _transcript_fallback_status(code: str) -> str:
     if code == "asset_extraction.transcription_external_ai_disabled":
         return "disabled"
@@ -70,4 +92,16 @@ def _transcript_fallback_status(code: str) -> str:
         return "skipped"
     if code == "asset_extraction.transcription_unsupported_content_type":
         return "unsupported"
+    return "failed"
+
+
+def _vision_fallback_status(code: str) -> str:
+    if code == "asset_extraction.vision_external_ai_disabled":
+        return "disabled"
+    if code == "asset_extraction.vision_missing_api_key":
+        return "not_configured"
+    if code == "asset_extraction.vision_image_too_large":
+        return "skipped"
+    if code == "asset_extraction.vision_empty_output":
+        return "empty"
     return "failed"

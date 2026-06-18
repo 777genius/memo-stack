@@ -36,7 +36,7 @@ scope.
 | API and SDK review flows | SDK can list, approve, reject, override target, batch review, list anchors/evidence and parse diagnostics | `tests/unit/test_sdk_contract.py`, `tests/e2e/test_context_link_batch_review_sdk_e2e.py`, `tests/e2e/test_manual_context_link_sdk_e2e.py` | Strong | Keep SDK typed diagnostics versioned with context contract |
 | Observability and audit | Review actions, linking decisions, rejected candidates and context assembly counters are bounded and redacted | context diagnostics tests, context link review audit tests, redaction tests | Strong | Add migration/schema diagnostics if schema drift tooling changes |
 | Performance guardrails | Candidate limits, evidence ref caps, diagnostics caps, batch caps and payload bounds are tested | `tests/unit/test_context_link_suggestion_guardrails.py`, `tests/unit/test_context_link_policy.py`, `tests/unit/test_context_packer.py`, review batch tests | Strong | Add collector call-count guard before adding expensive rerankers |
-| Multimodal evidence | Documents, images, audio and video create evidence artifacts with page, bbox or time refs before semantic promotion | multimodal manifest tests, extraction adapter tests, capabilities SDK tests | Partial | Add provider-off and provider-on integration cases for image/audio/video |
+| Multimodal evidence | Documents, images, audio and video create evidence artifacts with page, bbox or time refs before semantic promotion | multimodal manifest tests, extraction adapter tests, capabilities SDK tests, provider-off/provider-on API extraction tests for image/audio/video | Strong | Add optional live-provider smoke under explicit env when paid provider keys are available |
 
 ## Release Gate Shortlist
 
