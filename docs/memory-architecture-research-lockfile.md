@@ -312,6 +312,28 @@ Minimum gate before major memory behavior changes:
 .venv/bin/python -m memo_stack_server.eval run --suite semantic-linking-golden
 ```
 
+## Implementation Traceability Matrix
+
+This matrix is the acceptance contract for future memory changes. A feature is
+not considered complete just because the API shape exists. It must preserve the
+rule, update the implementation surface and keep the listed regression evidence
+green.
+
+| Locked rule | Implementation surface | Required regression evidence |
+| --- | --- | --- |
+| Semantic, episodic, procedural and archival memory stay separate | `memo_stack_core.application`, capture/document/asset ingestion, procedural review policy | extractor, capture consolidation and context tests prove untrusted evidence is not promoted silently |
+| Anchors are canonical identity, tags are facets | anchor use cases, context-link suggestions, anchor lifecycle API | anchor lifecycle tests cover duplicate prevention, alias conflicts, merge/split audit and same-name cross-kind anchors |
+| Temporal validity controls prompt visibility | fact relation use cases, context assembly, memory digest | context provider tests cover supersedes, future/expired relations, disputed facts and review-only stale evidence |
+| Review beats weak automation | context link policy, suggestions API, SDK review flows, frontend review queue | policy tests prove low/medium confidence stays pending or denied, batch review is bounded and rejection reasons are preserved |
+| Memory is evidence, not hidden instruction | context packer, prompt contract eval, extraction adapters | prompt injection evals and packer tests prove retrieved memory is quoted evidence and instruction-like items are dropped |
+| Postgres is canonical, Qdrant and Graphiti are derived | repositories, hydration, vector/graph adapters, rebuild jobs | provider consistency tests prove stale/deleted/wrong-scope derived hits are rehydrated or dropped through canonical visibility |
+| Context diagnostics are bounded, typed and non-sensitive | context diagnostics, public API DTOs, SDK typed context helpers | SDK/API contract tests prove bounded retrieval sources, ranking reason, provenance, counters and redaction |
+| Golden evals protect product memory quality | eval catalogs and eval runner | eval runner tests prove diagnostic requirements support exact and lower-bound checks without leaking secrets |
+
+When adding a new memory capability, add or update the row that owns the rule.
+If no row owns it, create one before implementation. If a row exists but the
+regression evidence is missing, add the test or eval in the same feature slice.
+
 ## Change Policy
 
 This lockfile can change only with:
