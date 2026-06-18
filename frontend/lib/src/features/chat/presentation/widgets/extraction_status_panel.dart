@@ -166,6 +166,21 @@ class _ExtractionJobRow extends StatelessWidget {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+              if (job.canCancel)
+                IconButton(
+                  key: ValueKey(
+                    'asset_extraction_cancel_${sidebarKeyPart(job.id)}',
+                  ),
+                  tooltip: 'Cancel extraction',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () =>
+                      context.read<ChatStore?>()?.cancelAssetExtraction(job),
+                  icon: Icon(
+                    Icons.cancel_outlined,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               if (job.hasDocuments)
                 IconButton(
                   key: ValueKey(

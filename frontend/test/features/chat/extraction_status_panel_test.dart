@@ -10,6 +10,7 @@ import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/extraction_status_panel.dart';
 import 'package:frontend/src/presentation/theme/app_theme.dart';
@@ -75,6 +76,78 @@ void main() {
       find.byKey(const ValueKey('asset_extraction_progress_extract_1')),
     );
     expect(progress.value, 0.45);
+  });
+
+  testWidgets('uses backend actionability to cancel running extraction',
+      (tester) async {
+    final repo = _PanelRepo();
+    final store = ChatStore(
+      repo,
+      null,
+      assetExtractionPollInterval: const Duration(minutes: 5),
+    );
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    store.assetExtractions = ObservableList.of([
+      AssetExtractionJob.fromMap({
+        'id': 'extract-1',
+        'asset_id': 'asset-1',
+        'space_id': 'space-1',
+        'memory_scope_id': 'scope-1',
+        'parser_profile': 'standard_local',
+        'parser_config_hash': 'hash',
+        'source_sha256_hex': 'sha',
+        'status': 'running',
+        'attempt_count': 1,
+        'result_document_ids': <String>[],
+        'artifacts': <Map<String, dynamic>>[],
+        'metadata': <String, dynamic>{},
+        'progress': {
+          'stage': 'extracting_content',
+          'percent': 45,
+          'message': 'Extracting searchable content',
+          'terminal': false,
+        },
+        'execution': {
+          'available_actions': ['cancel'],
+          'retry_actionable': false,
+          'cancel_actionable': true,
+          'retry_state_reason': 'job_not_terminal',
+          'cancel_state_reason': 'running_cancel_available',
+        },
+        'usage': <String, dynamic>{},
+        'created_at': '2026-06-13T00:00:00Z',
+        'updated_at': '2026-06-13T00:01:00Z',
+      }),
+    ]);
+
+    await tester.pumpWidget(
+      Provider<ChatStore>.value(
+        value: store,
+        child: MaterialApp(
+          theme: _testTheme(),
+          home: const Scaffold(body: ExtractionStatusPanel()),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('asset_extraction_cancel_extract_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('asset_extraction_retry_extract_1')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('asset_extraction_cancel_extract_1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.canceledJobIds, ['extract-1']);
+    expect(store.assetExtractions.single.status, 'canceled');
   });
 
   testWidgets('shows reconciled media quota after extraction completes',
@@ -399,6 +472,8 @@ class _PanelRepo implements ChatRepository {
   final _running = StreamController<bool>.broadcast();
   final _connection = StreamController<ConnectionStatus>.broadcast();
   final chunksByDocumentId = <String, List<DocumentChunk>>{};
+  final canceledJobIds = <String>[];
+  final extractionJobs = <AssetExtractionJob>[];
 
   Future<void> close() async {
     await _messages.close();
@@ -448,5 +523,62 @@ class _PanelRepo implements ChatRepository {
   }
 
   @override
+  Future<AssetExtractionJob> cancelAssetExtraction(String jobId) async {
+    canceledJobIds.add(jobId);
+    final job = AssetExtractionJob.fromMap({
+      'id': jobId,
+      'asset_id': 'asset-1',
+      'space_id': 'space-1',
+      'memory_scope_id': 'scope-1',
+      'parser_profile': 'standard_local',
+      'parser_config_hash': 'hash',
+      'source_sha256_hex': 'sha',
+      'status': 'canceled',
+      'attempt_count': 1,
+      'safe_error_code': 'asset_extraction.canceled',
+      'safe_error_message': 'Extraction was canceled',
+      'result_document_ids': <String>[],
+      'artifacts': <Map<String, dynamic>>[],
+      'metadata': <String, dynamic>{},
+      'progress': <String, dynamic>{},
+      'execution': {
+        'available_actions': ['retry'],
+        'retry_actionable': true,
+        'cancel_actionable': false,
+        'retry_state_reason': 'canceled_manual_retry_available',
+        'cancel_state_reason': 'terminal_job',
+      },
+      'usage': <String, dynamic>{},
+      'created_at': '2026-06-13T00:00:00Z',
+      'updated_at': '2026-06-13T00:01:00Z',
+    });
+    extractionJobs
+      ..removeWhere((item) => item.id == jobId)
+      ..insert(0, job);
+    return job;
+  }
+
+  @override
+  Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    return MemoryOperationsConsole(
+      generatedAt: DateTime.now(),
+      scope: const <String, dynamic>{},
+      extractionStatusCounts: _statusCounts(extractionJobs),
+      linkSuggestionStatusCounts: const <String, int>{},
+      extractionJobs: extractionJobs.take(limit).toList(growable: false),
+      contextLinkSuggestions: const <MemoryContextLinkSuggestion>[],
+      diagnostics: const <String, dynamic>{},
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Map<String, int> _statusCounts(Iterable<AssetExtractionJob> items) {
+  final counts = <String, int>{};
+  for (final item in items) {
+    counts[item.status] = (counts[item.status] ?? 0) + 1;
+  }
+  return counts;
 }

@@ -167,7 +167,10 @@ class AssetExtractionJob extends Equatable {
         _map(map['progress']),
         status: _string(map['status'], fallback: 'pending'),
       ),
-      execution: ExtractionExecution.fromMap(_map(map['execution'])),
+      execution: ExtractionExecution.fromMap(
+        _map(map['execution']),
+        status: _string(map['status'], fallback: 'pending'),
+      ),
       usage: ExtractionUsage.fromMap(_map(map['usage'])),
       createdAt: _date(map['created_at']),
       updatedAt: _date(map['updated_at']),
@@ -179,13 +182,17 @@ class AssetExtractionJob extends Equatable {
   bool get isRunning => status == 'pending' || status == 'running';
   bool get isSucceeded => status == 'succeeded';
   bool get isFailed => status == 'failed' || status == 'unsupported';
-  bool get canCancel => status == 'pending' || status == 'running';
+  bool get canCancel => execution.actionabilityProvided
+      ? execution.cancelActionable
+      : status == 'pending' || status == 'running';
   bool get canReprocess =>
       status == 'failed' ||
       status == 'unsupported' ||
       status == 'canceled' ||
       status == 'stale';
-  bool get canRetry => canReprocess;
+  bool get canRetry => execution.actionabilityProvided
+      ? execution.retryActionable
+      : canReprocess;
   bool get hasDocuments => resultDocumentIds.isNotEmpty;
 
   ExtractionArtifact? get preferredArtifact {
@@ -235,6 +242,12 @@ class ExtractionExecution extends Equatable {
   final DateTime? retryAfterAt;
   final String? retryDisposition;
   final DateTime? cancellationRequestedAt;
+  final bool actionabilityProvided;
+  final bool retryActionable;
+  final bool cancelActionable;
+  final List<String> availableActions;
+  final String? retryStateReason;
+  final String? cancelStateReason;
 
   const ExtractionExecution({
     this.leaseOwner,
@@ -243,16 +256,50 @@ class ExtractionExecution extends Equatable {
     this.retryAfterAt,
     this.retryDisposition,
     this.cancellationRequestedAt,
+    this.actionabilityProvided = false,
+    this.retryActionable = false,
+    this.cancelActionable = false,
+    this.availableActions = const <String>[],
+    this.retryStateReason,
+    this.cancelStateReason,
   });
 
-  factory ExtractionExecution.fromMap(Map<String, dynamic> map) {
+  factory ExtractionExecution.fromMap(
+    Map<String, dynamic> map, {
+    required String status,
+  }) {
+    final cancellationRequestedAt =
+        _nullableDate(map['cancellation_requested_at']);
+    final actionabilityProvided = map.containsKey('available_actions') ||
+        map.containsKey('retry_actionable') ||
+        map.containsKey('cancel_actionable') ||
+        map.containsKey('retry_state_reason') ||
+        map.containsKey('cancel_state_reason');
+    final availableActions = map.containsKey('available_actions')
+        ? _stringList(map['available_actions'])
+        : _legacyAvailableActions(
+            status: status,
+            cancellationRequestedAt: cancellationRequestedAt,
+          );
     return ExtractionExecution(
       leaseOwner: _nullableString(map['lease_owner']),
       leaseExpiresAt: _nullableDate(map['lease_expires_at']),
       heartbeatAt: _nullableDate(map['heartbeat_at']),
       retryAfterAt: _nullableDate(map['retry_after_at']),
       retryDisposition: _nullableString(map['retry_disposition']),
-      cancellationRequestedAt: _nullableDate(map['cancellation_requested_at']),
+      cancellationRequestedAt: cancellationRequestedAt,
+      actionabilityProvided: actionabilityProvided,
+      retryActionable: _bool(
+        map['retry_actionable'],
+        fallback: availableActions.contains('retry'),
+      ),
+      cancelActionable: _bool(
+        map['cancel_actionable'],
+        fallback: availableActions.contains('cancel'),
+      ),
+      availableActions: availableActions,
+      retryStateReason: _nullableString(map['retry_state_reason']),
+      cancelStateReason: _nullableString(map['cancel_state_reason']),
     );
   }
 
@@ -267,6 +314,12 @@ class ExtractionExecution extends Equatable {
         retryAfterAt,
         retryDisposition,
         cancellationRequestedAt,
+        actionabilityProvided,
+        retryActionable,
+        cancelActionable,
+        availableActions,
+        retryStateReason,
+        cancelStateReason,
       ];
 }
 
@@ -444,6 +497,24 @@ Map<String, dynamic> _map(Object? value) {
 List<String> _stringList(Object? value) {
   if (value is! List) return const <String>[];
   return value.map((item) => item.toString()).toList(growable: false);
+}
+
+List<String> _legacyAvailableActions({
+  required String status,
+  required DateTime? cancellationRequestedAt,
+}) {
+  final actions = <String>[];
+  if (status == 'failed' ||
+      status == 'unsupported' ||
+      status == 'canceled' ||
+      status == 'stale') {
+    actions.add('retry');
+  }
+  if ((status == 'pending' || status == 'running') &&
+      cancellationRequestedAt == null) {
+    actions.add('cancel');
+  }
+  return actions;
 }
 
 List<ExtractionArtifact> _artifactList(Object? value) {

@@ -451,13 +451,31 @@ class _EvidenceExtractionTile extends StatelessWidget {
           '${job.status.replaceAll('_', ' ')} - ${job.parserName ?? job.parserProfile}',
       status: job.progress.message,
       statusColor: _extractionStatusColor(job, scheme),
-      trailing: job.canRetry
-          ? IconButton(
-              key: ValueKey('memory_evidence_retry_${sidebarKeyPart(job.id)}'),
-              tooltip: 'Retry extraction',
-              onPressed: () =>
-                  context.read<ChatStore?>()?.retryAssetExtraction(job),
-              icon: const Icon(Icons.refresh, size: 18),
+      trailing: job.canRetry || job.canCancel
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (job.canRetry)
+                  IconButton(
+                    key: ValueKey(
+                      'memory_evidence_retry_${sidebarKeyPart(job.id)}',
+                    ),
+                    tooltip: 'Retry extraction',
+                    onPressed: () =>
+                        context.read<ChatStore?>()?.retryAssetExtraction(job),
+                    icon: const Icon(Icons.refresh, size: 18),
+                  ),
+                if (job.canCancel)
+                  IconButton(
+                    key: ValueKey(
+                      'memory_evidence_cancel_${sidebarKeyPart(job.id)}',
+                    ),
+                    tooltip: 'Cancel extraction',
+                    onPressed: () =>
+                        context.read<ChatStore?>()?.cancelAssetExtraction(job),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                  ),
+              ],
             )
           : null,
       body: Column(

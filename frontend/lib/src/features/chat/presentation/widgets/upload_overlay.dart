@@ -174,6 +174,17 @@ class UploadOverlay extends StatelessWidget {
                                   width: 32,
                                   height: 32,
                                   fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 32,
+                                    height: 32,
+                                    alignment: Alignment.center,
+                                    color: cs.primary.withValues(alpha: 0.1),
+                                    child: Icon(
+                                      Icons.image_not_supported_outlined,
+                                      size: 16,
+                                      color: cs.primary,
+                                    ),
+                                  ),
                                 ),
                               )
                             else

@@ -193,6 +193,16 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
                             width: 64,
                             height: 64,
                             fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 64,
+                              height: 64,
+                              alignment: Alignment.center,
+                              color: colorScheme.surfaceContainerHighest,
+                              child: Icon(
+                                Icons.image_not_supported_outlined,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           ),
                         ),
                         Positioned(

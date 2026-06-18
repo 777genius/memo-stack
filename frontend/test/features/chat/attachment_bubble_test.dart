@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -74,6 +75,32 @@ void main() {
     expect(find.textContaining('Open attachment failed'), findsOneWidget);
     expect(repo.downloadedFileIds, isEmpty);
     expect(opener.requests, isEmpty);
+  });
+
+  testWidgets('invalid image preview and long name stay bounded',
+      (tester) async {
+    final repo = _AttachmentRepo();
+    final opener = _FakeDownloadedFileOpener();
+    addTearDown(repo.close);
+
+    await _pumpAttachment(
+      tester,
+      repo: repo,
+      opener: opener,
+      child: SizedBox(
+        width: 260,
+        child: AttachmentBubble(
+          name: 'very-long-attachment-name-that-must-not-overflow.jpeg',
+          fileId: 'file-42',
+          previewBase64: base64Encode([1, 2, 3, 4, 5]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.attach_file), findsOneWidget);
+    expect(find.textContaining('very-long-attachment-name'), findsOneWidget);
   });
 }
 

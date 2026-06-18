@@ -76,6 +76,11 @@ Map<String, dynamic> _extractionToMap(AssetExtractionJob job) {
     'artifactTypes':
         job.artifacts.map((artifact) => artifact.artifactType).toList(),
     'progressPercent': job.progress.percent,
+    'availableActions': job.execution.availableActions,
+    'retryActionable': job.canRetry,
+    'cancelActionable': job.canCancel,
+    'retryStateReason': job.execution.retryStateReason,
+    'cancelStateReason': job.execution.cancelStateReason,
   };
 }
 
