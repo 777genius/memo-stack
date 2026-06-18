@@ -113,6 +113,25 @@ void main() {
       await repo.dispose();
     });
 
+    test('reads extraction capability diagnostics from capabilities', () async {
+      final rest = _CapabilitiesRestClient();
+      final repo = ChatRepositoryImpl(rest);
+
+      final capabilities = await repo.getExtractionCapabilities();
+
+      expect(capabilities.defaultProfile, 'standard_local');
+      expect(capabilities.provider('openai_vision')?.status, 'blocked');
+      expect(
+        capabilities.modalityAction('image', 'vision')?.reason,
+        'missing api key',
+      );
+      expect(capabilities.degradedLabels, [
+        'openai_vision: set OPENAI_API_KEY',
+      ]);
+
+      await repo.dispose();
+    });
+
     test('listAssetExtractions hydrates artifacts for succeeded jobs',
         () async {
       final rest = _ExtractionListRestClient();
@@ -692,6 +711,55 @@ class _CapabilitiesRestClient extends BackendRestClient {
     return {
       'limits': {'max_asset_upload_bytes': '12345'},
       'extraction': {
+        'enabled': true,
+        'default_profile': 'standard_local',
+        'profiles_v2': [
+          {
+            'name': 'standard_vision',
+            'enabled': false,
+            'status': 'blocked',
+            'input_modalities': ['image'],
+            'vision_features': ['structured_image_summary'],
+            'requires_explicit_external_ai': true,
+          },
+        ],
+        'providers': {
+          'openai_vision': {
+            'kind': 'vision',
+            'installed': true,
+            'configured': false,
+            'enabled': false,
+            'status': 'blocked',
+            'reason': 'missing api key',
+            'operator_action': 'set OPENAI_API_KEY',
+            'user_retryable': false,
+            'profiles': ['standard_vision'],
+          },
+        },
+        'modality_actions': {
+          'image': {
+            'vision': {
+              'enabled': false,
+              'status': 'blocked',
+              'reason': 'missing api key',
+              'profiles': ['standard_vision'],
+              'providers': ['openai_vision'],
+            },
+          },
+        },
+        'degraded_components': [
+          {
+            'component_type': 'provider',
+            'name': 'openai_vision',
+            'status': 'blocked',
+            'reason': 'missing api key',
+            'operator_action': 'set OPENAI_API_KEY',
+            'user_retryable': false,
+          },
+        ],
+        'provider_contract': {
+          'openai_vision': {'max_payload_bytes': 536870912},
+        },
         'limits': {'max_bytes': 999},
       },
     };

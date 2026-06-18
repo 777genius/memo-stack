@@ -7,12 +7,14 @@ import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
 import 'package:frontend/src/features/chat/domain/entities/connection_status.dart';
 import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
+import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
+import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 
 void main() {
   group('ChatStore approvals', () {
@@ -224,6 +226,26 @@ void main() {
       expect(store.contextLinkSuggestionError.value, isNull);
     });
 
+    test('refreshes pending context links from repository after review',
+        () async {
+      final store = ChatStore(repo, null);
+      repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+      repo.postReviewContextLinkSuggestions = [_suggestion('ctxlinksug-2')];
+
+      await store.refreshContextLinkSuggestions();
+      final listCallsBeforeReview = repo.listContextLinkSuggestionCalls;
+      await store.reviewContextLinkSuggestion(
+        store.contextLinkSuggestions.single,
+        approve: true,
+      );
+
+      expect(repo.reviewedSuggestions, ['ctxlinksug-1:approve']);
+      expect(repo.listContextLinkSuggestionCalls,
+          greaterThan(listCallsBeforeReview));
+      expect(store.contextLinkSuggestions.map((item) => item.id),
+          ['ctxlinksug-2']);
+    });
+
     test('approves pending suggestion with target override', () async {
       final store = ChatStore(repo, null);
       repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
@@ -284,6 +306,27 @@ void main() {
         contains('Target override review failed'),
       );
     });
+
+    test('refreshes extraction capabilities through optional provider',
+        () async {
+      final capabilityProvider = _FakeExtractionCapabilityProvider();
+      final store = ChatStore(
+        repo,
+        null,
+        extractionCapabilities: capabilityProvider,
+      );
+
+      await store.refreshExtractionCapabilities();
+
+      expect(capabilityProvider.calls, 1);
+      expect(
+        store.extractionCapabilities.value
+            ?.provider('openai_transcription')
+            ?.status,
+        'blocked',
+      );
+      expect(store.extractionCapabilitiesError.value, isNull);
+    });
   });
 }
 
@@ -313,6 +356,8 @@ class _FakeChatRepository implements ChatRepository {
     'sales-crm': _scope('scope-sales-crm', 'sales-crm', 'Sales CRM'),
   };
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
+  List<MemoryContextLinkSuggestion>? postReviewContextLinkSuggestions;
+  int listContextLinkSuggestionCalls = 0;
   final reviewedSuggestions = <String>[];
   final reviewedSuggestionReasons = <String, String?>{};
   final reviewedSuggestionOverrides = <String, Map<String, String>>{};
@@ -677,6 +722,7 @@ class _FakeChatRepository implements ChatRepository {
     String status = 'pending',
     int limit = 50,
   }) async {
+    listContextLinkSuggestionCalls += 1;
     return contextLinkSuggestions;
   }
 
@@ -706,9 +752,11 @@ class _FakeChatRepository implements ChatRepository {
     final suggestion = contextLinkSuggestions.firstWhere(
       (item) => item.id == suggestionId,
     );
-    contextLinkSuggestions = contextLinkSuggestions
-        .where((item) => item.id != suggestionId)
-        .toList(growable: false);
+    contextLinkSuggestions = postReviewContextLinkSuggestions ??
+        contextLinkSuggestions
+            .where((item) => item.id != suggestionId)
+            .toList(growable: false);
+    postReviewContextLinkSuggestions = null;
     return MemoryContextLinkSuggestion.fromMap({
       'id': suggestion.id,
       'space_id': suggestion.spaceId,
@@ -747,6 +795,38 @@ class _FakeChatRepository implements ChatRepository {
       );
     }
     return reviewed;
+  }
+}
+
+class _FakeExtractionCapabilityProvider
+    implements ExtractionCapabilityProvider {
+  var calls = 0;
+
+  @override
+  Future<ExtractionCapabilities> getExtractionCapabilities() async {
+    calls += 1;
+    return ExtractionCapabilities.fromMap({
+      'enabled': true,
+      'default_profile': 'standard_local',
+      'providers': {
+        'openai_transcription': {
+          'kind': 'asr',
+          'installed': true,
+          'configured': false,
+          'enabled': false,
+          'status': 'blocked',
+          'reason': 'missing api key',
+        },
+      },
+      'degraded_components': [
+        {
+          'component_type': 'provider',
+          'name': 'openai_transcription',
+          'status': 'blocked',
+          'reason': 'missing api key',
+        },
+      ],
+    });
   }
 }
 

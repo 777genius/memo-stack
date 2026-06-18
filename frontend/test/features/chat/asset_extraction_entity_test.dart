@@ -41,6 +41,27 @@ void main() {
     expect(job.preferredArtifact?.artifactType, 'transcript_json');
   });
 
+  test('parses public artifact download path without storage key', () {
+    final artifact = ExtractionArtifact.fromMap({
+      'id': 'artifact-public',
+      'job_id': 'extract-1',
+      'asset_id': 'asset-1',
+      'artifact_type': 'markdown',
+      'storage_backend': 'local',
+      'download_path': '/v1/extraction-artifacts/artifact-public/download',
+      'sha256_hex': 'abc',
+      'byte_size': 128,
+      'metadata': <String, dynamic>{},
+      'created_at': '2026-06-13T00:01:00Z',
+    });
+
+    expect(artifact.storageKey, isEmpty);
+    expect(
+      artifact.downloadPath,
+      '/v1/extraction-artifacts/artifact-public/download',
+    );
+  });
+
   test('maps backend extraction actionability contract', () {
     final job = AssetExtractionJob.fromMap({
       'id': 'extract-1',

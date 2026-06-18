@@ -7,6 +7,7 @@ class ExtractionArtifact extends Equatable {
   final String artifactType;
   final String storageBackend;
   final String storageKey;
+  final String downloadPath;
   final String sha256Hex;
   final int byteSize;
   final Map<String, dynamic> metadata;
@@ -19,6 +20,7 @@ class ExtractionArtifact extends Equatable {
     required this.artifactType,
     required this.storageBackend,
     required this.storageKey,
+    this.downloadPath = '',
     required this.sha256Hex,
     required this.byteSize,
     required this.metadata,
@@ -33,6 +35,7 @@ class ExtractionArtifact extends Equatable {
       artifactType: _string(map['artifact_type'], fallback: 'unknown'),
       storageBackend: _string(map['storage_backend']),
       storageKey: _string(map['storage_key']),
+      downloadPath: _string(map['download_path']),
       sha256Hex: _string(map['sha256_hex']),
       byteSize: _int(map['byte_size']),
       metadata: _map(map['metadata']),
@@ -81,6 +84,7 @@ class ExtractionArtifact extends Equatable {
         artifactType,
         storageBackend,
         storageKey,
+        downloadPath,
         sha256Hex,
         byteSize,
         metadata,

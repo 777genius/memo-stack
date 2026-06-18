@@ -6,11 +6,13 @@ import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_session.dart';
 import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
+import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 // injectable не используем для ChatStore, создаётся через Provider
 import 'package:frontend/src/features/chat/application/ports/chat_cache.dart';
@@ -28,6 +30,7 @@ const _targetOverrideContextLinkReviewReason =
 abstract class ChatStoreBase with Store {
   final ChatRepository repo;
   final ChatCache? cache;
+  final ExtractionCapabilityProvider? extractionCapabilityProvider;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final Duration _assetExtractionPollInterval;
   Timer? _assetExtractionPollTimer;
@@ -40,7 +43,12 @@ abstract class ChatStoreBase with Store {
     this.repo,
     this.cache, {
     Duration assetExtractionPollInterval = const Duration(seconds: 3),
-  }) : _assetExtractionPollInterval = assetExtractionPollInterval {
+    ExtractionCapabilityProvider? extractionCapabilities,
+  })  : _assetExtractionPollInterval = assetExtractionPollInterval,
+        extractionCapabilityProvider = extractionCapabilities ??
+            (repo is ExtractionCapabilityProvider
+                ? repo as ExtractionCapabilityProvider
+                : null) {
     activeMemoryScopeExternalRef = _normalizeScopeRef(
       repo.currentMemoryScopeExternalRef(),
     );
@@ -197,6 +205,13 @@ abstract class ChatStoreBase with Store {
   final Observable<bool> operationsConsoleLoading = Observable(false);
 
   final Observable<String?> operationsConsoleError = Observable(null);
+
+  final Observable<ExtractionCapabilities?> extractionCapabilities =
+      Observable(null);
+
+  final Observable<bool> extractionCapabilitiesLoading = Observable(false);
+
+  final Observable<String?> extractionCapabilitiesError = Observable(null);
 
   final Observable<MemoryBrowserSnapshot?> memoryBrowser = Observable(null);
 
@@ -400,8 +415,33 @@ abstract class ChatStoreBase with Store {
       connectionError = 'Backend connection failed: $e';
     }
     await refreshMemoryCaptures();
+    await refreshExtractionCapabilities();
     await refreshOperationsConsole();
     await refreshMemoryBrowser();
+  }
+
+  Future<void> refreshExtractionCapabilities({bool showLoading = true}) async {
+    final provider = extractionCapabilityProvider;
+    if (_disposed || provider == null) return;
+    if (showLoading) {
+      runInAction(() => extractionCapabilitiesLoading.value = true);
+    }
+    runInAction(() => extractionCapabilitiesError.value = null);
+    try {
+      final capabilities = await provider.getExtractionCapabilities();
+      if (_disposed) return;
+      runInAction(() => extractionCapabilities.value = capabilities);
+    } catch (e) {
+      if (_disposed) return;
+      runInAction(() {
+        extractionCapabilitiesError.value =
+            'Extraction capabilities unavailable: $e';
+      });
+    } finally {
+      if (showLoading && !_disposed) {
+        runInAction(() => extractionCapabilitiesLoading.value = false);
+      }
+    }
   }
 
   @action
@@ -812,22 +852,14 @@ abstract class ChatStoreBase with Store {
       contextLinkSuggestionError.value = null;
     });
     try {
-      final reviewed = await repo.reviewContextLinkSuggestion(
+      await repo.reviewContextLinkSuggestion(
         suggestionId: suggestion.id,
         action: action,
         reason: approve
             ? _approvedContextLinkReviewReason
             : _rejectedContextLinkReviewReason,
       );
-      runInAction(() {
-        _removeContextLinkSuggestion(suggestion.id);
-        if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
-      });
-      if (approve) {
-        unawaited(refreshMemoryCaptures(showLoading: false));
-      }
-      unawaited(refreshOperationsConsole(showLoading: false));
-      unawaited(refreshMemoryBrowser(showLoading: false));
+      await _refreshContextLinkReviewSurfaces(refreshCaptures: approve);
     } catch (e) {
       runInAction(() {
         contextLinkSuggestionError.value = 'Review failed: $e';
@@ -856,24 +888,12 @@ abstract class ChatStoreBase with Store {
       contextLinkSuggestionError.value = null;
     });
     try {
-      final reviewedSuggestions = await repo.reviewContextLinkSuggestionsBatch(
+      await repo.reviewContextLinkSuggestionsBatch(
         suggestionIds: pending.map((item) => item.id).toList(growable: false),
         action: action,
         reason: reason,
       );
-      runInAction(() {
-        for (final suggestion in pending) {
-          _removeContextLinkSuggestion(suggestion.id);
-        }
-        for (final reviewed in reviewedSuggestions) {
-          if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
-        }
-      });
-      if (approve) {
-        unawaited(refreshMemoryCaptures(showLoading: false));
-      }
-      unawaited(refreshOperationsConsole(showLoading: false));
-      unawaited(refreshMemoryBrowser(showLoading: false));
+      await _refreshContextLinkReviewSurfaces(refreshCaptures: approve);
     } catch (e) {
       runInAction(() {
         contextLinkSuggestionError.value = 'Batch review failed: $e';
@@ -900,7 +920,7 @@ abstract class ChatStoreBase with Store {
       contextLinkSuggestionError.value = null;
     });
     try {
-      final reviewed = await repo.reviewContextLinkSuggestion(
+      await repo.reviewContextLinkSuggestion(
         suggestionId: suggestion.id,
         action: 'approve',
         reason: _targetOverrideContextLinkReviewReason,
@@ -914,13 +934,7 @@ abstract class ChatStoreBase with Store {
             : confidence.trim(),
         linkReason: reason.trim().isEmpty ? 'selected by user' : reason.trim(),
       );
-      runInAction(() {
-        _removeContextLinkSuggestion(suggestion.id);
-        if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
-      });
-      unawaited(refreshMemoryCaptures(showLoading: false));
-      unawaited(refreshOperationsConsole(showLoading: false));
-      unawaited(refreshMemoryBrowser(showLoading: false));
+      await _refreshContextLinkReviewSurfaces(refreshCaptures: true);
       return true;
     } catch (e) {
       runInAction(() {
@@ -932,6 +946,17 @@ abstract class ChatStoreBase with Store {
         contextLinkSuggestionReviewing.remove(suggestion.id);
       });
     }
+  }
+
+  Future<void> _refreshContextLinkReviewSurfaces({
+    required bool refreshCaptures,
+  }) async {
+    if (refreshCaptures) {
+      await refreshMemoryCaptures(showLoading: false);
+    }
+    await refreshOperationsConsole(showLoading: false);
+    await refreshMemoryBrowser(showLoading: false);
+    await refreshContextLinkSuggestions(showLoading: false);
   }
 
   Future<bool> createManualContextLinkFromSuggestion(
@@ -1430,16 +1455,6 @@ abstract class ChatStoreBase with Store {
       assetExtractions.insert(0, job);
     }
     _scheduleAssetExtractionPollingIfNeeded();
-  }
-
-  void _upsertContextLinkSuggestion(MemoryContextLinkSuggestion suggestion) {
-    final idx =
-        contextLinkSuggestions.indexWhere((item) => item.id == suggestion.id);
-    if (idx >= 0) {
-      contextLinkSuggestions[idx] = suggestion;
-    } else {
-      contextLinkSuggestions.insert(0, suggestion);
-    }
   }
 
   void _removeContextLinkSuggestion(String suggestionId) {

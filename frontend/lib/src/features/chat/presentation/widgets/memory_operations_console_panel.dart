@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/src/features/chat/application/services/open_extraction_artifact.dart';
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
+import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/memory_browser_tab.dart';
@@ -32,6 +33,8 @@ class MemoryOperationsConsolePanel extends StatelessWidget {
                 .toList(growable: false);
         final loading = store.operationsConsoleLoading.value;
         final error = store.operationsConsoleError.value;
+        final capabilities = store.extractionCapabilities.value;
+        final capabilityError = store.extractionCapabilitiesError.value;
         final activeJobs = console?.activeExtractionCount ??
             store.assetExtractions.where((j) => j.isRunning).length;
         final retryableJobs = console?.retryableExtractionCount ??
@@ -92,7 +95,7 @@ class MemoryOperationsConsolePanel extends StatelessWidget {
                       key: const ValueKey('memory_operations_refresh_button'),
                       tooltip: 'Refresh operations',
                       visualDensity: VisualDensity.compact,
-                      onPressed: store.refreshOperationsConsole,
+                      onPressed: () => _refreshOperationsSurface(store),
                       icon: Icon(
                         Icons.refresh,
                         size: 18,
@@ -103,6 +106,13 @@ class MemoryOperationsConsolePanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 7),
+              if (capabilities != null || capabilityError != null) ...[
+                _CapabilityDiagnosticsLine(
+                  capabilities: capabilities,
+                  error: capabilityError,
+                ),
+                const SizedBox(height: 7),
+              ],
               _OperationsCounters(
                 activeJobs: activeJobs,
                 retryableJobs: retryableJobs,
@@ -173,6 +183,8 @@ class _MemoryOperationsConsoleDialog extends StatelessWidget {
               builder: (_) {
                 final console = store.operationsConsole.value;
                 final error = store.operationsConsoleError.value;
+                final capabilities = store.extractionCapabilities.value;
+                final capabilityError = store.extractionCapabilitiesError.value;
                 final jobs = console?.extractionJobs ?? store.assetExtractions;
                 final suggestions = console?.contextLinkSuggestions ??
                     store.contextLinkSuggestions;
@@ -211,7 +223,7 @@ class _MemoryOperationsConsoleDialog extends StatelessWidget {
                         ),
                         IconButton(
                           tooltip: 'Refresh',
-                          onPressed: store.refreshOperationsConsole,
+                          onPressed: () => _refreshOperationsSurface(store),
                           icon: const Icon(Icons.refresh, size: 20),
                         ),
                         IconButton(
@@ -230,6 +242,13 @@ class _MemoryOperationsConsoleDialog extends StatelessWidget {
                       pendingLinks: console?.pendingLinkSuggestionCount ??
                           suggestions.where((item) => item.isPending).length,
                     ),
+                    if (capabilities != null || capabilityError != null) ...[
+                      const SizedBox(height: 8),
+                      _CapabilityDiagnosticsLine(
+                        capabilities: capabilities,
+                        error: capabilityError,
+                      ),
+                    ],
                     if (error != null) ...[
                       const SizedBox(height: 8),
                       _OperationsErrorBanner(error: error),
@@ -300,6 +319,62 @@ class _OperationsErrorBanner extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+Future<void> _refreshOperationsSurface(ChatStore store) async {
+  await store.refreshExtractionCapabilities(showLoading: false);
+  await store.refreshOperationsConsole();
+}
+
+class _CapabilityDiagnosticsLine extends StatelessWidget {
+  final ExtractionCapabilities? capabilities;
+  final String? error;
+
+  const _CapabilityDiagnosticsLine({required this.capabilities, this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = _label();
+    final isProblem =
+        error != null || (capabilities?.hasDegradedComponents ?? false);
+    return Tooltip(
+      message: label,
+      child: Row(
+        key: const ValueKey('memory_operations_capability_diagnostics'),
+        children: [
+          Icon(
+            isProblem ? Icons.report_problem_outlined : Icons.verified_outlined,
+            size: 15,
+            color: isProblem ? scheme.error : scheme.primary,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: isProblem ? scheme.error : scheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _label() {
+    final err = error;
+    if (err != null && err.isNotEmpty) return err;
+    final value = capabilities;
+    if (value == null) return 'Extraction capabilities unavailable';
+    if (!value.enabled) return 'Extraction disabled by server policy';
+    final degraded = value.degradedLabels;
+    if (degraded.isNotEmpty) return degraded.take(2).join(' - ');
+    final profile = value.defaultProfile ?? 'default';
+    return 'Extraction ready - $profile';
   }
 }
 

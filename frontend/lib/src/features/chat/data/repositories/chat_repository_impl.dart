@@ -8,6 +8,7 @@ import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
 import 'package:frontend/src/features/chat/domain/entities/cost_usage.dart';
 import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
 import 'package:frontend/src/features/chat/domain/entities/document_chunk.dart';
+import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
@@ -15,6 +16,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_operations_con
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
 import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
+import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 import 'package:frontend/src/features/chat/data/datasources/backend_rest_client.dart';
 import 'package:frontend/src/features/chat/domain/entities/connection_status.dart';
 
@@ -23,7 +25,8 @@ class ChatRepositoryImpl
     implements
         ChatRepository,
         ConversationStateRepository,
-        AttachmentUploadLimits {
+        AttachmentUploadLimits,
+        ExtractionCapabilityProvider {
   final BackendRestClient _rest;
   String Function() _spaceSlugGetter;
   String Function() _memoryScopeExternalRefGetter;
@@ -837,6 +840,13 @@ class ChatRepositoryImpl
     }
   }
 
+  @override
+  Future<ExtractionCapabilities> getExtractionCapabilities() async {
+    final capabilities = await _rest.capabilities();
+    return ExtractionCapabilities.fromMap(
+        _nestedMap(capabilities, 'extraction'));
+  }
+
   void _emitEffectiveStatus() {
     ConnectionStatus eff;
     switch (_lastWsStatus) {
@@ -975,4 +985,13 @@ int? _positiveNestedInt(Map<String, dynamic> root, List<String> path) {
     if (parsed != null && parsed > 0) return parsed;
   }
   return null;
+}
+
+Map<String, dynamic> _nestedMap(Map<String, dynamic> root, String key) {
+  final value = root[key];
+  if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
+  if (value is Map) {
+    return value.map((key, item) => MapEntry(key.toString(), item));
+  }
+  return const <String, dynamic>{};
 }
