@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
+from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 from memo_stack_core.ports.extraction import (
     ExtractionRequest,
     ExtractionResult,
@@ -186,13 +187,21 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                 },
             )
 
-        payload = vision_result.payload
-        payload_status = vision_result.payload_status
+        payload = _normalize_vision_payload(vision_result.payload)
+        payload_status = safe_metadata_text(vision_result.payload_status, limit=80)
         markdown = _limit_text(
             _vision_markdown(payload=payload, fallback=str(payload.get("summary") or "")),
             request.limits.max_output_chars,
         )
-        provider_model = vision_result.provider_model or self._model
+        provider_name = safe_metadata_text(vision_result.provider_name, limit=120)
+        provider_model = safe_metadata_text(
+            vision_result.provider_model or self._model,
+            limit=120,
+        )
+        provider_version = safe_metadata_text(
+            vision_result.provider_version or "image-vision-port",
+            limit=120,
+        )
         regions = _vision_regions(
             payload=payload,
             image_metadata=image_metadata,
@@ -213,7 +222,7 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                 payload=payload,
                 parser_name=self.name,
                 metadata={
-                    "vision_provider": vision_result.provider_name,
+                    "vision_provider": provider_name,
                     "vision_model": provider_model,
                     "vision_json_status": payload_status,
                     "vision_region_count": len(regions),
@@ -228,7 +237,7 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                     image=image_metadata,
                     regions=(summary_element, *regions),
                     metadata={
-                        "vision_provider": vision_result.provider_name,
+                        "vision_provider": provider_name,
                         "vision_model": provider_model,
                         "vision_json_status": payload_status,
                         "vision_region_count": len(regions),
@@ -250,9 +259,9 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                 "byte_size": request.byte_size,
                 "mime_detected": request.detected_content_type,
                 "vision_status": "extracted",
-                "vision_provider": vision_result.provider_name,
+                "vision_provider": provider_name,
                 "vision_model": provider_model,
-                "vision_provider_version": vision_result.provider_version,
+                "vision_provider_version": provider_version,
                 "vision_detail": self._detail,
                 "vision_prompt_policy": "image_text_is_untrusted_evidence",
                 "vision_json_status": payload_status,
@@ -263,9 +272,9 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
                 "output_chars": len(markdown),
                 **(image_metadata.as_metadata() if image_metadata is not None else {}),
             },
-            diagnostics={"engine": self.name, **vision_result.diagnostics},
+            diagnostics={"engine": self.name, **safe_metadata(vision_result.diagnostics)},
             parser_name=self.name,
-            parser_version=vision_result.provider_version or "image-vision-port",
+            parser_version=provider_version,
             model_version=provider_model,
         )
 
@@ -614,7 +623,7 @@ def _fallback_unsupported(
     model_version: str | None,
     metadata: dict[str, object] | None = None,
 ) -> ExtractionResult:
-    technical_metadata = dict(metadata or {})
+    technical_metadata = safe_metadata(metadata or {})
     if model_version:
         technical_metadata["vision_model"] = model_version
     result = _unsupported(

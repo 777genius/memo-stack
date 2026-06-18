@@ -1,8 +1,11 @@
 import asyncio
+import json
 
 from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
 from memo_stack_core.ports.extraction import ExtractionLimits, ExtractionRequest
 from memo_stack_core.ports.vision import ImageVisionRequest, ImageVisionResult
+
+_VISION_SECRET = "sk-proj-vision-secret-value1234567890"
 
 
 def test_vision_engine_accepts_provider_neutral_image_vision_port() -> None:
@@ -20,6 +23,17 @@ def test_vision_engine_accepts_provider_neutral_image_vision_port() -> None:
     assert result.technical_metadata["vision_provider"] == "custom_vision"
     assert result.technical_metadata["vision_provider_version"] == "test-port"
     assert "Custom provider saw a memory review screenshot" in (result.markdown or "")
+    rendered_diagnostics = json.dumps(result.diagnostics, ensure_ascii=False)
+    assert _VISION_SECRET not in rendered_diagnostics
+    assert "api_key" not in result.diagnostics
+
+    vision_json = next(
+        artifact for artifact in result.artifacts if artifact.artifact_type == "vision_json"
+    )
+    rendered_artifact = vision_json.content.decode("utf-8")
+    assert _VISION_SECRET not in rendered_artifact
+    payload = json.loads(rendered_artifact)
+    assert "raw_provider_payload" not in payload
 
 
 class _FakeImageVisionPort:
@@ -43,11 +57,19 @@ class _FakeImageVisionPort:
                         "confidence": 0.9,
                     }
                 ],
+                "raw_provider_payload": {
+                    "api_key": _VISION_SECRET,
+                    "debug": f"Bearer {_VISION_SECRET}",
+                },
             },
             payload_status="parsed",
             provider_name="custom_vision",
             provider_model="custom-vision-model",
             provider_version="test-port",
+            diagnostics={
+                "api_key": _VISION_SECRET,
+                "debug": f"Bearer {_VISION_SECRET}",
+            },
         )
 
 
