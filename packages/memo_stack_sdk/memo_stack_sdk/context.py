@@ -46,6 +46,8 @@ class ContextItemDiagnostics:
     score_signals: Mapping[str, object]
     provenance: Mapping[str, object]
     raw: Mapping[str, object]
+    review_only: bool = False
+    stale_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -162,11 +164,16 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
         raw.get("ranking_reason"),
         limit=MAX_RANKING_REASON_CHARS,
     ) or _ranking_reason_for(retrieval_sources)
+    review_only = _safe_bool(raw.get("review_only"))
+    stale_reason = _optional_text(raw.get("stale_reason"), limit=MAX_KEY_CHARS)
     safe_raw = dict(raw)
     safe_raw["retrieval_sources"] = list(retrieval_sources)
     if retrieval_source:
         safe_raw["retrieval_source"] = retrieval_source
     safe_raw["ranking_reason"] = ranking_reason
+    safe_raw["review_only"] = review_only
+    if stale_reason:
+        safe_raw["stale_reason"] = stale_reason
     return ContextItemDiagnostics(
         retrieval_source=retrieval_source,
         retrieval_sources=retrieval_sources,
@@ -174,6 +181,8 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
         score_signals=_scalar_mapping(raw.get("score_signals")),
         provenance=_bounded_mapping(raw.get("provenance")),
         raw=safe_raw,
+        review_only=review_only,
+        stale_reason=stale_reason,
     )
 
 
@@ -336,6 +345,16 @@ def _safe_float(value: object) -> float:
     if isinstance(value, int | float):
         return float(value)
     return 0.0
+
+
+def _safe_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, int | float):
+        return value != 0
+    return False
 
 
 def _non_negative_int(value: object) -> int:

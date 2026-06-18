@@ -530,6 +530,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                     "vector_chunks",
                                     "keyword_chunks",
                                 ],
+                                "review_only": True,
+                                "stale_reason": "fact_status_superseded",
                                 "score_signals": {
                                     "base_score": 0.91,
                                     "provider_note": f"Bearer {raw_secret}",
@@ -539,6 +541,18 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                     "source_ref_count": 25,
                                     "token": raw_secret,
                                 },
+                            },
+                        },
+                        {
+                            "item_id": "fact_1",
+                            "item_type": "fact",
+                            "memory_scope_id": "memory_scope_default",
+                            "text": "Current fact evidence.",
+                            "score": 0.72,
+                            "is_instruction": False,
+                            "diagnostics": {
+                                "retrieval_sources": ["facts"],
+                                "review_only": "false",
                             },
                         }
                     ],
@@ -605,10 +619,16 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert item.diagnostics.retrieval_source == "vector_chunks"
     assert item.diagnostics.retrieval_sources == ("vector_chunks", "keyword_chunks")
     assert item.diagnostics.ranking_reason == "hybrid match via vector_chunks, keyword_chunks"
+    assert item.diagnostics.review_only is True
+    assert item.diagnostics.stale_reason == "fact_status_superseded"
+    assert item.diagnostics.raw["review_only"] is True
     assert item.diagnostics.score_signals["base_score"] == 0.91
     assert item.diagnostics.score_signals["provider_note"] == "[redacted]"
     assert "nested" not in item.diagnostics.score_signals
     assert "token" not in item.diagnostics.provenance
+    active_item = bundle.items[1]
+    assert active_item.diagnostics.review_only is False
+    assert active_item.diagnostics.stale_reason is None
     assert raw_secret not in str(bundle)
 
 
