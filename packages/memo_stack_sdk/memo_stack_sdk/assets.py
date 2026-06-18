@@ -497,6 +497,8 @@ class MemoStackAssetsMixin:
         seen_suggestion_ids: set[str] = set()
         for item in items:
             suggestion_id = str(item.get("suggestion_id", "")).strip()
+            if not suggestion_id:
+                raise ValueError("Context link batch review requires suggestion_id")
             if suggestion_id in seen_suggestion_ids:
                 raise ValueError("Context link batch review requires unique suggestion_id values")
             seen_suggestion_ids.add(suggestion_id)
