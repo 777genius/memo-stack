@@ -129,6 +129,38 @@ class FakeGraphAdapter:
         )
 
 
+class MultiFactGraphAdapter:
+    def __init__(self, fact_ids: tuple[str, ...]) -> None:
+        self._fact_ids = fact_ids
+        self.search_calls: list[dict[str, object]] = []
+
+    async def capabilities(self) -> AdapterCapabilities:
+        return AdapterCapabilities(
+            name="multi-fact-graph",
+            enabled=True,
+            healthy=True,
+            supports_upsert=True,
+            supports_delete=True,
+            supports_search=True,
+            supports_filters=True,
+            supports_temporal_queries=True,
+        )
+
+    async def search(self, **_kwargs: object) -> GraphSearchResult:
+        self.search_calls.append(_kwargs)
+        return GraphSearchResult.ok(
+            [
+                GraphCandidate(
+                    source_fact_ids=self._fact_ids,
+                    source_chunk_ids=(),
+                    relation_label="batch_relation",
+                    score=1.0,
+                    diagnostics={},
+                )
+            ]
+        )
+
+
 class OrphanGraphAdapter:
     async def capabilities(self) -> AdapterCapabilities:
         return AdapterCapabilities(
@@ -1838,6 +1870,94 @@ def test_graph_candidate_without_canonical_source_is_low_confidence_or_dropped(
     assert context.diagnostics["graph_candidate_count"] == 1
     assert context.diagnostics["graph_hydrated_count"] == 0
     assert context.diagnostics["stale_graph_drop_count"] == 1
+
+
+def test_context_batches_graph_fact_hydration_and_revalidation(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact_ids = tuple(
+            client.post(
+                "/v1/facts",
+                json={
+                    "space_id": "space_client_app",
+                    "memory_scope_id": "memory_scope_default",
+                    "text": (
+                        f"GRAPH_BATCH_FACT_MARKER_{index}: "
+                        "graph hydration should stay batched."
+                    ),
+                    "kind": "note",
+                    "source_refs": [
+                        {
+                            "source_type": "manual",
+                            "source_id": f"graph-batch-{index}",
+                        }
+                    ],
+                },
+                headers=auth_headers(),
+            ).json()["data"]["id"]
+            for index in range(4)
+        )
+        graph_adapter = MultiFactGraphAdapter(fact_ids)
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=graph_adapter,
+            embedder=NoopEmbeddingAdapter(),
+        )
+
+        fact_batch_select_count = 0
+        source_ref_batch_select_count = 0
+        engine = client.app.state.container.engine.sync_engine
+
+        def count_fact_batch_selects(
+            _conn: object,
+            _cursor: object,
+            statement: str,
+            _parameters: object,
+            _context: object,
+            _executemany: bool,
+        ) -> None:
+            nonlocal fact_batch_select_count, source_ref_batch_select_count
+            normalized = statement.lower()
+            if (
+                "select" in normalized
+                and "memory_facts" in normalized
+                and "memory_facts.id in" in normalized
+            ):
+                fact_batch_select_count += 1
+            if (
+                "select" in normalized
+                and "memory_source_refs" in normalized
+                and "memory_source_refs.fact_id in" in normalized
+            ):
+                source_ref_batch_select_count += 1
+
+        event.listen(engine, "before_cursor_execute", count_fact_batch_selects)
+        try:
+            context = asyncio.run(
+                use_case.execute(
+                    BuildContextQuery(
+                        space_id=SpaceId("space_client_app"),
+                        memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                        query="unrelated graph batch query",
+                        token_budget=2048,
+                    )
+                )
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", count_fact_batch_selects)
+
+    rendered = context.rendered_text
+    assert "GRAPH_BATCH_FACT_MARKER_0" in rendered
+    assert "GRAPH_BATCH_FACT_MARKER_3" in rendered
+    assert graph_adapter.search_calls
+    assert context.diagnostics["graph_candidate_count"] == 1
+    assert context.diagnostics["graph_hydrated_count"] == 4
+    assert 1 <= fact_batch_select_count <= 2
+    assert 1 <= source_ref_batch_select_count <= 2
 
 
 def test_graph_adapter_schema_mismatch_degrades_context(tmp_path: Path) -> None:

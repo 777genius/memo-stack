@@ -72,6 +72,45 @@ class PostgresFactRepository(FactRepositoryPort):
         refs = await self._load_source_refs(fact_id=fact_id, version=row.version)
         return fact_row_to_domain(row, refs)
 
+    async def get_by_ids(self, fact_ids: tuple[str, ...]) -> list[MemoryFact]:
+        unique_ids = tuple(dict.fromkeys(fact_id for fact_id in fact_ids if fact_id.strip()))
+        if not unique_ids:
+            return []
+        rows = list(
+            (
+                await self._session.execute(
+                    select(MemoryFactRow).where(MemoryFactRow.id.in_(unique_ids))
+                )
+            ).scalars()
+        )
+        if not rows:
+            return []
+        rows_by_id = {row.id: row for row in rows}
+        ref_rows = list(
+            (
+                await self._session.execute(
+                    select(MemorySourceRefRow)
+                    .where(MemorySourceRefRow.fact_id.in_(tuple(rows_by_id)))
+                    .order_by(
+                        MemorySourceRefRow.fact_id,
+                        MemorySourceRefRow.fact_version,
+                        MemorySourceRefRow.id,
+                    )
+                )
+            ).scalars()
+        )
+        refs_by_fact_version: dict[tuple[str, int], list[MemorySourceRefRow]] = {}
+        for ref in ref_rows:
+            refs_by_fact_version.setdefault((ref.fact_id, ref.fact_version), []).append(ref)
+        return [
+            fact_row_to_domain(
+                row,
+                refs_by_fact_version.get((row.id, row.version), []),
+            )
+            for fact_id in unique_ids
+            if (row := rows_by_id.get(fact_id)) is not None
+        ]
+
     async def get_for_update(self, fact_id: str) -> MemoryFact | None:
         statement = select(MemoryFactRow).where(MemoryFactRow.id == fact_id).with_for_update()
         row = (await self._session.execute(statement)).scalar_one_or_none()

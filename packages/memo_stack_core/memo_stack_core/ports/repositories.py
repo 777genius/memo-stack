@@ -162,6 +162,9 @@ class FactRepositoryPort(Protocol):
     async def get_by_id(self, fact_id: str) -> MemoryFact | None:
         """Load a fact by canonical id."""
 
+    async def get_by_ids(self, fact_ids: tuple[str, ...]) -> list[MemoryFact]:
+        """Load facts by canonical ids in bounded batches."""
+
     async def get_for_update(self, fact_id: str) -> MemoryFact | None:
         """Load a fact with write lock when supported by the adapter."""
 

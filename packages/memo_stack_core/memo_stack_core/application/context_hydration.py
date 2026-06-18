@@ -31,6 +31,8 @@ class ContextHydrator:
         query: BuildContextQuery,
         memory_scope_ids: tuple[str, ...],
     ) -> tuple[MemoryChunk, ...]:
+        if not chunk_ids:
+            return ()
         async with self._uow_factory() as uow:
             chunks = await uow.chunks.hydrate_visible_chunks(
                 chunk_ids=chunk_ids,
@@ -47,12 +49,17 @@ class ContextHydrator:
         query: BuildContextQuery,
         memory_scope_ids: tuple[str, ...],
     ) -> tuple[tuple[ContextItem, ...], int]:
+        if not fact_ids:
+            return (), 0
         async with self._uow_factory() as uow:
             hydrated: list[ContextItem] = []
             stale_count = 0
             now = self._clock.now() if self._clock is not None else None
+            facts_by_id = {
+                str(fact.id): fact for fact in await uow.facts.get_by_ids(fact_ids)
+            }
             for fact_id in fact_ids:
-                fact = await uow.facts.get_by_id(fact_id)
+                fact = facts_by_id.get(fact_id)
                 if fact is not None and is_graph_fact_visible(
                     fact,
                     query=query,
@@ -99,7 +106,9 @@ class ContextHydrator:
         if not items:
             return ()
 
-        chunk_ids = tuple(item.item_id for item in items if item.item_type == "chunk")
+        chunk_ids = tuple(
+            dict.fromkeys(item.item_id for item in items if item.item_type == "chunk")
+        )
         visible_chunks = {
             str(chunk.id): chunk
             for chunk in await self.hydrate_visible_chunks(
@@ -108,20 +117,21 @@ class ContextHydrator:
                 memory_scope_ids=memory_scope_ids,
             )
         }
-        async with self._uow_factory() as uow:
-            visible_facts = {}
-            now = self._clock.now() if self._clock is not None else None
-            for item in items:
-                if item.item_type != "fact":
-                    continue
-                fact = await uow.facts.get_by_id(item.item_id)
-                if fact is not None and is_context_fact_visible(
-                    fact,
-                    query=query,
-                    memory_scope_ids=memory_scope_ids,
-                    now=now,
-                ):
-                    visible_facts[str(fact.id)] = fact
+        fact_ids = tuple(
+            dict.fromkeys(item.item_id for item in items if item.item_type == "fact")
+        )
+        visible_facts = {}
+        if fact_ids:
+            async with self._uow_factory() as uow:
+                now = self._clock.now() if self._clock is not None else None
+                for fact in await uow.facts.get_by_ids(fact_ids):
+                    if is_context_fact_visible(
+                        fact,
+                        query=query,
+                        memory_scope_ids=memory_scope_ids,
+                        now=now,
+                    ):
+                        visible_facts[str(fact.id)] = fact
 
         visible_items: list[ContextItem] = []
         for item in items:
