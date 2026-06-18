@@ -57,7 +57,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "ok": True,
             "status": "ok",
             "metrics": {
-                "case_count": 5,
+                "case_count": 10,
                 "ranking_accuracy": 1.0,
                 "event_linking_accuracy": 1.0,
                 "temporal_intent_recall": 1.0,
@@ -450,7 +450,7 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
 
     assert policy["require_top_evidence"] is True
     assert "semantic-linking-golden" in policy["required_suites"]
-    assert policy["min_case_counts"]["semantic-linking-golden"] == 5
+    assert policy["min_case_counts"]["semantic-linking-golden"] == 10
     assert policy["full_provider"]["required_adapters"] == [
         "qdrant",
         "graphiti",
