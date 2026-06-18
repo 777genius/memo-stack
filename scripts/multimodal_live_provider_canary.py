@@ -16,8 +16,21 @@ import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memo_stack_adapters.extraction.openai_vision import OpenAIImageVisionAdapter
+from memo_stack_adapters.extraction.openai_vision import (
+    OPENAI_VISION_DOCS_URL,
+    OPENAI_VISION_ENDPOINT_FAMILY,
+    OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
+    OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+    OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+    OPENAI_VISION_SUPPORTED_FILE_SUFFIXES,
+    OpenAIImageVisionAdapter,
+    openai_vision_supported_detail_levels,
+)
 from memo_stack_adapters.extraction.transcription.openai_adapter import (
+    OPENAI_TRANSCRIPTION_DOCS_URL,
+    OPENAI_TRANSCRIPTION_ENDPOINT,
+    OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+    OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
     OpenAISpeechTranscriptionAdapter,
 )
 from memo_stack_core.ports.transcription import SpeechTranscriptionRequest
@@ -31,28 +44,16 @@ DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 SYNTHETIC_AUDIO_PHRASE = "memo stack live transcription canary"
-OPENAI_AUDIO_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-OPENAI_AUDIO_SUPPORTED_SUFFIXES = frozenset(
-    {
-        ".m4a",
-        ".mp3",
-        ".mp4",
-        ".mpeg",
-        ".mpga",
-        ".wav",
-        ".webm",
-    }
-)
-OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
+OPENAI_AUDIO_MAX_UPLOAD_BYTES = OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
+OPENAI_AUDIO_SUPPORTED_SUFFIXES = frozenset(OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES)
+OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset(OPENAI_VISION_SUPPORTED_FILE_SUFFIXES)
 
 _CONTENT_TYPES_BY_SUFFIX = {
-    ".flac": "audio/flac",
     ".m4a": "audio/m4a",
     ".mp3": "audio/mpeg",
     ".mp4": "video/mp4",
     ".mpeg": "audio/mpeg",
     ".mpga": "audio/mpga",
-    ".ogg": "audio/ogg",
     ".wav": "audio/wav",
     ".webm": "audio/webm",
 }
@@ -328,18 +329,22 @@ def _base_report(
             "external_ai_required": True,
             "timeout_seconds": args.timeout_seconds,
             "vision": {
-                "endpoint_family": "responses",
+                "endpoint_family": OPENAI_VISION_ENDPOINT_FAMILY,
                 "model": args.vision_model,
                 "detail": args.vision_detail,
+                "detail_levels": list(openai_vision_supported_detail_levels(args.vision_model)),
                 "supported_file_types": sorted(OPENAI_VISION_SUPPORTED_SUFFIXES),
-                "docs_url": "https://developers.openai.com/api/docs/guides/images-vision",
+                "docs_url": OPENAI_VISION_DOCS_URL,
+                "max_provider_payload_bytes": OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+                "max_provider_binary_upload_bytes": OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+                "max_images_per_request": OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
             },
             "transcription": {
-                "endpoint": "/v1/audio/transcriptions",
+                "endpoint": OPENAI_TRANSCRIPTION_ENDPOINT,
                 "model": args.transcription_model,
                 "max_upload_bytes": OPENAI_AUDIO_MAX_UPLOAD_BYTES,
                 "supported_file_types": sorted(OPENAI_AUDIO_SUPPORTED_SUFFIXES),
-                "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
+                "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
             },
         },
         "models": {

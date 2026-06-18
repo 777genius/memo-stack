@@ -49,6 +49,12 @@ REQUIRED_DOCKER_FILES = frozenset(
         "docker-proof.mp4",
     }
 )
+REQUIRED_OPENAI_AUDIO_SUFFIXES = frozenset(
+    {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
+)
+REQUIRED_OPENAI_VISION_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
+REQUIRED_OPENAI_VISION_BASE_DETAIL_LEVELS = frozenset({"low", "high", "auto"})
+ALLOWED_OPENAI_VISION_DETAIL_LEVELS = frozenset({"low", "high", "original", "auto"})
 FORBIDDEN_CORE_IMPORT_MARKERS = (
     "import fastapi",
     "from fastapi",
@@ -152,9 +158,20 @@ def run_goal_audit(
         "memo_stack_core imports forbidden server/adapters/provider dependencies",
     )
 
-    _audit_frontend_report(frontend, checks=checks, failures=failures)
-    _audit_docker_report(docker, checks=checks, failures=failures)
-    _audit_provider_report(provider, checks=checks, failures=failures)
+    current_commit = str(git.get("commit") or "")
+    _audit_frontend_report(
+        frontend,
+        current_commit=current_commit,
+        checks=checks,
+        failures=failures,
+    )
+    _audit_docker_report(docker, current_commit=current_commit, checks=checks, failures=failures)
+    _audit_provider_report(
+        provider,
+        current_commit=current_commit,
+        checks=checks,
+        failures=failures,
+    )
 
     serialized_reports = json.dumps(
         {
@@ -189,6 +206,7 @@ def run_goal_audit(
 def _audit_frontend_report(
     report: Mapping[str, object] | None,
     *,
+    current_commit: str,
     checks: dict[str, bool],
     failures: list[str],
 ) -> None:
@@ -222,6 +240,13 @@ def _audit_frontend_report(
     _check(
         checks,
         failures,
+        "frontend_marionette_current_commit",
+        bool(current_commit) and git.get("commit") == current_commit,
+        "Frontend Marionette proof must be generated for the current git commit",
+    )
+    _check(
+        checks,
+        failures,
         "frontend_marionette_flows_complete",
         flow.get("status") == "succeeded" and REQUIRED_FRONTEND_FLOWS.issubset(completed),
         "Frontend Marionette proof did not complete every required review/capture flow",
@@ -241,6 +266,7 @@ def _audit_frontend_report(
 def _audit_docker_report(
     report: Mapping[str, object] | None,
     *,
+    current_commit: str,
     checks: dict[str, bool],
     failures: list[str],
 ) -> None:
@@ -254,11 +280,20 @@ def _audit_docker_report(
     if report is None:
         return
     components = report.get("components") if isinstance(report.get("components"), dict) else {}
+    capabilities = (
+        components.get("capabilities") if isinstance(components.get("capabilities"), dict) else {}
+    )
     extraction = components.get("extraction_flow") if isinstance(components, dict) else {}
     raw_cases = extraction.get("cases") if isinstance(extraction, dict) else None
     cases = raw_cases if isinstance(raw_cases, list) else []
     filenames = {str(item.get("filename")) for item in cases if isinstance(item, dict)}
     git = report.get("git") if isinstance(report.get("git"), dict) else {}
+    provider_contract = (
+        capabilities.get("provider_contract")
+        if isinstance(capabilities.get("provider_contract"), dict)
+        else {}
+    )
+    contract_names = set(_string_list(capabilities.get("contract_names")))
     _check(
         checks,
         failures,
@@ -276,9 +311,53 @@ def _audit_docker_report(
     _check(
         checks,
         failures,
+        "docker_live_current_commit",
+        bool(current_commit) and git.get("commit") == current_commit,
+        "Docker live proof must be generated for the current git commit",
+    )
+    _check(
+        checks,
+        failures,
         "docker_live_components_succeeded",
         _components_succeeded(components, REQUIRED_DOCKER_COMPONENTS),
         "Docker live proof did not succeed for every required runtime component",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_provider_contract_present",
+        "provider_contract" in contract_names and bool(provider_contract),
+        "Docker live proof did not prove the provider capability contract",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_provider_contract_docs_aligned",
+        provider_contract.get("ok") is True
+        and set(_string_list(provider_contract.get("transcription_supported_file_types")))
+        == REQUIRED_OPENAI_AUDIO_SUFFIXES
+        and set(_string_list(provider_contract.get("vision_supported_file_types")))
+        == REQUIRED_OPENAI_VISION_SUFFIXES,
+        "Docker live proof provider contract is not aligned with current media providers",
+    )
+    docker_vision_detail_levels = set(
+        _string_list(provider_contract.get("vision_detail_levels"))
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_vision_detail_contract_docs_aligned",
+        REQUIRED_OPENAI_VISION_BASE_DETAIL_LEVELS.issubset(docker_vision_detail_levels)
+        and docker_vision_detail_levels.issubset(ALLOWED_OPENAI_VISION_DETAIL_LEVELS),
+        "Docker live proof provider contract is missing current OpenAI vision detail levels",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_vision_binary_limit_present",
+        _positive_int(provider_contract.get("vision_max_provider_binary_upload_bytes"))
+        is not None,
+        "Docker live proof provider contract is missing OpenAI vision binary upload limit",
     )
     _check(
         checks,
@@ -292,6 +371,7 @@ def _audit_docker_report(
 def _audit_provider_report(
     report: Mapping[str, object] | None,
     *,
+    current_commit: str,
     checks: dict[str, bool],
     failures: list[str],
 ) -> None:
@@ -306,6 +386,9 @@ def _audit_provider_report(
         return
     components = report.get("components") if isinstance(report.get("components"), dict) else {}
     git = report.get("git") if isinstance(report.get("git"), dict) else {}
+    provider_contract = (
+        report.get("provider_contract") if isinstance(report.get("provider_contract"), dict) else {}
+    )
     _check(
         checks,
         failures,
@@ -323,6 +406,13 @@ def _audit_provider_report(
     _check(
         checks,
         failures,
+        "live_provider_current_commit",
+        bool(current_commit) and git.get("commit") == current_commit,
+        "Live provider proof must be generated for the current git commit",
+    )
+    _check(
+        checks,
+        failures,
         "live_provider_key_present",
         report.get("provider_key_present") is True,
         "Live provider proof needs MEMORY_OPENAI_API_KEY or OPENAI_API_KEY",
@@ -333,6 +423,68 @@ def _audit_provider_report(
         "live_provider_components_succeeded",
         _components_succeeded(components, {"vision", "transcription"}),
         "Live provider vision and transcription checks must both succeed",
+    )
+    _audit_provider_contract(provider_contract, checks=checks, failures=failures)
+
+
+def _audit_provider_contract(
+    contract: Mapping[str, object],
+    *,
+    checks: dict[str, bool],
+    failures: list[str],
+) -> None:
+    transcription = (
+        contract.get("transcription") if isinstance(contract.get("transcription"), dict) else {}
+    )
+    vision = contract.get("vision") if isinstance(contract.get("vision"), dict) else {}
+    audio_suffixes = set(_string_list(transcription.get("supported_file_types")))
+    vision_suffixes = set(_string_list(vision.get("supported_file_types")))
+    vision_detail_levels = set(_string_list(vision.get("detail_levels")))
+    _check(
+        checks,
+        failures,
+        "live_provider_contract_present",
+        bool(contract),
+        "Live provider proof must include a provider capability contract",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_transcription_contract_docs_aligned",
+        transcription.get("endpoint") == "/v1/audio/transcriptions"
+        and transcription.get("max_upload_bytes") == 25 * 1024 * 1024
+        and audio_suffixes == REQUIRED_OPENAI_AUDIO_SUFFIXES,
+        "Live provider transcription contract is missing current OpenAI file limits/types",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_vision_contract_docs_aligned",
+        vision.get("endpoint_family") == "responses"
+        and vision_suffixes == REQUIRED_OPENAI_VISION_SUFFIXES,
+        "Live provider vision contract is missing current OpenAI file types",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_vision_detail_contract_docs_aligned",
+        REQUIRED_OPENAI_VISION_BASE_DETAIL_LEVELS.issubset(vision_detail_levels)
+        and vision_detail_levels.issubset(ALLOWED_OPENAI_VISION_DETAIL_LEVELS),
+        "Live provider vision contract is missing current OpenAI vision detail levels",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_vision_binary_limit_present",
+        _positive_int(vision.get("max_provider_binary_upload_bytes")) is not None,
+        "Live provider vision contract is missing OpenAI vision binary upload limit",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_contract_excludes_unsupported_legacy_suffixes",
+        not ({".flac", ".ogg"} & audio_suffixes),
+        "Live provider transcription contract must not advertise unsupported .flac/.ogg uploads",
     )
 
 
@@ -419,6 +571,12 @@ def _string_list(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(str(item) for item in value)
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
 
 
 def _safe_text(value: object, *, limit: int = 160) -> str | None:

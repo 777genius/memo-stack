@@ -174,6 +174,125 @@ def test_multimodal_production_goal_audit_rejects_provider_proof_without_git(
     assert any("Live provider proof must be tied" in failure for failure in result.failures)
 
 
+def test_multimodal_production_goal_audit_rejects_stale_report_commits(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    frontend = _frontend_report()
+    docker = _docker_report()
+    provider = _provider_report()
+    frontend["git"] = {"commit": "old", "short_commit": "old", "dirty": False}
+    docker["git"] = {"commit": "old", "short_commit": "old", "dirty": False}
+    provider["git"] = {"commit": "old", "short_commit": "old", "dirty": False}
+    frontend_report.write_text(json.dumps(frontend), encoding="utf-8")
+    docker_report.write_text(json.dumps(docker), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "current", "short_commit": "current", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["frontend_marionette_current_commit"] is False
+    assert result.checks["docker_live_current_commit"] is False
+    assert result.checks["live_provider_current_commit"] is False
+    assert any(
+        "Frontend Marionette proof must be generated" in failure
+        for failure in result.failures
+    )
+    assert any("Docker live proof must be generated" in failure for failure in result.failures)
+    assert any("Live provider proof must be generated" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_rejects_stale_provider_contract(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    provider["provider_contract"] = {
+        "transcription": {
+            "endpoint": "/v1/audio/transcriptions",
+            "max_upload_bytes": 25 * 1024 * 1024,
+            "supported_file_types": [".flac", ".mp3", ".ogg", ".wav"],
+        },
+        "vision": {
+            "endpoint_family": "responses",
+            "supported_file_types": [".jpg", ".png"],
+        },
+    }
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["live_provider_contract_present"] is True
+    assert result.checks["live_provider_transcription_contract_docs_aligned"] is False
+    assert result.checks["live_provider_vision_contract_docs_aligned"] is False
+    assert result.checks["live_provider_vision_detail_contract_docs_aligned"] is False
+    assert result.checks["live_provider_vision_binary_limit_present"] is False
+    assert result.checks["live_provider_contract_excludes_unsupported_legacy_suffixes"] is False
+    assert any("transcription contract" in failure for failure in result.failures)
+    assert any("vision contract" in failure for failure in result.failures)
+    assert any("must not advertise unsupported" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_rejects_docker_without_provider_contract(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    docker = _docker_report()
+    docker["components"]["capabilities"] = {
+        "status": "succeeded",
+        "contract_names": ["evidence_contract", "manifest_contract"],
+    }
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(docker), encoding="utf-8")
+    provider_report.write_text(json.dumps(_provider_report()), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["docker_live_components_succeeded"] is True
+    assert result.checks["docker_live_capabilities_provider_contract_present"] is False
+    assert result.checks["docker_live_capabilities_provider_contract_docs_aligned"] is False
+    assert result.checks["docker_live_capabilities_vision_detail_contract_docs_aligned"] is False
+    assert result.checks["docker_live_capabilities_vision_binary_limit_present"] is False
+    assert any("provider capability contract" in failure for failure in result.failures)
+
+
 def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
     tmp_path: Path,
 ) -> None:
@@ -255,7 +374,40 @@ def _docker_report() -> dict[str, object]:
             "compose_stack": {"status": "succeeded"},
             "container_dependencies": {"status": "succeeded"},
             "health": {"status": "succeeded"},
-            "capabilities": {"status": "succeeded"},
+            "capabilities": {
+                "status": "succeeded",
+                "contract_names": [
+                    "evidence_contract",
+                    "feature_contract",
+                    "file_type_detection",
+                    "manifest_contract",
+                    "provider_contract",
+                ],
+                "provider_contract": {
+                    "ok": True,
+                    "transcription_endpoint": "/v1/audio/transcriptions",
+                    "transcription_supported_file_types": [
+                        ".m4a",
+                        ".mp3",
+                        ".mp4",
+                        ".mpeg",
+                        ".mpga",
+                        ".wav",
+                        ".webm",
+                    ],
+                    "vision_endpoint_family": "responses",
+                    "vision_model": "gpt-4.1-mini",
+                    "vision_detail_levels": ["low", "high", "auto"],
+                    "vision_max_provider_binary_upload_bytes": 402650094,
+                    "vision_supported_file_types": [
+                        ".gif",
+                        ".jpeg",
+                        ".jpg",
+                        ".png",
+                        ".webp",
+                    ],
+                },
+            },
             "cleanup": {"status": "succeeded"},
             "extraction_flow": {
                 "status": "succeeded",
@@ -277,6 +429,34 @@ def _provider_report() -> dict[str, object]:
         "ok": True,
         "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "provider_key_present": True,
+        "provider_contract": {
+            "external_ai_required": True,
+            "timeout_seconds": 60.0,
+            "transcription": {
+                "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
+                "endpoint": "/v1/audio/transcriptions",
+                "max_upload_bytes": 25 * 1024 * 1024,
+                "model": "gpt-4o-mini-transcribe",
+                "supported_file_types": [
+                    ".m4a",
+                    ".mp3",
+                    ".mp4",
+                    ".mpeg",
+                    ".mpga",
+                    ".wav",
+                    ".webm",
+                ],
+            },
+            "vision": {
+                "detail": "low",
+                "detail_levels": ["low", "high", "auto"],
+                "docs_url": "https://developers.openai.com/api/docs/guides/images-vision",
+                "endpoint_family": "responses",
+                "max_provider_binary_upload_bytes": 402650094,
+                "model": "gpt-4.1-mini",
+                "supported_file_types": [".gif", ".jpeg", ".jpg", ".png", ".webp"],
+            },
+        },
         "components": {
             "provider_key": {"status": "configured"},
             "vision": {"status": "succeeded"},

@@ -74,8 +74,12 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     }
     assert file_report["provider_contract"]["vision"] == {
         "detail": "low",
+        "detail_levels": ["low", "high", "auto"],
         "docs_url": "https://developers.openai.com/api/docs/guides/images-vision",
         "endpoint_family": "responses",
+        "max_images_per_request": 1500,
+        "max_provider_binary_upload_bytes": 402650094,
+        "max_provider_payload_bytes": 536870912,
         "model": "gpt-4.1-mini",
         "supported_file_types": [".gif", ".jpeg", ".jpg", ".png", ".webp"],
     }
@@ -138,6 +142,20 @@ def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
     args = module._parse_args([])
 
     assert args.report_out == ".e2e-artifacts/multimodal-live-provider-canary.json"
+
+
+def test_multimodal_live_provider_canary_reports_model_specific_vision_details() -> None:
+    module = _load_canary_module()
+    args = module._parse_args(["--vision-model", "gpt-5.5"])
+
+    report = module._base_report(args, has_provider_key=False)
+
+    assert report["provider_contract"]["vision"]["detail_levels"] == [
+        "low",
+        "high",
+        "original",
+        "auto",
+    ]
 
 
 def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(

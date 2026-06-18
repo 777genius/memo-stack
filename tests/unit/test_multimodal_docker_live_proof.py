@@ -74,6 +74,33 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
                     "providers": {"local": {}, "docling": {}},
                     "evidence_contract": {},
                     "feature_contract": {},
+                    "provider_contract": {
+                        "transcription": {
+                            "endpoint": "/v1/audio/transcriptions",
+                            "supported_file_types": [
+                                ".m4a",
+                                ".mp3",
+                                ".mp4",
+                                ".mpeg",
+                                ".mpga",
+                                ".wav",
+                                ".webm",
+                            ],
+                        },
+                        "vision": {
+                            "endpoint_family": "responses",
+                            "model": "gpt-4.1-mini",
+                            "detail_levels": ["low", "high", "auto"],
+                            "max_provider_binary_upload_bytes": 402650094,
+                            "supported_file_types": [
+                                ".gif",
+                                ".jpeg",
+                                ".jpg",
+                                ".png",
+                                ".webp",
+                            ],
+                        },
+                    },
                     "manifest_contract": {},
                     "file_type_detection": {},
                 }
@@ -149,6 +176,17 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
 
     assert report["ok"] is True
     assert report["components"]["container_dependencies"]["versions"]["ffmpeg"]
+    assert report["components"]["capabilities"]["provider_contract"]["ok"] is True
+    assert report["components"]["capabilities"]["provider_contract"][
+        "vision_detail_levels"
+    ] == ["low", "high", "auto"]
+    assert (
+        report["components"]["capabilities"]["provider_contract"][
+            "vision_max_provider_binary_upload_bytes"
+        ]
+        == 402650094
+    )
+    assert "provider_contract" in report["components"]["capabilities"]["contract_names"]
     cases = report["components"]["extraction_flow"]["cases"]
     assert len(cases) == 5
     filenames = {case["filename"] for case in cases}

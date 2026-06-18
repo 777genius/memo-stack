@@ -396,11 +396,27 @@ def _prove_capabilities(
             "extraction_contract_incomplete",
             "Incomplete extraction capability contract",
         )
+    provider_contract = extraction.get("provider_contract")
+    if not isinstance(provider_contract, dict):
+        raise DockerProofFailure(
+            "capabilities",
+            "provider_contract_missing",
+            "Missing extraction provider capability contract",
+        )
+    provider_contract_summary = _provider_contract_summary(provider_contract)
+    if not provider_contract_summary["ok"]:
+        raise DockerProofFailure(
+            "capabilities",
+            "provider_contract_incomplete",
+            "Incomplete extraction provider capability contract",
+            diagnostics=provider_contract_summary,
+        )
     contract_names = sorted(
         key
         for key in (
             "evidence_contract",
             "feature_contract",
+            "provider_contract",
             "manifest_contract",
             "file_type_detection",
         )
@@ -413,7 +429,55 @@ def _prove_capabilities(
         modalities=sorted(str(key) for key in modality_actions)[:20],
         provider_names=sorted(str(key) for key in providers)[:20],
         contract_names=contract_names,
+        provider_contract=provider_contract_summary,
     )
+
+
+def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    transcription = contract.get("transcription")
+    vision = contract.get("vision")
+    transcription = transcription if isinstance(transcription, dict) else {}
+    vision = vision if isinstance(vision, dict) else {}
+    audio_suffixes = _string_list(transcription.get("supported_file_types"))
+    vision_suffixes = _string_list(vision.get("supported_file_types"))
+    vision_detail_levels = _string_list(vision.get("detail_levels"))
+    vision_max_binary_upload_bytes = _positive_int(
+        vision.get("max_provider_binary_upload_bytes")
+    )
+    audio_ok = (
+        transcription.get("endpoint") == "/v1/audio/transcriptions"
+        and set(audio_suffixes)
+        == {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
+    )
+    vision_ok = (
+        vision.get("endpoint_family") == "responses"
+        and set(vision_suffixes) == {".gif", ".jpeg", ".jpg", ".png", ".webp"}
+        and {"low", "high", "auto"}.issubset(set(vision_detail_levels))
+        and set(vision_detail_levels).issubset({"low", "high", "original", "auto"})
+        and vision_max_binary_upload_bytes is not None
+    )
+    return {
+        "ok": audio_ok and vision_ok and not ({".flac", ".ogg"} & set(audio_suffixes)),
+        "transcription_endpoint": transcription.get("endpoint"),
+        "transcription_supported_file_types": audio_suffixes,
+        "vision_endpoint_family": vision.get("endpoint_family"),
+        "vision_model": vision.get("model"),
+        "vision_detail_levels": vision_detail_levels,
+        "vision_max_provider_binary_upload_bytes": vision_max_binary_upload_bytes,
+        "vision_supported_file_types": vision_suffixes,
+    }
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str)][:50]
 
 
 def _prove_extraction_flow(
