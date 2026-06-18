@@ -111,6 +111,24 @@ def test_policy_marks_strong_text_match_as_auto_approve_eligible_but_review_gate
     assert "auto_approve_eligible" in decision.reason_codes
 
 
+def test_policy_keeps_suggestion_targets_review_only_even_with_high_score() -> None:
+    suggestion_target = _candidate(
+        target_id="suggestion_candidate",
+        target_type="suggestion",
+        score=98,
+    )
+
+    decision = decide_context_link_candidate(suggestion_target)
+    result = apply_context_link_policy((suggestion_target,), limit=10, persist=True)
+
+    assert decision.outcome == "needs_review"
+    assert decision.requires_review is True
+    assert decision.auto_approve_eligible is False
+    assert "review_required_target_type" in decision.reason_codes
+    assert result.candidates[0].metadata["review_gate"] == "required"
+    assert result.candidates[0].metadata["auto_approve_eligible"] is False
+
+
 def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
     candidates = tuple(
         [_candidate(target_id="same", score=96), _candidate(target_id="same", score=95)]
@@ -146,9 +164,7 @@ def test_policy_diagnostics_report_actual_candidates_processed_before_limit() ->
     assert result.diagnostics["link_policy_candidate_pool_size"] == (
         MAX_SUGGESTIONS_PER_SOURCE + 25
     )
-    assert result.diagnostics["link_policy_candidates_considered"] == (
-        MAX_SUGGESTIONS_PER_SOURCE
-    )
+    assert result.diagnostics["link_policy_candidates_considered"] == (MAX_SUGGESTIONS_PER_SOURCE)
     assert result.diagnostics["link_policy_candidates_unprocessed_after_limit"] == 25
     assert result.diagnostics["link_policy_stopped_after_return_limit"] is True
 
@@ -216,6 +232,36 @@ def test_policy_blocks_high_impact_relation_without_explicit_signal() -> None:
     assert result.candidates[0].metadata["review_gate"] == "required"
 
 
+def test_policy_blocks_contradicts_relation_without_explicit_signal() -> None:
+    weak_contradicts = _candidate(
+        target_id="disputed-fact",
+        score=96,
+        metadata={"relation_type": "contradicts"},
+    )
+    explicit_contradicts = _candidate(
+        target_id="disputed-fact",
+        score=96,
+        reason_codes=["explicit_correction"],
+        metadata={"relation_type": "contradicts"},
+    )
+
+    weak_decision = decide_context_link_candidate(weak_contradicts)
+    explicit_decision = decide_context_link_candidate(explicit_contradicts)
+    result = apply_context_link_policy(
+        (weak_contradicts, explicit_contradicts),
+        limit=10,
+        persist=True,
+    )
+
+    assert weak_decision.outcome == "deny"
+    assert weak_decision.reason_codes == ("high_impact_relation_requires_explicit_signal",)
+    assert explicit_decision.outcome == "needs_review"
+    assert explicit_decision.relation_type == "contradicts"
+    assert explicit_decision.auto_approve_eligible is False
+    assert result.candidates[0].metadata["policy_relation_type"] == "contradicts"
+    assert result.candidates[0].metadata["review_gate"] == "required"
+
+
 def test_policy_caps_candidates_considered_before_review_decisions() -> None:
     candidates = tuple(
         _candidate(
@@ -233,8 +279,7 @@ def test_policy_caps_candidates_considered_before_review_decisions() -> None:
         MAX_POLICY_CANDIDATES_CONSIDERED + 25
     )
     assert (
-        result.diagnostics["link_policy_candidates_considered"]
-        == MAX_POLICY_CANDIDATES_CONSIDERED
+        result.diagnostics["link_policy_candidates_considered"] == MAX_POLICY_CANDIDATES_CONSIDERED
     )
     assert result.diagnostics["link_policy_candidate_considered_cap"] == (
         MAX_POLICY_CANDIDATES_CONSIDERED
