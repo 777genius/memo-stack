@@ -28,7 +28,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from memo_stack_server.api.auth import require_service_token
 from memo_stack_server.api.dependencies import get_container
 from memo_stack_server.api.policy import ensure_server_writes_enabled
-from memo_stack_server.api.public_payload import safe_public_text
+from memo_stack_server.api.public_payload import (
+    safe_public_metadata,
+    safe_public_reason,
+    safe_public_text,
+)
 from memo_stack_server.api.v1.facts import (
     SourceRefRequest,
     fact_to_response,
@@ -46,6 +50,23 @@ router = APIRouter(
     tags=["suggestions"],
     dependencies=[Depends(require_service_token)],
 )
+
+_MAX_PUBLIC_SUGGESTION_REVIEW_AUDIT_EVENTS = 10
+_PUBLIC_SUGGESTION_REVIEW_AUDIT_FIELDS = {
+    "event_type": 120,
+    "suggestion_id": 160,
+    "space_id": 80,
+    "memory_scope_id": 80,
+    "operation": 40,
+    "action": 16,
+    "previous_status": 40,
+    "new_status": 40,
+    "reviewed_at": 80,
+    "target_fact_id": 160,
+    "target_fact_version": 40,
+    "created_from_capture_id": 160,
+    "reason": 320,
+}
 
 
 class CreateSuggestionRequest(BaseModel):
@@ -156,7 +177,7 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
         ],
         "confidence": suggestion.confidence.value,
         "trust_level": suggestion.trust_level.value,
-        "safe_reason": suggestion.safe_reason,
+        "safe_reason": safe_public_reason(suggestion.safe_reason, limit=320),
         "target_fact_id": str(suggestion.target_fact_id) if suggestion.target_fact_id else None,
         "target_fact_version": suggestion.target_fact_version,
         "category": suggestion.category,
@@ -166,12 +187,49 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
         "expiry_reason": suggestion.expiry_reason,
         "created_from_capture_id": suggestion.created_from_capture_id,
         "candidate_fingerprint": suggestion.candidate_fingerprint,
-        "review_payload": suggestion.review_payload or {},
-        "review_reason": suggestion.review_reason,
+        "review_payload": safe_public_metadata(suggestion.review_payload or {}, max_items=40),
+        "review_reason": _safe_optional_reason(suggestion.review_reason, limit=320),
+        "review_audit": _suggestion_review_audit_to_response(suggestion),
         "created_at": suggestion.created_at.isoformat(),
         "updated_at": suggestion.updated_at.isoformat(),
         "reviewed_at": suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None,
     }
+
+
+def _suggestion_review_audit_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
+    raw_events = (suggestion.review_payload or {}).get("review_events")
+    events = (
+        [item for item in raw_events if isinstance(item, dict)]
+        if isinstance(raw_events, list)
+        else []
+    )
+    public_events = [
+        _suggestion_review_audit_event_to_response(item)
+        for item in events[-_MAX_PUBLIC_SUGGESTION_REVIEW_AUDIT_EVENTS:]
+    ]
+    return {
+        "events": public_events,
+        "event_count": len(events),
+        "truncated": len(events) > len(public_events),
+    }
+
+
+def _suggestion_review_audit_event_to_response(event: dict[str, Any]) -> dict[str, Any]:
+    public: dict[str, Any] = {}
+    for key, limit in _PUBLIC_SUGGESTION_REVIEW_AUDIT_FIELDS.items():
+        value = event.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            sanitizer = safe_public_reason if key == "reason" else safe_public_text
+            public[key] = sanitizer(str(value), limit=limit)
+    return public
+
+
+def _safe_optional_reason(value: str | None, *, limit: int) -> str | None:
+    if value is None:
+        return None
+    return safe_public_reason(value, limit=limit)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

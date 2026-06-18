@@ -536,6 +536,66 @@ def test_rejected_suggestion_never_appears_in_context(tmp_path: Path) -> None:
     assert "Rejected memory marker" not in context.json()["data"]["rendered_text"]
 
 
+def test_suggestion_review_actions_expose_bounded_redacted_audit(tmp_path: Path) -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    with make_client(tmp_path) as client:
+        approved_candidate = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(candidate_text="Approved audit marker."),
+            headers=auth_headers(),
+        )
+        rejected_candidate = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(candidate_text="Rejected audit marker."),
+            headers=auth_headers(),
+        )
+        expired_candidate = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(candidate_text="Expired audit marker."),
+            headers=auth_headers(),
+        )
+
+        approved = client.post(
+            f"/v1/suggestions/{approved_candidate.json()['data']['id']}/approve",
+            json={"reason": f"reviewed with Bearer {raw_secret}"},
+            headers=auth_headers(),
+        )
+        rejected = client.post(
+            f"/v1/suggestions/{rejected_candidate.json()['data']['id']}/reject",
+            json={"reason": "not useful"},
+            headers=auth_headers(),
+        )
+        expired = client.post(
+            f"/v1/suggestions/{expired_candidate.json()['data']['id']}/expire",
+            json={"reason": "stale"},
+            headers=auth_headers(),
+        )
+
+    assert approved.status_code == 200
+    assert rejected.status_code == 200
+    assert expired.status_code == 200
+
+    approved_suggestion = approved.json()["data"]["suggestion"]
+    rendered = str(approved.json())
+    assert approved_suggestion["review_reason"] == "[redacted]"
+    assert approved_suggestion["review_audit"]["event_count"] == 1
+    assert approved_suggestion["review_audit"]["truncated"] is False
+    assert approved_suggestion["review_audit"]["events"][0]["action"] == "approve"
+    assert approved_suggestion["review_audit"]["events"][0]["new_status"] == "approved"
+    assert approved_suggestion["review_audit"]["events"][0]["reason"] == "[redacted]"
+    assert raw_secret not in rendered
+
+    rejected_suggestion = rejected.json()["data"]
+    assert rejected_suggestion["status"] == "rejected"
+    assert rejected_suggestion["review_audit"]["events"][0]["action"] == "reject"
+    assert rejected_suggestion["review_reason"] == "not useful"
+
+    expired_suggestion = expired.json()["data"]
+    assert expired_suggestion["status"] == "expired"
+    assert expired_suggestion["review_audit"]["events"][0]["action"] == "expire"
+    assert expired_suggestion["review_reason"] == "stale"
+
+
 def test_list_suggestions_filters_review_queue_by_operation_category_and_tag(
     tmp_path: Path,
 ) -> None:
