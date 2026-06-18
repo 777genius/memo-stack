@@ -143,6 +143,23 @@ async def _run_vision(
     visible_text_count = len(visible_text) if isinstance(visible_text, list) else 0
     summary = result.payload.get("summary")
     summary_chars = len(summary) if isinstance(summary, str) else 0
+    evidence_check = _vision_evidence_check(
+        visible_text_count=visible_text_count,
+        summary_chars=summary_chars,
+    )
+    if evidence_check["status"] != "succeeded":
+        return _component(
+            "failed",
+            reason=evidence_check["reason"],
+            message=evidence_check["message"],
+            provider_name=result.provider_name,
+            provider_model=result.provider_model,
+            provider_version=result.provider_version,
+            payload_status=result.payload_status,
+            visible_text_count=visible_text_count,
+            summary_chars=summary_chars,
+            diagnostics=_safe_diagnostics(result.diagnostics),
+        )
     return _component(
         "succeeded",
         provider_name=result.provider_name,
@@ -373,15 +390,31 @@ def _transcript_check(
         )
     if audio_path:
         return _component("succeeded")
-    normalized = transcript.lower()
+    normalized_terms = set(transcript.lower().replace("-", " ").split())
     expected_terms = {"memo", "stack", "canary"}
-    if not expected_terms.intersection(normalized.split()):
+    missing_terms = sorted(expected_terms.difference(normalized_terms))
+    if missing_terms:
         return _component(
             "failed",
             reason="synthetic_transcript_mismatch",
-            message="Synthetic speech transcript did not contain expected canary terms",
+            message="Synthetic speech transcript missed expected canary terms",
+            missing_terms=missing_terms,
         )
     return _component("succeeded")
+
+
+def _vision_evidence_check(
+    *,
+    visible_text_count: int,
+    summary_chars: int,
+) -> dict[str, object]:
+    if visible_text_count > 0 or summary_chars > 0:
+        return _component("succeeded")
+    return _component(
+        "failed",
+        reason="vision_empty_evidence",
+        message="Provider returned no visible text or image summary",
+    )
 
 
 def _safe_diagnostics(diagnostics: dict[str, object]) -> dict[str, object]:
