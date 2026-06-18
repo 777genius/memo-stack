@@ -244,9 +244,14 @@ extraction.evidence_contract.source_ref_coordinate_fields:
 extraction.profiles_v2[].input_modalities
 extraction.profiles_v2[].evidence_coordinates
 extraction.profiles_v2[].primary_artifact_types
+extraction.profiles_v2[].document_features
+extraction.profiles_v2[].vision_features
+extraction.profiles_v2[].transcript_features
+extraction.profiles_v2[].video_features
 extraction.profiles_v2[].external_provider_egress
 extraction.profiles_v2[].requires_explicit_external_ai
 extraction.profiles_v2[].may_run_local_asr
+extraction.feature_contract.schema_version: memo_stack.extraction_feature_contract.v1
 ```
 
 Contract rules:
@@ -258,6 +263,17 @@ Contract rules:
   `video_frame_timeline`.
 - `evidence_coordinates` describes what a profile can produce, not what every
   item must contain. Coordinates remain optional per source ref.
+- Feature fields describe profile capability, not artifact truth. For example,
+  `optional_speaker_labels` means the provider profile may return speaker
+  labels when the selected model/provider supports them; it does not mean every
+  transcript has labels.
+- Actual extraction artifacts are authoritative for per-file features. Transcript
+  artifacts expose bounded feature metadata such as `has_time_ranges`,
+  `has_speaker_labels`, `has_word_timestamps` and scalar
+  `transcript_feature_names`.
+- Local faster-whisper ASR may expose segments and time ranges. It must not
+  claim speaker labels unless a separate diarization adapter is explicitly
+  implemented, selected and covered by evals.
 - External provider egress and local ASR cost/load signals must be explicit
   before the frontend offers the profile.
 - Public capability diagnostics must never include API keys, raw provider
@@ -694,6 +710,13 @@ Extractor output requirements:
 - Every extracted element has an evidence ref.
 - Time-based evidence uses `time_start_ms` and `time_end_ms`.
 - Visual evidence uses `bbox` when known.
+- Transcript artifacts expose actual feature flags. `transcript_json` may expose
+  a list under `features.transcript_features`; public job/artifact metadata uses
+  scalar `transcript_feature_names` plus booleans for compatibility with bounded
+  metadata stores.
+- Diarization is metadata, not authority. Speaker labels can help review and
+  retrieval, but cannot by themselves promote a transcript claim into active
+  semantic or procedural memory.
 - Parser/vision/ASR errors are safe public errors and bounded internal
   diagnostics.
 - Missing provider credentials produce degraded evidence, not fake extraction.
