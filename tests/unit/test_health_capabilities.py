@@ -119,14 +119,44 @@ def test_capabilities_return_noop_adapters() -> None:
     assert set(profile_states) == set(body["extraction"]["profiles"])
     assert profile_states["standard_local"]["status"] == "ok"
     assert profile_states["standard_local"]["enabled"] is True
+    assert profile_states["standard_local"]["input_modalities"] == [
+        "text",
+        "document",
+        "image",
+        "timed_text",
+        "audio_metadata",
+        "video_metadata",
+    ]
+    assert profile_states["standard_local"]["evidence_coordinates"] == [
+        "char_range",
+        "page_number",
+        "bbox",
+        "time_range_ms",
+    ]
     assert profile_states["standard_local"]["external_provider_egress"] is False
     assert profile_states["standard_local"]["may_run_local_asr"] is False
+    assert profile_states["standard_docling"]["primary_artifact_types"] == [
+        "normalized_json",
+        "table_html",
+    ]
     assert profile_states["standard_vision"]["requires_explicit_external_ai"] is True
+    assert profile_states["standard_vision"]["input_modalities"] == ["image"]
+    assert profile_states["standard_vision"]["evidence_coordinates"] == ["bbox"]
     assert profile_states["standard_vision"]["memory_promotion"] == "review_required"
     assert profile_states["standard_vision"]["source_text_policy"] == "untrusted_evidence"
     assert profile_states["standard_vision"]["artifact_payloads_bounded"] is True
+    assert profile_states["media_api"]["input_modalities"] == ["audio", "video"]
+    assert profile_states["media_api"]["evidence_coordinates"] == ["time_range_ms", "bbox"]
+    assert profile_states["media_api"]["primary_artifact_types"] == [
+        "transcript",
+        "transcript_json",
+        "keyframe",
+        "video_frame_timeline",
+    ]
     assert profile_states["media_api"]["may_run_local_asr"] is False
     assert profile_states["media_local_asr"]["may_run_local_asr"] is True
+    assert profile_states["media_local_asr"]["external_provider_egress"] is False
+    assert profile_states["media_local_asr"]["evidence_coordinates"] == ["time_range_ms"]
     assert profile_states["standard_asr"]["deprecated"] is True
     assert profile_states["standard_asr"]["may_run_local_asr"] is False
     assert profile_states["standard_asr"]["fallback_profiles"] == ["standard_local"]
@@ -155,6 +185,26 @@ def test_capabilities_return_noop_adapters() -> None:
         "sensitive_data_in_diagnostics": False,
         "canonical_store": "postgres",
         "derived_indexes": ["qdrant", "graphiti"],
+    }
+    assert body["extraction"]["evidence_contract"] == {
+        "schema_version": "memo_stack.extraction_evidence_contract.v1",
+        "source_ref_coordinate_fields": [
+            "char_start",
+            "char_end",
+            "page_number",
+            "bbox",
+            "time_start_ms",
+            "time_end_ms",
+        ],
+        "profile_contract_fields": [
+            "input_modalities",
+            "evidence_coordinates",
+            "primary_artifact_types",
+        ],
+        "coordinates_are_optional_per_item": True,
+        "source_refs_are_bounded": True,
+        "memory_promotion": "review_required",
+        "source_text_policy": "untrusted_evidence",
     }
     assert isinstance(body["extraction"]["optional_extras"]["docling"]["installed"], bool)
     assert isinstance(body["extraction"]["optional_extras"]["vision"]["installed"], bool)

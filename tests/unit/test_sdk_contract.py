@@ -277,6 +277,14 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "enabled": True,
                             "status": "ok",
                             "providers": ["transcription_api"],
+                            "input_modalities": ["audio", "video"],
+                            "evidence_coordinates": ["time_range_ms", "bbox"],
+                            "primary_artifact_types": [
+                                "transcript",
+                                "transcript_json",
+                                "keyframe",
+                                "video_frame_timeline",
+                            ],
                             "external_provider_egress": True,
                             "requires_explicit_external_ai": True,
                             "fallback_profiles": ["standard_local"],
@@ -291,6 +299,13 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "status": "unavailable",
                             "reason": "provider_package_missing",
                             "providers": ["transcription_local"],
+                            "input_modalities": ["audio", "video"],
+                            "evidence_coordinates": ["time_range_ms"],
+                            "primary_artifact_types": [
+                                "media_manifest",
+                                "transcript",
+                                "transcript_json",
+                            ],
                             "external_provider_egress": False,
                             "requires_explicit_external_ai": False,
                             "fallback_profiles": ["standard_local"],
@@ -305,6 +320,14 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "enabled": True,
                             "status": "ok",
                             "providers": ["transcription_api"],
+                            "input_modalities": ["audio", "video"],
+                            "evidence_coordinates": ["time_range_ms", "bbox"],
+                            "primary_artifact_types": [
+                                "transcript",
+                                "transcript_json",
+                                "keyframe",
+                                "video_frame_timeline",
+                            ],
                             "external_provider_egress": True,
                             "requires_explicit_external_ai": True,
                             "fallback_profiles": ["standard_local"],
@@ -320,6 +343,17 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                         "transcription_api": {"status": "ok", "configured": True},
                     },
                     "policy": {"schema_version": 2, "external_ai_allowed": True},
+                    "evidence_contract": {
+                        "schema_version": "memo_stack.extraction_evidence_contract.v1",
+                        "source_ref_coordinate_fields": [
+                            "char_start",
+                            "char_end",
+                            "page_number",
+                            "bbox",
+                            "time_start_ms",
+                            "time_end_ms",
+                        ],
+                    },
                     "limits": {"max_media_seconds": 600},
                 }
             },
@@ -334,18 +368,38 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert diagnostics.enabled is True
     assert diagnostics.default_profile == "media_api"
     assert diagnostics.policy["schema_version"] == 2
+    assert diagnostics.evidence_contract["schema_version"] == (
+        "memo_stack.extraction_evidence_contract.v1"
+    )
+    assert diagnostics.evidence_contract["source_ref_coordinate_fields"] == [
+        "char_start",
+        "char_end",
+        "page_number",
+        "bbox",
+        "time_start_ms",
+        "time_end_ms",
+    ]
     assert diagnostics.limits["max_media_seconds"] == 600
     assert diagnostics.provider_status("transcription_api") == "ok"
     media_api = diagnostics.profile("media_api")
     assert media_api is not None
     assert media_api.status == "ok"
     assert media_api.providers == ("transcription_api",)
+    assert media_api.input_modalities == ("audio", "video")
+    assert media_api.evidence_coordinates == ("time_range_ms", "bbox")
+    assert media_api.primary_artifact_types == (
+        "transcript",
+        "transcript_json",
+        "keyframe",
+        "video_frame_timeline",
+    )
     assert media_api.external_provider_egress is True
     assert media_api.memory_promotion == "review_required"
     assert media_api.may_run_local_asr is False
     local_asr = diagnostics.profile("media_local_asr")
     assert local_asr is not None
     assert local_asr.reason == "provider_package_missing"
+    assert local_asr.evidence_coordinates == ("time_range_ms",)
     assert local_asr.may_run_local_asr is True
     standard_asr = diagnostics.profile("standard_asr")
     assert standard_asr is not None

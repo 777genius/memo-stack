@@ -12,6 +12,9 @@ class ExtractionProfileCapability:
     enabled: bool
     status: str
     providers: tuple[str, ...]
+    input_modalities: tuple[str, ...]
+    evidence_coordinates: tuple[str, ...]
+    primary_artifact_types: tuple[str, ...]
     external_provider_egress: bool
     requires_explicit_external_ai: bool
     fallback_profiles: tuple[str, ...]
@@ -31,6 +34,9 @@ class ExtractionProfileCapability:
             enabled=bool(payload.get("enabled", False)),
             status=str(payload.get("status") or "unknown"),
             providers=_strings(payload.get("providers")),
+            input_modalities=_strings(payload.get("input_modalities")),
+            evidence_coordinates=_strings(payload.get("evidence_coordinates")),
+            primary_artifact_types=_strings(payload.get("primary_artifact_types")),
             external_provider_egress=bool(payload.get("external_provider_egress", False)),
             requires_explicit_external_ai=bool(
                 payload.get("requires_explicit_external_ai", False)
@@ -54,6 +60,7 @@ class ExtractionCapabilityDiagnostics:
     profiles: dict[str, ExtractionProfileCapability]
     providers: dict[str, dict[str, Any]]
     policy: dict[str, Any]
+    evidence_contract: dict[str, Any]
     limits: dict[str, Any]
     raw: dict[str, Any]
 
@@ -77,6 +84,7 @@ class ExtractionCapabilityDiagnostics:
                 if isinstance(key, str) and isinstance(value, dict)
             },
             policy=dict(payload.get("policy") or {}),
+            evidence_contract=dict(payload.get("evidence_contract") or {}),
             limits=dict(payload.get("limits") or {}),
             raw=dict(payload),
         )

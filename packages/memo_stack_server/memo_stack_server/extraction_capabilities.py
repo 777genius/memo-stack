@@ -17,6 +17,90 @@ _PROFILE_ORDER = (
     "standard_full",
 )
 
+_PROFILE_CONTRACTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "standard_local": {
+        "input_modalities": (
+            "text",
+            "document",
+            "image",
+            "timed_text",
+            "audio_metadata",
+            "video_metadata",
+        ),
+        "evidence_coordinates": (
+            "char_range",
+            "page_number",
+            "bbox",
+            "time_range_ms",
+        ),
+        "primary_artifact_types": (
+            "image_regions",
+            "transcript",
+            "media_manifest",
+            "keyframe",
+            "video_frame_timeline",
+        ),
+    },
+    "standard_docling": {
+        "input_modalities": ("document",),
+        "evidence_coordinates": ("char_range", "page_number", "bbox"),
+        "primary_artifact_types": ("normalized_json", "table_html"),
+    },
+    "standard_vision": {
+        "input_modalities": ("image",),
+        "evidence_coordinates": ("bbox",),
+        "primary_artifact_types": ("vision_json", "image_regions"),
+    },
+    "media_api": {
+        "input_modalities": ("audio", "video"),
+        "evidence_coordinates": ("time_range_ms", "bbox"),
+        "primary_artifact_types": (
+            "transcript",
+            "transcript_json",
+            "keyframe",
+            "video_frame_timeline",
+        ),
+    },
+    "media_local_asr": {
+        "input_modalities": ("audio", "video"),
+        "evidence_coordinates": ("time_range_ms",),
+        "primary_artifact_types": (
+            "media_manifest",
+            "transcript",
+            "transcript_json",
+        ),
+    },
+    "standard_asr": {
+        "input_modalities": ("audio", "video"),
+        "evidence_coordinates": ("time_range_ms", "bbox"),
+        "primary_artifact_types": (
+            "transcript",
+            "transcript_json",
+            "keyframe",
+            "video_frame_timeline",
+        ),
+    },
+    "standard_full": {
+        "input_modalities": ("document", "image", "audio", "video"),
+        "evidence_coordinates": (
+            "char_range",
+            "page_number",
+            "bbox",
+            "time_range_ms",
+        ),
+        "primary_artifact_types": (
+            "normalized_json",
+            "table_html",
+            "vision_json",
+            "image_regions",
+            "transcript",
+            "transcript_json",
+            "keyframe",
+            "video_frame_timeline",
+        ),
+    },
+}
+
 
 @dataclass(frozen=True)
 class _ProviderState:
@@ -61,6 +145,7 @@ def build_extraction_capability_payload(settings: Settings) -> dict[str, object]
         },
         "optional_extras": _legacy_optional_extras(settings, providers),
         "policy": _policy_payload(settings),
+        "evidence_contract": _evidence_contract_payload(),
         "external_provider_egress": settings.extraction_external_ai_enabled,
         "limits": _limits_payload(settings),
     }
@@ -257,11 +342,22 @@ def _profile_payload(
     may_run_local_asr: bool = False,
     replacement_profiles: tuple[str, ...] = (),
 ) -> dict[str, object]:
+    contract = _PROFILE_CONTRACTS.get(
+        name,
+        {
+            "input_modalities": (),
+            "evidence_coordinates": (),
+            "primary_artifact_types": (),
+        },
+    )
     payload: dict[str, object] = {
         "name": name,
         "enabled": enabled,
         "status": status,
         "providers": list(provider_names),
+        "input_modalities": list(contract["input_modalities"]),
+        "evidence_coordinates": list(contract["evidence_coordinates"]),
+        "primary_artifact_types": list(contract["primary_artifact_types"]),
         "external_provider_egress": external_provider_egress,
         "requires_explicit_external_ai": requires_explicit_external_ai,
         "fallback_profiles": list(fallback_profiles),
@@ -331,6 +427,29 @@ def _policy_payload(settings: Settings) -> dict[str, object]:
         "sensitive_data_in_diagnostics": False,
         "canonical_store": "postgres",
         "derived_indexes": ["qdrant", "graphiti"],
+    }
+
+
+def _evidence_contract_payload() -> dict[str, object]:
+    return {
+        "schema_version": "memo_stack.extraction_evidence_contract.v1",
+        "source_ref_coordinate_fields": [
+            "char_start",
+            "char_end",
+            "page_number",
+            "bbox",
+            "time_start_ms",
+            "time_end_ms",
+        ],
+        "profile_contract_fields": [
+            "input_modalities",
+            "evidence_coordinates",
+            "primary_artifact_types",
+        ],
+        "coordinates_are_optional_per_item": True,
+        "source_refs_are_bounded": True,
+        "memory_promotion": "review_required",
+        "source_text_policy": "untrusted_evidence",
     }
 
 
