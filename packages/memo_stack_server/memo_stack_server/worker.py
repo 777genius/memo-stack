@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -33,6 +34,7 @@ from memo_stack_server.config import Settings
 
 MAX_ATTEMPTS = 5
 RUNNING_LEASE_TIMEOUT = timedelta(minutes=5)
+RUNNING_HEARTBEAT_INTERVAL = timedelta(seconds=60)
 
 WORKER_ROLE_WORKLOAD_CLASSES: dict[str, tuple[str, ...]] = {
     "all": (),
@@ -83,9 +85,13 @@ class OutboxWorker:
         container: Container,
         *,
         worker_filter: OutboxWorkerFilter | None = None,
+        running_heartbeat_interval: timedelta | None = None,
     ) -> None:
         self._container = container
         self._filter = worker_filter or OutboxWorkerFilter()
+        self._running_heartbeat_interval = (
+            running_heartbeat_interval or RUNNING_HEARTBEAT_INTERVAL
+        )
 
     async def run_once(self, *, limit: int = 25) -> int:
         if _should_run_suggestion_maintenance(self._filter):
@@ -93,12 +99,32 @@ class OutboxWorker:
         jobs = await self._claim_pending(limit=limit)
         for job in jobs:
             try:
-                await self._handle(job)
+                await self._handle_with_heartbeat(job)
             except Exception as exc:
                 await self._mark_retry_or_dead(job.id, exc)
             else:
                 await self._mark_done(job.id)
         return len(jobs)
+
+    async def _handle_with_heartbeat(self, job: ClaimedOutboxJob) -> None:
+        heartbeat = asyncio.create_task(self._heartbeat_running_job(job.id))
+        try:
+            await self._handle(job)
+        finally:
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat
+
+    async def _heartbeat_running_job(self, job_id: int) -> None:
+        interval = max(0.05, self._running_heartbeat_interval.total_seconds())
+        while True:
+            await asyncio.sleep(interval)
+            async with AsyncSession(self._container.engine) as session:
+                row = await session.get(MemoryOutboxRow, job_id)
+                if row is None or row.status != "running":
+                    return
+                row.updated_at = self._container.clock.now()
+                await session.commit()
 
     async def _claim_pending(self, *, limit: int) -> list[ClaimedOutboxJob]:
         now = self._container.clock.now()

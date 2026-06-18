@@ -90,6 +90,20 @@ async def _mark_asset_extraction_running(
         return saved
 
 
+async def _get_asset_extract_outbox_row(client: TestClient, extraction_id: str) -> MemoryOutboxRow:
+    async with AsyncSession(client.app.state.container.engine) as session:
+        row = (
+            await session.execute(
+                select(MemoryOutboxRow)
+                .where(MemoryOutboxRow.event_type == "asset.extract")
+                .where(MemoryOutboxRow.aggregate_id == extraction_id)
+                .order_by(MemoryOutboxRow.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+        return row
+
+
 def sample_pdf_bytes(text: str) -> bytes:
     stream = f"BT /F1 18 Tf 72 720 Td ({text}) Tj ET".encode("latin-1")
     return (
@@ -868,6 +882,74 @@ def test_cancel_during_slow_asset_extraction_interrupts_worker_without_artifacts
             assert data["execution"]["cancellation_requested_at"] is not None
             assert data["result_document_ids"] == []
             assert data["artifacts"] == []
+        finally:
+            run_use_case._extractor = original_extractor
+
+
+def test_slow_asset_extraction_refreshes_outbox_running_heartbeat(
+    tmp_path: Path,
+) -> None:
+    with make_client(
+        tmp_path,
+        extraction_cancellation_poll_seconds=0.05,
+        extraction_heartbeat_seconds=0.05,
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "outbox-heartbeat",
+                "filename": "outbox-heartbeat.txt",
+                "extract": "true",
+            },
+            content=b"Outbox running heartbeat should stay fresh during slow extraction.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_extractor = run_use_case._extractor
+        slow_extractor = _SlowCancelableExtractor()
+        run_use_case._extractor = slow_extractor
+        worker_error: list[BaseException] = []
+
+        def run_worker() -> None:
+            try:
+                asyncio.run(
+                    OutboxWorker(
+                        client.app.state.container,
+                        running_heartbeat_interval=timedelta(seconds=0.05),
+                    ).run_once(limit=10)
+                )
+            except BaseException as exc:  # pragma: no cover - asserted through worker_error
+                worker_error.append(exc)
+
+        worker_thread = threading.Thread(target=run_worker, daemon=True)
+        try:
+            worker_thread.start()
+            assert slow_extractor.started.wait(timeout=3)
+            initial_row = asyncio.run(_get_asset_extract_outbox_row(client, extraction_id))
+            assert initial_row.status == "running"
+
+            assert not slow_extractor.cancelled.wait(timeout=0.2)
+            refreshed_row = asyncio.run(_get_asset_extract_outbox_row(client, extraction_id))
+            assert refreshed_row.status == "running"
+            assert refreshed_row.updated_at > initial_row.updated_at
+
+            canceled = client.post(
+                f"/v1/asset-extractions/{extraction_id}/cancel",
+                headers=auth_headers(),
+            )
+            assert canceled.status_code == 202, canceled.text
+            worker_thread.join(timeout=5)
+            assert not worker_thread.is_alive()
+            assert worker_error == []
+            assert slow_extractor.cancelled.wait(timeout=1)
+
+            done_row = asyncio.run(_get_asset_extract_outbox_row(client, extraction_id))
+            assert done_row.status == "done"
         finally:
             run_use_case._extractor = original_extractor
 
