@@ -66,6 +66,10 @@ memo-stack-multimodal-live-provider-canary:
 memo-stack-multimodal-docker-live-proof:
 	$(PYTHON) scripts/multimodal_docker_live_proof.py
 
+.PHONY: memo-stack-multimodal-production-goal-audit
+memo-stack-multimodal-production-goal-audit:
+	$(PYTHON) scripts/multimodal_production_goal_audit.py
+
 .PHONY: memo-stack-frontend-pub-get
 memo-stack-frontend-pub-get:
 	cd $(FRONTEND_DIR) && $(FLUTTER) pub get
