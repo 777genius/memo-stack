@@ -406,6 +406,9 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
         status: str | None,
         limit: int,
         statuses: tuple[str, ...] | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
     ) -> list[MemoryContextLink]:
         conditions = [
             MemoryContextLinkRow.space_id == space_id,
@@ -414,6 +417,12 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
             MemoryContextLinkRow.source_id == source_id,
         ]
         conditions.extend(_status_conditions(MemoryContextLinkRow.status, status, statuses))
+        if target_type:
+            conditions.append(MemoryContextLinkRow.target_type == target_type)
+        if target_id:
+            conditions.append(MemoryContextLinkRow.target_id == target_id)
+        if relation_type:
+            conditions.append(MemoryContextLinkRow.relation_type == relation_type)
         rows = (
             await self._session.execute(
                 select(MemoryContextLinkRow)
@@ -432,12 +441,21 @@ class PostgresContextLinkRepository(ContextLinkRepositoryPort):
         status: str | None,
         limit: int,
         statuses: tuple[str, ...] | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
     ) -> list[MemoryContextLink]:
         conditions = [
             MemoryContextLinkRow.space_id == space_id,
             MemoryContextLinkRow.memory_scope_id == memory_scope_id,
         ]
         conditions.extend(_status_conditions(MemoryContextLinkRow.status, status, statuses))
+        if target_type:
+            conditions.append(MemoryContextLinkRow.target_type == target_type)
+        if target_id:
+            conditions.append(MemoryContextLinkRow.target_id == target_id)
+        if relation_type:
+            conditions.append(MemoryContextLinkRow.relation_type == relation_type)
         rows = (
             await self._session.execute(
                 select(MemoryContextLinkRow)
@@ -553,6 +571,9 @@ class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPor
         limit: int,
         source_type: str | None = None,
         source_id: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
         statuses: tuple[str, ...] | None = None,
     ) -> list[MemoryContextLinkSuggestion]:
         conditions = [
@@ -566,6 +587,12 @@ class PostgresContextLinkSuggestionRepository(ContextLinkSuggestionRepositoryPor
             conditions.append(MemoryContextLinkSuggestionRow.source_type == source_type)
         if source_id:
             conditions.append(MemoryContextLinkSuggestionRow.source_id == source_id)
+        if target_type:
+            conditions.append(MemoryContextLinkSuggestionRow.target_type == target_type)
+        if target_id:
+            conditions.append(MemoryContextLinkSuggestionRow.target_id == target_id)
+        if relation_type:
+            conditions.append(MemoryContextLinkSuggestionRow.relation_type == relation_type)
         rows = (
             await self._session.execute(
                 select(MemoryContextLinkSuggestionRow)

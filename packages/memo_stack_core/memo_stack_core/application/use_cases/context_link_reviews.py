@@ -48,6 +48,9 @@ class ListContextLinkSuggestionsUseCase:
                 limit=query.limit,
                 source_type=query.source_type,
                 source_id=query.source_id,
+                target_type=query.target_type,
+                target_id=query.target_id,
+                relation_type=query.relation_type,
                 statuses=query.statuses,
             )
 

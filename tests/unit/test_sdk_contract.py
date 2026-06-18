@@ -1693,12 +1693,18 @@ def test_sdk_supports_context_link_statuses_filters() -> None:
         space_slug="client-app",
         memory_scope_external_ref="default",
         statuses="active,deleted",
+        target_type="fact",
+        target_id="fact_2",
+        relation_type="supports",
         limit=20,
     )
     client.list_context_link_suggestions(
         space_slug="client-app",
         memory_scope_external_ref="default",
         statuses="approved,rejected",
+        target_type="document",
+        target_id="doc_1",
+        relation_type="references",
         limit=30,
     )
 
@@ -1710,6 +1716,9 @@ def test_sdk_supports_context_link_statuses_filters() -> None:
                 "space_slug": "client-app",
                 "memory_scope_external_ref": "default",
                 "statuses": "active,deleted",
+                "target_type": "fact",
+                "target_id": "fact_2",
+                "relation_type": "supports",
                 "limit": "20",
             },
         ),
@@ -1720,6 +1729,9 @@ def test_sdk_supports_context_link_statuses_filters() -> None:
                 "space_slug": "client-app",
                 "memory_scope_external_ref": "default",
                 "statuses": "approved,rejected",
+                "target_type": "document",
+                "target_id": "doc_1",
+                "relation_type": "references",
                 "limit": "30",
             },
         ),

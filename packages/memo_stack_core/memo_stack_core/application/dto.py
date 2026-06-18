@@ -512,6 +512,9 @@ class ListContextLinksQuery:
     limit: int
     source_type: str | None = None
     source_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    relation_type: str | None = None
     statuses: tuple[str, ...] | None = None
 
 
@@ -555,6 +558,9 @@ class ListContextLinkSuggestionsQuery:
     limit: int
     source_type: str | None = None
     source_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    relation_type: str | None = None
     statuses: tuple[str, ...] | None = None
 
 

@@ -94,21 +94,27 @@ class ListContextLinksUseCase:
                 return await uow.context_links.list_for_scope(
                     space_id=str(query.space_id),
                     memory_scope_id=str(query.memory_scope_id),
-                    status=query.status,
-                    limit=query.limit,
-                    statuses=query.statuses,
-                )
-            if query.source_type is None or query.source_id is None:
-                raise MemoryValidationError("Context link source requires type and id")
-            return await uow.context_links.list_for_source(
-                space_id=str(query.space_id),
-                memory_scope_id=str(query.memory_scope_id),
-                source_type=query.source_type,
-                source_id=query.source_id,
                 status=query.status,
                 limit=query.limit,
                 statuses=query.statuses,
+                target_type=query.target_type,
+                target_id=query.target_id,
+                relation_type=query.relation_type,
             )
+        if query.source_type is None or query.source_id is None:
+            raise MemoryValidationError("Context link source requires type and id")
+        return await uow.context_links.list_for_source(
+            space_id=str(query.space_id),
+            memory_scope_id=str(query.memory_scope_id),
+            source_type=query.source_type,
+            source_id=query.source_id,
+            status=query.status,
+            limit=query.limit,
+            statuses=query.statuses,
+            target_type=query.target_type,
+            target_id=query.target_id,
+            relation_type=query.relation_type,
+        )
 
 
 class DeleteContextLinkUseCase:

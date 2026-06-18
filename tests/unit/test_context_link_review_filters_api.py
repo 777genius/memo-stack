@@ -80,6 +80,11 @@ def test_context_link_suggestions_support_all_and_multi_status_filters(
             json={"action": "reject", "reason": "not the right context"},
             headers=auth_headers(),
         )
+        assert approved.status_code == 200, approved.text
+        assert rejected.status_code == 200, rejected.text
+        approved_data = approved.json()["data"]
+        approved_suggestion = approved_data["suggestion"]
+        approved_link = approved_data["link"]
         review_history = client.get(
             "/v1/context-link-suggestions",
             params={
@@ -112,6 +117,32 @@ def test_context_link_suggestions_support_all_and_multi_status_filters(
             },
             headers=auth_headers(),
         )
+        target_history = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "statuses": "approved,rejected",
+                "target_type": approved_suggestion["target_type"],
+                "target_id": approved_suggestion["target_id"],
+                "relation_type": approved_suggestion["relation_type"],
+                "limit": "50",
+            },
+            headers=auth_headers(),
+        )
+        wrong_target_history = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "statuses": "approved,rejected",
+                "target_type": approved_suggestion["target_type"],
+                "target_id": "ctxlinksug_missing_target",
+                "relation_type": approved_suggestion["relation_type"],
+                "limit": "50",
+            },
+            headers=auth_headers(),
+        )
         link_history = client.get(
             "/v1/context-links",
             params={
@@ -122,9 +153,33 @@ def test_context_link_suggestions_support_all_and_multi_status_filters(
             },
             headers=auth_headers(),
         )
+        link_target_history = client.get(
+            "/v1/context-links",
+            params={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "statuses": "active,deleted",
+                "target_type": approved_link["target_type"],
+                "target_id": approved_link["target_id"],
+                "relation_type": approved_link["relation_type"],
+                "limit": "50",
+            },
+            headers=auth_headers(),
+        )
+        wrong_relation_links = client.get(
+            "/v1/context-links",
+            params={
+                "space_slug": "review-history",
+                "memory_scope_external_ref": "default",
+                "statuses": "active,deleted",
+                "target_type": approved_link["target_type"],
+                "target_id": approved_link["target_id"],
+                "relation_type": "ctxlink_missing_relation",
+                "limit": "50",
+            },
+            headers=auth_headers(),
+        )
 
-    assert approved.status_code == 200, approved.text
-    assert rejected.status_code == 200, rejected.text
     assert review_history.status_code == 200, review_history.text
     review_items = review_history.json()["data"]
     assert {item["status"] for item in review_items} <= {"approved", "rejected"}
@@ -138,8 +193,32 @@ def test_context_link_suggestions_support_all_and_multi_status_filters(
     assert [item["id"] for item in approved_source_history.json()["data"]] == [
         approved_suggestion_id
     ]
+    assert target_history.status_code == 200, target_history.text
+    assert target_history.json()["data"]
+    assert {
+        (
+            item["target_type"],
+            item["target_id"],
+            item["relation_type"],
+        )
+        for item in target_history.json()["data"]
+    } == {
+        (
+            approved_suggestion["target_type"],
+            approved_suggestion["target_id"],
+            approved_suggestion["relation_type"],
+        )
+    }
+    assert wrong_target_history.status_code == 200, wrong_target_history.text
+    assert wrong_target_history.json()["data"] == []
     assert link_history.status_code == 200, link_history.text
     assert link_history.json()["data"][0]["status"] == "active"
+    assert link_target_history.status_code == 200, link_target_history.text
+    assert [item["id"] for item in link_target_history.json()["data"]] == [
+        approved_link["id"]
+    ]
+    assert wrong_relation_links.status_code == 200, wrong_relation_links.text
+    assert wrong_relation_links.json()["data"] == []
 
 
 def test_context_link_suggestions_batch_review_applies_mixed_actions(

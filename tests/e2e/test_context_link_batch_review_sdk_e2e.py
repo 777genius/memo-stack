@@ -92,11 +92,26 @@ def test_context_link_batch_review_sdk_e2e(tmp_path: Path) -> None:
             source_type="capture",
             source_id=capture["data"]["id"],
         )
+        target_links = client.list_context_links(
+            space_slug="context-link-batch-sdk-e2e",
+            memory_scope_external_ref="default",
+            target_type="fact",
+            target_id=first_fact["data"]["id"],
+            relation_type="supports",
+        )
         history = client.list_context_link_suggestions(
             space_slug="context-link-batch-sdk-e2e",
             memory_scope_external_ref="default",
             source_type="capture",
             source_id=capture["data"]["id"],
+            statuses="approved,rejected",
+            limit=20,
+        )
+        target_history = client.list_context_link_suggestions(
+            space_slug="context-link-batch-sdk-e2e",
+            memory_scope_external_ref="default",
+            target_type="fact",
+            target_id=first_fact["data"]["id"],
             statuses="approved,rejected",
             limit=20,
         )
@@ -117,6 +132,10 @@ def test_context_link_batch_review_sdk_e2e(tmp_path: Path) -> None:
         "sdk batch rejected lower priority candidate"
     )
     assert [item["id"] for item in links["data"]] == [approved_result["link"]["id"]]
+    assert [item["id"] for item in target_links["data"]] == [approved_result["link"]["id"]]
     by_id = {item["id"]: item for item in history["data"]}
     assert by_id[fact_candidate["suggestion_id"]]["status"] == "approved"
     assert by_id[reject_candidate["suggestion_id"]]["status"] == "rejected"
+    assert [item["id"] for item in target_history["data"]] == [
+        fact_candidate["suggestion_id"]
+    ]
