@@ -8,6 +8,7 @@ from memo_stack_adapters.noop import (
     NoopGraphMemoryAdapter,
     NoopVectorMemoryAdapter,
 )
+from memo_stack_adapters.postgres.models import MemoryFactRow
 from memo_stack_core.application import (
     BuildContextQuery,
     BuildContextUseCase,
@@ -42,6 +43,8 @@ from memo_stack_server.provider_circuit import (
     CircuitBreakingVectorMemoryAdapter,
     ProviderCircuitBreaker,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -62,6 +65,16 @@ def make_client(tmp_path: Path) -> TestClient:
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
+
+
+async def mark_fact_status(client: TestClient, *, fact_id: str, status: str) -> None:
+    engine = client.app.state.container.engine
+    async with AsyncSession(engine) as session:
+        row = (
+            await session.execute(select(MemoryFactRow).where(MemoryFactRow.id == fact_id))
+        ).scalar_one()
+        row.status = status
+        await session.commit()
 
 
 def legacy_event(session_id: str, event_id: str, text: str) -> dict[str, Any]:
@@ -540,6 +553,122 @@ def test_context_ignores_future_and_expired_supersedes_relations_by_default(
     assert "TEMPORAL_EXPIRED_NEW_FACT" not in data["rendered_text"]
     assert data["diagnostics"]["temporal_replacements_applied"] == 0
     assert data["diagnostics"]["temporal_relations_skipped_by_validity"] == 2
+
+
+def test_context_can_include_superseded_review_only_evidence(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        safe_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": (
+                    "CONTEXT_SUPERSEDED_REVIEW_MARKER: legacy project Alpha used "
+                    "the old endpoint."
+                ),
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "superseded-safe"}],
+            },
+            headers=auth_headers(),
+        )
+        restricted_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "CONTEXT_SUPERSEDED_SECRET_MARKER should stay hidden.",
+                "kind": "architecture_decision",
+                "classification": "restricted",
+                "source_refs": [
+                    {"source_type": "manual", "source_id": "superseded-restricted"}
+                ],
+            },
+            headers=auth_headers(),
+        )
+        asyncio.run(
+            mark_fact_status(
+                client,
+                fact_id=safe_fact.json()["data"]["id"],
+                status="superseded",
+            )
+        )
+        asyncio.run(
+            mark_fact_status(
+                client,
+                fact_id=restricted_fact.json()["data"]["id"],
+                status="superseded",
+            )
+        )
+        default_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "CONTEXT_SUPERSEDED_REVIEW_MARKER old endpoint",
+                "token_budget": 512,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
+        review_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "CONTEXT_SUPERSEDED_REVIEW_MARKER old endpoint",
+                "token_budget": 512,
+                "max_chunks": 0,
+                "include_superseded": True,
+            },
+            headers=auth_headers(),
+        )
+        restricted_review_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "CONTEXT_SUPERSEDED_SECRET_MARKER",
+                "token_budget": 512,
+                "max_chunks": 0,
+                "include_superseded": True,
+            },
+            headers=auth_headers(),
+        )
+
+    assert safe_fact.status_code == 201
+    assert restricted_fact.status_code == 201
+    assert default_context.status_code == 200
+    assert review_context.status_code == 200
+    assert restricted_review_context.status_code == 200
+
+    default_data = default_context.json()["data"]
+    assert "CONTEXT_SUPERSEDED_REVIEW_MARKER" not in default_data["rendered_text"]
+    assert default_data["diagnostics"]["superseded_facts_used"] == 0
+
+    review_data = review_context.json()["data"]
+    assert "CONTEXT_SUPERSEDED_REVIEW_MARKER" in review_data["rendered_text"]
+    assert "superseded_review" in review_data["diagnostics"]["retrieval_sources_used"]
+    assert review_data["diagnostics"]["superseded_facts_considered"] >= 1
+    assert review_data["diagnostics"]["superseded_facts_used"] == 1
+    review_item = next(
+        item
+        for item in review_data["items"]
+        if item["item_id"] == safe_fact.json()["data"]["id"]
+    )
+    assert review_item["diagnostics"]["retrieval_source"] == "superseded_review"
+    assert review_item["diagnostics"]["review_only"] is True
+    assert review_item["diagnostics"]["stale_reason"] == "fact_status_superseded"
+    assert (
+        review_item["diagnostics"]["ranking_reason"]
+        == "included only for review because include_superseded is true"
+    )
+    assert review_item["diagnostics"]["provenance"]["visibility"] == "review_only"
+
+    restricted_data = restricted_review_context.json()["data"]
+    assert "CONTEXT_SUPERSEDED_SECRET_MARKER" not in restricted_data["rendered_text"]
+    assert restricted_data["diagnostics"]["superseded_facts_used"] == 0
 
 
 def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path: Path) -> None:

@@ -46,6 +46,25 @@ def is_context_fact_visible(
     ) and (fact.classification != "restricted")
 
 
+def is_context_review_fact_visible(
+    fact: MemoryFact,
+    *,
+    query: BuildContextQuery,
+    memory_scope_ids: tuple[str, ...],
+    statuses: tuple[str, ...],
+    now: datetime | None = None,
+) -> bool:
+    return (
+        str(fact.space_id) == str(query.space_id)
+        and str(fact.memory_scope_id) in memory_scope_ids
+        and fact.status.value in statuses
+        and thread_is_visible(fact.thread_id, query.thread_id)
+        and not fact_is_expired(fact, now=now)
+        and fact_matches_taxonomy(fact, query=query)
+        and fact.classification != "restricted"
+    )
+
+
 def fact_is_expired(fact: MemoryFact, *, now: datetime | None = None) -> bool:
     if fact.expires_at is None:
         return False

@@ -14,7 +14,10 @@ from memo_stack_core.application.context_collectors import (
 from memo_stack_core.application.context_diagnostics import normalize_context_bundle_diagnostics
 from memo_stack_core.application.context_hydration import ContextHydrator
 from memo_stack_core.application.context_packer import ContextPacker
-from memo_stack_core.application.context_policy import is_context_fact_visible
+from memo_stack_core.application.context_policy import (
+    is_context_fact_visible,
+    is_context_review_fact_visible,
+)
 from memo_stack_core.application.context_ranking import dedupe_rank_items
 from memo_stack_core.application.context_relevance import QueryRelevance, score_query_relevance
 from memo_stack_core.application.document_text import document_chunk_retrieval_text
@@ -89,6 +92,9 @@ class BuildContextUseCase:
             "stale_vector_drop_count": 0,
             "stale_graph_drop_count": 0,
             "stale_rag_drop_count": 0,
+            "include_superseded": query.include_superseded,
+            "superseded_facts_considered": 0,
+            "superseded_facts_used": 0,
         }
         if query.consistency_mode == ConsistencyMode.CANONICAL_ONLY:
             diagnostics["vector_status"] = "skipped"
@@ -166,6 +172,20 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        superseded_review_items, superseded_diagnostics = (
+            await self._superseded_review_items(
+                query=query,
+                memory_scope_ids=memory_scope_ids,
+            )
+            if query.include_superseded
+            else (
+                (),
+                {
+                    "superseded_facts_considered": 0,
+                    "superseded_facts_used": 0,
+                },
+            )
+        )
         pending_conflicts = await self._pending_conflict_items(
             query=query,
             visible_fact_ids=tuple(
@@ -174,11 +194,14 @@ class BuildContextUseCase:
         )
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
-            items=dedupe_rank_items((*temporal_items, *pending_conflicts)),
+            items=dedupe_rank_items(
+                (*temporal_items, *superseded_review_items, *pending_conflicts)
+            ),
             token_budget=query.token_budget,
             max_rendered_chars=query.max_rendered_chars,
         )
         diagnostics.update(temporal_diagnostics)
+        diagnostics.update(superseded_diagnostics)
         diagnostics.update(result.bundle.diagnostics)
         diagnostics["pending_conflict_suggestions_considered"] = len(pending_conflicts)
         diagnostics["hybrid_items_used"] = sum(
@@ -284,6 +307,62 @@ class BuildContextUseCase:
             "temporal_replacements_applied": len(invalidated_fact_ids),
             "temporal_contradictions_considered": contradictions_considered,
             "temporal_relations_skipped_by_validity": relations_skipped_by_validity,
+        }
+
+    async def _superseded_review_items(
+        self,
+        *,
+        query: BuildContextQuery,
+        memory_scope_ids: tuple[str, ...],
+    ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
+        if query.max_facts <= 0:
+            return (), {
+                "superseded_facts_considered": 0,
+                "superseded_facts_used": 0,
+            }
+
+        now = self._clock.now() if self._clock is not None else None
+        candidate_limit = min(200, max(query.max_facts * 4, query.max_facts))
+        items: list[ContextItem] = []
+        considered = 0
+        async with self._uow_factory() as uow:
+            for memory_scope_id in query.memory_scope_ids:
+                if len(items) >= query.max_facts:
+                    break
+                facts = await uow.facts.list_for_scope(
+                    space_id=str(query.space_id),
+                    memory_scope_id=str(memory_scope_id),
+                    thread_id=str(query.thread_id) if query.thread_id else None,
+                    status="superseded",
+                    limit=candidate_limit,
+                    category=query.category,
+                    tag=None,
+                )
+                considered += len(facts)
+                for fact in facts:
+                    if not is_context_review_fact_visible(
+                        fact,
+                        query=query,
+                        memory_scope_ids=memory_scope_ids,
+                        statuses=("superseded",),
+                        now=now,
+                    ):
+                        continue
+                    relevance = score_query_relevance(query=query.query, text=fact.text)
+                    if relevance.query_term_count > 0 and relevance.unique_term_hits <= 0:
+                        continue
+                    items.append(
+                        _superseded_review_item(
+                            fact,
+                            relevance=relevance,
+                        )
+                    )
+                    if len(items) >= query.max_facts:
+                        break
+
+        return tuple(items), {
+            "superseded_facts_considered": considered,
+            "superseded_facts_used": len(items),
         }
 
     async def _pending_conflict_items(
@@ -401,6 +480,50 @@ def _fact_context_item(
                 "source_ref_count": len(fact.source_refs),
                 "fact_status": fact.status.value,
                 "fact_version": fact.version,
+            },
+            "confidence": fact.confidence.value,
+            "trust_level": fact.trust_level.value,
+            "updated_at": fact.updated_at.isoformat(),
+        },
+    )
+
+
+def _superseded_review_item(
+    fact: MemoryFact,
+    *,
+    relevance: QueryRelevance,
+) -> ContextItem:
+    score = min(0.64, round(0.44 + relevance.score_boost, 4))
+    return ContextItem(
+        item_id=str(fact.id),
+        item_type="fact",
+        text=fact.text,
+        score=score,
+        source_refs=fact.source_refs,
+        diagnostics={
+            "memory_scope_id": str(fact.memory_scope_id),
+            "retrieval_source": "superseded_review",
+            "retrieval_sources": ["superseded_review"],
+            "ranking_reason": "included only for review because include_superseded is true",
+            "review_only": True,
+            "stale_reason": "fact_status_superseded",
+            "score_signals": {
+                "base_score": 0.44,
+                "final_score": score,
+                "retrieval_channel": "superseded_review",
+                "fact_status": fact.status.value,
+                "query_term_count": relevance.query_term_count,
+                "unique_term_hits": relevance.unique_term_hits,
+                "capped_frequency_hits": relevance.capped_frequency_hits,
+                "hit_ratio": relevance.hit_ratio,
+                "query_relevance_boost": relevance.score_boost,
+            },
+            "provenance": {
+                "retrieval_sources": ["superseded_review"],
+                "source_ref_count": len(fact.source_refs),
+                "fact_status": fact.status.value,
+                "fact_version": fact.version,
+                "visibility": "review_only",
             },
             "confidence": fact.confidence.value,
             "trust_level": fact.trust_level.value,

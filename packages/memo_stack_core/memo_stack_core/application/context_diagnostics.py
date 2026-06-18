@@ -25,6 +25,8 @@ _BUNDLE_COUNTER_KEYS = (
     "stale_vector_drop_count",
     "stale_graph_drop_count",
     "stale_rag_drop_count",
+    "superseded_facts_considered",
+    "superseded_facts_used",
     "temporal_relations_considered",
     "temporal_replacements_applied",
     "temporal_contradictions_considered",
@@ -43,6 +45,8 @@ _BUNDLE_COUNTER_KEYS = (
 _BUNDLE_COUNTER_DEFAULTS = {
     "temporal_replacements_applied": 0,
     "temporal_relations_skipped_by_validity": 0,
+    "superseded_facts_considered": 0,
+    "superseded_facts_used": 0,
     "pending_conflict_suggestions_considered": 0,
     "hybrid_items_used": 0,
 }
@@ -53,7 +57,8 @@ _RETRIEVAL_SOURCE_PRIORITY = {
     "graph_hydrated": 3,
     "temporal_supersedes_relation": 4,
     "pending_conflict_suggestion": 5,
-    "postgres_facts": 6,
+    "superseded_review": 6,
+    "postgres_facts": 7,
 }
 
 
@@ -91,9 +96,13 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     retrieval_sources = diagnostic_retrieval_sources(raw)
     normalized = safe_diagnostic_mapping(raw)
     normalized["retrieval_sources"] = list(retrieval_sources)
-    selected_source = _safe_retrieval_source(raw.get("retrieval_source")) or (
-        retrieval_sources[0] if retrieval_sources else None
-    )
+    selected_source = _safe_retrieval_source(raw.get("retrieval_source"))
+    if retrieval_sources:
+        if selected_source not in retrieval_sources:
+            selected_source = retrieval_sources[0]
+    elif selected_source:
+        retrieval_sources = (selected_source,)
+        normalized["retrieval_sources"] = list(retrieval_sources)
     if selected_source:
         normalized["retrieval_source"] = selected_source
     else:
@@ -140,14 +149,17 @@ def normalize_context_bundle_diagnostics(
 
 def diagnostic_retrieval_sources(diagnostics: object) -> tuple[str, ...]:
     raw = _as_dict(diagnostics)
-    values: list[str] = []
-    raw_source = _safe_retrieval_source(raw.get("retrieval_source"))
-    if raw_source:
-        values.append(raw_source)
     raw_sources = raw.get("retrieval_sources")
     if isinstance(raw_sources, (list, tuple)):
-        values.extend(_safe_retrieval_source(value) or "" for value in raw_sources)
-    return _ordered_unique(tuple(value for value in values if value))
+        return _ordered_unique(
+            tuple(
+                source
+                for value in raw_sources
+                if (source := _safe_retrieval_source(value))
+            )
+        )
+    raw_source = _safe_retrieval_source(raw.get("retrieval_source"))
+    return (raw_source,) if raw_source else ()
 
 
 def merge_diagnostic_retrieval_sources(*diagnostics: object) -> tuple[str, ...]:
