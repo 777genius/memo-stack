@@ -57,6 +57,28 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert file_report["git"]["short_commit"]
     assert isinstance(file_report["git"]["dirty"], bool)
     assert file_report["provider_key_present"] is False
+    assert file_report["provider_contract"]["transcription"] == {
+        "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
+        "endpoint": "/v1/audio/transcriptions",
+        "max_upload_bytes": 26214400,
+        "model": "gpt-4o-mini-transcribe",
+        "supported_file_types": [
+            ".m4a",
+            ".mp3",
+            ".mp4",
+            ".mpeg",
+            ".mpga",
+            ".wav",
+            ".webm",
+        ],
+    }
+    assert file_report["provider_contract"]["vision"] == {
+        "detail": "low",
+        "docs_url": "https://developers.openai.com/api/docs/guides/images-vision",
+        "endpoint_family": "responses",
+        "model": "gpt-4.1-mini",
+        "supported_file_types": [".gif", ".jpeg", ".jpg", ".png", ".webp"],
+    }
     assert file_report["components"]["provider_key"] == {
         "message": (
             "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running the live provider canary"
@@ -116,6 +138,43 @@ def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
     args = module._parse_args([])
 
     assert args.report_out == ".e2e-artifacts/multimodal-live-provider-canary.json"
+
+
+def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    valid = tmp_path / "fixture.wav"
+    valid.write_bytes(b"RIFF" + b"\0" * 32)
+    unsupported = tmp_path / "fixture.ogg"
+    unsupported.write_bytes(b"OggS")
+    huge = tmp_path / "fixture.mp3"
+    with huge.open("wb") as handle:
+        handle.truncate(module.OPENAI_AUDIO_MAX_UPLOAD_BYTES + 1)
+
+    assert module._audio_fixture_contract_check(valid) == {"status": "succeeded"}
+    assert module._audio_fixture_contract_check(unsupported) == {
+        "filename_suffix": ".ogg",
+        "message": "Audio fixture type is not supported by OpenAI transcription upload",
+        "operator_action": "replace_audio_fixture",
+        "reason": "audio_fixture_unsupported_type",
+        "status": "degraded",
+        "supported_file_types": [
+            ".m4a",
+            ".mp3",
+            ".mp4",
+            ".mpeg",
+            ".mpga",
+            ".wav",
+            ".webm",
+        ],
+        "user_retryable": False,
+    }
+    too_large = module._audio_fixture_contract_check(huge)
+    assert too_large["status"] == "degraded"
+    assert too_large["reason"] == "audio_fixture_too_large"
+    assert too_large["operator_action"] == "replace_audio_fixture"
+    assert too_large["max_upload_bytes"] == 26214400
 
 
 def test_multimodal_live_provider_canary_requires_strong_synthetic_transcript() -> None:

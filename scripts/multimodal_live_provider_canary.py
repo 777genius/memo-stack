@@ -31,6 +31,19 @@ DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 SYNTHETIC_AUDIO_PHRASE = "memo stack live transcription canary"
+OPENAI_AUDIO_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+OPENAI_AUDIO_SUPPORTED_SUFFIXES = frozenset(
+    {
+        ".m4a",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".mpga",
+        ".wav",
+        ".webm",
+    }
+)
+OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
 
 _CONTENT_TYPES_BY_SUFFIX = {
     ".flac": "audio/flac",
@@ -190,6 +203,9 @@ async def _run_transcription(
                     "with the say command available"
                 ),
             )
+        audio_validation = _audio_fixture_contract_check(audio_path)
+        if audio_validation["status"] != "succeeded":
+            return audio_validation
         content = audio_path.read_bytes()
         content_type = _content_type_for_path(audio_path)
         request = SpeechTranscriptionRequest(
@@ -308,6 +324,24 @@ def _base_report(
         "generated_at": _utc_now(),
         "git": _git_info(),
         "provider_key_present": has_provider_key,
+        "provider_contract": {
+            "external_ai_required": True,
+            "timeout_seconds": args.timeout_seconds,
+            "vision": {
+                "endpoint_family": "responses",
+                "model": args.vision_model,
+                "detail": args.vision_detail,
+                "supported_file_types": sorted(OPENAI_VISION_SUPPORTED_SUFFIXES),
+                "docs_url": "https://developers.openai.com/api/docs/guides/images-vision",
+            },
+            "transcription": {
+                "endpoint": "/v1/audio/transcriptions",
+                "model": args.transcription_model,
+                "max_upload_bytes": OPENAI_AUDIO_MAX_UPLOAD_BYTES,
+                "supported_file_types": sorted(OPENAI_AUDIO_SUPPORTED_SUFFIXES),
+                "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
+            },
+        },
         "models": {
             "vision": args.vision_model,
             "transcription": args.transcription_model,
@@ -369,6 +403,11 @@ def _recovery_policy(*, status: str, reason: str | None) -> dict[str, object]:
         return {
             "user_retryable": False,
             "operator_action": "provide_audio_fixture",
+        }
+    if normalized.startswith("audio_fixture_"):
+        return {
+            "user_retryable": False,
+            "operator_action": "replace_audio_fixture",
         }
     return {
         "user_retryable": False,
@@ -453,6 +492,41 @@ def _synthesize_audio_fixture(tmp_dir: Path) -> Path | None:
 
 def _content_type_for_path(path: Path) -> str:
     return _CONTENT_TYPES_BY_SUFFIX.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _audio_fixture_contract_check(path: Path) -> dict[str, object]:
+    suffix = path.suffix.lower()
+    if suffix not in OPENAI_AUDIO_SUPPORTED_SUFFIXES:
+        return _component(
+            "degraded",
+            reason="audio_fixture_unsupported_type",
+            message="Audio fixture type is not supported by OpenAI transcription upload",
+            filename_suffix=suffix[:20] or "<none>",
+            supported_file_types=sorted(OPENAI_AUDIO_SUPPORTED_SUFFIXES),
+        )
+    try:
+        byte_size = path.stat().st_size
+    except OSError as exc:
+        return _component(
+            "degraded",
+            reason="audio_fixture_unreadable",
+            message=str(exc)[:200],
+        )
+    if byte_size <= 0:
+        return _component(
+            "degraded",
+            reason="audio_fixture_empty",
+            message="Audio fixture is empty",
+        )
+    if byte_size > OPENAI_AUDIO_MAX_UPLOAD_BYTES:
+        return _component(
+            "degraded",
+            reason="audio_fixture_too_large",
+            message="Audio fixture exceeds OpenAI transcription upload limit",
+            byte_size=byte_size,
+            max_upload_bytes=OPENAI_AUDIO_MAX_UPLOAD_BYTES,
+        )
+    return _component("succeeded")
 
 
 def _transcript_check(
