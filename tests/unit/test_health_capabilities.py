@@ -261,6 +261,39 @@ def test_capabilities_return_noop_adapters() -> None:
         "external_ai_features_require_explicit_profile": True,
         "local_asr_does_not_provide_speaker_labels": True,
     }
+    modality_actions = body["extraction"]["modality_actions"]
+    assert modality_actions["image"]["metadata"] == {
+        "profile": "standard_local",
+        "enabled": True,
+        "status": "ok",
+        "providers": ["local_text", "pdf_text", "image_metadata", "media_metadata"],
+        "artifact_types": ["image_regions", "media_manifest"],
+        "evidence_coordinates": ["bbox"],
+        "external_provider_egress": False,
+        "requires_explicit_external_ai": False,
+        "fallback_profiles": [],
+        "memory_promotion": "review_required",
+        "source_text_policy": "untrusted_evidence",
+        "artifact_payloads_bounded": True,
+    }
+    assert modality_actions["image"]["vision"]["profile"] == "standard_vision"
+    assert modality_actions["image"]["vision"]["status"] in {"blocked", "unavailable"}
+    assert modality_actions["image"]["vision"]["requires_explicit_external_ai"] is True
+    assert modality_actions["image"]["vision"]["fallback_profiles"] == ["standard_local"]
+    assert modality_actions["audio"]["transcription_api"]["profile"] == "media_api"
+    assert modality_actions["audio"]["transcription_api"]["status"] in {
+        "blocked",
+        "unavailable",
+    }
+    assert modality_actions["audio"]["transcription_local"]["profile"] == "media_local_asr"
+    assert modality_actions["video"]["metadata_keyframes"]["artifact_types"] == [
+        "media_manifest",
+        "keyframe",
+        "video_frame_timeline",
+    ]
+    assert modality_actions["video"]["transcription_api"]["source_text_policy"] == (
+        "untrusted_evidence"
+    )
     assert isinstance(body["extraction"]["optional_extras"]["docling"]["installed"], bool)
     assert isinstance(body["extraction"]["optional_extras"]["vision"]["installed"], bool)
     assert body["extraction"]["optional_extras"]["vision"]["configured"] is False
@@ -363,6 +396,11 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["providers"]["openai_vision"]["status"] == "ok"
     assert extraction["providers"]["transcription_api"]["enabled"] is True
     assert extraction["providers"]["transcription_api"]["status"] == "ok"
+    assert extraction["modality_actions"]["image"]["vision"]["status"] == "ok"
+    assert extraction["modality_actions"]["image"]["vision"]["enabled"] is True
+    assert extraction["modality_actions"]["image"]["vision"]["external_provider_egress"] is True
+    assert extraction["modality_actions"]["audio"]["transcription_api"]["status"] == "ok"
+    assert extraction["modality_actions"]["video"]["transcription_api"]["status"] == "ok"
     assert extraction["policy"]["external_ai_allowed"] is True
     profile_states = {profile["name"]: profile for profile in extraction["profiles_v2"]}
     assert profile_states["media_api"]["status"] == "ok"

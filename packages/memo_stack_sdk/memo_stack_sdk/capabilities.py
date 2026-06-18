@@ -67,6 +67,7 @@ class ExtractionCapabilityDiagnostics:
     default_profile: str | None
     profiles: dict[str, ExtractionProfileCapability]
     providers: dict[str, dict[str, Any]]
+    modality_actions: dict[str, dict[str, dict[str, Any]]]
     policy: dict[str, Any]
     evidence_contract: dict[str, Any]
     feature_contract: dict[str, Any]
@@ -92,6 +93,7 @@ class ExtractionCapabilityDiagnostics:
                 for key, value in (payload.get("providers") or {}).items()
                 if isinstance(key, str) and isinstance(value, dict)
             },
+            modality_actions=_modality_actions(payload.get("modality_actions")),
             policy=dict(payload.get("policy") or {}),
             evidence_contract=dict(payload.get("evidence_contract") or {}),
             feature_contract=dict(payload.get("feature_contract") or {}),
@@ -109,6 +111,12 @@ class ExtractionCapabilityDiagnostics:
         status = provider.get("status")
         return str(status) if status is not None else None
 
+    def modality_action(self, modality: str, action: str) -> dict[str, Any] | None:
+        actions = self.modality_actions.get(modality)
+        if actions is None:
+            return None
+        return actions.get(action)
+
 
 def _dict_items(value: object) -> tuple[dict[str, Any], ...]:
     if not isinstance(value, list):
@@ -120,6 +128,23 @@ def _strings(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(str(item) for item in value if isinstance(item, str))
+
+
+def _modality_actions(value: object) -> dict[str, dict[str, dict[str, Any]]]:
+    if not isinstance(value, dict):
+        return {}
+    parsed: dict[str, dict[str, dict[str, Any]]] = {}
+    for modality, actions in value.items():
+        if not isinstance(modality, str) or not isinstance(actions, dict):
+            continue
+        parsed_actions = {
+            action: dict(payload)
+            for action, payload in actions.items()
+            if isinstance(action, str) and isinstance(payload, dict)
+        }
+        if parsed_actions:
+            parsed[modality] = parsed_actions
+    return parsed
 
 
 def _optional_string(value: object) -> str | None:

@@ -203,6 +203,7 @@ def build_extraction_capability_payload(settings: Settings) -> dict[str, object]
         "policy": _policy_payload(settings),
         "evidence_contract": _evidence_contract_payload(),
         "feature_contract": _feature_contract_payload(),
+        "modality_actions": _modality_action_matrix(profiles),
         "external_provider_egress": settings.extraction_external_ai_enabled,
         "limits": _limits_payload(settings),
     }
@@ -538,6 +539,111 @@ def _feature_contract_payload() -> dict[str, object]:
         "external_ai_features_require_explicit_profile": True,
         "local_asr_does_not_provide_speaker_labels": True,
     }
+
+
+def _modality_action_matrix(
+    profiles: dict[str, dict[str, object]],
+) -> dict[str, dict[str, dict[str, object]]]:
+    return {
+        "document": {
+            "text_extraction": _modality_action_payload(
+                profiles,
+                profile_name="standard_local",
+                artifact_types=("markdown", "extracted_json"),
+                evidence_coordinates=("char_range", "page_number"),
+            ),
+            "layout_extraction": _modality_action_payload(
+                profiles,
+                profile_name="standard_docling",
+                artifact_types=("normalized_json", "table_html"),
+                evidence_coordinates=("page_number", "bbox", "char_range"),
+            ),
+        },
+        "image": {
+            "metadata": _modality_action_payload(
+                profiles,
+                profile_name="standard_local",
+                artifact_types=("image_regions", "media_manifest"),
+                evidence_coordinates=("bbox",),
+            ),
+            "vision": _modality_action_payload(
+                profiles,
+                profile_name="standard_vision",
+                artifact_types=("vision_json", "image_regions"),
+                evidence_coordinates=("bbox",),
+            ),
+        },
+        "audio": {
+            "metadata": _modality_action_payload(
+                profiles,
+                profile_name="standard_local",
+                artifact_types=("media_manifest",),
+                evidence_coordinates=("time_range_ms",),
+            ),
+            "transcription_api": _modality_action_payload(
+                profiles,
+                profile_name="media_api",
+                artifact_types=("transcript", "transcript_json"),
+                evidence_coordinates=("time_range_ms",),
+            ),
+            "transcription_local": _modality_action_payload(
+                profiles,
+                profile_name="media_local_asr",
+                artifact_types=("transcript", "transcript_json"),
+                evidence_coordinates=("time_range_ms",),
+            ),
+        },
+        "video": {
+            "metadata_keyframes": _modality_action_payload(
+                profiles,
+                profile_name="standard_local",
+                artifact_types=("media_manifest", "keyframe", "video_frame_timeline"),
+                evidence_coordinates=("time_range_ms", "bbox"),
+            ),
+            "transcription_api": _modality_action_payload(
+                profiles,
+                profile_name="media_api",
+                artifact_types=("transcript", "transcript_json"),
+                evidence_coordinates=("time_range_ms",),
+            ),
+        },
+    }
+
+
+def _modality_action_payload(
+    profiles: dict[str, dict[str, object]],
+    *,
+    profile_name: str,
+    artifact_types: tuple[str, ...],
+    evidence_coordinates: tuple[str, ...],
+) -> dict[str, object]:
+    profile = profiles[profile_name]
+    payload = {
+        "profile": profile_name,
+        "enabled": bool(profile.get("enabled", False)),
+        "status": str(profile.get("status") or "unknown"),
+        "providers": list(_safe_string_tuple(profile.get("providers"))),
+        "artifact_types": list(artifact_types),
+        "evidence_coordinates": list(evidence_coordinates),
+        "external_provider_egress": bool(profile.get("external_provider_egress", False)),
+        "requires_explicit_external_ai": bool(
+            profile.get("requires_explicit_external_ai", False)
+        ),
+        "fallback_profiles": list(_safe_string_tuple(profile.get("fallback_profiles"))),
+        "memory_promotion": str(profile.get("memory_promotion") or "review_required"),
+        "source_text_policy": str(profile.get("source_text_policy") or "untrusted_evidence"),
+        "artifact_payloads_bounded": bool(profile.get("artifact_payloads_bounded", True)),
+    }
+    reason = profile.get("reason")
+    if isinstance(reason, str) and reason:
+        payload["reason"] = reason
+    return payload
+
+
+def _safe_string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
 
 
 def _limits_payload(settings: Settings) -> dict[str, object]:

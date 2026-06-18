@@ -391,6 +391,41 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "video_features",
                         ],
                     },
+                    "modality_actions": {
+                        "audio": {
+                            "transcription_api": {
+                                "profile": "media_api",
+                                "enabled": True,
+                                "status": "ok",
+                                "providers": ["transcription_api"],
+                                "artifact_types": ["transcript", "transcript_json"],
+                                "evidence_coordinates": ["time_range_ms"],
+                                "external_provider_egress": True,
+                                "requires_explicit_external_ai": True,
+                                "fallback_profiles": ["standard_local"],
+                                "memory_promotion": "review_required",
+                                "source_text_policy": "untrusted_evidence",
+                                "artifact_payloads_bounded": True,
+                            }
+                        },
+                        "image": {
+                            "vision": {
+                                "profile": "standard_vision",
+                                "enabled": False,
+                                "status": "blocked",
+                                "reason": "provider_credential_missing",
+                                "providers": ["openai_vision"],
+                                "artifact_types": ["vision_json", "image_regions"],
+                                "evidence_coordinates": ["bbox"],
+                                "external_provider_egress": True,
+                                "requires_explicit_external_ai": True,
+                                "fallback_profiles": ["standard_local"],
+                                "memory_promotion": "review_required",
+                                "source_text_policy": "untrusted_evidence",
+                                "artifact_payloads_bounded": True,
+                            }
+                        },
+                    },
                     "limits": {"max_media_seconds": 600},
                 }
             },
@@ -419,6 +454,24 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert diagnostics.feature_contract["schema_version"] == (
         "memo_stack.extraction_feature_contract.v1"
     )
+    assert diagnostics.modality_action("audio", "transcription_api") == {
+        "profile": "media_api",
+        "enabled": True,
+        "status": "ok",
+        "providers": ["transcription_api"],
+        "artifact_types": ["transcript", "transcript_json"],
+        "evidence_coordinates": ["time_range_ms"],
+        "external_provider_egress": True,
+        "requires_explicit_external_ai": True,
+        "fallback_profiles": ["standard_local"],
+        "memory_promotion": "review_required",
+        "source_text_policy": "untrusted_evidence",
+        "artifact_payloads_bounded": True,
+    }
+    assert diagnostics.modality_action("image", "vision")["reason"] == (
+        "provider_credential_missing"
+    )
+    assert diagnostics.modality_action("video", "transcription_api") is None
     assert diagnostics.limits["max_media_seconds"] == 600
     assert diagnostics.provider_status("transcription_api") == "ok"
     media_api = diagnostics.profile("media_api")
