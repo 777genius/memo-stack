@@ -362,6 +362,18 @@ class SplitAnchorUseCase:
                     alias_key=normalized_key,
                     exclude_anchor_ids=(str(anchor.id),),
                 )
+            await _assert_anchor_aliases_available(
+                uow,
+                space_id=str(anchor.space_id),
+                memory_scope_id=str(anchor.memory_scope_id),
+                kind=anchor.kind.value,
+                label=label,
+                aliases=(alias,),
+                exclude_anchor_ids=(
+                    str(anchor.id),
+                    *((str(existing.id),) if existing is not None else ()),
+                ),
+            )
             if existing is not None:
                 new_anchor = existing.merge_observation(
                     label=label,

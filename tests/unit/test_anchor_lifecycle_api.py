@@ -927,6 +927,174 @@ def test_anchor_merge_rejects_legacy_alias_conflict_with_third_anchor(
     assert "Acme" not in active_by_id[target.json()["data"]["id"]]["aliases"]
 
 
+def test_anchor_split_to_existing_rejects_legacy_alias_conflict_with_third_anchor(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-split-existing-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "anchor-split-existing-conflict-seed",
+                "text": "Seed split existing conflict scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        parent = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-existing-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Group",
+                "aliases": ["Acme"],
+            },
+            headers=auth_headers(),
+        )
+        target = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-existing-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Research",
+            },
+            headers=auth_headers(),
+        )
+        third = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-existing-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Legacy Holder",
+                "aliases": ["Legacy Alias"],
+            },
+            headers=auth_headers(),
+        )
+        assert parent.status_code == 200, parent.text
+        assert target.status_code == 200, target.text
+        assert third.status_code == 200, third.text
+        overwrite_anchor_aliases(
+            client,
+            third.json()["data"]["id"],
+            ["Legacy Holder", "Acme"],
+        )
+
+        split = client.post(
+            f"/v1/anchors/{parent.json()['data']['id']}/split",
+            json={
+                "alias": "Acme",
+                "new_label": "Acme Research",
+                "reason": "reviewer attempted legacy split into existing anchor",
+            },
+            headers=auth_headers(),
+        )
+        active = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-split-existing-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+
+    assert split.status_code == 409, split.text
+    active_by_id = {item["id"]: item for item in active.json()["data"]}
+    assert "Acme" in active_by_id[parent.json()["data"]["id"]]["aliases"]
+    assert "Acme" not in active_by_id[target.json()["data"]["id"]]["aliases"]
+
+
+def test_anchor_split_to_new_rejects_legacy_alias_conflict_with_third_anchor(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-split-new-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "anchor-split-new-conflict-seed",
+                "text": "Seed split new conflict scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        parent = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-new-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Acme Group",
+                "aliases": ["Acme"],
+            },
+            headers=auth_headers(),
+        )
+        third = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "anchor-split-new-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Legacy Holder",
+                "aliases": ["Legacy Alias"],
+            },
+            headers=auth_headers(),
+        )
+        assert parent.status_code == 200, parent.text
+        assert third.status_code == 200, third.text
+        overwrite_anchor_aliases(
+            client,
+            third.json()["data"]["id"],
+            ["Legacy Holder", "Acme"],
+        )
+
+        split = client.post(
+            f"/v1/anchors/{parent.json()['data']['id']}/split",
+            json={
+                "alias": "Acme",
+                "new_label": "Acme Labs",
+                "reason": "reviewer attempted legacy split into new anchor",
+            },
+            headers=auth_headers(),
+        )
+        active = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-split-new-legacy-conflict",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+
+    assert split.status_code == 409, split.text
+    active_items = active.json()["data"]
+    active_by_id = {item["id"]: item for item in active_items}
+    assert "Acme" in active_by_id[parent.json()["data"]["id"]]["aliases"]
+    assert all(item["normalized_key"] != "acme labs" for item in active_items)
+
+
 def test_anchor_backfill_preserves_manual_event_label_for_case_variants(
     tmp_path: Path,
 ) -> None:
