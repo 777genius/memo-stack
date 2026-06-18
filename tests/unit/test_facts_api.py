@@ -220,6 +220,15 @@ def test_fact_multimodal_source_refs_survive_persistence_and_context(
     assert context_ref["time_start_ms"] == 1000
     assert context_ref["time_end_ms"] == 1500
     assert context_ref["bbox"] == [0.0, 1.0, 120.0, 40.0]
+    context_diagnostics = context_fact["diagnostics"]
+    assert context_diagnostics["retrieval_sources"] == ["postgres_facts"]
+    assert context_diagnostics["retrieval_sources_total"] == 1
+    assert context_diagnostics["retrieval_sources_returned"] == 1
+    assert context_diagnostics["retrieval_sources_truncated"] is False
+    assert (
+        context_diagnostics["ranking_reason"]
+        == "canonical active fact matched query and filters"
+    )
     assert context.json()["data"]["diagnostics"]["source_refs_with_bbox_count"] >= 1
 
 

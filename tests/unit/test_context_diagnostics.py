@@ -180,3 +180,25 @@ def test_context_item_diagnostics_report_retrieval_source_truncation() -> None:
     assert normalized["retrieval_sources_returned"] == 8
     assert normalized["retrieval_sources_truncated"] is True
     assert "source_8" not in normalized["retrieval_sources"]
+
+
+def test_context_item_diagnostics_always_report_retrieval_source_counts() -> None:
+    item = ContextItem(
+        item_id="fact_single_source",
+        item_type="fact",
+        text="Single source diagnostics item.",
+        score=0.9,
+        source_refs=(),
+        diagnostics={
+            "retrieval_source": "postgres_facts",
+            "ranking_reason": "canonical active fact matched query and filters",
+        },
+    )
+
+    normalized = normalize_context_item_diagnostics(item).diagnostics
+
+    assert normalized["retrieval_sources"] == ["postgres_facts"]
+    assert normalized["retrieval_sources_total"] == 1
+    assert normalized["retrieval_sources_returned"] == 1
+    assert normalized["retrieval_sources_truncated"] is False
+    assert normalized["ranking_reason"] == "canonical active fact matched query and filters"

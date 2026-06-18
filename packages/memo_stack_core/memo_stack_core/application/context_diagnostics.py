@@ -150,10 +150,11 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     retrieval_sources = all_retrieval_sources[:_MAX_RETRIEVAL_SOURCES]
     normalized = safe_diagnostic_mapping(raw)
     normalized["retrieval_sources"] = list(retrieval_sources)
-    if len(all_retrieval_sources) > len(retrieval_sources):
-        normalized["retrieval_sources_total"] = len(all_retrieval_sources)
-        normalized["retrieval_sources_returned"] = len(retrieval_sources)
-        normalized["retrieval_sources_truncated"] = True
+    normalized["retrieval_sources_total"] = len(all_retrieval_sources)
+    normalized["retrieval_sources_returned"] = len(retrieval_sources)
+    normalized["retrieval_sources_truncated"] = len(all_retrieval_sources) > len(
+        retrieval_sources
+    )
     if retrieval_sources and not selected_source:
         selected_source = retrieval_sources[0]
     if selected_source:
