@@ -36,6 +36,9 @@ docling = [
 asr = [
   "faster-whisper>=1.2.1,<2.0.0",
 ]
+s3 = [
+  "boto3>=1.43.32,<2.0.0",
+]
 cognee = [
   "cognee>=1.1.2,<2.0.0",
 ]

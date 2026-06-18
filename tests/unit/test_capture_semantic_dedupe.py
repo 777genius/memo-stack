@@ -4,7 +4,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from infinity_context_core.application import ConsolidateCaptureCommand, ConsolidateCaptureUseCase
 from infinity_context_core.domain.entities import Confidence, MemoryKind, SourceRef
-from infinity_context_core.ports.auto_memory import CandidateOperation, MemoryCandidate, SourceProvenance
+from infinity_context_core.ports.auto_memory import (
+    CandidateOperation,
+    MemoryCandidate,
+    SourceProvenance,
+)
 from infinity_context_server.config import CaptureMode, DeployProfile, Settings
 from infinity_context_server.main import create_app
 
@@ -26,7 +30,7 @@ class StaticExtractor:
         return self._candidates
 
 
-def test_capture_semantic_active_duplicate_creates_no_suggestion_or_fact(
+def test_capture_semantic_active_duplicate_creates_merge_review_suggestion(
     tmp_path: Path,
 ) -> None:
     app = _capture_app(tmp_path, "capture-semantic-duplicate.db", CaptureMode.AUTO_APPLY_SAFE)
@@ -37,6 +41,7 @@ def test_capture_semantic_active_duplicate_creates_no_suggestion_or_fact(
             headers=headers,
             text="Qdrant owns document vector retrieval.",
             space_slug="capture-semantic-duplicate",
+            source_id="semantic-dedupe-existing",
         )
         capture = _create_capture(
             client,
@@ -53,6 +58,7 @@ def test_capture_semantic_active_duplicate_creates_no_suggestion_or_fact(
                         "Docs retrieval should use Qdrant vectors.",
                         confidence=Confidence.HIGH,
                         ttl_policy="durable",
+                        source_id="semantic-dedupe-candidate",
                     ),
                 )
             ),
@@ -64,14 +70,33 @@ def test_capture_semantic_active_duplicate_creates_no_suggestion_or_fact(
             headers=headers,
             space_slug="capture-semantic-duplicate",
         )
+        suggestion = suggestions.json()["data"][0]
+        approved = client.post(
+            f"/v1/suggestions/{suggestion['id']}/approve",
+            json={"reason": "confirmed duplicate source merge"},
+            headers=headers,
+        )
+        merged_facts = _list_facts(client, headers=headers, space_slug="capture-semantic-duplicate")
 
     assert existing.status_code == 201
     assert result.auto_applied_facts == 0
-    assert result.created_suggestions == 0
+    assert result.created_suggestions == 1
     assert [item["text"] for item in facts.json()["data"]] == [
         "Qdrant owns document vector retrieval."
     ]
-    assert suggestions.json()["data"] == []
+    assert suggestion["operation"] == "review"
+    assert suggestion["target_fact_id"] == existing.json()["data"]["id"]
+    assert suggestion["review_payload"]["review_kind"] == "duplicate_fact_merge"
+    assert suggestion["review_payload"]["dedupe_match_type"] == "semantic_token_overlap"
+    assert "semantic_duplicate" in suggestion["review_payload"]["dedupe_reason_codes"]
+    assert approved.status_code == 200, approved.text
+    merged_fact = merged_facts.json()["data"][0]
+    assert merged_fact["text"] == "Qdrant owns document vector retrieval."
+    assert merged_fact["version"] == 2
+    assert {ref["source_id"] for ref in merged_fact["source_refs"]} == {
+        "semantic-dedupe-existing",
+        "semantic-dedupe-candidate",
+    }
 
 
 def test_capture_semantic_dedupe_keeps_engine_mismatch_for_review(tmp_path: Path) -> None:
@@ -93,9 +118,7 @@ def test_capture_semantic_dedupe_keeps_engine_mismatch_for_review(tmp_path: Path
         result = _consolidate(
             client,
             capture_id=capture.json()["data"]["id"],
-            extractor=StaticExtractor(
-                (_candidate("Docs retrieval should use Qdrant vectors."),)
-            ),
+            extractor=StaticExtractor((_candidate("Docs retrieval should use Qdrant vectors."),)),
             auto_apply_safe_enabled=False,
         )
         suggestions = _list_suggestions(
@@ -108,6 +131,58 @@ def test_capture_semantic_dedupe_keeps_engine_mismatch_for_review(tmp_path: Path
     assert suggestions.json()["data"][0]["candidate_text"] == (
         "Docs retrieval should use Qdrant vectors."
     )
+
+
+def test_auto_apply_safe_similar_event_with_different_time_is_not_merged(
+    tmp_path: Path,
+) -> None:
+    app = _capture_app(tmp_path, "capture-semantic-event-time.db", CaptureMode.AUTO_APPLY_SAFE)
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        existing = _create_fact(
+            client,
+            headers=headers,
+            text="Alex call last week covered Project Atlas pricing.",
+            space_slug="capture-semantic-event-time",
+            source_id="alex-last-week",
+        )
+        capture = _create_capture(
+            client,
+            headers=headers,
+            text="Remember: Alex call yesterday covered Project Atlas pricing.",
+            space_slug="capture-semantic-event-time",
+        )
+        result = _consolidate(
+            client,
+            capture_id=capture.json()["data"]["id"],
+            extractor=StaticExtractor(
+                (
+                    _candidate(
+                        "Alex call yesterday covered Project Atlas pricing.",
+                        confidence=Confidence.HIGH,
+                        ttl_policy="durable",
+                        source_id="alex-yesterday",
+                    ),
+                )
+            ),
+            auto_apply_safe_enabled=True,
+        )
+        facts = _list_facts(client, headers=headers, space_slug="capture-semantic-event-time")
+        suggestions = _list_suggestions(
+            client,
+            headers=headers,
+            space_slug="capture-semantic-event-time",
+        )
+
+    assert existing.status_code == 201
+    assert result.auto_applied_facts == 1
+    assert result.created_suggestions == 0
+    assert suggestions.json()["data"] == []
+    fact_texts = {item["text"] for item in facts.json()["data"]}
+    assert fact_texts == {
+        "Alex call last week covered Project Atlas pricing.",
+        "Alex call yesterday covered Project Atlas pricing.",
+    }
 
 
 def test_auto_apply_safe_active_conflict_creates_review_suggestion_not_fact(
@@ -160,9 +235,7 @@ def test_auto_apply_safe_active_conflict_creates_review_suggestion_not_fact(
     assert suggestion["candidate_text"] == "Docs retrieval should use Qdrant vectors."
     assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["conflicting_fact_version"] == 1
-    assert "auto_apply_active_conflict" in suggestion["review_payload"][
-        "rejected_resolver_codes"
-    ]
+    assert "auto_apply_active_conflict" in suggestion["review_payload"]["rejected_resolver_codes"]
 
 
 def _capture_app(tmp_path: Path, database_name: str, capture_mode: CaptureMode):
@@ -186,6 +259,7 @@ def _create_fact(
     headers: dict[str, str],
     text: str,
     space_slug: str,
+    source_id: str = "semantic-dedupe-test",
 ):
     return client.post(
         "/v1/facts",
@@ -194,7 +268,7 @@ def _create_fact(
             "memory_scope_external_ref": "default",
             "text": text,
             "kind": "note",
-            "source_refs": [{"source_type": "manual", "source_id": "semantic-dedupe-test"}],
+            "source_refs": [{"source_type": "manual", "source_id": source_id}],
         },
         headers=headers,
     )
@@ -232,6 +306,7 @@ def _candidate(
     *,
     confidence: Confidence = Confidence.MEDIUM,
     ttl_policy: str = "review",
+    source_id: str = "semantic-dedupe-test",
 ) -> MemoryCandidate:
     return MemoryCandidate(
         text=text,
@@ -240,7 +315,7 @@ def _candidate(
         source_refs=(
             SourceRef(
                 source_type="manual",
-                source_id="semantic-dedupe-test",
+                source_id=source_id,
                 quote_preview=text,
             ),
         ),

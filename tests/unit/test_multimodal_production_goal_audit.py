@@ -114,15 +114,9 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     assert blocked_by_area["docker_live_proof"]["operator_action"] is None
     assert blocked_by_area["live_provider_proof"]["reason"] == "provider_credential_missing"
     assert "docker_live_extraction_cases_complete" in result.not_evaluable_checks
-    assert "docker_live_capabilities_audio_upload_limit_present" in (
-        result.not_evaluable_checks
-    )
-    assert "docker_live_capabilities_vision_payload_limits_present" in (
-        result.not_evaluable_checks
-    )
-    assert "docker_live_capabilities_provider_contract_present" in (
-        result.not_evaluable_checks
-    )
+    assert "docker_live_capabilities_audio_upload_limit_present" in (result.not_evaluable_checks)
+    assert "docker_live_capabilities_vision_payload_limits_present" in (result.not_evaluable_checks)
+    assert "docker_live_capabilities_provider_contract_present" in (result.not_evaluable_checks)
     assert "live_provider_components_succeeded" in result.not_evaluable_checks
     assert any("Docker multimodal live proof" in failure for failure in result.failures)
     assert any("Live provider canary" in failure for failure in result.failures)
@@ -227,8 +221,7 @@ def test_multimodal_production_goal_audit_rejects_stale_report_commits(
     assert result.checks["docker_live_current_commit"] is False
     assert result.checks["live_provider_current_commit"] is False
     assert any(
-        "Frontend Marionette proof must be generated" in failure
-        for failure in result.failures
+        "Frontend Marionette proof must be generated" in failure for failure in result.failures
     )
     assert any("Docker live proof must be generated" in failure for failure in result.failures)
     assert any("Live provider proof must be generated" in failure for failure in result.failures)
@@ -277,6 +270,41 @@ def test_multimodal_production_goal_audit_rejects_stale_provider_contract(
     assert any("transcription contract" in failure for failure in result.failures)
     assert any("vision contract" in failure for failure in result.failures)
     assert any("must not advertise unsupported" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_rejects_bad_provider_failure_policy(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    provider["failure_policy_contract"]["rate_limited"] = {
+        "operator_action": "inspect_provider_canary",
+        "reason": "asset_extraction.transcription.rate_limited",
+        "status": "failed",
+        "user_retryable": False,
+    }
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["live_provider_failure_policy_contract_present"] is True
+    assert result.checks["live_provider_failure_policy_rate_limited"] is False
+    assert result.checks["live_provider_failure_policy_invalid_api_key"] is True
+    assert any("failure policy for rate_limited" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_docker_without_provider_contract(
@@ -348,10 +376,7 @@ def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
     assert result.ok is False
     assert result.checks["core_boundary_clean"] is False
     assert result.checks["proof_reports_do_not_leak_secrets"] is False
-    assert any(
-        "infinity_context_core imports forbidden" in failure
-        for failure in result.failures
-    )
+    assert any("infinity_context_core imports forbidden" in failure for failure in result.failures)
     assert any("secret-like value" in failure for failure in result.failures)
 
 
@@ -464,6 +489,7 @@ def _provider_report() -> dict[str, object]:
         "ok": True,
         "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "provider_key_present": True,
+        "failure_policy_contract": _failure_policy_contract(),
         "provider_contract": {
             "external_ai_required": True,
             "timeout_seconds": 60.0,
@@ -496,5 +522,40 @@ def _provider_report() -> dict[str, object]:
             "provider_key": {"status": "configured"},
             "vision": {"status": "succeeded"},
             "transcription": {"status": "succeeded"},
+        },
+    }
+
+
+def _failure_policy_contract() -> dict[str, dict[str, object]]:
+    return {
+        "provider_credential_missing": {
+            "operator_action": "configure_provider_credential",
+            "reason": "provider_credential_missing",
+            "status": "degraded",
+            "user_retryable": False,
+        },
+        "invalid_api_key": {
+            "operator_action": "replace_provider_credential",
+            "reason": "asset_extraction.vision.invalid_api_key",
+            "status": "failed",
+            "user_retryable": False,
+        },
+        "quota_exceeded": {
+            "operator_action": "check_provider_billing",
+            "reason": "asset_extraction.transcription.quota_exceeded",
+            "status": "failed",
+            "user_retryable": False,
+        },
+        "rate_limited": {
+            "operator_action": "retry_later",
+            "reason": "asset_extraction.transcription.rate_limited",
+            "status": "failed",
+            "user_retryable": True,
+        },
+        "timeout": {
+            "operator_action": "retry_later",
+            "reason": "asset_extraction.vision.timeout",
+            "status": "failed",
+            "user_retryable": True,
         },
     }

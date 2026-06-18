@@ -14,6 +14,24 @@ from pathlib import Path
 from typing import Any
 
 MANIFEST_SCHEMA_VERSION = "infinity_context.memory_scope_snapshot_manifest.v1"
+SNAPSHOT_COUNT_KEYS = (
+    "threads",
+    "facts",
+    "documents",
+    "episodes",
+    "chunks",
+    "assets",
+    "asset_blobs",
+    "asset_extraction_jobs",
+    "extraction_artifacts",
+    "extraction_artifact_blobs",
+    "captures",
+    "anchors",
+    "context_links",
+    "context_link_suggestions",
+    "relations",
+    "source_refs",
+)
 
 
 def default_manifest_path(snapshot_path: Path) -> Path:
@@ -68,24 +86,7 @@ def build_snapshot_manifest(
         "memory_scope_external_ref": memory_scope_external_ref,
         "redacted": redacted,
         "snapshot_schema_version": snapshot.get("schema_version"),
-        "counts": {
-            "threads": _list_count(snapshot.get("threads")),
-            "facts": _list_count(snapshot.get("facts")),
-            "documents": _list_count(snapshot.get("documents")),
-            "episodes": _list_count(snapshot.get("episodes")),
-            "chunks": _list_count(snapshot.get("chunks")),
-            "assets": _list_count(snapshot.get("assets")),
-            "asset_blobs": _list_count(snapshot.get("asset_blobs")),
-            "asset_extraction_jobs": _list_count(snapshot.get("asset_extraction_jobs")),
-            "extraction_artifacts": _list_count(snapshot.get("extraction_artifacts")),
-            "extraction_artifact_blobs": _list_count(snapshot.get("extraction_artifact_blobs")),
-            "captures": _list_count(snapshot.get("captures")),
-            "anchors": _list_count(snapshot.get("anchors")),
-            "context_links": _list_count(snapshot.get("context_links")),
-            "context_link_suggestions": _list_count(snapshot.get("context_link_suggestions")),
-            "relations": _list_count(snapshot.get("relations")),
-            "source_refs": _list_count(snapshot.get("source_refs")),
-        },
+        "counts": snapshot_counts(snapshot),
     }
     if snapshot_file is not None:
         manifest["snapshot_file"] = snapshot_file
@@ -151,6 +152,8 @@ def verify_snapshot_manifest_payload(
     expected_size = manifest.get("snapshot_bytes")
     if isinstance(expected_size, int) and expected_size != len(payload_bytes):
         errors.append("snapshot_size_mismatch")
+    if snapshot is not None:
+        errors.extend(_snapshot_manifest_contract_errors(snapshot=snapshot, manifest=manifest))
     return {
         "ok": not errors,
         "errors": errors,
@@ -169,6 +172,34 @@ def stable_json_bytes(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
         "utf-8"
     )
+
+
+def snapshot_counts(snapshot: dict[str, Any]) -> dict[str, int]:
+    return {key: _list_count(snapshot.get(key)) for key in SNAPSHOT_COUNT_KEYS}
+
+
+def _snapshot_manifest_contract_errors(
+    *,
+    snapshot: dict[str, Any],
+    manifest: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    manifest_schema_version = manifest.get("snapshot_schema_version")
+    if manifest_schema_version is not None and manifest_schema_version != snapshot.get(
+        "schema_version"
+    ):
+        errors.append("snapshot_schema_version_mismatch")
+    manifest_redacted = manifest.get("redacted")
+    if manifest_redacted is not None and manifest_redacted != bool(snapshot.get("redacted")):
+        errors.append("redacted_mismatch")
+    manifest_counts = manifest.get("counts")
+    if not isinstance(manifest_counts, dict):
+        errors.append("counts_missing")
+        return errors
+    for key, actual_count in snapshot_counts(snapshot).items():
+        if manifest_counts.get(key) != actual_count:
+            errors.append(f"count_mismatch:{key}")
+    return errors
 
 
 def _list_count(value: object) -> int:

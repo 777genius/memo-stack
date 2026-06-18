@@ -19,6 +19,7 @@ from infinity_context_adapters.postgres import (
     build_async_engine,
     build_session_factory,
 )
+from infinity_context_adapters.s3_blob import S3BlobStorage
 from infinity_context_core.application import (
     ApproveSuggestionUseCase,
     BackfillAnchorsUseCase,
@@ -102,7 +103,10 @@ from infinity_context_core.application import (
 )
 from infinity_context_core.application.auto_memory import RuleBasedMemoryClassifier
 from infinity_context_core.application.context_packer import ContextPacker
-from infinity_context_core.application.extractor import NoopMemoryExtractor, RuleBasedMemoryExtractor
+from infinity_context_core.application.extractor import (
+    NoopMemoryExtractor,
+    RuleBasedMemoryExtractor,
+)
 from infinity_context_core.domain.usage import ProductPlan
 from infinity_context_core.ports.adapters import (
     EmbeddingPort,
@@ -275,7 +279,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         max_per_minute=resolved_settings.max_query_embeddings_per_minute,
     )
-    blob_storage = LocalBlobStorage(root_dir=resolved_settings.asset_storage_dir)
+    blob_storage = _build_blob_storage(resolved_settings)
     product_plan = ProductPlan.create(
         tier=resolved_settings.product_plan_tier,
         media_analysis_seconds_per_month=(resolved_settings.plan_media_analysis_seconds_per_month),
@@ -333,6 +337,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         ids=ids,
         blob_storage=blob_storage,
+        storage_backend=resolved_settings.asset_storage_backend,
         max_bytes=resolved_settings.max_asset_upload_bytes,
     )
     get_asset = GetAssetUseCase(uow_factory=uow_factory)
@@ -436,6 +441,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         ids=ids,
         limits=extraction_limits,
+        artifact_storage_backend=resolved_settings.asset_storage_backend,
         execution_lease_seconds=resolved_settings.extraction_execution_lease_seconds,
         cancellation_poll_seconds=resolved_settings.extraction_cancellation_poll_seconds,
         heartbeat_seconds=resolved_settings.extraction_heartbeat_seconds,
@@ -638,6 +644,23 @@ async def _close_resource(resource: object) -> None:
         if inspect.isawaitable(result):
             await result
         return
+
+
+def _build_blob_storage(settings: Settings) -> BlobStoragePort:
+    if settings.asset_storage_backend == "local":
+        return LocalBlobStorage(root_dir=settings.asset_storage_dir)
+    if settings.asset_storage_backend == "s3":
+        return S3BlobStorage(
+            bucket=settings.asset_storage_s3_bucket or "",
+            prefix=settings.asset_storage_s3_prefix,
+            endpoint_url=settings.asset_storage_s3_endpoint_url,
+            region_name=settings.asset_storage_s3_region,
+            access_key_id=settings.asset_storage_s3_access_key_id,
+            secret_access_key=settings.asset_storage_s3_secret_access_key,
+            session_token=settings.asset_storage_s3_session_token,
+            force_path_style=settings.asset_storage_s3_force_path_style,
+        )
+    raise RuntimeError("Unsupported asset storage backend")
 
 
 def _build_vector_adapter(settings: Settings) -> MemoryAdapterPort:

@@ -10,6 +10,7 @@ from infinity_context_core.application.context_diagnostics import (
 )
 from infinity_context_core.application.dto import ContextBundle, ContextItem
 from infinity_context_core.application.normalize import estimate_tokens
+from infinity_context_core.domain.entities import SourceRef
 
 _MAX_CHUNKS_PER_SOURCE = 4
 _DEFAULT_MAX_RENDERED_CHARS = 18000
@@ -45,6 +46,7 @@ class ContextPacker:
         dropped_by_source_cap = 0
         dropped_by_budget = 0
         dropped_by_char_cap = 0
+        citations_rendered = 0
         used_tokens = 0
         lines = list(_HEADER_LINES)
         current_memory_scope_id: str | None = None
@@ -80,6 +82,7 @@ class ContextPacker:
                 continue
 
             selected.append(item)
+            citations_rendered += len(_citation_labels(item))
             if item.item_type == "chunk":
                 selected_chunks_by_source[source_key] = source_count + 1
             used_tokens += item_tokens
@@ -103,6 +106,7 @@ class ContextPacker:
                     "dropped_by_budget": dropped_by_budget,
                     "dropped_by_source_cap": dropped_by_source_cap,
                     "dropped_by_char_cap": dropped_by_char_cap,
+                    "citations_rendered": citations_rendered,
                     "rendered_chars": len(rendered_text),
                     "max_rendered_chars": char_budget,
                 },
@@ -118,9 +122,11 @@ def _one_line(text: str) -> str:
 
 def _item_line(index: int, item: ContextItem) -> str:
     safe_text = _one_line(item.text)
+    citation_text = _citation_text(item)
+    citation_part = f' citations="{_quote_text(citation_text)}"' if citation_text else ""
     return (
         f"[{index}] {item.item_type}:{item.item_id} "
-        f'source={_source_label(item)} text="{_quote_text(safe_text)}"'
+        f'source={_source_label(item)}{citation_part} text="{_quote_text(safe_text)}"'
     )
 
 
@@ -145,6 +151,48 @@ def _source_label(item: ContextItem) -> str:
     if ref.chunk_id:
         return f"{ref.source_type}:{ref.source_id}#{ref.chunk_id}"
     return f"{ref.source_type}:{ref.source_id}"
+
+
+def _citation_text(item: ContextItem) -> str:
+    labels = _citation_labels(item)
+    return "; ".join(labels)
+
+
+def _citation_labels(item: ContextItem) -> tuple[str, ...]:
+    labels: list[str] = []
+    for ref in item.source_refs[:3]:
+        location = _source_ref_location(ref)
+        label = (
+            f"{_source_ref_identity(ref)} {location}"
+            if location
+            else _source_ref_identity(ref)
+        )
+        labels.append(label)
+    return tuple(labels)
+
+
+def _source_ref_identity(ref: SourceRef) -> str:
+    if ref.chunk_id:
+        return f"{ref.source_type}:{ref.source_id}#{ref.chunk_id}"
+    return f"{ref.source_type}:{ref.source_id}"
+
+
+def _source_ref_location(ref: SourceRef) -> str:
+    parts: list[str] = []
+    if ref.page_number is not None:
+        parts.append(f"page={ref.page_number}")
+    if ref.time_start_ms is not None or ref.time_end_ms is not None:
+        start = ref.time_start_ms if ref.time_start_ms is not None else "?"
+        end = ref.time_end_ms if ref.time_end_ms is not None else "?"
+        parts.append(f"time_ms={start}-{end}")
+    if ref.bbox is not None:
+        bbox = ",".join(_format_bbox_value(value) for value in ref.bbox)
+        parts.append(f"bbox={bbox}")
+    return " ".join(parts)
+
+
+def _format_bbox_value(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else f"{value:.2f}"
 
 
 def _quote_text(text: str) -> str:

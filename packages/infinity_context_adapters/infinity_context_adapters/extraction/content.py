@@ -772,6 +772,12 @@ def _detection_diagnostics(
     )
     magic_mismatch = magic_type is not None and magic_type != choice.content_type
     extension_mismatch = extension_type is not None and extension_type != choice.content_type
+    archive_detected = magic_type == "application/zip"
+    archive_review_required = archive_detected and not _is_structured_archive_choice(
+        choice=choice,
+        declared_type=declared_type,
+        extension_type=extension_type,
+    )
     diagnostics: dict[str, object] = {
         "mime_declared_content_type": declared_type,
         "mime_detected_content_type": choice.content_type,
@@ -780,8 +786,12 @@ def _detection_diagnostics(
         "mime_content_type_mismatch": declared_mismatch,
         "mime_magic_mismatch": magic_mismatch,
         "mime_extension_mismatch": extension_mismatch,
+        "mime_archive_detected": archive_detected,
+        "mime_archive_review_required": archive_review_required,
         "asset_empty_content": byte_size == 0,
     }
+    if archive_review_required:
+        diagnostics["mime_archive_review_reason"] = "zip_archive_not_structured_document"
     if magic_type is not None:
         diagnostics["mime_magic_content_type"] = magic_type
     if extension is not None:
@@ -791,6 +801,19 @@ def _detection_diagnostics(
     if declared_mismatch:
         diagnostics["mime_mismatch_kind"] = "declared_vs_detected"
     return diagnostics
+
+
+def _is_structured_archive_choice(
+    *,
+    choice: _ContentTypeChoice,
+    declared_type: str,
+    extension_type: str | None,
+) -> bool:
+    return (
+        choice.content_type in _STRUCTURED_DOCUMENT_TYPES
+        or declared_type in _STRUCTURED_DOCUMENT_TYPES
+        or extension_type in _STRUCTURED_DOCUMENT_TYPES
+    )
 
 
 def _extension_content_type(extension: str | None) -> str | None:

@@ -14,6 +14,7 @@ from infinity_context_core.application.extractor import (
     validate_extractor_candidates,
 )
 from infinity_context_core.application.semantic_dedupe import (
+    describe_duplicate_fact_match,
     looks_conflicting_fact,
     looks_equivalent_fact,
     normalize_memory_text,
@@ -228,6 +229,91 @@ class ConsolidateCaptureUseCase:
                     )
                 if active_duplicate is not None:
                     resolver_rejected_codes.append("duplicate_active_fact")
+                    duplicate_match = describe_duplicate_fact_match(
+                        candidate.text,
+                        active_duplicate.text,
+                    )
+                    if duplicate_match is None:
+                        continue
+                    duplicate_candidate = replace(
+                        candidate,
+                        operation_hint=CandidateOperation.REVIEW,
+                        target_fact_id=str(active_duplicate.id),
+                        target_fact_version=active_duplicate.version,
+                        ttl_policy="review",
+                        tags=_dedupe_review_tags(taxonomy.tags),
+                    )
+                    duplicate_taxonomy = self._taxonomy.normalize(duplicate_candidate)
+                    duplicate_fingerprint = _candidate_fingerprint(
+                        space_id=str(current.space_id),
+                        memory_scope_id=str(current.memory_scope_id),
+                        text=candidate.text,
+                        operation=CandidateOperation.REVIEW.value,
+                        target_fact_id=str(active_duplicate.id),
+                        category=duplicate_taxonomy.category,
+                    )
+                    duplicate_pending = await uow.suggestions.find_pending_duplicate(
+                        space_id=str(current.space_id),
+                        memory_scope_id=str(current.memory_scope_id),
+                        candidate_fingerprint=duplicate_fingerprint,
+                        operation=SuggestionOperation.REVIEW.value,
+                        target_fact_id=str(active_duplicate.id),
+                    )
+                    if duplicate_pending is not None:
+                        resolver_rejected_codes.append("duplicate_pending_suggestion")
+                        continue
+                    if pending_suggestion_count + len(created_ids) >= (
+                        self._max_pending_suggestions_per_memory_scope
+                    ):
+                        resolver_rejected_codes.append("pending_suggestion_limit_reached")
+                        continue
+                    duplicate_expires_at = _expires_at(now, duplicate_taxonomy.ttl_policy.duration)
+                    suggestion = MemorySuggestion.create(
+                        suggestion_id=MemorySuggestionId(self._ids.new_id("sug")),
+                        space_id=current.space_id,
+                        memory_scope_id=current.memory_scope_id,
+                        candidate_text=candidate.text,
+                        kind=candidate.kind,
+                        source_refs=candidate.source_refs,
+                        safe_reason=(
+                            "Candidate matches an active memory fact and needs merge review."
+                        ),
+                        confidence=decision.confidence,
+                        trust_level=decision.trust_level,
+                        target_fact_id=MemoryFactId(str(active_duplicate.id)),
+                        target_fact_version=active_duplicate.version,
+                        operation=SuggestionOperation.REVIEW,
+                        category=duplicate_taxonomy.category,
+                        tags=duplicate_taxonomy.tags,
+                        ttl_policy=duplicate_taxonomy.ttl_policy.name,
+                        expires_at=duplicate_expires_at,
+                        expiry_reason="ttl_policy" if duplicate_expires_at else None,
+                        created_from_capture_id=str(current.id),
+                        candidate_fingerprint=duplicate_fingerprint,
+                        review_payload={
+                            "operation": SuggestionOperation.REVIEW.value,
+                            "review_kind": "duplicate_fact_merge",
+                            "category": duplicate_taxonomy.category,
+                            "tags": list(duplicate_taxonomy.tags),
+                            "ttl_policy": duplicate_taxonomy.ttl_policy.name,
+                            "source_authority": current.source_authority.value,
+                            "target_fact_id": str(active_duplicate.id),
+                            "target_fact_version": active_duplicate.version,
+                            "duplicate_fact_id": str(active_duplicate.id),
+                            "duplicate_fact_version": active_duplicate.version,
+                            "dedupe_match_type": duplicate_match.match_type,
+                            "dedupe_score": duplicate_match.score,
+                            "dedupe_reason_codes": list(duplicate_match.reason_codes),
+                            "dedupe_overlap_terms": list(duplicate_match.overlap_terms),
+                            "recommended_action": "merge_source_refs_into_existing_fact",
+                            "rejected_extractor_codes": list(validation.rejected_codes),
+                            "rejected_resolver_codes": list(resolver_rejected_codes),
+                            "unknown_taxonomy_labels": list(duplicate_taxonomy.unknown_labels),
+                        },
+                        now=now,
+                    )
+                    saved_suggestion = await uow.suggestions.create(suggestion)
+                    created_ids.append(str(saved_suggestion.id))
                     continue
                 active_conflict = None
                 if candidate.operation_hint == CandidateOperation.ADD:
@@ -528,6 +614,12 @@ def _candidate_fingerprint(
 ) -> str:
     raw = f"{space_id}:{memory_scope_id}:{operation}:{target_fact_id or ''}:{category}:{text}"
     return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _dedupe_review_tags(tags: tuple[str, ...]) -> tuple[str, ...]:
+    ordered = [tag for tag in tags if tag != "dedupe"]
+    ordered.insert(0, "dedupe")
+    return tuple(ordered[:10])
 
 
 def _expires_at(now: datetime, duration) -> datetime | None:

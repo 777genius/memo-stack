@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-ARG INFINITY_CONTEXT_EXTRAS="qdrant,openai,graphiti,mcp,docling"
+ARG INFINITY_CONTEXT_EXTRAS="qdrant,openai,graphiti,mcp,docling,s3"
 ARG INFINITY_CONTEXT_PREINSTALL_TORCH_CPU="true"
 ARG INFINITY_CONTEXT_TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
 

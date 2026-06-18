@@ -7,7 +7,11 @@ from infinity_context_adapters.postgres.models import MemoryOutboxRow
 from infinity_context_core.application import ConsolidateCaptureCommand, ConsolidateCaptureUseCase
 from infinity_context_core.domain.entities import Confidence, MemoryKind, SourceRef
 from infinity_context_core.domain.errors import MemoryInfrastructureError
-from infinity_context_core.ports.auto_memory import CandidateOperation, MemoryCandidate, SourceProvenance
+from infinity_context_core.ports.auto_memory import (
+    CandidateOperation,
+    MemoryCandidate,
+    SourceProvenance,
+)
 from infinity_context_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
 from infinity_context_server.main import create_app
 from infinity_context_server.worker import OutboxWorker
@@ -860,7 +864,9 @@ def test_auto_apply_safe_medium_confidence_remains_suggestion(tmp_path: Path) ->
     assert facts.json()["data"] == []
 
 
-def test_auto_apply_safe_active_duplicate_creates_no_fact_or_suggestion(tmp_path: Path) -> None:
+def test_auto_apply_safe_active_duplicate_creates_merge_review_suggestion(
+    tmp_path: Path,
+) -> None:
     app = _capture_app(
         tmp_path,
         "auto-apply-duplicate.db",
@@ -913,8 +919,12 @@ def test_auto_apply_safe_active_duplicate_creates_no_fact_or_suggestion(tmp_path
 
     assert fact.status_code == 201
     assert result.auto_applied_facts == 0
-    assert result.created_suggestions == 0
-    assert suggestions.json()["data"] == []
+    assert result.created_suggestions == 1
+    suggestion = suggestions.json()["data"][0]
+    assert suggestion["operation"] == "review"
+    assert suggestion["target_fact_id"] == fact.json()["data"]["id"]
+    assert suggestion["review_payload"]["review_kind"] == "duplicate_fact_merge"
+    assert suggestion["review_payload"]["dedupe_match_type"] == "exact_normalized_text"
     assert len(facts.json()["data"]) == 1
     assert facts.json()["data"][0]["text"] == marker
 

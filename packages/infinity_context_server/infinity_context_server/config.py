@@ -31,7 +31,9 @@ class CaptureMode(StrEnum):
 class Settings(BaseSettings):
     service_name: str = "infinity-context"
     deploy_profile: DeployProfile = DeployProfile.LOCAL
-    database_url: str = "postgresql+asyncpg://infinity_context:infinity_context@127.0.0.1:54329/infinity_context"
+    database_url: str = (
+        "postgresql+asyncpg://infinity_context:infinity_context@127.0.0.1:54329/infinity_context"
+    )
     auto_create_schema: bool = False
     host: str = "127.0.0.1"
     port: int = 7788
@@ -54,7 +56,16 @@ class Settings(BaseSettings):
         ge=0,
         le=10_000 * 3600,
     )
+    asset_storage_backend: str = "local"
     asset_storage_dir: str = "~/.infinity-context/assets"
+    asset_storage_s3_bucket: str | None = None
+    asset_storage_s3_prefix: str = ""
+    asset_storage_s3_endpoint_url: str | None = None
+    asset_storage_s3_region: str | None = None
+    asset_storage_s3_access_key_id: str | None = None
+    asset_storage_s3_secret_access_key: str | None = None
+    asset_storage_s3_session_token: str | None = None
+    asset_storage_s3_force_path_style: bool = False
     max_asset_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=500 * 1024 * 1024)
     extraction_enabled: bool = True
     extraction_default_profile: str = "standard_local"
@@ -135,6 +146,10 @@ class Settings(BaseSettings):
             self.qdrant_enabled or self.graphiti_enabled or self.embeddings_enabled
         ):
             raise RuntimeError("test deploy profile cannot use external adapters")
+        if self.asset_storage_backend not in {"local", "s3"}:
+            raise RuntimeError("MEMORY_ASSET_STORAGE_BACKEND must be local or s3")
+        if self.asset_storage_backend == "s3" and not self.asset_storage_s3_bucket:
+            raise RuntimeError("MEMORY_ASSET_STORAGE_S3_BUCKET is required for S3 asset storage")
         if self.qdrant_enabled and not self.embeddings_enabled:
             raise RuntimeError("MEMORY_QDRANT_ENABLED requires MEMORY_EMBEDDINGS_ENABLED")
         if self.embeddings_enabled and self.embeddings_provider != "openai":
@@ -156,8 +171,6 @@ class Settings(BaseSettings):
                 "MEMORY_OPENAI_API_KEY is required when OpenAI capture extractor is enabled"
             )
         if self.transcription_provider not in {"disabled", "openai"}:
-            raise RuntimeError(
-                "MEMORY_TRANSCRIPTION_PROVIDER must be disabled or openai"
-            )
+            raise RuntimeError("MEMORY_TRANSCRIPTION_PROVIDER must be disabled or openai")
         if self.graphiti_enabled and not self.graphiti_neo4j_password:
             raise RuntimeError("MEMORY_GRAPHITI_ENABLED requires MEMORY_GRAPHITI_NEO4J_PASSWORD")

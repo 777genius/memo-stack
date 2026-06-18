@@ -25,6 +25,9 @@ docling = [
 asr = [
   "faster-whisper>=1.2.1,<2.0.0",
 ]
+s3 = [
+  "boto3>=1.43.32,<2.0.0",
+]
 
 [tool.setuptools.package-data]
 infinity_context_adapters = [

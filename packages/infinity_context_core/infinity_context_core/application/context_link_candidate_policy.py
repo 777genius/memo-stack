@@ -249,6 +249,29 @@ def terms(text: str) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def excluded_terms(text: str) -> tuple[str, ...]:
+    seen: dict[str, None] = {}
+    lowered = redact_sensitive_text(text).lower()
+    for match in re.finditer(r"\b(?:not|exclude|excluding|не)\s+(?P<term>[\w.@:/#-]+)", lowered):
+        raw = match.group("term")
+        term = raw.strip("._-:/#")[:_MAX_QUERY_TERM_CHARS]
+        if len(term) >= 3 and term not in _LINK_STOP_TERMS and term not in seen:
+            seen[term] = None
+            if len(seen) >= 12:
+                break
+    return tuple(seen)
+
+
+def excluded_term_hits(
+    candidate: ContextLinkCandidate,
+    excluded_query_terms: tuple[str, ...],
+) -> tuple[str, ...]:
+    if not excluded_query_terms:
+        return ()
+    lowered = f"{candidate.label} {candidate.preview}".lower()
+    return tuple(term for term in excluded_query_terms if term in lowered)
+
+
 def score_text_candidate(
     *,
     query_terms: tuple[str, ...],
@@ -786,6 +809,8 @@ def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
             codes.append("video_evidence_match")
         elif reason == "audio evidence match":
             codes.append("audio_evidence_match")
+        elif reason == "excluded query term":
+            codes.append("excluded_term_penalty")
         elif reason == "recent context":
             codes.append("recent_context")
         else:

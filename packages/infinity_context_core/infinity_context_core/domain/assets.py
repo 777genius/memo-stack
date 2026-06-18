@@ -489,6 +489,10 @@ def _safe_metadata(
             safe[key_text] = _safe_metadata_text(value, max_chars=500)
         elif isinstance(value, (int, float, bool)) or value is None:
             safe[key_text] = value
+        elif isinstance(value, Mapping):
+            safe_mapping = _safe_metadata_mapping(value)
+            if safe_mapping:
+                safe[key_text] = safe_mapping
         elif isinstance(value, (list, tuple)):
             items: list[object] = []
             for item in value[:20]:

@@ -31,6 +31,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 SUITE = "infinity-context-multimodal-docker-live-proof"
+PROJECT_PREFIX = "infinity-context-multimodal-"
 DEFAULT_REPORT = ".e2e-artifacts/multimodal-docker-live-proof.json"
 
 RunCommand = Callable[[list[str]], subprocess.CompletedProcess[str]]
@@ -71,7 +72,7 @@ def run_multimodal_docker_live_proof(
     sleep: Sleep = time.sleep,
 ) -> dict[str, Any]:
     ports = _ports(args)
-    project_name = args.project_name or f"infinity-context-multimodal-{int(time.time() * 1000)}"
+    project_name = args.project_name or f"{PROJECT_PREFIX}{int(time.time() * 1000)}"
     token = args.service_token or f"local-proof-{uuid.uuid4().hex}"
     env = _compose_env(args, ports=ports, token=token)
     run_cmd = run_cmd or _command_runner(args, env=env)
@@ -82,8 +83,8 @@ def run_multimodal_docker_live_proof(
     try:
         _prove_compose_config(args, project_name, run_cmd=run_cmd, report=report, env=env)
         _prove_docker_daemon(args, run_cmd=run_cmd, report=report, env=env)
-        _start_stack(args, project_name, run_cmd=run_cmd, report=report, env=env)
         stack_started = True
+        _start_stack(args, project_name, run_cmd=run_cmd, report=report, env=env)
         _prove_container_dependencies(
             args,
             project_name,
@@ -303,7 +304,15 @@ def _start_stack(
         *(("--build",) if not args.no_build else ()),
         *services,
     ]
-    result = run_cmd(command)
+    try:
+        result = run_cmd(command)
+    except subprocess.TimeoutExpired as exc:
+        raise DockerProofFailure(
+            "compose_stack",
+            "compose_up_timeout",
+            (f"Docker Compose stack did not start within {args.compose_timeout_seconds}s"),
+            degraded=True,
+        ) from exc
     if result.returncode != 0:
         raise DockerProofFailure(
             "compose_stack",
@@ -322,9 +331,7 @@ def _prove_container_dependencies(
     env: dict[str, str],
 ) -> None:
     service = (
-        "infinity_context_server_full"
-        if args.profile == "full"
-        else "infinity_context_server"
+        "infinity_context_server_full" if args.profile == "full" else "infinity_context_server"
     )
     checks = {
         "ffmpeg": "ffmpeg -version | head -n 1",
@@ -339,9 +346,24 @@ def _prove_container_dependencies(
     }
     versions: dict[str, str] = {}
     for name, shell in checks.items():
-        result = run_cmd(
-            [*_compose_base(args, project_name), "exec", "-T", service, "sh", "-lc", shell]
-        )
+        command = [
+            *_compose_base(args, project_name),
+            "exec",
+            "-T",
+            service,
+            "sh",
+            "-lc",
+            shell,
+        ]
+        try:
+            result = run_cmd(command)
+        except subprocess.TimeoutExpired as exc:
+            raise DockerProofFailure(
+                "container_dependencies",
+                f"{name}_dependency_timeout",
+                f"{name} dependency check did not finish within {args.compose_timeout_seconds}s",
+                degraded=True,
+            ) from exc
         if result.returncode != 0:
             raise DockerProofFailure(
                 "container_dependencies",
@@ -453,15 +475,11 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
     audio_suffixes = _string_list(transcription.get("supported_file_types"))
     vision_suffixes = _string_list(vision.get("supported_file_types"))
     vision_detail_levels = _string_list(vision.get("detail_levels"))
-    transcription_max_upload_bytes = _positive_int(
-        transcription.get("max_provider_upload_bytes")
-    )
+    transcription_max_upload_bytes = _positive_int(transcription.get("max_provider_upload_bytes"))
     transcription_effective_max_upload_bytes = _positive_int(
         transcription.get("effective_max_upload_bytes")
     )
-    vision_max_binary_upload_bytes = _positive_int(
-        vision.get("max_provider_binary_upload_bytes")
-    )
+    vision_max_binary_upload_bytes = _positive_int(vision.get("max_provider_binary_upload_bytes"))
     vision_max_payload_bytes = _positive_int(vision.get("max_provider_payload_bytes"))
     vision_max_images_per_request = _positive_int(vision.get("max_images_per_request"))
     vision_effective_max_upload_bytes = _positive_int(vision.get("effective_max_upload_bytes"))
@@ -469,8 +487,7 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
         transcription.get("endpoint") == "/v1/audio/transcriptions"
         and transcription_max_upload_bytes == 25 * 1024 * 1024
         and transcription_effective_max_upload_bytes is not None
-        and set(audio_suffixes)
-        == {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
+        and set(audio_suffixes) == {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
     )
     vision_ok = (
         vision.get("endpoint_family") == "responses"
@@ -574,9 +591,7 @@ def _prove_extraction_flow(
             sleep=sleep,
             timeout_seconds=timeout_seconds,
         )
-        artifacts = {
-            str(item.get("artifact_type")) for item in extraction.get("artifacts") or []
-        }
+        artifacts = {str(item.get("artifact_type")) for item in extraction.get("artifacts") or []}
         if not case.expected_artifacts.issubset(artifacts):
             message = (
                 f"{case.filename} expected artifacts {sorted(case.expected_artifacts)}, "
@@ -685,17 +700,314 @@ def _cleanup_stack(
     report: dict[str, Any],
     env: dict[str, str],
 ) -> None:
-    result = run_cmd([*_compose_base(args, project_name), "down", "-v", "--remove-orphans"])
-    if result.returncode == 0:
-        _mark_component(report, "cleanup", "succeeded")
+    try:
+        result = run_cmd([*_compose_base(args, project_name), "down", "-v", "--remove-orphans"])
+        cleanup = _force_cleanup_compose_project(
+            args,
+            project_name,
+            run_cmd=run_cmd,
+            env=env,
+        )
+        stale_cleanup = _cleanup_stale_suite_projects(
+            args,
+            current_project_name=project_name,
+            run_cmd=run_cmd,
+            env=env,
+        )
+        residual = _compose_project_resource_ids(
+            args,
+            project_name,
+            run_cmd=run_cmd,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        _mark_component(
+            report,
+            "cleanup",
+            "failed",
+            reason="cleanup_timeout",
+            message=(
+                f"Docker cleanup command did not finish within {args.compose_timeout_seconds}s"
+            ),
+            command=[str(part) for part in exc.cmd] if isinstance(exc.cmd, list) else None,
+        )
+        return
+    except OSError as exc:
+        _mark_component(
+            report,
+            "cleanup",
+            "failed",
+            reason="cleanup_command_failed",
+            message=_safe_text(str(exc), env=env),
+        )
+        return
+    if (
+        result.returncode == 0
+        and cleanup["ok"] is True
+        and stale_cleanup["ok"] is True
+        and _resources_empty(residual)
+    ):
+        _mark_component(
+            report,
+            "cleanup",
+            "succeeded",
+            compose_down_returncode=result.returncode,
+            forced_cleanup=cleanup,
+            stale_suite_cleanup=stale_cleanup,
+            residual_resources=residual,
+        )
+    elif cleanup["ok"] is True and stale_cleanup["ok"] is True and _resources_empty(residual):
+        _mark_component(
+            report,
+            "cleanup",
+            "succeeded",
+            reason="compose_down_failed_forced_cleanup_succeeded",
+            compose_down_returncode=result.returncode,
+            compose_down_message=_safe_completed(result, env=env),
+            forced_cleanup=cleanup,
+            stale_suite_cleanup=stale_cleanup,
+            residual_resources=residual,
+        )
     else:
         _mark_component(
             report,
             "cleanup",
             "failed",
-            reason="compose_down_failed",
+            reason="cleanup_residual_resources",
+            compose_down_returncode=result.returncode,
             message=_safe_completed(result, env=env),
+            forced_cleanup=cleanup,
+            stale_suite_cleanup=stale_cleanup,
+            residual_resources=residual,
         )
+
+
+def _cleanup_stale_suite_projects(
+    args: argparse.Namespace,
+    *,
+    current_project_name: str,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+) -> dict[str, Any]:
+    project_names = [
+        name
+        for name in _suite_compose_project_names(args, run_cmd=run_cmd, env=env)
+        if name != current_project_name
+    ]
+    cleaned: list[dict[str, Any]] = []
+    ok = True
+    for project_name in project_names:
+        cleanup = _force_cleanup_compose_project(
+            args,
+            project_name,
+            run_cmd=run_cmd,
+            env=env,
+        )
+        residual = _compose_project_resource_ids(
+            args,
+            project_name,
+            run_cmd=run_cmd,
+            env=env,
+        )
+        project_ok = cleanup["ok"] is True and _resources_empty(residual)
+        ok = ok and project_ok
+        cleaned.append(
+            {
+                "project_name": project_name,
+                "ok": project_ok,
+                "forced_cleanup": cleanup,
+                "residual_resources": residual,
+            }
+        )
+    return {"ok": ok, "project_prefix": PROJECT_PREFIX, "projects": cleaned}
+
+
+def _force_cleanup_compose_project(
+    args: argparse.Namespace,
+    project_name: str,
+    *,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+) -> dict[str, Any]:
+    before = _compose_project_resource_ids(
+        args,
+        project_name,
+        run_cmd=run_cmd,
+        env=env,
+    )
+    errors: list[dict[str, Any]] = []
+    removed: dict[str, list[str]] = {"containers": [], "volumes": [], "networks": []}
+    _remove_docker_resources(
+        args,
+        run_cmd=run_cmd,
+        env=env,
+        resource_name="containers",
+        command_prefix=[args.docker, "rm", "-f"],
+        ids=before["containers"],
+        removed=removed,
+        errors=errors,
+    )
+    _remove_docker_resources(
+        args,
+        run_cmd=run_cmd,
+        env=env,
+        resource_name="volumes",
+        command_prefix=[args.docker, "volume", "rm", "-f"],
+        ids=before["volumes"],
+        removed=removed,
+        errors=errors,
+    )
+    _remove_docker_resources(
+        args,
+        run_cmd=run_cmd,
+        env=env,
+        resource_name="networks",
+        command_prefix=[args.docker, "network", "rm"],
+        ids=before["networks"],
+        removed=removed,
+        errors=errors,
+    )
+    return {
+        "ok": not errors,
+        "label": _compose_project_label(project_name),
+        "before": before,
+        "removed": removed,
+        "errors": errors,
+    }
+
+
+def _remove_docker_resources(
+    args: argparse.Namespace,
+    *,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+    resource_name: str,
+    command_prefix: list[str],
+    ids: list[str],
+    removed: dict[str, list[str]],
+    errors: list[dict[str, Any]],
+) -> None:
+    del args
+    list_errors = [value for value in ids if value.startswith("__list_failed__:")]
+    if list_errors:
+        errors.append(
+            {
+                "resource": resource_name,
+                "ids": [],
+                "message": "; ".join(
+                    value.removeprefix("__list_failed__:") for value in list_errors
+                ),
+            }
+        )
+    ids = [value for value in ids if not value.startswith("__list_failed__:")]
+    if not ids:
+        return
+    command = [*command_prefix, *ids]
+    result = run_cmd(command)
+    if result.returncode == 0:
+        removed[resource_name].extend(ids)
+        return
+    errors.append(
+        {
+            "resource": resource_name,
+            "ids": ids,
+            "message": _safe_completed(result, env=env),
+        }
+    )
+
+
+def _compose_project_resource_ids(
+    args: argparse.Namespace,
+    project_name: str,
+    *,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+) -> dict[str, list[str]]:
+    label = _compose_project_label(project_name)
+    return {
+        "containers": _docker_ids(
+            [args.docker, "ps", "-aq", "--filter", f"label={label}"],
+            run_cmd=run_cmd,
+            env=env,
+        ),
+        "volumes": _docker_ids(
+            [args.docker, "volume", "ls", "-q", "--filter", f"label={label}"],
+            run_cmd=run_cmd,
+            env=env,
+        ),
+        "networks": _docker_ids(
+            [args.docker, "network", "ls", "-q", "--filter", f"label={label}"],
+            run_cmd=run_cmd,
+            env=env,
+        ),
+    }
+
+
+def _docker_ids(
+    command: list[str],
+    *,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+) -> list[str]:
+    result = run_cmd(command)
+    if result.returncode != 0:
+        return [f"__list_failed__:{_safe_completed(result, env=env)}"]
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _resources_empty(resources: dict[str, list[str]]) -> bool:
+    return all(not values for values in resources.values())
+
+
+def _compose_project_label(project_name: str) -> str:
+    return f"com.docker.compose.project={project_name}"
+
+
+def _suite_compose_project_names(
+    args: argparse.Namespace,
+    *,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+) -> list[str]:
+    names: set[str] = set()
+    for command in (
+        [args.docker, "ps", "-a", "--filter", f"name={PROJECT_PREFIX}", "--format", "{{.Names}}"],
+        [
+            args.docker,
+            "network",
+            "ls",
+            "--filter",
+            f"name={PROJECT_PREFIX}",
+            "--format",
+            "{{.Name}}",
+        ],
+        [
+            args.docker,
+            "volume",
+            "ls",
+            "--filter",
+            f"name={PROJECT_PREFIX}",
+            "--format",
+            "{{.Name}}",
+        ],
+    ):
+        for resource_name in _docker_ids(command, run_cmd=run_cmd, env=env):
+            project_name = _compose_project_from_resource_name(resource_name)
+            if project_name is not None:
+                names.add(project_name)
+    return sorted(names)
+
+
+def _compose_project_from_resource_name(resource_name: str) -> str | None:
+    if not resource_name.startswith(PROJECT_PREFIX):
+        return None
+    if "-infinity_context_" in resource_name:
+        return resource_name.split("-infinity_context_", 1)[0]
+    if "_infinity_context_" in resource_name:
+        return resource_name.split("_infinity_context_", 1)[0]
+    if resource_name.endswith("_default"):
+        return resource_name[: -len("_default")]
+    return None
 
 
 @dataclass(frozen=True)
@@ -709,11 +1021,7 @@ class _AssetCase:
 
 def _command_runner(args: argparse.Namespace, *, env: dict[str, str]) -> RunCommand:
     def run(command: list[str]) -> subprocess.CompletedProcess[str]:
-        timeout = (
-            args.docker_timeout_seconds
-            if command[:2] == [args.docker, "info"]
-            else args.compose_timeout_seconds
-        )
+        timeout = _command_timeout(args, command)
         return subprocess.run(
             command,
             cwd=ROOT,
@@ -725,6 +1033,16 @@ def _command_runner(args: argparse.Namespace, *, env: dict[str, str]) -> RunComm
         )
 
     return run
+
+
+def _command_timeout(args: argparse.Namespace, command: list[str]) -> float:
+    docker_parts = shlex.split(args.docker)
+    compose_parts = shlex.split(args.compose)
+    if compose_parts and command[: len(compose_parts)] == compose_parts:
+        return args.compose_timeout_seconds
+    if docker_parts and command[: len(docker_parts)] == docker_parts:
+        return args.docker_timeout_seconds
+    return args.compose_timeout_seconds
 
 
 def _request_json_factory(token: str) -> RequestJson:
@@ -930,9 +1248,7 @@ def _docker_diagnostic_summary(diagnostics: dict[str, Any]) -> str:
     docker_host_configured = (
         docker_host.get("configured") if isinstance(docker_host, dict) else False
     )
-    docker_context = diagnostics.get("docker_context") or diagnostics.get(
-        "docker_context_current"
-    )
+    docker_context = diagnostics.get("docker_context") or diagnostics.get("docker_context_current")
     return (
         f"docker_context_configured={bool(docker_context)}; "
         f"docker_host_configured={bool(docker_host_configured)}; "

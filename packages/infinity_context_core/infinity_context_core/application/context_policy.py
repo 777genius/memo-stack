@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from infinity_context_core.application.dto import BuildContextQuery
-from infinity_context_core.domain.entities import MemoryFact
+from infinity_context_core.application.temporal_validity import is_temporal_window_current
+from infinity_context_core.domain.entities import MemoryAnchor, MemoryFact
 
 
 def thread_is_visible(item_thread_id: object | None, query_thread_id: object | None) -> bool:
@@ -62,6 +63,25 @@ def is_context_review_fact_visible(
         and not fact_is_expired(fact, now=now)
         and fact_matches_taxonomy(fact, query=query)
         and fact.classification != "restricted"
+    )
+
+
+def is_context_anchor_visible(
+    anchor: MemoryAnchor,
+    *,
+    query: BuildContextQuery,
+    memory_scope_ids: tuple[str, ...],
+    now: datetime | None = None,
+) -> bool:
+    return (
+        str(anchor.space_id) == str(query.space_id)
+        and str(anchor.memory_scope_id) in memory_scope_ids
+        and anchor.status.value == "active"
+        and is_temporal_window_current(
+            valid_from=anchor.valid_from,
+            valid_to=anchor.valid_to,
+            now=now,
+        )
     )
 
 

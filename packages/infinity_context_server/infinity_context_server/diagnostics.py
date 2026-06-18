@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from infinity_context_adapters.postgres.models import (
@@ -34,6 +36,7 @@ async def adapter_diagnostics(container: Container) -> dict[str, Any]:
             adapter.name for adapter in capabilities.adapters if adapter.enabled and adapter.healthy
         ],
         "extraction": build_extraction_capability_payload(container.settings),
+        "storage": storage_diagnostics(container),
         "policy_mode": capabilities.policy_mode,
         "deploy_profile": capabilities.deploy_profile,
     }
@@ -141,6 +144,48 @@ async def memory_scope_diagnostics(container: Container, *, memory_scope_id: str
     }
 
 
+def storage_diagnostics(container: Container) -> dict[str, Any]:
+    settings = container.settings
+    backend = settings.asset_storage_backend
+    if backend == "local":
+        readiness = _local_storage_readiness(settings.asset_storage_dir)
+        return {
+            "asset_backend": "local",
+            "asset_external": False,
+            "configured": True,
+            "ready": readiness["ready"],
+            "readiness": readiness,
+        }
+    if backend == "s3":
+        configured = bool(settings.asset_storage_s3_bucket)
+        return {
+            "asset_backend": "s3",
+            "asset_external": True,
+            "configured": configured,
+            "ready": configured,
+            "readiness": {
+                "bucket_configured": configured,
+                "prefix_configured": bool(settings.asset_storage_s3_prefix.strip()),
+                "endpoint_configured": bool(settings.asset_storage_s3_endpoint_url),
+                "region_configured": bool(settings.asset_storage_s3_region),
+                "explicit_credentials_configured": bool(
+                    settings.asset_storage_s3_access_key_id
+                    and settings.asset_storage_s3_secret_access_key
+                ),
+                "session_token_configured": bool(settings.asset_storage_s3_session_token),
+                "force_path_style": settings.asset_storage_s3_force_path_style,
+                "network_probe": "not_performed",
+            },
+        }
+    return {
+        "asset_backend": backend,
+        "asset_external": False,
+        "configured": False,
+        "ready": False,
+        "readiness": {"unsupported_backend": True},
+    }
+
+
 async def operational_metrics(container: Container) -> dict[str, Any]:
     now = container.clock.now()
     async with AsyncSession(container.engine) as session:
@@ -173,6 +218,7 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
     oldest_active_lag_seconds = _lag_seconds(now, oldest_pending)
     context_metrics = container.runtime_metrics.snapshot()
     circuit_snapshots = _circuit_snapshots(container)
+    storage = storage_diagnostics(container)
     return {
         "outbox": {
             "counts": outbox_counts,
@@ -194,6 +240,7 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
         "adapters": adapter_statuses,
         "circuits": circuit_snapshots,
         "context": context_metrics,
+        "storage": storage,
         "alerts": _operational_alerts(
             dead_count=dead_count,
             pending_active=pending_active,
@@ -201,6 +248,7 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
             adapters=adapter_statuses,
             circuits=circuit_snapshots,
             context_degraded_rate=float(context_metrics["degraded_rate"]),
+            storage=storage,
         ),
     }
 
@@ -297,6 +345,40 @@ def _circuit_snapshots(container: Container) -> dict[str, dict[str, object]]:
     return {circuit.adapter_name: circuit.snapshot() for circuit in container.provider_circuits}
 
 
+def _local_storage_readiness(root_dir: str) -> dict[str, object]:
+    root = Path(root_dir).expanduser()
+    root_exists = root.exists()
+    root_is_dir = root.is_dir()
+    nearest_parent = _nearest_existing_parent(root)
+    root_writable = root_is_dir and _path_writable(root)
+    parent_writable = nearest_parent is not None and _path_writable(nearest_parent)
+    return {
+        "root_configured": bool(str(root_dir).strip()),
+        "root_exists": root_exists,
+        "root_is_dir": root_is_dir,
+        "root_writable": root_writable,
+        "parent_exists": nearest_parent is not None,
+        "parent_writable": parent_writable,
+        "ready": root_writable or (not root_exists and parent_writable),
+    }
+
+
+def _nearest_existing_parent(path: Path) -> Path | None:
+    current = path if path.exists() else path.parent
+    while current != current.parent:
+        if current.exists():
+            return current
+        current = current.parent
+    return current if current.exists() else None
+
+
+def _path_writable(path: Path) -> bool:
+    try:
+        return path.is_dir() and path.stat().st_mode is not None and os.access(path, os.W_OK)
+    except OSError:
+        return False
+
+
 def _operational_alerts(
     *,
     dead_count: int,
@@ -305,6 +387,7 @@ def _operational_alerts(
     adapters: dict[str, dict[str, object]],
     circuits: dict[str, dict[str, object]],
     context_degraded_rate: float,
+    storage: dict[str, Any],
 ) -> list[dict[str, object]]:
     alerts: list[dict[str, object]] = []
     if dead_count > 0:
@@ -314,7 +397,9 @@ def _operational_alerts(
                 severity="warning",
                 value=dead_count,
                 threshold=0,
-                playbook_command="python -m infinity_context_server.admin replay-outbox --status dead",
+                playbook_command=(
+                    "python -m infinity_context_server.admin replay-outbox --status dead"
+                ),
             )
         )
     if pending_active > 0 and (oldest_active_lag_seconds or 0) > 600:
@@ -356,6 +441,16 @@ def _operational_alerts(
                 severity="warning",
                 value=int(context_degraded_rate * 10000),
                 threshold=2000,
+                playbook_command="python -m infinity_context_server.doctor",
+            )
+        )
+    if storage.get("ready") is not True:
+        alerts.append(
+            _alert(
+                name="asset_storage_not_ready",
+                severity="critical",
+                value=1,
+                threshold=0,
                 playbook_command="python -m infinity_context_server.doctor",
             )
         )

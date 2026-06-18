@@ -83,6 +83,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "model": "gpt-4.1-mini",
         "supported_file_types": [".gif", ".jpeg", ".jpg", ".png", ".webp"],
     }
+    assert file_report["failure_policy_contract"] == _expected_failure_policy_contract()
     assert file_report["components"]["provider_key"] == {
         "message": (
             "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running the live provider canary"
@@ -164,6 +165,12 @@ def test_multimodal_live_provider_canary_maps_invalid_key_to_operator_action() -
         "status": "failed",
         "user_retryable": False,
     }
+
+
+def test_multimodal_live_provider_canary_failure_policy_contract_covers_provider_errors() -> None:
+    module = _load_canary_module()
+
+    assert module._failure_policy_contract() == _expected_failure_policy_contract()
 
 
 def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
@@ -322,3 +329,38 @@ def _load_canary_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _expected_failure_policy_contract() -> dict[str, dict[str, object]]:
+    return {
+        "provider_credential_missing": {
+            "operator_action": "configure_provider_credential",
+            "reason": "provider_credential_missing",
+            "status": "degraded",
+            "user_retryable": False,
+        },
+        "invalid_api_key": {
+            "operator_action": "replace_provider_credential",
+            "reason": "asset_extraction.vision.invalid_api_key",
+            "status": "failed",
+            "user_retryable": False,
+        },
+        "quota_exceeded": {
+            "operator_action": "check_provider_billing",
+            "reason": "asset_extraction.transcription.quota_exceeded",
+            "status": "failed",
+            "user_retryable": False,
+        },
+        "rate_limited": {
+            "operator_action": "retry_later",
+            "reason": "asset_extraction.transcription.rate_limited",
+            "status": "failed",
+            "user_retryable": True,
+        },
+        "timeout": {
+            "operator_action": "retry_later",
+            "reason": "asset_extraction.vision.timeout",
+            "status": "failed",
+            "user_retryable": True,
+        },
+    }

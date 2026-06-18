@@ -94,6 +94,41 @@ def test_memory_items_have_source_labels() -> None:
     assert "source=document:doc_1#chunk_1" in result.bundle.rendered_text
 
 
+def test_memory_items_render_multimodal_citation_locations() -> None:
+    result = ContextPacker().pack(
+        bundle_id="ctx_multimodal_citations",
+        items=(
+            ContextItem(
+                item_id="chunk_vision",
+                item_type="chunk",
+                text="Invoice threshold visible in screenshot.",
+                score=1.0,
+                source_refs=(
+                    SourceRef(
+                        source_type="asset_extraction",
+                        source_id="extract_image_1",
+                        chunk_id="chunk_vision",
+                        page_number=2,
+                        time_start_ms=1200,
+                        time_end_ms=5400,
+                        bbox=(12.0, 32.0, 300.0, 88.0),
+                    ),
+                ),
+                diagnostics={"memory_scope_id": "memory_scope_default"},
+            ),
+        ),
+        token_budget=512,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "source=asset_extraction:extract_image_1#chunk_vision" in rendered
+    assert (
+        'citations="asset_extraction:extract_image_1#chunk_vision '
+        'page=2 time_ms=1200-5400 bbox=12,32,300,88"'
+    ) in rendered
+    assert result.bundle.diagnostics["citations_rendered"] == 1
+
+
 def test_memory_block_drops_instruction_marked_items() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_no_instruction_role",
@@ -284,9 +319,7 @@ def test_context_dedupe_caps_merged_source_refs() -> None:
 
     assert len(result[0].source_refs) == MAX_SOURCE_REFS_PER_ITEM
     assert result[0].source_refs == primary_refs
-    assert result[0].diagnostics["score_signals"]["source_ref_count"] == (
-        MAX_SOURCE_REFS_PER_ITEM
-    )
+    assert result[0].diagnostics["score_signals"]["source_ref_count"] == (MAX_SOURCE_REFS_PER_ITEM)
 
 
 def test_context_dedupe_preserves_distinct_multimodal_source_refs() -> None:

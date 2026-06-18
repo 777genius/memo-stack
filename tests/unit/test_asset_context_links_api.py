@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from infinity_context_adapters.noop import (
+    NoopEmbeddingAdapter,
+    NoopGraphMemoryAdapter,
+    NoopVectorMemoryAdapter,
+)
 from infinity_context_adapters.postgres.models import MemoryFactRow, MemoryThreadRow
+from infinity_context_core.application import BuildContextQuery, BuildContextUseCase
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId
 from infinity_context_server.admin import token_create
 from infinity_context_server.config import CaptureMode, DeployProfile, Settings
 from infinity_context_server.db import upgrade
@@ -234,6 +241,7 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert duplicate.json()["data"]["duplicate"] is True
     assert duplicate.json()["data"]["id"] == asset_id
     assert download.status_code == 200
+    assert download.headers["x-content-type-options"] == "nosniff"
     assert download.content == b"fake image bytes"
     assert capture.status_code == 201
     assert suggestions.status_code == 200
@@ -287,6 +295,60 @@ def test_asset_upload_download_dedupe_and_context_link_flow(tmp_path: Path) -> N
     assert deleted_links.status_code == 200
     deleted_link_ids = {item["id"] for item in deleted_links.json()["data"]}
     assert {link_id, second_link.json()["data"]["id"]}.issubset(deleted_link_ids)
+
+
+def test_asset_upload_records_upload_policy_mismatch_metadata(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "filename": "not-really-image.png",
+            },
+            content=b"plain text body",
+            headers=auth_headers({"Content-Type": "image/png"}),
+        )
+
+    assert upload.status_code == 201, upload.text
+    metadata = upload.json()["data"]["metadata"]
+    assert metadata["upload_policy_version"] == "asset-upload-policy-v1"
+    assert metadata["upload_declared_content_type"] == "image/png"
+    assert metadata["upload_extension_content_type"] == "image/png"
+    assert metadata["upload_magic_content_type"] == "text/plain"
+    assert metadata["upload_content_type_mismatch"] is True
+    assert metadata["upload_extension_mismatch"] is True
+
+
+def test_asset_upload_blocks_path_and_dangerous_extension_before_storage(
+    tmp_path: Path,
+) -> None:
+    asset_storage_dir = tmp_path / "assets"
+    with make_client(tmp_path) as client:
+        path_upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "filename": "../secret.txt",
+            },
+            content=b"hello",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        executable_upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "filename": "run.exe",
+            },
+            content=b"MZ fake executable",
+            headers=auth_headers({"Content-Type": "application/octet-stream"}),
+        )
+
+    assert path_upload.status_code == 429, path_upload.text
+    assert executable_upload.status_code == 429, executable_upload.text
+    assert stored_blob_files(asset_storage_dir) == []
 
 
 def test_context_link_suggestions_include_thread_anchor(tmp_path: Path) -> None:
@@ -766,9 +828,7 @@ def test_rejected_context_link_suggestion_is_not_recreated(tmp_path: Path) -> No
         )
         assert pending.status_code == 200, pending.text
         pending_suggestion = next(
-            item
-            for item in pending.json()["data"]
-            if item["id"] == fact_candidate["suggestion_id"]
+            item for item in pending.json()["data"] if item["id"] == fact_candidate["suggestion_id"]
         )
         assert pending_suggestion["review_actionable"] is True
         assert pending_suggestion["available_review_actions"] == ["approve", "reject"]
@@ -1031,6 +1091,20 @@ def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Pa
             and item["metadata"]["anchor_kind"] == "event"
             for item in anchor_candidates
         )
+        event_candidate = next(
+            item
+            for item in anchor_candidates
+            if item["metadata"]["normalized_key"] == "meeting last week"
+            and item["metadata"]["anchor_kind"] == "event"
+        )
+        assert event_candidate["metadata"]["anchor_family"] == "event"
+        assert event_candidate["metadata"]["event_type"] == "meeting"
+        assert event_candidate["metadata"]["event_temporal_phrase"] == "last week"
+        assert event_candidate["metadata"]["event_temporal_hint_code"] == "last_week"
+        assert event_candidate["metadata"]["event_identity_terms"] == [
+            "meeting",
+            "last_week:1:week",
+        ]
         reason_codes_by_anchor = {
             (item["metadata"]["anchor_kind"], item["metadata"]["normalized_key"]): set(
                 item["metadata"]["reason_codes"]
@@ -1055,6 +1129,48 @@ def test_persisted_context_link_suggestions_create_semantic_anchors(tmp_path: Pa
         assert review_data["suggestion"]["status"] == "approved"
         assert review_data["link"]["target_type"] == "anchor"
         assert review_data["link"]["metadata"]["anchor_kind"] == "person"
+
+        mobile_capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "anchor-thread",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-anchor-mobile-review",
+                "text": "Alex call last week reviewed Project Atlas Mobile rollout.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert mobile_capture.status_code == 201, mobile_capture.text
+
+        mobile_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "anchor-thread",
+                "source_type": "capture",
+                "source_id": mobile_capture.json()["data"]["id"],
+                "text": "Alex call last week Project Atlas Mobile",
+                "persist": True,
+                "limit": 12,
+            },
+            headers=auth_headers(),
+        )
+        assert mobile_suggestions.status_code == 200, mobile_suggestions.text
+        mobile_anchor_keys = {
+            (item["metadata"]["anchor_kind"], item["metadata"]["normalized_key"])
+            for item in mobile_suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "anchor"
+        }
+        assert ("project", "atlas mobile") in mobile_anchor_keys
+        assert ("event", "call with alex last week") in mobile_anchor_keys
+        assert ("event", "call last week") in mobile_anchor_keys
 
 
 def test_prompt_injection_like_capture_text_is_review_gated_without_anchor_upsert(
@@ -1316,6 +1432,68 @@ def test_persisted_context_link_suggestions_merge_observed_anchor_case_variants(
         assert person_anchors[0]["label"] == "Алекс"
         assert {"Алекс", "Алексом"}.issubset(set(person_anchors[0]["aliases"]))
         assert person_anchors[0]["metadata"]["canonical_key"] == "aleks"
+
+        event_anchors = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "kind": "event",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+        assert event_anchors.status_code == 200, event_anchors.text
+        event_anchor = next(
+            item
+            for item in event_anchors.json()["data"]
+            if item["normalized_key"] == "переписывался с алексом час назад"
+        )
+        assert event_anchor["metadata"]["anchor_family"] == "event"
+        assert event_anchor["metadata"]["event_participant_canonical_key"] == "aleks"
+        assert event_anchor["metadata"]["event_temporal_hint_code"] == "hours_ago"
+
+        project_anchors = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "quick-capture-anchor-variants",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+        assert project_anchors.status_code == 200, project_anchors.text
+        project_keys = {item["normalized_key"] for item in project_anchors.json()["data"]}
+        assert "atlas" in project_keys
+        assert "atlas час" not in project_keys
+        assert "atlas алекс" not in project_keys
+
+        container = client.app.state.container
+        context = asyncio.run(
+            BuildContextUseCase(
+                uow_factory=container.uow_factory,
+                ids=container.ids,
+                vector_index=NoopVectorMemoryAdapter(),
+                graph_index=NoopGraphMemoryAdapter(),
+                embedder=NoopEmbeddingAdapter(),
+            ).execute(
+                BuildContextQuery(
+                    space_id=SpaceId(second_capture.json()["data"]["space_id"]),
+                    memory_scope_ids=(
+                        MemoryScopeId(second_capture.json()["data"]["memory_scope_id"]),
+                    ),
+                    query="переписывался с Алексом час назад",
+                    token_budget=600,
+                )
+            )
+        )
+        rendered = context.rendered_text
+        assert "event: переписывался с Алексом Час назад" in rendered
+        assert "с: алексом" in rendered
+        assert "time: Час назад" in rendered
+        assert context.diagnostics["anchors_used"] >= 1
+        assert "canonical_anchors" in context.diagnostics["retrieval_sources_used"]
 
 
 def test_context_linking_quality_golden_handles_people_events_projects_and_decoys(
@@ -2046,14 +2224,26 @@ def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path)
         assert data["extraction_status_counts"]["canceled"] == 1
         assert data["link_suggestion_status_counts"]["pending"] >= 1
         assert data["diagnostics"]["extraction_retryable_count"] == 1
+        assert data["diagnostics"]["extraction_attempt_count_max"] == 0
+        assert data["diagnostics"]["extraction_cancellation_requested_count"] == 1
+        assert data["diagnostics"]["extraction_error_code_counts"]["asset_extraction.canceled"] == 1
+        retry_dispositions = data["diagnostics"]["extraction_retry_disposition_counts"]
+        assert sum(retry_dispositions.values()) == 1
+        assert set(retry_dispositions) <= {"none", "permanent", "retryable"}
         assert data["diagnostics"]["link_suggestion_pending_count"] >= 1
+        assert data["diagnostics"]["link_suggestion_target_type_counts"]["fact"] >= 1
+        assert data["diagnostics"]["link_suggestion_relation_type_counts"]["related_to"] >= 1
         assert "no_suggestion_note" in data["diagnostics"]["link_suggestion_explainability"]
         stored_fields = data["diagnostics"]["link_suggestion_explainability"]["stored_fields"]
         assert "review_reason" in stored_fields
         assert "metadata.matched_terms" in stored_fields
+        assert "metadata.evidence_modalities" in stored_fields
+        assert "metadata.review_gate_reason" in stored_fields
         extraction_fields = data["diagnostics"]["extraction_observability"]["stored_fields"]
         assert "metadata.cancellation_status" in extraction_fields
         assert "metadata.cancellation_message" in extraction_fields
+        assert "metadata.normalized_content_type" in extraction_fields
+        assert "metadata.*_provider_retryable" in extraction_fields
         no_suggestion_reasons = data["diagnostics"]["link_suggestion_explainability"][
             "no_suggestion_reasons"
         ]

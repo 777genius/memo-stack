@@ -1059,6 +1059,60 @@ def test_memory_scope_snapshot_import_rejects_manifest_mismatch(tmp_path: Path) 
     assert "snapshot_sha256_mismatch" in imported.text
 
 
+def test_memory_scope_snapshot_import_rejects_manifest_count_mismatch(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "text": "SNAPSHOT_API_COUNT_MARKER: manifest catches summary drift.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "snapshot-count"}],
+            },
+            headers=auth_headers(),
+        )
+        exported = client.get(
+            "/v1/export/memory_scope-snapshot",
+            params={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "source-memory_scope",
+                "redacted": False,
+            },
+            headers=auth_headers(),
+        )
+        manifest = exported.json()["manifest"]
+        manifest["counts"]["facts"] = 99
+        imported = client.post(
+            "/v1/export/memory_scope-snapshot/import",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "restore-base",
+                "snapshot": exported.json()["data"],
+                "manifest": manifest,
+                "dry_run": True,
+            },
+            headers=auth_headers(),
+        )
+        previewed = client.post(
+            "/v1/export/memory_scope-snapshot/preview",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "restore-base",
+                "snapshot": exported.json()["data"],
+                "manifest": manifest,
+            },
+            headers=auth_headers(),
+        )
+
+    assert imported.status_code == 400
+    assert previewed.status_code == 400
+    assert "manifest verification failed" in imported.text
+    assert "snapshot_sha256_mismatch" not in imported.text
+    assert "count_mismatch:facts" in imported.text
+    assert "count_mismatch:facts" in previewed.text
+
+
 def test_memory_scope_snapshot_import_refuses_redacted_memory(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(

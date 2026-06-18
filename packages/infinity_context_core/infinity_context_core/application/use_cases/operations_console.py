@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
+
 from infinity_context_core.application.dto import (
     MemoryOperationsConsoleQuery,
     MemoryOperationsConsoleResult,
 )
-from infinity_context_core.domain.extraction import AssetExtractionStatus
+from infinity_context_core.domain.assets import MemoryContextLinkSuggestion
+from infinity_context_core.domain.extraction import AssetExtractionJob, AssetExtractionStatus
 from infinity_context_core.ports.clock import ClockPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
@@ -61,6 +64,8 @@ class BuildMemoryOperationsConsoleUseCase:
         diagnostics = _diagnostics(
             extraction_status_counts=extraction_counts,
             link_suggestion_status_counts=link_suggestion_counts,
+            extraction_jobs=extraction_jobs,
+            suggestions=suggestions,
             extraction_job_count=len(extraction_jobs),
             suggestion_count=len(suggestions),
         )
@@ -83,9 +88,13 @@ def _diagnostics(
     *,
     extraction_status_counts: dict[str, int],
     link_suggestion_status_counts: dict[str, int],
+    extraction_jobs: Iterable[AssetExtractionJob],
+    suggestions: Iterable[MemoryContextLinkSuggestion],
     extraction_job_count: int,
     suggestion_count: int,
 ) -> dict[str, object]:
+    extraction_job_items = tuple(extraction_jobs)
+    suggestion_items = tuple(suggestions)
     retryable_count = sum(
         extraction_status_counts.get(status, 0) for status in _RETRYABLE_EXTRACTION_STATUSES
     )
@@ -102,9 +111,77 @@ def _diagnostics(
         "extraction_active_count": active_count,
         "extraction_retryable_count": retryable_count,
         "extraction_returned_count": extraction_job_count,
+        "extraction_attempt_count_max": max(
+            (job.attempt_count for job in extraction_job_items),
+            default=0,
+        ),
+        "extraction_cancellation_requested_count": sum(
+            1 for job in extraction_job_items if job.cancellation_requested_at is not None
+        ),
+        "extraction_degraded_fallback_count": sum(
+            1 for job in extraction_job_items if job.metadata.get("degraded_fallback") is True
+        ),
+        "extraction_provider_retryable_count": sum(
+            1 for job in extraction_job_items if _metadata_bool_suffix(job.metadata, "retryable")
+        ),
+        "extraction_timeout_count": sum(
+            1 for job in extraction_job_items if _safe_text(job.safe_error_code).endswith("timeout")
+        ),
+        "extraction_retry_disposition_counts": _counts(
+            job.retry_disposition.value if job.retry_disposition else "none"
+            for job in extraction_job_items
+        ),
+        "extraction_error_code_counts": _counts(
+            _safe_text(job.safe_error_code) for job in extraction_job_items if job.safe_error_code
+        ),
+        "extraction_parser_counts": _counts(
+            _safe_text(job.parser_name) for job in extraction_job_items if job.parser_name
+        ),
+        "extraction_content_type_counts": _counts(
+            _metadata_text(job.metadata, "normalized_content_type")
+            or _metadata_text(job.metadata, "detected_content_type")
+            for job in extraction_job_items
+            if _metadata_text(job.metadata, "normalized_content_type")
+            or _metadata_text(job.metadata, "detected_content_type")
+        ),
         "link_suggestion_pending_count": pending_suggestions,
         "link_suggestion_reviewed_count": reviewed_suggestions,
         "link_suggestion_returned_count": suggestion_count,
+        "link_suggestion_target_type_counts": _counts(
+            suggestion.target_type for suggestion in suggestion_items
+        ),
+        "link_suggestion_relation_type_counts": _counts(
+            suggestion.relation_type for suggestion in suggestion_items
+        ),
+        "link_suggestion_review_gate_counts": _counts(
+            _metadata_text(suggestion.metadata, "review_gate")
+            for suggestion in suggestion_items
+            if _metadata_text(suggestion.metadata, "review_gate")
+        ),
+        "link_suggestion_evidence_modality_counts": _list_value_counts(
+            suggestion.metadata.get("evidence_modalities") for suggestion in suggestion_items
+        ),
+        "link_suggestion_auto_approve_eligible_count": sum(
+            1
+            for suggestion in suggestion_items
+            if suggestion.metadata.get("auto_approve_eligible") is True
+        ),
+        "link_suggestion_prompt_injection_review_count": sum(
+            1
+            for suggestion in suggestion_items
+            if suggestion.metadata.get("review_gate_reason") == "prompt_injection_evidence"
+        ),
+        "link_suggestion_bbox_evidence_count": sum(
+            1 for suggestion in suggestion_items if suggestion.metadata.get("evidence_has_bbox_ref")
+        ),
+        "link_suggestion_page_evidence_count": sum(
+            1 for suggestion in suggestion_items if suggestion.metadata.get("evidence_has_page_ref")
+        ),
+        "link_suggestion_time_range_evidence_count": sum(
+            1
+            for suggestion in suggestion_items
+            if suggestion.metadata.get("evidence_has_time_range_ref")
+        ),
         "link_suggestion_explainability": {
             "stored_fields": (
                 "reason",
@@ -118,6 +195,11 @@ def _diagnostics(
                 "metadata.resolver_version",
                 "metadata.reason_codes",
                 "metadata.matched_terms",
+                "metadata.evidence_modalities",
+                "metadata.evidence_kinds",
+                "metadata.evidence_refs",
+                "metadata.review_gate",
+                "metadata.review_gate_reason",
             ),
             "no_suggestion_note": (
                 "Suggestions are stored only when persisted link discovery finds visible "
@@ -165,6 +247,47 @@ def _diagnostics(
                 "execution.cancellation_requested_at",
                 "metadata.cancellation_status",
                 "metadata.cancellation_message",
+                "metadata.normalized_content_type",
+                "metadata.detected_content_type",
+                "metadata.degraded_fallback",
+                "metadata.*_provider_retryable",
             )
         },
     }
+
+
+def _counts(values: Iterable[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for raw in values:
+        value = _safe_text(raw)
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _list_value_counts(values: Iterable[object]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for raw in values:
+        if not isinstance(raw, (list, tuple)):
+            continue
+        for item in raw:
+            value = _safe_text(item)
+            if not value:
+                continue
+            counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _metadata_text(metadata: Mapping[str, object], key: str) -> str:
+    return _safe_text(metadata.get(key))
+
+
+def _metadata_bool_suffix(metadata: Mapping[str, object], suffix: str) -> bool:
+    return any(str(key).endswith(suffix) and value is True for key, value in metadata.items())
+
+
+def _safe_text(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()[:160]

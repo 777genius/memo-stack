@@ -230,9 +230,7 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
     )
     review_blocked = candidate.target_type in _REVIEW_BLOCKED_TARGET_TYPES
     outcome = (
-        "auto_approve_candidate"
-        if auto_approve_eligible and not review_blocked
-        else "needs_review"
+        "auto_approve_candidate" if auto_approve_eligible and not review_blocked else "needs_review"
     )
     decision_codes = ["score_threshold_met", *reason_codes]
     if review_blocked:
@@ -379,6 +377,8 @@ def _source_review_gate_reasons(candidate: ContextLinkCandidate) -> tuple[str, .
         reasons.append("prompt_injection_evidence")
     if metadata.get("mime_content_type_mismatch") is True:
         reasons.append("mime_content_type_mismatch")
+    if metadata.get("mime_archive_review_required") is True:
+        reasons.append("mime_archive_review_required")
     return tuple(reasons)
 
 
@@ -386,6 +386,7 @@ def _source_review_reason_code(review_reason: str) -> str:
     return {
         "prompt_injection_evidence": "prompt_injection_evidence_review_required",
         "mime_content_type_mismatch": "source_mime_mismatch_review_required",
+        "mime_archive_review_required": "source_archive_content_review_required",
     }.get(review_reason, "source_risk_review_required")
 
 

@@ -19,7 +19,9 @@ from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
     OpenAISpeechTranscriptionAdapter,
 )
-from infinity_context_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
+from infinity_context_adapters.extraction.transcription_engine import (
+    SpeechTranscriptionExtractionEngine,
+)
 from infinity_context_adapters.extraction.whisper_engine import FasterWhisperTranscriptionEngine
 from infinity_context_core.ports.extraction import (
     ExtractedElement,
@@ -52,6 +54,26 @@ def test_file_type_detector_prefers_office_extension_over_zip_magic() -> None:
         == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     assert result.diagnostics["mime_detector_reason"] == "extension_overrides_zip_magic"
+    assert result.diagnostics["mime_archive_detected"] is True
+    assert result.diagnostics["mime_archive_review_required"] is False
+
+
+def test_file_type_detector_marks_raw_zip_archive_for_review() -> None:
+    result = asyncio.run(
+        SimpleFileTypeDetector().detect(
+            FileTypeDetectionRequest(
+                filename="payload.zip",
+                declared_content_type="application/zip",
+                content=b"PK\x03\x04fake archive",
+            )
+        )
+    )
+
+    assert result.content_type == "application/zip"
+    assert result.diagnostics["mime_magic_content_type"] == "application/zip"
+    assert result.diagnostics["mime_archive_detected"] is True
+    assert result.diagnostics["mime_archive_review_required"] is True
+    assert result.diagnostics["mime_archive_review_reason"] == "zip_archive_not_structured_document"
 
 
 def test_file_type_detector_prefers_text_magic_over_spoofed_image_metadata() -> None:
@@ -748,10 +770,7 @@ def test_standard_asr_provider_failure_does_not_fall_back_to_local_asr() -> None
     assert local_asr_model_loaded is False
     assert result.diagnostics["speech_transcription_fallback"] is True
     assert result.diagnostics["faster_whisper_transcript_support"] is False
-    assert (
-        result.diagnostics["faster_whisper_transcript_reason"]
-        == "parser_profile_not_asr"
-    )
+    assert result.diagnostics["faster_whisper_transcript_reason"] == "parser_profile_not_asr"
     assert result.technical_metadata["transcript_status"] == "failed"
     assert (
         result.technical_metadata["transcript_error_code"]

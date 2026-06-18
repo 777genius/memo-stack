@@ -969,6 +969,29 @@ class MemoryFact:
             updated_at=now,
         )
 
+    def merge_source_refs(
+        self,
+        *,
+        expected_version: int,
+        source_refs: tuple[SourceRef, ...],
+        reason: str,
+        now: datetime,
+    ) -> MemoryFact:
+        if self.status == FactStatus.DELETED:
+            raise MemoryConflictError("Deleted fact cannot be updated")
+        if self.version != expected_version:
+            raise MemoryConflictError("Stale fact version")
+        if not source_refs:
+            raise MemoryValidationError("Fact merge requires source refs")
+        if not reason.strip():
+            raise MemoryValidationError("Fact merge requires reason")
+        return replace(
+            self,
+            source_refs=_unique_source_refs((*self.source_refs, *source_refs)),
+            version=self.version + 1,
+            updated_at=now,
+        )
+
     def forget(self, *, now: datetime) -> MemoryFact:
         if self.status == FactStatus.DELETED:
             return self

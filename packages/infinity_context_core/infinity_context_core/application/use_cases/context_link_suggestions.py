@@ -30,6 +30,12 @@ from infinity_context_core.application.context_link_candidate_policy import (
     evidence_summary as _evidence_summary,
 )
 from infinity_context_core.application.context_link_candidate_policy import (
+    excluded_term_hits as _excluded_term_hits,
+)
+from infinity_context_core.application.context_link_candidate_policy import (
+    excluded_terms as _excluded_terms,
+)
+from infinity_context_core.application.context_link_candidate_policy import (
     has_link_signal as _has_link_signal,
 )
 from infinity_context_core.application.context_link_candidate_policy import (
@@ -58,6 +64,7 @@ from infinity_context_core.application.context_link_policy import (
     policy_confidence_for_candidate,
     policy_relation_type_for_candidate,
 )
+from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import (
     ContextLinkCandidate,
     ContextLinkSuggestionsResult,
@@ -77,7 +84,12 @@ from infinity_context_core.domain.assets import (
     MemoryContextLinkSuggestion,
     MemoryContextLinkSuggestionId,
 )
-from infinity_context_core.domain.entities import Confidence, MemoryAnchor, MemoryAnchorId, SourceRef
+from infinity_context_core.domain.entities import (
+    Confidence,
+    MemoryAnchor,
+    MemoryAnchorId,
+    SourceRef,
+)
 from infinity_context_core.domain.errors import MemoryValidationError
 from infinity_context_core.ports.clock import ClockPort
 from infinity_context_core.ports.ids import IdGeneratorPort
@@ -221,13 +233,16 @@ class SuggestContextLinksUseCase:
                 anchors = list(anchors_by_id.values())
                 await uow.commit()
             elif command.persist and source_risk_metadata:
-                diagnostics["observed_anchor_upsert_skipped_reason"] = (
-                    _source_risk_skip_reason(source_risk_metadata)
+                diagnostics["observed_anchor_upsert_skipped_reason"] = _source_risk_skip_reason(
+                    source_risk_metadata
                 )
 
         terms = _terms(query_text)
+        excluded_terms = _excluded_terms(query_text)
         temporal_hints = _temporal_hints(query_text)
         now = self._clock.now()
+        if excluded_terms:
+            diagnostics["excluded_query_terms"] = list(excluded_terms)
         if temporal_hints:
             diagnostics["temporal_hints"] = [hint.code for hint in temporal_hints]
         observed_by_key = {
@@ -514,10 +529,14 @@ class SuggestContextLinksUseCase:
             if key in seen or _is_same_source(key, command):
                 continue
             seen.add(key)
+            retrieval_text = document_chunk_retrieval_text(
+                text=chunk.text,
+                metadata=chunk.metadata,
+            )
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
                 temporal_hints=temporal_hints,
-                target_text=chunk.text,
+                target_text=retrieval_text,
                 updated_at=chunk.updated_at,
                 now=now,
                 base=46,
@@ -594,6 +613,10 @@ class SuggestContextLinksUseCase:
             candidates = [
                 _with_source_text_risk_metadata(candidate, source_risk_metadata)
                 for candidate in candidates
+            ]
+        if excluded_terms:
+            candidates = [
+                _with_excluded_term_penalty(candidate, excluded_terms) for candidate in candidates
             ]
         ranked = sorted(
             candidates,
@@ -808,7 +831,7 @@ def _same_scope(entity: object, command: SuggestContextLinksCommand) -> bool:
 
 
 def _join_text(left: str, right: str) -> str:
-    return " ".join(part for part in (left.strip(), right.strip()) if part)
+    return ". ".join(part for part in (left.strip(" ."), right.strip(" .")) if part)
 
 
 def _bounded_suggestion_limit(limit: int) -> int:
@@ -824,25 +847,59 @@ def _with_source_text_risk_metadata(
     return replace(candidate, metadata=metadata)
 
 
+def _with_excluded_term_penalty(
+    candidate: ContextLinkCandidate,
+    excluded_terms: tuple[str, ...],
+) -> ContextLinkCandidate:
+    hits = _excluded_term_hits(candidate, excluded_terms)
+    if not hits:
+        return candidate
+    metadata = dict(candidate.metadata or {})
+    metadata["excluded_matched_terms"] = list(hits)
+    penalty = min(40.0, 24.0 * len(hits))
+    return replace(
+        candidate,
+        score=max(0.0, candidate.score - penalty),
+        reasons=(*candidate.reasons, "excluded query term"),
+        metadata=metadata,
+    )
+
+
 def _source_extraction_risk_metadata(metadata: dict[str, object]) -> dict[str, object]:
     prompt_risk_metadata = _source_text_risk_metadata_from_mapping(metadata)
-    if metadata.get("mime_content_type_mismatch") is not True:
-        return prompt_risk_metadata
     risk_metadata: dict[str, object] = {
         **prompt_risk_metadata,
-        "mime_content_type_mismatch": True,
     }
-    for key in (
-        "mime_declared_content_type",
-        "mime_detected_content_type",
-        "mime_magic_content_type",
-        "mime_extension_content_type",
-        "mime_detector_reason",
-        "detector_confidence",
-    ):
-        value = metadata.get(key)
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            risk_metadata[key] = value
+    if metadata.get("mime_content_type_mismatch") is True:
+        risk_metadata["mime_content_type_mismatch"] = True
+        _copy_scalar_metadata(
+            risk_metadata,
+            metadata,
+            keys=(
+                "mime_declared_content_type",
+                "mime_detected_content_type",
+                "mime_magic_content_type",
+                "mime_extension_content_type",
+                "mime_detector_reason",
+                "detector_confidence",
+            ),
+        )
+    if metadata.get("mime_archive_review_required") is True:
+        risk_metadata["mime_archive_review_required"] = True
+        _copy_scalar_metadata(
+            risk_metadata,
+            metadata,
+            keys=(
+                "mime_archive_detected",
+                "mime_archive_review_reason",
+                "mime_declared_content_type",
+                "mime_detected_content_type",
+                "mime_magic_content_type",
+                "mime_filename_extension",
+                "mime_detector_reason",
+                "detector_confidence",
+            ),
+        )
     return risk_metadata
 
 
@@ -851,4 +908,18 @@ def _source_risk_skip_reason(source_risk_metadata: dict[str, object]) -> str:
         return "prompt_injection_evidence"
     if source_risk_metadata.get("mime_content_type_mismatch") is True:
         return "mime_content_type_mismatch"
+    if source_risk_metadata.get("mime_archive_review_required") is True:
+        return "mime_archive_review_required"
     return "source_risk_evidence"
+
+
+def _copy_scalar_metadata(
+    target: dict[str, object],
+    source: dict[str, object],
+    *,
+    keys: tuple[str, ...],
+) -> None:
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            target[key] = value

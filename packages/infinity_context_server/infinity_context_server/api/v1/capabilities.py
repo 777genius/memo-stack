@@ -61,14 +61,13 @@ async def capabilities(
                 container.settings.max_pending_suggestions_per_memory_scope
             ),
         },
+        "storage": _storage_payload(container),
         "extraction": build_extraction_capability_payload(container.settings),
         "plans": {
             "current": container.settings.product_plan_tier,
             "resources": {
                 "media_analysis_seconds": {
-                    "limit_per_month": (
-                        container.settings.plan_media_analysis_seconds_per_month
-                    ),
+                    "limit_per_month": (container.settings.plan_media_analysis_seconds_per_month),
                     "free_default_seconds": 10 * 60 * 60,
                     "free_default_hours": 10,
                 }
@@ -89,3 +88,20 @@ def _capability_payload(capability: Any) -> dict[str, Any]:
     payload["projection_freshness"] = str(payload["projection_freshness"])
     payload["healthy"] = status == "ok"
     return payload
+
+
+def _storage_payload(container: Container) -> dict[str, Any]:
+    settings = container.settings
+    backend = settings.asset_storage_backend
+    return {
+        "asset_backend": backend,
+        "asset_backend_configured": backend == "local" or bool(settings.asset_storage_s3_bucket),
+        "asset_external": backend == "s3",
+        "s3": {
+            "bucket_configured": bool(settings.asset_storage_s3_bucket),
+            "prefix_configured": bool(settings.asset_storage_s3_prefix.strip()),
+            "endpoint_configured": bool(settings.asset_storage_s3_endpoint_url),
+            "region_configured": bool(settings.asset_storage_s3_region),
+            "force_path_style": settings.asset_storage_s3_force_path_style,
+        },
+    }

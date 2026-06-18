@@ -55,9 +55,7 @@ REQUIRED_OPENAI_AUDIO_SUFFIXES = frozenset(
 REQUIRED_OPENAI_VISION_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
 REQUIRED_OPENAI_VISION_BASE_DETAIL_LEVELS = frozenset({"low", "high", "auto"})
 ALLOWED_OPENAI_VISION_DETAIL_LEVELS = frozenset({"low", "high", "original", "auto"})
-CORE_BOUNDARY_RELATIVE_PATHS = (
-    Path("packages/infinity_context_core/infinity_context_core"),
-)
+CORE_BOUNDARY_RELATIVE_PATHS = (Path("packages/infinity_context_core/infinity_context_core"),)
 FORBIDDEN_CORE_IMPORT_MARKERS = (
     "import fastapi",
     "from fastapi",
@@ -347,8 +345,7 @@ def _audit_docker_report(
         provider_contract.get("ok") is True
         and set(_string_list(provider_contract.get("transcription_supported_file_types")))
         == REQUIRED_OPENAI_AUDIO_SUFFIXES
-        and provider_contract.get("transcription_max_provider_upload_bytes")
-        == 25 * 1024 * 1024
+        and provider_contract.get("transcription_max_provider_upload_bytes") == 25 * 1024 * 1024
         and set(_string_list(provider_contract.get("vision_supported_file_types")))
         == REQUIRED_OPENAI_VISION_SUFFIXES,
         "Docker live proof provider contract is not aligned with current media providers",
@@ -362,9 +359,7 @@ def _audit_docker_report(
         is not None,
         "Docker live proof provider contract is missing OpenAI audio upload limits",
     )
-    docker_vision_detail_levels = set(
-        _string_list(provider_contract.get("vision_detail_levels"))
-    )
+    docker_vision_detail_levels = set(_string_list(provider_contract.get("vision_detail_levels")))
     _check(
         checks,
         failures,
@@ -377,8 +372,7 @@ def _audit_docker_report(
         checks,
         failures,
         "docker_live_capabilities_vision_binary_limit_present",
-        _positive_int(provider_contract.get("vision_max_provider_binary_upload_bytes"))
-        is not None,
+        _positive_int(provider_contract.get("vision_max_provider_binary_upload_bytes")) is not None,
         "Docker live proof provider contract is missing OpenAI vision binary upload limit",
     )
     _check(
@@ -387,8 +381,7 @@ def _audit_docker_report(
         "docker_live_capabilities_vision_payload_limits_present",
         _positive_int(provider_contract.get("vision_max_provider_payload_bytes")) is not None
         and _positive_int(provider_contract.get("vision_max_images_per_request")) is not None
-        and _positive_int(provider_contract.get("vision_effective_max_upload_bytes"))
-        is not None,
+        and _positive_int(provider_contract.get("vision_effective_max_upload_bytes")) is not None,
         "Docker live proof provider contract is missing OpenAI vision payload limits",
     )
     _check(
@@ -420,6 +413,11 @@ def _audit_provider_report(
     git = report.get("git") if isinstance(report.get("git"), dict) else {}
     provider_contract = (
         report.get("provider_contract") if isinstance(report.get("provider_contract"), dict) else {}
+    )
+    failure_policy_contract = (
+        report.get("failure_policy_contract")
+        if isinstance(report.get("failure_policy_contract"), dict)
+        else {}
     )
     _check(
         checks,
@@ -458,6 +456,11 @@ def _audit_provider_report(
         "Live provider vision and transcription checks must both succeed",
     )
     _audit_provider_contract(provider_contract, checks=checks, failures=failures)
+    _audit_provider_failure_policy(
+        failure_policy_contract,
+        checks=checks,
+        failures=failures,
+    )
 
 
 def _audit_provider_contract(
@@ -519,6 +522,39 @@ def _audit_provider_contract(
         not ({".flac", ".ogg"} & audio_suffixes),
         "Live provider transcription contract must not advertise unsupported .flac/.ogg uploads",
     )
+
+
+def _audit_provider_failure_policy(
+    contract: Mapping[str, object],
+    *,
+    checks: dict[str, bool],
+    failures: list[str],
+) -> None:
+    expected = {
+        "provider_credential_missing": (False, "configure_provider_credential"),
+        "invalid_api_key": (False, "replace_provider_credential"),
+        "quota_exceeded": (False, "check_provider_billing"),
+        "rate_limited": (True, "retry_later"),
+        "timeout": (True, "retry_later"),
+    }
+    _check(
+        checks,
+        failures,
+        "live_provider_failure_policy_contract_present",
+        bool(contract),
+        "Live provider proof must include failure policy classification contract",
+    )
+    for reason, (retryable, action) in expected.items():
+        case = contract.get(reason) if isinstance(contract.get(reason), dict) else {}
+        _check(
+            checks,
+            failures,
+            f"live_provider_failure_policy_{reason}",
+            case.get("reason") is not None
+            and case.get("user_retryable") is retryable
+            and case.get("operator_action") == action,
+            f"Live provider failure policy for {reason} is missing or wrong",
+        )
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

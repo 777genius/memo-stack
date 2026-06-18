@@ -5,21 +5,33 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime
 
+from infinity_context_core.application.context_anchors import (
+    anchor_context_item,
+    anchor_identity_retrieval_text,
+    anchor_retrieval_text,
+)
 from infinity_context_core.application.context_collectors import (
     CanonicalContextCollector,
     GraphContextCollector,
     RagContextCollector,
     VectorContextCollector,
 )
-from infinity_context_core.application.context_diagnostics import normalize_context_bundle_diagnostics
+from infinity_context_core.application.context_diagnostics import (
+    normalize_context_bundle_diagnostics,
+)
 from infinity_context_core.application.context_hydration import ContextHydrator
+from infinity_context_core.application.context_link_expansion import ApprovedContextLinkExpander
 from infinity_context_core.application.context_packer import ContextPacker
 from infinity_context_core.application.context_policy import (
+    is_context_anchor_visible,
     is_context_fact_visible,
     is_context_review_fact_visible,
 )
 from infinity_context_core.application.context_ranking import dedupe_rank_items
-from infinity_context_core.application.context_relevance import QueryRelevance, score_query_relevance
+from infinity_context_core.application.context_relevance import (
+    QueryRelevance,
+    score_query_relevance,
+)
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import (
     BuildContextQuery,
@@ -27,8 +39,16 @@ from infinity_context_core.application.dto import (
     ContextBundle,
     ContextItem,
 )
+from infinity_context_core.application.source_refs import (
+    chunk_source_refs,
+    source_ref_location_summary,
+)
 from infinity_context_core.application.temporal_validity import is_temporal_window_current
-from infinity_context_core.domain.entities import MemoryChunk, MemoryFact, MemoryFactRelation, SourceRef
+from infinity_context_core.domain.entities import (
+    MemoryChunk,
+    MemoryFact,
+    MemoryFactRelation,
+)
 from infinity_context_core.ports.adapters import EmbeddingPort, GraphMemoryPort, VectorMemoryPort
 from infinity_context_core.ports.capabilities import RagRecallPort
 from infinity_context_core.ports.clock import ClockPort
@@ -71,6 +91,11 @@ class BuildContextUseCase:
             rag_recall=rag_recall,
             hydrator=self._hydrator,
         )
+        self._context_link_expander = ApprovedContextLinkExpander(
+            uow_factory=uow_factory,
+            hydrator=self._hydrator,
+            clock=clock,
+        )
 
     async def execute(self, query: BuildContextQuery) -> ContextBundle:
         memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
@@ -83,6 +108,8 @@ class BuildContextUseCase:
             "consistency_mode": query.consistency_mode.value,
             "facts_considered": len(canonical.facts),
             "keyword_chunks_considered": len(canonical.keyword_chunks),
+            "anchors_considered": len(canonical.anchors),
+            "anchors_used": 0,
             "vector_status": "disabled",
             "graph_status": "disabled",
             "rag_status": "disabled",
@@ -131,6 +158,35 @@ class BuildContextUseCase:
         now = self._clock.now() if self._clock is not None else None
         for fact in canonical.facts:
             items.append(_fact_context_item(fact, now=now))
+        anchors_used = 0
+        for anchor in canonical.anchors:
+            if not is_context_anchor_visible(
+                anchor,
+                query=query,
+                memory_scope_ids=memory_scope_ids,
+                now=now,
+            ):
+                continue
+            relevance = score_query_relevance(
+                query=query.query,
+                text=anchor_retrieval_text(anchor),
+            )
+            if relevance.query_term_count > 0 and relevance.unique_term_hits <= 0:
+                continue
+            identity_relevance = score_query_relevance(
+                query=query.query,
+                text=anchor_identity_retrieval_text(anchor),
+            )
+            items.append(
+                anchor_context_item(
+                    anchor,
+                    relevance=relevance,
+                    identity_relevance=identity_relevance,
+                    now=now,
+                )
+            )
+            anchors_used += 1
+        diagnostics["anchors_used"] = anchors_used
         for chunk in canonical.keyword_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -199,16 +255,27 @@ class BuildContextUseCase:
                 item.item_id for item in temporal_items if item.item_type == "fact"
             ),
         )
+        linked_context = await self._context_link_expander.collect(
+            items=temporal_items,
+            query=query,
+            memory_scope_ids=memory_scope_ids,
+        )
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
             items=dedupe_rank_items(
-                (*temporal_items, *stale_review_items, *pending_conflicts)
+                (
+                    *temporal_items,
+                    *linked_context.items,
+                    *stale_review_items,
+                    *pending_conflicts,
+                )
             ),
             token_budget=query.token_budget,
             max_rendered_chars=query.max_rendered_chars,
         )
         diagnostics.update(temporal_diagnostics)
         diagnostics.update(stale_diagnostics)
+        diagnostics.update(linked_context.diagnostics)
         diagnostics.update(result.bundle.diagnostics)
         diagnostics["pending_conflict_suggestions_considered"] = len(pending_conflicts)
         diagnostics["hybrid_items_used"] = sum(
@@ -455,7 +522,6 @@ class BuildContextUseCase:
                         return tuple(items)
         return tuple(items)
 
-
 def _suggestion_conflict_fact_id(suggestion) -> str | None:
     payload = suggestion.review_payload or {}
     for key in ("conflicting_fact_id", "conflict_fact_id", "possible_conflict_fact_id"):
@@ -668,11 +734,13 @@ def _chunk_context_item(
     score: float,
     relevance: QueryRelevance | None,
 ) -> ContextItem:
+    source_refs = chunk_source_refs(chunk, text_preview=text[:200])
     score_signals = {
         "base_score": base_score,
         "final_score": score,
         "retrieval_channel": retrieval_source,
         "source_type": chunk.source_type,
+        "source_ref_count": len(source_refs),
     }
     if relevance is not None:
         score_signals.update(
@@ -689,16 +757,7 @@ def _chunk_context_item(
         item_type="chunk",
         text=text,
         score=score,
-        source_refs=(
-            SourceRef(
-                source_type=chunk.source_type,
-                source_id=chunk.source_external_id,
-                chunk_id=str(chunk.id),
-                char_start=chunk.char_start,
-                char_end=chunk.char_end,
-                quote_preview=text[:200],
-            ),
-        ),
+        source_refs=source_refs,
         diagnostics={
             "memory_scope_id": str(chunk.memory_scope_id),
             "retrieval_source": retrieval_source,
@@ -707,19 +766,21 @@ def _chunk_context_item(
             "score_signals": score_signals,
             "provenance": {
                 "retrieval_sources": [retrieval_source],
-                "source_ref_count": 1,
+                "source_ref_count": len(source_refs),
                 "source_type": chunk.source_type,
                 "source_id": chunk.source_external_id,
                 "chunk_id": str(chunk.id),
                 "sequence": chunk.sequence,
                 "char_start": chunk.char_start,
                 "char_end": chunk.char_end,
+                **source_ref_location_summary(source_refs),
             },
             "source_type": chunk.source_type,
             "source_id": chunk.source_external_id,
             "chunk_sequence": chunk.sequence,
             "char_start": chunk.char_start,
             "char_end": chunk.char_end,
+            **source_ref_location_summary(source_refs),
         },
     )
 

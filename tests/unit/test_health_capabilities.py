@@ -1,5 +1,7 @@
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from infinity_context_adapters.extraction.openai_vision import (
     OPENAI_VISION_DOCS_URL,
@@ -37,6 +39,7 @@ from infinity_context_core.ports import (
     VectorRecallPort,
 )
 from infinity_context_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
+from infinity_context_server.diagnostics import storage_diagnostics
 from infinity_context_server.main import create_app
 
 
@@ -112,6 +115,18 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["limits"]["max_pending_suggestions_per_memory_scope"] == 500
     assert body["limits"]["max_asset_upload_bytes"] == 25 * 1024 * 1024
     assert body["limits"]["media_analysis_seconds_per_month"] == 10 * 60 * 60
+    assert body["storage"] == {
+        "asset_backend": "local",
+        "asset_backend_configured": True,
+        "asset_external": False,
+        "s3": {
+            "bucket_configured": False,
+            "prefix_configured": False,
+            "endpoint_configured": False,
+            "region_configured": False,
+            "force_path_style": False,
+        },
+    }
     assert body["plans"]["current"] == "free"
     assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == (10 * 60 * 60)
     assert body["extraction"]["enabled"] is True
@@ -306,12 +321,14 @@ def test_capabilities_return_noop_adapters() -> None:
             ),
         },
     }
-    assert ".ogg" not in body["extraction"]["provider_contract"]["transcription"][
-        "supported_file_types"
-    ]
-    assert ".flac" not in body["extraction"]["provider_contract"]["transcription"][
-        "supported_file_types"
-    ]
+    assert (
+        ".ogg"
+        not in body["extraction"]["provider_contract"]["transcription"]["supported_file_types"]
+    )
+    assert (
+        ".flac"
+        not in body["extraction"]["provider_contract"]["transcription"]["supported_file_types"]
+    )
     assert body["extraction"]["manifest_contract"]["schema_version"] == (
         "infinity_context.multimodal_manifest_contract.v1"
     )
@@ -346,6 +363,9 @@ def test_capabilities_return_noop_adapters() -> None:
             "mime_content_type_mismatch",
             "mime_magic_mismatch",
             "mime_extension_mismatch",
+            "mime_archive_detected",
+            "mime_archive_review_required",
+            "mime_archive_review_reason",
             "mime_detector_reason",
             "asset_empty_content",
         ],
@@ -531,9 +551,7 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["provider_contract"]["vision"]["effective_max_upload_bytes"] == 77_777
     assert extraction["provider_contract"]["transcription"]["model"] == "gpt-4o-transcribe"
     assert extraction["provider_contract"]["transcription"]["effective_max_upload_bytes"] == 12_345
-    assert (
-        extraction["provider_contract"]["transcription"]["diarization_model_configured"] is False
-    )
+    assert extraction["provider_contract"]["transcription"]["diarization_model_configured"] is False
     assert extraction["limits"]["max_bytes"] == 123_456
     assert extraction["limits"]["max_pages"] == 7
     assert extraction["limits"]["max_media_seconds"] == 42
@@ -571,8 +589,19 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert ("modality_action", "audio.transcription_api") not in degraded_keys
     assert ("modality_action", "video.transcription_api") not in degraded_keys
     assert body["limits"]["max_asset_upload_bytes"] == 77_777
+    assert body["storage"]["asset_backend"] == "local"
     assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == 3_600
     assert "sk-capabilities-secret" not in response.text
+
+
+def test_s3_asset_storage_requires_bucket() -> None:
+    settings = Settings(
+        deploy_profile=DeployProfile.LOCAL,
+        asset_storage_backend="s3",
+    )
+
+    with pytest.raises(RuntimeError, match="MEMORY_ASSET_STORAGE_S3_BUCKET"):
+        settings.validate_for_startup()
 
 
 def test_capabilities_expose_configured_diarization_transcription_model(
@@ -631,6 +660,113 @@ def test_adapter_diagnostics_include_extraction_policy_without_credentials(tmp_p
     profile_states = {profile["name"]: profile for profile in extraction["profiles_v2"]}
     assert profile_states["standard_vision"]["memory_promotion"] == "review_required"
     assert "sk-diagnostics-secret" not in response.text
+
+
+def test_storage_diagnostics_endpoint_exposes_local_readiness_without_path(tmp_path: Path) -> None:
+    asset_root = tmp_path / "assets"
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'diagnostic-storage.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            asset_storage_dir=str(asset_root),
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/diagnostics/storage")
+
+    assert response.status_code == 200
+    storage = response.json()["data"]
+    assert storage["asset_backend"] == "local"
+    assert storage["asset_external"] is False
+    assert storage["configured"] is True
+    assert storage["ready"] is True
+    assert storage["readiness"]["root_exists"] is False
+    assert storage["readiness"]["parent_exists"] is True
+    assert storage["readiness"]["parent_writable"] is True
+    assert str(asset_root) not in response.text
+    assert str(tmp_path) not in response.text
+
+
+def test_storage_diagnostics_redacts_s3_configuration_values() -> None:
+    payload = storage_diagnostics(
+        SimpleNamespace(
+            settings=SimpleNamespace(
+                asset_storage_backend="s3",
+                asset_storage_s3_bucket="private-memory-bucket",
+                asset_storage_s3_prefix="tenant-a/private",
+                asset_storage_s3_endpoint_url="https://minio.internal.example",
+                asset_storage_s3_region="eu-secret-1",
+                asset_storage_s3_access_key_id="AKIA-DIAGNOSTIC-SECRET",
+                asset_storage_s3_secret_access_key="s3-diagnostic-secret",
+                asset_storage_s3_session_token="s3-diagnostic-session-secret",
+                asset_storage_s3_force_path_style=True,
+            )
+        )
+    )
+
+    assert payload == {
+        "asset_backend": "s3",
+        "asset_external": True,
+        "configured": True,
+        "ready": True,
+        "readiness": {
+            "bucket_configured": True,
+            "prefix_configured": True,
+            "endpoint_configured": True,
+            "region_configured": True,
+            "explicit_credentials_configured": True,
+            "session_token_configured": True,
+            "force_path_style": True,
+            "network_probe": "not_performed",
+        },
+    }
+    serialized = repr(payload)
+    assert "private-memory-bucket" not in serialized
+    assert "tenant-a/private" not in serialized
+    assert "minio.internal.example" not in serialized
+    assert "eu-secret-1" not in serialized
+    assert "AKIA-DIAGNOSTIC-SECRET" not in serialized
+    assert "s3-diagnostic-secret" not in serialized
+
+
+def test_operational_metrics_alert_when_local_asset_storage_path_is_not_directory(
+    tmp_path: Path,
+) -> None:
+    asset_root = tmp_path / "asset-root-file"
+    asset_root.write_text("not a directory")
+    app = create_app(
+        Settings(
+            deploy_profile=DeployProfile.TEST,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'diagnostic-storage-alert.db'}",
+            auto_create_schema=True,
+            qdrant_enabled=False,
+            graphiti_enabled=False,
+            embeddings_enabled=False,
+            asset_storage_dir=str(asset_root),
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/diagnostics/metrics")
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["storage"]["asset_backend"] == "local"
+    assert body["storage"]["ready"] is False
+    assert body["storage"]["readiness"]["root_exists"] is True
+    assert body["storage"]["readiness"]["root_is_dir"] is False
+    assert {
+        "name": "asset_storage_not_ready",
+        "severity": "critical",
+        "status": "firing",
+        "value": 1,
+        "threshold": 0,
+        "playbook_command": "python -m infinity_context_server.doctor",
+    } in body["alerts"]
+    assert str(asset_root) not in response.text
 
 
 def test_capabilities_keep_transcription_disabled_when_provider_is_disabled(

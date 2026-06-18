@@ -40,6 +40,18 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
         text = " ".join(command)
         if command[:2] == ["docker", "info"]:
             return _completed(command, stdout="29.0.0\n")
+        if command[:3] == ["docker", "ps", "-a"]:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-aq"]:
+            return _completed(command)
+        if command[:3] == ["docker", "network", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:4] == ["docker", "volume", "ls", "-q"]:
+            return _completed(command)
+        if command[:3] == ["docker", "volume", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:4] == ["docker", "network", "ls", "-q"]:
+            return _completed(command)
         if "config" in command:
             return _completed(command)
         if "up" in command:
@@ -155,17 +167,14 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
                     "status": "succeeded",
                     "parser_name": parser_map[filename],
                     "artifacts": [
-                        {"artifact_type": artifact_type}
-                        for artifact_type in artifact_map[filename]
+                        {"artifact_type": artifact_type} for artifact_type in artifact_map[filename]
                     ],
                     "result_document_ids": [item["document_id"]],
                 }
             }
         if method == "GET" and parsed.path.startswith("/v1/documents/"):
             document_id = parsed.path.split("/")[3]
-            item = next(
-                value for value in uploaded.values() if value["document_id"] == document_id
-            )
+            item = next(value for value in uploaded.values() if value["document_id"] == document_id)
             chunk_text = {
                 "docker-proof.txt": item["content"],
                 "docker-proof.pdf": item["content"],
@@ -200,9 +209,11 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
         ]
         == 26214400
     )
-    assert report["components"]["capabilities"]["provider_contract"][
-        "vision_detail_levels"
-    ] == ["low", "high", "auto"]
+    assert report["components"]["capabilities"]["provider_contract"]["vision_detail_levels"] == [
+        "low",
+        "high",
+        "auto",
+    ]
     assert (
         report["components"]["capabilities"]["provider_contract"][
             "vision_max_provider_binary_upload_bytes"
@@ -216,9 +227,7 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
         == 536870912
     )
     assert (
-        report["components"]["capabilities"]["provider_contract"][
-            "vision_max_images_per_request"
-        ]
+        report["components"]["capabilities"]["provider_contract"]["vision_max_images_per_request"]
         == 1500
     )
     assert "provider_contract" in report["components"]["capabilities"]["contract_names"]
@@ -233,10 +242,16 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
     }.issubset(filenames)
     assert any("--profile" in command and "lite" in command for command in commands)
     assert any(
-        "up" in command and "infinity_context_extraction_worker" in command
-        for command in commands
+        "up" in command and "infinity_context_extraction_worker" in command for command in commands
     )
     assert any("down" in command and "-v" in command for command in commands)
+    assert any(command[:3] == ["docker", "ps", "-aq"] for command in commands)
+    assert report["components"]["cleanup"]["status"] == "succeeded"
+    assert report["components"]["cleanup"]["residual_resources"] == {
+        "containers": [],
+        "volumes": [],
+        "networks": [],
+    }
     assert "secret-proof-token" not in json.dumps(report)
 
 
@@ -297,12 +312,9 @@ def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
     assert report["components"]["docker_daemon"]["status"] == "degraded"
     assert report["components"]["docker_daemon"]["user_retryable"] is True
     assert (
-        report["components"]["docker_daemon"]["operator_action"]
-        == "start_or_restart_docker_daemon"
+        report["components"]["docker_daemon"]["operator_action"] == "start_or_restart_docker_daemon"
     )
-    assert report["components"]["docker_daemon"]["diagnostics"] == report["failure"][
-        "diagnostics"
-    ]
+    assert report["components"]["docker_daemon"]["diagnostics"] == report["failure"]["diagnostics"]
     assert report["components"]["cleanup"]["status"] == "unknown"
     rendered = json.dumps(report)
     assert "infinity-context-secret-docker.sock" not in rendered
@@ -352,11 +364,345 @@ def test_docker_live_proof_degrades_on_compose_config_timeout(monkeypatch) -> No
     assert report["components"]["cleanup"]["status"] == "unknown"
 
 
+def test_docker_live_proof_degrades_on_compose_up_timeout_and_cleans_project(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(proof, "_docker_context_show", lambda _command: "desktop-linux")
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--compose-timeout-seconds",
+            "1",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    commands: list[list[str]] = []
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if "config" in command:
+            return _completed(command)
+        if command[:2] == ["docker", "info"]:
+            return _completed(command, stdout="29.0.0\n")
+        if "up" in command:
+            raise subprocess.TimeoutExpired(command, timeout=1)
+        if "down" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-a"]:
+            return _completed(command)
+        if command[:3] == ["docker", "network", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "volume", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-aq"]:
+            return _completed(command)
+        if command[:4] == ["docker", "volume", "ls", "-q"]:
+            return _completed(command)
+        if command[:4] == ["docker", "network", "ls", "-q"]:
+            return _completed(command)
+        raise AssertionError(f"Unexpected command: {command}")
+
+    report = proof.run_multimodal_docker_live_proof(
+        args,
+        run_cmd=run_cmd,
+        request_json=lambda *_args, **_kwargs: {},
+        sleep=lambda _: None,
+    )
+
+    assert report["ok"] is False
+    assert report["failure"]["component"] == "compose_stack"
+    assert report["failure"]["reason"] == "compose_up_timeout"
+    assert report["failure"]["degraded"] is True
+    assert report["components"]["compose_stack"]["status"] == "degraded"
+    assert report["components"]["cleanup"]["status"] == "succeeded"
+    assert any("down" in command for command in commands)
+
+
+def test_cleanup_removes_labeled_compose_resource_tails() -> None:
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    resources = {
+        "containers": ["container-1", "container-2"],
+        "volumes": ["volume-1"],
+        "networks": ["network-1"],
+    }
+    commands: list[list[str]] = []
+    report = {"components": {"cleanup": proof._component("unknown")}}
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if "down" in command:
+            return _completed(
+                command,
+                stdout="network infinity-context-proof-test_default Resource is still in use",
+            )
+        if command[:3] == ["docker", "ps", "-a"]:
+            return _completed(command)
+        if command[:3] == ["docker", "network", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "volume", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-aq"]:
+            return _completed(command, stdout="\n".join(resources["containers"]))
+        if command[:4] == ["docker", "volume", "ls", "-q"]:
+            return _completed(command, stdout="\n".join(resources["volumes"]))
+        if command[:4] == ["docker", "network", "ls", "-q"]:
+            return _completed(command, stdout="\n".join(resources["networks"]))
+        if command[:3] == ["docker", "rm", "-f"]:
+            for item in command[3:]:
+                resources["containers"].remove(item)
+            return _completed(command, stdout="\n".join(command[3:]))
+        if command[:4] == ["docker", "volume", "rm", "-f"]:
+            for item in command[4:]:
+                resources["volumes"].remove(item)
+            return _completed(command, stdout="\n".join(command[4:]))
+        if command[:3] == ["docker", "network", "rm"]:
+            for item in command[3:]:
+                resources["networks"].remove(item)
+            return _completed(command, stdout="\n".join(command[3:]))
+        raise AssertionError(f"Unexpected command: {command}")
+
+    proof._cleanup_stack(
+        args,
+        "infinity-context-proof-test",
+        run_cmd=run_cmd,
+        report=report,
+        env={},
+    )
+
+    cleanup = report["components"]["cleanup"]
+    assert cleanup["status"] == "succeeded"
+    assert cleanup["forced_cleanup"]["before"] == {
+        "containers": ["container-1", "container-2"],
+        "volumes": ["volume-1"],
+        "networks": ["network-1"],
+    }
+    assert cleanup["forced_cleanup"]["removed"] == {
+        "containers": ["container-1", "container-2"],
+        "volumes": ["volume-1"],
+        "networks": ["network-1"],
+    }
+    assert cleanup["residual_resources"] == {
+        "containers": [],
+        "volumes": [],
+        "networks": [],
+    }
+    assert any(command[:3] == ["docker", "rm", "-f"] for command in commands)
+    assert any(command[:4] == ["docker", "volume", "rm", "-f"] for command in commands)
+    assert any(command[:3] == ["docker", "network", "rm"] for command in commands)
+
+
+def test_cleanup_fails_when_labeled_resources_remain() -> None:
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    report = {"components": {"cleanup": proof._component("unknown")}}
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "down" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-a"]:
+            return _completed(command)
+        if command[:3] == ["docker", "network", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "volume", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-aq"]:
+            return _completed(command, stdout="stuck-container\n")
+        if command[:4] == ["docker", "volume", "ls", "-q"]:
+            return _completed(command)
+        if command[:4] == ["docker", "network", "ls", "-q"]:
+            return _completed(command)
+        if command[:3] == ["docker", "rm", "-f"]:
+            return _completed(command, stderr="daemon refused removal", returncode=1)
+        raise AssertionError(f"Unexpected command: {command}")
+
+    proof._cleanup_stack(
+        args,
+        "infinity-context-proof-test",
+        run_cmd=run_cmd,
+        report=report,
+        env={},
+    )
+
+    cleanup = report["components"]["cleanup"]
+    assert cleanup["status"] == "failed"
+    assert cleanup["reason"] == "cleanup_residual_resources"
+    assert cleanup["residual_resources"]["containers"] == ["stuck-container"]
+    assert cleanup["forced_cleanup"]["errors"][0]["resource"] == "containers"
+    assert "daemon refused removal" in cleanup["forced_cleanup"]["errors"][0]["message"]
+
+
+def test_cleanup_timeout_is_reported_without_raising() -> None:
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--compose-timeout-seconds",
+            "1",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    report = {"components": {"cleanup": proof._component("unknown")}}
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(command, timeout=1)
+
+    proof._cleanup_stack(
+        args,
+        "infinity-context-proof-test",
+        run_cmd=run_cmd,
+        report=report,
+        env={},
+    )
+
+    cleanup = report["components"]["cleanup"]
+    assert cleanup["status"] == "failed"
+    assert cleanup["reason"] == "cleanup_timeout"
+
+
+def test_cleanup_removes_stale_suite_project_volumes() -> None:
+    current_project = "infinity-context-multimodal-current"
+    stale_project = "infinity-context-multimodal-stale"
+    stale_volume = f"{stale_project}_infinity_context_assets"
+    args = proof._parse_args(
+        [
+            "--project-name",
+            current_project,
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    resources = {current_project: [], stale_project: [stale_volume]}
+    report = {"components": {"cleanup": proof._component("unknown")}}
+
+    def project_from_label(command: list[str]) -> str | None:
+        label_prefix = "label=com.docker.compose.project="
+        for item in command:
+            if item.startswith(label_prefix):
+                return item.removeprefix(label_prefix)
+        return None
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "down" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-a"]:
+            return _completed(command)
+        if command[:3] == ["docker", "network", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "volume", "ls"] and "--format" in command:
+            return _completed(command, stdout=stale_volume)
+        if command[:3] == ["docker", "ps", "-aq"]:
+            return _completed(command)
+        if command[:4] == ["docker", "network", "ls", "-q"]:
+            return _completed(command)
+        if command[:4] == ["docker", "volume", "ls", "-q"]:
+            project = project_from_label(command)
+            return _completed(command, stdout="\n".join(resources.get(project or "", [])))
+        if command[:4] == ["docker", "volume", "rm", "-f"]:
+            for item in command[4:]:
+                resources[stale_project].remove(item)
+            return _completed(command, stdout="\n".join(command[4:]))
+        raise AssertionError(f"Unexpected command: {command}")
+
+    proof._cleanup_stack(
+        args,
+        current_project,
+        run_cmd=run_cmd,
+        report=report,
+        env={},
+    )
+
+    cleanup = report["components"]["cleanup"]
+    assert cleanup["status"] == "succeeded"
+    assert cleanup["stale_suite_cleanup"]["projects"][0]["project_name"] == stale_project
+    assert cleanup["stale_suite_cleanup"]["projects"][0]["forced_cleanup"]["removed"][
+        "volumes"
+    ] == [stale_volume]
+    assert cleanup["stale_suite_cleanup"]["projects"][0]["residual_resources"] == {
+        "containers": [],
+        "volumes": [],
+        "networks": [],
+    }
+
+
 def test_makefile_exposes_multimodal_docker_live_proof_target() -> None:
     makefile = (proof.ROOT / "Makefile").read_text(encoding="utf-8")
 
     assert ".PHONY: infinity-context-multimodal-docker-live-proof" in makefile
     assert "$(PYTHON) scripts/multimodal_docker_live_proof.py" in makefile
+
+
+def test_command_timeout_prioritizes_docker_compose_over_docker() -> None:
+    args = proof._parse_args(
+        [
+            "--compose",
+            "docker compose",
+            "--docker",
+            "docker",
+            "--docker-timeout-seconds",
+            "7",
+            "--compose-timeout-seconds",
+            "77",
+        ]
+    )
+
+    assert proof._command_timeout(args, ["docker", "compose", "up"]) == 77
+    assert proof._command_timeout(args, ["docker", "info"]) == 7
 
 
 def test_sample_mp4_fixture_contains_extractable_video_frame(tmp_path) -> None:
@@ -388,9 +734,7 @@ def test_sample_mp4_fixture_contains_extractable_video_frame(tmp_path) -> None:
         timeout=20,
     )
     payload = json.loads(probe.stdout)
-    assert any(
-        stream.get("codec_type") == "video" for stream in payload.get("streams", [])
-    )
+    assert any(stream.get("codec_type") == "video" for stream in payload.get("streams", []))
 
     subprocess.run(
         [

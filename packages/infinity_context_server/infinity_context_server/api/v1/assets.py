@@ -310,7 +310,7 @@ async def download_extraction_artifact(
     return Response(
         content=result.content,
         media_type=_artifact_content_type(result.artifact),
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        headers=_download_headers(filename),
     )
 
 
@@ -320,10 +320,11 @@ async def download_asset(
     container: Annotated[Container, Depends(get_container)],
 ) -> Response:
     asset, content = await container.read_asset_bytes.execute(GetAssetQuery(asset_id=asset_id))
+    filename = _safe_download_filename(asset.filename, fallback="asset.bin")
     return Response(
         content=content,
         media_type=asset.content_type,
-        headers={"Content-Disposition": (f"attachment; filename*=UTF-8''{quote(asset.filename)}")},
+        headers=_download_headers(filename),
     )
 
 
@@ -390,9 +391,7 @@ def _extraction_execution(
     available_actions = _available_extraction_actions(job)
     return {
         "lease_owner": job.lease_owner,
-        "lease_expires_at": job.lease_expires_at.isoformat()
-        if job.lease_expires_at
-        else None,
+        "lease_expires_at": job.lease_expires_at.isoformat() if job.lease_expires_at else None,
         "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
         "retry_after_at": job.retry_after_at.isoformat() if job.retry_after_at else None,
         "retry_disposition": job.retry_disposition.value if job.retry_disposition else None,
@@ -516,8 +515,7 @@ def _extraction_progress(job: AssetExtractionJob) -> dict[str, Any]:
         "stage": stage,
         "percent": percent,
         "message": message,
-        "terminal": job.status.value
-        in {"succeeded", "failed", "unsupported", "canceled", "stale"},
+        "terminal": job.status.value in {"succeeded", "failed", "unsupported", "canceled", "stale"},
     }
 
 
@@ -644,6 +642,13 @@ def _safe_download_filename(value: Any, *, fallback: str) -> str:
     filename = value if isinstance(value, str) and value.strip() else fallback
     safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in filename.strip())[:240]
     return safe.strip("._") or fallback
+
+
+def _download_headers(filename: str) -> dict[str, str]:
+    return {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "X-Content-Type-Options": "nosniff",
+    }
 
 
 def _validate_asset_status(status_value: str | None) -> None:

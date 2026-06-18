@@ -352,6 +352,7 @@ def _base_report(
                 "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
             },
         },
+        "failure_policy_contract": _failure_policy_contract(),
         "models": {
             "vision": args.vision_model,
             "transcription": args.transcription_model,
@@ -422,6 +423,31 @@ def _recovery_policy(*, status: str, reason: str | None) -> dict[str, object]:
     return {
         "user_retryable": False,
         "operator_action": "inspect_provider_canary",
+    }
+
+
+def _failure_policy_contract() -> dict[str, object]:
+    return {
+        "provider_credential_missing": _component(
+            "degraded",
+            reason="provider_credential_missing",
+        ),
+        "invalid_api_key": _component(
+            "failed",
+            reason="asset_extraction.vision.invalid_api_key",
+        ),
+        "quota_exceeded": _component(
+            "failed",
+            reason="asset_extraction.transcription.quota_exceeded",
+        ),
+        "rate_limited": _component(
+            "failed",
+            reason="asset_extraction.transcription.rate_limited",
+        ),
+        "timeout": _component(
+            "failed",
+            reason="asset_extraction.vision.timeout",
+        ),
     }
 
 

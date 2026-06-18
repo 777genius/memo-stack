@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from infinity_context_core.application.context_policy import (
+    is_context_anchor_visible,
     is_context_fact_visible,
     is_graph_fact_visible,
 )
@@ -55,9 +56,7 @@ class ContextHydrator:
             hydrated: list[ContextItem] = []
             stale_count = 0
             now = self._clock.now() if self._clock is not None else None
-            facts_by_id = {
-                str(fact.id): fact for fact in await uow.facts.get_by_ids(fact_ids)
-            }
+            facts_by_id = {str(fact.id): fact for fact in await uow.facts.get_by_ids(fact_ids)}
             for fact_id in fact_ids:
                 fact = facts_by_id.get(fact_id)
                 if fact is not None and is_graph_fact_visible(
@@ -117,9 +116,7 @@ class ContextHydrator:
                 memory_scope_ids=memory_scope_ids,
             )
         }
-        fact_ids = tuple(
-            dict.fromkeys(item.item_id for item in items if item.item_type == "fact")
-        )
+        fact_ids = tuple(dict.fromkeys(item.item_id for item in items if item.item_type == "fact"))
         visible_facts = {}
         if fact_ids:
             async with self._uow_factory() as uow:
@@ -132,6 +129,22 @@ class ContextHydrator:
                         now=now,
                     ):
                         visible_facts[str(fact.id)] = fact
+        anchor_ids = tuple(
+            dict.fromkeys(item.item_id for item in items if item.item_type == "anchor")
+        )
+        visible_anchors = {}
+        if anchor_ids:
+            async with self._uow_factory() as uow:
+                now = self._clock.now() if self._clock is not None else None
+                for anchor_id in anchor_ids:
+                    anchor = await uow.anchors.get_by_id(anchor_id)
+                    if anchor is not None and is_context_anchor_visible(
+                        anchor,
+                        query=query,
+                        memory_scope_ids=memory_scope_ids,
+                        now=now,
+                    ):
+                        visible_anchors[str(anchor.id)] = anchor
 
         visible_items: list[ContextItem] = []
         for item in items:
@@ -146,6 +159,21 @@ class ContextHydrator:
                         text=fact.text,
                         score=item.score,
                         source_refs=fact.source_refs,
+                        is_instruction=item.is_instruction,
+                        diagnostics=item.diagnostics,
+                    )
+                )
+            elif item.item_type == "anchor":
+                anchor = visible_anchors.get(item.item_id)
+                if anchor is None:
+                    continue
+                visible_items.append(
+                    ContextItem(
+                        item_id=str(anchor.id),
+                        item_type=item.item_type,
+                        text=item.text,
+                        score=item.score,
+                        source_refs=anchor.evidence_refs,
                         is_instruction=item.is_instruction,
                         diagnostics=item.diagnostics,
                     )

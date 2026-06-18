@@ -14,6 +14,7 @@ from infinity_context_server.diagnostics import (
     memory_scope_diagnostics,
     operational_metrics,
     outbox_diagnostics,
+    storage_diagnostics,
 )
 
 router = APIRouter(
@@ -54,3 +55,10 @@ async def get_operational_metrics(
     container: Annotated[Container, Depends(get_container)],
 ) -> dict[str, Any]:
     return {"data": await operational_metrics(container)}
+
+
+@router.get("/storage")
+async def get_storage_diagnostics(
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    return {"data": storage_diagnostics(container)}

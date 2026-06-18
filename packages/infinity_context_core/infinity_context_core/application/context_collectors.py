@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from infinity_context_core.application.context_hydration import ContextHydrator
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import BuildContextQuery, ContextItem
-from infinity_context_core.application.source_refs import chunk_source_refs
-from infinity_context_core.domain.entities import MemoryChunk, MemoryFact
+from infinity_context_core.application.source_refs import (
+    chunk_source_refs,
+    source_ref_location_summary,
+)
+from infinity_context_core.domain.entities import MemoryAnchor, MemoryChunk, MemoryFact
 from infinity_context_core.ports.adapters import (
     EmbeddingPort,
     GraphMemoryPort,
@@ -48,6 +51,7 @@ _SENSITIVE_VALUE_MARKERS = (
 class CanonicalCollectionResult:
     facts: tuple[MemoryFact, ...]
     keyword_chunks: tuple[MemoryChunk, ...]
+    anchors: tuple[MemoryAnchor, ...]
 
 
 class CanonicalContextCollector:
@@ -79,9 +83,22 @@ class CanonicalContextCollector:
                 query=query.query,
                 limit=query.max_chunks,
             )
+            anchors: list[MemoryAnchor] = []
+            anchor_limit = min(100, max(query.max_facts * 2, 20))
+            for memory_scope_id in memory_scope_ids:
+                anchors.extend(
+                    await uow.anchors.list_for_scope(
+                        space_id=str(query.space_id),
+                        memory_scope_id=memory_scope_id,
+                        kind=None,
+                        status="active",
+                        limit=anchor_limit,
+                    )
+                )
         return CanonicalCollectionResult(
             facts=tuple(facts),
             keyword_chunks=tuple(keyword_chunks),
+            anchors=tuple(anchors),
         )
 
 
@@ -337,12 +354,13 @@ def _candidate_chunk_ids(candidate: CapabilityRecallCandidate) -> tuple[str, ...
 
 def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) -> ContextItem:
     chunk_text = document_chunk_retrieval_text(text=chunk.text, metadata=chunk.metadata)
+    source_refs = chunk_source_refs(chunk, text_preview=chunk_text)
     return ContextItem(
         item_id=str(chunk.id),
         item_type="chunk",
         text=chunk_text,
         score=candidate.score,
-        source_refs=chunk_source_refs(chunk, text_preview=chunk_text),
+        source_refs=source_refs,
         diagnostics={
             "memory_scope_id": str(chunk.memory_scope_id),
             "retrieval_source": "rag_recall",
@@ -351,14 +369,17 @@ def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) ->
             "score_signals": {
                 "base_score": candidate.score,
                 "retrieval_channel": "rag_recall",
+                "source_ref_count": len(source_refs),
             },
             "provenance": {
                 "retrieval_sources": ["rag_recall"],
-                "source_ref_count": 1,
+                "source_ref_count": len(source_refs),
                 "adapter_name": _safe_adapter_name(candidate.adapter_name),
                 "chunk_id": str(chunk.id),
+                **source_ref_location_summary(source_refs),
             },
             "adapter_name": _safe_adapter_name(candidate.adapter_name),
+            **source_ref_location_summary(source_refs),
             **_safe_recall_metadata(candidate.metadata),
         },
     )

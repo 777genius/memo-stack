@@ -102,6 +102,9 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     assert diagnostics["items_used"] == 0
     assert diagnostics["dropped_by_instruction_flag"] == 0
     assert diagnostics["dropped_by_budget"] == 0
+    assert diagnostics["anchors_considered"] == 0
+    assert diagnostics["anchors_used"] == 0
+    assert diagnostics["citations_rendered"] == 0
     assert diagnostics["source_refs_with_bbox_count"] == 0
     assert diagnostics["source_refs_total"] == 0
     assert diagnostics["source_refs_returned"] == 0

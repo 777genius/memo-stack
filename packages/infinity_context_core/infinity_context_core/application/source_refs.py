@@ -27,6 +27,18 @@ def chunk_source_refs(chunk: MemoryChunk, *, text_preview: str) -> tuple[SourceR
     return tuple(refs) or (_fallback_chunk_source_ref(chunk, text_preview=text_preview),)
 
 
+def source_ref_location_summary(source_refs: tuple[SourceRef, ...]) -> dict[str, object]:
+    return {
+        "source_refs_with_page_count": sum(1 for ref in source_refs if ref.page_number is not None),
+        "source_refs_with_bbox_count": sum(1 for ref in source_refs if ref.bbox is not None),
+        "source_refs_with_time_range_count": sum(
+            1
+            for ref in source_refs
+            if ref.time_start_ms is not None or ref.time_end_ms is not None
+        ),
+    }
+
+
 def _source_refs_from_metadata(metadata: Mapping[str, object]) -> list[Mapping[str, object]]:
     refs = metadata.get("source_refs")
     if not isinstance(refs, list):

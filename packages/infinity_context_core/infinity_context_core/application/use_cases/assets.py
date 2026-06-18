@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+from infinity_context_core.application.asset_upload_policy import assess_asset_upload
 from infinity_context_core.application.dto import (
     AssetResult,
     CreateAssetCommand,
@@ -12,6 +13,7 @@ from infinity_context_core.application.dto import (
     GetAssetQuery,
     ListAssetsQuery,
 )
+from infinity_context_core.application.safe_payload import safe_metadata
 from infinity_context_core.domain.assets import AssetStatus, MemoryAsset, MemoryAssetId
 from infinity_context_core.domain.errors import (
     MemoryConflictError,
@@ -50,6 +52,11 @@ class CreateAssetUseCase:
             raise MemoryIngressLimitError("Asset content is empty")
         if len(command.content) > self._max_bytes:
             raise MemoryIngressLimitError("Asset exceeds configured upload limit")
+        upload_assessment = assess_asset_upload(
+            filename=command.filename,
+            declared_content_type=command.content_type,
+            content=command.content,
+        )
         now = self._clock.now()
         digest = hashlib.sha256(command.content).hexdigest()
         async with self._uow_factory() as uow:
@@ -82,7 +89,10 @@ class CreateAssetUseCase:
             storage_backend=self._storage_backend,
             storage_key=storage_key,
             classification=command.classification,
-            metadata=command.metadata,
+            metadata={
+                **safe_metadata(command.metadata or {}),
+                **upload_assessment.metadata,
+            },
             now=now,
         )
         try:

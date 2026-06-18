@@ -1504,7 +1504,7 @@ def _auto_memory_duplicate_after_approval_case(
         space_id=space_id,
         memory_scope_id=memory_scope_id,
         source_event_id="auto-memory-eval-duplicate-first",
-        text=f"Remember: {marker} canonical duplicate must not create a second suggestion.",
+        text=f"Remember: {marker} canonical duplicate creates one reviewed fact.",
     )
     first_consolidated = _consolidate_auto_memory_capture(client, headers, first)
     first_suggestion_id = _first_suggestion_id(first_consolidated)
@@ -1523,7 +1523,7 @@ def _auto_memory_duplicate_after_approval_case(
         space_id=space_id,
         memory_scope_id=memory_scope_id,
         source_event_id="auto-memory-eval-duplicate-second",
-        text=f"Remember: {marker} canonical duplicate must not create a second suggestion.",
+        text=f"Remember: {marker} canonical duplicate creates one reviewed fact.",
     )
     second_consolidated = _consolidate_auto_memory_capture(client, headers, second)
     pending_suggestions = _auto_memory_suggestions_for_marker(
@@ -1543,27 +1543,33 @@ def _auto_memory_duplicate_after_approval_case(
     )
     duplicate_suggestions = len(pending_suggestions)
     return _auto_memory_result(
-        case_id="approved_fact_blocks_duplicate_suggestion",
+        case_id="approved_fact_creates_duplicate_merge_review",
         category="duplicate",
         request_ok=request_ok,
-        expected_suggestion=False,
-        suggestion_ok=duplicate_suggestions == 0,
-        duplicate_suggestion_count=duplicate_suggestions,
+        expected_suggestion=True,
+        suggestion_ok=duplicate_suggestions == 1
+        and pending_suggestions[0].get("operation") == "review"
+        and (pending_suggestions[0].get("review_payload") or {}).get("review_kind")
+        == "duplicate_fact_merge",
+        duplicate_suggestion_count=0,
         wrong_auto_apply_count=_json_path_int(second_consolidated, "data", "auto_applied_facts"),
         failures=_auto_memory_failures(
-            case_id="approved_fact_blocks_duplicate_suggestion",
+            case_id="approved_fact_creates_duplicate_merge_review",
             category="duplicate",
             checks={
                 "request_ok": request_ok,
                 "first_suggestion_created": first_suggestion_id is not None,
                 "approval_created_fact": len(facts) == 1,
-                "second_created_zero": _json_path_int(
+                "second_created_one_review": _json_path_int(
                     second_consolidated,
                     "data",
                     "created_suggestions",
                 )
-                == 0,
-                "no_pending_duplicate": duplicate_suggestions == 0,
+                == 1,
+                "pending_duplicate_merge_review": duplicate_suggestions == 1
+                and pending_suggestions[0].get("operation") == "review"
+                and (pending_suggestions[0].get("review_payload") or {}).get("review_kind")
+                == "duplicate_fact_merge",
                 "not_auto_applied": _json_path_int(
                     second_consolidated,
                     "data",

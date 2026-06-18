@@ -252,6 +252,13 @@ class ApproveSuggestionUseCase:
                     if current.version != expected:
                         raise MemoryConflictError("Stale fact version")
                     fact = current.forget(now=now)
+                elif _is_duplicate_fact_merge_review(suggestion):
+                    fact = current.merge_source_refs(
+                        expected_version=suggestion.target_fact_version or current.version,
+                        source_refs=suggestion.source_refs,
+                        reason=command.reason or suggestion.safe_reason,
+                        now=now,
+                    )
                 else:
                     fact = current.update(
                         expected_version=suggestion.target_fact_version or current.version,
@@ -466,6 +473,14 @@ def _normalize_candidate_text(text: str) -> str:
 
 def _has_independent_source(suggestion: MemorySuggestion) -> bool:
     return any(ref.source_type not in _ASSISTANT_SOURCES for ref in suggestion.source_refs)
+
+
+def _is_duplicate_fact_merge_review(suggestion: MemorySuggestion) -> bool:
+    return (
+        suggestion.operation == SuggestionOperation.REVIEW
+        and suggestion.target_fact_id is not None
+        and (suggestion.review_payload or {}).get("review_kind") == "duplicate_fact_merge"
+    )
 
 
 def _batch_candidate_key(command: CreateSuggestionCommand) -> tuple[object, ...]:

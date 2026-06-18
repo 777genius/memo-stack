@@ -18,6 +18,8 @@ _MAX_DIAGNOSTIC_STRING_CHARS = 240
 _MAX_RANKING_REASON_CHARS = 240
 _BUNDLE_COUNTER_KEYS = (
     "facts_considered",
+    "anchors_considered",
+    "anchors_used",
     "keyword_chunks_considered",
     "vector_candidate_count",
     "vector_hydrated_count",
@@ -35,6 +37,12 @@ _BUNDLE_COUNTER_KEYS = (
     "temporal_contradictions_considered",
     "temporal_relations_skipped_by_validity",
     "pending_conflict_suggestions_considered",
+    "approved_context_links_considered",
+    "approved_context_links_used",
+    "approved_context_linked_chunks_used",
+    "approved_context_linked_facts_used",
+    "stale_context_linked_chunk_drop_count",
+    "stale_context_linked_fact_drop_count",
     "hybrid_items_used",
     "items_considered",
     "items_used",
@@ -42,6 +50,7 @@ _BUNDLE_COUNTER_KEYS = (
     "dropped_by_budget",
     "dropped_by_source_cap",
     "dropped_by_char_cap",
+    "citations_rendered",
     "multimodal_source_ref_count",
     "items_with_multimodal_source_refs",
     "source_refs_with_page_count",
@@ -52,6 +61,8 @@ _BUNDLE_COUNTER_KEYS = (
 )
 _BUNDLE_COUNTER_DEFAULTS = {
     "facts_considered": 0,
+    "anchors_considered": 0,
+    "anchors_used": 0,
     "keyword_chunks_considered": 0,
     "vector_candidate_count": 0,
     "vector_hydrated_count": 0,
@@ -69,6 +80,12 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "superseded_facts_considered": 0,
     "superseded_facts_used": 0,
     "pending_conflict_suggestions_considered": 0,
+    "approved_context_links_considered": 0,
+    "approved_context_links_used": 0,
+    "approved_context_linked_chunks_used": 0,
+    "approved_context_linked_facts_used": 0,
+    "stale_context_linked_chunk_drop_count": 0,
+    "stale_context_linked_fact_drop_count": 0,
     "hybrid_items_used": 0,
     "items_considered": 0,
     "items_used": 0,
@@ -76,6 +93,7 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "dropped_by_budget": 0,
     "dropped_by_source_cap": 0,
     "dropped_by_char_cap": 0,
+    "citations_rendered": 0,
     "multimodal_source_ref_count": 0,
     "items_with_multimodal_source_refs": 0,
     "source_refs_with_page_count": 0,
@@ -92,14 +110,17 @@ _BUNDLE_STATUS_DEFAULTS = {
 _RETRIEVAL_SOURCE_PRIORITY = {
     "vector_chunks": 0,
     "rag_recall": 1,
-    "keyword_chunks": 2,
-    "graph_hydrated": 3,
-    "temporal_supersedes_relation": 4,
-    "pending_conflict_suggestion": 5,
-    "superseded_review": 6,
-    "disputed_review": 7,
-    "stale_review": 8,
-    "postgres_facts": 9,
+    "approved_context_linked_chunks": 2,
+    "approved_context_linked_facts": 3,
+    "canonical_anchors": 4,
+    "keyword_chunks": 5,
+    "graph_hydrated": 6,
+    "temporal_supersedes_relation": 7,
+    "pending_conflict_suggestion": 8,
+    "superseded_review": 9,
+    "disputed_review": 10,
+    "stale_review": 11,
+    "postgres_facts": 11,
 }
 
 
@@ -152,9 +173,7 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     normalized["retrieval_sources"] = list(retrieval_sources)
     normalized["retrieval_sources_total"] = len(all_retrieval_sources)
     normalized["retrieval_sources_returned"] = len(retrieval_sources)
-    normalized["retrieval_sources_truncated"] = len(all_retrieval_sources) > len(
-        retrieval_sources
-    )
+    normalized["retrieval_sources_truncated"] = len(all_retrieval_sources) > len(retrieval_sources)
     if retrieval_sources and not selected_source:
         selected_source = retrieval_sources[0]
     if selected_source:
@@ -197,8 +216,7 @@ def normalize_context_bundle_diagnostics(
     )
     for key, default in _BUNDLE_STATUS_DEFAULTS.items():
         normalized[key] = (
-            _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS)
-            or default
+            _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS) or default
         )
     all_retrieval_sources = _bundle_retrieval_sources(
         items,
@@ -208,9 +226,7 @@ def normalize_context_bundle_diagnostics(
     normalized["retrieval_sources_used"] = list(retrieval_sources)
     normalized["retrieval_sources_total"] = len(all_retrieval_sources)
     normalized["retrieval_sources_returned"] = len(retrieval_sources)
-    normalized["retrieval_sources_truncated"] = len(all_retrieval_sources) > len(
-        retrieval_sources
-    )
+    normalized["retrieval_sources_truncated"] = len(all_retrieval_sources) > len(retrieval_sources)
     normalized["diagnostics_truncated"] = len(raw) > _MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS
     for key in _BUNDLE_COUNTER_KEYS:
         if key in raw or key in _BUNDLE_COUNTER_DEFAULTS:
@@ -428,9 +444,7 @@ def _multimodal_source_ref_counts(items: tuple[ContextItem, ...]) -> dict[str, i
     page_count = sum(1 for ref in refs if ref.page_number is not None)
     bbox_count = sum(1 for ref in refs if ref.bbox is not None)
     time_count = sum(
-        1
-        for ref in refs
-        if ref.time_start_ms is not None or ref.time_end_ms is not None
+        1 for ref in refs if ref.time_start_ms is not None or ref.time_end_ms is not None
     )
     return {
         "multimodal_source_ref_count": sum(1 for ref in refs if _is_multimodal_source_ref(ref)),

@@ -1,13 +1,15 @@
 import asyncio
 import hashlib
+import zipfile
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import Any
 
 from infinity_context_core.application.dto import CreateAssetCommand
 from infinity_context_core.application.use_cases.assets import CreateAssetUseCase
 from infinity_context_core.domain.assets import MemoryAsset, MemoryAssetId
 from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
-from infinity_context_core.domain.errors import MemoryConflictError
+from infinity_context_core.domain.errors import MemoryConflictError, MemoryIngressLimitError
 from infinity_context_core.ports.assets import StoredBlob
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -246,6 +248,57 @@ def test_create_asset_cleanup_failure_preserves_original_error() -> None:
     asyncio.run(run())
 
 
+def test_create_asset_sanitizes_user_metadata_and_preserves_upload_policy() -> None:
+    async def run() -> None:
+        assets = FakeAssetRepository()
+        storage = FakeBlobStorage()
+
+        await _create_use_case(assets=assets, storage=storage).execute(
+            _command(
+                filename="note.txt",
+                content=b"plain text",
+                metadata={
+                    "secret_token": "should not persist",
+                    "nested": {"api_key": "nope", "safe": "ok"},
+                    "upload_policy_version": "user override",
+                    "huge": "x" * 800,
+                },
+            )
+        )
+
+        metadata = assets.created[0].metadata
+        assert "secret_token" not in metadata
+        assert metadata["nested"] == {"safe": "ok"}
+        assert metadata["huge"] == "x" * 500
+        assert metadata["upload_policy_version"] == "asset-upload-policy-v1"
+        assert metadata["upload_magic_content_type"] == "text/plain"
+
+    asyncio.run(run())
+
+
+def test_create_asset_rejects_archive_bomb_before_blob_write() -> None:
+    async def run() -> None:
+        assets = FakeAssetRepository()
+        storage = FakeBlobStorage()
+
+        try:
+            await _create_use_case(assets=assets, storage=storage).execute(
+                _command(
+                    filename="payload.zip",
+                    content=_zip_bytes({"huge.txt": b"0" * (2 * 1024 * 1024)}),
+                )
+            )
+        except MemoryIngressLimitError as exc:
+            assert "compression ratio" in str(exc)
+        else:
+            raise AssertionError("expected MemoryIngressLimitError")
+
+        assert storage.writes == []
+        assert assets.created == []
+
+    asyncio.run(run())
+
+
 def _create_use_case(
     *,
     assets: FakeAssetRepository,
@@ -259,7 +312,12 @@ def _create_use_case(
     )
 
 
-def _command(*, filename: str, content: bytes) -> CreateAssetCommand:
+def _command(
+    *,
+    filename: str,
+    content: bytes,
+    metadata: dict[str, object] | None = None,
+) -> CreateAssetCommand:
     return CreateAssetCommand(
         space_id=SPACE_ID,
         memory_scope_id=MEMORY_SCOPE_ID,
@@ -267,6 +325,7 @@ def _command(*, filename: str, content: bytes) -> CreateAssetCommand:
         filename=filename,
         content_type="text/plain",
         content=content,
+        metadata=metadata,
     )
 
 
@@ -295,3 +354,11 @@ def _asset(
 def _expected_storage_key(*, filename: str, content: bytes) -> str:
     digest = hashlib.sha256(content).hexdigest()
     return f"{SPACE_ID}/{MEMORY_SCOPE_ID}/{digest[:2]}/{digest}/{filename}"
+
+
+def _zip_bytes(entries: dict[str, bytes]) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in entries.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()

@@ -471,6 +471,7 @@ def test_text_asset_extraction_indexes_document_chunks_and_artifacts(tmp_path: P
         assert downloaded.status_code == 200, downloaded.text
         assert downloaded.headers["content-type"].startswith("text/markdown")
         assert "extracted.md" in downloaded.headers["content-disposition"]
+        assert downloaded.headers["x-content-type-options"] == "nosniff"
         assert b"quick capture attached to memory scopes" in downloaded.content
 
 
@@ -642,10 +643,7 @@ def test_pending_asset_extraction_can_be_canceled_before_worker(tmp_path: Path) 
         assert canceled_data["execution"]["available_actions"] == ["retry"]
         assert canceled_data["execution"]["retry_actionable"] is True
         assert canceled_data["execution"]["cancel_actionable"] is False
-        assert (
-            canceled_data["execution"]["retry_state_reason"]
-            == "canceled_manual_retry_available"
-        )
+        assert canceled_data["execution"]["retry_state_reason"] == "canceled_manual_retry_available"
         assert canceled_data["execution"]["cancel_state_reason"] == "terminal_job"
 
         processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
@@ -902,9 +900,7 @@ def test_cancel_during_slow_asset_extraction_interrupts_worker_without_artifacts
 
         def run_worker() -> None:
             try:
-                processed = asyncio.run(
-                    OutboxWorker(client.app.state.container).run_once(limit=10)
-                )
+                processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
             except BaseException as exc:  # pragma: no cover - asserted through worker_error
                 worker_error.append(exc)
             else:
@@ -1656,7 +1652,7 @@ def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
             json={
                 "space_slug": "quick-capture",
                 "memory_scope_external_ref": "frontend",
-                "query": "Image asset evidence",
+                "query": "bbox region",
                 "token_budget": 1200,
             },
             headers=auth_headers(),
@@ -1807,9 +1803,7 @@ def test_standard_vision_profile_uses_provider_and_preserves_bbox_evidence(
         assert extracted["metadata"]["vision_detail"] == "low"
         assert extracted["metadata"]["vision_json_status"] == "parsed"
         assert extracted["metadata"]["vision_region_count"] == 1
-        assert extracted["metadata"]["vision_prompt_policy"] == (
-            "image_text_is_untrusted_evidence"
-        )
+        assert extracted["metadata"]["vision_prompt_policy"] == ("image_text_is_untrusted_evidence")
         assert "degraded_fallback" not in extracted["metadata"]
         artifact_types = {item["artifact_type"] for item in extracted["artifacts"]}
         assert {
@@ -1848,8 +1842,7 @@ def test_standard_vision_profile_uses_provider_and_preserves_bbox_evidence(
         regions_payload = json.loads(regions_download.content.decode("utf-8"))
         assert regions_payload["schema_name"] == "infinity_context.image_regions"
         assert any(
-            region["bbox"] == [12.0, 4.0, 118.0, 36.0]
-            for region in regions_payload["regions"]
+            region["bbox"] == [12.0, 4.0, 118.0, 36.0] for region in regions_payload["regions"]
         )
         assert _VISION_PROVIDER_SECRET not in regions_download.text
 
@@ -1943,8 +1936,7 @@ def test_standard_vision_provider_failure_falls_back_to_local_image_metadata(
         )
         assert extracted["metadata"]["vision_status"] == "failed"
         assert (
-            extracted["metadata"]["vision_error_code"]
-            == "asset_extraction.vision_provider_error"
+            extracted["metadata"]["vision_error_code"] == "asset_extraction.vision_provider_error"
         )
         assert extracted["metadata"]["vision_provider"] == "openai_vision"
         assert extracted["metadata"]["vision_model"] == "gpt-4.1-mini"

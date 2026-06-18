@@ -16,6 +16,7 @@ from infinity_context_core.application import (
     ContextItem,
     EnsureScopeCommand,
     ForgetFactCommand,
+    IngestDocumentCommand,
 )
 from infinity_context_core.domain.entities import MemoryScopeId, SourceRef, SpaceId
 from infinity_context_core.ports.adapters import (
@@ -424,6 +425,475 @@ def test_context_marks_keyword_and_vector_hits_as_hybrid_evidence(tmp_path: Path
     ]
 
 
+def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        container = client.app.state.container
+        result = asyncio.run(
+            container.ingest_document.execute(
+                IngestDocumentCommand(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_id=MemoryScopeId("memory_scope_default"),
+                    title="Multimodal context source",
+                    text=(
+                        "MULTIMODAL_CONTEXT_MARKER appears in a transcript and screenshot "
+                        "region that must keep citation coordinates."
+                    ),
+                    source_type="asset_extraction",
+                    source_external_id="extract-mm-context",
+                    classification="internal",
+                    chunk_metadata={
+                        "asset_id": "asset-mm-context",
+                        "source_refs": [
+                            {
+                                "source_type": "asset_extraction",
+                                "source_id": "extract-mm-context",
+                                "kind": "page_text",
+                                "page_number": 2,
+                                "quote_preview": "document page evidence",
+                            },
+                            {
+                                "source_type": "asset_extraction",
+                                "source_id": "extract-mm-context",
+                                "kind": "transcript_segment",
+                                "time_start_ms": 1200,
+                                "time_end_ms": 5400,
+                                "quote_preview": "transcript evidence",
+                            },
+                            {
+                                "source_type": "asset_extraction",
+                                "source_id": "extract-mm-context",
+                                "kind": "ocr_region",
+                                "bbox": [12.0, 32.0, 300.0, 88.0],
+                                "quote_preview": "image region evidence",
+                            },
+                        ],
+                    },
+                )
+            )
+        )
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="MULTIMODAL_CONTEXT_MARKER citation coordinates",
+                    consistency_mode=ConsistencyMode.CANONICAL_ONLY,
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert len(result.chunks) == 1
+    assert "page=2" in context.rendered_text
+    assert "time_ms=1200-5400" in context.rendered_text
+    assert "bbox=12,32,300,88" in context.rendered_text
+    assert context.diagnostics["source_refs_with_page_count"] == 1
+    assert context.diagnostics["source_refs_with_time_range_count"] == 1
+    assert context.diagnostics["source_refs_with_bbox_count"] == 1
+    assert context.diagnostics["items_with_multimodal_source_refs"] == 1
+    item = context.items[0]
+    assert len(item.source_refs) == 3
+    assert item.diagnostics["provenance"]["source_ref_count"] == 3
+    assert item.diagnostics["provenance"]["source_refs_with_bbox_count"] == 1
+
+
+def test_context_expands_approved_fact_to_linked_chunk_evidence(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "LINKED_FACT_MARKER says Project Atlas billing evidence was approved.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "linked-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        document = asyncio.run(
+            container.ingest_document.execute(
+                IngestDocumentCommand(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_id=MemoryScopeId("memory_scope_default"),
+                    title="Linked transcript",
+                    text="Transcript-only linked evidence says billing owner is Alex.",
+                    source_type="asset_extraction",
+                    source_external_id="extract-linked-context",
+                    classification="internal",
+                    chunk_metadata={
+                        "source_refs": [
+                            {
+                                "source_type": "asset_extraction",
+                                "source_id": "extract-linked-context",
+                                "kind": "transcript_segment",
+                                "time_start_ms": 7000,
+                                "time_end_ms": 9000,
+                            }
+                        ]
+                    },
+                )
+            )
+        )
+        chunk_id = str(document.chunks[0].id)
+        link = client.post(
+            "/v1/context-links",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "source_type": "fact",
+                "source_id": fact.json()["data"]["id"],
+                "target_type": "chunk",
+                "target_id": chunk_id,
+                "relation_type": "evidence_of",
+                "confidence": "high",
+                "reason": "approved transcript evidence supports fact",
+            },
+            headers=auth_headers(),
+        )
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="LINKED_FACT_MARKER",
+                    consistency_mode=ConsistencyMode.CANONICAL_ONLY,
+                    token_budget=900,
+                )
+            )
+        )
+
+    assert fact.status_code == 201, fact.text
+    assert link.status_code == 200, link.text
+    assert "LINKED_FACT_MARKER" in context.rendered_text
+    assert "Transcript-only linked evidence" in context.rendered_text
+    assert "time_ms=7000-9000" in context.rendered_text
+    assert context.diagnostics["approved_context_links_considered"] == 1
+    assert context.diagnostics["approved_context_links_used"] == 1
+    linked_items = [
+        item
+        for item in context.items
+        if (item.diagnostics or {}).get("retrieval_source") == "approved_context_linked_chunks"
+    ]
+    assert len(linked_items) == 1
+    assert linked_items[0].diagnostics["context_link_relation_type"] == "evidence_of"
+    assert linked_items[0].diagnostics["provenance"]["context_link_source_type"] == "fact"
+
+
+def test_context_includes_matching_canonical_anchor_with_evidence_citation(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        anchor = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "project",
+                "label": "Project Atlas",
+                "aliases": ["Atlas"],
+                "description": "Canonical project anchor for Atlas work.",
+                "confidence": "high",
+                "evidence_refs": [
+                    {
+                        "source_type": "asset_extraction",
+                        "source_id": "extract_anchor_atlas",
+                        "chunk_id": "chunk_anchor_atlas",
+                        "time_start_ms": 1200,
+                        "time_end_ms": 5400,
+                        "bbox": [12.0, 32.0, 300.0, 88.0],
+                        "quote_preview": "Project Atlas appeared in screenshot OCR.",
+                    }
+                ],
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="Project Atlas owner",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert anchor.status_code == 200, anchor.text
+    rendered = context.rendered_text
+    assert "anchor:" in rendered
+    assert "project: Project Atlas" in rendered
+    assert "source=asset_extraction:extract_anchor_atlas#chunk_anchor_atlas" in rendered
+    assert "time_ms=1200-5400" in rendered
+    assert "bbox=12,32,300,88" in rendered
+    assert context.diagnostics["anchors_considered"] == 1
+    assert context.diagnostics["anchors_used"] == 1
+    assert context.diagnostics["citations_rendered"] == 1
+    assert context.diagnostics["retrieval_sources_used"] == ["canonical_anchors"]
+    anchor_items = [item for item in context.items if item.item_type == "anchor"]
+    assert len(anchor_items) == 1
+    assert anchor_items[0].diagnostics["retrieval_source"] == "canonical_anchors"
+
+
+def test_context_retrieves_event_anchor_by_structured_identity_metadata(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        alex_event = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "event",
+                "label": "Sprint review",
+                "aliases": [],
+                "description": "Calendar event captured from meeting transcript.",
+                "confidence": "high",
+                "metadata": {
+                    "anchor_family": "event",
+                    "event_type": "meeting",
+                    "event_type_canonical": "meeting",
+                    "event_participant_label": "Alex",
+                    "event_participant_relation": "with",
+                    "event_participant_canonical_key": "alex",
+                    "event_temporal_phrase": "last week",
+                    "event_temporal_hint_code": "last_week",
+                    "event_temporal_quantity": 1,
+                    "event_temporal_unit": "week",
+                    "event_identity_terms": ["meeting", "alex", "last_week:1:week"],
+                },
+                "evidence_refs": [
+                    {
+                        "source_type": "asset_extraction",
+                        "source_id": "extract_event_alex",
+                        "chunk_id": "chunk_event_alex",
+                        "time_start_ms": 10_000,
+                        "time_end_ms": 22_000,
+                        "quote_preview": (
+                            "Transcript mentions the sprint review with Alex last week."
+                        ),
+                    }
+                ],
+            },
+            headers=auth_headers(),
+        )
+        decoy_event = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "event",
+                "label": "Design review",
+                "confidence": "high",
+                "metadata": {
+                    "anchor_family": "event",
+                    "event_type": "meeting",
+                    "event_participant_label": "Sam",
+                    "event_participant_canonical_key": "sam",
+                    "event_temporal_phrase": "yesterday",
+                    "event_temporal_hint_code": "yesterday",
+                    "event_identity_terms": ["meeting", "sam", "yesterday:1:day"],
+                },
+                "evidence_refs": [
+                    {
+                        "source_type": "asset_extraction",
+                        "source_id": "extract_event_sam",
+                        "chunk_id": "chunk_event_sam",
+                        "quote_preview": "Transcript mentions a design review with Sam yesterday.",
+                    }
+                ],
+            },
+            headers=auth_headers(),
+        )
+        linked_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": (
+                    "LAUNCH_DECISION_MARKER: Ship the Atlas launch checklist after the "
+                    "review evidence is confirmed."
+                ),
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "launch-decision"}],
+            },
+            headers=auth_headers(),
+        )
+        linked_fact_response = linked_fact.json()
+        link = client.post(
+            "/v1/context-links",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "source_type": "anchor",
+                "source_id": alex_event.json()["data"]["id"],
+                "target_type": "fact",
+                "target_id": linked_fact_response["data"]["id"],
+                "relation_type": "references",
+                "confidence": "high",
+                "reason": "approved event anchor references the launch decision fact",
+            },
+            headers=auth_headers(),
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="Alex last week",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert alex_event.status_code == 200, alex_event.text
+    assert decoy_event.status_code == 200, decoy_event.text
+    assert linked_fact.status_code == 201, linked_fact.text
+    assert link.status_code == 200, link.text
+    rendered = context.rendered_text
+    assert "event: Sprint review" in rendered
+    assert "with: Alex" in rendered
+    assert "time: last week" in rendered
+    assert "time_ms=10000-22000" in rendered
+    assert "LAUNCH_DECISION_MARKER" in rendered
+    assert "event: Design review" not in rendered
+    anchor_items = [item for item in context.items if item.item_type == "anchor"]
+    assert len(anchor_items) == 1
+    diagnostics = anchor_items[0].diagnostics
+    assert diagnostics["ranking_reason"] == (
+        "canonical semantic anchor matched query via structured identity metadata"
+    )
+    assert diagnostics["event_participant_canonical_key"] == "alex"
+    assert diagnostics["event_temporal_hint_code"] == "last_week"
+    assert diagnostics["score_signals"]["identity_unique_term_hits"] >= 2
+    assert context.diagnostics["anchors_considered"] == 2
+    assert context.diagnostics["anchors_used"] == 1
+    linked_fact_items = [
+        item
+        for item in context.items
+        if (item.diagnostics or {}).get("retrieval_source") == "approved_context_linked_facts"
+    ]
+    assert len(linked_fact_items) == 1
+    assert linked_fact_items[0].diagnostics["context_link_relation_type"] == "references"
+    assert context.diagnostics["approved_context_links_considered"] == 1
+    assert context.diagnostics["approved_context_linked_facts_used"] == 1
+
+
+def test_context_drops_stale_fact_reached_through_approved_anchor_link(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        anchor = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "event",
+                "label": "Ops followup",
+                "confidence": "high",
+                "metadata": {
+                    "anchor_family": "event",
+                    "event_participant_label": "Alex",
+                    "event_participant_canonical_key": "alex",
+                    "event_temporal_phrase": "last week",
+                    "event_temporal_hint_code": "last_week",
+                    "event_identity_terms": ["alex", "last_week:1:week"],
+                },
+            },
+            headers=auth_headers(),
+        )
+        stale_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "STALE_LINKED_FACT_MARKER must not render through approved links.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "stale-linked"}],
+            },
+            headers=auth_headers(),
+        )
+        link = client.post(
+            "/v1/context-links",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "source_type": "anchor",
+                "source_id": anchor.json()["data"]["id"],
+                "target_type": "fact",
+                "target_id": stale_fact.json()["data"]["id"],
+                "relation_type": "references",
+                "confidence": "high",
+                "reason": "approved link points at a stale fact",
+            },
+            headers=auth_headers(),
+        )
+        asyncio.run(
+            mark_fact_status(
+                client,
+                fact_id=stale_fact.json()["data"]["id"],
+                status="superseded",
+            )
+        )
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="Alex last week",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert anchor.status_code == 200, anchor.text
+    assert stale_fact.status_code == 201, stale_fact.text
+    assert link.status_code == 200, link.text
+    assert "event: Ops followup" in context.rendered_text
+    assert "STALE_LINKED_FACT_MARKER" not in context.rendered_text
+    assert context.diagnostics["approved_context_links_considered"] == 1
+    assert context.diagnostics["approved_context_linked_facts_used"] == 0
+    assert context.diagnostics["stale_context_linked_fact_drop_count"] == 1
+
+
 def test_context_replaces_superseded_fact_with_active_temporal_relation(
     tmp_path: Path,
 ) -> None:
@@ -499,9 +969,7 @@ def test_context_resolves_relative_time_query_to_current_fact(
             json={
                 "space_id": "space_client_app",
                 "memory_scope_id": "memory_scope_default",
-                "text": (
-                    "RELATIVE_TIME_OLD_FACT: billing rollout owner was Alex last week."
-                ),
+                "text": ("RELATIVE_TIME_OLD_FACT: billing rollout owner was Alex last week."),
                 "kind": "architecture_decision",
                 "source_refs": [{"source_type": "manual", "source_id": "relative-old"}],
             },
@@ -556,8 +1024,9 @@ def test_context_resolves_relative_time_query_to_current_fact(
         "active fact supersedes a matched older fact"
     )
     assert replacement["diagnostics"]["provenance"]["valid_from"].startswith("2026-06-18")
-    assert replacement["diagnostics"]["provenance"]["supersedes_fact_id"] == (
-        old_fact.json()["data"]["id"]
+    assert (
+        replacement["diagnostics"]["provenance"]["supersedes_fact_id"]
+        == (old_fact.json()["data"]["id"])
     )
 
 
@@ -986,24 +1455,32 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
             )
 
     with make_client(tmp_path) as client:
-        document = client.post(
-            "/v1/documents",
-            json={
-                "space_id": "space_client_app",
-                "memory_scope_id": "memory_scope_default",
-                "title": "RAG canonical source",
-                "text": "RAG_CANONICAL_MARKER is hydrated from the canonical chunk.",
-                "source_type": "document",
-                "source_external_id": "rag-source",
-            },
-            headers=auth_headers(),
-        )
-        document_id = document.json()["data"]["id"]
-        chunk_id = client.get(
-            f"/v1/documents/{document_id}/chunks",
-            headers=auth_headers(),
-        ).json()["data"][0]["id"]
         container = client.app.state.container
+        document = asyncio.run(
+            container.ingest_document.execute(
+                IngestDocumentCommand(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_id=MemoryScopeId("memory_scope_default"),
+                    title="RAG canonical source",
+                    text="RAG_CANONICAL_MARKER is hydrated from the canonical chunk.",
+                    source_type="asset_extraction",
+                    source_external_id="rag-source",
+                    classification="internal",
+                    chunk_metadata={
+                        "source_refs": [
+                            {
+                                "source_type": "asset_extraction",
+                                "source_id": "rag-source",
+                                "kind": "transcript_segment",
+                                "time_start_ms": 2000,
+                                "time_end_ms": 4400,
+                            }
+                        ]
+                    },
+                )
+            )
+        )
+        chunk_id = str(document.chunks[0].id)
         use_case = BuildContextUseCase(
             uow_factory=container.uow_factory,
             ids=container.ids,
@@ -1031,6 +1508,9 @@ def test_context_can_include_rag_recall_candidates_when_adapter_is_enabled(
     assert context.items[0].diagnostics["adapter_name"] == "cognee"
     assert context.items[0].diagnostics["provider"] == "cognee"
     assert context.items[0].diagnostics["dataset_id"] == "client-app/default"
+    assert context.items[0].diagnostics["provenance"]["source_ref_count"] == 1
+    assert context.items[0].diagnostics["provenance"]["source_refs_with_time_range_count"] == 1
+    assert "time_ms=2000-4400" in context.rendered_text
     assert "RAW_RAG_METADATA_SECRET" not in str(context.items[0].diagnostics)
     assert "RAG_METADATA_SECRET_TOKEN" not in str(context.items[0].diagnostics)
 
@@ -1954,8 +2434,7 @@ def test_context_batches_graph_fact_hydration_and_revalidation(
                     "space_id": "space_client_app",
                     "memory_scope_id": "memory_scope_default",
                     "text": (
-                        f"GRAPH_BATCH_FACT_MARKER_{index}: "
-                        "graph hydration should stay batched."
+                        f"GRAPH_BATCH_FACT_MARKER_{index}: graph hydration should stay batched."
                     ),
                     "kind": "note",
                     "source_refs": [

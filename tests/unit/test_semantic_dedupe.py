@@ -1,4 +1,5 @@
 from infinity_context_core.application.semantic_dedupe import (
+    describe_duplicate_fact_match,
     looks_conflicting_fact,
     looks_equivalent_fact,
     normalize_memory_text,
@@ -11,12 +12,60 @@ def test_semantic_dedupe_recognizes_document_vector_paraphrase() -> None:
         "Docs retrieval should use Qdrant vectors.",
         "Qdrant owns document vector retrieval.",
     )
+    match = describe_duplicate_fact_match(
+        "Docs retrieval should use Qdrant vectors.",
+        "Qdrant owns document vector retrieval.",
+    )
+    assert match is not None
+    assert match.match_type == "semantic_token_overlap"
+    assert "semantic_duplicate" in match.reason_codes
 
 
 def test_semantic_dedupe_rejects_exclusive_engine_mismatch() -> None:
     assert not looks_equivalent_fact(
         "Docs retrieval should use Qdrant vectors.",
         "Postgres owns document vector retrieval.",
+    )
+
+
+def test_semantic_dedupe_rejects_similar_but_different_project() -> None:
+    assert not looks_equivalent_fact(
+        "Project Atlas uses Qdrant retrieval for documents.",
+        "Project Beta uses Qdrant retrieval for documents.",
+    )
+    assert not looks_conflicting_fact(
+        "Project Atlas uses Qdrant retrieval for documents.",
+        "Project Beta uses Qdrant retrieval for documents.",
+    )
+    assert not looks_equivalent_fact(
+        "проект Атлас использует Qdrant для документов.",
+        "проект Бета использует Qdrant для документов.",
+    )
+
+
+def test_semantic_dedupe_rejects_similar_but_different_person_event() -> None:
+    assert not looks_equivalent_fact(
+        "Alex call last week covered Project Atlas pricing.",
+        "Maria call last week covered Project Atlas pricing.",
+    )
+    assert not looks_conflicting_fact(
+        "Alex call last week covered Project Atlas pricing.",
+        "Maria call last week covered Project Atlas pricing.",
+    )
+
+
+def test_semantic_dedupe_rejects_similar_but_different_event_time() -> None:
+    assert not looks_equivalent_fact(
+        "Alex call yesterday covered Project Atlas pricing.",
+        "Alex call last week covered Project Atlas pricing.",
+    )
+    assert not looks_conflicting_fact(
+        "Alex call yesterday covered Project Atlas pricing.",
+        "Alex call last week covered Project Atlas pricing.",
+    )
+    assert not looks_equivalent_fact(
+        "Час назад переписывался с Алексом по Project Atlas pricing.",
+        "На прошлой неделе переписывался с Алексом по Project Atlas pricing.",
     )
 
 

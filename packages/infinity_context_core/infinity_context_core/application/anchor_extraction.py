@@ -11,7 +11,9 @@ _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _PERSON_PATTERN = re.compile(r"\b([A-Z][a-z][A-Za-z]{1,40})(?:\s+([A-Z][a-z][A-Za-z]{1,40}))?\b")
 _CYRILLIC_PERSON_PATTERN = re.compile(r"\b([А-ЯЁ][а-яё]{2,40})(?:\s+([А-ЯЁ][а-яё]{2,40}))?\b")
 _PROJECT_PATTERN = re.compile(
-    r"\b(?:project|проект|repo|repository|service|сервис)\s+([A-Za-zА-Яа-яЁё0-9][\w.-]{1,80})",
+    r"\b(?:project|проект|repo|repository|service|сервис)\s+"
+    r"([A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}"
+    r"(?:\s+[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}){0,3})",
     re.IGNORECASE,
 )
 _ORGANIZATION_PATTERN = re.compile(
@@ -28,15 +30,18 @@ _ORGANIZATION_SUFFIX_PATTERN = re.compile(
 _TEMPORAL_PHRASE = (
     r"last week|yesterday|today|tomorrow|an hour ago|hour ago|"
     r"\d{1,3}\s+hours?\s+ago|\d{1,3}\s+days?\s+ago|\d{1,2}\s+weeks?\s+ago|"
-    r"неделю назад|вчера|сегодня|завтра|час назад|"
+    r"неделю назад|на прошлой неделе|прошлой неделе|прошлую неделю|"
+    r"вчера|сегодня|завтра|час назад|"
     r"\d{1,3}\s+час(?:а|ов)?\s+назад|"
     r"\d{1,3}\s+д(?:ень|ня|ней)\s+назад|"
     r"\d{1,2}\s+недел[юи]\s+назад"
 )
 _EVENT_KEYWORDS = (
     r"call|meeting|review|sync|demo|chat|message|conversation|"
+    r"standup|planning|retro|retrospective|workshop|interview|presentation|release|launch|"
     r"звонок|созвон|встреча|ревью|демо|переписка|переписывался|"
-    r"разговор(?:а|е|ом)?|чат"
+    r"разговор(?:а|е|ом)?|чат|планерка|планёрка|стендап|ретро|"
+    r"интервью|воркшоп|релиз|запуск"
 )
 _EVENT_PATTERN = re.compile(
     rf"\b({_EVENT_KEYWORDS})"
@@ -47,6 +52,9 @@ _EVENT_PATTERN = re.compile(
 _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
     r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
+)
+_EVENT_PREFIX_PARTICIPANT_PATTERN = re.compile(
+    r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\s*$"
 )
 _EVENT_KEYWORD_PATTERN = re.compile(rf"\b({_EVENT_KEYWORDS})\b", re.IGNORECASE)
 _TEMPORAL_PATTERN = re.compile(
@@ -71,6 +79,15 @@ _PERSON_STOP_WORDS = {
     "chat",
     "message",
     "conversation",
+    "standup",
+    "planning",
+    "retro",
+    "retrospective",
+    "workshop",
+    "interview",
+    "presentation",
+    "release",
+    "launch",
     "quick",
     "capture",
     "content",
@@ -127,6 +144,14 @@ _PERSON_STOP_WORDS = {
     "переписывался",
     "встреча",
     "звонок",
+    "планерка",
+    "планёрка",
+    "стендап",
+    "ретро",
+    "интервью",
+    "воркшоп",
+    "релиз",
+    "запуск",
 }
 _ORGANIZATION_SUFFIX_WORDS = {
     "ag",
@@ -153,6 +178,32 @@ _ORGANIZATION_LEADING_STOP_WORDS = {
     "reviewed",
     "reviewing",
     "shared",
+}
+_PROJECT_LABEL_STOP_WORDS = {
+    "about",
+    "after",
+    "and",
+    "belongs",
+    "confirmed",
+    "covered",
+    "from",
+    "has",
+    "is",
+    "keeps",
+    "meeting",
+    "needs",
+    "notes",
+    "owns",
+    "said",
+    "says",
+    "shared",
+    "tracks",
+    "uses",
+    "with",
+    "по",
+    "после",
+    "про",
+    "с",
 }
 _PROJECT_HINTS = {
     "qdrant",
@@ -223,6 +274,17 @@ class ObservedAnchor:
     reason: str
     score_boost: float
     metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class _EventComponents:
+    event_type: str
+    participant_label: str
+    participant_relation: str
+    temporal_phrase: str
+    temporal_hint_code: str
+    temporal_quantity: int | None
+    temporal_unit: str
 
 
 def extract_observed_anchors(text: str) -> tuple[ObservedAnchor, ...]:
@@ -311,6 +373,7 @@ def _append_anchor(
         return
     seen.add(key)
     safe_label = label.strip()[:120]
+    canonical_key = canonical_anchor_key_for_kind(kind, label)
     anchors.append(
         ObservedAnchor(
             kind=kind,
@@ -322,17 +385,161 @@ def _append_anchor(
             metadata={
                 "extraction_reason": reason,
                 "extractor": "anchor-rule-v2",
-                "canonical_key": canonical_anchor_key_for_kind(kind, label),
+                "canonical_key": canonical_key,
+                **_structured_anchor_metadata(kind, label, canonical_key=canonical_key),
             },
         )
     )
 
 
+def _structured_anchor_metadata(
+    kind: MemoryAnchorKind,
+    label: str,
+    *,
+    canonical_key: str,
+) -> dict[str, object]:
+    if kind == MemoryAnchorKind.PERSON:
+        return {
+            "anchor_family": "person",
+            "person_canonical_key": canonical_key,
+        }
+    if kind == MemoryAnchorKind.PROJECT:
+        return {
+            "anchor_family": "project",
+            "project_canonical_key": canonical_key,
+        }
+    if kind == MemoryAnchorKind.ORGANIZATION:
+        return {
+            "anchor_family": "organization",
+            "organization_canonical_key": canonical_key,
+        }
+    if kind != MemoryAnchorKind.EVENT:
+        return {"anchor_family": kind.value}
+
+    components = _event_components(label)
+    metadata: dict[str, object] = {
+        "anchor_family": "event",
+        "event_type": components.event_type,
+        "event_type_canonical": canonical_anchor_key(components.event_type),
+        "event_has_participant": bool(components.participant_label),
+        "event_has_temporal": bool(components.temporal_phrase),
+        "event_identity_terms": _event_identity_terms(components),
+    }
+    if components.participant_label:
+        metadata.update(
+            {
+                "event_participant_label": components.participant_label,
+                "event_participant_relation": components.participant_relation,
+                "event_participant_canonical_key": _canonical_person_key(
+                    components.participant_label
+                ),
+            }
+        )
+    if components.temporal_phrase:
+        metadata["event_temporal_phrase"] = components.temporal_phrase
+    if components.temporal_hint_code:
+        metadata["event_temporal_hint_code"] = components.temporal_hint_code
+    if components.temporal_quantity is not None:
+        metadata["event_temporal_quantity"] = components.temporal_quantity
+    if components.temporal_unit:
+        metadata["event_temporal_unit"] = components.temporal_unit
+    return metadata
+
+
+def _event_identity_terms(components: _EventComponents) -> list[str]:
+    terms = [canonical_anchor_key(components.event_type)]
+    if components.participant_label:
+        terms.append(_canonical_person_key(components.participant_label))
+    if components.temporal_hint_code:
+        temporal = components.temporal_hint_code
+        if components.temporal_quantity is not None and components.temporal_unit:
+            temporal = f"{temporal}:{components.temporal_quantity}:{components.temporal_unit}"
+        terms.append(temporal)
+    return [term for term in terms if term]
+
+
+def _event_components(label: str) -> _EventComponents:
+    normalized = normalize_anchor_key(label)
+    parts = normalized.split()
+    event_type = parts[0] if parts else normalized
+    temporal_phrase = _event_temporal_phrase(label)
+    temporal_parts = set(normalize_anchor_key(temporal_phrase).split())
+    participant_relation = ""
+    participant_label = ""
+    for index, part in enumerate(parts):
+        if part not in {"with", "from", "с", "от"}:
+            continue
+        participant_relation = part
+        participant_tokens: list[str] = []
+        for token in parts[index + 1 :]:
+            if token in temporal_parts:
+                break
+            participant_tokens.append(token)
+        participant_label = " ".join(participant_tokens).strip()
+        break
+    temporal_hint_code, temporal_quantity, temporal_unit = _temporal_hint_payload(
+        temporal_phrase
+    )
+    return _EventComponents(
+        event_type=event_type,
+        participant_label=participant_label,
+        participant_relation=participant_relation,
+        temporal_phrase=temporal_phrase,
+        temporal_hint_code=temporal_hint_code,
+        temporal_quantity=temporal_quantity,
+        temporal_unit=temporal_unit,
+    )
+
+
+def _event_temporal_phrase(label: str) -> str:
+    matches = list(_TEMPORAL_PATTERN.finditer(label))
+    if not matches:
+        return ""
+    return matches[-1].group(1).strip()
+
+
+def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
+    normalized = normalize_anchor_key(phrase)
+    if not normalized:
+        return "", None, ""
+    if normalized in {"today", "сегодня"}:
+        return "today", 0, "day"
+    if normalized in {"yesterday", "вчера"}:
+        return "yesterday", 1, "day"
+    if normalized in {"tomorrow", "завтра"}:
+        return "tomorrow", 1, "day"
+    if normalized in {
+        "last week",
+        "week ago",
+        "1 week ago",
+        "неделю назад",
+        "на прошлой неделе",
+        "прошлой неделе",
+        "прошлую неделю",
+    }:
+        return "last_week", 1, "week"
+    if normalized in {"an hour ago", "hour ago", "1 hour ago", "час назад"}:
+        return "hours_ago", 1, "hour"
+    if match := re.match(r"(?P<count>\d{1,3}) hours? ago$", normalized):
+        return "hours_ago", int(match.group("count")), "hour"
+    if match := re.match(r"(?P<count>\d{1,3}) час(?:а|ов)? назад$", normalized):
+        return "hours_ago", int(match.group("count")), "hour"
+    if match := re.match(r"(?P<count>\d{1,3}) days? ago$", normalized):
+        return "days_ago", int(match.group("count")), "day"
+    if match := re.match(r"(?P<count>\d{1,3}) д(?:ень|ня|ней) назад$", normalized):
+        return "days_ago", int(match.group("count")), "day"
+    if match := re.match(r"(?P<count>\d{1,2}) weeks? ago$", normalized):
+        return "weeks_ago", int(match.group("count")), "week"
+    if match := re.match(r"(?P<count>\d{1,2}) недел[юи] назад$", normalized):
+        return "weeks_ago", int(match.group("count")), "week"
+    return "relative_time", None, ""
+
+
 def _explicit_project_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for match in _PROJECT_PATTERN.finditer(text):
-        value = match.group(1).strip(".,:;()[]{}")
-        if len(value) >= 2:
+        value = _clean_project_label(match.group(1))
+        if len(normalize_anchor_key(value)) >= 2:
             labels.append(value)
     return tuple(labels)
 
@@ -368,7 +575,10 @@ def _event_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for match in _EVENT_PATTERN.finditer(text):
         event = match.group(1).strip()
-        participant = _nearby_event_participant(text, match.end())
+        participant = _nearby_event_participant(
+            text,
+            match.end(),
+        ) or _nearby_event_participant_before(text, match.start())
         temporal = (
             match.group(2)
             or _nearby_temporal_after(text, match.end())
@@ -421,6 +631,20 @@ def _nearby_event_participant(text: str, start: int) -> str:
     return f"{match.group('prep')} {label}"
 
 
+def _nearby_event_participant_before(text: str, end: int) -> str:
+    prefix = re.split(r"[.!?\n]", text[max(0, end - 80) : end])[-1]
+    if re.search(r"(?:project|проект)\s+[A-Za-zА-Яа-яЁё0-9][\w.-]*\s*$", prefix, re.IGNORECASE):
+        return ""
+    match = _EVENT_PREFIX_PARTICIPANT_PATTERN.search(prefix)
+    if not match:
+        return ""
+    label = match.group("label")
+    if not _is_probable_person_label(label):
+        return ""
+    prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
+    return f"{prep} {label}"
+
+
 def _nearby_temporal_before(text: str, end: int) -> str:
     prefix = re.split(r"[.!?\n]", text[max(0, end - 80) : end])[-1]
     matches = list(_TEMPORAL_PATTERN.finditer(prefix))
@@ -467,6 +691,33 @@ def _clean_organization_label(label: str) -> str:
         0
     ]
     return value.strip(".,:;()[]{} ")
+
+
+def _clean_project_label(label: str) -> str:
+    raw_tokens = [token for token in label.split() if token.strip(".,:;()[]{}")]
+    if not raw_tokens:
+        return ""
+    cleaned: list[str] = []
+    for index, raw_token in enumerate(raw_tokens[:4]):
+        token = raw_token.strip(".,:;()[]{}")
+        normalized = normalize_anchor_key(token)
+        if not normalized:
+            continue
+        if index > 0 and (
+            normalized in _PROJECT_LABEL_STOP_WORDS
+            or not _looks_like_project_label_continuation(token)
+        ):
+            break
+        cleaned.append(token)
+        if raw_token.rstrip().endswith((".", "!", "?", ";", ":")):
+            break
+    return " ".join(cleaned).strip(".,:;()[]{} ")
+
+
+def _looks_like_project_label_continuation(token: str) -> bool:
+    return bool(re.match(r"[A-ZА-ЯЁ0-9]", token)) or any(
+        marker in token for marker in ("-", ".", "_")
+    )
 
 
 def _canonical_person_key(label: str) -> str:

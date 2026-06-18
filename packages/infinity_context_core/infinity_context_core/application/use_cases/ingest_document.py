@@ -156,8 +156,10 @@ class IngestDocumentUseCase:
                     char_start=piece.char_start,
                     char_end=piece.char_end,
                 )
+                retrieval_metadata = {**chunk_metadata, "title": saved_document.title}
                 retrieval_text = document_chunk_retrieval_text(
                     text=piece.text,
+                    metadata=retrieval_metadata,
                     title=saved_document.title,
                 )
                 chunk = MemoryChunk.create(
@@ -185,8 +187,7 @@ class IngestDocumentUseCase:
                     token_estimate=estimate_tokens(retrieval_text),
                     now=now,
                     metadata={
-                        **chunk_metadata,
-                        "title": saved_document.title,
+                        **retrieval_metadata,
                         "node_kind": piece.node_kind,
                         "heading": piece.heading,
                         "ordinal_in_heading": piece.ordinal_in_heading,
