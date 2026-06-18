@@ -451,12 +451,27 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                     "diagnostics": {
                         "context_assembly_version": "context-v2-hybrid-explainable",
                         "consistency_mode": "best_effort",
+                        "vector_status": "ok",
+                        "graph_status": "degraded",
+                        "rag_status": "skipped",
                         "retrieval_sources_used": [
                             f"source_{index}" for index in range(12)
                         ],
+                        "facts_considered": 5,
+                        "keyword_chunks_considered": 6,
+                        "vector_candidate_count": 9,
+                        "vector_hydrated_count": 8,
+                        "graph_candidate_count": 7,
+                        "graph_hydrated_count": 6,
+                        "stale_vector_drop_count": 1,
+                        "stale_graph_drop_count": 2,
+                        "stale_rag_drop_count": 3,
                         "hybrid_items_used": 2,
+                        "temporal_relations_considered": 4,
                         "temporal_replacements_applied": 1,
+                        "temporal_contradictions_considered": 2,
                         "temporal_relations_skipped_by_validity": 3,
+                        "pending_conflict_suggestions_considered": 11,
                         "items_considered": 14,
                         "items_used": 7,
                         "dropped_by_instruction_flag": 1,
@@ -523,12 +538,27 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.bundle_id == "ctx_1"
     assert bundle.meta["request_id"] == "req_1"
     assert bundle.diagnostics.context_assembly_version == "context-v2-hybrid-explainable"
+    assert bundle.diagnostics.vector_status == "ok"
+    assert bundle.diagnostics.graph_status == "degraded"
+    assert bundle.diagnostics.rag_status == "skipped"
     assert bundle.diagnostics.retrieval_sources_used == tuple(
         f"source_{index}" for index in range(8)
     )
+    assert bundle.diagnostics.facts_considered == 5
+    assert bundle.diagnostics.keyword_chunks_considered == 6
+    assert bundle.diagnostics.vector_candidate_count == 9
+    assert bundle.diagnostics.vector_hydrated_count == 8
+    assert bundle.diagnostics.graph_candidate_count == 7
+    assert bundle.diagnostics.graph_hydrated_count == 6
+    assert bundle.diagnostics.stale_vector_drop_count == 1
+    assert bundle.diagnostics.stale_graph_drop_count == 2
+    assert bundle.diagnostics.stale_rag_drop_count == 3
     assert bundle.diagnostics.hybrid_items_used == 2
+    assert bundle.diagnostics.temporal_relations_considered == 4
     assert bundle.diagnostics.temporal_replacements_applied == 1
+    assert bundle.diagnostics.temporal_contradictions_considered == 2
     assert bundle.diagnostics.temporal_relations_skipped_by_validity == 3
+    assert bundle.diagnostics.pending_conflict_suggestions_considered == 11
     assert bundle.diagnostics.items_considered == 14
     assert bundle.diagnostics.items_used == 7
     assert bundle.diagnostics.dropped_by_instruction_flag == 1
@@ -580,9 +610,24 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
         query="legacy diagnostics",
     )
 
+    assert bundle.diagnostics.vector_status == "unknown"
+    assert bundle.diagnostics.graph_status == "unknown"
+    assert bundle.diagnostics.rag_status == "unknown"
+    assert bundle.diagnostics.facts_considered == 0
+    assert bundle.diagnostics.keyword_chunks_considered == 0
+    assert bundle.diagnostics.vector_candidate_count == 0
+    assert bundle.diagnostics.vector_hydrated_count == 0
+    assert bundle.diagnostics.graph_candidate_count == 0
+    assert bundle.diagnostics.graph_hydrated_count == 0
+    assert bundle.diagnostics.stale_vector_drop_count == 0
+    assert bundle.diagnostics.stale_graph_drop_count == 0
+    assert bundle.diagnostics.stale_rag_drop_count == 0
     assert bundle.diagnostics.hybrid_items_used == 0
+    assert bundle.diagnostics.temporal_relations_considered == 0
     assert bundle.diagnostics.temporal_replacements_applied == 0
+    assert bundle.diagnostics.temporal_contradictions_considered == 0
     assert bundle.diagnostics.temporal_relations_skipped_by_validity == 0
+    assert bundle.diagnostics.pending_conflict_suggestions_considered == 0
     assert bundle.diagnostics.items_considered == 0
     assert bundle.diagnostics.items_used == 0
     assert bundle.diagnostics.dropped_by_instruction_flag == 0

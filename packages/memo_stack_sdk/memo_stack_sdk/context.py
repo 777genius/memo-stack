@@ -76,6 +76,21 @@ class ContextBundleDiagnostics:
     dropped_by_char_cap: int
     diagnostics_truncated: bool
     raw: Mapping[str, object]
+    vector_status: str = "unknown"
+    graph_status: str = "unknown"
+    rag_status: str = "unknown"
+    facts_considered: int = 0
+    keyword_chunks_considered: int = 0
+    vector_candidate_count: int = 0
+    vector_hydrated_count: int = 0
+    graph_candidate_count: int = 0
+    graph_hydrated_count: int = 0
+    stale_vector_drop_count: int = 0
+    stale_graph_drop_count: int = 0
+    stale_rag_drop_count: int = 0
+    temporal_relations_considered: int = 0
+    temporal_contradictions_considered: int = 0
+    pending_conflict_suggestions_considered: int = 0
 
 
 @dataclass(frozen=True)
@@ -189,6 +204,27 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         dropped_by_char_cap=_non_negative_int(raw.get("dropped_by_char_cap")),
         diagnostics_truncated=bool(raw.get("diagnostics_truncated")),
         raw=safe_raw,
+        vector_status=_safe_text(raw.get("vector_status"), default="unknown"),
+        graph_status=_safe_text(raw.get("graph_status"), default="unknown"),
+        rag_status=_safe_text(raw.get("rag_status"), default="unknown"),
+        facts_considered=_non_negative_int(raw.get("facts_considered")),
+        keyword_chunks_considered=_non_negative_int(raw.get("keyword_chunks_considered")),
+        vector_candidate_count=_non_negative_int(raw.get("vector_candidate_count")),
+        vector_hydrated_count=_non_negative_int(raw.get("vector_hydrated_count")),
+        graph_candidate_count=_non_negative_int(raw.get("graph_candidate_count")),
+        graph_hydrated_count=_non_negative_int(raw.get("graph_hydrated_count")),
+        stale_vector_drop_count=_non_negative_int(raw.get("stale_vector_drop_count")),
+        stale_graph_drop_count=_non_negative_int(raw.get("stale_graph_drop_count")),
+        stale_rag_drop_count=_non_negative_int(raw.get("stale_rag_drop_count")),
+        temporal_relations_considered=_non_negative_int(
+            raw.get("temporal_relations_considered")
+        ),
+        temporal_contradictions_considered=_non_negative_int(
+            raw.get("temporal_contradictions_considered")
+        ),
+        pending_conflict_suggestions_considered=_non_negative_int(
+            raw.get("pending_conflict_suggestions_considered")
+        ),
     )
 
 
