@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 part 'marionette_e2e_runtime.dart';
 
@@ -71,6 +72,126 @@ class MarionetteAnchorLifecycleConfig {
   }
 }
 
+List<_AttachmentCase> _attachmentCases(String runMarker) {
+  return <_AttachmentCase>[
+    _AttachmentCase(
+      label: 'text',
+      filename: 'attachment-text-$runMarker.txt',
+      mime: 'text/plain',
+      content: 'Attachment E2E $runMarker: Alex attached file evidence '
+          'for Project Capture Target $runMarker.',
+      text: 'Attachment text capture $runMarker should preserve file evidence.',
+      expectedParserName: 'simple_text',
+      expectedArtifactTypes: <String>{'markdown'},
+    ),
+    _AttachmentCase(
+      label: 'image',
+      filename: 'attachment-image-$runMarker.png',
+      mime: 'image/png',
+      contentBase64: _samplePngBase64(),
+      text:
+          'Attachment image capture $runMarker should preserve screenshot evidence.',
+      expectedParserName: 'image_metadata',
+      expectedArtifactTypes: <String>{'image_regions', 'markdown'},
+    ),
+    _AttachmentCase(
+      label: 'audio',
+      filename: 'attachment-audio-$runMarker.wav',
+      mime: 'audio/wav',
+      contentBase64: _sampleWavBase64(),
+      text:
+          'Attachment audio capture $runMarker should preserve media evidence.',
+      expectedParserName: 'media_metadata',
+      expectedArtifactTypes: <String>{'media_manifest', 'markdown'},
+    ),
+    _AttachmentCase(
+      label: 'video',
+      filename: 'attachment-video-$runMarker.mp4',
+      mime: 'video/mp4',
+      contentBase64: _sampleMp4Base64(),
+      text:
+          'Attachment video capture $runMarker should preserve keyframe evidence.',
+      expectedParserName: 'media_metadata',
+      expectedArtifactTypes: <String>{
+        'keyframe',
+        'media_manifest',
+        'markdown',
+        'video_frame_timeline',
+      },
+    ),
+  ];
+}
+
+String _samplePngBase64() {
+  return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8'
+      'z8BQDwAFgwJ/l5v2NwAAAABJRU5ErkJggg==';
+}
+
+String _sampleWavBase64() {
+  return base64Encode(_sampleWavBytes());
+}
+
+List<int> _sampleWavBytes() {
+  const sampleRate = 8000;
+  const frameCount = 800;
+  const channels = 1;
+  const bytesPerSample = 2;
+  const bitsPerSample = 16;
+  const dataSize = frameCount * channels * bytesPerSample;
+  final bytes = Uint8List(44 + dataSize);
+  final data = ByteData.sublistView(bytes);
+  _writeAscii(bytes, 0, 'RIFF');
+  data.setUint32(4, 36 + dataSize, Endian.little);
+  _writeAscii(bytes, 8, 'WAVE');
+  _writeAscii(bytes, 12, 'fmt ');
+  data.setUint32(16, 16, Endian.little);
+  data.setUint16(20, 1, Endian.little);
+  data.setUint16(22, channels, Endian.little);
+  data.setUint32(24, sampleRate, Endian.little);
+  data.setUint32(28, sampleRate * channels * bytesPerSample, Endian.little);
+  data.setUint16(32, channels * bytesPerSample, Endian.little);
+  data.setUint16(34, bitsPerSample, Endian.little);
+  _writeAscii(bytes, 36, 'data');
+  data.setUint32(40, dataSize, Endian.little);
+  return bytes;
+}
+
+void _writeAscii(Uint8List bytes, int offset, String value) {
+  for (var index = 0; index < value.length; index += 1) {
+    bytes[offset + index] = value.codeUnitAt(index);
+  }
+}
+
+String _sampleMp4Base64() {
+  final tempDir = Directory.systemTemp.createTempSync(
+    'memo-stack-video-fixture.',
+  );
+  try {
+    final video = File('${tempDir.path}/fixture.mp4');
+    final result = Process.runSync(
+      'ffmpeg',
+      <String>[
+        '-y',
+        '-v',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:s=32x32:d=1',
+        '-pix_fmt',
+        'yuv420p',
+        video.path,
+      ],
+    );
+    if (result.exitCode != 0 || !video.existsSync()) {
+      throw StateError('failed to generate mp4 fixture: ${result.stderr}');
+    }
+    return base64Encode(video.readAsBytesSync());
+  } finally {
+    tempDir.deleteSync(recursive: true);
+  }
+}
+
 class MarionetteFlowRecorder {
   final String? path;
   final String runMarker;
@@ -103,6 +224,28 @@ class MarionetteFlowRecorder {
           })}\n',
     );
   }
+}
+
+class _AttachmentCase {
+  final String label;
+  final String filename;
+  final String mime;
+  final String text;
+  final String expectedParserName;
+  final Set<String> expectedArtifactTypes;
+  final String? content;
+  final String? contentBase64;
+
+  const _AttachmentCase({
+    required this.label,
+    required this.filename,
+    required this.mime,
+    required this.text,
+    required this.expectedParserName,
+    required this.expectedArtifactTypes,
+    this.content,
+    this.contentBase64,
+  });
 }
 
 class MarionetteAnchorLifecycleRunner {
@@ -411,50 +554,65 @@ class MarionetteAnchorLifecycleRunner {
     MemoStackExtensionClient memoStack,
     String runMarker,
   ) async {
-    final captured = await memoStack.call(
-      'memoStack.submitAttachmentCapture',
-      {
+    for (final attachment in _attachmentCases(runMarker)) {
+      final params = <String, String>{
         'memoryScopeExternalRef': config.scopeRef,
-        'threadTitle': 'Attachment Capture Thread $runMarker',
-        'filename': 'attachment-$runMarker.txt',
-        'mime': 'text/plain',
-        'content': 'Attachment E2E $runMarker: Alex attached file evidence '
-            'for Project Capture Target $runMarker.',
-        'text': 'Attachment capture $runMarker should preserve file evidence.',
-      },
-    );
-    final uploadedAssetIds =
-        _list(captured['uploadedAssetIds']).map((item) => '$item').toList();
-    _expect(
-      uploadedAssetIds.length == 1,
-      'submitAttachmentCapture did not return exactly one uploaded asset id',
-    );
-    final assetId = uploadedAssetIds.single;
-    final latestCapture = _map(captured['latestCapture']);
-    final captureAssetIds =
-        _list(latestCapture['assetIds']).map((item) => '$item').toSet();
-    _expect(
-      captureAssetIds.contains(assetId),
-      'latest capture does not reference uploaded asset $assetId',
-    );
+        'threadTitle': 'Attachment ${attachment.label} Thread $runMarker',
+        'filename': attachment.filename,
+        'mime': attachment.mime,
+        'text': attachment.text,
+      };
+      if (attachment.content != null) {
+        params['content'] = attachment.content!;
+      }
+      if (attachment.contentBase64 != null) {
+        params['contentBase64'] = attachment.contentBase64!;
+      }
+      final captured = await memoStack.call(
+        'memoStack.submitAttachmentCapture',
+        params,
+      );
+      final uploadedAssetIds =
+          _list(captured['uploadedAssetIds']).map((item) => '$item').toList();
+      _expect(
+        uploadedAssetIds.length == 1,
+        '${attachment.label} attachment did not return exactly one asset id',
+      );
+      final assetId = uploadedAssetIds.single;
+      final latestCapture = _map(captured['latestCapture']);
+      final captureAssetIds =
+          _list(latestCapture['assetIds']).map((item) => '$item').toSet();
+      _expect(
+        captureAssetIds.contains(assetId),
+        'latest ${attachment.label} capture does not reference asset $assetId',
+      );
 
-    final extraction = await _waitForAssetExtraction(
-      memoStack,
-      assetId: assetId,
-    );
-    _expect(
-      _field(extraction, 'parserName') == 'simple_text',
-      'text attachment was not parsed by simple_text',
-    );
-    _expect(
-      _list(extraction['resultDocumentIds']).isNotEmpty,
-      'text attachment extraction did not create a document',
-    );
-    _expect(
-      _list(extraction['artifactTypes']).contains('markdown'),
-      'text attachment extraction did not create a markdown artifact',
-    );
-    _log('attachment capture linked asset $assetId to extracted document');
+      final extraction = await _waitForAssetExtraction(
+        memoStack,
+        assetId: assetId,
+      );
+      final parserName = _field(extraction, 'parserName');
+      _expect(
+        parserName == attachment.expectedParserName,
+        '${attachment.label} attachment parser mismatch: $parserName',
+      );
+      _expect(
+        _list(extraction['resultDocumentIds']).isNotEmpty,
+        '${attachment.label} attachment extraction did not create a document',
+      );
+      final artifactTypes =
+          _list(extraction['artifactTypes']).map((item) => '$item').toSet();
+      for (final artifactType in attachment.expectedArtifactTypes) {
+        _expect(
+          artifactTypes.contains(artifactType),
+          '${attachment.label} attachment missing artifact $artifactType',
+        );
+      }
+      _log(
+        'attachment ${attachment.label} linked asset $assetId '
+        'with parser $parserName',
+      );
+    }
   }
 
   Future<void> _runRejectedContextLinkFlow(
