@@ -138,7 +138,7 @@ def _quality_golden_cases(
             must_not_include=("QUALITY_FACT_TEMPORAL_OLD",),
             max_facts=5,
             max_chunks=0,
-            required_diagnostics=(("temporal_replacements_applied", 1),),
+            required_diagnostics=(("temporal_replacements_applied", "gte", 1),),
         ),
         EvalCase(
             case_id="contradicted_fact_hidden_by_default",
@@ -246,7 +246,7 @@ def _quality_golden_cases(
             must_not_include=("QUALITY_HYBRID_SINGLE_SOURCE_DECOY",),
             max_facts=0,
             max_chunks=1,
-            required_diagnostics=(("hybrid_items_used", 1),),
+            required_diagnostics=(("hybrid_items_used", "gte", 1),),
         ),
         EvalCase(
             case_id="document_middle_recall",

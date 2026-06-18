@@ -2,6 +2,7 @@ from memo_stack_server.eval_case_runner import (
     _MAX_DIAGNOSTIC_MISMATCH_FAILURES,
     _case_failures,
     _required_diagnostic_mismatches,
+    _required_diagnostics_ok,
 )
 from memo_stack_server.eval_types import EvalCase
 
@@ -38,6 +39,7 @@ def test_required_diagnostic_failures_are_bounded_and_redacted() -> None:
     rendered = repr(failures)
     assert len(mismatches) == _MAX_DIAGNOSTIC_MISMATCH_FAILURES
     assert mismatches[0]["key"] == "diag_0"
+    assert mismatches[0]["operator"] == "eq"
     assert raw_secret not in rendered
     assert "[redacted]" in rendered
     assert failures == (
@@ -47,5 +49,52 @@ def test_required_diagnostic_failures_are_bounded_and_redacted() -> None:
             "reason": "required_diagnostics_missing",
             "item_ids": ["chunk_hybrid"],
             "diagnostic_mismatches": list(mismatches),
+        },
+    )
+
+
+def test_required_diagnostics_support_operator_requirements() -> None:
+    diagnostics = {
+        "hybrid_items_used": 2,
+        "retrieval_sources_used": ["vector_chunks", "keyword_chunks"],
+        "context_assembly_version": "context-v2-hybrid-explainable",
+    }
+
+    assert _required_diagnostics_ok(
+        diagnostics,
+        required=(
+            ("hybrid_items_used", "gte", 1),
+            ("retrieval_sources_used", "contains", "keyword_chunks"),
+            ("context_assembly_version", "eq", "context-v2-hybrid-explainable"),
+        ),
+    )
+
+    mismatches = _required_diagnostic_mismatches(
+        diagnostics,
+        required=(
+            ("hybrid_items_used", "gte", 3),
+            ("retrieval_sources_used", "contains", "graph_facts"),
+            ("context_assembly_version", "unknown_operator", "context-v2"),
+        ),
+    )
+
+    assert mismatches == (
+        {
+            "key": "hybrid_items_used",
+            "operator": "gte",
+            "expected": 3,
+            "actual": 2,
+        },
+        {
+            "key": "retrieval_sources_used",
+            "operator": "contains",
+            "expected": "graph_facts",
+            "actual": "['vector_chunks', 'keyword_chunks']",
+        },
+        {
+            "key": "context_assembly_version",
+            "operator": "unknown_operator",
+            "expected": "context-v2",
+            "actual": "context-v2-hybrid-explainable",
         },
     )

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+DiagnosticRequirement = tuple[str, object] | tuple[str, str, object]
+
 
 @dataclass(frozen=True)
 class SeedResult:
@@ -64,7 +66,7 @@ class EvalCase:
     max_chunks: int = 30
     consistency_mode: str = "best_effort"
     require_evidence_guard: bool = True
-    required_diagnostics: tuple[tuple[str, object], ...] = ()
+    required_diagnostics: tuple[DiagnosticRequirement, ...] = ()
 
 
 @dataclass(frozen=True)

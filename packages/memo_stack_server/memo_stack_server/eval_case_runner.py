@@ -14,7 +14,7 @@ from memo_stack_server.eval_constants import (
     _SMALL_GOLDEN_PRECISION_GATE,
     _SMALL_GOLDEN_RECALL_GATE,
 )
-from memo_stack_server.eval_types import EvalCase, EvalCaseResult
+from memo_stack_server.eval_types import DiagnosticRequirement, EvalCase, EvalCaseResult
 
 _MAX_DIAGNOSTIC_MISMATCH_FAILURES = 8
 _MAX_DIAGNOSTIC_FAILURE_TEXT_CHARS = 160
@@ -111,7 +111,7 @@ def _token_overflow(diagnostics: object) -> bool:
 def _required_diagnostics_ok(
     diagnostics: dict[str, object],
     *,
-    required: tuple[tuple[str, object], ...],
+    required: tuple[DiagnosticRequirement, ...],
 ) -> bool:
     return not _required_diagnostic_mismatches(diagnostics, required=required)
 
@@ -119,23 +119,72 @@ def _required_diagnostics_ok(
 def _required_diagnostic_mismatches(
     diagnostics: dict[str, object],
     *,
-    required: tuple[tuple[str, object], ...],
+    required: tuple[DiagnosticRequirement, ...],
 ) -> tuple[dict[str, object], ...]:
     mismatches: list[dict[str, object]] = []
-    for key, expected in required:
+    for requirement in required:
+        key, operator, expected = _parse_diagnostic_requirement(requirement)
         actual = diagnostics.get(key)
-        if actual == expected:
+        if _diagnostic_requirement_matches(
+            actual,
+            operator=operator,
+            expected=expected,
+        ):
             continue
         if len(mismatches) >= _MAX_DIAGNOSTIC_MISMATCH_FAILURES:
             break
         mismatches.append(
             {
                 "key": _safe_failure_text(key),
+                "operator": _safe_failure_text(operator),
                 "expected": _safe_failure_value(expected),
                 "actual": _safe_failure_value(actual),
             }
         )
     return tuple(mismatches)
+
+
+def _parse_diagnostic_requirement(
+    requirement: DiagnosticRequirement,
+) -> tuple[str, str, object]:
+    if len(requirement) == 2:
+        key, expected = requirement
+        return key, "eq", expected
+    key, operator, expected = requirement
+    return key, str(operator).strip().lower() or "eq", expected
+
+
+def _diagnostic_requirement_matches(
+    actual: object,
+    *,
+    operator: str,
+    expected: object,
+) -> bool:
+    if operator == "eq":
+        return actual == expected
+    if operator == "gte":
+        return _number(actual) >= _number(expected)
+    if operator == "lte":
+        return _number(actual) <= _number(expected)
+    if operator == "contains":
+        return _contains(actual, expected)
+    return False
+
+
+def _number(value: object) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    return float("nan")
+
+
+def _contains(actual: object, expected: object) -> bool:
+    if isinstance(actual, str):
+        return str(expected) in actual
+    if isinstance(actual, list | tuple | set):
+        return expected in actual
+    return False
 
 
 def _case_failures(
