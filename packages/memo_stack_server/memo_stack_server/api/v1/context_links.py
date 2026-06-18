@@ -423,6 +423,7 @@ def _review_context_link_batch_to_response(result: Any) -> dict[str, Any]:
         "applied": result.applied,
         "failed": result.failed,
         "stopped": result.stopped,
+        "diagnostics": safe_public_metadata(result.diagnostics, max_items=40),
         "results": [
             {
                 "suggestion_id": item.suggestion_id,

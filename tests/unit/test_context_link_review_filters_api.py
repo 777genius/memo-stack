@@ -307,6 +307,12 @@ def test_context_link_suggestions_batch_review_applies_mixed_actions(
     assert data["applied"] == 2
     assert data["failed"] == 0
     assert data["stopped"] is False
+    assert data["diagnostics"] == {
+        "requested_count": 2,
+        "continue_on_error": False,
+        "batch_limit": 50,
+        "visible_filter_applied": False,
+    }
     approved_item, rejected_item = data["results"]
     assert approved_item["suggestion_id"] == approved_suggestion_id
     assert approved_item["status"] == "applied"

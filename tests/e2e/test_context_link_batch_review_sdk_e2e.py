@@ -127,6 +127,16 @@ def test_context_link_batch_review_sdk_e2e(tmp_path: Path) -> None:
     assert reviewed["data"]["applied"] == 2
     assert reviewed["data"]["failed"] == 0
     assert reviewed["data"]["stopped"] is False
+    diagnostics = reviewed["data"]["diagnostics"]
+    assert diagnostics["requested_count"] == 2
+    assert diagnostics["continue_on_error"] is True
+    assert diagnostics["batch_limit"] == 50
+    assert diagnostics["visible_filter_applied"] is True
+    assert diagnostics["visible_filter_result_count"] >= 2
+    assert diagnostics["visible_filter_limit"] == 20
+    assert diagnostics["visible_filter_statuses"] == ["pending"]
+    assert diagnostics["visible_filter_source_type"] == "capture"
+    assert diagnostics["visible_filter_has_source_id"] is True
     assert [item["status"] for item in reviewed["data"]["results"]] == ["applied", "applied"]
     approved_result = reviewed["data"]["results"][0]
     rejected_result = reviewed["data"]["results"][1]

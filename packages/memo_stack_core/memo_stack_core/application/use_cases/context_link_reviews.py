@@ -31,6 +31,7 @@ from memo_stack_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS = 50
 MAX_SAFE_BATCH_ERROR_CHARS = 320
+MAX_VISIBLE_FILTER_DIAGNOSTIC_STATUSES = 8
 
 
 class ListContextLinkSuggestionsUseCase:
@@ -194,7 +195,11 @@ class ReviewContextLinkSuggestionsBatchUseCase:
         if len(command.items) > MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS:
             raise MemoryValidationError("Context link batch review supports at most 50 items")
         _assert_unique_batch_suggestion_ids(command.items)
-        await self._assert_visible_filter_matches(command)
+        visible_filter_result_count = await self._assert_visible_filter_matches(command)
+        diagnostics = _batch_review_diagnostics(
+            command,
+            visible_filter_result_count=visible_filter_result_count,
+        )
 
         results: list[ReviewContextLinkSuggestionBatchItemResult] = []
         stopped = False
@@ -231,6 +236,7 @@ class ReviewContextLinkSuggestionsBatchUseCase:
             failed=failed,
             stopped=stopped,
             results=tuple(results),
+            diagnostics=diagnostics,
         )
 
     async def _review_one(
@@ -253,10 +259,10 @@ class ReviewContextLinkSuggestionsBatchUseCase:
     async def _assert_visible_filter_matches(
         self,
         command: ReviewContextLinkSuggestionsBatchCommand,
-    ) -> None:
+    ) -> int | None:
         visible_filter = command.visible_filter
         if visible_filter is None:
-            return
+            return None
         if self._list_context_link_suggestions is None:
             raise MemoryValidationError("Context link batch visible filter is unavailable")
         visible = await self._list_context_link_suggestions.execute(
@@ -268,6 +274,7 @@ class ReviewContextLinkSuggestionsBatchUseCase:
             raise MemoryValidationError(
                 "Context link batch review contains suggestions outside visible filter"
             )
+        return len(visible)
 
 
 def _visible_filter_to_query(
@@ -285,6 +292,44 @@ def _visible_filter_to_query(
         relation_type=visible_filter.relation_type,
         statuses=visible_filter.statuses,
     )
+
+
+def _batch_review_diagnostics(
+    command: ReviewContextLinkSuggestionsBatchCommand,
+    *,
+    visible_filter_result_count: int | None,
+) -> dict[str, object]:
+    diagnostics: dict[str, object] = {
+        "requested_count": len(command.items),
+        "continue_on_error": command.continue_on_error,
+        "batch_limit": MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS,
+        "visible_filter_applied": command.visible_filter is not None,
+    }
+    visible_filter = command.visible_filter
+    if visible_filter is None:
+        return diagnostics
+
+    statuses = visible_filter.statuses
+    if statuses is None:
+        statuses = (visible_filter.status,) if visible_filter.status else ()
+    diagnostics.update(
+        {
+            "visible_filter_result_count": visible_filter_result_count or 0,
+            "visible_filter_limit": visible_filter.limit,
+            "visible_filter_statuses": tuple(
+                statuses[:MAX_VISIBLE_FILTER_DIAGNOSTIC_STATUSES]
+            ),
+            "visible_filter_statuses_truncated": (
+                len(statuses) > MAX_VISIBLE_FILTER_DIAGNOSTIC_STATUSES
+            ),
+            "visible_filter_source_type": visible_filter.source_type or "",
+            "visible_filter_has_source_id": bool(visible_filter.source_id),
+            "visible_filter_target_type": visible_filter.target_type or "",
+            "visible_filter_has_target_id": bool(visible_filter.target_id),
+            "visible_filter_relation_type": visible_filter.relation_type or "",
+        }
+    )
+    return diagnostics
 
 
 def _has_approval_override(command: ReviewContextLinkSuggestionCommand) -> bool:
