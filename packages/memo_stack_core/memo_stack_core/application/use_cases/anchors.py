@@ -630,7 +630,7 @@ async def _assert_anchor_aliases_available(
     aliases: tuple[str, ...],
     exclude_anchor_ids: tuple[str, ...] = (),
 ) -> None:
-    proposed_keys = _anchor_alias_keys(label, aliases)
+    proposed_keys = _anchor_alias_keys(kind=kind, label=label, aliases=aliases)
     if not proposed_keys:
         return
     conflict = await _find_active_anchor_by_alias_key(
@@ -671,18 +671,26 @@ async def _find_active_anchor_by_alias_key(
     for anchor in anchors:
         if str(anchor.id) in excluded:
             continue
-        if set(keys) & set(_anchor_alias_keys(anchor.label, anchor.aliases)):
+        if set(keys) & set(
+            _anchor_alias_keys(kind=kind, label=anchor.label, aliases=anchor.aliases)
+        ):
             return anchor
     return None
 
 
-def _anchor_alias_keys(label: str, aliases: tuple[str, ...]) -> tuple[str, ...]:
+def _anchor_alias_keys(*, kind: str, label: str, aliases: tuple[str, ...]) -> tuple[str, ...]:
     keys = {
         normalized
         for value in (label, *aliases)
         if (normalized := normalize_anchor_key(value))
     }
+    if kind in {MemoryAnchorKind.ORGANIZATION.value, MemoryAnchorKind.PROJECT.value}:
+        keys.update(_compact_anchor_key(key) for key in tuple(keys))
     return tuple(sorted(keys))
+
+
+def _compact_anchor_key(value: str) -> str:
+    return "".join(value.split())
 
 
 def _parse_anchor_confidence(value: str | None) -> Confidence:

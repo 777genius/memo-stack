@@ -528,6 +528,85 @@ def test_organization_anchor_alias_conflicts_and_split_preserve_lineage(
     assert "Acme" not in active_by_id[acme_parent.json()["data"]["id"]]["aliases"]
 
 
+def test_organization_anchor_compact_alias_conflicts_reject_brand_variants(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "organization-compact-conflicts",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "org-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "org-compact-conflict-seed",
+                "text": "Seed organization compact conflict scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        openai = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-compact-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "OpenAI",
+            },
+            headers=auth_headers(),
+        )
+        assert openai.status_code == 200, openai.text
+
+        spaced_openai = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-compact-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Open AI",
+            },
+            headers=auth_headers(),
+        )
+
+        github = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-compact-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "GitHub",
+            },
+            headers=auth_headers(),
+        )
+        assert github.status_code == 200, github.text
+
+        docs_hub = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "organization-compact-conflicts",
+                "memory_scope_external_ref": "default",
+                "kind": "organization",
+                "label": "Docs Hub",
+            },
+            headers=auth_headers(),
+        )
+        assert docs_hub.status_code == 200, docs_hub.text
+
+        spaced_github_alias = client.patch(
+            f"/v1/anchors/{docs_hub.json()['data']['id']}",
+            json={"aliases": ["Git Hub"]},
+            headers=auth_headers(),
+        )
+
+    assert spaced_openai.status_code == 409, spaced_openai.text
+    assert spaced_github_alias.status_code == 409, spaced_github_alias.text
+
+
 def test_anchor_split_rejects_empty_normalized_label_without_mutating_alias(
     tmp_path: Path,
 ) -> None:
