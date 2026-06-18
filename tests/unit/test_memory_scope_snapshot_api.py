@@ -556,6 +556,138 @@ def test_memory_scope_snapshot_export_dry_run_and_confirmed_import(tmp_path: Pat
     )
 
 
+def test_memory_scope_snapshot_import_accepts_legacy_anchor_relation_payload(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        source = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "legacy-snapshots",
+                "memory_scope_external_ref": "source-memory_scope",
+                "text": "LEGACY_SNAPSHOT_SOURCE: anchor and relation defaults survive.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "legacy-source"}],
+            },
+            headers=auth_headers(),
+        )
+        target = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "legacy-snapshots",
+                "memory_scope_external_ref": "source-memory_scope",
+                "text": "LEGACY_SNAPSHOT_TARGET: relation target survives.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "legacy-target"}],
+            },
+            headers=auth_headers(),
+        )
+        relation = client.post(
+            f"/v1/facts/{source.json()['data']['id']}/relations",
+            json={
+                "target_fact_id": target.json()["data"]["id"],
+                "relation_type": "supports",
+                "reason": "Legacy snapshot relation did not have temporal fields.",
+            },
+            headers=auth_headers(),
+        )
+        anchor = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "legacy-snapshots",
+                "memory_scope_external_ref": "source-memory_scope",
+                "kind": "organization",
+                "label": "Legacy OpenAI",
+                "aliases": ["Open AI"],
+                "description": "Legacy snapshot anchor without lifecycle fields.",
+            },
+            headers=auth_headers(),
+        )
+        exported = client.get(
+            "/v1/export/memory_scope-snapshot",
+            params={
+                "space_slug": "legacy-snapshots",
+                "memory_scope_external_ref": "source-memory_scope",
+            },
+            headers=auth_headers(),
+        )
+        snapshot = exported.json()["data"]
+        snapshot["schema_version"] = 8
+        for item in snapshot["anchors"]:
+            item.pop("confidence", None)
+            item.pop("evidence_refs", None)
+            item.pop("observed_at", None)
+            item.pop("valid_from", None)
+            item.pop("valid_to", None)
+        for item in snapshot["relations"]:
+            item.pop("observed_at", None)
+            item.pop("valid_from", None)
+            item.pop("valid_to", None)
+
+        imported = client.post(
+            "/v1/export/memory_scope-snapshot/import",
+            json={
+                "space_slug": "legacy-snapshots-imported",
+                "memory_scope_external_ref": "target-memory_scope",
+                "snapshot": snapshot,
+                "merge_strategy": "create_new_memory_scope",
+                "dry_run": False,
+                "confirmed": True,
+            },
+            headers=auth_headers(),
+        )
+        imported_memory_scope = imported.json()["data"]["created_memory_scope"]
+        browser = client.get(
+            "/v1/memory-browser",
+            params={
+                "space_slug": "legacy-snapshots-imported",
+                "memory_scope_external_ref": imported_memory_scope["external_ref"],
+                "limit": 20,
+            },
+            headers=auth_headers(),
+        )
+        restored_source = next(
+            item
+            for item in browser.json()["data"]["facts"]
+            if item["text"] == "LEGACY_SNAPSHOT_SOURCE: anchor and relation defaults survive."
+        )
+        restored_relations = client.get(
+            f"/v1/facts/{restored_source['id']}/relations",
+            headers=auth_headers(),
+        )
+
+    assert source.status_code == 201
+    assert target.status_code == 201
+    assert relation.status_code == 201
+    assert anchor.status_code == 200
+    assert exported.status_code == 200
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["data"]["status"] == "ok"
+    assert imported.json()["data"]["merge_strategy"] == "create_new_memory_scope"
+    assert imported.json()["data"]["imported"]["anchors"] == 1
+    assert imported.json()["data"]["imported"]["relations"] == 1
+
+    assert browser.status_code == 200
+    data = browser.json()["data"]
+    restored_anchor = data["anchors"][0]
+    assert restored_anchor["id"] != anchor.json()["data"]["id"]
+    assert restored_anchor["confidence"] == "medium"
+    assert restored_anchor["evidence_refs"] == []
+    assert restored_anchor["observed_at"] == restored_anchor["created_at"]
+    assert restored_anchor["valid_from"] is None
+    assert restored_anchor["valid_to"] is None
+
+    assert restored_relations.status_code == 200
+    restored_relation = restored_relations.json()["data"]["items"][0]["relation"]
+    assert restored_relation["id"] != relation.json()["data"]["id"]
+    assert restored_relation["relation_type"] == "supports"
+    assert restored_relation["source_fact_id"] == restored_source["id"]
+    assert restored_relation["target_fact_id"] != target.json()["data"]["id"]
+    assert restored_relation["observed_at"] == restored_relation["created_at"]
+    assert restored_relation["valid_from"] is None
+    assert restored_relation["valid_to"] is None
+
+
 def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         fact = client.post(
