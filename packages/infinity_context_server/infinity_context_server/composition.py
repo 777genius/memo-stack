@@ -467,6 +467,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=clock,
         rag_recall=cognee,
         packer=ContextPacker(),
+        blob_storage=blob_storage,
     )
     build_memory_digest = BuildMemoryDigestUseCase(
         uow_factory=uow_factory,

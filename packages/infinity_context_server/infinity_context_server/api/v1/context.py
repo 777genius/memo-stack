@@ -8,7 +8,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from infinity_context_core.application import BuildContextQuery, ConsistencyMode
-from infinity_context_core.application.context_diagnostics import normalize_context_bundle_diagnostics
+from infinity_context_core.application.context_diagnostics import (
+    normalize_context_bundle_diagnostics,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 from infinity_context_server.api.auth import require_service_token
@@ -40,6 +42,7 @@ class ContextRequest(BaseModel):
     token_budget: int = Field(default=1800, ge=64, le=16000)
     max_facts: int = Field(default=20, ge=0, le=100)
     max_chunks: int = Field(default=30, ge=0, le=200)
+    max_evidence_items: int = Field(default=12, ge=0, le=100)
     max_conflicting_suggestions: int = Field(default=5, ge=0, le=20)
     include_superseded: bool = False
     include_stale: bool = False
@@ -123,6 +126,7 @@ async def build_context(
             max_rendered_chars=container.settings.max_context_chars,
             max_facts=request.max_facts,
             max_chunks=request.max_chunks,
+            max_evidence_items=request.max_evidence_items,
             max_conflicting_suggestions=request.max_conflicting_suggestions,
             include_superseded=request.include_superseded,
             include_stale=request.include_stale,
@@ -213,6 +217,7 @@ async def search_memory(
             max_rendered_chars=container.settings.max_context_chars,
             max_facts=request.max_facts,
             max_chunks=request.max_chunks,
+            max_evidence_items=request.max_evidence_items,
             max_conflicting_suggestions=request.max_conflicting_suggestions,
             include_superseded=request.include_superseded,
             include_stale=request.include_stale,

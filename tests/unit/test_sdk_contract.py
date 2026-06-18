@@ -847,6 +847,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "vector_status": "ok",
                         "graph_status": "degraded",
                         "rag_status": "skipped",
+                        "artifact_evidence_status": "ok",
                         "retrieval_sources_used": [f"source_{index}" for index in range(12)],
                         "retrieval_sources_total": 12,
                         "retrieval_sources_returned": 8,
@@ -857,6 +858,19 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "vector_hydrated_count": 8,
                         "graph_candidate_count": 7,
                         "graph_hydrated_count": 6,
+                        "artifact_evidence_jobs_considered": 4,
+                        "artifact_evidence_manifests_considered": 3,
+                        "artifact_evidence_manifests_used": 2,
+                        "artifact_evidence_items_considered": 5,
+                        "artifact_evidence_items_used": 4,
+                        "artifact_evidence_query_drop_count": 1,
+                        "artifact_evidence_sensitive_drop_count": 2,
+                        "artifact_evidence_prompt_injection_drop_count": 1,
+                        "artifact_evidence_manifest_too_large_count": 1,
+                        "artifact_evidence_read_error_count": 1,
+                        "artifact_evidence_parse_error_count": 1,
+                        "artifact_evidence_schema_skip_count": 1,
+                        "artifact_evidence_stale_asset_drop_count": 1,
                         "stale_vector_drop_count": 1,
                         "stale_graph_drop_count": 2,
                         "stale_rag_drop_count": 3,
@@ -959,6 +973,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
         memory_scope_ids=["memory_scope_default"],
         query="typed context",
         consistency_mode="best_effort",
+        max_evidence_items=9,
         include_superseded=True,
         include_stale=True,
     )
@@ -966,6 +981,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert isinstance(bundle, ContextBundle)
     assert seen["url"] == "http://memory.test/v1/context"
     assert seen["body"]["consistency_mode"] == "best_effort"
+    assert seen["body"]["max_evidence_items"] == 9
     assert seen["body"]["include_superseded"] is True
     assert seen["body"]["include_stale"] is True
     assert bundle.bundle_id == "ctx_1"
@@ -974,6 +990,7 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.vector_status == "ok"
     assert bundle.diagnostics.graph_status == "degraded"
     assert bundle.diagnostics.rag_status == "skipped"
+    assert bundle.diagnostics.artifact_evidence_status == "ok"
     assert bundle.diagnostics.retrieval_sources_used == tuple(
         f"source_{index}" for index in range(8)
     )
@@ -986,6 +1003,19 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.vector_hydrated_count == 8
     assert bundle.diagnostics.graph_candidate_count == 7
     assert bundle.diagnostics.graph_hydrated_count == 6
+    assert bundle.diagnostics.artifact_evidence_jobs_considered == 4
+    assert bundle.diagnostics.artifact_evidence_manifests_considered == 3
+    assert bundle.diagnostics.artifact_evidence_manifests_used == 2
+    assert bundle.diagnostics.artifact_evidence_items_considered == 5
+    assert bundle.diagnostics.artifact_evidence_items_used == 4
+    assert bundle.diagnostics.artifact_evidence_query_drop_count == 1
+    assert bundle.diagnostics.artifact_evidence_sensitive_drop_count == 2
+    assert bundle.diagnostics.artifact_evidence_prompt_injection_drop_count == 1
+    assert bundle.diagnostics.artifact_evidence_manifest_too_large_count == 1
+    assert bundle.diagnostics.artifact_evidence_read_error_count == 1
+    assert bundle.diagnostics.artifact_evidence_parse_error_count == 1
+    assert bundle.diagnostics.artifact_evidence_schema_skip_count == 1
+    assert bundle.diagnostics.artifact_evidence_stale_asset_drop_count == 1
     assert bundle.diagnostics.stale_vector_drop_count == 1
     assert bundle.diagnostics.stale_graph_drop_count == 2
     assert bundle.diagnostics.stale_rag_drop_count == 3

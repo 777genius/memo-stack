@@ -946,6 +946,7 @@ class BuildContextQuery:
     max_rendered_chars: int = 18000
     max_facts: int = 20
     max_chunks: int = 30
+    max_evidence_items: int = 12
     max_conflicting_suggestions: int = 5
     include_graph: bool = True
     include_superseded: bool = False

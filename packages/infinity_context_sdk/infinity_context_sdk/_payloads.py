@@ -67,6 +67,7 @@ def context_body(
     token_budget: int,
     max_facts: int,
     max_chunks: int,
+    max_evidence_items: int | None = None,
     consistency_mode: str | None = None,
     max_conflicting_suggestions: int | None = None,
     include_superseded: bool = False,
@@ -93,6 +94,7 @@ def context_body(
             "token_budget": token_budget,
             "max_facts": max_facts,
             "max_chunks": max_chunks,
+            "max_evidence_items": max_evidence_items,
             "max_conflicting_suggestions": max_conflicting_suggestions,
             "include_superseded": include_superseded if include_superseded else None,
             "include_stale": include_stale if include_stale else None,
@@ -117,6 +119,7 @@ def context_scope_body(
     token_budget: int,
     max_facts: int,
     max_chunks: int,
+    max_evidence_items: int | None = None,
     consistency_mode: str | None = None,
     max_conflicting_suggestions: int | None = None,
 ) -> dict[str, Any]:
@@ -136,6 +139,7 @@ def context_scope_body(
             "token_budget": token_budget,
             "max_facts": max_facts,
             "max_chunks": max_chunks,
+            "max_evidence_items": max_evidence_items,
             "max_conflicting_suggestions": max_conflicting_suggestions,
         }
     )

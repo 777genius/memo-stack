@@ -91,12 +91,26 @@ class ContextBundleDiagnostics:
     vector_status: str = "unknown"
     graph_status: str = "unknown"
     rag_status: str = "unknown"
+    artifact_evidence_status: str = "unknown"
     facts_considered: int = 0
     keyword_chunks_considered: int = 0
     vector_candidate_count: int = 0
     vector_hydrated_count: int = 0
     graph_candidate_count: int = 0
     graph_hydrated_count: int = 0
+    artifact_evidence_jobs_considered: int = 0
+    artifact_evidence_manifests_considered: int = 0
+    artifact_evidence_manifests_used: int = 0
+    artifact_evidence_items_considered: int = 0
+    artifact_evidence_items_used: int = 0
+    artifact_evidence_query_drop_count: int = 0
+    artifact_evidence_sensitive_drop_count: int = 0
+    artifact_evidence_prompt_injection_drop_count: int = 0
+    artifact_evidence_manifest_too_large_count: int = 0
+    artifact_evidence_read_error_count: int = 0
+    artifact_evidence_parse_error_count: int = 0
+    artifact_evidence_schema_skip_count: int = 0
+    artifact_evidence_stale_asset_drop_count: int = 0
     stale_vector_drop_count: int = 0
     stale_graph_drop_count: int = 0
     stale_rag_drop_count: int = 0
@@ -278,12 +292,55 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         vector_status=_safe_text(raw.get("vector_status"), default="unknown"),
         graph_status=_safe_text(raw.get("graph_status"), default="unknown"),
         rag_status=_safe_text(raw.get("rag_status"), default="unknown"),
+        artifact_evidence_status=_safe_text(
+            raw.get("artifact_evidence_status"),
+            default="unknown",
+        ),
         facts_considered=_non_negative_int(raw.get("facts_considered")),
         keyword_chunks_considered=_non_negative_int(raw.get("keyword_chunks_considered")),
         vector_candidate_count=_non_negative_int(raw.get("vector_candidate_count")),
         vector_hydrated_count=_non_negative_int(raw.get("vector_hydrated_count")),
         graph_candidate_count=_non_negative_int(raw.get("graph_candidate_count")),
         graph_hydrated_count=_non_negative_int(raw.get("graph_hydrated_count")),
+        artifact_evidence_jobs_considered=_non_negative_int(
+            raw.get("artifact_evidence_jobs_considered")
+        ),
+        artifact_evidence_manifests_considered=_non_negative_int(
+            raw.get("artifact_evidence_manifests_considered")
+        ),
+        artifact_evidence_manifests_used=_non_negative_int(
+            raw.get("artifact_evidence_manifests_used")
+        ),
+        artifact_evidence_items_considered=_non_negative_int(
+            raw.get("artifact_evidence_items_considered")
+        ),
+        artifact_evidence_items_used=_non_negative_int(
+            raw.get("artifact_evidence_items_used")
+        ),
+        artifact_evidence_query_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_query_drop_count")
+        ),
+        artifact_evidence_sensitive_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_sensitive_drop_count")
+        ),
+        artifact_evidence_prompt_injection_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_prompt_injection_drop_count")
+        ),
+        artifact_evidence_manifest_too_large_count=_non_negative_int(
+            raw.get("artifact_evidence_manifest_too_large_count")
+        ),
+        artifact_evidence_read_error_count=_non_negative_int(
+            raw.get("artifact_evidence_read_error_count")
+        ),
+        artifact_evidence_parse_error_count=_non_negative_int(
+            raw.get("artifact_evidence_parse_error_count")
+        ),
+        artifact_evidence_schema_skip_count=_non_negative_int(
+            raw.get("artifact_evidence_schema_skip_count")
+        ),
+        artifact_evidence_stale_asset_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_stale_asset_drop_count")
+        ),
         stale_vector_drop_count=_non_negative_int(raw.get("stale_vector_drop_count")),
         stale_graph_drop_count=_non_negative_int(raw.get("stale_graph_drop_count")),
         stale_rag_drop_count=_non_negative_int(raw.get("stale_rag_drop_count")),

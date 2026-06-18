@@ -10,6 +10,9 @@ from infinity_context_core.application.context_anchors import (
     anchor_identity_retrieval_text,
     anchor_retrieval_text,
 )
+from infinity_context_core.application.context_artifact_evidence import (
+    ArtifactEvidenceContextCollector,
+)
 from infinity_context_core.application.context_collectors import (
     CanonicalContextCollector,
     GraphContextCollector,
@@ -50,6 +53,7 @@ from infinity_context_core.domain.entities import (
     MemoryFactRelation,
 )
 from infinity_context_core.ports.adapters import EmbeddingPort, GraphMemoryPort, VectorMemoryPort
+from infinity_context_core.ports.assets import BlobStoragePort
 from infinity_context_core.ports.capabilities import RagRecallPort
 from infinity_context_core.ports.clock import ClockPort
 from infinity_context_core.ports.ids import IdGeneratorPort
@@ -68,6 +72,7 @@ class BuildContextUseCase:
         clock: ClockPort | None = None,
         rag_recall: RagRecallPort | None = None,
         packer: ContextPacker | None = None,
+        blob_storage: BlobStoragePort | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._ids = ids
@@ -96,6 +101,10 @@ class BuildContextUseCase:
             hydrator=self._hydrator,
             clock=clock,
         )
+        self._artifact_evidence_collector = ArtifactEvidenceContextCollector(
+            uow_factory=uow_factory,
+            blob_storage=blob_storage,
+        )
 
     async def execute(self, query: BuildContextQuery) -> ContextBundle:
         memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
@@ -113,10 +122,24 @@ class BuildContextUseCase:
             "vector_status": "disabled",
             "graph_status": "disabled",
             "rag_status": "disabled",
+            "artifact_evidence_status": "unknown",
             "vector_candidate_count": 0,
             "vector_hydrated_count": 0,
             "graph_candidate_count": 0,
             "graph_hydrated_count": 0,
+            "artifact_evidence_jobs_considered": 0,
+            "artifact_evidence_manifests_considered": 0,
+            "artifact_evidence_manifests_used": 0,
+            "artifact_evidence_items_considered": 0,
+            "artifact_evidence_items_used": 0,
+            "artifact_evidence_query_drop_count": 0,
+            "artifact_evidence_sensitive_drop_count": 0,
+            "artifact_evidence_prompt_injection_drop_count": 0,
+            "artifact_evidence_manifest_too_large_count": 0,
+            "artifact_evidence_read_error_count": 0,
+            "artifact_evidence_parse_error_count": 0,
+            "artifact_evidence_schema_skip_count": 0,
+            "artifact_evidence_stale_asset_drop_count": 0,
             "stale_vector_drop_count": 0,
             "stale_graph_drop_count": 0,
             "stale_rag_drop_count": 0,
@@ -232,6 +255,11 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        artifact_evidence_items = await self._artifact_evidence_collector.collect(
+            query=query,
+            memory_scope_ids=memory_scope_ids,
+            diagnostics=diagnostics,
+        )
         include_stale_review = query.include_stale or query.include_superseded
         stale_review_items, stale_diagnostics = (
             await self._stale_review_items(
@@ -265,6 +293,7 @@ class BuildContextUseCase:
             items=dedupe_rank_items(
                 (
                     *temporal_items,
+                    *artifact_evidence_items,
                     *linked_context.items,
                     *stale_review_items,
                     *pending_conflicts,
