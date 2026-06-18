@@ -348,8 +348,12 @@ void main() {
           'matched_terms': ['alex', 'q3'],
           'policy_decision': 'needs_review',
           'review_gate': 'required',
+          'review_gate_reason': 'mime_content_type_mismatch',
           'auto_approve_eligible': true,
           'policy_reason_codes': ['score_threshold_met', 'text_match'],
+          'mime_content_type_mismatch': true,
+          'mime_declared_content_type': 'image/png',
+          'mime_detected_content_type': 'text/plain',
         },
       ),
       _suggestion(
@@ -401,6 +405,9 @@ void main() {
     expect(find.text('person anchor 1'), findsOneWidget);
     expect(find.textContaining('policy: needs_review'), findsOneWidget);
     expect(find.textContaining('gate: required'), findsOneWidget);
+    expect(find.textContaining('risk: MIME mismatch'), findsOneWidget);
+    expect(
+        find.textContaining('mime: image/png -> text/plain'), findsOneWidget);
     expect(find.text('auto eligible'), findsOneWidget);
     expect(
       find.textContaining('policy codes: score_threshold_met, text_match'),

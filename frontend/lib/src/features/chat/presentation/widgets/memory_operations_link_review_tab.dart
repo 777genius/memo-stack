@@ -260,6 +260,9 @@ class _SuggestionTile extends StatelessWidget {
     final reasonCodes = _metadataList(suggestion.metadata['reason_codes']);
     final policyCodes =
         _metadataList(suggestion.metadata['policy_reason_codes']);
+    final reviewGateReason =
+        _metadataString(suggestion.metadata['review_gate_reason']);
+    final mimeMismatchLabel = _mimeMismatchLabel(suggestion.metadata);
     return Container(
       key: ValueKey('memory_operations_suggestion_${_keyPart(suggestion.id)}'),
       padding: const EdgeInsets.all(10),
@@ -315,6 +318,12 @@ class _SuggestionTile extends StatelessWidget {
                 _DetailChip(label: 'policy: ${suggestion.policyDecision}'),
               if (suggestion.reviewGate != null)
                 _DetailChip(label: 'gate: ${suggestion.reviewGate}'),
+              if (reviewGateReason != null)
+                _DetailChip(
+                  label: 'risk: ${_reviewGateReasonLabel(reviewGateReason)}',
+                ),
+              if (mimeMismatchLabel != null)
+                _DetailChip(label: 'mime: $mimeMismatchLabel'),
               if (suggestion.autoApproveEligible)
                 const _DetailChip(label: 'auto eligible'),
               if (policyCodes.isNotEmpty)
@@ -970,6 +979,29 @@ List<String> _metadataList(Object? value) {
       .map((item) => item?.toString().trim() ?? '')
       .where((item) => item.isNotEmpty)
       .toList(growable: false);
+}
+
+String? _metadataString(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
+}
+
+String _reviewGateReasonLabel(String value) {
+  return switch (value) {
+    'prompt_injection_evidence' => 'prompt injection',
+    'mime_content_type_mismatch' => 'MIME mismatch',
+    _ => value.replaceAll('_', ' '),
+  };
+}
+
+String? _mimeMismatchLabel(Map<String, dynamic> metadata) {
+  if (metadata['mime_content_type_mismatch'] != true) return null;
+  final declared = _metadataString(metadata['mime_declared_content_type']);
+  final detected = _metadataString(metadata['mime_detected_content_type']);
+  if (declared == null && detected == null) return 'mismatch';
+  if (declared == null) return detected;
+  if (detected == null) return declared;
+  return '$declared -> $detected';
 }
 
 String _compactValue(Object? value) {
