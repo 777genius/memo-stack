@@ -88,8 +88,10 @@ def apply_context_link_policy(
     denied_reason_counts: dict[str, int] = {}
     denied_candidates: list[dict[str, object]] = []
     candidate_pool = candidates[:MAX_POLICY_CANDIDATES_CONSIDERED]
+    processed_count = 0
 
     for candidate in candidate_pool:
+        processed_count += 1
         decision = decide_context_link_candidate(candidate)
         if decision.outcome == "deny":
             denied_count += 1
@@ -123,9 +125,17 @@ def apply_context_link_policy(
         diagnostics={
             "link_policy_version": POLICY_VERSION,
             "link_policy_candidates_received": len(candidates),
-            "link_policy_candidates_considered": len(candidate_pool),
+            "link_policy_candidates_considered": processed_count,
+            "link_policy_candidate_pool_size": len(candidate_pool),
             "link_policy_candidate_considered_cap": MAX_POLICY_CANDIDATES_CONSIDERED,
             "link_policy_candidates_truncated": len(candidate_pool) < len(candidates),
+            "link_policy_candidates_unprocessed_after_limit": max(
+                0,
+                len(candidate_pool) - processed_count,
+            ),
+            "link_policy_stopped_after_return_limit": (
+                processed_count < len(candidate_pool) and len(accepted) >= max_suggestions
+            ),
             "link_policy_candidates_returned": len(accepted),
             "link_policy_denied_count": denied_count,
             "link_policy_duplicate_suppressed_count": duplicate_count,

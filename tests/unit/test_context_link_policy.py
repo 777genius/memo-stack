@@ -131,6 +131,28 @@ def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
     assert first_metadata["policy_confidence"] == "high"
 
 
+def test_policy_diagnostics_report_actual_candidates_processed_before_limit() -> None:
+    candidates = tuple(
+        _candidate(target_id=f"strong_{index}", score=96)
+        for index in range(MAX_SUGGESTIONS_PER_SOURCE + 25)
+    )
+
+    result = apply_context_link_policy(candidates, limit=100, persist=True)
+
+    assert len(result.candidates) == MAX_SUGGESTIONS_PER_SOURCE
+    assert result.diagnostics["link_policy_candidates_received"] == (
+        MAX_SUGGESTIONS_PER_SOURCE + 25
+    )
+    assert result.diagnostics["link_policy_candidate_pool_size"] == (
+        MAX_SUGGESTIONS_PER_SOURCE + 25
+    )
+    assert result.diagnostics["link_policy_candidates_considered"] == (
+        MAX_SUGGESTIONS_PER_SOURCE
+    )
+    assert result.diagnostics["link_policy_candidates_unprocessed_after_limit"] == 25
+    assert result.diagnostics["link_policy_stopped_after_return_limit"] is True
+
+
 def test_policy_keeps_allowed_relation_type_and_dedupes_per_relation() -> None:
     related = _candidate(target_id="same", score=90)
     supporting = _candidate(
