@@ -753,6 +753,27 @@ def test_rejected_context_link_suggestion_is_not_recreated(tmp_path: Path) -> No
             for item in suggestions.json()["data"]["candidates"]
             if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
         )
+        pending = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "status": "pending",
+            },
+            headers=auth_headers(),
+        )
+        assert pending.status_code == 200, pending.text
+        pending_suggestion = next(
+            item
+            for item in pending.json()["data"]
+            if item["id"] == fact_candidate["suggestion_id"]
+        )
+        assert pending_suggestion["review_actionable"] is True
+        assert pending_suggestion["available_review_actions"] == ["approve", "reject"]
+        assert pending_suggestion["review_state_reason"] == "pending_user_review"
+
         rejected = client.post(
             f"/v1/context-link-suggestions/{fact_candidate['suggestion_id']}/review",
             json={"action": "reject", "reason": "not relevant after review"},
@@ -793,6 +814,9 @@ def test_rejected_context_link_suggestion_is_not_recreated(tmp_path: Path) -> No
         ]
         assert len(same_pair) == 1
         assert same_pair[0]["status"] == "rejected"
+        assert same_pair[0]["review_actionable"] is False
+        assert same_pair[0]["available_review_actions"] == []
+        assert same_pair[0]["review_state_reason"] == "already_rejected"
 
 
 def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> None:
@@ -905,6 +929,9 @@ def test_context_link_suggestion_approve_can_override_target(tmp_path: Path) -> 
     assert raw_sensitive_value not in approved.text
     payload = approved.json()["data"]
     assert payload["suggestion"]["status"] == "approved"
+    assert payload["suggestion"]["review_actionable"] is False
+    assert payload["suggestion"]["available_review_actions"] == []
+    assert payload["suggestion"]["review_state_reason"] == "already_approved"
     assert payload["suggestion"]["target_id"] == fact_candidate["target_id"]
     assert payload["suggestion"]["metadata"]["approved_override"] is True
     assert payload["suggestion"]["metadata"]["original_target_id"] == fact_candidate["target_id"]

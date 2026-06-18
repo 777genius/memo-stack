@@ -513,6 +513,7 @@ def context_link_to_response(link: MemoryContextLink) -> dict[str, Any]:
 def context_link_suggestion_to_response(
     suggestion: MemoryContextLinkSuggestion,
 ) -> dict[str, Any]:
+    review_actionable = suggestion.status.value == "pending"
     return {
         "id": str(suggestion.id),
         "space_id": str(suggestion.space_id),
@@ -526,6 +527,9 @@ def context_link_suggestion_to_response(
         "reason": safe_public_reason(suggestion.reason, limit=320),
         "score": suggestion.score,
         "status": suggestion.status.value,
+        "review_actionable": review_actionable,
+        "available_review_actions": ["approve", "reject"] if review_actionable else [],
+        "review_state_reason": _review_state_reason(suggestion),
         "metadata": _safe_metadata(suggestion.metadata),
         "created_at": suggestion.created_at.isoformat(),
         "updated_at": suggestion.updated_at.isoformat(),
@@ -533,6 +537,19 @@ def context_link_suggestion_to_response(
         "review_reason": _safe_optional_text(suggestion.review_reason, limit=320),
         "review_audit": _review_audit_to_response(suggestion),
     }
+
+
+def _review_state_reason(suggestion: MemoryContextLinkSuggestion) -> str:
+    status = suggestion.status.value
+    if status == "pending":
+        return "pending_user_review"
+    if status == "approved":
+        return "already_approved"
+    if status == "rejected":
+        return "already_rejected"
+    if status == "expired":
+        return "expired"
+    return f"not_actionable_{status}"
 
 
 def _safe_metadata(metadata: Any) -> dict[str, Any]:
