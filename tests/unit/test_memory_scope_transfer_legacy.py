@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+from memo_stack_core.domain.errors import MemoryValidationError
 from memo_stack_server.memory_scope_transfer_records import anchor_from_json, anchor_to_json
 from memo_stack_server.memory_scope_transfer_relations import relation_from_json, relation_to_json
 
@@ -99,3 +100,49 @@ def test_legacy_relation_export_uses_created_at_when_observed_at_missing() -> No
     assert exported["observed_at"] == created_at.isoformat()
     assert exported["valid_from"] is None
     assert exported["valid_to"] is None
+
+
+def test_snapshot_anchor_import_rejects_invalid_temporal_window() -> None:
+    now = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+
+    try:
+        anchor_from_json(
+            {
+                "id": "anchor_invalid_window",
+                "kind": "organization",
+                "normalized_key": "acme",
+                "label": "Acme",
+                "valid_from": "2026-02-01T00:00:00+00:00",
+                "valid_to": "2026-01-01T00:00:00+00:00",
+            },
+            space_id="space_legacy",
+            memory_scope_id="scope_legacy",
+            now=now,
+        )
+    except MemoryValidationError as exc:
+        assert "valid_to must be after valid_from" in str(exc)
+    else:
+        raise AssertionError("Expected invalid anchor temporal window to fail")
+
+
+def test_snapshot_relation_import_rejects_invalid_temporal_window() -> None:
+    now = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+
+    try:
+        relation_from_json(
+            {
+                "id": "relation_invalid_window",
+                "source_fact_id": "fact_source",
+                "target_fact_id": "fact_target",
+                "relation_type": "supersedes",
+                "valid_from": "2026-02-01T00:00:00+00:00",
+                "valid_to": "2026-01-01T00:00:00+00:00",
+            },
+            space_id="space_legacy",
+            memory_scope_id="scope_legacy",
+            now=now,
+        )
+    except MemoryValidationError as exc:
+        assert "valid_to must be after valid_from" in str(exc)
+    else:
+        raise AssertionError("Expected invalid relation temporal window to fail")

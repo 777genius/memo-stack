@@ -17,6 +17,8 @@ from memo_stack_adapters.postgres.models import (
 )
 from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 
+from memo_stack_server.memory_scope_transfer_temporal import validate_temporal_window
+
 
 def contains_redacted_memory(
     payload: dict[str, Any],
@@ -403,6 +405,9 @@ def anchor_from_json(
     now: datetime,
 ) -> MemoryAnchorRow:
     created_at = _parse_dt(item.get("created_at"), now)
+    valid_from = _parse_optional_dt(item.get("valid_from"))
+    valid_to = _parse_optional_dt(item.get("valid_to"))
+    validate_temporal_window(valid_from=valid_from, valid_to=valid_to)
     return MemoryAnchorRow(
         id=str(item["id"]),
         space_id=space_id,
@@ -416,8 +421,8 @@ def anchor_from_json(
         confidence=str(item.get("confidence", "medium")),
         evidence_refs_json=_anchor_evidence_refs_from_json(item.get("evidence_refs")),
         observed_at=_parse_optional_dt(item.get("observed_at")) or created_at,
-        valid_from=_parse_optional_dt(item.get("valid_from")),
-        valid_to=_parse_optional_dt(item.get("valid_to")),
+        valid_from=valid_from,
+        valid_to=valid_to,
         metadata_json=safe_metadata(item.get("metadata_json") or item.get("metadata") or {}),
         created_at=created_at,
         updated_at=_parse_dt(item.get("updated_at"), now),

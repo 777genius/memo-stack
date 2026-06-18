@@ -7,6 +7,8 @@ from typing import Any
 
 from memo_stack_adapters.postgres.models import MemoryFactRelationRow
 
+from memo_stack_server.memory_scope_transfer_temporal import validate_temporal_window
+
 
 def relation_to_json(row: MemoryFactRelationRow) -> dict[str, Any]:
     observed_at = row.observed_at or row.created_at
@@ -33,6 +35,9 @@ def relation_from_json(
     now: datetime,
 ) -> MemoryFactRelationRow:
     created_at = _parse_dt(item.get("created_at"), now)
+    valid_from = _parse_optional_dt(item.get("valid_from"))
+    valid_to = _parse_optional_dt(item.get("valid_to"))
+    validate_temporal_window(valid_from=valid_from, valid_to=valid_to)
     return MemoryFactRelationRow(
         id=str(item["id"]),
         space_id=space_id,
@@ -43,8 +48,8 @@ def relation_from_json(
         reason=str(item.get("reason") or "imported memory_scope snapshot relation")[:320],
         status=str(item.get("status", "active")),
         observed_at=_parse_dt(item.get("observed_at"), created_at),
-        valid_from=_parse_optional_dt(item.get("valid_from")),
-        valid_to=_parse_optional_dt(item.get("valid_to")),
+        valid_from=valid_from,
+        valid_to=valid_to,
         created_at=created_at,
         updated_at=_parse_dt(item.get("updated_at"), now),
     )
