@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 
 from memo_stack_core.domain.assets import (
     MAX_CONTEXT_LINK_REVIEW_EVENTS,
+    MemoryContextLink,
+    MemoryContextLinkId,
     MemoryContextLinkSuggestion,
     MemoryContextLinkSuggestionId,
 )
@@ -72,3 +74,64 @@ def test_context_link_review_audit_reason_redacts_obvious_secret_markers() -> No
 
     assert approved.review_reason == "Authorization: Bearer sk-proj-review-secret-value"
     assert review_event["reason"] == "[redacted]"
+
+
+def test_context_link_metadata_preserves_nested_evidence_refs_without_secret_payloads() -> None:
+    now = datetime(2026, 6, 17, tzinfo=UTC)
+    metadata = {
+        "evidence_refs": [
+            {
+                "source_type": "asset_extraction",
+                "source_id": "extract_1",
+                "chunk_id": "chunk_1",
+                "page_number": 2,
+                "bbox": [0.0, 0.0, 120.0, 40.0],
+                "token": "secret-token",
+            }
+        ],
+        "provider_token": "secret-token",
+        "safe_note": "Authorization: Bearer sk-proj-secret-value",
+    }
+
+    suggestion = MemoryContextLinkSuggestion.create(
+        suggestion_id=MemoryContextLinkSuggestionId("ctxlinksug_evidence"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
+        source_type="capture",
+        source_id="capture_1",
+        target_type="chunk",
+        target_id="chunk_1",
+        relation_type="related_to",
+        confidence="medium",
+        reason="same evidence",
+        score=88.0,
+        metadata=metadata,
+        now=now,
+    )
+    link = MemoryContextLink.create(
+        link_id=MemoryContextLinkId("ctxlink_evidence"),
+        space_id=SpaceId("space_1"),
+        memory_scope_id=MemoryScopeId("memory_scope_1"),
+        source_type="capture",
+        source_id="capture_1",
+        target_type="chunk",
+        target_id="chunk_1",
+        relation_type="related_to",
+        confidence="medium",
+        reason="same evidence",
+        metadata=metadata,
+        now=now,
+    )
+
+    for entity in (suggestion, link):
+        assert entity.metadata["evidence_refs"] == [
+            {
+                "source_type": "asset_extraction",
+                "source_id": "extract_1",
+                "chunk_id": "chunk_1",
+                "page_number": 2,
+                "bbox": [0.0, 0.0, 120.0, 40.0],
+            }
+        ]
+        assert "provider_token" not in entity.metadata
+        assert entity.metadata["safe_note"] == "[redacted]"

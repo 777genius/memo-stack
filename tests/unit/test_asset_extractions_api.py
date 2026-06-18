@@ -1079,6 +1079,40 @@ def test_pdf_asset_extraction_indexes_pdf_text_and_artifacts(tmp_path: Path) -> 
         assert context_data["diagnostics"]["source_refs_with_page_count"] >= 1
         assert context_data["diagnostics"]["items_with_multimodal_source_refs"] >= 1
 
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "alex-call",
+                "source_type": "asset",
+                "source_id": upload.json()["data"]["id"],
+                "text": f"{marker} linked scope thread assets",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        chunk_candidate = next(
+            item
+            for item in suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "chunk"
+        )
+        assert chunk_candidate["metadata"]["evidence_has_page_ref"] is True
+        assert "document" in chunk_candidate["metadata"]["evidence_modalities"]
+        assert chunk_candidate["metadata"]["evidence_refs"][0]["page_number"] == 1
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{chunk_candidate['suggestion_id']}/review",
+            json={"action": "approve", "reason": "page evidence verified"},
+            headers=auth_headers(),
+        )
+        assert approved.status_code == 200, approved.text
+        link_metadata = approved.json()["data"]["link"]["metadata"]
+        assert link_metadata["evidence_has_page_ref"] is True
+        assert link_metadata["evidence_refs"][0]["page_number"] == 1
+
 
 def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
@@ -1164,6 +1198,45 @@ def test_image_asset_extraction_indexes_image_evidence(tmp_path: Path) -> None:
         assert any(ref.get("bbox") == [0.0, 0.0, 120.0, 40.0] for ref in context_refs)
         assert context_data["diagnostics"]["source_refs_with_bbox_count"] >= 1
         assert context_data["diagnostics"]["multimodal_source_ref_count"] >= 1
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "screenshots",
+                "source_type": "asset",
+                "source_id": upload.json()["data"]["id"],
+                "text": "Image asset evidence 120x40 screenshot",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        chunk_candidate = next(
+            item
+            for item in suggestions.json()["data"]["candidates"]
+            if item["target_type"] == "chunk"
+        )
+        assert chunk_candidate["metadata"]["evidence_has_bbox_ref"] is True
+        assert "image" in chunk_candidate["metadata"]["evidence_modalities"]
+        assert chunk_candidate["metadata"]["evidence_refs"][0]["bbox"] == [
+            0.0,
+            0.0,
+            120.0,
+            40.0,
+        ]
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{chunk_candidate['suggestion_id']}/review",
+            json={"action": "approve", "reason": "bbox evidence verified"},
+            headers=auth_headers(),
+        )
+        assert approved.status_code == 200, approved.text
+        link_metadata = approved.json()["data"]["link"]["metadata"]
+        assert link_metadata["evidence_has_bbox_ref"] is True
+        assert link_metadata["evidence_refs"][0]["bbox"] == [0.0, 0.0, 120.0, 40.0]
 
 
 def test_standard_vision_profile_falls_back_to_local_image_metadata(

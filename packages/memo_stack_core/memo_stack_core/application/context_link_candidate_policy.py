@@ -9,10 +9,13 @@ from math import log
 
 from memo_stack_core.application.dto import ContextLinkCandidate, SuggestContextLinksCommand
 from memo_stack_core.application.sensitive_text import redact_sensitive_text
-from memo_stack_core.domain.entities import MemoryChunk
+from memo_stack_core.domain.entities import MemoryChunk, SourceRef
 
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _MAX_CANDIDATE_PREVIEW = 220
+_MAX_EVIDENCE_REFS = 5
+_MAX_EVIDENCE_SOURCE_ID_CHARS = 160
+_MAX_EVIDENCE_SOURCE_TYPE_CHARS = 80
 _MAX_QUERY_TERMS = 64
 _MAX_QUERY_TERM_CHARS = 80
 _LINK_STOP_TERMS = {
@@ -293,6 +296,26 @@ def confidence_for_candidate(candidate: ContextLinkCandidate) -> str:
     return "low"
 
 
+def evidence_summary(source_refs: tuple[SourceRef, ...]) -> dict[str, object]:
+    refs = _unique_evidence_refs(source_refs)
+    if not refs:
+        return {}
+    returned = refs[:_MAX_EVIDENCE_REFS]
+    return {
+        "evidence_source_ref_count": len(refs),
+        "evidence_source_refs_returned": len(returned),
+        "evidence_source_refs_truncated": len(refs) > len(returned),
+        "evidence_source_types": _evidence_source_types(refs),
+        "evidence_modalities": _evidence_modalities(refs),
+        "evidence_has_page_ref": any(ref.page_number is not None for ref in refs),
+        "evidence_has_bbox_ref": any(ref.bbox is not None for ref in refs),
+        "evidence_has_time_range_ref": any(
+            ref.time_start_ms is not None or ref.time_end_ms is not None for ref in refs
+        ),
+        "evidence_refs": [_evidence_ref_payload(ref) for ref in returned],
+    }
+
+
 def candidate_metadata(
     candidate: ContextLinkCandidate,
     diagnostics: dict[str, object],
@@ -308,9 +331,7 @@ def candidate_metadata(
         if isinstance(value, (str, int, float, bool)) or value is None:
             metadata[str(key)] = value
         elif isinstance(value, (list, tuple)):
-            cleaned = [
-                item for item in value if isinstance(item, (str, int, float, bool)) or item is None
-            ]
+            cleaned = _safe_metadata_list(str(key), value)
             if cleaned:
                 metadata[str(key)] = cleaned
     return metadata
@@ -352,6 +373,104 @@ def _numeric_temporal_window(target_hours: float) -> tuple[float, float]:
 
 def _matches_temporal_hint(hints: tuple[TemporalHint, ...], age_hours: float) -> bool:
     return any(hint.min_hours <= age_hours <= hint.max_hours for hint in hints)
+
+
+def _unique_evidence_refs(source_refs: tuple[SourceRef, ...]) -> tuple[SourceRef, ...]:
+    refs: list[SourceRef] = []
+    seen: set[tuple[object, ...]] = set()
+    for ref in source_refs:
+        key = (
+            ref.source_type,
+            ref.source_id,
+            ref.chunk_id,
+            ref.char_start,
+            ref.char_end,
+            ref.page_number,
+            ref.time_start_ms,
+            ref.time_end_ms,
+            ref.bbox,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(ref)
+    return tuple(refs)
+
+
+def _evidence_source_types(refs: tuple[SourceRef, ...]) -> list[str]:
+    return sorted(
+        {
+            _safe_evidence_text(ref.source_type, limit=_MAX_EVIDENCE_SOURCE_TYPE_CHARS)
+            for ref in refs
+            if ref.source_type.strip()
+        }
+    )
+
+
+def _evidence_modalities(refs: tuple[SourceRef, ...]) -> list[str]:
+    modalities: set[str] = set()
+    for ref in refs:
+        lowered = f"{ref.source_type} {ref.source_id}".lower()
+        if ref.page_number is not None or "document" in lowered or "pdf" in lowered:
+            modalities.add("document")
+        if ref.bbox is not None or any(
+            marker in lowered
+            for marker in ("image", "screenshot", ".png", ".jpg", ".jpeg", ".webp")
+        ):
+            modalities.add("image")
+        if ref.time_start_ms is not None or ref.time_end_ms is not None:
+            modalities.add("time_range")
+        if "audio" in lowered or any(marker in lowered for marker in (".mp3", ".wav", ".m4a")):
+            modalities.add("audio")
+        if "video" in lowered or any(marker in lowered for marker in (".mp4", ".mov", ".webm")):
+            modalities.add("video")
+        if not modalities:
+            modalities.add("text")
+    return sorted(modalities)
+
+
+def _evidence_ref_payload(ref: SourceRef) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "source_type": _safe_evidence_text(
+            ref.source_type,
+            limit=_MAX_EVIDENCE_SOURCE_TYPE_CHARS,
+        ),
+        "source_id": _safe_evidence_text(ref.source_id, limit=_MAX_EVIDENCE_SOURCE_ID_CHARS),
+    }
+    if ref.chunk_id:
+        payload["chunk_id"] = _safe_evidence_text(ref.chunk_id, limit=160)
+    if ref.char_start is not None:
+        payload["char_start"] = ref.char_start
+    if ref.char_end is not None:
+        payload["char_end"] = ref.char_end
+    if ref.page_number is not None:
+        payload["page_number"] = ref.page_number
+    if ref.time_start_ms is not None:
+        payload["time_start_ms"] = ref.time_start_ms
+    if ref.time_end_ms is not None:
+        payload["time_end_ms"] = ref.time_end_ms
+    if ref.bbox is not None:
+        payload["bbox"] = [float(value) for value in ref.bbox]
+    return payload
+
+
+def _safe_metadata_list(key: str, value: object) -> list[object]:
+    items = list(value)[: _MAX_EVIDENCE_REFS if key == "evidence_refs" else 50]
+    if key == "evidence_refs":
+        return [
+            {
+                str(item_key): item_value
+                for item_key, item_value in item.items()
+                if isinstance(item_value, (str, int, float, bool, list)) or item_value is None
+            }
+            for item in items
+            if isinstance(item, dict)
+        ]
+    return [item for item in items if isinstance(item, (str, int, float, bool)) or item is None]
+
+
+def _safe_evidence_text(value: str, *, limit: int) -> str:
+    return redact_sensitive_text(value)[:limit]
 
 
 def _reason_codes(reasons: tuple[str, ...]) -> list[str]:

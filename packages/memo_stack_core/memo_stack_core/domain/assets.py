@@ -483,22 +483,58 @@ def _safe_metadata(
         if len(safe) >= max_keys:
             break
         key_text = str(key).strip()[:80]
-        if not key_text:
+        if not key_text or _looks_sensitive_metadata_key(key_text):
             continue
         if isinstance(value, str):
-            safe[key_text] = value[:500]
+            safe[key_text] = _safe_metadata_text(value, max_chars=500)
         elif isinstance(value, (int, float, bool)) or value is None:
             safe[key_text] = value
         elif isinstance(value, (list, tuple)):
             items: list[object] = []
             for item in value[:20]:
                 if isinstance(item, str):
-                    items.append(item[:120])
+                    items.append(_safe_metadata_text(item, max_chars=120))
                 elif isinstance(item, (int, float, bool)) or item is None:
                     items.append(item)
+                elif isinstance(item, Mapping):
+                    safe_item = _safe_metadata_mapping(item)
+                    if safe_item:
+                        items.append(safe_item)
             if items:
                 safe[key_text] = items
     return safe
+
+
+def _safe_metadata_mapping(metadata: Mapping[str, object]) -> dict[str, object]:
+    safe: dict[str, object] = {}
+    for key, value in list(metadata.items())[:20]:
+        key_text = str(key).strip()[:80]
+        if not key_text or _looks_sensitive_metadata_key(key_text):
+            continue
+        if isinstance(value, str):
+            safe[key_text] = _safe_metadata_text(value, max_chars=500)
+        elif isinstance(value, (int, float, bool)) or value is None:
+            safe[key_text] = value
+        elif isinstance(value, (list, tuple)):
+            items = [
+                item for item in value[:20] if isinstance(item, (int, float, bool)) or item is None
+            ]
+            if items:
+                safe[key_text] = items
+    return safe
+
+
+def _safe_metadata_text(value: str, *, max_chars: int) -> str:
+    text = value.strip()[:max_chars]
+    lowered = text.lower()
+    if any(marker in lowered for marker in _AUDIT_SECRET_MARKERS):
+        return "[redacted]"
+    return text
+
+
+def _looks_sensitive_metadata_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(marker.strip(": ") in lowered for marker in _AUDIT_SECRET_MARKERS)
 
 
 def _context_link_changed_fields(

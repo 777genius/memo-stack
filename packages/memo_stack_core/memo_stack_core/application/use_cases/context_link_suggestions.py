@@ -24,6 +24,9 @@ from memo_stack_core.application.context_link_candidate_policy import (
     episode_label as _episode_label,
 )
 from memo_stack_core.application.context_link_candidate_policy import (
+    evidence_summary as _evidence_summary,
+)
+from memo_stack_core.application.context_link_candidate_policy import (
     has_link_signal as _has_link_signal,
 )
 from memo_stack_core.application.context_link_candidate_policy import (
@@ -53,6 +56,7 @@ from memo_stack_core.application.observed_anchor_resolution import (
     preferred_observed_label,
     should_promote_observed_key,
 )
+from memo_stack_core.application.source_refs import chunk_source_refs as _chunk_source_refs
 from memo_stack_core.application.use_cases.context_link_visibility import (
     assert_context_link_endpoint_visible,
 )
@@ -247,6 +251,7 @@ class SuggestContextLinksUseCase:
                         "normalized_key": anchor.normalized_key,
                         "aliases": list(anchor.aliases),
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(anchor.evidence_refs),
                         **(observed.metadata if observed is not None else {}),
                     },
                 )
@@ -283,6 +288,7 @@ class SuggestContextLinksUseCase:
                         "version": fact.version,
                         "tags": list(fact.tags),
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(fact.source_refs),
                     },
                 )
             )
@@ -362,6 +368,7 @@ class SuggestContextLinksUseCase:
                     metadata={
                         "source_agent": capture.source_agent,
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(capture.evidence_refs),
                     },
                 )
             )
@@ -391,6 +398,7 @@ class SuggestContextLinksUseCase:
                     metadata={
                         "confidence": suggestion.confidence.value,
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(suggestion.source_refs),
                     },
                 )
             )
@@ -425,6 +433,9 @@ class SuggestContextLinksUseCase:
                         "content_type": asset.content_type,
                         "byte_size": asset.byte_size,
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(
+                            (SourceRef(source_type="asset", source_id=str(asset.id)),)
+                        ),
                     },
                 )
             )
@@ -460,6 +471,14 @@ class SuggestContextLinksUseCase:
                         "source_external_id": document.source_external_id,
                         "classification": document.classification,
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(
+                            (
+                                SourceRef(
+                                    source_type=document.source_type,
+                                    source_id=document.source_external_id,
+                                ),
+                            )
+                        ),
                     },
                 )
             )
@@ -498,6 +517,7 @@ class SuggestContextLinksUseCase:
                         "char_start": chunk.char_start,
                         "char_end": chunk.char_end,
                         "matched_terms": list(matched_terms),
+                        **_evidence_summary(_chunk_source_refs(chunk, text_preview=chunk.text)),
                     },
                 )
             )
