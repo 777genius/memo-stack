@@ -103,6 +103,7 @@ class MarionetteAnchorLifecycleRunner {
 
       await _runMemoryScopeManagementFlow(memoStack, runMarker);
       await _runCaptureLinkingFlow(memoStack, runMarker);
+      await _runRejectedContextLinkFlow(memoStack, runMarker);
       await _runAttachmentCaptureFlow(memoStack, runMarker);
       await _runManualContextLinkFlow(memoStack, runMarker);
       final anchorBaselineState =
@@ -406,6 +407,73 @@ class MarionetteAnchorLifecycleRunner {
     _log('attachment capture linked asset $assetId to extracted document');
   }
 
+  Future<void> _runRejectedContextLinkFlow(
+    MemoStackExtensionClient memoStack,
+    String runMarker,
+  ) async {
+    final baseline = await memoStack.call('memoStack.e2eState', {});
+    final baselineLinkCount = _int(baseline['memoryBrowserContextLinkCount']);
+    final target = await memoStack.call(
+      'memoStack.createMemoryAnchor',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'kind': 'project',
+        'label': 'Rejected Link Target $runMarker',
+        'aliases': 'Reject Target $runMarker',
+        'description': 'Target anchor for rejected context-link e2e',
+      },
+    );
+    final targetAnchorId = _field(_map(target['anchor']), 'id');
+    _log('created rejected link target $targetAnchorId');
+
+    await memoStack.call(
+      'memoStack.submitCapture',
+      {
+        'memoryScopeExternalRef': config.scopeRef,
+        'threadTitle': 'Rejected Link Thread $runMarker',
+        'text': 'Alex mentioned Rejected Link Target $runMarker, but this '
+            'automated run rejects the suggested relation.',
+      },
+    );
+    await _waitForPendingContextLinkSuggestion(
+      memoStack,
+      targetAnchorId: targetAnchorId,
+    );
+
+    final reviewed = await memoStack.call(
+      'memoStack.reviewFirstPendingLinkSuggestion',
+      {
+        'approve': 'false',
+        'targetId': targetAnchorId,
+      },
+    );
+    _expect(
+        reviewed['reviewed'] == true, 'no context-link suggestion rejected');
+    _expect(
+      reviewed['reviewAction'] == 'reject',
+      'context-link suggestion was not rejected',
+    );
+    _expect(
+      reviewed['reviewedTargetId'] == targetAnchorId,
+      'rejected suggestion target did not match the requested anchor',
+    );
+
+    final rejectedState = await memoStack.call('memoStack.refresh', {});
+    final remainingForTarget = _pendingSuggestionsForTarget(
+      rejectedState,
+      targetAnchorId,
+    );
+    _expect(
+      remainingForTarget.isEmpty,
+      'rejected target still has pending suggestions: $remainingForTarget',
+    );
+    _expect(
+      _int(rejectedState['memoryBrowserContextLinkCount']) == baselineLinkCount,
+      'rejected context-link suggestion created a visible link',
+    );
+    _log('rejected context-link suggestion for $targetAnchorId');
+  }
+
   Future<void> _runManualContextLinkFlow(
     MemoStackExtensionClient memoStack,
     String runMarker,
@@ -486,6 +554,16 @@ class MarionetteAnchorLifecycleRunner {
     throw StateError(
       'No pending context-link suggestion before timeout: $lastState',
     );
+  }
+
+  List<Map<String, dynamic>> _pendingSuggestionsForTarget(
+    Map<String, dynamic> state,
+    String targetAnchorId,
+  ) {
+    return _list(state['pendingLinkSuggestions'])
+        .map(_map)
+        .where((item) => _field(item, 'targetId') == targetAnchorId)
+        .toList(growable: false);
   }
 
   Future<Map<String, dynamic>> _waitForAssetExtraction(
