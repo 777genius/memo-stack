@@ -7,6 +7,7 @@ MEMO_STACK_PYTHONPATH ?= packages/memo_stack_core:packages/memo_stack_server:pac
 export PYTHONPATH := $(MEMO_STACK_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONPATH))
 FRONTEND_DIR ?= frontend
 FLUTTER ?= $(shell command -v flutter 2>/dev/null || if [ -x "$$HOME/dev/flutter/bin/flutter" ]; then echo "$$HOME/dev/flutter/bin/flutter"; elif [ -x "$$HOME/dev/projects/flutter/bin/flutter" ]; then echo "$$HOME/dev/projects/flutter/bin/flutter"; else echo flutter; fi)
+MEMORY_FRONTEND_MARIONETTE_REPORT ?= .e2e-artifacts/frontend-marionette-local-e2e.json
 MEMORY_SERVER_ENV ?= MEMORY_AUTO_CREATE_SCHEMA=true MEMORY_SERVICE_TOKEN=local-dev-token
 PLUGIN_KIT_AI ?= scripts/plugin-kit-ai-local
 MEMORY_AGENT_PLUGIN_ROOT ?= plugins/memo-stack-agent-plugin
@@ -87,7 +88,7 @@ memo-stack-frontend-marionette-memory-e2e: memo-stack-up-lite
 
 .PHONY: memo-stack-frontend-marionette-local-e2e
 memo-stack-frontend-marionette-local-e2e:
-	$(PYTHON) scripts/frontend_marionette_local_e2e.py --python "$(PYTHON)" --flutter "$(FLUTTER)" --frontend-dir "$(FRONTEND_DIR)"
+	$(PYTHON) scripts/frontend_marionette_local_e2e.py --python "$(PYTHON)" --flutter "$(FLUTTER)" --frontend-dir "$(FRONTEND_DIR)" --report-out "$(MEMORY_FRONTEND_MARIONETTE_REPORT)"
 
 .PHONY: memo-stack-frontend-marionette-anchor-e2e
 memo-stack-frontend-marionette-anchor-e2e: memo-stack-frontend-marionette-memory-e2e

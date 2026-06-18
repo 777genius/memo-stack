@@ -54,11 +54,13 @@ def test_makefile_has_frontend_quality_gate() -> None:
 
     assert "FRONTEND_DIR ?= frontend" in makefile
     assert "FLUTTER ?=" in makefile
+    assert "MEMORY_FRONTEND_MARIONETTE_REPORT ?=" in makefile
     assert ".PHONY: memo-stack-frontend-pub-get" in makefile
     assert ".PHONY: memo-stack-frontend-analyze" in makefile
     assert ".PHONY: memo-stack-frontend-test" in makefile
     assert ".PHONY: memo-stack-frontend-build-macos" in makefile
     assert ".PHONY: memo-stack-frontend-check" in makefile
+    assert ".PHONY: memo-stack-frontend-marionette-local-e2e" in makefile
     assert (
         "memo-stack-frontend-check: memo-stack-frontend-analyze memo-stack-frontend-test"
     ) in makefile
@@ -66,6 +68,57 @@ def test_makefile_has_frontend_quality_gate() -> None:
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) analyze" in makefile
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) test" in makefile
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) build macos --debug" in makefile
+    assert "--report-out \"$(MEMORY_FRONTEND_MARIONETTE_REPORT)\"" in makefile
+
+
+def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
+    module = _load_frontend_marionette_local_e2e(
+        ROOT / "scripts" / "frontend_marionette_local_e2e.py"
+    )
+    args = SimpleNamespace(
+        device="macos",
+        host="127.0.0.1",
+        port=17789,
+        space_slug="marionette-local-proof",
+    )
+    report = module._base_report(
+        args,
+        root=ROOT,
+        frontend_dir=ROOT / "frontend",
+        scope_ref="marionette-local-proof-unit",
+        run_id="unit-run",
+    )
+    report["components"]["server"] = module._component("succeeded")
+    report["components"]["worker"] = module._component("succeeded")
+    report["components"]["flutter_marionette"] = module._component(
+        "succeeded",
+        exit_code=0,
+    )
+    report["ok"] = True
+    report["exit_code"] = 0
+    report["finished_at"] = module._utc_now()
+    report_out = tmp_path / "frontend-marionette-report.json"
+
+    module._write_report(report, str(report_out))
+    persisted = json.loads(report_out.read_text(encoding="utf-8"))
+    rendered = json.dumps(persisted, ensure_ascii=False)
+
+    assert persisted["schema_version"] == 1
+    assert persisted["suite"] == "memo-stack-frontend-marionette-local-e2e"
+    assert persisted["ok"] is True
+    assert persisted["secrets_redacted"] is True
+    assert persisted["frontend"]["dir_name"] == "frontend"
+    assert persisted["backend"] == {
+        "database": "sqlite",
+        "host": "127.0.0.1",
+        "port": 17789,
+        "profile": "test",
+    }
+    assert persisted["components"]["flutter_marionette"]["status"] == "succeeded"
+    assert set(persisted["git"]) == {"commit", "short_commit", "dirty"}
+    assert str(ROOT) not in rendered
+    assert "local-dev-token" not in rendered
+    assert "OPENAI_API_KEY" not in rendered
 
 
 def test_selfhost_compose_has_team_deployment_contract() -> None:
@@ -1310,6 +1363,18 @@ def test_real_stack_mcp_canary_docs_are_env_based() -> None:
 
 def _load_clean_full_smoke(path: Path):
     spec = importlib.util.spec_from_file_location("clean_full_smoke_for_test", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_frontend_marionette_local_e2e(path: Path):
+    spec = importlib.util.spec_from_file_location(
+        "frontend_marionette_local_e2e_for_test",
+        path,
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

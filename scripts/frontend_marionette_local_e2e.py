@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -12,7 +14,10 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
+
+SUITE = "memo-stack-frontend-marionette-local-e2e"
 
 
 def main() -> int:
@@ -24,6 +29,14 @@ def main() -> int:
     dart_bin = _resolve_dart(flutter_bin)
     run_id = str(int(time.time() * 1000))
     scope_ref = args.scope_ref or f"marionette-local-proof-{run_id}"
+    report = _base_report(
+        args,
+        root=root,
+        frontend_dir=frontend_dir,
+        scope_ref=scope_ref,
+        run_id=run_id,
+    )
+    exit_code = 1
 
     tmp_ctx = tempfile.TemporaryDirectory(prefix="memo-stack-marionette.")
     tmp_root = Path(tmp_ctx.name)
@@ -46,6 +59,7 @@ def main() -> int:
             server,
             timeout_seconds=args.server_startup_timeout,
         )
+        report["components"]["server"] = _component("succeeded")
 
         worker = _start(
             [
@@ -64,6 +78,7 @@ def main() -> int:
             env=server_env,
         )
         processes.append(worker)
+        report["components"]["worker"] = _component("running")
 
         marionette_env = os.environ.copy()
         marionette_env.update(
@@ -86,9 +101,28 @@ def main() -> int:
             env=marionette_env,
             check=False,
         )
-        return int(result.returncode)
+        exit_code = int(result.returncode)
+        report["components"]["flutter_marionette"] = _component(
+            "succeeded" if exit_code == 0 else "failed",
+            exit_code=exit_code,
+        )
+        if exit_code == 0:
+            report["components"]["worker"] = _component("succeeded")
+        report["ok"] = exit_code == 0
+        return exit_code
+    except Exception as exc:
+        report["ok"] = False
+        report["failure"] = {
+            "type": exc.__class__.__name__,
+            "message": str(exc)[:240],
+        }
+        _mark_unknown_components_failed(report, exc)
+        raise
     finally:
         _stop_processes(reversed(processes))
+        report["exit_code"] = exit_code
+        report["finished_at"] = _utc_now()
+        _write_report(report, args.report_out)
         if args.keep_temp:
             print(f"kept temp dir: {tmp_root}", file=sys.stderr)
         else:
@@ -112,7 +146,114 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--flutter-startup-timeout", type=int, default=180)
     parser.add_argument("--call-timeout", type=int, default=45)
     parser.add_argument("--keep-temp", action="store_true")
+    parser.add_argument(
+        "--report-out",
+        default=os.environ.get("MEMORY_FRONTEND_MARIONETTE_REPORT_OUT"),
+        help="Optional path for the JSON local Marionette proof report.",
+    )
     return parser.parse_args()
+
+
+def _base_report(
+    args: argparse.Namespace,
+    *,
+    root: Path,
+    frontend_dir: Path,
+    scope_ref: str,
+    run_id: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "suite": SUITE,
+        "ok": False,
+        "secrets_redacted": True,
+        "generated_at": _utc_now(),
+        "run_id": run_id,
+        "git": _git_info(root),
+        "runtime": {
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+        },
+        "frontend": {
+            "dir_name": frontend_dir.name,
+            "device": args.device,
+        },
+        "backend": {
+            "host": args.host,
+            "port": args.port,
+            "profile": "test",
+            "database": "sqlite",
+        },
+        "scope": {
+            "space_slug": args.space_slug,
+            "memory_scope_external_ref": scope_ref,
+        },
+        "components": {
+            "server": _component("unknown"),
+            "worker": _component("unknown"),
+            "flutter_marionette": _component("unknown"),
+        },
+    }
+
+
+def _component(status: str, **values: object) -> dict[str, object]:
+    component: dict[str, object] = {"status": status}
+    for key, value in values.items():
+        if value is not None:
+            component[key] = value
+    return component
+
+
+def _write_report(report: dict[str, object], report_out: str | None) -> None:
+    if not report_out:
+        return
+    path = Path(report_out)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _mark_unknown_components_failed(report: dict[str, object], exc: Exception) -> None:
+    components = report.get("components")
+    if not isinstance(components, dict):
+        return
+    for value in components.values():
+        if not isinstance(value, dict) or value.get("status") != "unknown":
+            continue
+        value["status"] = "failed"
+        value["reason"] = exc.__class__.__name__
+
+
+def _git_info(root: Path) -> dict[str, object]:
+    commit = _git_output(root, "rev-parse", "HEAD")
+    short_commit = _git_output(root, "rev-parse", "--short", "HEAD")
+    dirty = _git_output(root, "status", "--short")
+    return {
+        "commit": commit,
+        "short_commit": short_commit,
+        "dirty": bool(dirty),
+    }
+
+
+def _git_output(root: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def _server_env(

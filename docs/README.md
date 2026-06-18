@@ -89,6 +89,10 @@ the local Docker backend and validates the frontend memory save/review path
 through VM service extensions: create scope, save capture, approve a context-link
 suggestion, upload attachment evidence, wait for asset extraction,
 create/update/split anchors, merge duplicate anchors and cleanup.
+`memo-stack-frontend-marionette-local-e2e` runs the same frontend proof against
+a temporary local SQLite server and worker, without Docker, and writes a bounded
+JSON proof report to `.e2e-artifacts/frontend-marionette-local-e2e.json` by
+default.
 `memo-stack-test-quality` is the deterministic backend quality gate. It runs
 lint, the full pytest suite, memory evals, prompt snapshots and the repository
 secret scan without requiring Docker or paid provider keys.
