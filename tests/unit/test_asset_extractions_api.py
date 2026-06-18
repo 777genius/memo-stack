@@ -474,6 +474,64 @@ def test_text_asset_extraction_indexes_document_chunks_and_artifacts(tmp_path: P
         assert b"quick capture attached to memory scopes" in downloaded.content
 
 
+def test_delete_asset_removes_source_and_extraction_artifact_blobs(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "cleanup",
+                "filename": "cleanup-note.txt",
+                "extract": "true",
+            },
+            content=b"Deleting an asset should remove extraction artifact blobs too.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        uploaded = upload.json()["data"]
+        extraction_id = uploaded["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        artifact_id = next(
+            item["id"]
+            for item in fetched.json()["data"]["artifacts"]
+            if item["artifact_type"] == "markdown"
+        )
+        artifact_before_delete = client.get(
+            f"/v1/extraction-artifacts/{artifact_id}/download",
+            headers=auth_headers(),
+        )
+        assert artifact_before_delete.status_code == 200, artifact_before_delete.text
+        asset_before_delete = client.get(
+            f"/v1/assets/{uploaded['id']}/download",
+            headers=auth_headers(),
+        )
+        assert asset_before_delete.status_code == 200, asset_before_delete.text
+
+        deleted = client.delete(f"/v1/assets/{uploaded['id']}", headers=auth_headers())
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["data"]["status"] == "deleted"
+
+        asset_after_delete = client.get(
+            f"/v1/assets/{uploaded['id']}/download",
+            headers=auth_headers(),
+        )
+        assert asset_after_delete.status_code == 404, asset_after_delete.text
+        artifact_after_delete = client.get(
+            f"/v1/extraction-artifacts/{artifact_id}/download",
+            headers=auth_headers(),
+        )
+        assert artifact_after_delete.status_code == 404, artifact_after_delete.text
+
+
 def test_spoofed_image_mime_text_asset_extracts_as_text_with_mismatch_metadata(
     tmp_path: Path,
 ) -> None:

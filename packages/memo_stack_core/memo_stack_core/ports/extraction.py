@@ -127,6 +127,9 @@ class AssetExtractionRepositoryPort(Protocol):
     async def list_artifacts(self, *, job_id: str) -> list[ExtractionArtifact]:
         """List artifacts for a job."""
 
+    async def list_artifacts_for_asset(self, *, asset_id: str) -> list[ExtractionArtifact]:
+        """List artifacts derived from one asset."""
+
     async def get_artifact_by_id(self, artifact_id: str) -> ExtractionArtifact | None:
         """Load one extraction artifact."""
 

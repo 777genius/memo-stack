@@ -231,6 +231,19 @@ class PostgresAssetExtractionRepository(AssetExtractionRepositoryPort):
         ).scalars()
         return [extraction_artifact_row_to_domain(row) for row in rows]
 
+    async def list_artifacts_for_asset(self, *, asset_id: str) -> list[ExtractionArtifact]:
+        rows = (
+            await self._session.execute(
+                select(MemoryAssetExtractionArtifactRow)
+                .where(MemoryAssetExtractionArtifactRow.asset_id == asset_id)
+                .order_by(
+                    MemoryAssetExtractionArtifactRow.created_at,
+                    MemoryAssetExtractionArtifactRow.id,
+                )
+            )
+        ).scalars()
+        return [extraction_artifact_row_to_domain(row) for row in rows]
+
     async def get_artifact_by_id(self, artifact_id: str) -> ExtractionArtifact | None:
         row = await self._session.get(MemoryAssetExtractionArtifactRow, artifact_id)
         return extraction_artifact_row_to_domain(row) if row is not None else None

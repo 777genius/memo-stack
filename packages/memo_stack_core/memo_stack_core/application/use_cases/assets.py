@@ -157,6 +157,9 @@ class DeleteAssetUseCase:
             if asset is None:
                 raise MemoryNotFoundError("Asset not found")
             storage_key = asset.storage_key
+            extraction_artifacts = await uow.asset_extractions.list_artifacts_for_asset(
+                asset_id=str(asset.id)
+            )
             saved = await uow.assets.save(asset.delete(now=now))
             should_delete_blob = not await uow.assets.has_stored_with_storage_key(
                 storage_key=storage_key,
@@ -165,6 +168,8 @@ class DeleteAssetUseCase:
             await uow.commit()
         if should_delete_blob:
             await self._blob_storage.delete(storage_key=storage_key)
+        for artifact in extraction_artifacts:
+            await self._blob_storage.delete(storage_key=artifact.storage_key)
         return AssetResult(asset=saved)
 
 
