@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime
 
 from memo_stack_core.application.multimodal_manifest import (
+    MULTIMODAL_MANIFEST_CONTRACT_SCHEMA_VERSION,
     MULTIMODAL_MANIFEST_SCHEMA_VERSION,
     multimodal_manifest_artifact_candidate,
     multimodal_manifest_payload,
@@ -67,12 +68,39 @@ def test_multimodal_manifest_normalizes_document_image_audio_and_video_evidence(
         parser_version="1.2.3",
         model_version="vision-test",
         language="en",
+        technical_metadata={
+            "provider_request_id": "req_123",
+            "duration_seconds": 4.2,
+            "raw_provider_payload": "must-not-leak",
+            "bad_float": float("nan"),
+        },
+        diagnostics={"provider_timeout": False, "secret_token": "must-not-leak"},
     )
 
     payload = multimodal_manifest_payload(asset=asset, job=job, result=result)
 
     assert payload["schema_version"] == MULTIMODAL_MANIFEST_SCHEMA_VERSION
+    assert payload["contract"]["schema_version"] == MULTIMODAL_MANIFEST_CONTRACT_SCHEMA_VERSION
+    assert payload["contract"]["provider_output_policy"] == "evidence_not_truth"
+    assert payload["contract"]["raw_provider_payloads_in_public_api"] is False
+    assert payload["contract"]["coordinate_fields"] == ["page_number", "bbox", "time_range"]
     assert payload["modalities"] == ["text", "document", "image", "audio", "video"]
+    assert payload["features"] == {
+        "modalities": ["text", "document", "image", "audio", "video"],
+        "coordinate_fields_present": ["page_number", "bbox", "time_range"],
+        "evidence_kinds": ["heading", "ocr_region", "transcript_segment", "keyframe"],
+        "artifact_types": ["keyframe"],
+        "has_text_preview": True,
+        "has_page_refs": True,
+        "has_bbox_refs": True,
+        "has_time_ranges": True,
+        "has_confidence": True,
+        "has_artifacts": True,
+        "has_extraction_metadata": True,
+        "has_diagnostics": True,
+        "has_language": True,
+        "has_model_version": True,
+    }
     assert payload["evidence_item_count"] == 4
     assert payload["evidence_items_truncated"] is False
     items = payload["evidence_items"]
@@ -85,7 +113,15 @@ def test_multimodal_manifest_normalizes_document_image_audio_and_video_evidence(
     assert items[3]["time_range"] == {"start_ms": 4000, "end_ms": 4000}
     assert payload["artifacts"][0]["artifact_type"] == "keyframe"
     assert payload["artifacts"][0]["byte_size"] == len(b"frame-bytes")
-    assert "frame-bytes" not in json.dumps(payload)
+    extraction = payload["extraction"]
+    assert extraction["technical_metadata"] == {
+        "provider_request_id": "req_123",
+        "duration_seconds": 4.2,
+    }
+    assert extraction["diagnostics"] == {"provider_timeout": False}
+    serialized = json.dumps(payload, allow_nan=False)
+    assert "frame-bytes" not in serialized
+    assert "must-not-leak" not in serialized
 
 
 def test_multimodal_manifest_bounds_evidence_and_text_previews() -> None:
@@ -142,7 +178,9 @@ def test_multimodal_manifest_artifact_candidate_uses_media_manifest_type() -> No
     assert candidate.content_type == "application/json"
     assert candidate.metadata["schema_version"] == MULTIMODAL_MANIFEST_SCHEMA_VERSION
     assert candidate.metadata["evidence_item_count"] == 1
+    assert payload["contract"]["schema_version"] == MULTIMODAL_MANIFEST_CONTRACT_SCHEMA_VERSION
     assert payload["modalities"] == ["text", "audio"]
+    assert payload["features"]["coordinate_fields_present"] == ["time_range"]
     assert payload["evidence_items"][0]["modality"] == "audio"
 
 

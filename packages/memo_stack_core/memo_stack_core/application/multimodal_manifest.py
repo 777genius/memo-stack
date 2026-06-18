@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable
 from hashlib import sha256
 
 from memo_stack_core.application.safe_payload import safe_metadata_text
@@ -16,12 +17,30 @@ from memo_stack_core.ports.extraction import (
 )
 
 MULTIMODAL_MANIFEST_SCHEMA_VERSION = "memo_stack.multimodal_manifest.v1"
+MULTIMODAL_MANIFEST_CONTRACT_SCHEMA_VERSION = "memo_stack.multimodal_manifest_contract.v1"
 
 _SOURCE_TYPE = "asset_extraction"
 _MAX_EVIDENCE_ITEMS = 500
 _MAX_ARTIFACT_ITEMS = 100
 _MAX_TEXT_PREVIEW_CHARS = 600
 _MODALITY_ORDER = ("text", "document", "image", "audio", "video")
+_COORDINATE_FIELDS = ("page_number", "bbox", "time_range")
+_FEATURE_FIELDS = (
+    "modalities",
+    "coordinate_fields_present",
+    "evidence_kinds",
+    "artifact_types",
+    "has_text_preview",
+    "has_page_refs",
+    "has_bbox_refs",
+    "has_time_ranges",
+    "has_confidence",
+    "has_artifacts",
+    "has_extraction_metadata",
+    "has_diagnostics",
+    "has_language",
+    "has_model_version",
+)
 
 
 def multimodal_manifest_artifact_candidate(
@@ -31,7 +50,9 @@ def multimodal_manifest_artifact_candidate(
     result: ExtractionResult,
 ) -> ExtractionArtifactCandidate:
     payload = multimodal_manifest_payload(asset=asset, job=job, result=result)
-    content = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    content = json.dumps(payload, allow_nan=False, ensure_ascii=False, sort_keys=True).encode(
+        "utf-8"
+    )
     return ExtractionArtifactCandidate(
         artifact_type="media_manifest",
         filename="media_manifest.json",
@@ -76,6 +97,7 @@ def multimodal_manifest_payload(
     )
     return {
         "schema_version": MULTIMODAL_MANIFEST_SCHEMA_VERSION,
+        "contract": multimodal_manifest_contract_payload(),
         "asset": {
             "id": str(asset.id),
             "filename": safe_metadata_text(asset.filename, limit=240),
@@ -100,8 +122,16 @@ def multimodal_manifest_payload(
             else None,
             "language": safe_metadata_text(result.language, limit=80) if result.language else None,
             "status": safe_metadata_text(result.status, limit=80),
+            "technical_metadata": _safe_manifest_metadata(result.technical_metadata),
+            "diagnostics": _safe_manifest_metadata(result.diagnostics),
         },
         "modalities": modalities,
+        "features": _feature_summary(
+            evidence_items=evidence_items,
+            artifact_items=artifact_items,
+            result=result,
+            modalities=modalities,
+        ),
         "evidence_item_count": len(evidence_items),
         "evidence_item_count_total": len(result.elements),
         "evidence_item_limit": _MAX_EVIDENCE_ITEMS,
@@ -114,6 +144,40 @@ def multimodal_manifest_payload(
         "artifact_limit": _MAX_ARTIFACT_ITEMS,
         "artifacts_truncated": len(result.artifacts) > len(artifact_items),
         "artifacts": artifact_items,
+    }
+
+
+def multimodal_manifest_contract_payload() -> dict[str, object]:
+    return {
+        "schema_version": MULTIMODAL_MANIFEST_CONTRACT_SCHEMA_VERSION,
+        "manifest_schema_version": MULTIMODAL_MANIFEST_SCHEMA_VERSION,
+        "artifact_type": "media_manifest",
+        "source_type": _SOURCE_TYPE,
+        "evidence_item_fields": [
+            "id",
+            "source",
+            "kind",
+            "modality",
+            "text_preview",
+            "page_number",
+            "bbox",
+            "time_range",
+            "confidence",
+            "metadata",
+        ],
+        "coordinate_fields": list(_COORDINATE_FIELDS),
+        "feature_fields": list(_FEATURE_FIELDS),
+        "coordinates_are_optional_per_item": True,
+        "provider_output_policy": "evidence_not_truth",
+        "metadata_policy": (
+            "bounded_scalar_metadata_without_sensitive_keys_or_raw_provider_payloads"
+        ),
+        "raw_provider_payloads_in_public_api": False,
+        "raw_artifact_bytes_in_public_api": False,
+        "artifact_integrity": {
+            "hash_algorithm": "sha256",
+            "byte_size_included": True,
+        },
     }
 
 
@@ -173,6 +237,56 @@ def _artifact_items(result: ExtractionResult) -> list[dict[str, object]]:
             }
         )
     return items
+
+
+def _feature_summary(
+    *,
+    evidence_items: list[dict[str, object]],
+    artifact_items: list[dict[str, object]],
+    result: ExtractionResult,
+    modalities: list[str],
+) -> dict[str, object]:
+    coordinate_fields = [
+        field
+        for field in _COORDINATE_FIELDS
+        if any(field in item for item in evidence_items)
+    ]
+    artifact_types = _ordered_unique_safe_kinds(
+        str(item.get("artifact_type") or "") for item in artifact_items
+    )
+    evidence_kinds = _ordered_unique_safe_kinds(
+        str(item.get("kind") or "") for item in evidence_items
+    )
+    return {
+        "modalities": modalities,
+        "coordinate_fields_present": coordinate_fields,
+        "evidence_kinds": evidence_kinds,
+        "artifact_types": artifact_types,
+        "has_text_preview": any(bool(item.get("text_preview")) for item in evidence_items),
+        "has_page_refs": "page_number" in coordinate_fields,
+        "has_bbox_refs": "bbox" in coordinate_fields,
+        "has_time_ranges": "time_range" in coordinate_fields,
+        "has_confidence": any("confidence" in item for item in evidence_items),
+        "has_artifacts": bool(artifact_items),
+        "has_extraction_metadata": bool(result.technical_metadata),
+        "has_diagnostics": bool(result.diagnostics),
+        "has_language": bool(result.language),
+        "has_model_version": bool(result.model_version),
+    }
+
+
+def _ordered_unique_safe_kinds(values: Iterable[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        safe = _safe_kind(str(value))
+        if safe == "unknown" or safe in seen:
+            continue
+        unique.append(safe)
+        seen.add(safe)
+        if len(unique) >= 40:
+            break
+    return unique
 
 
 def _modalities(*, evidence_items: list[dict[str, object]], content_type: str) -> list[str]:
@@ -275,7 +389,9 @@ def _safe_manifest_metadata(metadata: dict[str, object]) -> dict[str, object]:
             continue
         if isinstance(raw_value, str):
             safe[key] = safe_metadata_text(raw_value, limit=240)
-        elif isinstance(raw_value, (int, float, bool)) or raw_value is None:
+        elif raw_value is None or isinstance(raw_value, (bool, int)) or (
+            isinstance(raw_value, float) and math.isfinite(raw_value)
+        ):
             safe[key] = raw_value
     return safe
 

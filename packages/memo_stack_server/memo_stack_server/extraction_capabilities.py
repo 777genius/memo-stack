@@ -5,6 +5,10 @@ from __future__ import annotations
 import importlib.util
 from dataclasses import dataclass
 
+from memo_stack_core.application.multimodal_manifest import (
+    multimodal_manifest_contract_payload,
+)
+
 from memo_stack_server.config import Settings
 
 _PROFILE_ORDER = (
@@ -203,6 +207,7 @@ def build_extraction_capability_payload(settings: Settings) -> dict[str, object]
         "policy": _policy_payload(settings),
         "evidence_contract": _evidence_contract_payload(),
         "feature_contract": _feature_contract_payload(),
+        "manifest_contract": multimodal_manifest_contract_payload(),
         "file_type_detection": _file_type_detection_contract_payload(),
         "modality_actions": _modality_action_matrix(profiles),
         "external_provider_egress": settings.extraction_external_ai_enabled,

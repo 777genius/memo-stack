@@ -71,6 +71,7 @@ class ExtractionCapabilityDiagnostics:
     policy: dict[str, Any]
     evidence_contract: dict[str, Any]
     feature_contract: dict[str, Any]
+    manifest_contract: dict[str, Any]
     file_type_detection: dict[str, Any]
     limits: dict[str, Any]
     raw: dict[str, Any]
@@ -98,6 +99,7 @@ class ExtractionCapabilityDiagnostics:
             policy=dict(payload.get("policy") or {}),
             evidence_contract=dict(payload.get("evidence_contract") or {}),
             feature_contract=dict(payload.get("feature_contract") or {}),
+            manifest_contract=dict(payload.get("manifest_contract") or {}),
             file_type_detection=dict(payload.get("file_type_detection") or {}),
             limits=dict(payload.get("limits") or {}),
             raw=dict(payload),

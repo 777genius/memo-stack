@@ -261,6 +261,25 @@ def test_capabilities_return_noop_adapters() -> None:
         "external_ai_features_require_explicit_profile": True,
         "local_asr_does_not_provide_speaker_labels": True,
     }
+    assert body["extraction"]["manifest_contract"]["schema_version"] == (
+        "memo_stack.multimodal_manifest_contract.v1"
+    )
+    assert body["extraction"]["manifest_contract"]["manifest_schema_version"] == (
+        "memo_stack.multimodal_manifest.v1"
+    )
+    assert body["extraction"]["manifest_contract"]["artifact_type"] == "media_manifest"
+    assert body["extraction"]["manifest_contract"]["coordinate_fields"] == [
+        "page_number",
+        "bbox",
+        "time_range",
+    ]
+    assert body["extraction"]["manifest_contract"]["provider_output_policy"] == (
+        "evidence_not_truth"
+    )
+    assert (
+        body["extraction"]["manifest_contract"]["raw_provider_payloads_in_public_api"]
+        is False
+    )
     assert body["extraction"]["file_type_detection"] == {
         "schema_version": "memo_stack.file_type_detection_contract.v1",
         "declared_content_type_trusted": False,

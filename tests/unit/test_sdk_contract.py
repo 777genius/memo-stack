@@ -391,6 +391,13 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "video_features",
                         ],
                     },
+                    "manifest_contract": {
+                        "schema_version": "memo_stack.multimodal_manifest_contract.v1",
+                        "manifest_schema_version": "memo_stack.multimodal_manifest.v1",
+                        "artifact_type": "media_manifest",
+                        "coordinate_fields": ["page_number", "bbox", "time_range"],
+                        "raw_provider_payloads_in_public_api": False,
+                    },
                     "file_type_detection": {
                         "schema_version": "memo_stack.file_type_detection_contract.v1",
                         "declared_content_type_trusted": False,
@@ -462,6 +469,16 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert diagnostics.feature_contract["schema_version"] == (
         "memo_stack.extraction_feature_contract.v1"
     )
+    assert diagnostics.manifest_contract["schema_version"] == (
+        "memo_stack.multimodal_manifest_contract.v1"
+    )
+    assert diagnostics.manifest_contract["artifact_type"] == "media_manifest"
+    assert diagnostics.manifest_contract["coordinate_fields"] == [
+        "page_number",
+        "bbox",
+        "time_range",
+    ]
+    assert diagnostics.manifest_contract["raw_provider_payloads_in_public_api"] is False
     assert diagnostics.file_type_detection["schema_version"] == (
         "memo_stack.file_type_detection_contract.v1"
     )
@@ -570,6 +587,7 @@ def test_sdk_defaults_legacy_extraction_capability_contract_fields() -> None:
     standard_local = diagnostics.profile("standard_local")
 
     assert diagnostics.evidence_contract == {}
+    assert diagnostics.manifest_contract == {}
     assert diagnostics.file_type_detection == {}
     assert standard_local is not None
     assert standard_local.input_modalities == ()
