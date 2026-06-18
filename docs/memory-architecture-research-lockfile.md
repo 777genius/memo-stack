@@ -15,14 +15,21 @@ implementation authority. Memo Stack rules below are the authority for this
 repository.
 
 - [Mem0 memory types](https://docs.mem0.ai/core-concepts/memory-types) and
-  [Mem0 long-term memory overview](https://mem0.ai/blog/long-term-memory-ai-agents)
-  separate factual, episodic and semantic memory, with procedural memory used
-  for behavior and reusable workflows.
+  [Mem0 add memory](https://docs.mem0.ai/core-concepts/memory-operations/add)
+  separate memory layers and treat memory addition as an explicit extraction
+  and storage operation over conversation evidence.
 - [Zep concepts](https://help.getzep.com/concepts),
   [Zep Graph Overview](https://help.getzep.com/graph-overview) and
   [Graphiti](https://github.com/getzep/graphiti) use a temporal context graph
   where entities, facts and relationships preserve history while invalidating
   outdated facts.
+- [Qdrant payload and filtering docs](https://qdrant.tech/documentation/manage-data/payload/)
+  treat payloads, filters and payload indexes as retrieval infrastructure.
+  Memo Stack uses them only as derived recall aids.
+- [OWASP LLM Prompt Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html)
+  identifies instruction/data mixing as the core prompt injection hazard. Memo
+  Stack applies this by keeping retrieved memory and extracted files as
+  evidence, not hidden instructions.
 - [OpenAI agent safety guidance](https://developers.openai.com/api/docs/guides/agent-builder-safety)
   and [OpenAI deep research safety guidance](https://developers.openai.com/api/docs/guides/deep-research)
   treat retrieved text, files, tool output and connector data as untrusted input
@@ -35,6 +42,20 @@ repository.
   patterns.
 - [Letta archival memory](https://docs.letta.com/guides/core-concepts/memory/archival-memory/)
   separates long-term searchable memory from always-visible context memory.
+
+### Source-To-Rule Ledger
+
+This is the research lock, not a general bibliography. External systems can
+inspire product rules, but cannot override them.
+
+| Source signal | Locked Memo Stack rule |
+| --- | --- |
+| Mem0 separates memory layers and has an explicit add-memory operation | Memo Stack keeps semantic, episodic, procedural and archival behavior separate at write admission and retrieval time |
+| Graphiti/Zep models changing relationships over time with provenance | Postgres stores canonical temporal fields and evidence refs; Graphiti can only project or suggest temporal graph candidates |
+| Qdrant relies on payload/filter/index metadata for efficient scoped recall | Qdrant payloads must contain scope/provenance needed for recall, but every hit is rehydrated through Postgres before visibility |
+| OWASP frames prompt injection as instruction/data confusion | Retrieved memory, file text, OCR, transcripts and tool output are always rendered as untrusted evidence, never as hidden policy |
+| LangMem-style memory patterns split semantic, episodic and procedural behavior | Procedural memory cannot be inferred from ordinary facts or files without explicit review and a separate lifecycle |
+| Letta-style archival memory separates long-term search from always-visible context | Archival evidence is searchable and reviewable, but hidden from default prompt context unless selected by current retrieval policy |
 
 ## Locked Product Model
 
@@ -86,6 +107,39 @@ Locked type boundaries:
 No write path may silently promote episodic or archival evidence into active
 semantic or procedural memory. Promotion is a domain decision with confidence,
 source trust, review state and audit evidence.
+
+### Write Admission Matrix
+
+Write admission runs before ranking, linking or prompt assembly. It decides what
+the system is allowed to store as canonical memory and what must remain source
+evidence.
+
+| Candidate | Source trust | Default admission | Auto-active allowed? | Required evidence |
+| --- | --- | --- | --- | --- |
+| Direct user fact | `user_direct` | semantic pending or active according to validation | yes, when no conflict and source refs exist | user source ref, scope, kind, confidence |
+| User uploaded file text | `user_uploaded` or `provider_derived` | episodic/archival evidence plus suggestions | no | asset/document/chunk refs, parser status, extraction confidence |
+| OCR or vision claim | `provider_derived` | pending suggestion | no | asset id, bbox or page when known, model/parser metadata |
+| ASR transcript claim | `provider_derived` | pending suggestion | no | asset id, segment time range, transcript artifact |
+| Assistant summary | `assistant_generated` | low-trust evidence or pending suggestion | no | source refs to original evidence plus explicit user review |
+| Connector import | `connector_external` | evidence first, suggestion when useful | no by default | connector provenance, scope proof, source ids |
+| Procedural behavior preference | `user_direct` only | procedural pending review | no silent write | explicit user approval, audit event, policy version |
+| Temporal replacement | any trusted source | pending relation suggestion | only under dedicated relation policy | old target id, new target id, valid/observed time evidence |
+
+Admission outputs are:
+
+```text
+source_only
+pending_semantic_suggestion
+pending_anchor_suggestion
+pending_relation_suggestion
+pending_procedural_suggestion
+active_semantic_memory
+deny
+```
+
+`active_semantic_memory` is allowed only for direct user facts or explicit user
+edits that pass scope, source-ref, conflict and sensitivity checks. All other
+promotion paths start as reviewable suggestions.
 
 ## Source Trust Tiers
 
@@ -291,6 +345,39 @@ Deny without suggestion when any are true:
 - Candidate reason would expose secrets or raw private payload.
 - No candidate is better than a hallucinated candidate.
 
+### Semantic Link Policy Thresholds
+
+These thresholds lock the current `context-link-policy-v1` behavior. Changing
+them requires a lockfile or ADR update plus semantic-linking eval evidence.
+
+| Rule | Locked value | Product meaning |
+| --- | --- | --- |
+| minimum review score | `40.0` | below this, deny without persisted suggestion |
+| minimum weak-signal review score | `55.0` | score `40.0..54.99` needs at least one strong reason code |
+| high confidence score | `75.0` | candidate can be labeled high confidence, but still requires review |
+| auto-approve eligible score | `92.0` | candidate can receive `auto_approve_candidate` policy label |
+| independent signals for auto-approve eligibility | `2` | at least two strong reason codes, including `text_match` |
+| persisted suggestions per source request | `10` | bounded review queue and public payload |
+| candidates considered before policy | `120` | protects ranking and diagnostics from unbounded candidate pools |
+| denied candidates sampled in diagnostics | `8` | enough for debug without leaking large private candidate sets |
+
+Strong reason codes are:
+
+```text
+text_match
+temporal_intent_match
+explicit_project_reference
+known_project_tool_reference
+event_phrase
+person_name
+organization_reference
+rule_signal
+```
+
+High-impact relations are `supersedes` and `contradicts`. They require explicit
+temporal/update/conflict reason codes and remain review-gated. A high score
+alone is never enough for these relations.
+
 ### Review Decision Contract
 
 Review decisions must be stable across API, SDK, frontend, CLI and future MCP
@@ -430,6 +517,81 @@ Provenance:
 - Temporal relation ids when temporal replacement happened.
 - Sequence or character offsets for chunks when available.
 
+### Context Diagnostics Schema V1
+
+Each prompt-visible `ContextItem` must expose this normalized diagnostics
+shape. Missing adapter fields are defaulted in application/API/SDK mapping, not
+in UI code.
+
+```text
+diagnostics:
+  retrieval_source: string | null
+  retrieval_sources: string[] max 8 ordered unique
+  retrieval_sources_total?: int
+  retrieval_sources_returned?: int
+  retrieval_sources_truncated?: bool
+  ranking_reason: string max 240
+  score_signals: map<string, scalar> max 24 keys
+  provenance:
+    retrieval_sources: string[] max 8
+    source_type?: string
+    source_id?: string
+    document_id?: string
+    chunk_id?: string
+    source_ref_count?: int
+    page_number?: int
+    bbox?: number[4]
+    time_start_ms?: int
+    time_end_ms?: int
+    temporal_relation_ids?: string[] max 8
+    visibility?: current | review_only | historical
+```
+
+Bundle diagnostics must expose:
+
+```text
+context_assembly_version
+consistency_mode
+retrieval_sources_used: string[] max 8
+retrieval_sources_total?: int
+retrieval_sources_returned?: int
+retrieval_sources_truncated?: bool
+hybrid_items_used: int
+temporal_replacements_applied: int
+source_refs_total?: int
+source_refs_returned?: int
+source_refs_truncated?: bool
+multimodal_source_ref_count: int
+source_refs_with_page_count: int
+source_refs_with_bbox_count: int
+source_refs_with_time_range_count: int
+stale_*_drop_count: int
+*_candidate_count: int
+*_hydrated_count: int
+```
+
+Forbidden diagnostics:
+
+- raw query text;
+- full document/chunk/source text;
+- OCR/ASR transcript bodies;
+- raw provider payloads;
+- stack traces;
+- absolute local file paths;
+- tokens, keys, passwords, bearer headers, signed URLs or cookies;
+- prompt/developer/system text.
+
+The SDK must parse absent optional fields to safe defaults:
+
+| Field | Missing default |
+| --- | --- |
+| `retrieval_sources` | empty tuple |
+| `ranking_reason` | derived from retrieval sources or safe fallback |
+| `score_signals` | empty mapping |
+| `provenance` | empty mapping |
+| bundle counters | `0` |
+| nullable temporal/media coordinates | `None` |
+
 Current context-link guardrails:
 
 - Direct suggestion requests clamp effective limit to `1..30`.
@@ -503,6 +665,25 @@ Compatibility matrix:
 | SDK typed DTOs | missing optional diagnostics parse to bounded defaults, not exceptions |
 | public API | arrays default to empty arrays, nullable temporal fields stay nullable |
 | frontend/review | unknown future metadata is ignored safely and never used as authority |
+
+Legacy default contract:
+
+| Legacy gap | Safe default | Required diagnostic |
+| --- | --- | --- |
+| anchor `confidence` missing | `medium` | `migration_defaults_applied.anchor_confidence` |
+| anchor `evidence_refs` missing | empty list | `migration_defaults_applied.anchor_evidence_refs` |
+| anchor `observed_at` missing | `created_at`, then `updated_at`, then import time | `migration_defaults_applied.anchor_observed_at` |
+| anchor `valid_from` missing | `None`, interpreted as observed/current by policy | `migration_defaults_applied.anchor_valid_from` |
+| anchor `valid_to` missing | `None`, interpreted as current unless status/relation says otherwise | `migration_defaults_applied.anchor_valid_to` |
+| relation `observed_at` missing | relation `created_at`, then import time | `migration_defaults_applied.relation_observed_at` |
+| relation `valid_from` missing | `None` | `migration_defaults_applied.relation_valid_from` |
+| relation `valid_to` missing | `None` | `migration_defaults_applied.relation_valid_to` |
+| transfer record missing new metadata | default at import mapper boundary | transfer preview warning |
+| SDK payload missing diagnostics | typed empty/default diagnostics | SDK parser regression |
+
+Legacy defaults are compatibility behavior, not truth. They must not increase
+confidence, bypass review gates or mark stale evidence as independently
+verified.
 
 Breaking changes require:
 
