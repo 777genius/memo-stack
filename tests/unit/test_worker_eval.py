@@ -1048,6 +1048,18 @@ def test_worker_safe_error_omits_raw_exception_text() -> None:
     assert _safe_diagnostic_code(error) == "RuntimeError"
 
 
+def test_worker_safe_diagnostic_code_uses_wrapped_root_cause_code() -> None:
+    class ParserTimeoutError(RuntimeError):
+        diagnostic_code = "asset_extraction.parser_timeout"
+
+    cause = ParserTimeoutError("RAW_PROVIDER_SECRET_MARKER should not be persisted")
+    error = RuntimeError("outer wrapper")
+    error.__cause__ = cause
+
+    assert _safe_error(error) == "ParserTimeoutError"
+    assert _safe_diagnostic_code(error) == "asset_extraction.parser_timeout"
+
+
 def test_outbox_poison_job_becomes_dead_with_safe_error(tmp_path: Path) -> None:
     async def run() -> tuple[str, int, str | None, str | None]:
         container = build_container(

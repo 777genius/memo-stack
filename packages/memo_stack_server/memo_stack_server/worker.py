@@ -460,14 +460,30 @@ def _chunk_source_ref(chunk) -> SourceRef:
 
 
 def _safe_error(exc: Exception) -> str:
-    return exc.__class__.__name__[:400]
+    return _diagnostic_exception(exc).__class__.__name__[:400]
 
 
 def _safe_diagnostic_code(exc: Exception) -> str:
-    code = getattr(exc, "diagnostic_code", None)
+    code_source = _diagnostic_exception(exc)
+    code = getattr(code_source, "diagnostic_code", None)
     if isinstance(code, str) and code.strip():
         return code
     return exc.__class__.__name__
+
+
+def _diagnostic_exception(exc: Exception) -> BaseException:
+    current: BaseException = exc
+    seen: set[int] = set()
+    while id(current) not in seen:
+        seen.add(id(current))
+        code = getattr(current, "diagnostic_code", None)
+        if isinstance(code, str) and code.strip():
+            return current
+        next_exc = current.__cause__ or current.__context__
+        if next_exc is None:
+            return current
+        current = next_exc
+    return exc
 
 
 def _retry_after_from_exception(exc: Exception) -> datetime | None:

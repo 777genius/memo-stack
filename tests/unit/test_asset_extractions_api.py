@@ -1012,6 +1012,65 @@ def test_slow_asset_extraction_refreshes_outbox_running_heartbeat(
             run_use_case._extractor = original_extractor
 
 
+def test_slow_asset_extraction_parser_timeout_marks_retryable_without_artifacts(
+    tmp_path: Path,
+) -> None:
+    with make_client(
+        tmp_path,
+        extraction_cancellation_poll_seconds=0.05,
+        extraction_heartbeat_seconds=0.05,
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "timeout",
+                "filename": "timeout-note.txt",
+                "extract": "true",
+            },
+            content=b"Parser timeout should fail retryably without half-committed evidence.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_extractor = run_use_case._extractor
+        original_limits = run_use_case._limits
+        slow_extractor = _SlowCancelableExtractor()
+        run_use_case._extractor = slow_extractor
+        run_use_case._limits = replace(original_limits, parser_timeout_seconds=0.1)
+        try:
+            processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        finally:
+            run_use_case._extractor = original_extractor
+            run_use_case._limits = original_limits
+
+        assert processed == 1
+        assert slow_extractor.started.is_set()
+        assert slow_extractor.cancelled.wait(timeout=1)
+
+        fetched = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert fetched.status_code == 200, fetched.text
+        data = fetched.json()["data"]
+        assert data["status"] == "failed"
+        assert data["safe_error_code"] == "asset_extraction.parser_timeout"
+        assert data["safe_error_message"] == "Asset extraction parser timed out after 0.1s"
+        assert data["execution"]["retry_disposition"] == "retryable"
+        assert data["execution"]["retry_after_at"] is not None
+        assert data["result_document_ids"] == []
+        assert data["artifacts"] == []
+
+        outbox_row = asyncio.run(_get_asset_extract_outbox_row(client, extraction_id))
+        assert outbox_row.status == "retry_pending"
+        assert outbox_row.last_safe_error == "AssetExtractionParserTimeoutError"
+        assert outbox_row.last_safe_diagnostic_code == "asset_extraction.parser_timeout"
+
+
 def test_asset_extraction_ignores_cancel_after_document_commit(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         upload = client.post(

@@ -54,6 +54,14 @@ class DeferredAssetExtractionRetryError(RuntimeError):
         self.retry_after_at = retry_after_at
 
 
+class AssetExtractionParserTimeoutError(RuntimeError):
+    diagnostic_code = "asset_extraction.parser_timeout"
+
+    def __init__(self, *, timeout_seconds: float) -> None:
+        super().__init__(f"Asset extraction parser timed out after {timeout_seconds:g}s")
+        self.timeout_seconds = max(0.0, float(timeout_seconds))
+
+
 class ExtractionRetryPolicy:
     def __init__(
         self,
@@ -227,6 +235,9 @@ def is_non_runnable_extraction_job(job: AssetExtractionJob) -> bool:
 
 
 def safe_exception_code(exc: Exception) -> str:
+    diagnostic_code = getattr(exc, "diagnostic_code", None)
+    if isinstance(diagnostic_code, str) and diagnostic_code.strip():
+        return diagnostic_code.strip()[:120]
     name = exc.__class__.__name__.lower()
     return f"asset_extraction.{name[:80]}"
 

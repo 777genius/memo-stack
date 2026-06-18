@@ -37,6 +37,7 @@ from memo_stack_core.application.safe_payload import safe_metadata, safe_metadat
 from memo_stack_core.application.use_cases.asset_extraction_support import (
     NON_RUNNABLE_EXTRACTION_STATUSES,
     ActiveAssetExtractionLeaseError,
+    AssetExtractionParserTimeoutError,
     DeferredAssetExtractionRetryError,
     ExtractionRetryPolicy,
     actual_media_analysis_seconds,
@@ -547,11 +548,19 @@ class RunAssetExtractionUseCase:
     ) -> tuple[AssetExtractionJob, ExtractionResult | None]:
         task = asyncio.create_task(self._extractor.extract(request))
         last_heartbeat_at = self._clock.now()
+        timeout_seconds = max(0.001, float(request.limits.parser_timeout_seconds))
+        started_at = self._clock.now()
         try:
             while True:
+                now = self._clock.now()
+                elapsed_seconds = max(0.0, (now - started_at).total_seconds())
+                remaining_seconds = timeout_seconds - elapsed_seconds
+                if remaining_seconds <= 0:
+                    await self._cancel_supervised_task(task)
+                    raise AssetExtractionParserTimeoutError(timeout_seconds=timeout_seconds)
                 done, _pending = await asyncio.wait(
                     {task},
-                    timeout=self._cancellation_poll_seconds,
+                    timeout=min(self._cancellation_poll_seconds, remaining_seconds),
                 )
                 if task in done:
                     return job, task.result()
@@ -563,7 +572,6 @@ class RunAssetExtractionUseCase:
                     canceled = await self._cancel_if_requested(current)
                     await self._cancel_supervised_task(task)
                     return canceled, None
-                now = self._clock.now()
                 if _datetime_after(now, last_heartbeat_at + self._heartbeat_interval):
                     job = await self._save_progress(
                         current,
