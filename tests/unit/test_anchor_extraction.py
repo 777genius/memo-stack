@@ -50,6 +50,26 @@ def test_anchor_extraction_keeps_organizations_separate_from_people() -> None:
     assert "github" not in person_keys
 
 
+def test_anchor_extraction_avoids_suffixed_organization_person_false_positives() -> None:
+    anchors = extract_observed_anchors(
+        "GitHub Actions failed for OpenAI evals. Acme Research LLC owns the rollout. "
+        "The GitHub team reviewed OpenAI memory notes."
+    )
+
+    keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    organization_keys = {
+        anchor.normalized_key for anchor in anchors if anchor.kind.value == "organization"
+    }
+
+    assert ("organization", "github") in keys
+    assert ("organization", "openai") in keys
+    assert ("organization", "acme research llc") in keys
+    assert "acme research" not in person_keys
+    assert "github actions" not in person_keys
+    assert "reviewed openai memory notes" not in organization_keys
+
+
 def test_anchor_extraction_keeps_numeric_temporal_event_labels() -> None:
     anchors = extract_observed_anchors(
         "Сохрани заметку из разговора 5 часов назад и chat 2 days ago."

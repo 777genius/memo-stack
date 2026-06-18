@@ -142,6 +142,18 @@ _ORGANIZATION_SUFFIX_WORDS = {
     "зао",
     "ооо",
 }
+_ORGANIZATION_LEADING_STOP_WORDS = {
+    "approved",
+    "failed",
+    "mention",
+    "mentioned",
+    "mentions",
+    "notes",
+    "owns",
+    "reviewed",
+    "reviewing",
+    "shared",
+}
 _PROJECT_HINTS = {
     "qdrant",
     "graphiti",
@@ -376,6 +388,8 @@ def _person_labels(text: str) -> tuple[str, ...]:
         for match in pattern.finditer(text):
             if _is_project_qualified_person_match(text, match.start()):
                 continue
+            if _is_followed_by_organization_suffix(text, match.end()):
+                continue
             parts = tuple(part for part in match.groups() if part)
             normalized_parts = tuple(normalize_anchor_key(part) for part in parts)
             if any(part in _ORGANIZATION_SUFFIX_WORDS for part in normalized_parts[1:]):
@@ -418,6 +432,16 @@ def _is_project_qualified_person_match(text: str, start: int) -> bool:
     return bool(re.search(r"(?:project|проект)\s+$", prefix))
 
 
+def _is_followed_by_organization_suffix(text: str, end: int) -> bool:
+    tail = text[end : end + 16]
+    return bool(
+        re.match(
+            r"\s+(?:Inc|LLC|Ltd|Corp|Corporation|GmbH|AG|SAS|ООО|АО|ЗАО)\b",
+            tail,
+        )
+    )
+
+
 def _is_probable_person_label(label: str) -> bool:
     if len(label) < 3 or len(label) > 80:
         return False
@@ -431,6 +455,8 @@ def _is_probable_person_label(label: str) -> bool:
 def _is_probable_organization_label(label: str) -> bool:
     normalized = normalize_anchor_key(label)
     if len(normalized) < 2 or len(normalized) > 120:
+        return False
+    if normalized.split()[0] in _ORGANIZATION_LEADING_STOP_WORDS:
         return False
     return normalized not in _PERSON_STOP_WORDS
 
