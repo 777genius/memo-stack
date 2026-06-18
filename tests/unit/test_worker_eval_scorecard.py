@@ -79,11 +79,14 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "event_call_beats_recent_chat": True,
                 "temporal_intent_links_recent_fact_without_text_match": True,
                 "document_chunk_evidence_suggested": True,
+                "person_project_and_org_anchors_suggested": True,
+                "anchor_evidence_confidence_and_observed_at_exposed": True,
                 "person_and_project_anchors_suggested": True,
                 "same_name_person_project_anchors_separate": True,
                 "high_impact_relation_requires_explicit_signal": True,
                 "top_suggestion_approves_to_link": True,
                 "unrelated_capture_has_no_candidates": True,
+                "cross_scope_fact_not_suggested": True,
             },
             "failures": [],
         },
@@ -1469,6 +1472,23 @@ def test_memory_quality_scorecard_fails_on_semantic_linking_regression() -> None
     assert result["metrics"]["semantic_linking_false_positive_count"] == 1
     assert result["metrics"]["semantic_linking_cross_scope_leak_count"] == 1
     assert result["gates"]["all_capabilities_ok"] is False
+
+
+def test_memory_quality_scorecard_fails_on_missing_semantic_linking_safety_check() -> None:
+    suite_results = _scorecard_fixture_results()
+    del suite_results["semantic-linking-golden"]["checks"][
+        "unrelated_capture_has_no_candidates"
+    ]
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    assert result["capabilities"]["semantic_linking"]["ok"] is False
+    assert (
+        "semantic_check_unrelated_capture_has_no_candidates"
+        in result["capabilities"]["semantic_linking"]["failed_checks"]
+    )
+    assert result["metrics"]["semantic_linking_false_positive_count"] == 0
 
 
 def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> None:

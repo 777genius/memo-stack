@@ -59,6 +59,20 @@ from memo_stack_server.top_evidence_policy import (
     top_evidence_safety_summary,
 )
 
+_SEMANTIC_LINKING_REQUIRED_CHECKS = (
+    "top_fact_beats_distractor",
+    "event_call_beats_recent_chat",
+    "temporal_intent_links_recent_fact_without_text_match",
+    "document_chunk_evidence_suggested",
+    "person_project_and_org_anchors_suggested",
+    "anchor_evidence_confidence_and_observed_at_exposed",
+    "same_name_person_project_anchors_separate",
+    "high_impact_relation_requires_explicit_signal",
+    "top_suggestion_approves_to_link",
+    "unrelated_capture_has_no_candidates",
+    "cross_scope_fact_not_suggested",
+)
+
 
 def _ratio(passed: int, total: int) -> float:
     if total <= 0:
@@ -380,7 +394,10 @@ def _scorecard_graph_native_recall(
 def _scorecard_semantic_linking(
     suite_results: Mapping[str, dict[str, object]],
 ) -> dict[str, object]:
-    metrics = _scorecard_result_metrics(suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE))
+    result = suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE)
+    metrics = _scorecard_result_metrics(result)
+    checks_raw = result.get("checks", {}) if isinstance(result, dict) else {}
+    checks_map = checks_raw if isinstance(checks_raw, Mapping) else {}
     checks = {
         "ranking_accuracy": metrics.get("ranking_accuracy") == 1.0,
         "event_linking_accuracy": metrics.get("event_linking_accuracy") == 1.0,
@@ -395,6 +412,10 @@ def _scorecard_semantic_linking(
         "review_approval_rate": metrics.get("review_approval_rate") == 1.0,
         "false_positive_count": metrics.get("false_positive_count") == 0,
         "cross_scope_leak_count": metrics.get("cross_scope_leak_count") == 0,
+        **{
+            f"semantic_check_{check_name}": checks_map.get(check_name) is True
+            for check_name in _SEMANTIC_LINKING_REQUIRED_CHECKS
+        },
     }
     return _scorecard_capability("semantic_linking", checks)
 
