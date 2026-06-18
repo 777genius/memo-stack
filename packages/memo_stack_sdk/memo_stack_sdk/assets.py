@@ -434,6 +434,11 @@ class MemoStackAssetsMixin:
         confidence: str | None = None,
         link_reason: str | None = None,
     ) -> dict[str, Any]:
+        suggestion_id = _required_text(
+            suggestion_id,
+            "Context link review requires suggestion_id",
+        )
+        action = _required_text(action, "Context link review requires action")
         return self._request(
             "POST",
             f"/v1/context-link-suggestions/{suggestion_id}/review",
@@ -495,15 +500,36 @@ class MemoStackAssetsMixin:
         if len(items) > 50:
             raise ValueError("Context link batch review supports at most 50 items")
         seen_suggestion_ids: set[str] = set()
+        normalized_items: list[dict[str, Any]] = []
         for item in items:
-            suggestion_id = str(item.get("suggestion_id", "")).strip()
-            if not suggestion_id:
-                raise ValueError("Context link batch review requires suggestion_id")
+            normalized_item = _normalized_context_link_review_item(item)
+            suggestion_id = normalized_item["suggestion_id"]
             if suggestion_id in seen_suggestion_ids:
                 raise ValueError("Context link batch review requires unique suggestion_id values")
             seen_suggestion_ids.add(suggestion_id)
+            normalized_items.append(normalized_item)
         return self._request(
             "POST",
             "/v1/context-link-suggestions/review-batch",
-            json={"items": items, "continue_on_error": continue_on_error},
+            json={"items": normalized_items, "continue_on_error": continue_on_error},
         )
+
+
+def _normalized_context_link_review_item(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    normalized["suggestion_id"] = _required_text(
+        item.get("suggestion_id"),
+        "Context link batch review requires suggestion_id",
+    )
+    normalized["action"] = _required_text(
+        item.get("action"),
+        "Context link batch review requires action",
+    )
+    return normalized
+
+
+def _required_text(value: object, message: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(message)
+    return text

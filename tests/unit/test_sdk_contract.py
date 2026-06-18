@@ -1436,6 +1436,89 @@ def test_sdk_preserves_context_link_review_audit_response() -> None:
     assert audit["events"][0]["action"] == "approve"
 
 
+def test_sdk_normalizes_context_link_review_ids_and_actions() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        seen.append((request.method, request.url.path, body))
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.review_context_link_suggestion(
+        " ctxlinksug_1 ",
+        action=" approve ",
+        reason="confirmed",
+    )
+    client.review_context_link_suggestions_batch(
+        [
+            {
+                "suggestion_id": " ctxlinksug_2 ",
+                "action": " reject ",
+                "reason": "not related",
+            }
+        ]
+    )
+
+    assert seen == [
+        (
+            "POST",
+            "/v1/context-link-suggestions/ctxlinksug_1/review",
+            {"action": "approve", "reason": "confirmed"},
+        ),
+        (
+            "POST",
+            "/v1/context-link-suggestions/review-batch",
+            {
+                "items": [
+                    {
+                        "suggestion_id": "ctxlinksug_2",
+                        "action": "reject",
+                        "reason": "not related",
+                    }
+                ],
+                "continue_on_error": False,
+            },
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("suggestion_id", "action", "message"),
+    [
+        ("  ", "approve", "requires suggestion_id"),
+        ("ctxlinksug_1", "  ", "requires action"),
+    ],
+)
+def test_sdk_rejects_invalid_single_context_link_review(
+    suggestion_id: str,
+    action: str,
+    message: str,
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        client.review_context_link_suggestion(suggestion_id, action=action)
+
+    assert calls == 0
+
+
 def test_sdk_rejects_oversized_context_link_batch_review() -> None:
     calls = 0
 
@@ -1513,6 +1596,28 @@ def test_sdk_rejects_duplicate_context_link_batch_review_ids() -> None:
         assert "unique suggestion_id" in str(exc)
     else:
         raise AssertionError("Expected duplicate context link batch review to fail")
+
+    assert calls == 0
+
+
+def test_sdk_rejects_blank_context_link_batch_review_action() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    client = MemoStackClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="requires action"):
+        client.review_context_link_suggestions_batch(
+            [{"suggestion_id": "ctxlinksug_1", "action": "  "}]
+        )
 
     assert calls == 0
 
