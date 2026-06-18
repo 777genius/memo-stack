@@ -441,6 +441,20 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             }
                         },
                     },
+                    "degraded_components": [
+                        {
+                            "component_type": "provider",
+                            "name": "openai_vision",
+                            "status": "blocked",
+                            "reason": "provider_credential_missing",
+                        },
+                        {
+                            "component_type": "modality_action",
+                            "name": "image.vision",
+                            "status": "blocked",
+                            "reason": "provider_credential_missing",
+                        },
+                    ],
                     "limits": {"max_media_seconds": 600},
                 }
             },
@@ -505,6 +519,20 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         "provider_credential_missing"
     )
     assert diagnostics.modality_action("video", "transcription_api") is None
+    assert diagnostics.degraded_components == (
+        {
+            "component_type": "provider",
+            "name": "openai_vision",
+            "status": "blocked",
+            "reason": "provider_credential_missing",
+        },
+        {
+            "component_type": "modality_action",
+            "name": "image.vision",
+            "status": "blocked",
+            "reason": "provider_credential_missing",
+        },
+    )
     assert diagnostics.limits["max_media_seconds"] == 600
     assert diagnostics.provider_status("transcription_api") == "ok"
     media_api = diagnostics.profile("media_api")
@@ -589,6 +617,7 @@ def test_sdk_defaults_legacy_extraction_capability_contract_fields() -> None:
     assert diagnostics.evidence_contract == {}
     assert diagnostics.manifest_contract == {}
     assert diagnostics.file_type_detection == {}
+    assert diagnostics.degraded_components == ()
     assert standard_local is not None
     assert standard_local.input_modalities == ()
     assert standard_local.evidence_coordinates == ()

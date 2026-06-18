@@ -46,9 +46,7 @@ class ExtractionProfileCapability:
             transcript_features=_strings(payload.get("transcript_features")),
             video_features=_strings(payload.get("video_features")),
             external_provider_egress=bool(payload.get("external_provider_egress", False)),
-            requires_explicit_external_ai=bool(
-                payload.get("requires_explicit_external_ai", False)
-            ),
+            requires_explicit_external_ai=bool(payload.get("requires_explicit_external_ai", False)),
             fallback_profiles=_strings(payload.get("fallback_profiles")),
             memory_promotion=str(payload.get("memory_promotion") or ""),
             source_text_policy=str(payload.get("source_text_policy") or ""),
@@ -68,6 +66,7 @@ class ExtractionCapabilityDiagnostics:
     profiles: dict[str, ExtractionProfileCapability]
     providers: dict[str, dict[str, Any]]
     modality_actions: dict[str, dict[str, dict[str, Any]]]
+    degraded_components: tuple[dict[str, Any], ...]
     policy: dict[str, Any]
     evidence_contract: dict[str, Any]
     feature_contract: dict[str, Any]
@@ -96,6 +95,7 @@ class ExtractionCapabilityDiagnostics:
                 if isinstance(key, str) and isinstance(value, dict)
             },
             modality_actions=_modality_actions(payload.get("modality_actions")),
+            degraded_components=_dict_tuple(payload.get("degraded_components")),
             policy=dict(payload.get("policy") or {}),
             evidence_contract=dict(payload.get("evidence_contract") or {}),
             feature_contract=dict(payload.get("feature_contract") or {}),
@@ -126,6 +126,10 @@ def _dict_items(value: object) -> tuple[dict[str, Any], ...]:
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, dict))
+
+
+def _dict_tuple(value: object) -> tuple[dict[str, Any], ...]:
+    return tuple(dict(item) for item in _dict_items(value))
 
 
 def _strings(value: object) -> tuple[str, ...]:

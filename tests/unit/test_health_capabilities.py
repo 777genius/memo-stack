@@ -112,10 +112,7 @@ def test_capabilities_return_noop_adapters() -> None:
         "standard_asr",
         "standard_full",
     ]
-    profile_states = {
-        profile["name"]: profile
-        for profile in body["extraction"]["profiles_v2"]
-    }
+    profile_states = {profile["name"]: profile for profile in body["extraction"]["profiles_v2"]}
     assert set(profile_states) == set(body["extraction"]["profiles"])
     assert profile_states["standard_local"]["status"] == "ok"
     assert profile_states["standard_local"]["enabled"] is True
@@ -196,9 +193,7 @@ def test_capabilities_return_noop_adapters() -> None:
         "time_ranges",
         "transcript_json",
     ]
-    assert "optional_speaker_labels" not in profile_states["media_local_asr"][
-        "transcript_features"
-    ]
+    assert "optional_speaker_labels" not in profile_states["media_local_asr"]["transcript_features"]
     assert profile_states["standard_asr"]["deprecated"] is True
     assert profile_states["standard_asr"]["may_run_local_asr"] is False
     assert profile_states["standard_asr"]["fallback_profiles"] == ["standard_local"]
@@ -276,10 +271,7 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["extraction"]["manifest_contract"]["provider_output_policy"] == (
         "evidence_not_truth"
     )
-    assert (
-        body["extraction"]["manifest_contract"]["raw_provider_payloads_in_public_api"]
-        is False
-    )
+    assert body["extraction"]["manifest_contract"]["raw_provider_payloads_in_public_api"] is False
     assert body["extraction"]["file_type_detection"] == {
         "schema_version": "memo_stack.file_type_detection_contract.v1",
         "declared_content_type_trusted": False,
@@ -336,19 +328,40 @@ def test_capabilities_return_noop_adapters() -> None:
     assert modality_actions["video"]["transcription_api"]["source_text_policy"] == (
         "untrusted_evidence"
     )
+    degraded_components = {
+        (item["component_type"], item["name"]): item
+        for item in body["extraction"]["degraded_components"]
+    }
+    openai_vision = body["extraction"]["providers"]["openai_vision"]
+    standard_vision = profile_states["standard_vision"]
+    image_vision = modality_actions["image"]["vision"]
+    assert degraded_components[("provider", "openai_vision")] == {
+        "component_type": "provider",
+        "name": "openai_vision",
+        "status": openai_vision["status"],
+        "reason": openai_vision["reason"],
+    }
+    assert degraded_components[("profile", "standard_vision")] == {
+        "component_type": "profile",
+        "name": "standard_vision",
+        "status": standard_vision["status"],
+        "reason": standard_vision["reason"],
+    }
+    assert degraded_components[("modality_action", "image.vision")] == {
+        "component_type": "modality_action",
+        "name": "image.vision",
+        "status": image_vision["status"],
+        "reason": image_vision["reason"],
+    }
+    assert ("profile", "standard_local") not in degraded_components
+    assert ("modality_action", "image.metadata") not in degraded_components
     assert isinstance(body["extraction"]["optional_extras"]["docling"]["installed"], bool)
     assert isinstance(body["extraction"]["optional_extras"]["vision"]["installed"], bool)
     assert body["extraction"]["optional_extras"]["vision"]["configured"] is False
     assert body["extraction"]["optional_extras"]["vision"]["model"] == "gpt-4.1-mini"
     assert body["extraction"]["optional_extras"]["vision"]["detail"] == "high"
-    assert (
-        body["extraction"]["optional_extras"]["vision"]["request_timeout_seconds"]
-        == 60
-    )
-    assert (
-        body["extraction"]["providers"]["openai_vision"]["request_timeout_seconds"]
-        == 60
-    )
+    assert body["extraction"]["optional_extras"]["vision"]["request_timeout_seconds"] == 60
+    assert body["extraction"]["providers"]["openai_vision"]["request_timeout_seconds"] == 60
     assert isinstance(body["extraction"]["optional_extras"]["transcription_api"]["installed"], bool)
     assert body["extraction"]["optional_extras"]["transcription_api"]["configured"] is False
     assert body["extraction"]["optional_extras"]["transcription_api"]["provider"] == "openai"
@@ -361,21 +374,11 @@ def test_capabilities_return_noop_adapters() -> None:
         == OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
     )
     assert (
-        body["extraction"]["optional_extras"]["transcription_api"][
-            "request_timeout_seconds"
-        ]
-        == 60
+        body["extraction"]["optional_extras"]["transcription_api"]["request_timeout_seconds"] == 60
     )
+    assert body["extraction"]["providers"]["transcription_api"]["request_timeout_seconds"] == 60
     assert (
-        body["extraction"]["providers"]["transcription_api"][
-            "request_timeout_seconds"
-        ]
-        == 60
-    )
-    assert (
-        body["extraction"]["optional_extras"]["transcription_api"][
-            "diarization_model_configured"
-        ]
+        body["extraction"]["optional_extras"]["transcription_api"]["diarization_model_configured"]
         is False
     )
     assert (
@@ -444,8 +447,7 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["optional_extras"]["transcription_api"]["provider"] == "openai"
     assert extraction["optional_extras"]["transcription_api"]["model"] == "gpt-4o-transcribe"
     assert (
-        extraction["optional_extras"]["transcription_api"]["diarization_model_configured"]
-        is False
+        extraction["optional_extras"]["transcription_api"]["diarization_model_configured"] is False
     )
     assert extraction["providers"]["transcription_api"]["diarization_model_configured"] is False
     assert extraction["optional_extras"]["transcription_api"]["max_provider_upload_bytes"] == 12_345
@@ -474,6 +476,16 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     profile_states = {profile["name"]: profile for profile in extraction["profiles_v2"]}
     assert profile_states["media_api"]["status"] == "ok"
     assert profile_states["standard_vision"]["status"] == "ok"
+    degraded_keys = {
+        (item["component_type"], item["name"]) for item in extraction["degraded_components"]
+    }
+    assert ("provider", "openai_vision") not in degraded_keys
+    assert ("provider", "transcription_api") not in degraded_keys
+    assert ("profile", "media_api") not in degraded_keys
+    assert ("profile", "standard_vision") not in degraded_keys
+    assert ("modality_action", "image.vision") not in degraded_keys
+    assert ("modality_action", "audio.transcription_api") not in degraded_keys
+    assert ("modality_action", "video.transcription_api") not in degraded_keys
     assert body["limits"]["max_asset_upload_bytes"] == 77_777
     assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == 3_600
     assert "sk-capabilities-secret" not in response.text
@@ -503,8 +515,7 @@ def test_capabilities_expose_configured_diarization_transcription_model(
     assert response.status_code == 200
     extraction = response.json()["extraction"]
     assert (
-        extraction["optional_extras"]["transcription_api"]["diarization_model_configured"]
-        is True
+        extraction["optional_extras"]["transcription_api"]["diarization_model_configured"] is True
     )
     assert extraction["providers"]["transcription_api"]["diarization_model_configured"] is True
     assert "sk-diarize-capabilities-secret" not in response.text

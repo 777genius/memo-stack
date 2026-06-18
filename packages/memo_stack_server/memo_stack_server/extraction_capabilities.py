@@ -194,6 +194,7 @@ class _ProviderState:
 def build_extraction_capability_payload(settings: Settings) -> dict[str, object]:
     providers = _provider_states(settings)
     profiles = _profile_states(settings, providers)
+    modality_actions = _modality_action_matrix(profiles)
     return {
         "enabled": settings.extraction_enabled,
         "default_profile": settings.extraction_default_profile,
@@ -209,7 +210,12 @@ def build_extraction_capability_payload(settings: Settings) -> dict[str, object]
         "feature_contract": _feature_contract_payload(),
         "manifest_contract": multimodal_manifest_contract_payload(),
         "file_type_detection": _file_type_detection_contract_payload(),
-        "modality_actions": _modality_action_matrix(profiles),
+        "modality_actions": modality_actions,
+        "degraded_components": _degraded_components(
+            providers=providers,
+            profiles=profiles,
+            modality_actions=modality_actions,
+        ),
         "external_provider_egress": settings.extraction_external_ai_enabled,
         "limits": _limits_payload(settings),
     }
@@ -662,9 +668,7 @@ def _modality_action_payload(
         "artifact_types": list(artifact_types),
         "evidence_coordinates": list(evidence_coordinates),
         "external_provider_egress": bool(profile.get("external_provider_egress", False)),
-        "requires_explicit_external_ai": bool(
-            profile.get("requires_explicit_external_ai", False)
-        ),
+        "requires_explicit_external_ai": bool(profile.get("requires_explicit_external_ai", False)),
         "fallback_profiles": list(_safe_string_tuple(profile.get("fallback_profiles"))),
         "memory_promotion": str(profile.get("memory_promotion") or "review_required"),
         "source_text_policy": str(profile.get("source_text_policy") or "untrusted_evidence"),
@@ -674,6 +678,68 @@ def _modality_action_payload(
     if isinstance(reason, str) and reason:
         payload["reason"] = reason
     return payload
+
+
+def _degraded_components(
+    *,
+    providers: dict[str, _ProviderState],
+    profiles: dict[str, dict[str, object]],
+    modality_actions: dict[str, dict[str, dict[str, object]]],
+) -> list[dict[str, object]]:
+    components: list[dict[str, object]] = []
+    for name, provider in sorted(providers.items(), key=lambda item: item[0]):
+        _append_degraded_component(
+            components,
+            component_type="provider",
+            name=name,
+            status=provider.status,
+            reason=provider.reason,
+        )
+    for name in _PROFILE_ORDER:
+        profile = profiles[name]
+        _append_degraded_component(
+            components,
+            component_type="profile",
+            name=name,
+            status=str(profile.get("status") or "unknown"),
+            reason=_optional_reason(profile.get("reason")),
+        )
+    for modality, actions in sorted(modality_actions.items(), key=lambda item: item[0]):
+        for action, payload in sorted(actions.items(), key=lambda item: item[0]):
+            _append_degraded_component(
+                components,
+                component_type="modality_action",
+                name=f"{modality}.{action}",
+                status=str(payload.get("status") or "unknown"),
+                reason=_optional_reason(payload.get("reason")),
+            )
+    return components
+
+
+def _append_degraded_component(
+    components: list[dict[str, object]],
+    *,
+    component_type: str,
+    name: str,
+    status: str,
+    reason: str | None,
+) -> None:
+    if status == "ok":
+        return
+    item: dict[str, object] = {
+        "component_type": component_type,
+        "name": name,
+        "status": status,
+    }
+    if reason is not None:
+        item["reason"] = reason
+    components.append(item)
+
+
+def _optional_reason(value: object) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 def _safe_string_tuple(value: object) -> tuple[str, ...]:
