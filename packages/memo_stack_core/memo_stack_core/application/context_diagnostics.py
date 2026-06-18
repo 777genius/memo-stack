@@ -9,6 +9,7 @@ from memo_stack_core.application.dto import ContextItem
 from memo_stack_core.application.safe_payload import safe_metadata, safe_metadata_text
 
 _MAX_RETRIEVAL_SOURCES = 8
+_MAX_RETRIEVAL_SOURCE_CANDIDATES = 64
 _MAX_DIAGNOSTIC_MAPPING_ITEMS = 24
 _MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS = 64
 _MAX_DIAGNOSTIC_LIST_ITEMS = 8
@@ -99,15 +100,26 @@ def normalize_context_item_diagnostics(item: ContextItem) -> ContextItem:
 
 def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     raw = _as_dict(diagnostics)
-    listed_retrieval_sources = diagnostic_retrieval_sources(raw)
+    listed_retrieval_sources = diagnostic_retrieval_sources(
+        raw,
+        limit=_MAX_RETRIEVAL_SOURCE_CANDIDATES,
+    )
     selected_source = _safe_retrieval_source(raw.get("retrieval_source"))
-    retrieval_sources = (
-        _ordered_unique((selected_source, *listed_retrieval_sources))
+    all_retrieval_sources = (
+        _ordered_unique(
+            (selected_source, *listed_retrieval_sources),
+            limit=_MAX_RETRIEVAL_SOURCE_CANDIDATES,
+        )
         if selected_source
         else listed_retrieval_sources
     )
+    retrieval_sources = all_retrieval_sources[:_MAX_RETRIEVAL_SOURCES]
     normalized = safe_diagnostic_mapping(raw)
     normalized["retrieval_sources"] = list(retrieval_sources)
+    if len(all_retrieval_sources) > len(retrieval_sources):
+        normalized["retrieval_sources_total"] = len(all_retrieval_sources)
+        normalized["retrieval_sources_returned"] = len(retrieval_sources)
+        normalized["retrieval_sources_truncated"] = True
     if retrieval_sources and not selected_source:
         selected_source = retrieval_sources[0]
     if selected_source:
@@ -160,12 +172,17 @@ def normalize_context_bundle_diagnostics(
     return normalized
 
 
-def diagnostic_retrieval_sources(diagnostics: object) -> tuple[str, ...]:
+def diagnostic_retrieval_sources(
+    diagnostics: object,
+    *,
+    limit: int = _MAX_RETRIEVAL_SOURCES,
+) -> tuple[str, ...]:
     raw = _as_dict(diagnostics)
     raw_sources = raw.get("retrieval_sources")
     if isinstance(raw_sources, (list, tuple)):
         return _ordered_unique(
-            tuple(source for value in raw_sources if (source := _safe_retrieval_source(value)))
+            tuple(source for value in raw_sources if (source := _safe_retrieval_source(value))),
+            limit=limit,
         )
     raw_source = _safe_retrieval_source(raw.get("retrieval_source"))
     return (raw_source,) if raw_source else ()
@@ -398,7 +415,11 @@ def _as_dict(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
-def _ordered_unique(values: tuple[str, ...]) -> tuple[str, ...]:
+def _ordered_unique(
+    values: tuple[str, ...],
+    *,
+    limit: int = _MAX_RETRIEVAL_SOURCES,
+) -> tuple[str, ...]:
     seen: set[str] = set()
     result: list[str] = []
     for value in values:
@@ -406,6 +427,6 @@ def _ordered_unique(values: tuple[str, ...]) -> tuple[str, ...]:
             continue
         seen.add(value)
         result.append(value)
-        if len(result) >= _MAX_RETRIEVAL_SOURCES:
+        if len(result) >= limit:
             break
     return tuple(result)

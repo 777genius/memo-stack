@@ -1,5 +1,6 @@
 from memo_stack_core.application.context_diagnostics import (
     normalize_context_bundle_diagnostics,
+    normalize_context_item_diagnostics,
 )
 from memo_stack_core.application.dto import ContextItem
 
@@ -94,3 +95,25 @@ def test_context_bundle_retrieval_sources_prioritize_rag_over_keyword() -> None:
     )
 
     assert diagnostics["retrieval_sources_used"] == ["rag_recall", "keyword_chunks"]
+
+
+def test_context_item_diagnostics_report_retrieval_source_truncation() -> None:
+    item = ContextItem(
+        item_id="chunk_many_sources",
+        item_type="chunk",
+        text="Many source diagnostics item.",
+        score=0.9,
+        source_refs=(),
+        diagnostics={
+            "retrieval_source": "source_0",
+            "retrieval_sources": [f"source_{index}" for index in range(1, 20)],
+        },
+    )
+
+    normalized = normalize_context_item_diagnostics(item).diagnostics
+
+    assert normalized["retrieval_sources"] == [f"source_{index}" for index in range(8)]
+    assert normalized["retrieval_sources_total"] == 20
+    assert normalized["retrieval_sources_returned"] == 8
+    assert normalized["retrieval_sources_truncated"] is True
+    assert "source_8" not in normalized["retrieval_sources"]
