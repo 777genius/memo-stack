@@ -22,6 +22,7 @@ class MarionetteAnchorLifecycleConfig {
   final bool keepAppRunning;
   final Duration startupTimeout;
   final Duration callTimeout;
+  final String? flowReportOut;
 
   const MarionetteAnchorLifecycleConfig({
     required this.flutterBin,
@@ -35,6 +36,7 @@ class MarionetteAnchorLifecycleConfig {
     required this.keepAppRunning,
     required this.startupTimeout,
     required this.callTimeout,
+    required this.flowReportOut,
   });
 
   factory MarionetteAnchorLifecycleConfig.fromEnv(
@@ -64,6 +66,41 @@ class MarionetteAnchorLifecycleConfig {
       callTimeout: Duration(
         seconds: int.tryParse(env['MEMO_STACK_E2E_CALL_TIMEOUT'] ?? '') ?? 30,
       ),
+      flowReportOut: _env(env, 'MEMO_STACK_E2E_FLOW_REPORT_OUT'),
+    );
+  }
+}
+
+class MarionetteFlowRecorder {
+  final String? path;
+  final String runMarker;
+  final List<String> completedFlows = <String>[];
+
+  MarionetteFlowRecorder({
+    required this.path,
+    required this.runMarker,
+  });
+
+  Future<void> markCompleted(String flow) async {
+    if (!completedFlows.contains(flow)) {
+      completedFlows.add(flow);
+    }
+    await write(status: 'running');
+  }
+
+  Future<void> write({required String status}) async {
+    final output = path;
+    if (output == null || output.isEmpty) return;
+    final file = File(output);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(
+      '${jsonEncode({
+            'schema_version': 1,
+            'status': status,
+            'run_marker': runMarker,
+            'completed_flow_count': completedFlows.length,
+            'completed_flows': completedFlows,
+          })}\n',
     );
   }
 }
@@ -80,6 +117,11 @@ class MarionetteAnchorLifecycleRunner {
     VmServiceClient? client;
     MemoStackExtensionClient? memoStack;
     final runMarker = _runMarker(config.scopeRef);
+    final flowRecorder = MarionetteFlowRecorder(
+      path: config.flowReportOut,
+      runMarker: runMarker,
+    );
+    var flowStatus = 'failed';
 
     try {
       _log('connecting to VM service at $vmServiceUri');
@@ -102,10 +144,15 @@ class MarionetteAnchorLifecycleRunner {
       );
 
       await _runMemoryScopeManagementFlow(memoStack, runMarker);
+      await flowRecorder.markCompleted('memory_scope_management');
       await _runCaptureLinkingFlow(memoStack, runMarker);
+      await flowRecorder.markCompleted('capture_link_approve');
       await _runRejectedContextLinkFlow(memoStack, runMarker);
+      await flowRecorder.markCompleted('context_link_reject');
       await _runAttachmentCaptureFlow(memoStack, runMarker);
+      await flowRecorder.markCompleted('attachment_capture_extraction');
       await _runManualContextLinkFlow(memoStack, runMarker);
+      await flowRecorder.markCompleted('manual_context_link_override');
       final anchorBaselineState =
           await memoStack.call('memoStack.e2eState', {});
       final anchorBaseline =
@@ -225,9 +272,12 @@ class MarionetteAnchorLifecycleRunner {
         remaining.isEmpty,
         'cleanup left ${remaining.length} test anchors in memory browser',
       );
+      await flowRecorder.markCompleted('anchor_lifecycle_cleanup');
+      flowStatus = 'succeeded';
 
       _log('anchor lifecycle e2e passed');
     } finally {
+      await flowRecorder.write(status: flowStatus);
       if (memoStack != null) {
         await _bestEffortCleanup(memoStack, runMarker);
       }

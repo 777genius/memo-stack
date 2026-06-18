@@ -98,7 +98,24 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
     report["exit_code"] = 0
     report["finished_at"] = module._utc_now()
     report_out = tmp_path / "frontend-marionette-report.json"
+    flow_report = tmp_path / "frontend-marionette-flow-report.json"
+    flow_report.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "succeeded",
+                "run_marker": "unit-run",
+                "completed_flow_count": 2,
+                "completed_flows": [
+                    "memory_scope_management",
+                    "context_link_reject",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
+    module._attach_flow_report(report, flow_report)
     module._write_report(report, str(report_out))
     persisted = json.loads(report_out.read_text(encoding="utf-8"))
     rendered = json.dumps(persisted, ensure_ascii=False)
@@ -115,6 +132,16 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
         "profile": "test",
     }
     assert persisted["components"]["flutter_marionette"]["status"] == "succeeded"
+    assert persisted["flow_coverage"] == {
+        "schema_version": 1,
+        "status": "succeeded",
+        "run_marker": "unit-run",
+        "completed_flow_count": 2,
+        "completed_flows": [
+            "memory_scope_management",
+            "context_link_reject",
+        ],
+    }
     assert set(persisted["git"]) == {"commit", "short_commit", "dirty"}
     assert str(ROOT) not in rendered
     assert "local-dev-token" not in rendered

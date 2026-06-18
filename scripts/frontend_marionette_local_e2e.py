@@ -40,6 +40,7 @@ def main() -> int:
 
     tmp_ctx = tempfile.TemporaryDirectory(prefix="memo-stack-marionette.")
     tmp_root = Path(tmp_ctx.name)
+    flow_report_path = tmp_root / "marionette-flow-report.json"
     processes: list[subprocess.Popen[bytes]] = []
     try:
         server_env = _server_env(
@@ -93,6 +94,7 @@ def main() -> int:
                 "MEMO_STACK_E2E_CALL_TIMEOUT": str(args.call_timeout),
                 "MEMO_STACK_E2E_DEVICE": args.device,
                 "MEMO_STACK_E2E_RUN_ID": run_id,
+                "MEMO_STACK_E2E_FLOW_REPORT_OUT": str(flow_report_path),
             }
         )
         result = subprocess.run(
@@ -122,6 +124,7 @@ def main() -> int:
         _stop_processes(reversed(processes))
         report["exit_code"] = exit_code
         report["finished_at"] = _utc_now()
+        _attach_flow_report(report, flow_report_path)
         _write_report(report, args.report_out)
         if args.keep_temp:
             print(f"kept temp dir: {tmp_root}", file=sys.stderr)
@@ -210,6 +213,37 @@ def _write_report(report: dict[str, object], report_out: str | None) -> None:
     path = Path(report_out)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _attach_flow_report(report: dict[str, object], flow_report_path: Path) -> None:
+    if not flow_report_path.exists():
+        report["flow_coverage"] = _component("missing")
+        return
+    try:
+        payload = json.loads(flow_report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        report["flow_coverage"] = _component(
+            "invalid",
+            reason=exc.__class__.__name__,
+        )
+        return
+    if not isinstance(payload, dict):
+        report["flow_coverage"] = _component("invalid", reason="not_object")
+        return
+    safe_payload: dict[str, object] = {}
+    for key in (
+        "schema_version",
+        "status",
+        "run_marker",
+        "completed_flow_count",
+        "completed_flows",
+    ):
+        value = payload.get(key)
+        if isinstance(value, (str, int, bool)) or value is None:
+            safe_payload[key] = value
+        elif isinstance(value, list):
+            safe_payload[key] = [str(item)[:120] for item in value[:50]]
+    report["flow_coverage"] = safe_payload
 
 
 def _mark_unknown_components_failed(report: dict[str, object], exc: Exception) -> None:
