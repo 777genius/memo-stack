@@ -161,8 +161,8 @@ class MarionetteAnchorLifecycleRunner {
         {
           'memoryScopeExternalRef': config.scopeRef,
           'kind': 'person',
-          'label': 'Alex Script Demo $runMarker',
-          'aliases': 'Alex Demo, Alex Script',
+          'label': 'Alex Script $runMarker Candidate',
+          'aliases': 'AS Candidate $runMarker, Alex Candidate $runMarker',
           'description': 'Possible duplicate for automated merge e2e',
         },
       );
