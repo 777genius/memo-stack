@@ -10,6 +10,22 @@ from memo_stack_server.eval import (
     memory_quality_scorecard_policy_snapshot,
     run_memory_quality_scorecard,
 )
+from memo_stack_server.eval_constants import (
+    QUALITY_GOLDEN_REQUIRED_CASE_IDS,
+    SEMANTIC_LINKING_REQUIRED_CASE_IDS,
+)
+
+
+def _case_reports(case_ids: tuple[str, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "case_id": case_id,
+            "category": "fixture",
+            "status": "ok",
+            "item_ids": [],
+        }
+        for case_id in case_ids
+    ]
 
 
 def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
@@ -52,6 +68,18 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "harmful_context_rate": 0.0,
                 "context_token_overflow_count": 0,
             },
+            "cases": _case_reports(
+                (
+                    *QUALITY_GOLDEN_REQUIRED_CASE_IDS,
+                    "current_model_beats_decoy",
+                    "architecture_roles_recall",
+                    "clean_architecture_recall_without_frontend_noise",
+                    "deleted_fact_hidden",
+                    "restricted_fact_hidden",
+                    "thread_current_visible_without_neighbor",
+                    "thread_other_visible_without_current",
+                )
+            ),
             "failures": [],
         },
         "semantic-linking-golden": {
@@ -74,6 +102,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "false_positive_count": 0,
                 "cross_scope_leak_count": 0,
             },
+            "cases": _case_reports(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
             "checks": {
                 "top_fact_beats_distractor": True,
                 "event_call_beats_recent_chat": True,
@@ -1522,9 +1551,46 @@ def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> No
     assert result["metrics"]["semantic_linking_missing_required_case_count"] == 1
 
 
+def test_memory_quality_scorecard_fails_when_report_omits_required_case_ids() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["quality-golden"]["cases"] = [
+        case
+        for case in suite_results["quality-golden"]["cases"]
+        if case["case_id"] != "hybrid_document_beats_single_source"
+    ]
+    suite_results["semantic-linking-golden"]["cases"] = [
+        case
+        for case in suite_results["semantic-linking-golden"]["cases"]
+        if case["case_id"] != "unrelated_capture_has_no_candidates"
+    ]
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    assert result["capabilities"]["coverage_floors"]["ok"] is False
+    assert (
+        "quality-golden_case_count"
+        in result["capabilities"]["coverage_floors"]["failed_checks"]
+    )
+    assert (
+        "quality_required_case_hybrid_document_beats_single_source"
+        in result["capabilities"]["coverage_floors"]["failed_checks"]
+    )
+    assert (
+        "semantic-linking-golden_case_count"
+        in result["capabilities"]["coverage_floors"]["failed_checks"]
+    )
+    assert (
+        "semantic_linking_required_case_unrelated_capture_has_no_candidates"
+        in result["capabilities"]["coverage_floors"]["failed_checks"]
+    )
+
+
 def test_memory_quality_scorecard_fails_on_undercovered_semantic_linking_suite() -> None:
     suite_results = _scorecard_fixture_results()
-    suite_results["semantic-linking-golden"]["metrics"]["case_count"] = 1
+    suite_results["semantic-linking-golden"]["cases"] = suite_results[
+        "semantic-linking-golden"
+    ]["cases"][:1]
 
     result = build_memory_quality_scorecard(suite_results)
 

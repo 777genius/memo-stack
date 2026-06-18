@@ -48,8 +48,10 @@ from memo_stack_server.eval_constants import (
     MEMORY_QUALITY_SCORECARD_SUITE,
     PROMPT_CONTRACT_SUITE,
     PUBLIC_MEMORY_BENCHMARK_SUITE,
+    QUALITY_GOLDEN_REQUIRED_CASE_IDS,
     QUALITY_GOLDEN_SUITE,
     SEMANTIC_LINKING_GOLDEN_SUITE,
+    SEMANTIC_LINKING_REQUIRED_CASE_IDS,
     SMALL_GOLDEN_SUITE,
 )
 from memo_stack_server.top_evidence_policy import (
@@ -265,11 +267,14 @@ def _scorecard_suite_summary(result: dict[str, object] | None) -> dict[str, obje
             "failure_count": 1,
         }
     metrics = _scorecard_result_metrics(result)
-    cases = result.get("cases", ())
+    cases = result.get("cases")
     failures = result.get("failures", ())
-    case_count = metrics.get("case_count")
-    if not isinstance(case_count, int):
-        case_count = len(cases) if isinstance(cases, list | tuple) else 0
+    if isinstance(cases, list | tuple):
+        case_count = len(cases)
+    else:
+        case_count = metrics.get("case_count")
+        if not isinstance(case_count, int):
+            case_count = 0
     return {
         "ok": bool(result.get("ok")),
         "status": result.get("status", "ok" if result.get("ok") else "failed"),
@@ -282,6 +287,8 @@ def _scorecard_coverage_floors(
     suite_results: Mapping[str, dict[str, object]],
     suites: Mapping[str, dict[str, object]],
 ) -> dict[str, object]:
+    quality_result = suite_results.get(QUALITY_GOLDEN_SUITE)
+    semantic_result = suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE)
     quality_metrics = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
     semantic_metrics = _scorecard_result_metrics(suite_results.get(SEMANTIC_LINKING_GOLDEN_SUITE))
     auto_metrics = _scorecard_result_metrics(suite_results.get(AUTO_MEMORY_GOLDEN_SUITE))
@@ -301,6 +308,20 @@ def _scorecard_coverage_floors(
     checks["semantic_linking_missing_required_case_count"] = (
         semantic_metrics.get("missing_required_case_count") == 0
     )
+    checks.update(
+        _scorecard_required_case_checks(
+            quality_result,
+            prefix="quality",
+            required_case_ids=QUALITY_GOLDEN_REQUIRED_CASE_IDS,
+        )
+    )
+    checks.update(
+        _scorecard_required_case_checks(
+            semantic_result,
+            prefix="semantic_linking",
+            required_case_ids=SEMANTIC_LINKING_REQUIRED_CASE_IDS,
+        )
+    )
     checks["auto_memory_extraction_case_count"] = (
         int(auto_metrics.get("extraction_case_count", 0))
         >= _MEMORY_QUALITY_SCORECARD_MIN_EXTRACTION_CASES
@@ -310,6 +331,33 @@ def _scorecard_coverage_floors(
         >= _MEMORY_QUALITY_SCORECARD_MIN_SEMANTIC_EXTRACTION_CASES
     )
     return _scorecard_capability("coverage_floors", checks)
+
+
+def _scorecard_required_case_checks(
+    result: Mapping[str, object] | None,
+    *,
+    prefix: str,
+    required_case_ids: Sequence[str],
+) -> dict[str, bool]:
+    case_ids = set(_scorecard_case_ids(result))
+    return {
+        f"{prefix}_required_case_{case_id}": case_id in case_ids
+        for case_id in required_case_ids
+    }
+
+
+def _scorecard_case_ids(result: Mapping[str, object] | None) -> tuple[str, ...]:
+    if result is None:
+        return ()
+    raw_cases = result.get("cases")
+    if not isinstance(raw_cases, list | tuple):
+        return ()
+    case_ids: list[str] = []
+    for raw_case in raw_cases:
+        case_id = raw_case.get("case_id") if isinstance(raw_case, Mapping) else raw_case
+        if isinstance(case_id, str) and case_id:
+            case_ids.append(case_id)
+    return tuple(case_ids)
 
 
 def _scorecard_canonical_recall_precision(
