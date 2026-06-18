@@ -8,7 +8,9 @@ import base64
 import json
 import os
 import shlex
+import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -42,6 +44,7 @@ class DockerProofFailure(RuntimeError):
     reason: str
     message: str
     degraded: bool = False
+    diagnostics: dict[str, Any] | None = None
 
     def __str__(self) -> str:
         return self.message
@@ -115,11 +118,14 @@ def run_multimodal_docker_live_proof(
             "degraded": exc.degraded,
             **_recovery_policy(status="degraded" if exc.degraded else "failed", reason=exc.reason),
         }
+        if exc.diagnostics:
+            report["failure"]["diagnostics"] = exc.diagnostics
         _mark_component(
             report,
             exc.component,
             "degraded" if exc.degraded else "failed",
             reason=exc.reason,
+            diagnostics=exc.diagnostics,
         )
     finally:
         if stack_started and not args.keep_stack:
@@ -193,6 +199,7 @@ def _base_report(
                 os.environ.get("MEMORY_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
             ),
         },
+        "docker_client": _docker_client_diagnostics(args),
         "components": {
             "docker_daemon": _component("unknown"),
             "compose_config": _component("unknown"),
@@ -213,14 +220,19 @@ def _prove_docker_daemon(
     report: dict[str, Any],
     env: dict[str, str],
 ) -> None:
+    diagnostics = _docker_client_diagnostics(args)
     try:
         result = run_cmd([args.docker, "info", "--format", "{{.ServerVersion}}"])
     except subprocess.TimeoutExpired as exc:
         raise DockerProofFailure(
             "docker_daemon",
             "docker_daemon_timeout",
-            f"Docker daemon did not answer within {args.docker_timeout_seconds}s",
+            (
+                f"Docker daemon did not answer within {args.docker_timeout_seconds}s; "
+                f"{_docker_diagnostic_summary(diagnostics)}"
+            ),
             degraded=True,
+            diagnostics=diagnostics,
         ) from exc
     except OSError as exc:
         raise DockerProofFailure(
@@ -228,6 +240,7 @@ def _prove_docker_daemon(
             "docker_cli_unavailable",
             str(exc),
             degraded=True,
+            diagnostics=diagnostics,
         ) from exc
     if result.returncode != 0:
         raise DockerProofFailure(
@@ -235,6 +248,7 @@ def _prove_docker_daemon(
             "docker_daemon_unavailable",
             _safe_completed(result, env=env),
             degraded=True,
+            diagnostics=diagnostics,
         )
     _mark_component(
         report,
@@ -716,6 +730,99 @@ def _component(status: str, **values: Any) -> dict[str, Any]:
     return payload
 
 
+def _docker_client_diagnostics(args: argparse.Namespace) -> dict[str, Any]:
+    docker_cmd = _first_command_token(args.docker)
+    compose_cmd = _first_command_token(args.compose)
+    docker_host = os.environ.get("DOCKER_HOST") or ""
+    return {
+        "docker_cli": _cli_diagnostic(docker_cmd),
+        "compose_cli": _cli_diagnostic(compose_cmd),
+        "docker_context": _safe_diagnostic_value(os.environ.get("DOCKER_CONTEXT")),
+        "docker_host": _docker_host_diagnostic(docker_host),
+        "known_sockets": {
+            "var_run": _socket_status(Path("/var/run/docker.sock")),
+            "desktop": _socket_status(Path.home() / ".docker/run/docker.sock"),
+        },
+        "timeouts": {
+            "docker_seconds": args.docker_timeout_seconds,
+            "compose_seconds": args.compose_timeout_seconds,
+        },
+    }
+
+
+def _first_command_token(value: str) -> str:
+    try:
+        parts = shlex.split(value)
+    except ValueError:
+        parts = []
+    return parts[0] if parts else value
+
+
+def _cli_diagnostic(command: str) -> dict[str, Any]:
+    resolved = shutil.which(command)
+    return {
+        "command": Path(command).name,
+        "found": bool(resolved or Path(command).exists()),
+    }
+
+
+def _docker_host_diagnostic(value: str) -> dict[str, Any]:
+    if not value:
+        return {"configured": False}
+    lowered = value.lower()
+    if lowered.startswith("unix://"):
+        return {
+            "configured": True,
+            "kind": "unix",
+            "socket": _socket_status(Path(value.removeprefix("unix://"))),
+        }
+    if lowered.startswith("tcp://"):
+        return {"configured": True, "kind": "tcp"}
+    if lowered.startswith("npipe://"):
+        return {"configured": True, "kind": "npipe"}
+    return {"configured": True, "kind": "other"}
+
+
+def _socket_status(path: Path) -> dict[str, Any]:
+    try:
+        file_stat = path.stat()
+    except OSError:
+        return {
+            "exists": False,
+            "is_socket": False,
+            "is_symlink": path.is_symlink(),
+        }
+    return {
+        "exists": True,
+        "is_socket": stat.S_ISSOCK(file_stat.st_mode),
+        "is_symlink": path.is_symlink(),
+    }
+
+
+def _docker_diagnostic_summary(diagnostics: dict[str, Any]) -> str:
+    known_sockets = diagnostics.get("known_sockets")
+    socket_status = known_sockets if isinstance(known_sockets, dict) else {}
+    var_run = socket_status.get("var_run") if isinstance(socket_status.get("var_run"), dict) else {}
+    desktop = socket_status.get("desktop") if isinstance(socket_status.get("desktop"), dict) else {}
+    docker_host = diagnostics.get("docker_host")
+    docker_host_configured = (
+        docker_host.get("configured") if isinstance(docker_host, dict) else False
+    )
+    docker_context = diagnostics.get("docker_context")
+    return (
+        f"docker_context_configured={bool(docker_context)}; "
+        f"docker_host_configured={bool(docker_host_configured)}; "
+        f"var_run_socket_exists={bool(var_run.get('exists'))}; "
+        f"desktop_socket_exists={bool(desktop.get('exists'))}"
+    )
+
+
+def _safe_diagnostic_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value[:80]
+
+
 def _mark_component(report: dict[str, Any], name: str, status: str, **values: Any) -> None:
     report["components"][name] = _component(status, **values)
 
@@ -727,7 +834,7 @@ def _recovery_policy(*, status: str, reason: str | None) -> dict[str, Any]:
     if normalized in {"docker_daemon_timeout", "docker_daemon_unavailable"}:
         return {
             "user_retryable": True,
-            "operator_action": "start_docker_daemon",
+            "operator_action": "start_or_restart_docker_daemon",
         }
     if normalized == "docker_cli_unavailable":
         return {

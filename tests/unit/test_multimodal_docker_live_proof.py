@@ -167,7 +167,9 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token() -> None:
     assert "secret-proof-token" not in json.dumps(report)
 
 
-def test_docker_live_proof_degrades_on_daemon_timeout() -> None:
+def test_docker_live_proof_degrades_on_daemon_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("DOCKER_CONTEXT", "desktop-linux")
+    monkeypatch.setenv("DOCKER_HOST", "unix:///tmp/memo-stack-secret-docker.sock")
     args = proof._parse_args(
         [
             "--project-name",
@@ -202,11 +204,31 @@ def test_docker_live_proof_degrades_on_daemon_timeout() -> None:
     assert report["failure"]["reason"] == "docker_daemon_timeout"
     assert report["failure"]["degraded"] is True
     assert report["failure"]["user_retryable"] is True
-    assert report["failure"]["operator_action"] == "start_docker_daemon"
+    assert report["failure"]["operator_action"] == "start_or_restart_docker_daemon"
+    assert report["failure"]["diagnostics"]["docker_context"] == "desktop-linux"
+    assert report["failure"]["diagnostics"]["docker_host"] == {
+        "configured": True,
+        "kind": "unix",
+        "socket": {
+            "exists": False,
+            "is_socket": False,
+            "is_symlink": False,
+        },
+    }
+    assert "desktop_socket_exists" in report["failure"]["message"]
     assert report["components"]["docker_daemon"]["status"] == "degraded"
     assert report["components"]["docker_daemon"]["user_retryable"] is True
-    assert report["components"]["docker_daemon"]["operator_action"] == "start_docker_daemon"
+    assert (
+        report["components"]["docker_daemon"]["operator_action"]
+        == "start_or_restart_docker_daemon"
+    )
+    assert report["components"]["docker_daemon"]["diagnostics"] == report["failure"][
+        "diagnostics"
+    ]
     assert report["components"]["cleanup"]["status"] == "unknown"
+    rendered = json.dumps(report)
+    assert "memo-stack-secret-docker.sock" not in rendered
+    assert "secret-proof-token" not in rendered
 
 
 def test_makefile_exposes_multimodal_docker_live_proof_target() -> None:
