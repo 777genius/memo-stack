@@ -2,9 +2,12 @@
 
 Date: 2026-06-11
 
-Refresh note: selected dependency versions and the audio/video policy were
-updated on 2026-06-13. See
-`docs/adr/ADR-0006-multimodal-ingestion-provider-policy.md`.
+Refresh notes:
+
+- Selected dependency versions and the audio/video policy were updated on
+  2026-06-13. See `docs/adr/ADR-0006-multimodal-ingestion-provider-policy.md`.
+- Version and provider-policy check refreshed on 2026-06-18. Keep API-first
+  media transcription and explicit local ASR opt-in as locked product rules.
 
 ## Goal
 
@@ -30,12 +33,12 @@ ffmpeg, ASR and OCR libraries should live in adapters or a separate worker.
 ## Dependency snapshot
 
 Initial check was done on 2026-06-11. Selected dependencies were refreshed on
-2026-06-13.
+2026-06-13 and partially rechecked on 2026-06-18.
 
 | Package | Version | Python | License | Role |
 | --- | ---: | --- | --- | --- |
-| `docling` | 2.102.1 | >=3.10,<4.0 | MIT | Primary structured document parser |
-| `unstructured` | 0.23.0 | >=3.11,<3.14 | Apache-2.0 | Fallback parser and OCR/table extraction |
+| `docling` | 2.103.0 | >=3.10,<4.0 | MIT | Primary structured document parser |
+| `unstructured` | 0.23.1 | >=3.11,<3.14 | Apache-2.0 | Fallback parser and OCR/table extraction |
 | `tika` | 3.1.0 | not declared | Apache-2.0 | Broad text/metadata fallback through Apache Tika |
 | `markitdown` | 0.1.6 | >=3.10 | MIT | Lightweight Markdown conversion |
 | `llama-index` | 0.14.22 | >=3.10,<4.0 | MIT | RAG ingestion orchestration, not canonical parser |
@@ -62,6 +65,27 @@ Initial check was done on 2026-06-11. Selected dependencies were refreshed on
 | `google-cloud-documentai` | 3.15.0 | >=3.10 | Apache-2.0 | Google Document AI client |
 | `azure-ai-documentintelligence` | 1.0.2 | >=3.8 | MIT | Azure Document Intelligence client |
 | `mistralai` | 2.4.9 | >=3.10 | not declared | Mistral OCR/API client |
+
+2026-06-18 verification sources:
+
+- `docling` 2.103.0, released 2026-06-17:
+  https://pypi.org/project/docling/
+- `unstructured` 0.23.1, released 2026-06-11:
+  https://pypi.org/project/unstructured/
+- `faster-whisper` remains 1.2.1:
+  https://github.com/SYSTRAN/faster-whisper
+- PySceneDetect remains 0.7, released 2026-05-03:
+  https://www.scenedetect.com/
+- PaddleOCR remains 3.7.0 and Surya remains 0.20.0:
+  https://pypi.org/project/paddleocr/
+  https://pypi.org/project/surya-ocr/
+- OpenAI speech-to-text docs list `gpt-4o-mini-transcribe`,
+  `gpt-4o-transcribe` and `gpt-4o-transcribe-diarize`:
+  https://developers.openai.com/api/docs/guides/speech-to-text
+- OpenAI vision and structured-output docs remain the right adapter path for
+  schema-bound screenshot/image understanding:
+  https://developers.openai.com/api/docs/guides/images-vision
+  https://developers.openai.com/api/docs/guides/structured-outputs
 
 ## Source findings
 
@@ -351,6 +375,9 @@ Recommended stack:
 - API-first transcription provider by default, initially OpenAI when external
   processing policy allows it;
 - `faster-whisper` only as an explicit local/offline/self-hosted opt-in;
+- public capabilities must expose that `media_api` and `standard_full` do not
+  run local ASR, while `media_local_asr` may run local ASR only by explicit
+  profile selection;
 - optional WhisperX if word-level timestamps and diarization become important;
 - PySceneDetect and ffmpeg frame extraction for keyframes;
 - OCR selected keyframes through Docling/Unstructured/Tesseract only when useful.
