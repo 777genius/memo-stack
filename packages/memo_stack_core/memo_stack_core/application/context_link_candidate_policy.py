@@ -8,7 +8,10 @@ from datetime import UTC, datetime
 from math import log
 
 from memo_stack_core.application.dto import ContextLinkCandidate, SuggestContextLinksCommand
-from memo_stack_core.application.sensitive_text import redact_sensitive_text
+from memo_stack_core.application.sensitive_text import (
+    contains_sensitive_text,
+    redact_sensitive_text,
+)
 from memo_stack_core.domain.entities import MemoryChunk, SourceRef
 
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
@@ -18,22 +21,41 @@ _MAX_EVIDENCE_SOURCE_ID_CHARS = 160
 _MAX_EVIDENCE_SOURCE_TYPE_CHARS = 80
 _MAX_QUERY_TERMS = 64
 _MAX_QUERY_TERM_CHARS = 80
+_MAX_PROMPT_INJECTION_SIGNAL_CODES = 8
 _LINK_STOP_TERMS = {
     "about",
     "after",
     "again",
     "ago",
     "and",
+    "api",
     "authorization",
+    "above",
     "bearer",
+    "credential",
+    "credentials",
     "days",
+    "developer",
     "from",
     "hour",
     "hours",
+    "ignore",
+    "instruction",
+    "instructions",
+    "key",
     "last",
     "note",
+    "password",
+    "previous",
+    "print",
+    "prompt",
+    "prior",
     "redacted",
+    "reveal",
+    "secret",
+    "secrets",
     "screenshot",
+    "system",
     "that",
     "the",
     "this",
@@ -50,6 +72,11 @@ _LINK_STOP_TERMS = {
     "день",
     "дней",
     "дня",
+    "игнорируй",
+    "инструкции",
+    "инструкций",
+    "ключ",
+    "ключи",
     "когда",
     "назад",
     "неделю",
@@ -59,7 +86,12 @@ _LINK_STOP_TERMS = {
     "прошлую",
     "про",
     "скриншот",
+    "секрет",
+    "секреты",
+    "системный",
     "сегодня",
+    "токен",
+    "токены",
     "что",
     "час",
     "часа",
@@ -119,6 +151,45 @@ _NUMERIC_TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, int], 
         ),
         24.0 * 7,
         52,
+    ),
+)
+_PROMPT_INJECTION_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "ignore_instructions",
+        re.compile(
+            r"\b(?:ignore|disregard|forget|override)\s+(?:all\s+)?"
+            r"(?:previous|prior|above|earlier|system|developer)?\s*instructions?\b|"
+            r"\bигнорируй\s+(?:все\s+)?(?:предыдущие|прошлые|вышеуказанные|системные)?"
+            r"\s*инструкци[июй]\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "system_prompt_disclosure",
+        re.compile(
+            r"\b(?:system|developer|hidden|internal)\s+(?:prompt|message|instructions?)\b|"
+            r"\b(?:системн(?:ый|ые)|скрыт(?:ый|ые)|внутренн(?:ий|ие))\s+"
+            r"(?:промпт|сообщени[ея]|инструкци[ия])\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "secret_exfiltration",
+        re.compile(
+            r"\b(?:reveal|print|show|dump|leak|exfiltrate|send)\b.{0,80}"
+            r"\b(?:secret|secrets|api\s*key|token|password|credential)s?\b|"
+            r"\b(?:покажи|выведи|раскрой|отправь)\b.{0,80}"
+            r"\b(?:секрет|секреты|ключ|ключи|токен|токены|парол[ьи])\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "tool_override",
+        re.compile(
+            r"\b(?:call|run|execute|use)\b.{0,80}\b(?:tool|function|shell|terminal)\b|"
+            r"\b(?:вызови|запусти|используй)\b.{0,80}\b(?:tool|функци[юя]|терминал)\b",
+            re.IGNORECASE,
+        ),
     ),
 )
 _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] = (
@@ -240,6 +311,31 @@ def temporal_hints(text: str) -> tuple[TemporalHint, ...]:
         seen.add(code)
         hints.append(TemporalHint(code=code, min_hours=min_hours, max_hours=max_hours))
     return tuple(hints)
+
+
+def prompt_injection_signal_codes(text: str) -> tuple[str, ...]:
+    codes: list[str] = []
+    if contains_sensitive_text(text):
+        codes.append("credential_literal")
+    for code, pattern in _PROMPT_INJECTION_SIGNAL_PATTERNS:
+        if pattern.search(text) and code not in codes:
+            codes.append(code)
+        if len(codes) >= _MAX_PROMPT_INJECTION_SIGNAL_CODES:
+            break
+    return tuple(codes[:_MAX_PROMPT_INJECTION_SIGNAL_CODES])
+
+
+def source_text_risk_metadata(text: str) -> dict[str, object]:
+    signal_codes = prompt_injection_signal_codes(text)
+    if not signal_codes:
+        return {}
+    return {
+        "source_text_policy": "untrusted_evidence",
+        "prompt_injection_signals_detected": True,
+        "prompt_injection_signal_count": len(signal_codes),
+        "prompt_injection_signal_codes": list(signal_codes),
+        "review_gate_reason": "prompt_injection_evidence",
+    }
 
 
 def candidate(

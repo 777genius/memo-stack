@@ -36,6 +36,9 @@ from memo_stack_core.application.context_link_candidate_policy import (
     score_text_candidate as _score_text_candidate,
 )
 from memo_stack_core.application.context_link_candidate_policy import (
+    source_text_risk_metadata as _source_text_risk_metadata,
+)
+from memo_stack_core.application.context_link_candidate_policy import (
     temporal_hints as _temporal_hints,
 )
 from memo_stack_core.application.context_link_candidate_policy import (
@@ -115,6 +118,9 @@ class SuggestContextLinksUseCase:
                 if episode is not None and _same_scope(episode, command):
                     query_text = _join_text(query_text, episode.text)
                     source_thread_id = str(episode.thread_id)
+            source_risk_metadata = _source_text_risk_metadata(query_text)
+            if source_risk_metadata:
+                diagnostics.update(source_risk_metadata)
             facts = await uow.facts.find_active(
                 space_id=str(command.space_id),
                 memory_scope_ids=(str(command.memory_scope_id),),
@@ -186,7 +192,7 @@ class SuggestContextLinksUseCase:
                 status="active",
                 limit=max(effective_limit * 3, 24),
             )
-            if command.persist:
+            if command.persist and not source_risk_metadata:
                 observed_anchors = await self._upsert_observed_anchors(
                     uow,
                     command=command,
@@ -197,6 +203,10 @@ class SuggestContextLinksUseCase:
                     anchors_by_id[str(anchor.id)] = anchor
                 anchors = list(anchors_by_id.values())
                 await uow.commit()
+            elif command.persist and source_risk_metadata:
+                diagnostics["observed_anchor_upsert_skipped_reason"] = (
+                    "prompt_injection_evidence"
+                )
 
         terms = _terms(query_text)
         temporal_hints = _temporal_hints(query_text)
@@ -555,6 +565,11 @@ class SuggestContextLinksUseCase:
                 )
             )
 
+        if source_risk_metadata:
+            candidates = [
+                _with_source_text_risk_metadata(candidate, source_risk_metadata)
+                for candidate in candidates
+            ]
         ranked = sorted(
             candidates,
             key=lambda item: (-item.score, item.target_type, item.target_id),
@@ -773,3 +788,12 @@ def _join_text(left: str, right: str) -> str:
 
 def _bounded_suggestion_limit(limit: int) -> int:
     return min(max(1, limit), MAX_CONTEXT_LINK_SUGGESTION_LIMIT)
+
+
+def _with_source_text_risk_metadata(
+    candidate: ContextLinkCandidate,
+    source_risk_metadata: dict[str, object],
+) -> ContextLinkCandidate:
+    metadata = dict(candidate.metadata or {})
+    metadata.update(source_risk_metadata)
+    return replace(candidate, metadata=metadata)

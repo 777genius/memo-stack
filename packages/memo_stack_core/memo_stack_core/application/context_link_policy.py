@@ -120,6 +120,7 @@ def apply_context_link_policy(
     duplicate_count = 0
     auto_eligible_count = 0
     needs_review_count = 0
+    source_risk_review_count = 0
     denied_reason_counts: dict[str, int] = {}
     denied_candidates: list[dict[str, object]] = []
     candidate_pool = candidates[:MAX_POLICY_CANDIDATES_CONSIDERED]
@@ -152,6 +153,8 @@ def apply_context_link_policy(
             auto_eligible_count += 1
         else:
             needs_review_count += 1
+        if _requires_source_risk_review(candidate):
+            source_risk_review_count += 1
         if len(accepted) >= max_suggestions:
             break
 
@@ -177,6 +180,7 @@ def apply_context_link_policy(
             "link_policy_auto_approve_eligible_count": auto_eligible_count,
             "link_policy_needs_review_count": needs_review_count,
             "link_policy_pending_review_count": needs_review_count,
+            "link_policy_source_risk_review_count": source_risk_review_count,
             "link_policy_decision_counts": {
                 "deny": denied_count,
                 "duplicate_suppressed": duplicate_count,
@@ -205,10 +209,14 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
             auto_approve_eligible=False,
         )
 
+    source_risk_review = _requires_source_risk_review(candidate)
     confidence = _confidence_for_score(candidate.score)
+    if source_risk_review and confidence == "high":
+        confidence = "medium"
     auto_approve_signal_count = _auto_approve_signal_count(reason_codes)
     auto_approve_eligible = (
-        candidate.score >= AUTO_APPROVE_ELIGIBLE_SCORE
+        not source_risk_review
+        and candidate.score >= AUTO_APPROVE_ELIGIBLE_SCORE
         and candidate.target_type in _AUTO_APPROVE_TARGET_TYPES
         and relation_type not in _HIGH_IMPACT_RELATION_TYPES
         and "text_match" in reason_codes
@@ -237,6 +245,8 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
         decision_codes.append("auto_approve_eligible")
     else:
         decision_codes.append("review_required")
+    if source_risk_review:
+        decision_codes.append("prompt_injection_evidence_review_required")
     return ContextLinkPolicyDecision(
         outcome=outcome,
         relation_type=relation_type,
@@ -264,18 +274,19 @@ def _with_policy_metadata(
     decision: ContextLinkPolicyDecision,
 ) -> ContextLinkCandidate:
     metadata = dict(candidate.metadata or {})
-    metadata.update(
-        {
-            "suggestion_policy_version": POLICY_VERSION,
-            "policy_decision": decision.outcome,
-            "policy_decision_canonical": _canonical_policy_decision(decision.outcome),
-            "policy_relation_type": decision.relation_type,
-            "policy_confidence": decision.confidence,
-            "policy_reason_codes": list(decision.reason_codes),
-            "review_gate": "required",
-            "auto_approve_eligible": decision.auto_approve_eligible,
-        }
-    )
+    policy_metadata: dict[str, object] = {
+        "suggestion_policy_version": POLICY_VERSION,
+        "policy_decision": decision.outcome,
+        "policy_decision_canonical": _canonical_policy_decision(decision.outcome),
+        "policy_relation_type": decision.relation_type,
+        "policy_confidence": decision.confidence,
+        "policy_reason_codes": list(decision.reason_codes),
+        "review_gate": "required",
+        "auto_approve_eligible": decision.auto_approve_eligible,
+    }
+    if _requires_source_risk_review(candidate):
+        policy_metadata["review_gate_reason"] = "prompt_injection_evidence"
+    metadata.update(policy_metadata)
     return replace(candidate, metadata=metadata)
 
 
@@ -348,6 +359,11 @@ def _has_evidence_relation_signal(
             return True
     evidence_modalities = metadata.get("evidence_modalities")
     return isinstance(evidence_modalities, (list, tuple)) and bool(evidence_modalities)
+
+
+def _requires_source_risk_review(candidate: ContextLinkCandidate) -> bool:
+    metadata = candidate.metadata or {}
+    return metadata.get("prompt_injection_signals_detected") is True
 
 
 def _auto_approve_signal_count(reason_codes: tuple[str, ...]) -> int:
