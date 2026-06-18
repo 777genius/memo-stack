@@ -547,6 +547,54 @@ def test_speech_transcription_router_falls_back_when_provider_upload_is_too_larg
     assert metadata["transcript_error_code"] == "asset_extraction.transcription_file_too_large"
 
 
+def test_standard_asr_provider_failure_does_not_fall_back_to_local_asr() -> None:
+    local_asr_model_loaded = False
+
+    def local_model_factory(model: str, device: str, compute_type: str) -> _FailingWhisperModel:
+        nonlocal local_asr_model_loaded
+        local_asr_model_loaded = True
+        return _FailingWhisperModel()
+
+    router = StandardExtractionRouter(
+        engines=(
+            SpeechTranscriptionExtractionEngine(
+                transcription=OpenAISpeechTranscriptionAdapter(
+                    api_key=None,
+                    model="gpt-4o-mini-transcribe",
+                    client_factory=lambda: _FakeTranscriptionClient(
+                        transcriptions=_FailingAudioTranscriptions()
+                    ),
+                )
+            ),
+            FasterWhisperTranscriptionEngine(model_factory=local_model_factory),
+            _FallbackMediaEngine(),
+        )
+    )
+    request = _request(
+        parser_profile="standard_asr",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+        enable_external_ai=True,
+    )
+
+    result = asyncio.run(router.extract(request))
+
+    assert result.parser_name == "fallback_media"
+    assert local_asr_model_loaded is False
+    assert result.diagnostics["speech_transcription_fallback"] is True
+    assert result.diagnostics["faster_whisper_transcript_support"] is False
+    assert (
+        result.diagnostics["faster_whisper_transcript_reason"]
+        == "parser_profile_not_asr"
+    )
+    assert result.technical_metadata["transcript_status"] == "failed"
+    assert (
+        result.technical_metadata["transcript_error_code"]
+        == "asset_extraction.transcription_provider_error"
+    )
+
+
 def test_faster_whisper_engine_extracts_transcript_artifact() -> None:
     engine = FasterWhisperTranscriptionEngine(
         model_factory=lambda model, device, compute_type: _FakeWhisperModel(
@@ -828,6 +876,11 @@ class _FakeAudioTranscriptions:
                 },
             ],
         )
+
+
+class _FailingAudioTranscriptions:
+    async def create(self, **kwargs) -> object:
+        raise RuntimeError("simulated transcription provider outage")
 
 
 class _FakeWhisperAudioTranscriptions:

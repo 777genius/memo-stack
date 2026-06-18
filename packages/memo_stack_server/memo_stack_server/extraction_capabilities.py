@@ -187,13 +187,15 @@ def _profile_states(
             providers=(providers["transcription_local"],),
             fallback_profiles=("standard_local",),
             requires_explicit_external_ai=False,
+            may_run_local_asr=True,
         ),
         "standard_asr": _profile_from_providers(
             name="standard_asr",
             providers=(providers["transcription_api"],),
-            fallback_profiles=("media_api", "media_local_asr"),
+            fallback_profiles=("standard_local",),
             requires_explicit_external_ai=True,
             deprecated=True,
+            replacement_profiles=("media_api", "media_local_asr"),
         ),
         "standard_full": _profile_from_providers(
             name="standard_full",
@@ -220,6 +222,8 @@ def _profile_from_providers(
     fallback_profiles: tuple[str, ...],
     requires_explicit_external_ai: bool,
     deprecated: bool = False,
+    may_run_local_asr: bool = False,
+    replacement_profiles: tuple[str, ...] = (),
 ) -> dict[str, object]:
     enabled_providers = tuple(provider for provider in providers if provider.enabled)
     status = _combined_status(providers)
@@ -234,6 +238,8 @@ def _profile_from_providers(
         requires_explicit_external_ai=requires_explicit_external_ai,
         fallback_profiles=fallback_profiles,
         deprecated=deprecated,
+        may_run_local_asr=may_run_local_asr,
+        replacement_profiles=replacement_profiles,
     )
 
 
@@ -248,6 +254,8 @@ def _profile_payload(
     requires_explicit_external_ai: bool,
     fallback_profiles: tuple[str, ...],
     deprecated: bool = False,
+    may_run_local_asr: bool = False,
+    replacement_profiles: tuple[str, ...] = (),
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "name": name,
@@ -260,11 +268,14 @@ def _profile_payload(
         "memory_promotion": "review_required",
         "source_text_policy": "untrusted_evidence",
         "artifact_payloads_bounded": True,
+        "may_run_local_asr": may_run_local_asr,
     }
     if reason is not None:
         payload["reason"] = reason
     if deprecated:
         payload["deprecated"] = True
+    if replacement_profiles:
+        payload["replacement_profiles"] = list(replacement_profiles)
     return payload
 
 
@@ -313,6 +324,7 @@ def _policy_payload(settings: Settings) -> dict[str, object]:
         "external_ai_allowed": settings.extraction_external_ai_enabled,
         "external_ai_requires_explicit_profile": True,
         "local_asr_default": False,
+        "local_asr_requires_explicit_profile": True,
         "memory_promotion": "review_required",
         "source_text_policy": "untrusted_evidence",
         "provider_payloads_bounded": True,

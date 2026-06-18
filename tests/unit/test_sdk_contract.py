@@ -283,6 +283,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "memory_promotion": "review_required",
                             "source_text_policy": "untrusted_evidence",
                             "artifact_payloads_bounded": True,
+                            "may_run_local_asr": False,
                         },
                         {
                             "name": "media_local_asr",
@@ -296,6 +297,23 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "memory_promotion": "review_required",
                             "source_text_policy": "untrusted_evidence",
                             "artifact_payloads_bounded": True,
+                            "may_run_local_asr": True,
+                            "replacement_profiles": [],
+                        },
+                        {
+                            "name": "standard_asr",
+                            "enabled": True,
+                            "status": "ok",
+                            "providers": ["transcription_api"],
+                            "external_provider_egress": True,
+                            "requires_explicit_external_ai": True,
+                            "fallback_profiles": ["standard_local"],
+                            "memory_promotion": "review_required",
+                            "source_text_policy": "untrusted_evidence",
+                            "artifact_payloads_bounded": True,
+                            "may_run_local_asr": False,
+                            "deprecated": True,
+                            "replacement_profiles": ["media_api", "media_local_asr"],
                         },
                     ],
                     "providers": {
@@ -324,9 +342,16 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert media_api.providers == ("transcription_api",)
     assert media_api.external_provider_egress is True
     assert media_api.memory_promotion == "review_required"
+    assert media_api.may_run_local_asr is False
     local_asr = diagnostics.profile("media_local_asr")
     assert local_asr is not None
     assert local_asr.reason == "provider_package_missing"
+    assert local_asr.may_run_local_asr is True
+    standard_asr = diagnostics.profile("standard_asr")
+    assert standard_asr is not None
+    assert standard_asr.deprecated is True
+    assert standard_asr.may_run_local_asr is False
+    assert standard_asr.replacement_profiles == ("media_api", "media_local_asr")
     assert diagnostics.profile("missing") is None
 
 

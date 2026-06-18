@@ -18,8 +18,10 @@ class ExtractionProfileCapability:
     memory_promotion: str
     source_text_policy: str
     artifact_payloads_bounded: bool
+    may_run_local_asr: bool = False
     reason: str | None = None
     deprecated: bool = False
+    replacement_profiles: tuple[str, ...] = ()
     raw: dict[str, Any] | None = None
 
     @classmethod
@@ -37,8 +39,10 @@ class ExtractionProfileCapability:
             memory_promotion=str(payload.get("memory_promotion") or ""),
             source_text_policy=str(payload.get("source_text_policy") or ""),
             artifact_payloads_bounded=bool(payload.get("artifact_payloads_bounded", False)),
+            may_run_local_asr=bool(payload.get("may_run_local_asr", False)),
             reason=_optional_string(payload.get("reason")),
             deprecated=bool(payload.get("deprecated", False)),
+            replacement_profiles=_strings(payload.get("replacement_profiles")),
             raw=dict(payload),
         )
 

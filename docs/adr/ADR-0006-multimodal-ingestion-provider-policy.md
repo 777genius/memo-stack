@@ -94,6 +94,24 @@ MEMORY_TRANSCRIPTION_PROVIDER=local_faster_whisper
 MEMORY_EXTRACTION_PROFILE=media_local_asr
 ```
 
+Public capability diagnostics must expose this as a contract, not only as
+implementation behavior:
+
+```text
+policy.local_asr_default = false
+policy.local_asr_requires_explicit_profile = true
+profile.media_api.may_run_local_asr = false
+profile.standard_full.may_run_local_asr = false
+profile.media_local_asr.may_run_local_asr = true
+profile.standard_asr.deprecated = true
+profile.standard_asr.replacement_profiles = [media_api, media_local_asr]
+```
+
+`standard_asr` remains a compatibility/deprecation profile for API-first
+transcription. It must not silently fall back to local ASR when the API provider
+is disabled, missing credentials, over upload limits or unavailable. The safe
+fallback is metadata/keyframe evidence through the local media extractor.
+
 ### Video
 
 Video is not a document parser problem. Video extraction is a media pipeline:

@@ -120,11 +120,21 @@ def test_capabilities_return_noop_adapters() -> None:
     assert profile_states["standard_local"]["status"] == "ok"
     assert profile_states["standard_local"]["enabled"] is True
     assert profile_states["standard_local"]["external_provider_egress"] is False
+    assert profile_states["standard_local"]["may_run_local_asr"] is False
     assert profile_states["standard_vision"]["requires_explicit_external_ai"] is True
     assert profile_states["standard_vision"]["memory_promotion"] == "review_required"
     assert profile_states["standard_vision"]["source_text_policy"] == "untrusted_evidence"
     assert profile_states["standard_vision"]["artifact_payloads_bounded"] is True
+    assert profile_states["media_api"]["may_run_local_asr"] is False
+    assert profile_states["media_local_asr"]["may_run_local_asr"] is True
     assert profile_states["standard_asr"]["deprecated"] is True
+    assert profile_states["standard_asr"]["may_run_local_asr"] is False
+    assert profile_states["standard_asr"]["fallback_profiles"] == ["standard_local"]
+    assert profile_states["standard_asr"]["replacement_profiles"] == [
+        "media_api",
+        "media_local_asr",
+    ]
+    assert profile_states["standard_full"]["may_run_local_asr"] is False
     assert body["extraction"]["providers"]["openai_vision"]["status"] in {
         "blocked",
         "unavailable",
@@ -138,6 +148,7 @@ def test_capabilities_return_noop_adapters() -> None:
         "external_ai_allowed": False,
         "external_ai_requires_explicit_profile": True,
         "local_asr_default": False,
+        "local_asr_requires_explicit_profile": True,
         "memory_promotion": "review_required",
         "source_text_policy": "untrusted_evidence",
         "provider_payloads_bounded": True,
