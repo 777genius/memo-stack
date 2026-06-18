@@ -1,6 +1,7 @@
 from memo_stack_server.eval_case_runner import (
     _MAX_DIAGNOSTIC_MISMATCH_FAILURES,
     _case_failures,
+    _required_case_metrics,
     _required_diagnostic_mismatches,
     _required_diagnostics_ok,
 )
@@ -98,3 +99,22 @@ def test_required_diagnostics_support_operator_requirements() -> None:
             "actual": "context-v2-hybrid-explainable",
         },
     )
+
+
+def test_required_case_metrics_report_missing_required_cases() -> None:
+    metrics = _required_case_metrics(
+        case_ids=("specific_target_beats_similar_project", "unrelated_capture_has_no_candidates"),
+        required_case_ids=(
+            "specific_target_beats_similar_project",
+            "event_call_beats_recent_chat",
+            "unrelated_capture_has_no_candidates",
+        ),
+    )
+
+    assert metrics == {
+        "required_case_count": 3,
+        "required_cases_present": 2,
+        "missing_required_case_count": 1,
+        "missing_required_cases": ["event_call_beats_recent_chat"],
+        "required_case_coverage_rate": 0.6667,
+    }

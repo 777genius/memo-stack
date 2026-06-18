@@ -13,6 +13,7 @@ from memo_stack_server.eval_constants import (
     _QUALITY_GOLDEN_RECALL_GATE,
     _SMALL_GOLDEN_PRECISION_GATE,
     _SMALL_GOLDEN_RECALL_GATE,
+    QUALITY_GOLDEN_REQUIRED_CASE_IDS,
 )
 from memo_stack_server.eval_types import DiagnosticRequirement, EvalCase, EvalCaseResult
 
@@ -284,8 +285,20 @@ def _small_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
     }
 
 
-def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[str, object]:
+def _quality_golden_metrics(
+    case_results: tuple[EvalCaseResult, ...],
+    *,
+    include_required_case_metrics: bool = True,
+) -> dict[str, object]:
     base = _small_golden_metrics(case_results)
+    required_case_metrics = (
+        _required_case_metrics(
+            case_ids=tuple(result.case.case_id for result in case_results),
+            required_case_ids=QUALITY_GOLDEN_REQUIRED_CASE_IDS,
+        )
+        if include_required_case_metrics
+        else {}
+    )
     answer_support_cases = tuple(
         result for result in case_results if result.case.category == "answer_support"
     )
@@ -320,6 +333,7 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
     )
     return {
         **base,
+        **required_case_metrics,
         "answer_support_rate": _ratio(
             sum(
                 1
@@ -354,6 +368,8 @@ def _quality_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[st
 
 def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
     return {
+        "required_case_coverage_rate": metrics["required_case_coverage_rate"] == 1.0,
+        "missing_required_case_count": metrics["missing_required_case_count"] == 0,
         "recall_at_5": float(metrics["recall_at_5"]) >= _QUALITY_GOLDEN_RECALL_GATE,
         "precision_at_5": float(metrics["precision_at_5"]) >= _QUALITY_GOLDEN_PRECISION_GATE,
         "answer_support_rate": metrics["answer_support_rate"] == 1.0,
@@ -374,8 +390,25 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
     }
 
 
+def _required_case_metrics(
+    *,
+    case_ids: tuple[str, ...],
+    required_case_ids: tuple[str, ...],
+) -> dict[str, object]:
+    present = set(case_ids)
+    missing = tuple(case_id for case_id in required_case_ids if case_id not in present)
+    present_count = len(required_case_ids) - len(missing)
+    return {
+        "required_case_count": len(required_case_ids),
+        "required_cases_present": present_count,
+        "missing_required_case_count": len(missing),
+        "missing_required_cases": list(missing),
+        "required_case_coverage_rate": _ratio(present_count, len(required_case_ids)),
+    }
+
+
 def _long_memory_golden_metrics(case_results: tuple[EvalCaseResult, ...]) -> dict[str, object]:
-    base = _quality_golden_metrics(case_results)
+    base = _quality_golden_metrics(case_results, include_required_case_metrics=False)
     multi_session_cases = _category_results(case_results, "multi_session")
     temporal_cases = _category_results(case_results, "temporal_update")
     preference_cases = _category_results(case_results, "preference_synthesis")

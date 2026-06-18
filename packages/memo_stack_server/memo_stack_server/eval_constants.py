@@ -54,6 +54,29 @@ _MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS = {
     GRAPH_NATIVE_GOLDEN_SUITE: 8,
     PROMPT_CONTRACT_SUITE: 10,
 }
+QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
+    "updated_provider_current_only",
+    "temporal_supersedes_current_only",
+    "contradicted_fact_hidden_by_default",
+    "contradicted_fact_visible_only_in_stale_review",
+    "document_architecture_precision",
+    "hybrid_document_beats_single_source",
+    "cross_memory_scope_secret_hidden",
+    "multi_memory_scope_explicit_recall",
+    "prompt_injection_evidence_only",
+)
+SEMANTIC_LINKING_REQUIRED_CASE_IDS = (
+    "specific_target_beats_similar_project",
+    "person_project_and_org_anchors_suggested",
+    "anchor_evidence_confidence_and_observed_at_exposed",
+    "same_name_person_project_anchors_separate",
+    "high_impact_relation_requires_explicit_signal",
+    "event_call_beats_recent_chat",
+    "temporal_intent_links_recent_fact_without_text_match",
+    "screenshot_note_links_uploaded_document_chunk",
+    "unrelated_capture_has_no_candidates",
+    "cross_scope_exact_match_fact_not_suggested",
+)
 _MEMORY_QUALITY_SCORECARD_MIN_EXTRACTION_CASES = 78
 _MEMORY_QUALITY_SCORECARD_MIN_SEMANTIC_EXTRACTION_CASES = 18
 _FULL_PROVIDER_CANARY_SUITE_ALIASES = (

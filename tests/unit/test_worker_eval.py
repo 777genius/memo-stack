@@ -39,6 +39,10 @@ from memo_stack_server.eval import (
     run_semantic_linking_golden,
     run_small_golden,
 )
+from memo_stack_server.eval_constants import (
+    QUALITY_GOLDEN_REQUIRED_CASE_IDS,
+    SEMANTIC_LINKING_REQUIRED_CASE_IDS,
+)
 from memo_stack_server.eval_graph import (
     EvalGraphMemoryAdapter,
     _install_eval_graph_adapter,
@@ -1142,6 +1146,11 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["document_recall_at_5"] >= 0.95
     assert result["metrics"]["hybrid_retrieval_rate"] == 1.0
     assert result["gates"]["hybrid_retrieval_rate"] is True
+    assert result["metrics"]["required_case_count"] == len(QUALITY_GOLDEN_REQUIRED_CASE_IDS)
+    assert result["metrics"]["missing_required_case_count"] == 0
+    assert result["metrics"]["required_case_coverage_rate"] == 1.0
+    assert result["gates"]["missing_required_case_count"] is True
+    assert result["gates"]["required_case_coverage_rate"] is True
     assert result["metrics"]["multi_memory_scope_recall_at_5"] == 1.0
     assert result["metrics"]["thread_recall_at_5"] == 1.0
     assert result["metrics"]["stale_memory_rate"] == 0.0
@@ -1153,15 +1162,7 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["critical_failure_count"] == 0
     assert result["metrics"]["harmful_context_rate"] == 0.0
     quality_case_ids = {case["case_id"] for case in result["cases"]}
-    assert {
-        "updated_provider_current_only",
-        "temporal_supersedes_current_only",
-        "contradicted_fact_hidden_by_default",
-        "contradicted_fact_visible_only_in_stale_review",
-        "document_architecture_precision",
-        "hybrid_document_beats_single_source",
-        "prompt_injection_evidence_only",
-    } <= quality_case_ids
+    assert set(QUALITY_GOLDEN_REQUIRED_CASE_IDS) <= quality_case_ids
     assert result["failures"] == []
     assert "QUALITY_RESTRICTED_SECRET" not in str(result)
     assert "QUALITY_BETA_ONLY_SECRET" not in str(result)
@@ -1208,6 +1209,11 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["cross_scope_fact_not_suggested"] is True
     assert result["metrics"]["case_count"] >= 10
     assert result["gates"]["case_count"] is True
+    assert result["metrics"]["required_case_count"] == len(SEMANTIC_LINKING_REQUIRED_CASE_IDS)
+    assert result["metrics"]["missing_required_case_count"] == 0
+    assert result["metrics"]["required_case_coverage_rate"] == 1.0
+    assert result["gates"]["missing_required_case_count"] is True
+    assert result["gates"]["required_case_coverage_rate"] is True
     assert result["metrics"]["event_linking_accuracy"] == 1.0
     assert result["metrics"]["temporal_intent_recall"] == 1.0
     assert result["metrics"]["anchor_disambiguation_rate"] == 1.0
@@ -1215,18 +1221,9 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["metrics"]["high_impact_relation_policy_safety"] == 1.0
     assert result["metrics"]["false_positive_count"] == 0
     assert result["metrics"]["cross_scope_leak_count"] == 0
-    assert {
-        "specific_target_beats_similar_project",
-        "person_project_and_org_anchors_suggested",
-        "anchor_evidence_confidence_and_observed_at_exposed",
-        "event_call_beats_recent_chat",
-        "temporal_intent_links_recent_fact_without_text_match",
-        "same_name_person_project_anchors_separate",
-        "high_impact_relation_requires_explicit_signal",
-        "screenshot_note_links_uploaded_document_chunk",
-        "unrelated_capture_has_no_candidates",
-        "cross_scope_exact_match_fact_not_suggested",
-    } <= {case["case_id"] for case in result["cases"]}
+    assert set(SEMANTIC_LINKING_REQUIRED_CASE_IDS) <= {
+        case["case_id"] for case in result["cases"]
+    }
     assert payload["suite"] == "semantic-linking-golden"
     assert "Project Atlas" not in report_text
     assert "invoice threshold" not in report_text

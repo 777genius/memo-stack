@@ -13,8 +13,11 @@ from memo_stack_core.application.context_link_policy import apply_context_link_p
 from memo_stack_core.application.dto import ContextLinkCandidate
 
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
-from memo_stack_server.eval_common import _write_redacted_report
-from memo_stack_server.eval_constants import SEMANTIC_LINKING_GOLDEN_SUITE
+from memo_stack_server.eval_common import _ratio, _write_redacted_report
+from memo_stack_server.eval_constants import (
+    SEMANTIC_LINKING_GOLDEN_SUITE,
+    SEMANTIC_LINKING_REQUIRED_CASE_IDS,
+)
 from memo_stack_server.main import create_app
 
 
@@ -775,7 +778,9 @@ def _report(
     cases: list[dict[str, object]],
     failures: list[dict[str, object]],
 ) -> dict[str, object]:
+    required_case_metrics = _required_case_metrics(cases)
     metrics = {
+        **required_case_metrics,
         "case_count": len(cases),
         "ranking_accuracy": 1.0 if checks.get("top_fact_beats_distractor") else 0.0,
         "event_linking_accuracy": 1.0 if checks.get("event_call_beats_recent_chat") else 0.0,
@@ -803,6 +808,8 @@ def _report(
     }
     gates = {
         "case_count": metrics["case_count"] >= 5,
+        "required_case_coverage_rate": metrics["required_case_coverage_rate"] == 1.0,
+        "missing_required_case_count": metrics["missing_required_case_count"] == 0,
         "ranking_accuracy": metrics["ranking_accuracy"] == 1.0,
         "event_linking_accuracy": metrics["event_linking_accuracy"] == 1.0,
         "temporal_intent_recall": metrics["temporal_intent_recall"] == 1.0,
@@ -827,6 +834,24 @@ def _report(
         "gates": gates,
         "cases": cases,
         "failures": failures,
+    }
+
+
+def _required_case_metrics(cases: list[dict[str, object]]) -> dict[str, object]:
+    case_ids = {str(case.get("case_id")) for case in cases}
+    missing = tuple(
+        case_id for case_id in SEMANTIC_LINKING_REQUIRED_CASE_IDS if case_id not in case_ids
+    )
+    present_count = len(SEMANTIC_LINKING_REQUIRED_CASE_IDS) - len(missing)
+    return {
+        "required_case_count": len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
+        "required_cases_present": present_count,
+        "missing_required_case_count": len(missing),
+        "missing_required_cases": list(missing),
+        "required_case_coverage_rate": _ratio(
+            present_count,
+            len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
+        ),
     }
 
 
