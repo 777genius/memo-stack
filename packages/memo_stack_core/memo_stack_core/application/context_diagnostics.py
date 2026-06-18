@@ -70,6 +70,18 @@ def context_rank_key(item: ContextItem) -> tuple[float, str, str, str, int, int,
     )
 
 
+def context_duplicate_primary_key(
+    item: ContextItem,
+) -> tuple[int, tuple[float, str, str, str, int, int, str, str], str]:
+    sources = _prioritized_retrieval_sources(diagnostic_retrieval_sources(item.diagnostics))
+    selected_source = sources[0] if sources else ""
+    return (
+        _RETRIEVAL_SOURCE_PRIORITY.get(selected_source, 10_000),
+        context_rank_key(item),
+        item.text,
+    )
+
+
 def normalize_context_item_diagnostics(item: ContextItem) -> ContextItem:
     return replace(item, diagnostics=normalize_context_diagnostics(item.diagnostics))
 

@@ -336,6 +336,43 @@ def test_context_ranking_merges_hybrid_retrieval_provenance() -> None:
     ]
 
 
+def test_context_dedupe_uses_deterministic_primary_when_scores_tie() -> None:
+    keyword = ContextItem(
+        item_id="chunk_tie",
+        item_type="chunk",
+        text="keyword primary text",
+        score=0.8,
+        source_refs=(SourceRef(source_type="document", source_id="doc", chunk_id="chunk_tie"),),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+        },
+    )
+    vector = ContextItem(
+        item_id="chunk_tie",
+        item_type="chunk",
+        text="vector primary text",
+        score=0.8,
+        source_refs=(SourceRef(source_type="document", source_id="doc", chunk_id="chunk_tie"),),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "vector_chunks",
+            "retrieval_sources": ["vector_chunks"],
+        },
+    )
+
+    first = dedupe_rank_items((keyword, vector))
+    second = dedupe_rank_items((vector, keyword))
+
+    assert len(first) == 1
+    assert len(second) == 1
+    assert first[0].text == "vector primary text"
+    assert second[0].text == "vector primary text"
+    assert first[0].diagnostics["retrieval_source"] == "vector_chunks"
+    assert second[0].diagnostics["retrieval_source"] == "vector_chunks"
+
+
 def test_context_diagnostics_are_bounded_and_redacted_when_merged() -> None:
     secret = "Bearer sk-proj-secretvalue1234567890"
     noisy_sources = (secret, *(f"source_{index}" for index in range(20)))

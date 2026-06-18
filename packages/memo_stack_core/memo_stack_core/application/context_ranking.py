@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from memo_stack_core.application.context_diagnostics import (
+    context_duplicate_primary_key,
     context_rank_key,
     merge_context_diagnostics,
     merge_diagnostic_retrieval_sources,
@@ -22,11 +23,19 @@ def dedupe_rank_items(items: tuple[ContextItem, ...]) -> tuple[ContextItem, ...]
         existing = by_key.get(key)
         if existing is None:
             by_key[key] = item
-        elif item.score > existing.score:
+        elif _should_replace_context_item(candidate=item, existing=existing):
             by_key[key] = _merge_context_items(primary=item, secondary=existing)
         else:
             by_key[key] = _merge_context_items(primary=existing, secondary=item)
     return tuple(sorted(by_key.values(), key=context_rank_key))
+
+
+def _should_replace_context_item(*, candidate: ContextItem, existing: ContextItem) -> bool:
+    if candidate.score > existing.score:
+        return True
+    if candidate.score < existing.score:
+        return False
+    return context_duplicate_primary_key(candidate) < context_duplicate_primary_key(existing)
 
 
 def _merge_context_items(*, primary: ContextItem, secondary: ContextItem) -> ContextItem:
