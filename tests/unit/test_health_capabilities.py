@@ -1,8 +1,21 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from memo_stack_adapters.extraction.openai_vision import (
+    OPENAI_VISION_DOCS_URL,
+    OPENAI_VISION_ENDPOINT_FAMILY,
+    OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
+    OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+    OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+    OPENAI_VISION_SUPPORTED_CONTENT_TYPES,
+    OPENAI_VISION_SUPPORTED_FILE_SUFFIXES,
+)
 from memo_stack_adapters.extraction.transcription.openai_adapter import (
+    OPENAI_TRANSCRIPTION_DOCS_URL,
+    OPENAI_TRANSCRIPTION_ENDPOINT,
     OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+    OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES,
+    OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
 )
 from memo_stack_core.domain.entities import SourceRef
 from memo_stack_core.domain.errors import MemoryInfrastructureError, MemoryInvariantError
@@ -256,6 +269,49 @@ def test_capabilities_return_noop_adapters() -> None:
         "external_ai_features_require_explicit_profile": True,
         "local_asr_does_not_provide_speaker_labels": True,
     }
+    assert body["extraction"]["provider_contract"] == {
+        "schema_version": "memo_stack.extraction_provider_contract.v1",
+        "provider_output_policy": "evidence_not_truth",
+        "raw_provider_payloads_in_public_api": False,
+        "external_ai_requires_explicit_profile": True,
+        "vision": {
+            "provider": "openai",
+            "provider_name": "openai_vision",
+            "endpoint_family": OPENAI_VISION_ENDPOINT_FAMILY,
+            "model": "gpt-4.1-mini",
+            "detail": "high",
+            "supported_file_types": list(OPENAI_VISION_SUPPORTED_FILE_SUFFIXES),
+            "supported_content_types": list(OPENAI_VISION_SUPPORTED_CONTENT_TYPES),
+            "docs_url": OPENAI_VISION_DOCS_URL,
+            "max_provider_payload_bytes": OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+            "max_provider_binary_upload_bytes": OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+            "max_images_per_request": OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
+            "effective_max_upload_bytes": 25 * 1024 * 1024,
+            "detail_levels": ["low", "high", "auto"],
+        },
+        "transcription": {
+            "provider": "openai",
+            "provider_name": "transcription_api",
+            "endpoint": OPENAI_TRANSCRIPTION_ENDPOINT,
+            "model": "gpt-4o-mini-transcribe",
+            "supported_file_types": list(OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES),
+            "supported_content_types": list(OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES),
+            "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
+            "max_provider_upload_bytes": OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+            "effective_max_upload_bytes": OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+            "request_timeout_seconds": 60,
+            "diarization_model_configured": False,
+            "timestamp_policy": (
+                "segments_when_provider_returns_them; fallback whole transcript uses full range"
+            ),
+        },
+    }
+    assert ".ogg" not in body["extraction"]["provider_contract"]["transcription"][
+        "supported_file_types"
+    ]
+    assert ".flac" not in body["extraction"]["provider_contract"]["transcription"][
+        "supported_file_types"
+    ]
     assert body["extraction"]["manifest_contract"]["schema_version"] == (
         "memo_stack.multimodal_manifest_contract.v1"
     )
@@ -429,7 +485,7 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
             extraction_max_output_chars=10_000,
             extraction_max_tables=3,
             extraction_ocr_enabled=False,
-            extraction_vision_model="gpt-4.1-mini",
+            extraction_vision_model="gpt-5.5",
             extraction_vision_detail="low",
             transcription_provider="openai",
             transcription_openai_model="gpt-4o-transcribe",
@@ -451,7 +507,7 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["default_profile"] == "media_api"
     assert extraction["external_provider_egress"] is True
     assert extraction["optional_extras"]["vision"]["configured"] is True
-    assert extraction["optional_extras"]["vision"]["model"] == "gpt-4.1-mini"
+    assert extraction["optional_extras"]["vision"]["model"] == "gpt-5.5"
     assert extraction["optional_extras"]["vision"]["detail"] == "low"
     assert extraction["optional_extras"]["vision"]["request_timeout_seconds"] == 17
     assert extraction["providers"]["openai_vision"]["request_timeout_seconds"] == 17
@@ -465,6 +521,19 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["optional_extras"]["transcription_api"]["max_provider_upload_bytes"] == 12_345
     assert extraction["optional_extras"]["transcription_api"]["request_timeout_seconds"] == 17
     assert extraction["providers"]["transcription_api"]["request_timeout_seconds"] == 17
+    assert extraction["provider_contract"]["vision"]["detail"] == "low"
+    assert extraction["provider_contract"]["vision"]["detail_levels"] == [
+        "low",
+        "high",
+        "original",
+        "auto",
+    ]
+    assert extraction["provider_contract"]["vision"]["effective_max_upload_bytes"] == 77_777
+    assert extraction["provider_contract"]["transcription"]["model"] == "gpt-4o-transcribe"
+    assert extraction["provider_contract"]["transcription"]["effective_max_upload_bytes"] == 12_345
+    assert (
+        extraction["provider_contract"]["transcription"]["diarization_model_configured"] is False
+    )
     assert extraction["limits"]["max_bytes"] == 123_456
     assert extraction["limits"]["max_pages"] == 7
     assert extraction["limits"]["max_media_seconds"] == 42

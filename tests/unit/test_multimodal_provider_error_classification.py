@@ -1,9 +1,11 @@
 import asyncio
 import json
+from dataclasses import replace
 from typing import Any
 
 from memo_stack_adapters.extraction.openai_vision import OpenAIImageVisionAdapter
 from memo_stack_adapters.extraction.transcription.openai_adapter import (
+    OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
     OpenAISpeechTranscriptionAdapter,
 )
 from memo_stack_core.application.use_cases.asset_extraction_support import (
@@ -142,6 +144,28 @@ def test_openai_transcription_adapter_classifies_provider_quota_as_permanent() -
     assert result.diagnostics["provider_retryable"] is False
     assert is_permanent_error_code(result.safe_error_code)
     assert raw_secret not in json.dumps(result.diagnostics)
+
+
+def test_openai_transcription_adapter_rejects_undocumented_file_types() -> None:
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key="test-key",
+        model="gpt-4o-mini-transcribe",
+        client_factory=lambda: _TranscriptionClient(AssertionError("must not call provider")),
+    )
+
+    for content_type in ("audio/flac", "audio/ogg"):
+        result = asyncio.run(
+            adapter.transcribe(replace(_speech_request(), content_type=content_type))
+        )
+
+        assert result.status == "unsupported"
+        assert (
+            result.safe_error_code
+            == "asset_extraction.transcription_unsupported_content_type"
+        )
+
+    assert ".flac" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".ogg" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
 
 
 def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:

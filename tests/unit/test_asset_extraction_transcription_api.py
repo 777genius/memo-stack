@@ -247,6 +247,8 @@ def test_audio_asset_extraction_uses_api_first_transcription(
             "has_time_ranges": True,
             "has_speaker_labels": False,
             "has_word_timestamps": False,
+            "segments_truncated": False,
+            "words_truncated": False,
         }
         assert transcript_payload["segments"][0]["start_ms"] == 0
         assert transcript_payload["segments"][0]["end_ms"] == 1000

@@ -1,6 +1,7 @@
 import asyncio
 
 from memo_stack_core.application.dto import (
+    ContextLinkSuggestionVisibleFilter,
     CreateSuggestionCommand,
     CreateSuggestionsBatchCommand,
     ReviewContextLinkSuggestionBatchItemCommand,
@@ -131,6 +132,71 @@ def test_context_link_batch_rejects_duplicate_ids_before_review() -> None:
         assert "duplicate suggestion_id" in str(exc)
     else:
         raise AssertionError("Expected duplicate suggestion_id to fail validation")
+
+    assert reviewer.calls == 0
+
+
+def test_context_link_batch_rejects_non_pending_visible_filter_before_review() -> None:
+    reviewer = _CountingUseCase()
+    use_case = ReviewContextLinkSuggestionsBatchUseCase(review_context_link_suggestion=reviewer)
+
+    try:
+        asyncio.run(
+            use_case.execute(
+                ReviewContextLinkSuggestionsBatchCommand(
+                    items=(
+                        ReviewContextLinkSuggestionBatchItemCommand(
+                            suggestion_id="ctxsug_approved",
+                            action="approve",
+                        ),
+                    ),
+                    continue_on_error=True,
+                    visible_filter=ContextLinkSuggestionVisibleFilter(
+                        space_id=SpaceId("space_1"),
+                        memory_scope_id=MemoryScopeId("scope_1"),
+                        status="pending",
+                        statuses=("approved", "rejected"),
+                        limit=20,
+                    ),
+                )
+            )
+        )
+    except MemoryValidationError as exc:
+        assert "pending suggestions only" in str(exc)
+    else:
+        raise AssertionError("Expected non-pending visible filter to fail validation")
+
+    assert reviewer.calls == 0
+
+
+def test_context_link_batch_rejects_unbounded_visible_filter_before_review() -> None:
+    reviewer = _CountingUseCase()
+    use_case = ReviewContextLinkSuggestionsBatchUseCase(review_context_link_suggestion=reviewer)
+
+    try:
+        asyncio.run(
+            use_case.execute(
+                ReviewContextLinkSuggestionsBatchCommand(
+                    items=(
+                        ReviewContextLinkSuggestionBatchItemCommand(
+                            suggestion_id="ctxsug_all",
+                            action="approve",
+                        ),
+                    ),
+                    visible_filter=ContextLinkSuggestionVisibleFilter(
+                        space_id=SpaceId("space_1"),
+                        memory_scope_id=MemoryScopeId("scope_1"),
+                        status=None,
+                        statuses=None,
+                        limit=20,
+                    ),
+                )
+            )
+        )
+    except MemoryValidationError as exc:
+        assert "pending suggestions only" in str(exc)
+    else:
+        raise AssertionError("Expected unbounded visible filter to fail validation")
 
     assert reviewer.calls == 0
 

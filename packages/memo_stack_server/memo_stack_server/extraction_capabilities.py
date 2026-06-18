@@ -5,6 +5,23 @@ from __future__ import annotations
 import importlib.util
 from dataclasses import dataclass
 
+from memo_stack_adapters.extraction.openai_vision import (
+    OPENAI_VISION_DOCS_URL,
+    OPENAI_VISION_ENDPOINT_FAMILY,
+    OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
+    OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+    OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+    OPENAI_VISION_SUPPORTED_CONTENT_TYPES,
+    OPENAI_VISION_SUPPORTED_FILE_SUFFIXES,
+    openai_vision_supported_detail_levels,
+)
+from memo_stack_adapters.extraction.transcription.openai_adapter import (
+    OPENAI_TRANSCRIPTION_DOCS_URL,
+    OPENAI_TRANSCRIPTION_ENDPOINT,
+    OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+    OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES,
+    OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
+)
 from memo_stack_core.application.multimodal_manifest import (
     multimodal_manifest_contract_payload,
 )
@@ -209,6 +226,7 @@ def build_extraction_capability_payload(settings: Settings) -> dict[str, object]
         "policy": _policy_payload(settings),
         "evidence_contract": _evidence_contract_payload(),
         "feature_contract": _feature_contract_payload(),
+        "provider_contract": _provider_contract_payload(settings),
         "manifest_contract": multimodal_manifest_contract_payload(),
         "file_type_detection": _file_type_detection_contract_payload(),
         "modality_actions": modality_actions,
@@ -556,6 +574,58 @@ def _feature_contract_payload() -> dict[str, object]:
         "actual_artifact_metadata_is_authoritative": True,
         "external_ai_features_require_explicit_profile": True,
         "local_asr_does_not_provide_speaker_labels": True,
+    }
+
+
+def _provider_contract_payload(settings: Settings) -> dict[str, object]:
+    return {
+        "schema_version": "memo_stack.extraction_provider_contract.v1",
+        "provider_output_policy": "evidence_not_truth",
+        "raw_provider_payloads_in_public_api": False,
+        "external_ai_requires_explicit_profile": True,
+        "vision": {
+            "provider": "openai",
+            "provider_name": "openai_vision",
+            "endpoint_family": OPENAI_VISION_ENDPOINT_FAMILY,
+            "model": settings.extraction_vision_model,
+            "detail": settings.extraction_vision_detail,
+            "supported_file_types": list(OPENAI_VISION_SUPPORTED_FILE_SUFFIXES),
+            "supported_content_types": list(OPENAI_VISION_SUPPORTED_CONTENT_TYPES),
+            "docs_url": OPENAI_VISION_DOCS_URL,
+            "max_provider_payload_bytes": OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+            "max_provider_binary_upload_bytes": OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+            "max_images_per_request": OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
+            "effective_max_upload_bytes": min(
+                settings.max_asset_upload_bytes,
+                settings.extraction_max_bytes,
+                OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+            ),
+            "detail_levels": list(
+                openai_vision_supported_detail_levels(settings.extraction_vision_model)
+            ),
+        },
+        "transcription": {
+            "provider": "openai",
+            "provider_name": "transcription_api",
+            "endpoint": OPENAI_TRANSCRIPTION_ENDPOINT,
+            "model": settings.transcription_openai_model,
+            "supported_file_types": list(OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES),
+            "supported_content_types": list(OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES),
+            "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
+            "max_provider_upload_bytes": OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+            "effective_max_upload_bytes": min(
+                settings.max_asset_upload_bytes,
+                settings.transcription_openai_max_upload_bytes,
+                OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
+            ),
+            "request_timeout_seconds": settings.extraction_provider_timeout_seconds,
+            "diarization_model_configured": _transcription_model_supports_diarization(
+                settings.transcription_openai_model
+            ),
+            "timestamp_policy": (
+                "segments_when_provider_returns_them; fallback whole transcript uses full range"
+            ),
+        },
     }
 
 

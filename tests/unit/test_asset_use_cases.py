@@ -34,6 +34,7 @@ class FakeBlobStorage:
     def __init__(self) -> None:
         self.writes: list[tuple[str, bytes]] = []
         self.deletes: list[str] = []
+        self.fail_delete = False
 
     async def write_bytes(self, *, storage_key: str, content: bytes) -> StoredBlob:
         self.writes.append((storage_key, content))
@@ -44,6 +45,8 @@ class FakeBlobStorage:
 
     async def delete(self, *, storage_key: str) -> None:
         self.deletes.append(storage_key)
+        if self.fail_delete:
+            raise RuntimeError("blob delete failed")
 
 
 class FakeAssetRepository:
@@ -52,6 +55,7 @@ class FakeAssetRepository:
         self.storage_refs: set[str] = set()
         self.created: list[MemoryAsset] = []
         self.fail_create = False
+        self.create_error: Exception | None = None
 
     async def find_stored_by_sha256(
         self,
@@ -74,6 +78,8 @@ class FakeAssetRepository:
         return storage_key in self.storage_refs
 
     async def create(self, asset: MemoryAsset) -> MemoryAsset:
+        if self.create_error is not None:
+            raise self.create_error
         if self.fail_create:
             raise MemoryConflictError("asset conflict")
         self.created.append(asset)
@@ -189,6 +195,53 @@ def test_create_asset_conflict_cleanup_keeps_referenced_storage_key() -> None:
 
         assert storage.writes[0][0] == expected_key
         assert storage.deletes == []
+
+    asyncio.run(run())
+
+
+def test_create_asset_unexpected_failure_cleans_unreferenced_blob() -> None:
+    async def run() -> None:
+        content = b"database outage after blob write"
+        command = _command(filename="late-failure.txt", content=content)
+        expected_key = _expected_storage_key(filename=command.filename, content=content)
+        assets = FakeAssetRepository()
+        assets.lookup_results = [None, None]
+        assets.create_error = RuntimeError("database create failed")
+        storage = FakeBlobStorage()
+
+        try:
+            await _create_use_case(assets=assets, storage=storage).execute(command)
+        except RuntimeError as exc:
+            assert str(exc) == "database create failed"
+        else:
+            raise AssertionError("expected RuntimeError")
+
+        assert storage.writes[0][0] == expected_key
+        assert storage.deletes == [expected_key]
+
+    asyncio.run(run())
+
+
+def test_create_asset_cleanup_failure_preserves_original_error() -> None:
+    async def run() -> None:
+        content = b"cleanup can fail but must not hide root cause"
+        command = _command(filename="cleanup-failure.txt", content=content)
+        expected_key = _expected_storage_key(filename=command.filename, content=content)
+        assets = FakeAssetRepository()
+        assets.lookup_results = [None, None]
+        assets.create_error = RuntimeError("database create failed")
+        storage = FakeBlobStorage()
+        storage.fail_delete = True
+
+        try:
+            await _create_use_case(assets=assets, storage=storage).execute(command)
+        except RuntimeError as exc:
+            assert str(exc) == "database create failed"
+        else:
+            raise AssertionError("expected RuntimeError")
+
+        assert storage.writes[0][0] == expected_key
+        assert storage.deletes == [expected_key]
 
     asyncio.run(run())
 

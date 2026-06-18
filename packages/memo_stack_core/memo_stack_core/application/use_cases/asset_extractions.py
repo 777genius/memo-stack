@@ -532,12 +532,15 @@ class RunAssetExtractionUseCase:
             return AssetExtractionResult(
                 job=succeeded,
                 artifacts=tuple(artifacts),
-                indexing_status=ingest.indexing_status,
+                indexing_status=indexing_status(succeeded.status),
             )
         except Exception as exc:
             failed = await self._mark_failed_unless_terminal(job, exc)
             if failed.retry_disposition == ExtractionRetryDisposition.PERMANENT:
-                return AssetExtractionResult(job=failed, indexing_status="failed")
+                return AssetExtractionResult(
+                    job=failed,
+                    indexing_status=indexing_status(failed.status),
+                )
             if isinstance(exc, MemoryInfrastructureError):
                 raise
             raise MemoryInfrastructureError("Asset extraction failed") from exc
@@ -830,12 +833,16 @@ class RunAssetExtractionUseCase:
             if current is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
             if current.status != AssetExtractionStatus.RUNNING:
-                now = self._clock.now()
-                current = current.mark_running(
-                    now=now,
-                    lease_owner=f"asset-extraction:{job.id}",
-                    lease_expires_at=now + self._execution_lease,
+                skipped = current.with_metadata_updates(
+                    now=self._clock.now(),
+                    metadata={
+                        "success_finalization_status": "skipped_non_running_state",
+                        "success_finalization_skipped_status": current.status.value,
+                    },
                 )
+                saved = await uow.asset_extractions.save(skipped)
+                await uow.commit()
+                return saved
             succeeded = current.mark_succeeded(
                 now=self._clock.now(),
                 result_document_ids=result_document_ids,

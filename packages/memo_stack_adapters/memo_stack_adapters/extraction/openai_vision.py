@@ -40,12 +40,32 @@ from memo_stack_adapters.extraction.image_evidence import (
 from memo_stack_adapters.provider_errors import classify_provider_exception
 
 _VISION_PROFILES = {"vision", "openai_vision", "standard_vision", "standard_full", "full"}
-_SUPPORTED_OPENAI_IMAGE_TYPES = {
-    "image/png",
-    "image/jpeg",
-    "image/webp",
+OPENAI_VISION_DOCS_URL = "https://developers.openai.com/api/docs/guides/images-vision"
+OPENAI_VISION_ENDPOINT_FAMILY = "responses"
+OPENAI_VISION_SUPPORTED_FILE_SUFFIXES = (".gif", ".jpeg", ".jpg", ".png", ".webp")
+OPENAI_VISION_SUPPORTED_CONTENT_TYPES = (
     "image/gif",
-}
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+)
+OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES = 512 * 1024 * 1024
+OPENAI_VISION_MAX_IMAGES_PER_REQUEST = 1500
+OPENAI_VISION_REQUEST_JSON_OVERHEAD_BYTES = 4096
+OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES = max(
+    0,
+    (
+        OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES
+        - OPENAI_VISION_REQUEST_JSON_OVERHEAD_BYTES
+        - max(
+            len(f"data:{content_type};base64,")
+            for content_type in OPENAI_VISION_SUPPORTED_CONTENT_TYPES
+        )
+    )
+    // 4
+    * 3,
+)
+_SUPPORTED_OPENAI_IMAGE_TYPES = frozenset(OPENAI_VISION_SUPPORTED_CONTENT_TYPES)
 _MAX_TEXT_CHARS = 4_000
 _MAX_VISIBLE_TEXT_ITEMS = 50
 _MAX_VISIBLE_TEXT_CHARS = 1_000
@@ -101,6 +121,15 @@ _VISION_JSON_SCHEMA = {
         },
     },
 }
+
+
+def openai_vision_supported_detail_levels(model: str) -> tuple[str, ...]:
+    normalized = model.strip().lower()
+    if normalized.startswith(("gpt-5.4-mini", "gpt-5.4-nano")):
+        return ("low", "high", "auto")
+    if normalized == "gpt-5.4" or normalized.startswith(("gpt-5.4-", "gpt-5.5")):
+        return ("low", "high", "original", "auto")
+    return ("low", "high", "auto")
 
 
 class OpenAIVisionImageExtractionEngine(ExtractionEngine):
@@ -317,6 +346,19 @@ class OpenAIImageVisionAdapter(ImageVisionPort):
             return self._unsupported(
                 code="asset_extraction.vision_missing_api_key",
                 message="OpenAI API key is missing for image understanding",
+            )
+        provider_payload_bytes = max(request.byte_size, len(request.content))
+        if provider_payload_bytes > OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES:
+            return self._unsupported(
+                code="asset_extraction.vision_provider_payload_too_large",
+                message="Image exceeds OpenAI vision provider payload limit",
+                diagnostics={
+                    "byte_size": provider_payload_bytes,
+                    "max_provider_binary_upload_bytes": OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+                    "max_provider_payload_bytes": OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+                    "transport_encoding": "base64_data_url",
+                    "provider_retryable": False,
+                },
             )
         client = None
         try:

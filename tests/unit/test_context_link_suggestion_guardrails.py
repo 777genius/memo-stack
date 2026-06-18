@@ -6,7 +6,16 @@ from memo_stack_core.application.use_cases.context_link_suggestions import (
     MAX_CONTEXT_LINK_SUGGESTION_LIMIT,
     SuggestContextLinksUseCase,
 )
-from memo_stack_core.domain.entities import MemoryScopeId, SpaceId
+from memo_stack_core.domain.entities import (
+    LifecycleStatus,
+    MemoryChunk,
+    MemoryChunkId,
+    MemoryChunkKind,
+    MemoryDocumentId,
+    MemoryScopeId,
+    SpaceId,
+    ThreadId,
+)
 
 
 def test_context_link_suggestions_clamps_large_internal_limit_and_fanout() -> None:
@@ -86,6 +95,40 @@ def test_context_link_suggestions_clamps_zero_internal_limit_to_one() -> None:
     }
 
 
+def test_context_link_suggestions_explains_multimodal_chunk_matches() -> None:
+    uow = _RecordingUnitOfWork(chunks=[_multimodal_transcript_chunk()])
+    use_case = SuggestContextLinksUseCase(
+        uow_factory=lambda: uow,
+        clock=_FixedClock(),
+        ids=_Ids(),
+    )
+
+    result = asyncio.run(
+        use_case.execute(
+            SuggestContextLinksCommand(
+                space_id=SpaceId("space_guardrail"),
+                memory_scope_id=MemoryScopeId("scope_guardrail"),
+                text="Link this to Alex renewal transcript.",
+                source_type="capture",
+                source_id="capture_1",
+                limit=10,
+            )
+        )
+    )
+
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.target_type == "chunk"
+    assert "transcript match" in candidate.reasons
+    assert candidate.metadata is not None
+    assert "text_match" in candidate.metadata["reason_codes"]
+    assert "transcript_match" in candidate.metadata["reason_codes"]
+    assert candidate.metadata["evidence_kinds"] == ["transcript_segment"]
+    assert candidate.metadata["evidence_modalities"] == ["audio", "time_range"]
+    assert candidate.metadata["evidence_has_time_range_ref"] is True
+    assert candidate.metadata["policy_decision_canonical"] == "pending_review"
+
+
 class _FixedClock:
     def now(self) -> datetime:
         return datetime(2026, 1, 1, tzinfo=UTC)
@@ -97,7 +140,7 @@ class _Ids:
 
 
 class _RecordingUnitOfWork:
-    def __init__(self) -> None:
+    def __init__(self, *, chunks: list[MemoryChunk] | None = None) -> None:
         self.limits: dict[str, int] = {}
         self.scope = _RecordingRepository("scope", self.limits)
         self.facts = _RecordingRepository("facts", self.limits)
@@ -106,7 +149,11 @@ class _RecordingUnitOfWork:
         self.suggestions = _RecordingRepository("suggestions", self.limits)
         self.assets = _RecordingRepository("assets", self.limits)
         self.documents = _RecordingRepository("documents", self.limits)
-        self.chunks = _RecordingRepository("chunks", self.limits)
+        self.chunks = _RecordingRepository(
+            "chunks",
+            self.limits,
+            keyword_search_result=chunks or [],
+        )
         self.anchors = _RecordingRepository("anchors", self.limits)
 
     async def __aenter__(self) -> "_RecordingUnitOfWork":
@@ -125,9 +172,16 @@ class _RecordingUnitOfWork:
 
 
 class _RecordingRepository:
-    def __init__(self, name: str, limits: dict[str, int]) -> None:
+    def __init__(
+        self,
+        name: str,
+        limits: dict[str, int],
+        *,
+        keyword_search_result: list[object] | None = None,
+    ) -> None:
         self._name = name
         self._limits = limits
+        self._keyword_search_result = keyword_search_result or []
 
     async def get_by_id(self, *_args: object, **_kwargs: object) -> None:
         return None
@@ -142,7 +196,7 @@ class _RecordingRepository:
 
     async def keyword_search(self, *_args: object, **kwargs: object) -> list[object]:
         self._record("keyword_search", kwargs)
-        return []
+        return list(self._keyword_search_result)
 
     async def list_threads(self, *_args: object, **kwargs: object) -> list[object]:
         self._record("list_threads", kwargs)
@@ -153,3 +207,44 @@ class _RecordingRepository:
             limit = kwargs.get("limit")
             if isinstance(limit, int):
                 self._limits[f"{self._name}.{method}"] = limit
+
+
+def _multimodal_transcript_chunk() -> MemoryChunk:
+    text = "Alex renewal transcript confirms the memory scope migration."
+    return MemoryChunk(
+        id=MemoryChunkId("chunk_transcript_1"),
+        space_id=SpaceId("space_guardrail"),
+        memory_scope_id=MemoryScopeId("scope_guardrail"),
+        thread_id=ThreadId("thread_alex"),
+        document_id=MemoryDocumentId("doc_transcript_1"),
+        episode_id=None,
+        source_type="asset_extraction",
+        source_external_id="extract_audio_1",
+        source_hash="hash_transcript_1",
+        kind=MemoryChunkKind.DOCUMENT_SECTION,
+        text=text,
+        normalized_text=text.lower(),
+        status=LifecycleStatus.ACTIVE,
+        sequence=1,
+        char_start=0,
+        char_end=len(text),
+        token_estimate=12,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+        metadata={
+            "asset_id": "asset_audio_1",
+            "extraction_job_id": "extract_audio_1",
+            "normalized_content_type": "audio/mpeg",
+            "parser_name": "speech_transcription",
+            "source_refs": [
+                {
+                    "source_type": "asset_extraction",
+                    "source_id": "extract_audio_1",
+                    "kind": "transcript_segment",
+                    "time_start_ms": 1200,
+                    "time_end_ms": 3400,
+                    "quote_preview": "Alex renewal transcript",
+                }
+            ],
+        },
+    )

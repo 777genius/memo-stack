@@ -822,6 +822,7 @@ def _extension_content_type(extension: str | None) -> str | None:
         "srt": "application/x-subrip",
         "vtt": "text/vtt",
         "mp3": "audio/mpeg",
+        "mpeg": "audio/mpeg",
         "mpga": "audio/mpga",
         "m4a": "audio/mp4",
         "wav": "audio/wav",

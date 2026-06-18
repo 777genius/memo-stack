@@ -616,13 +616,14 @@ def _progress_message(status_value: str) -> str:
 
 
 def extraction_artifact_to_response(artifact: ExtractionArtifact) -> dict[str, Any]:
+    artifact_id = str(artifact.id)
     return {
-        "id": str(artifact.id),
+        "id": artifact_id,
         "job_id": str(artifact.job_id),
         "asset_id": str(artifact.asset_id),
         "artifact_type": artifact.artifact_type.value,
         "storage_backend": artifact.storage_backend,
-        "storage_key": artifact.storage_key,
+        "download_path": f"/v1/extraction-artifacts/{artifact_id}/download",
         "sha256_hex": artifact.sha256_hex,
         "byte_size": artifact.byte_size,
         "metadata": _safe_metadata(artifact.metadata),

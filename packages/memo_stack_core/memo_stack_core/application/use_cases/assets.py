@@ -100,15 +100,27 @@ class CreateAssetUseCase:
                 saved = await uow.assets.create(asset)
                 await uow.commit()
         except MemoryConflictError:
-            await self._delete_blob_if_unreferenced(storage_key=storage_key)
+            await self._delete_blob_if_unreferenced(storage_key=storage_key, suppress_errors=True)
+            raise
+        except Exception:
+            await self._delete_blob_if_unreferenced(storage_key=storage_key, suppress_errors=True)
             raise
         return AssetResult(asset=saved)
 
-    async def _delete_blob_if_unreferenced(self, *, storage_key: str) -> None:
+    async def _delete_blob_if_unreferenced(
+        self,
+        *,
+        storage_key: str,
+        suppress_errors: bool = False,
+    ) -> None:
         async with self._uow_factory() as uow:
             has_reference = await uow.assets.has_stored_with_storage_key(storage_key=storage_key)
         if not has_reference:
-            await self._blob_storage.delete(storage_key=storage_key)
+            try:
+                await self._blob_storage.delete(storage_key=storage_key)
+            except Exception:
+                if not suppress_errors:
+                    raise
 
 
 class GetAssetUseCase:

@@ -28,7 +28,12 @@ from memo_stack_core.ports.extraction import (
     ExtractionResult,
     FileTypeDetectionRequest,
 )
-from memo_stack_core.ports.transcription import SpeechTranscriptionRequest
+from memo_stack_core.ports.transcription import (
+    SpeechTranscriptionRequest,
+    SpeechTranscriptionResult,
+    SpeechTranscriptSegment,
+    SpeechTranscriptWord,
+)
 
 
 def test_file_type_detector_prefers_office_extension_over_zip_magic() -> None:
@@ -561,8 +566,41 @@ def test_speech_transcription_engine_extracts_timecoded_transcript_artifact() ->
         "has_time_ranges": True,
         "has_speaker_labels": False,
         "has_word_timestamps": False,
+        "segments_truncated": False,
+        "words_truncated": False,
     }
     assert "00:00:00.000 --> 00:00:02.000" in (result.markdown or "")
+
+
+def test_speech_transcription_engine_bounds_transcript_manifest_payload() -> None:
+    engine = SpeechTranscriptionExtractionEngine(transcription=_LargeTranscriptPort())
+    request = _request(
+        parser_profile="media_api",
+        detected_content_type="audio/wav",
+        content=b"RIFF0000WAVEfake wav bytes",
+        filename="voice-note.wav",
+        enable_external_ai=True,
+        max_output_chars=80,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.technical_metadata["segments_truncated"] is True
+    assert result.technical_metadata["transcript_words_truncated"] is True
+    assert result.technical_metadata["segment_count"] == 1
+    assert result.technical_metadata["transcript_word_count"] == 1
+    transcript_json = next(
+        artifact for artifact in result.artifacts if artifact.artifact_type == "transcript_json"
+    )
+    payload = json.loads(transcript_json.content.decode("utf-8"))
+    assert payload["features"]["segments_truncated"] is True
+    assert payload["features"]["words_truncated"] is True
+    assert payload["text"] == "A" * 80
+    assert len(payload["segments"]) == 1
+    assert payload["segments"][0]["text"] == "S" * 80
+    assert payload["words"][0]["word"] == "W" * 200
+    assert "TAIL" not in transcript_json.content.decode("utf-8")
 
 
 def test_speech_transcription_engine_marks_diarized_transcript_features() -> None:
@@ -841,6 +879,7 @@ def _request(
     max_image_pixels: int = 50_000_000,
     max_bytes: int = 10_000_000,
     byte_size: int | None = None,
+    max_output_chars: int = 500_000,
 ) -> ExtractionRequest:
     return ExtractionRequest(
         job_id="extract_1",
@@ -857,6 +896,7 @@ def _request(
             parser_timeout_seconds=parser_timeout_seconds,
             subprocess_timeout_seconds=subprocess_timeout_seconds,
             max_image_pixels=max_image_pixels,
+            max_output_chars=max_output_chars,
             enable_external_ai=enable_external_ai,
         ),
     )
@@ -1049,6 +1089,41 @@ class _FakeAudioTranscriptions:
 class _FailingAudioTranscriptions:
     async def create(self, **kwargs) -> object:
         raise RuntimeError("simulated transcription provider outage")
+
+
+class _LargeTranscriptPort:
+    async def transcribe(
+        self,
+        request: SpeechTranscriptionRequest,
+    ) -> SpeechTranscriptionResult:
+        assert request.max_output_chars == 80
+        return SpeechTranscriptionResult(
+            status="succeeded",
+            text=("A" * 1000) + "TAIL",
+            segments=(
+                SpeechTranscriptSegment(
+                    text=("S" * 5000) + "TAIL",
+                    start_ms=0,
+                    end_ms=1000,
+                ),
+                SpeechTranscriptSegment(
+                    text="second segment must be omitted",
+                    start_ms=1000,
+                    end_ms=2000,
+                ),
+            ),
+            words=(
+                SpeechTranscriptWord(
+                    word=("W" * 250) + "TAIL",
+                    start_ms=0,
+                    end_ms=100,
+                ),
+            ),
+            language="en",
+            duration_seconds=2.0,
+            provider_name="test_transcription",
+            provider_model="bounded-test",
+        )
 
 
 class _FakeWhisperAudioTranscriptions:

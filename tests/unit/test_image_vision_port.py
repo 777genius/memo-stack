@@ -1,7 +1,11 @@
 import asyncio
 import json
 
-from memo_stack_adapters.extraction.openai_vision import OpenAIVisionImageExtractionEngine
+from memo_stack_adapters.extraction.openai_vision import (
+    OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+    OpenAIImageVisionAdapter,
+    OpenAIVisionImageExtractionEngine,
+)
 from memo_stack_core.ports.extraction import ExtractionLimits, ExtractionRequest
 from memo_stack_core.ports.vision import ImageVisionRequest, ImageVisionResult
 
@@ -34,6 +38,41 @@ def test_vision_engine_accepts_provider_neutral_image_vision_port() -> None:
     assert _VISION_SECRET not in rendered_artifact
     payload = json.loads(rendered_artifact)
     assert "raw_provider_payload" not in payload
+
+
+def test_openai_vision_adapter_rejects_oversized_data_url_before_provider_call() -> None:
+    def client_factory() -> object:
+        raise AssertionError("oversized image must not call OpenAI")
+
+    adapter = OpenAIImageVisionAdapter(
+        api_key=None,
+        model="gpt-4.1-mini",
+        detail="low",
+        client_factory=client_factory,
+    )
+
+    result = asyncio.run(
+        adapter.analyze(
+            ImageVisionRequest(
+                job_id="extract_large_vision",
+                asset_id="asset_large_vision",
+                filename="large.png",
+                content_type="image/png",
+                byte_size=OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES + 1,
+                sha256_hex="0" * 64,
+                content=b"small-placeholder",
+                max_output_chars=1000,
+            )
+        )
+    )
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.vision_provider_payload_too_large"
+    assert result.diagnostics["provider_retryable"] is False
+    assert (
+        result.diagnostics["max_provider_binary_upload_bytes"]
+        == OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES
+    )
 
 
 class _FakeImageVisionPort:

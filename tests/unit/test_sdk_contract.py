@@ -398,6 +398,38 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "video_features",
                         ],
                     },
+                    "provider_contract": {
+                        "schema_version": "memo_stack.extraction_provider_contract.v1",
+                        "vision": {
+                            "provider": "openai",
+                            "provider_name": "openai_vision",
+                            "endpoint_family": "responses",
+                            "supported_file_types": [
+                                ".gif",
+                                ".jpeg",
+                                ".jpg",
+                                ".png",
+                                ".webp",
+                            ],
+                            "effective_max_upload_bytes": 12345,
+                        },
+                        "transcription": {
+                            "provider": "openai",
+                            "provider_name": "transcription_api",
+                            "endpoint": "/v1/audio/transcriptions",
+                            "supported_file_types": [
+                                ".m4a",
+                                ".mp3",
+                                ".mp4",
+                                ".mpeg",
+                                ".mpga",
+                                ".wav",
+                                ".webm",
+                            ],
+                            "max_provider_upload_bytes": 26214400,
+                            "effective_max_upload_bytes": 12345,
+                        },
+                    },
                     "manifest_contract": {
                         "schema_version": "memo_stack.multimodal_manifest_contract.v1",
                         "manifest_schema_version": "memo_stack.multimodal_manifest.v1",
@@ -493,6 +525,31 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     ]
     assert diagnostics.feature_contract["schema_version"] == (
         "memo_stack.extraction_feature_contract.v1"
+    )
+    assert diagnostics.provider_contract["schema_version"] == (
+        "memo_stack.extraction_provider_contract.v1"
+    )
+    assert diagnostics.provider_contract["vision"]["supported_file_types"] == [
+        ".gif",
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".webp",
+    ]
+    assert diagnostics.provider_contract["transcription"]["supported_file_types"] == [
+        ".m4a",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".mpga",
+        ".wav",
+        ".webm",
+    ]
+    assert ".ogg" not in diagnostics.provider_contract["transcription"]["supported_file_types"]
+    assert ".flac" not in diagnostics.provider_contract["transcription"]["supported_file_types"]
+    assert (
+        diagnostics.provider_contract["transcription"]["endpoint"]
+        == "/v1/audio/transcriptions"
     )
     assert diagnostics.manifest_contract["schema_version"] == (
         "memo_stack.multimodal_manifest_contract.v1"
@@ -641,6 +698,7 @@ def test_sdk_defaults_legacy_extraction_capability_contract_fields() -> None:
     standard_local = diagnostics.profile("standard_local")
 
     assert diagnostics.evidence_contract == {}
+    assert diagnostics.provider_contract == {}
     assert diagnostics.manifest_contract == {}
     assert diagnostics.file_type_detection == {}
     assert diagnostics.degraded_components == ()

@@ -195,6 +195,7 @@ class ReviewContextLinkSuggestionsBatchUseCase:
         if len(command.items) > MAX_CONTEXT_LINK_BATCH_REVIEW_ITEMS:
             raise MemoryValidationError("Context link batch review supports at most 50 items")
         _assert_unique_batch_suggestion_ids(command.items)
+        _assert_pending_visible_filter(command.visible_filter)
         visible_filter_result_count = await self._assert_visible_filter_matches(command)
         diagnostics = _batch_review_diagnostics(
             command,
@@ -358,6 +359,21 @@ def _assert_unique_batch_suggestion_ids(
                 "Context link batch review contains duplicate suggestion_id"
             )
         seen.add(suggestion_id)
+
+
+def _assert_pending_visible_filter(
+    visible_filter: ContextLinkSuggestionVisibleFilter | None,
+) -> None:
+    if visible_filter is None:
+        return
+    statuses = visible_filter.statuses
+    if statuses is None:
+        statuses = (visible_filter.status,) if visible_filter.status else ()
+    normalized = tuple((status or "").strip().lower() for status in statuses if status)
+    if normalized != ("pending",):
+        raise MemoryValidationError(
+            "Context link batch visible filter must select pending suggestions only"
+        )
 
 
 def _review_target(

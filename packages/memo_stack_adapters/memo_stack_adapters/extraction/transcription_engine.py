@@ -42,6 +42,10 @@ _API_TRANSCRIPTION_PROFILES = {
     "standard_full",
     "full",
 }
+_MAX_TRANSCRIPT_SEGMENTS = 1_000
+_MAX_TRANSCRIPT_WORDS = 10_000
+_MAX_TRANSCRIPT_SEGMENT_TEXT_CHARS = 4_000
+_MAX_TRANSCRIPT_WORD_TEXT_CHARS = 200
 
 
 class SpeechTranscriptionExtractionEngine(ExtractionEngine):
@@ -134,7 +138,21 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                 end_ms=_duration_to_ms(result.duration_seconds or probe.duration_seconds),
             ),
         )
-        transcript_features = _transcript_feature_metadata(segments, result.words)
+        segments, segments_truncated = _bounded_segments(
+            segments,
+            max_text_chars=request.limits.max_output_chars,
+        )
+        if not segments:
+            segments = (
+                SpeechTranscriptSegment(
+                    text=text,
+                    start_ms=0,
+                    end_ms=_duration_to_ms(result.duration_seconds or probe.duration_seconds),
+                ),
+            )
+            segments_truncated = True
+        words, words_truncated = _bounded_words(result.words)
+        transcript_features = _transcript_feature_metadata(segments, words)
         elements = tuple(
             ExtractedElement(
                 kind="transcript_segment",
@@ -190,8 +208,12 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
         transcript_json = _transcript_json_bytes(
             request=request,
             result=result,
+            text=text,
             segments=segments,
+            words=words,
             duration_seconds=duration_seconds,
+            segments_truncated=segments_truncated,
+            words_truncated=words_truncated,
         )
         return ExtractionResult(
             status="succeeded",
@@ -213,6 +235,8 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                     metadata={
                         "parser": self.name,
                         "segment_count": len(segments),
+                        "segments_truncated": segments_truncated,
+                        "words_truncated": words_truncated,
                         **transcript_features,
                         "transcription_provider": safe_metadata_text(result.provider_name),
                         "transcription_model": safe_metadata_text(result.provider_model)
@@ -228,7 +252,9 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                     metadata={
                         "parser": self.name,
                         "segment_count": len(segments),
-                        "word_count": len(result.words),
+                        "word_count": len(words),
+                        "segments_truncated": segments_truncated,
+                        "words_truncated": words_truncated,
                         **transcript_features,
                         "transcription_provider": safe_metadata_text(result.provider_name),
                         "transcription_model": safe_metadata_text(result.provider_model)
@@ -244,12 +270,14 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                 "mime_detected": request.detected_content_type,
                 "duration_seconds": duration_seconds,
                 "segment_count": len(segments),
+                "segments_truncated": segments_truncated,
                 "transcript_status": "extracted",
                 "transcription_provider": result.provider_name,
                 "transcription_model": result.provider_model,
                 "transcription_provider_version": result.provider_version,
                 "transcript_json_status": "extracted",
-                "transcript_word_count": len(result.words),
+                "transcript_word_count": len(words),
+                "transcript_words_truncated": words_truncated,
                 **transcript_features,
                 "keyframe_status": "extracted" if keyframes else "not_applicable",
                 "output_chars": len(markdown),
@@ -312,8 +340,12 @@ def _transcript_json_bytes(
     *,
     request: ExtractionRequest,
     result: SpeechTranscriptionResult,
+    text: str,
     segments: tuple[SpeechTranscriptSegment, ...],
+    words: tuple[SpeechTranscriptWord, ...],
     duration_seconds: float | None,
+    segments_truncated: bool,
+    words_truncated: bool,
 ) -> bytes:
     payload = {
         "schema_name": "memo_stack.transcript",
@@ -333,12 +365,79 @@ def _transcript_json_bytes(
             else None,
             "diagnostics": safe_metadata(result.diagnostics),
         },
-        "features": _transcript_feature_metadata(segments, result.words),
-        "text": result.text,
+        "features": {
+            **_transcript_feature_metadata(segments, words),
+            "segments_truncated": segments_truncated,
+            "words_truncated": words_truncated,
+        },
+        "text": text,
         "segments": [_segment_payload(segment) for segment in segments],
-        "words": [_word_payload(word) for word in result.words],
+        "words": [_word_payload(word) for word in words],
     }
     return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _bounded_segments(
+    segments: tuple[SpeechTranscriptSegment, ...],
+    *,
+    max_text_chars: int,
+) -> tuple[tuple[SpeechTranscriptSegment, ...], bool]:
+    bounded: list[SpeechTranscriptSegment] = []
+    remaining_text_chars = max(1, int(max_text_chars))
+    truncated = len(segments) > _MAX_TRANSCRIPT_SEGMENTS
+    for segment in segments[:_MAX_TRANSCRIPT_SEGMENTS]:
+        text = segment.text.strip()
+        if not text:
+            continue
+        if len(text) > _MAX_TRANSCRIPT_SEGMENT_TEXT_CHARS:
+            text = text[:_MAX_TRANSCRIPT_SEGMENT_TEXT_CHARS]
+            truncated = True
+        if len(text) > remaining_text_chars:
+            text = text[:remaining_text_chars]
+            truncated = True
+        if not text:
+            truncated = True
+            break
+        bounded.append(
+            SpeechTranscriptSegment(
+                text=text,
+                start_ms=segment.start_ms,
+                end_ms=segment.end_ms,
+                confidence=segment.confidence,
+                speaker=segment.speaker,
+                metadata=segment.metadata,
+            )
+        )
+        remaining_text_chars -= len(text)
+        if remaining_text_chars <= 0 and len(bounded) < len(segments):
+            truncated = True
+            break
+    return tuple(bounded), truncated
+
+
+def _bounded_words(
+    words: tuple[SpeechTranscriptWord, ...],
+) -> tuple[tuple[SpeechTranscriptWord, ...], bool]:
+    bounded: list[SpeechTranscriptWord] = []
+    truncated = len(words) > _MAX_TRANSCRIPT_WORDS
+    for word in words[:_MAX_TRANSCRIPT_WORDS]:
+        text = word.word.strip()
+        if not text:
+            continue
+        if len(text) > _MAX_TRANSCRIPT_WORD_TEXT_CHARS:
+            text = text[:_MAX_TRANSCRIPT_WORD_TEXT_CHARS]
+            truncated = True
+        bounded.append(
+            SpeechTranscriptWord(
+                word=text,
+                start_ms=word.start_ms,
+                end_ms=word.end_ms,
+                confidence=word.confidence,
+                speaker=word.speaker,
+                metadata=word.metadata,
+            )
+        )
+    return tuple(bounded), truncated
 
 
 def _transcript_feature_metadata(

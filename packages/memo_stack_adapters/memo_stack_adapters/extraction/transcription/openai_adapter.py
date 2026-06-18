@@ -17,22 +17,33 @@ from memo_stack_core.ports.transcription import (
 
 from memo_stack_adapters.provider_errors import classify_provider_exception
 
-_SUPPORTED_CONTENT_TYPES = {
-    "audio/flac",
+OPENAI_TRANSCRIPTION_DOCS_URL = "https://developers.openai.com/api/docs/guides/speech-to-text"
+OPENAI_TRANSCRIPTION_ENDPOINT = "/v1/audio/transcriptions"
+OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES = (
+    ".m4a",
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpga",
+    ".wav",
+    ".webm",
+)
+OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES = (
     "audio/m4a",
     "audio/mpeg",
     "audio/mpga",
     "audio/mp4",
-    "audio/ogg",
     "audio/vnd.wave",
     "audio/wav",
     "audio/x-wav",
     "audio/x-m4a",
     "audio/webm",
     "video/mp4",
+    "video/mpeg",
     "video/webm",
-}
-OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+)
+_SUPPORTED_CONTENT_TYPES = frozenset(OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES)
 
 
 class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
@@ -177,18 +188,17 @@ def _safe_filename(filename: str, content_type: str) -> str:
     if "." in clean:
         return clean
     extension = {
-        "audio/flac": ".flac",
         "audio/m4a": ".m4a",
         "audio/mpeg": ".mp3",
         "audio/mpga": ".mpga",
         "audio/mp4": ".m4a",
-        "audio/ogg": ".ogg",
         "audio/vnd.wave": ".wav",
         "audio/wav": ".wav",
         "audio/x-wav": ".wav",
         "audio/x-m4a": ".m4a",
         "audio/webm": ".webm",
         "video/mp4": ".mp4",
+        "video/mpeg": ".mpeg",
         "video/webm": ".webm",
     }.get(content_type, ".bin")
     return f"{clean or 'media'}{extension}"
