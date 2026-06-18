@@ -55,7 +55,7 @@ memo-stack-test-e2e:
 
 .PHONY: memo-stack-multimodal-production-e2e
 memo-stack-multimodal-production-e2e:
-	$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py -q
+	$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py tests/e2e/test_multimodal_ingestion_edge_cases_e2e.py -q
 
 .PHONY: memo-stack-multimodal-live-provider-canary
 memo-stack-multimodal-live-provider-canary:

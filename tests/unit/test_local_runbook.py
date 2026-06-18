@@ -39,7 +39,8 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
     assert "$(PYTHON) -m pytest tests/e2e" in makefile
     assert ".PHONY: memo-stack-multimodal-production-e2e" in makefile
     assert (
-        "$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py -q"
+        "$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py "
+        "tests/e2e/test_multimodal_ingestion_edge_cases_e2e.py -q"
         in makefile
     )
     assert ".PHONY: memo-stack-multimodal-live-provider-canary" in makefile

@@ -81,7 +81,9 @@ gates, and the no-candidate path for unrelated captures.
 `memo-stack-multimodal-production-e2e` is the local multimodal acceptance gate.
 It uploads document, image, audio and video assets into an isolated server,
 runs extraction, checks artifacts/source chunks and approves semantic links
-without requiring paid provider keys.
+without requiring paid provider keys. It also covers ingestion edge cases:
+duplicate uploads, cancel/retry, wrong MIME detection, extraction size limits,
+corrupted input diagnostics and deleted review targets.
 `memo-stack-frontend-marionette-memory-e2e` starts the Flutter debug app against
 the local Docker backend and validates the frontend memory save/review path
 through VM service extensions: create scope, save capture, approve a context-link
