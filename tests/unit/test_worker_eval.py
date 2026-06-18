@@ -1152,9 +1152,15 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["prompt_injection_promoted_count"] == 0
     assert result["metrics"]["critical_failure_count"] == 0
     assert result["metrics"]["harmful_context_rate"] == 0.0
-    assert "hybrid_document_beats_single_source" in {
-        case["case_id"] for case in result["cases"]
-    }
+    quality_case_ids = {case["case_id"] for case in result["cases"]}
+    assert {
+        "updated_provider_current_only",
+        "temporal_supersedes_current_only",
+        "contradicted_fact_hidden_by_default",
+        "document_architecture_precision",
+        "hybrid_document_beats_single_source",
+        "prompt_injection_evidence_only",
+    } <= quality_case_ids
     assert result["failures"] == []
     assert "QUALITY_RESTRICTED_SECRET" not in str(result)
     assert "QUALITY_BETA_ONLY_SECRET" not in str(result)
@@ -1195,6 +1201,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["person_and_project_anchors_suggested"] is True
     assert result["checks"]["same_name_person_project_anchors_separate"] is True
     assert result["checks"]["high_impact_relation_requires_explicit_signal"] is True
+    assert result["checks"]["document_chunk_evidence_suggested"] is True
     assert result["checks"]["top_suggestion_approves_to_link"] is True
     assert result["checks"]["unrelated_capture_has_no_candidates"] is True
     assert result["checks"]["cross_scope_fact_not_suggested"] is True
@@ -1213,6 +1220,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
         "temporal_intent_links_recent_fact_without_text_match",
         "same_name_person_project_anchors_separate",
         "high_impact_relation_requires_explicit_signal",
+        "screenshot_note_links_uploaded_document_chunk",
         "unrelated_capture_has_no_candidates",
         "cross_scope_exact_match_fact_not_suggested",
     } <= {case["case_id"] for case in result["cases"]}
