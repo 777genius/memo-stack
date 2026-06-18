@@ -2200,6 +2200,26 @@ def test_sdk_supports_memory_scope_snapshot_export_import() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode("utf-8")) if request.content else {}
         seen.append((request.url.path, dict(request.url.params), body))
+        if request.url.path.endswith("/preview"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "status": "ok",
+                        "preview": {
+                            "diagnostics": {
+                                "migration_defaults_applied": {
+                                    "anchor_confidence": 1,
+                                },
+                                "migration_defaults_applied_count": 1,
+                            },
+                            "warnings": [
+                                "migration_defaults_applied.anchor_confidence",
+                            ],
+                        },
+                    }
+                },
+            )
         return httpx.Response(200, json={"data": {"status": "ok"}})
 
     client = MemoStackClient(
@@ -2228,7 +2248,7 @@ def test_sdk_supports_memory_scope_snapshot_export_import() -> None:
         confirmed=True,
         source_name="sdk-test",
     )
-    client.preview_memory_scope_snapshot_import(
+    preview = client.preview_memory_scope_snapshot_import(
         space_slug="agents",
         memory_scope_external_ref="restore",
         snapshot=snapshot,
@@ -2270,6 +2290,10 @@ def test_sdk_supports_memory_scope_snapshot_export_import() -> None:
             "merge_strategy": "skip_existing",
         },
     )
+    assert preview["data"]["preview"]["diagnostics"] == {
+        "migration_defaults_applied": {"anchor_confidence": 1},
+        "migration_defaults_applied_count": 1,
+    }
 
 
 def test_sdk_sends_search_taxonomy_filters() -> None:

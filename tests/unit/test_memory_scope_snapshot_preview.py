@@ -252,6 +252,81 @@ def test_memory_scope_snapshot_import_preview_reports_skip_and_supersede() -> No
     assert supersede_preview["would_import"]["relations"] == 1
 
 
+def test_memory_scope_snapshot_import_preview_reports_legacy_defaults() -> None:
+    payload = {
+        "schema_version": 7,
+        "facts": [{"id": "fact_source"}, {"id": "fact_target"}],
+        "anchors": [
+            {
+                "id": "anchor_legacy_alex",
+                "kind": "person",
+                "normalized_key": "alex",
+                "label": "Alex bearer-token should not leak",
+            },
+            {
+                "id": "anchor_current_acme",
+                "kind": "organization",
+                "normalized_key": "acme",
+                "label": "Acme",
+                "confidence": "medium",
+                "evidence_refs": [],
+                "observed_at": "2026-06-18T10:00:00+00:00",
+                "valid_from": None,
+                "valid_to": None,
+            },
+        ],
+        "relations": [
+            {
+                "id": "relation_legacy",
+                "source_fact_id": "fact_source",
+                "target_fact_id": "fact_target",
+                "relation_type": "supports",
+            },
+            {
+                "id": "relation_current",
+                "source_fact_id": "fact_target",
+                "target_fact_id": "fact_source",
+                "relation_type": "related_to",
+                "observed_at": "2026-06-18T10:00:00+00:00",
+                "valid_from": None,
+                "valid_to": None,
+            },
+        ],
+    }
+
+    preview = build_memory_scope_snapshot_import_preview(
+        payload=payload,
+        merge_strategy="skip_existing",
+        conflict_ids=set(),
+    )
+
+    assert preview["diagnostics"] == {
+        "migration_defaults_applied": {
+            "anchor_confidence": 1,
+            "anchor_evidence_refs": 1,
+            "anchor_observed_at": 1,
+            "anchor_valid_from": 1,
+            "anchor_valid_to": 1,
+            "relation_observed_at": 1,
+            "relation_valid_from": 1,
+            "relation_valid_to": 1,
+        },
+        "migration_defaults_applied_count": 8,
+    }
+    assert preview["warnings"] == [
+        "migration_defaults_applied.anchor_confidence",
+        "migration_defaults_applied.anchor_evidence_refs",
+        "migration_defaults_applied.anchor_observed_at",
+        "migration_defaults_applied.anchor_valid_from",
+        "migration_defaults_applied.anchor_valid_to",
+        "migration_defaults_applied.relation_observed_at",
+        "migration_defaults_applied.relation_valid_from",
+        "migration_defaults_applied.relation_valid_to",
+    ]
+    assert "bearer-token" not in repr(preview["diagnostics"])
+    assert "bearer-token" not in repr(preview["warnings"])
+
+
 def test_memory_scope_snapshot_import_preview_warns_on_redacted_blocking_conflict() -> None:
     preview = build_memory_scope_snapshot_import_preview(
         payload={"redacted": True, "facts": [{"id": "fact_1"}]},

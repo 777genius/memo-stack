@@ -20,6 +20,18 @@ _RECORD_TYPES = (
     "relations",
 )
 _COUNT_TYPES = (*_RECORD_TYPES, "asset_blobs", "extraction_artifact_blobs", "source_refs")
+_ANCHOR_MIGRATION_DEFAULT_FIELDS = (
+    ("confidence", "anchor_confidence", True),
+    ("evidence_refs", "anchor_evidence_refs", True),
+    ("observed_at", "anchor_observed_at", True),
+    ("valid_from", "anchor_valid_from", False),
+    ("valid_to", "anchor_valid_to", False),
+)
+_RELATION_MIGRATION_DEFAULT_FIELDS = (
+    ("observed_at", "relation_observed_at", True),
+    ("valid_from", "relation_valid_from", False),
+    ("valid_to", "relation_valid_to", False),
+)
 
 
 def build_memory_scope_snapshot_import_preview(
@@ -82,6 +94,10 @@ def build_memory_scope_snapshot_import_preview(
     superseded_fact_ids = (
         _record_ids(facts) & conflict_ids if merge_strategy == "supersede_matching_facts" else set()
     )
+    migration_defaults_applied = _migration_defaults_applied(
+        anchors=anchors,
+        relations=relations,
+    )
     return {
         "snapshot_counts": snapshot_counts(
             threads=threads,
@@ -141,11 +157,15 @@ def build_memory_scope_snapshot_import_preview(
             "facts": len(superseded_fact_ids),
             "fact_ids": sorted(superseded_fact_ids)[:20],
         },
+        "diagnostics": _preview_diagnostics(
+            migration_defaults_applied=migration_defaults_applied,
+        ),
         "warnings": _preview_warnings(
             payload=payload,
             skipped=skipped,
             conflict_ids=conflict_ids,
             merge_strategy=merge_strategy,
+            migration_defaults_applied=migration_defaults_applied,
         ),
     }
 
@@ -551,6 +571,7 @@ def _preview_warnings(
     skipped: dict[str, set[str]],
     conflict_ids: set[str],
     merge_strategy: str,
+    migration_defaults_applied: dict[str, int],
 ) -> list[str]:
     warnings: list[str] = []
     if payload.get("redacted") is True:
@@ -573,7 +594,55 @@ def _preview_warnings(
         warnings.append("some_context_link_suggestions_will_be_skipped")
     if conflict_ids and merge_strategy == "fail_on_conflict":
         warnings.append("conflicts_block_import")
+    warnings.extend(
+        f"migration_defaults_applied.{key}" for key in migration_defaults_applied
+    )
     return warnings
+
+
+def _preview_diagnostics(
+    *,
+    migration_defaults_applied: dict[str, int],
+) -> dict[str, Any]:
+    return {
+        "migration_defaults_applied": migration_defaults_applied,
+        "migration_defaults_applied_count": sum(migration_defaults_applied.values()),
+    }
+
+
+def _migration_defaults_applied(
+    *,
+    anchors: list[dict[str, Any]],
+    relations: list[dict[str, Any]],
+) -> dict[str, int]:
+    defaults: dict[str, int] = {}
+    _record_default_counts(
+        records=anchors,
+        fields=_ANCHOR_MIGRATION_DEFAULT_FIELDS,
+        defaults=defaults,
+    )
+    _record_default_counts(
+        records=relations,
+        fields=_RELATION_MIGRATION_DEFAULT_FIELDS,
+        defaults=defaults,
+    )
+    return defaults
+
+
+def _record_default_counts(
+    *,
+    records: list[dict[str, Any]],
+    fields: tuple[tuple[str, str, bool], ...],
+    defaults: dict[str, int],
+) -> None:
+    for field, diagnostic_key, none_defaults in fields:
+        count = sum(1 for record in records if _field_will_default(record, field, none_defaults))
+        if count:
+            defaults[diagnostic_key] = count
+
+
+def _field_will_default(record: dict[str, Any], field: str, none_defaults: bool) -> bool:
+    return field not in record or (none_defaults and record.get(field) is None)
 
 
 def _records(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:

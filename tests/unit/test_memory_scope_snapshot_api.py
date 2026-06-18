@@ -768,6 +768,60 @@ def test_memory_scope_snapshot_import_dry_run_returns_conflict_preview(tmp_path:
     assert "conflicts_block_import" in preview["warnings"]
 
 
+def test_memory_scope_snapshot_preview_returns_legacy_default_diagnostics(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/v1/export/memory_scope-snapshot/preview",
+            json={
+                "space_slug": "agents",
+                "memory_scope_external_ref": "restore-base",
+                "snapshot": {
+                    "schema_version": 7,
+                    "facts": [{"id": "fact_source"}, {"id": "fact_target"}],
+                    "anchors": [
+                        {
+                            "id": "anchor_legacy_alex",
+                            "kind": "person",
+                            "normalized_key": "alex",
+                            "label": "Alex api-key should not leak",
+                        }
+                    ],
+                    "relations": [
+                        {
+                            "id": "relation_legacy_supports",
+                            "source_fact_id": "fact_source",
+                            "target_fact_id": "fact_target",
+                            "relation_type": "supports",
+                        }
+                    ],
+                },
+                "merge_strategy": "skip_existing",
+            },
+            headers=auth_headers(),
+        )
+
+    assert response.status_code == 200, response.text
+    preview = response.json()["data"]["preview"]
+    assert preview["diagnostics"] == {
+        "migration_defaults_applied": {
+            "anchor_confidence": 1,
+            "anchor_evidence_refs": 1,
+            "anchor_observed_at": 1,
+            "anchor_valid_from": 1,
+            "anchor_valid_to": 1,
+            "relation_observed_at": 1,
+            "relation_valid_from": 1,
+            "relation_valid_to": 1,
+        },
+        "migration_defaults_applied_count": 8,
+    }
+    assert "migration_defaults_applied.anchor_confidence" in preview["warnings"]
+    assert "api-key" not in repr(preview["diagnostics"])
+    assert "api-key" not in repr(preview["warnings"])
+
+
 def test_memory_scope_snapshot_import_remaps_reviewed_context_link_audit(
     tmp_path: Path,
 ) -> None:
