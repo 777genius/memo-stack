@@ -9,6 +9,8 @@ from uuid import uuid4
 
 import httpx
 from fastapi.testclient import TestClient
+from memo_stack_core.application.context_link_policy import apply_context_link_policy
+from memo_stack_core.application.dto import ContextLinkCandidate
 
 from memo_stack_server.config import CaptureMode, DeployProfile, Settings
 from memo_stack_server.eval_common import _write_redacted_report
@@ -221,6 +223,18 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
                 "same_name_person_project_anchors_separate",
                 "anchor_disambiguation",
                 "same_normalized_person_and_project_not_kept_separate",
+            )
+        )
+
+    policy_case = _high_impact_relation_policy_case()
+    checks["high_impact_relation_requires_explicit_signal"] = bool(policy_case["ok"])
+    cases.append(policy_case)
+    if not checks["high_impact_relation_requires_explicit_signal"]:
+        failures.append(
+            _failure(
+                "high_impact_relation_requires_explicit_signal",
+                "policy",
+                "high_impact_relation_accepted_without_explicit_signal",
             )
         )
 
@@ -697,6 +711,64 @@ def _candidate_score(candidates: list[dict[str, object]], target_id: str) -> flo
     return 0.0
 
 
+def _high_impact_relation_policy_case() -> dict[str, object]:
+    weak_supersedes = _policy_candidate(
+        target_id="policy-old-fact",
+        reason_codes=("text_match",),
+        relation_type="supersedes",
+    )
+    explicit_supersedes = _policy_candidate(
+        target_id="policy-old-fact",
+        reason_codes=("temporal_intent_match",),
+        relation_type="supersedes",
+    )
+
+    weak_result = apply_context_link_policy((weak_supersedes,), limit=8, persist=True)
+    explicit_result = apply_context_link_policy((explicit_supersedes,), limit=8, persist=True)
+    explicit_candidate = explicit_result.candidates[0] if explicit_result.candidates else None
+    explicit_metadata = explicit_candidate.metadata if explicit_candidate else {}
+    ok = (
+        weak_result.candidates == ()
+        and weak_result.diagnostics.get("link_policy_denied_reason_counts")
+        == {"high_impact_relation_requires_explicit_signal": 1}
+        and explicit_candidate is not None
+        and explicit_metadata.get("policy_relation_type") == "supersedes"
+        and explicit_metadata.get("review_gate") == "required"
+        and explicit_metadata.get("auto_approve_eligible") is False
+    )
+    return {
+        "case_id": "high_impact_relation_requires_explicit_signal",
+        "ok": ok,
+        "weak_denied_reason_counts": weak_result.diagnostics.get(
+            "link_policy_denied_reason_counts"
+        ),
+        "explicit_policy_relation_type": explicit_metadata.get("policy_relation_type"),
+        "explicit_auto_approve_eligible": explicit_metadata.get("auto_approve_eligible"),
+    }
+
+
+def _policy_candidate(
+    *,
+    target_id: str,
+    reason_codes: tuple[str, ...],
+    relation_type: str,
+) -> ContextLinkCandidate:
+    return ContextLinkCandidate(
+        target_type="fact",
+        target_id=target_id,
+        label="policy fact",
+        preview="policy preview",
+        score=96.0,
+        tier="likely",
+        reasons=("policy signal",),
+        metadata={
+            "reason_codes": list(reason_codes),
+            "relation_type": relation_type,
+            "matched_terms": [],
+        },
+    )
+
+
 def _report(
     *,
     checks: dict[str, bool],
@@ -722,6 +794,9 @@ def _report(
             if checks.get("anchor_evidence_confidence_and_observed_at_exposed")
             else 0.0
         ),
+        "high_impact_relation_policy_safety": (
+            1.0 if checks.get("high_impact_relation_requires_explicit_signal") else 0.0
+        ),
         "review_approval_rate": 1.0 if checks.get("top_suggestion_approves_to_link") else 0.0,
         "false_positive_count": 0 if checks.get("unrelated_capture_has_no_candidates") else 1,
         "cross_scope_leak_count": 0 if checks.get("cross_scope_fact_not_suggested") else 1,
@@ -735,6 +810,9 @@ def _report(
         "anchor_recall_rate": metrics["anchor_recall_rate"] == 1.0,
         "anchor_disambiguation_rate": metrics["anchor_disambiguation_rate"] == 1.0,
         "anchor_review_evidence_rate": metrics["anchor_review_evidence_rate"] == 1.0,
+        "high_impact_relation_policy_safety": (
+            metrics["high_impact_relation_policy_safety"] == 1.0
+        ),
         "review_approval_rate": metrics["review_approval_rate"] == 1.0,
         "false_positive_count": metrics["false_positive_count"] == 0,
         "cross_scope_leak_count": metrics["cross_scope_leak_count"] == 0,

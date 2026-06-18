@@ -75,8 +75,8 @@ item ids, gates and aggregate metrics, not raw memory text.
 `semantic-linking-golden` specifically checks context-link suggestion quality:
 specific target ranking against a similar distractor, event-like call linking
 against a recent chat distractor, person/project anchor suggestions, same-name
-person/project disambiguation, review approval, and the no-candidate path for
-unrelated captures.
+person/project disambiguation, review approval, high-impact relation review
+gates, and the no-candidate path for unrelated captures.
 `memo-stack-frontend-marionette-memory-e2e` starts the Flutter debug app against
 the local Docker backend and validates the frontend memory save/review path
 through VM service extensions: create scope, save capture, approve a context-link

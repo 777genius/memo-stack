@@ -1194,6 +1194,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["temporal_intent_links_recent_fact_without_text_match"] is True
     assert result["checks"]["person_and_project_anchors_suggested"] is True
     assert result["checks"]["same_name_person_project_anchors_separate"] is True
+    assert result["checks"]["high_impact_relation_requires_explicit_signal"] is True
     assert result["checks"]["top_suggestion_approves_to_link"] is True
     assert result["checks"]["unrelated_capture_has_no_candidates"] is True
     assert result["checks"]["cross_scope_fact_not_suggested"] is True
@@ -1202,6 +1203,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["metrics"]["event_linking_accuracy"] == 1.0
     assert result["metrics"]["temporal_intent_recall"] == 1.0
     assert result["metrics"]["anchor_disambiguation_rate"] == 1.0
+    assert result["metrics"]["high_impact_relation_policy_safety"] == 1.0
     assert result["metrics"]["false_positive_count"] == 0
     assert result["metrics"]["cross_scope_leak_count"] == 0
     assert {
@@ -1209,6 +1211,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
         "event_call_beats_recent_chat",
         "temporal_intent_links_recent_fact_without_text_match",
         "same_name_person_project_anchors_separate",
+        "high_impact_relation_requires_explicit_signal",
         "unrelated_capture_has_no_candidates",
         "cross_scope_exact_match_fact_not_suggested",
     } <= {case["case_id"] for case in result["cases"]}
