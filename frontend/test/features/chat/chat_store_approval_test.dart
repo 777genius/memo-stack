@@ -224,12 +224,12 @@ void main() {
       expect(store.contextLinkSuggestionError.value, isNull);
     });
 
-    test('replaces pending suggestion with manual context link', () async {
+    test('approves pending suggestion with target override', () async {
       final store = ChatStore(repo, null);
       repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
 
       await store.refreshContextLinkSuggestions();
-      final ok = await store.createManualContextLinkFromSuggestion(
+      final ok = await store.approveContextLinkSuggestionWithOverride(
         store.contextLinkSuggestions.single,
         targetType: 'anchor',
         targetId: 'anchor-alex',
@@ -239,33 +239,34 @@ void main() {
       );
 
       expect(ok, true);
-      expect(repo.createdContextLinks, [
-        {
-          'source_type': 'capture',
-          'source_id': 'capture-1',
-          'target_type': 'anchor',
-          'target_id': 'anchor-alex',
-          'relation_type': 'mentions',
-          'confidence': 'medium',
-          'reason': 'Alex is the correct target',
-        },
-      ]);
-      expect(repo.reviewedSuggestions, ['ctxlinksug-1:reject']);
+      expect(repo.createdContextLinks, isEmpty);
+      expect(repo.reviewedSuggestions, ['ctxlinksug-1:approve']);
       expect(
         repo.reviewedSuggestionReasons['ctxlinksug-1'],
-        'replaced by manual link',
+        'approved by user with target override',
       );
-      expect(store.contextLinkSuggestions, isEmpty);
+      expect(repo.reviewedSuggestionOverrides['ctxlinksug-1'], {
+        'target_type': 'anchor',
+        'target_id': 'anchor-alex',
+        'relation_type': 'mentions',
+        'confidence': 'medium',
+        'link_reason': 'Alex is the correct target',
+      });
+      expect(
+        store.contextLinkSuggestions,
+        isEmpty,
+      );
       expect(store.contextLinkSuggestionError.value, isNull);
     });
 
-    test('keeps suggestion visible when manual context link fails', () async {
+    test('keeps suggestion visible when target override review fails',
+        () async {
       final store = ChatStore(repo, null);
       repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
-      repo.failCreateContextLink = true;
+      repo.failReviewContextLink = true;
 
       await store.refreshContextLinkSuggestions();
-      final ok = await store.createManualContextLinkFromSuggestion(
+      final ok = await store.approveContextLinkSuggestionWithOverride(
         store.contextLinkSuggestions.single,
         targetType: 'anchor',
         targetId: 'anchor-alex',
@@ -280,7 +281,7 @@ void main() {
       expect(store.contextLinkSuggestions.single.id, 'ctxlinksug-1');
       expect(
         store.contextLinkSuggestionError.value,
-        contains('Manual link failed'),
+        contains('Target override review failed'),
       );
     });
   });
@@ -306,6 +307,7 @@ class _FakeChatRepository implements ChatRepository {
   bool respondApprovalResult = true;
   String activeMemoryScopeExternalRef = 'default';
   bool failCreateContextLink = false;
+  bool failReviewContextLink = false;
   final Map<String, MemoryScope> scopesByRef = {
     'default': _scope('scope-default', 'default', 'Default'),
     'sales-crm': _scope('scope-sales-crm', 'sales-crm', 'Sales CRM'),
@@ -313,6 +315,7 @@ class _FakeChatRepository implements ChatRepository {
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
   final reviewedSuggestions = <String>[];
   final reviewedSuggestionReasons = <String, String?>{};
+  final reviewedSuggestionOverrides = <String, Map<String, String>>{};
   final createdContextLinks = <Map<String, String>>[];
   final assetExtractions = <AssetExtractionJob>[];
   int _assetSeq = 0;
@@ -682,9 +685,24 @@ class _FakeChatRepository implements ChatRepository {
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   }) async {
+    if (failReviewContextLink) {
+      throw StateError('simulated review failure');
+    }
     reviewedSuggestions.add('$suggestionId:$action');
     reviewedSuggestionReasons[suggestionId] = reason;
+    reviewedSuggestionOverrides[suggestionId] = {
+      if (targetType != null) 'target_type': targetType,
+      if (targetId != null) 'target_id': targetId,
+      if (relationType != null) 'relation_type': relationType,
+      if (confidence != null) 'confidence': confidence,
+      if (linkReason != null) 'link_reason': linkReason,
+    };
     final suggestion = contextLinkSuggestions.firstWhere(
       (item) => item.id == suggestionId,
     );
@@ -697,10 +715,10 @@ class _FakeChatRepository implements ChatRepository {
       'memory_scope_id': suggestion.memoryScopeId,
       'source_type': suggestion.sourceType,
       'source_id': suggestion.sourceId,
-      'target_type': suggestion.targetType,
-      'target_id': suggestion.targetId,
-      'relation_type': suggestion.relationType,
-      'confidence': suggestion.confidence,
+      'target_type': targetType ?? suggestion.targetType,
+      'target_id': targetId ?? suggestion.targetId,
+      'relation_type': relationType ?? suggestion.relationType,
+      'confidence': confidence ?? suggestion.confidence,
       'reason': suggestion.reason,
       'score': suggestion.score,
       'status': action == 'approve' ? 'approved' : 'rejected',

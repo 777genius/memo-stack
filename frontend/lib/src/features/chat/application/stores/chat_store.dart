@@ -22,7 +22,8 @@ class ChatStore = ChatStoreBase with _$ChatStore;
 
 const _approvedContextLinkReviewReason = 'approved by user from review queue';
 const _rejectedContextLinkReviewReason = 'rejected by user from review queue';
-const _manualContextLinkReviewReason = 'replaced by manual link';
+const _targetOverrideContextLinkReviewReason =
+    'approved by user with target override';
 
 abstract class ChatStoreBase with Store {
   final ChatRepository repo;
@@ -886,7 +887,7 @@ abstract class ChatStoreBase with Store {
     }
   }
 
-  Future<bool> createManualContextLinkFromSuggestion(
+  Future<bool> approveContextLinkSuggestionWithOverride(
     MemoryContextLinkSuggestion suggestion, {
     required String targetType,
     required String targetId,
@@ -899,9 +900,10 @@ abstract class ChatStoreBase with Store {
       contextLinkSuggestionError.value = null;
     });
     try {
-      await repo.createContextLink(
-        sourceType: suggestion.sourceType,
-        sourceId: suggestion.sourceId,
+      final reviewed = await repo.reviewContextLinkSuggestion(
+        suggestionId: suggestion.id,
+        action: 'approve',
+        reason: _targetOverrideContextLinkReviewReason,
         targetType: targetType.trim(),
         targetId: targetId.trim(),
         relationType: relationType.trim().isEmpty
@@ -910,26 +912,19 @@ abstract class ChatStoreBase with Store {
         confidence: confidence.trim().isEmpty
             ? suggestion.confidence
             : confidence.trim(),
-        reason: reason.trim().isEmpty ? 'selected by user' : reason.trim(),
+        linkReason: reason.trim().isEmpty ? 'selected by user' : reason.trim(),
       );
-      if (suggestion.isPending) {
-        final reviewed = await repo.reviewContextLinkSuggestion(
-          suggestionId: suggestion.id,
-          action: 'reject',
-          reason: _manualContextLinkReviewReason,
-        );
-        runInAction(() {
-          _removeContextLinkSuggestion(suggestion.id);
-          if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
-        });
-      }
+      runInAction(() {
+        _removeContextLinkSuggestion(suggestion.id);
+        if (reviewed.isPending) _upsertContextLinkSuggestion(reviewed);
+      });
       unawaited(refreshMemoryCaptures(showLoading: false));
       unawaited(refreshOperationsConsole(showLoading: false));
       unawaited(refreshMemoryBrowser(showLoading: false));
       return true;
     } catch (e) {
       runInAction(() {
-        contextLinkSuggestionError.value = 'Manual link failed: $e';
+        contextLinkSuggestionError.value = 'Target override review failed: $e';
       });
       return false;
     } finally {
@@ -937,6 +932,24 @@ abstract class ChatStoreBase with Store {
         contextLinkSuggestionReviewing.remove(suggestion.id);
       });
     }
+  }
+
+  Future<bool> createManualContextLinkFromSuggestion(
+    MemoryContextLinkSuggestion suggestion, {
+    required String targetType,
+    required String targetId,
+    required String relationType,
+    required String confidence,
+    required String reason,
+  }) {
+    return approveContextLinkSuggestionWithOverride(
+      suggestion,
+      targetType: targetType,
+      targetId: targetId,
+      relationType: relationType,
+      confidence: confidence,
+      reason: reason,
+    );
   }
 
   @action

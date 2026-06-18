@@ -32,7 +32,10 @@ void main() {
           Provider<ChatRepository>.value(value: repo),
           Provider<ChatStore>.value(value: store),
         ],
-        child: const MaterialApp(home: Scaffold(body: ChatInputComposer())),
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: InkRipple.splashFactory),
+          home: const Scaffold(body: ChatInputComposer()),
+        ),
       ),
     );
 
@@ -402,6 +405,11 @@ class _RecordingChatRepository implements ChatRepository {
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   }) async {
     return _suggestion(
       suggestionId,

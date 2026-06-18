@@ -654,7 +654,7 @@ class _ManualContextLinkDialogState extends State<_ManualContextLinkDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       key: const ValueKey('memory_manual_link_dialog'),
-      title: const Text('Edit link'),
+      title: const Text('Edit and approve link'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
@@ -723,8 +723,8 @@ class _ManualContextLinkDialogState extends State<_ManualContextLinkDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.add_link, size: 16),
-          label: const Text('Create link'),
+              : const Icon(Icons.check_circle_outline, size: 16),
+          label: const Text('Approve link'),
         ),
       ],
     );
@@ -740,7 +740,7 @@ class _ManualContextLinkDialogState extends State<_ManualContextLinkDialog> {
       return;
     }
     setState(() => _busy = true);
-    final ok = await widget.store.createManualContextLinkFromSuggestion(
+    final ok = await widget.store.approveContextLinkSuggestionWithOverride(
       widget.suggestion,
       targetType: targetType,
       targetId: targetId,

@@ -210,7 +210,7 @@ void main() {
       expect(repo.contextLinkSuggestions.single.id, 'ctxlinksug-1');
     });
 
-    test('creates a manual context link from a pending suggestion', () async {
+    test('approves a pending link suggestion with target override', () async {
       await handler.submitCapture({
         'text': 'Alex confirmed the Project Atlas launch timing.',
       });
@@ -224,27 +224,27 @@ void main() {
         'reason': 'manual override',
       });
 
+      expect(result['linkApproved'], true);
       expect(result['manualLinked'], true);
       expect(result['manualLinkSuggestionId'], 'ctxlinksug-1');
       expect(result['manualLinkTargetId'], 'anchor-manual-project');
       expect(result['pendingLinkSuggestionCount'], 0);
       expect(result['memoryBrowserContextLinkCount'], 1);
-      expect(repo.createdContextLinks, [
-        {
-          'source_type': 'capture',
-          'source_id': 'capture-1',
-          'target_type': 'anchor',
-          'target_id': 'anchor-manual-project',
-          'relation_type': 'supports',
-          'confidence': 'medium',
-          'reason': 'manual override',
-        },
-      ]);
-      expect(repo.reviewedSuggestions, ['ctxlinksug-1:reject']);
+      expect(repo.createdContextLinks, isEmpty);
+      expect(repo.reviewedSuggestions, ['ctxlinksug-1:approve']);
       expect(
         repo.reviewedSuggestionReasons['ctxlinksug-1'],
-        'replaced by manual link',
+        'approved by user with target override',
       );
+      expect(repo.reviewedSuggestionOverrides['ctxlinksug-1'], {
+        'target_type': 'anchor',
+        'target_id': 'anchor-manual-project',
+        'relation_type': 'supports',
+        'confidence': 'medium',
+        'link_reason': 'manual override',
+      });
+      expect(repo.contextLinks.single.targetId, 'anchor-manual-project');
+      expect(repo.contextLinks.single.reason, 'manual override');
     });
 
     test('drives memory anchor lifecycle for live e2e checks', () async {

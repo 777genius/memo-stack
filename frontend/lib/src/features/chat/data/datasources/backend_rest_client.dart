@@ -480,12 +480,27 @@ class BackendRestClient {
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   }) async {
     final resp = await _dio.post<Map<String, dynamic>>(
       '/v1/context-link-suggestions/$suggestionId/review',
       data: {
         'action': action,
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        if (targetType != null && targetType.trim().isNotEmpty)
+          'target_type': targetType.trim(),
+        if (targetId != null && targetId.trim().isNotEmpty)
+          'target_id': targetId.trim(),
+        if (relationType != null && relationType.trim().isNotEmpty)
+          'relation_type': relationType.trim(),
+        if (confidence != null && confidence.trim().isNotEmpty)
+          'confidence': confidence.trim(),
+        if (linkReason != null && linkReason.trim().isNotEmpty)
+          'link_reason': linkReason.trim(),
       },
     );
     final data = _data(resp.data);

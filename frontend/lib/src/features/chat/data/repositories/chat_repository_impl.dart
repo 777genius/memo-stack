@@ -392,11 +392,21 @@ class ChatRepositoryImpl
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   }) async {
     final row = await _rest.reviewContextLinkSuggestion(
       suggestionId: suggestionId,
       action: action,
       reason: reason,
+      targetType: targetType,
+      targetId: targetId,
+      relationType: relationType,
+      confidence: confidence,
+      linkReason: linkReason,
     );
     return MemoryContextLinkSuggestion.fromMap(row);
   }

@@ -115,6 +115,11 @@ abstract class ChatRepository {
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   });
   Future<List<MemoryContextLinkSuggestion>> reviewContextLinkSuggestionsBatch({
     required List<String> suggestionIds,

@@ -30,6 +30,8 @@ class FakeMarionetteChatRepository implements ChatRepository {
   List<MemoryAnchorMergeSuggestion> anchorMergeSuggestions = const [];
   final List<String> reviewedSuggestions = <String>[];
   final Map<String, String?> reviewedSuggestionReasons = <String, String?>{};
+  final Map<String, Map<String, String>> reviewedSuggestionOverrides =
+      <String, Map<String, String>>{};
   final List<Map<String, String>> createdContextLinks = <Map<String, String>>[];
   String activeMemoryScopeExternalRef = 'default';
   String? activeChatId;
@@ -610,25 +612,57 @@ class FakeMarionetteChatRepository implements ChatRepository {
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   }) async {
     reviewedSuggestions.add('$suggestionId:$action');
     reviewedSuggestionReasons[suggestionId] = reason;
+    reviewedSuggestionOverrides[suggestionId] = {
+      if (targetType != null) 'target_type': targetType,
+      if (targetId != null) 'target_id': targetId,
+      if (relationType != null) 'relation_type': relationType,
+      if (confidence != null) 'confidence': confidence,
+      if (linkReason != null) 'link_reason': linkReason,
+    };
     final suggestion = contextLinkSuggestions.firstWhere(
       (item) => item.id == suggestionId,
     );
+    final reviewedTargetType = targetType ?? suggestion.targetType;
+    final reviewedTargetId = targetId ?? suggestion.targetId;
+    final reviewedRelationType = relationType ?? suggestion.relationType;
+    final reviewedConfidence = confidence ?? suggestion.confidence;
+    final reviewedLinkReason = linkReason ?? suggestion.reason;
     contextLinkSuggestions = contextLinkSuggestions
         .where((item) => item.id != suggestionId)
         .toList(growable: false);
+    if (action == 'approve') {
+      contextLinks.add(
+        _contextLink(
+          id: 'ctxlink-${++_contextLinkSeq}',
+          memoryScopeId: suggestion.memoryScopeId,
+          sourceType: suggestion.sourceType,
+          sourceId: suggestion.sourceId,
+          targetType: reviewedTargetType,
+          targetId: reviewedTargetId,
+          relationType: reviewedRelationType,
+          confidence: reviewedConfidence,
+          reason: reviewedLinkReason,
+        ),
+      );
+    }
     return MemoryContextLinkSuggestion.fromMap({
       'id': suggestion.id,
       'space_id': suggestion.spaceId,
       'memory_scope_id': suggestion.memoryScopeId,
       'source_type': suggestion.sourceType,
       'source_id': suggestion.sourceId,
-      'target_type': suggestion.targetType,
-      'target_id': suggestion.targetId,
-      'relation_type': suggestion.relationType,
-      'confidence': suggestion.confidence,
+      'target_type': reviewedTargetType,
+      'target_id': reviewedTargetId,
+      'relation_type': reviewedRelationType,
+      'confidence': reviewedConfidence,
       'reason': suggestion.reason,
       'score': suggestion.score,
       'status': action == 'approve' ? 'approved' : 'rejected',

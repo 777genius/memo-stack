@@ -449,7 +449,7 @@ class MemoStackMarionetteE2eCommandHandler {
     final suggestion = pending.first;
     final targetType = _required(params, 'targetType');
     final targetId = _required(params, 'targetId');
-    final ok = await store.createManualContextLinkFromSuggestion(
+    final ok = await store.approveContextLinkSuggestionWithOverride(
       suggestion,
       targetType: targetType,
       targetId: targetId,
@@ -461,11 +461,12 @@ class MemoStackMarionetteE2eCommandHandler {
     _throwIfFailed(
       ok,
       store.contextLinkSuggestionError.value,
-      'Manual context link was not created',
+      'Context link suggestion was not approved',
     );
     await _refreshEvidence(store);
     return {
       ..._state(store),
+      'linkApproved': true,
       'manualLinked': true,
       'manualLinkSuggestionId': suggestion.id,
       'manualLinkTargetType': targetType,

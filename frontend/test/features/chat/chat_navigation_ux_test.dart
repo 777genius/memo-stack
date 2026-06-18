@@ -609,7 +609,7 @@ void main() {
     expect(find.text('Alex confirmed Q3 rollout.'), findsWidgets);
   });
 
-  testWidgets('operations console creates edited manual link from suggestion', (
+  testWidgets('operations console approves edited link from suggestion', (
     tester,
   ) async {
     final repo = _UxFakeChatRepository();
@@ -651,12 +651,22 @@ void main() {
         .tap(find.byKey(const ValueKey('memory_manual_link_save_button')));
     await tester.pumpAndSettle();
 
-    expect(repo.createdContextLinks.single['targetId'], 'fact-edited');
-    expect(repo.createdContextLinks.single['reason'], 'manual override');
-    expect(repo.reviewedSuggestions, ['ctxlinksug-1:reject']);
+    expect(repo.createdContextLinks, isEmpty);
+    expect(repo.reviewedSuggestions, ['ctxlinksug-1:approve']);
     expect(
       repo.reviewedSuggestionReasons['ctxlinksug-1'],
-      'replaced by manual link',
+      'approved by user with target override',
+    );
+    expect(repo.reviewedSuggestionOverrides['ctxlinksug-1'], {
+      'target_type': 'fact',
+      'target_id': 'fact-edited',
+      'relation_type': 'related_to',
+      'confidence': 'high',
+      'link_reason': 'manual override',
+    });
+    expect(
+      repo.contextLinkSuggestions.map((item) => item.id),
+      isNot(contains('ctxlinksug-1')),
     );
   });
 
@@ -1042,6 +1052,7 @@ class _UxFakeChatRepository implements ChatRepository {
   final reviewedSuggestions = <String>[];
   final batchReviewedSuggestionIds = <List<String>>[];
   final reviewedSuggestionReasons = <String, String?>{};
+  final reviewedSuggestionOverrides = <String, Map<String, String>>{};
   final Map<String, MemoryScope> scopesByRef = {
     'default': _scope('scope-default', 'default', 'Default'),
   };
@@ -1415,9 +1426,21 @@ class _UxFakeChatRepository implements ChatRepository {
     required String suggestionId,
     required String action,
     String? reason,
+    String? targetType,
+    String? targetId,
+    String? relationType,
+    String? confidence,
+    String? linkReason,
   }) async {
     reviewedSuggestions.add('$suggestionId:$action');
     reviewedSuggestionReasons[suggestionId] = reason;
+    reviewedSuggestionOverrides[suggestionId] = {
+      if (targetType != null) 'target_type': targetType,
+      if (targetId != null) 'target_id': targetId,
+      if (relationType != null) 'relation_type': relationType,
+      if (confidence != null) 'confidence': confidence,
+      if (linkReason != null) 'link_reason': linkReason,
+    };
     final suggestion = contextLinkSuggestions.firstWhere(
       (item) => item.id == suggestionId,
     );
@@ -1430,10 +1453,10 @@ class _UxFakeChatRepository implements ChatRepository {
       'memory_scope_id': suggestion.memoryScopeId,
       'source_type': suggestion.sourceType,
       'source_id': suggestion.sourceId,
-      'target_type': suggestion.targetType,
-      'target_id': suggestion.targetId,
-      'relation_type': suggestion.relationType,
-      'confidence': suggestion.confidence,
+      'target_type': targetType ?? suggestion.targetType,
+      'target_id': targetId ?? suggestion.targetId,
+      'relation_type': relationType ?? suggestion.relationType,
+      'confidence': confidence ?? suggestion.confidence,
       'reason': suggestion.reason,
       'score': suggestion.score,
       'status': action == 'approve' ? 'approved' : 'rejected',
