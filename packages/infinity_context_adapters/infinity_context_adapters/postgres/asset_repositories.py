@@ -100,6 +100,30 @@ class PostgresAssetRepository(AssetRepositoryPort):
         ).scalar_one_or_none()
         return asset_row_to_domain(row) if row is not None else None
 
+    async def find_any_stored_by_sha256(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        storage_backend: str,
+        sha256_hex: str,
+    ) -> MemoryAsset | None:
+        row = (
+            await self._session.execute(
+                select(MemoryAssetRow)
+                .where(
+                    MemoryAssetRow.space_id == space_id,
+                    MemoryAssetRow.memory_scope_id == memory_scope_id,
+                    MemoryAssetRow.storage_backend == storage_backend,
+                    MemoryAssetRow.sha256_hex == sha256_hex,
+                    MemoryAssetRow.status == "stored",
+                )
+                .order_by(MemoryAssetRow.created_at.desc(), MemoryAssetRow.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return asset_row_to_domain(row) if row is not None else None
+
     async def has_stored_with_storage_key(
         self,
         *,

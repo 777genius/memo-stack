@@ -54,6 +54,9 @@ class FakeBlobStorage:
 class FakeAssetRepository:
     def __init__(self) -> None:
         self.lookup_results: list[MemoryAsset | None] = []
+        self.scope_lookup_results: list[MemoryAsset | None] = []
+        self.scope_lookup_calls = 0
+        self.scope_lookup_storage_backends: list[str] = []
         self.storage_refs: set[str] = set()
         self.created: list[MemoryAsset] = []
         self.fail_create = False
@@ -69,6 +72,20 @@ class FakeAssetRepository:
     ) -> MemoryAsset | None:
         if self.lookup_results:
             return self.lookup_results.pop(0)
+        return None
+
+    async def find_any_stored_by_sha256(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        storage_backend: str,
+        sha256_hex: str,
+    ) -> MemoryAsset | None:
+        self.scope_lookup_calls += 1
+        self.scope_lookup_storage_backends.append(storage_backend)
+        if self.scope_lookup_results:
+            return self.scope_lookup_results.pop(0)
         return None
 
     async def has_stored_with_storage_key(
@@ -173,6 +190,68 @@ def test_create_asset_keeps_late_duplicate_blob_when_storage_key_is_referenced()
         assert result.asset == existing
         assert storage.writes[0][0] == expected_key
         assert storage.deletes == []
+
+    asyncio.run(run())
+
+
+def test_create_asset_reuses_scope_blob_for_different_thread_duplicate() -> None:
+    async def run() -> None:
+        content = b"same content in another thread"
+        digest = hashlib.sha256(content).hexdigest()
+        reusable = _asset(
+            asset_id="asset_reusable",
+            filename="original.txt",
+            sha256_hex=digest,
+            storage_key="space_asset_tests/scope_asset_tests/original.txt",
+            thread_id=ThreadId("thread_original"),
+        )
+        assets = FakeAssetRepository()
+        assets.scope_lookup_results = [reusable]
+        assets.storage_refs.add(reusable.storage_key)
+        storage = FakeBlobStorage()
+
+        result = await _create_use_case(assets=assets, storage=storage).execute(
+            _command(filename="copy.txt", content=content)
+        )
+
+        assert result.duplicate is True
+        assert result.asset.id != reusable.id
+        assert result.asset.thread_id == THREAD_ID
+        assert result.asset.storage_key == reusable.storage_key
+        assert result.asset.metadata["asset_blob_deduplicated"] is True
+        assert result.asset.metadata["asset_blob_duplicate_of_asset_id"] == str(reusable.id)
+        assert result.asset.metadata["asset_blob_dedupe_scope"] == "memory_scope"
+        assert assets.scope_lookup_storage_backends == ["local"]
+        assert assets.created == [result.asset]
+        assert storage.writes == []
+        assert storage.deletes == []
+
+    asyncio.run(run())
+
+
+def test_create_asset_same_thread_duplicate_returns_existing_without_scope_lookup() -> None:
+    async def run() -> None:
+        content = b"already uploaded here"
+        digest = hashlib.sha256(content).hexdigest()
+        existing = _asset(
+            asset_id="asset_existing",
+            filename="existing.txt",
+            sha256_hex=digest,
+            storage_key="space_asset_tests/scope_asset_tests/existing.txt",
+        )
+        assets = FakeAssetRepository()
+        assets.lookup_results = [existing]
+        storage = FakeBlobStorage()
+
+        result = await _create_use_case(assets=assets, storage=storage).execute(
+            _command(filename="same-thread.txt", content=content)
+        )
+
+        assert result.duplicate is True
+        assert result.asset == existing
+        assert assets.scope_lookup_calls == 0
+        assert assets.created == []
+        assert storage.writes == []
 
     asyncio.run(run())
 
@@ -335,12 +414,13 @@ def _asset(
     filename: str,
     sha256_hex: str,
     storage_key: str,
+    thread_id: ThreadId | None = THREAD_ID,
 ) -> MemoryAsset:
     return MemoryAsset.create(
         asset_id=MemoryAssetId(asset_id),
         space_id=SPACE_ID,
         memory_scope_id=MEMORY_SCOPE_ID,
-        thread_id=THREAD_ID,
+        thread_id=thread_id,
         filename=filename,
         content_type="text/plain",
         byte_size=12,

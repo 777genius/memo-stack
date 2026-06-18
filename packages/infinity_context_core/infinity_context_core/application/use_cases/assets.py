@@ -59,6 +59,7 @@ class CreateAssetUseCase:
         )
         now = self._clock.now()
         digest = hashlib.sha256(command.content).hexdigest()
+        reusable_asset: MemoryAsset | None = None
         async with self._uow_factory() as uow:
             existing = await uow.assets.find_stored_by_sha256(
                 space_id=str(command.space_id),
@@ -68,15 +69,40 @@ class CreateAssetUseCase:
             )
             if existing is not None:
                 return AssetResult(asset=existing, duplicate=True)
+            reusable_asset = await uow.assets.find_any_stored_by_sha256(
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                storage_backend=self._storage_backend,
+                sha256_hex=digest,
+            )
 
         asset_id = MemoryAssetId(self._ids.new_id("asset"))
-        storage_key = _storage_key(
-            space_id=str(command.space_id),
-            memory_scope_id=str(command.memory_scope_id),
-            digest=digest,
-            filename=command.filename,
+        storage_key = (
+            reusable_asset.storage_key
+            if reusable_asset is not None
+            else _storage_key(
+                space_id=str(command.space_id),
+                memory_scope_id=str(command.memory_scope_id),
+                digest=digest,
+                filename=command.filename,
+            )
         )
-        await self._blob_storage.write_bytes(storage_key=storage_key, content=command.content)
+        wrote_blob = False
+        if reusable_asset is None:
+            await self._blob_storage.write_bytes(storage_key=storage_key, content=command.content)
+            wrote_blob = True
+        metadata = {
+            **safe_metadata(command.metadata or {}),
+            **upload_assessment.metadata,
+        }
+        if reusable_asset is not None:
+            metadata.update(
+                {
+                    "asset_blob_deduplicated": True,
+                    "asset_blob_duplicate_of_asset_id": str(reusable_asset.id),
+                    "asset_blob_dedupe_scope": "memory_scope",
+                }
+            )
         asset = MemoryAsset.create(
             asset_id=asset_id,
             space_id=command.space_id,
@@ -89,10 +115,7 @@ class CreateAssetUseCase:
             storage_backend=self._storage_backend,
             storage_key=storage_key,
             classification=command.classification,
-            metadata={
-                **safe_metadata(command.metadata or {}),
-                **upload_assessment.metadata,
-            },
+            metadata=metadata,
             now=now,
         )
         try:
@@ -105,17 +128,26 @@ class CreateAssetUseCase:
                 )
                 if existing is not None:
                     await uow.commit()
-                    await self._delete_blob_if_unreferenced(storage_key=storage_key)
+                    if wrote_blob:
+                        await self._delete_blob_if_unreferenced(storage_key=storage_key)
                     return AssetResult(asset=existing, duplicate=True)
                 saved = await uow.assets.create(asset)
                 await uow.commit()
         except MemoryConflictError:
-            await self._delete_blob_if_unreferenced(storage_key=storage_key, suppress_errors=True)
+            if wrote_blob:
+                await self._delete_blob_if_unreferenced(
+                    storage_key=storage_key,
+                    suppress_errors=True,
+                )
             raise
         except Exception:
-            await self._delete_blob_if_unreferenced(storage_key=storage_key, suppress_errors=True)
+            if wrote_blob:
+                await self._delete_blob_if_unreferenced(
+                    storage_key=storage_key,
+                    suppress_errors=True,
+                )
             raise
-        return AssetResult(asset=saved)
+        return AssetResult(asset=saved, duplicate=reusable_asset is not None)
 
     async def _delete_blob_if_unreferenced(
         self,

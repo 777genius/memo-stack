@@ -2449,7 +2449,7 @@ def test_asset_delete_retains_shared_blob_until_last_reference(tmp_path: Path) -
                 "space_slug": "quick-capture",
                 "memory_scope_external_ref": "default",
                 "thread_external_ref": "thread-b",
-                "filename": "shared.txt",
+                "filename": "shared-copy.txt",
             },
             content=content,
             headers=auth_headers({"Content-Type": "text/plain"}),
@@ -2457,6 +2457,9 @@ def test_asset_delete_retains_shared_blob_until_last_reference(tmp_path: Path) -
 
         assert first.status_code == 201
         assert second.status_code == 201
+        assert first.json()["data"]["duplicate"] is False
+        assert second.json()["data"]["duplicate"] is True
+        files_after_uploads = stored_blob_files(asset_storage_dir)
         first_id = first.json()["data"]["id"]
         second_id = second.json()["data"]["id"]
         first_delete = client.delete(f"/v1/assets/{first_id}", headers=auth_headers())
@@ -2469,6 +2472,7 @@ def test_asset_delete_retains_shared_blob_until_last_reference(tmp_path: Path) -
         )
 
     assert first_id != second_id
+    assert len(files_after_uploads) == 1
     assert first_delete.status_code == 200
     assert second_download.status_code == 200
     assert second_download.content == content

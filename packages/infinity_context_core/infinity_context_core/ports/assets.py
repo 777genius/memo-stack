@@ -48,7 +48,17 @@ class AssetRepositoryPort(Protocol):
         thread_id: str | None,
         sha256_hex: str,
     ) -> MemoryAsset | None:
-        """Find a stored asset duplicate in the same scope."""
+        """Find a stored asset duplicate in the same thread context."""
+
+    async def find_any_stored_by_sha256(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        storage_backend: str,
+        sha256_hex: str,
+    ) -> MemoryAsset | None:
+        """Find any stored asset duplicate in the same memory scope and storage backend."""
 
     async def has_stored_with_storage_key(
         self,
