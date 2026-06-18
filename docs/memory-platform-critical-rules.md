@@ -127,6 +127,7 @@ tests.
 | Surface | Hard budget |
 | --- | --- |
 | `ContextItem.retrieval_sources` | max 8 ordered unique source names |
+| public `ContextItem.source_refs` | max 20 refs per API item, with truncation diagnostics |
 | diagnostic mapping | max 24 keys per object, depth max 3 |
 | diagnostic list value | max 8 items |
 | diagnostic key | max 80 chars |

@@ -21,6 +21,8 @@ from memo_stack_server.composition import Container
 
 router = APIRouter(tags=["context"], dependencies=[Depends(require_service_token)])
 
+_MAX_PUBLIC_CONTEXT_SOURCE_REFS = 20
+
 
 class ContextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -47,7 +49,13 @@ class ContextRequest(BaseModel):
 
 
 def context_item_to_response(item) -> dict[str, Any]:
-    diagnostics = item.diagnostics or {}
+    diagnostics = dict(item.diagnostics or {})
+    source_refs = tuple(item.source_refs)
+    public_source_refs = source_refs[:_MAX_PUBLIC_CONTEXT_SOURCE_REFS]
+    if len(source_refs) > len(public_source_refs):
+        diagnostics["source_refs_total"] = len(source_refs)
+        diagnostics["source_refs_returned"] = len(public_source_refs)
+        diagnostics["source_refs_truncated"] = True
     return {
         "item_id": item.item_id,
         "item_type": item.item_type,
@@ -65,7 +73,7 @@ def context_item_to_response(item) -> dict[str, Any]:
                 if ref.quote_preview
                 else None,
             }
-            for ref in item.source_refs
+            for ref in public_source_refs
         ],
         "is_instruction": item.is_instruction,
         "diagnostics": diagnostics,

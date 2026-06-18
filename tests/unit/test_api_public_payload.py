@@ -285,3 +285,40 @@ def test_fact_relation_response_defaults_legacy_temporal_fields_and_redacts_reas
     assert response["status"] == "active"
     assert raw_secret not in rendered
     assert "[redacted]" in response["reason"]
+
+
+def test_context_item_response_bounds_source_refs_with_truncation_diagnostics() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+
+    response = context_item_to_response(
+        SimpleNamespace(
+            item_id="chunk_many_refs",
+            item_type="chunk",
+            diagnostics={"retrieval_source": "keyword_chunks"},
+            text="safe chunk text",
+            score=1.0,
+            source_refs=[
+                SimpleNamespace(
+                    source_type="chunk",
+                    source_id=f"chunk_{index}",
+                    chunk_id=f"chunk_{index}",
+                    char_start=index,
+                    char_end=index + 1,
+                    quote_preview=f"quote with Bearer {raw_secret}",
+                )
+                for index in range(25)
+            ],
+            is_instruction=False,
+        )
+    )
+
+    rendered = json.dumps(response, sort_keys=True)
+
+    assert len(response["source_refs"]) == 20
+    assert response["source_refs"][0]["source_id"] == "chunk_0"
+    assert response["source_refs"][-1]["source_id"] == "chunk_19"
+    assert response["diagnostics"]["source_refs_total"] == 25
+    assert response["diagnostics"]["source_refs_returned"] == 20
+    assert response["diagnostics"]["source_refs_truncated"] is True
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
