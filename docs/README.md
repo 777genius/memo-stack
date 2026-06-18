@@ -54,6 +54,7 @@ Local smokes:
 make memo-stack-smoke
 make memo-stack-smoke-full
 make memo-stack-mcp-smoke
+make memo-stack-multimodal-production-e2e
 make memo-stack-frontend-marionette-memory-e2e
 ```
 
@@ -77,6 +78,10 @@ specific target ranking against a similar distractor, event-like call linking
 against a recent chat distractor, person/project anchor suggestions, same-name
 person/project disambiguation, review approval, high-impact relation review
 gates, and the no-candidate path for unrelated captures.
+`memo-stack-multimodal-production-e2e` is the local multimodal acceptance gate.
+It uploads document, image, audio and video assets into an isolated server,
+runs extraction, checks artifacts/source chunks and approves semantic links
+without requiring paid provider keys.
 `memo-stack-frontend-marionette-memory-e2e` starts the Flutter debug app against
 the local Docker backend and validates the frontend memory save/review path
 through VM service extensions: create scope, save capture, approve a context-link

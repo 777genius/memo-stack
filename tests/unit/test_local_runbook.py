@@ -37,6 +37,11 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
     assert "$(PYTHON) -m memo_stack_server eval run --suite semantic-linking-golden" in makefile
     assert "$(PYTHON) -m memo_stack_server eval run --suite long-memory-golden" in makefile
     assert "$(PYTHON) -m pytest tests/e2e" in makefile
+    assert ".PHONY: memo-stack-multimodal-production-e2e" in makefile
+    assert (
+        "$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py -q"
+        in makefile
+    )
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
     assert "$(MAKE) memo-stack-api-smoke" in makefile
 

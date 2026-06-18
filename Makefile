@@ -53,6 +53,10 @@ memo-stack-test-integration:
 memo-stack-test-e2e:
 	$(PYTHON) -m pytest tests/e2e
 
+.PHONY: memo-stack-multimodal-production-e2e
+memo-stack-multimodal-production-e2e:
+	$(PYTHON) -m pytest tests/e2e/test_multimodal_production_acceptance_e2e.py -q
+
 .PHONY: memo-stack-frontend-pub-get
 memo-stack-frontend-pub-get:
 	cd $(FRONTEND_DIR) && $(FLUTTER) pub get
