@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/context_link_endpoint_dialog.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/sidebar_formatters.dart';
 import 'package:frontend/src/presentation/theme/app_theme.dart';
 
@@ -253,6 +254,37 @@ class _ContextLinkSuggestionTile extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              TextButton.icon(
+                key: ValueKey(
+                  'context_link_suggestion_source_${sidebarKeyPart(suggestion.id)}',
+                ),
+                onPressed: () => showContextLinkEndpointDialog(
+                  context,
+                  suggestion,
+                  endpoint: ContextLinkEndpoint.source,
+                ),
+                icon: const Icon(Icons.input_outlined, size: 16),
+                label: const Text('Source'),
+              ),
+              TextButton.icon(
+                key: ValueKey(
+                  'context_link_suggestion_target_${sidebarKeyPart(suggestion.id)}',
+                ),
+                onPressed: () => showContextLinkEndpointDialog(
+                  context,
+                  suggestion,
+                  endpoint: ContextLinkEndpoint.target,
+                ),
+                icon: const Icon(Icons.output_outlined, size: 16),
+                label: const Text('Target'),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           _SuggestionActions(suggestion: suggestion, expanded: true),

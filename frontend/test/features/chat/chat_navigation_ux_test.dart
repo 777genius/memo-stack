@@ -463,6 +463,71 @@ void main() {
     expect(find.textContaining('matched_terms: alex, q3'), findsOneWidget);
   });
 
+  testWidgets('operations console opens source and target from review modal', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.contextLinkSuggestions = [
+      _suggestion(
+        'ctxlinksug-1',
+        metadata: const {
+          'source_label': 'Call note',
+          'source_preview': 'Alex said Q3 rollout is approved.',
+          'target_label': 'Q3 roadmap',
+          'target_preview': 'Alex confirmed Q3 rollout.',
+          'matched_terms': ['alex', 'q3'],
+        },
+      ),
+    ];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshOperationsConsole();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link suggestions'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_operations_source_ctxlinksug_1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('context_link_endpoint_dialog')),
+        findsOneWidget);
+    expect(find.text('Source evidence'), findsOneWidget);
+    expect(find.text('Call note'), findsOneWidget);
+    expect(find.text('capture-1'), findsOneWidget);
+    expect(find.text('Alex said Q3 rollout is approved.'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('context_link_endpoint_close_button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_operations_target_ctxlinksug_1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('context_link_endpoint_dialog')),
+        findsOneWidget);
+    expect(find.text('Target memory'), findsOneWidget);
+    expect(find.text('Q3 roadmap'), findsWidgets);
+    expect(find.text('fact-1'), findsOneWidget);
+    expect(find.text('Alex confirmed Q3 rollout.'), findsWidgets);
+  });
+
   testWidgets('operations console creates edited manual link from suggestion', (
     tester,
   ) async {
@@ -840,6 +905,7 @@ ThemeData _testTheme() {
   return ThemeData(
     useMaterial3: true,
     colorSchemeSeed: Colors.blue,
+    splashFactory: InkRipple.splashFactory,
     extensions: [
       const AppThemeColors(
         userBubbleBg: Color(0xFF1565C0),

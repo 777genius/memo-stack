@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/context_link_endpoint_dialog.dart';
 
 class MemoryOperationsLinkReviewTab extends StatefulWidget {
   final List<MemoryContextLinkSuggestion> suggestions;
@@ -340,6 +341,32 @@ class _SuggestionActions extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            IconButton(
+              key: ValueKey(
+                'memory_operations_source_${_keyPart(suggestion.id)}',
+              ),
+              tooltip: 'Open source',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => showContextLinkEndpointDialog(
+                context,
+                suggestion,
+                endpoint: ContextLinkEndpoint.source,
+              ),
+              icon: const Icon(Icons.input_outlined, size: 18),
+            ),
+            IconButton(
+              key: ValueKey(
+                'memory_operations_target_${_keyPart(suggestion.id)}',
+              ),
+              tooltip: 'Open target',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => showContextLinkEndpointDialog(
+                context,
+                suggestion,
+                endpoint: ContextLinkEndpoint.target,
+              ),
+              icon: const Icon(Icons.output_outlined, size: 18),
+            ),
             IconButton(
               key: ValueKey(
                 'memory_operations_evidence_${_keyPart(suggestion.id)}',
