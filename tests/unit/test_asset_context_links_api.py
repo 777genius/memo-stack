@@ -1754,6 +1754,7 @@ def test_context_link_suggestions_redact_public_diagnostics(tmp_path: Path) -> N
 
 
 def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path) -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
     with make_client(tmp_path) as client:
         upload = client.post(
             "/v1/assets",
@@ -1868,7 +1869,7 @@ def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path)
 
         reviewed = client.post(
             f"/v1/context-link-suggestions/{suggestion_id}/review",
-            json={"action": "approve", "reason": "approved from operations console"},
+            json={"action": "approve", "reason": f"approved from operations console {raw_secret}"},
             headers=auth_headers(),
         )
         assert reviewed.status_code == 200, reviewed.text
@@ -1889,8 +1890,11 @@ def test_operations_console_summarizes_ingestion_and_link_review(tmp_path: Path)
             item for item in review_data["context_link_suggestions"] if item["id"] == suggestion_id
         )
         assert reviewed_suggestion["status"] == "approved"
-        assert reviewed_suggestion["review_reason"] == "approved from operations console"
+        assert reviewed_suggestion["review_reason"] == "[redacted]"
         assert reviewed_suggestion["reviewed_at"]
+        rendered_review_data = json.dumps(review_data, sort_keys=True)
+        assert raw_secret not in rendered_review_data
+        assert reviewed_suggestion["review_audit"]["events"][-1]["reason"] == "[redacted]"
 
         retry = client.post(
             f"/v1/asset-extractions/{extraction_id}/retry",
