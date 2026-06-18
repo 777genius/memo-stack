@@ -54,6 +54,8 @@ _HIGH_IMPACT_RELATION_SIGNAL_CODES = frozenset(
         "explicit_correction",
     }
 )
+_AUTO_APPROVE_SIGNAL_CODES = _STRONG_REVIEW_SIGNAL_CODES - frozenset({"recent_context"})
+MIN_AUTO_APPROVE_INDEPENDENT_SIGNALS = 2
 
 
 @dataclass(frozen=True)
@@ -169,12 +171,14 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
         )
 
     confidence = _confidence_for_score(candidate.score)
+    auto_approve_signal_count = _auto_approve_signal_count(reason_codes)
     auto_approve_eligible = (
         candidate.score >= AUTO_APPROVE_ELIGIBLE_SCORE
         and candidate.target_type in _AUTO_APPROVE_TARGET_TYPES
         and relation_type not in _HIGH_IMPACT_RELATION_TYPES
         and "text_match" in reason_codes
         and "recent_context" not in reason_codes
+        and auto_approve_signal_count >= MIN_AUTO_APPROVE_INDEPENDENT_SIGNALS
     )
     review_blocked = candidate.target_type in _REVIEW_BLOCKED_TARGET_TYPES
     outcome = (
@@ -185,6 +189,15 @@ def decide_context_link_candidate(candidate: ContextLinkCandidate) -> ContextLin
     decision_codes = ["score_threshold_met", *reason_codes]
     if review_blocked:
         decision_codes.append("review_required_target_type")
+    if (
+        candidate.score >= AUTO_APPROVE_ELIGIBLE_SCORE
+        and candidate.target_type in _AUTO_APPROVE_TARGET_TYPES
+        and relation_type not in _HIGH_IMPACT_RELATION_TYPES
+        and "text_match" in reason_codes
+        and "recent_context" not in reason_codes
+        and auto_approve_signal_count < MIN_AUTO_APPROVE_INDEPENDENT_SIGNALS
+    ):
+        decision_codes.append("insufficient_independent_signals")
     if auto_approve_eligible and not review_blocked:
         decision_codes.append("auto_approve_eligible")
     else:
@@ -256,6 +269,10 @@ def _deny_reason_codes(
     ):
         codes.append("high_impact_relation_requires_explicit_signal")
     return tuple(codes)
+
+
+def _auto_approve_signal_count(reason_codes: tuple[str, ...]) -> int:
+    return len(_AUTO_APPROVE_SIGNAL_CODES.intersection(reason_codes))
 
 
 def _relation_type_for_candidate(candidate: ContextLinkCandidate) -> tuple[str, str | None]:

@@ -107,8 +107,25 @@ def test_policy_allows_low_score_with_strong_temporal_signal_for_review() -> Non
     assert result.candidates[0].metadata["policy_decision"] == "needs_review"
 
 
-def test_policy_marks_strong_text_match_as_auto_approve_eligible_but_review_gated() -> None:
+def test_policy_keeps_single_signal_high_score_candidate_review_only() -> None:
     decision = decide_context_link_candidate(_candidate(target_id="strong", score=94))
+
+    assert decision.outcome == "needs_review"
+    assert decision.confidence == "high"
+    assert decision.requires_review is True
+    assert decision.auto_approve_eligible is False
+    assert "insufficient_independent_signals" in decision.reason_codes
+    assert "auto_approve_eligible" not in decision.reason_codes
+
+
+def test_policy_marks_two_signal_text_match_as_auto_approve_eligible_but_review_gated() -> None:
+    decision = decide_context_link_candidate(
+        _candidate(
+            target_id="strong",
+            score=94,
+            reason_codes=["text_match", "explicit_project_reference"],
+        )
+    )
 
     assert decision.outcome == "auto_approve_candidate"
     assert decision.confidence == "high"
@@ -137,7 +154,18 @@ def test_policy_keeps_suggestion_targets_review_only_even_with_high_score() -> N
 
 def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
     candidates = tuple(
-        [_candidate(target_id="same", score=96), _candidate(target_id="same", score=95)]
+        [
+            _candidate(
+                target_id="same",
+                score=96,
+                reason_codes=["text_match", "explicit_project_reference"],
+            ),
+            _candidate(
+                target_id="same",
+                score=95,
+                reason_codes=["text_match", "explicit_project_reference"],
+            ),
+        ]
         + [_candidate(target_id=f"target_{index}", score=80) for index in range(20)]
     )
 
