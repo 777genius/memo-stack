@@ -75,6 +75,7 @@ parallel memory model and needs an ADR before implementation.
 | `bounded-provenance` | Context items expose bounded scoring/provenance diagnostics without secrets | SDK/API contract tests, redaction tests |
 | `legacy-compatible` | Old payloads and rows map to safe defaults at boundaries, with diagnostics | SDK compatibility tests, transfer preview tests |
 | `multimodal-evidence-first` | Documents, images, audio and video produce evidence artifacts before semantic promotion | multimodal extraction tests, review-gated linking tests |
+| `public-multimodal-contract` | Frontend and SDK discover supported modalities, evidence coordinates and artifact types from capabilities, not implementation guesses | capabilities API and SDK contract tests |
 
 ## Locked Product Model
 
@@ -227,6 +228,40 @@ Provider rules:
 The manifest is retrieval and review evidence. It does not replace canonical
 chunk source refs, context-link review, anchor identity checks or temporal
 validity.
+
+### Public Capabilities Contract
+
+Frontend, SDK, CLI and MCP clients must not infer multimodal behavior from
+parser names, provider package installation or implementation-specific artifact
+filenames. They must use the public `/v1/capabilities` extraction payload.
+
+Locked public fields:
+
+```text
+extraction.evidence_contract.schema_version: memo_stack.extraction_evidence_contract.v1
+extraction.evidence_contract.source_ref_coordinate_fields:
+  char_start, char_end, page_number, bbox, time_start_ms, time_end_ms
+extraction.profiles_v2[].input_modalities
+extraction.profiles_v2[].evidence_coordinates
+extraction.profiles_v2[].primary_artifact_types
+extraction.profiles_v2[].external_provider_egress
+extraction.profiles_v2[].requires_explicit_external_ai
+extraction.profiles_v2[].may_run_local_asr
+```
+
+Contract rules:
+
+- Field additions must be additive or versioned.
+- `primary_artifact_types` uses stored `artifact_type` values, for example
+  `normalized_json`, `table_html`, `vision_json`, `image_regions`,
+  `transcript`, `transcript_json`, `media_manifest`, `keyframe` and
+  `video_frame_timeline`.
+- `evidence_coordinates` describes what a profile can produce, not what every
+  item must contain. Coordinates remain optional per source ref.
+- External provider egress and local ASR cost/load signals must be explicit
+  before the frontend offers the profile.
+- Public capability diagnostics must never include API keys, raw provider
+  payloads, prompts, local unrestricted paths or user file bytes.
 
 ## Canonical Anchors vs Tags
 
@@ -784,7 +819,7 @@ considered complete. This is intentionally stricter than "route exists" or
 | context assembly | ranking reason, score signals, provenance and counters are bounded | API/SDK contract tests plus quality-golden coverage |
 | semantic linking | thresholds, deny rules, duplicate suppression and review state are explicit | policy tests plus semantic-linking-golden coverage |
 | migration compatibility | old missing fields and public payload defaults are enumerated | legacy row, import/export, API and SDK regression tests |
-| multimodal ingestion | artifact model, coordinates and provider degradation are explicit | document/image/audio/video extraction tests with source refs |
+| multimodal ingestion | artifact model, public capability contract, coordinates and provider degradation are explicit | document/image/audio/video extraction tests with source refs plus capabilities API/SDK contract tests |
 | review UX/API/SDK | approve/reject/edit/batch semantics and audit event are explicit | API/SDK tests for filters, target override, bounded batch and audit |
 | observability | counters are bounded and redacted | diagnostics size/redaction tests |
 | performance guardrail | candidate, evidence, diagnostics and batch caps are explicit | bounded payload and N+1 regression tests where applicable |
@@ -817,6 +852,7 @@ green.
 | Context diagnostics are bounded, typed and non-sensitive | context diagnostics, public API DTOs, SDK typed context helpers | SDK/API contract tests prove bounded retrieval sources, ranking reason, provenance, counters and redaction |
 | Golden evals protect product memory quality | eval catalogs and eval runner | eval runner tests prove diagnostic requirements support exact and lower-bound checks without leaking secrets |
 | Multimodal inputs stay evidence-first | extraction use cases, asset/document/transcript/keyframe artifacts, provider adapters | image/audio/video/document tests prove extracted output keeps source refs, time ranges or bbox and stays review-gated when ambiguous |
+| Public clients discover multimodal behavior through capabilities | `/v1/capabilities`, SDK typed diagnostics, frontend profile selectors | capabilities tests prove modalities, coordinate fields, artifact types, external egress and local ASR signals stay explicit and redacted |
 | API and SDK review flows are equivalent to UI | review use cases, API routes, SDK helpers, frontend review queue | API/SDK tests cover filters, approve/reject reason, target override, bounded batch review and typed diagnostics |
 | Observability is bounded and safe | diagnostics builders, audit metadata, migration reports, worker events | tests prove counters exist, sensitive values are redacted and payload budgets are enforced |
 | Migration compatibility is preserved | mappers, import/export, API DTOs, SDK DTOs | legacy row/payload fixtures prove safe defaults for missing confidence, evidence refs, temporal windows and diagnostics |
