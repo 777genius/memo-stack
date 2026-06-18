@@ -141,6 +141,12 @@ def apply_context_link_policy(
             "link_policy_duplicate_suppressed_count": duplicate_count,
             "link_policy_auto_approve_eligible_count": auto_eligible_count,
             "link_policy_needs_review_count": needs_review_count,
+            "link_policy_decision_counts": {
+                "deny": denied_count,
+                "duplicate_suppressed": duplicate_count,
+                "auto_approve_candidate": auto_eligible_count,
+                "needs_review": needs_review_count,
+            },
             "link_policy_max_suggestions_per_source": max_suggestions,
             "link_policy_denied_reason_counts": denied_reason_counts,
             "link_policy_denied_candidates": denied_candidates,

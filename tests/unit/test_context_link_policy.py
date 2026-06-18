@@ -62,6 +62,12 @@ def test_policy_denies_low_score_without_strong_link_signal() -> None:
     assert result.diagnostics["link_policy_denied_reason_counts"] == {
         "weak_signal_below_review_threshold": 1
     }
+    assert result.diagnostics["link_policy_decision_counts"] == {
+        "deny": 1,
+        "duplicate_suppressed": 0,
+        "auto_approve_candidate": 0,
+        "needs_review": 0,
+    }
 
 
 def test_policy_redacts_denied_candidate_diagnostics() -> None:
@@ -139,6 +145,12 @@ def test_policy_applies_metadata_caps_and_duplicate_suppression() -> None:
 
     assert len(result.candidates) == MAX_SUGGESTIONS_PER_SOURCE
     assert result.diagnostics["link_policy_duplicate_suppressed_count"] == 1
+    assert result.diagnostics["link_policy_decision_counts"] == {
+        "deny": 0,
+        "duplicate_suppressed": 1,
+        "auto_approve_candidate": 1,
+        "needs_review": MAX_SUGGESTIONS_PER_SOURCE - 1,
+    }
     assert result.diagnostics["link_policy_max_suggestions_per_source"] == (
         MAX_SUGGESTIONS_PER_SOURCE
     )
