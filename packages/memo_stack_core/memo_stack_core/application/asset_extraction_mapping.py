@@ -11,6 +11,8 @@ from memo_stack_core.ports.extraction import ExtractedElement, ExtractionResult
 
 ASSET_EXTRACTION_SOURCE_TYPE = "asset_extraction"
 _MAX_SOURCE_REFS = 200
+_MAX_RESULT_JSON_ELEMENTS = 100
+_MAX_RESULT_JSON_ELEMENT_TEXT_CHARS = 4_000
 
 
 def extracted_text(result: ExtractionResult) -> str:
@@ -53,6 +55,7 @@ def asset_extraction_chunk_metadata(
 
 
 def result_json(result: ExtractionResult) -> str:
+    serialized_elements, text_truncated_count = _result_json_elements(result)
     payload = {
         "status": result.status,
         "normalized_content_type": safe_metadata_text(result.normalized_content_type),
@@ -65,19 +68,11 @@ def result_json(result: ExtractionResult) -> str:
         "model_version": safe_metadata_text(result.model_version) if result.model_version else None,
         "technical_metadata": safe_metadata(result.technical_metadata),
         "diagnostics": safe_metadata(result.diagnostics),
-        "elements": [
-            {
-                "kind": element.kind,
-                "text": element.text,
-                "page_number": element.page_number,
-                "time_start_ms": element.time_start_ms,
-                "time_end_ms": element.time_end_ms,
-                "bbox": element.bbox,
-                "confidence": element.confidence,
-                "metadata": safe_metadata(element.metadata),
-            }
-            for element in result.elements
-        ],
+        "element_count_total": len(result.elements),
+        "element_count_serialized": len(serialized_elements),
+        "elements_truncated": len(result.elements) > len(serialized_elements),
+        "element_text_truncated_count": text_truncated_count,
+        "elements": serialized_elements,
     }
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
@@ -92,6 +87,31 @@ def artifact_storage_key(
 ) -> str:
     safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in filename)[:160]
     return f"{space_id}/{memory_scope_id}/extractions/{job_id}/{digest[:2]}/{digest}/{safe_name}"
+
+
+def _result_json_elements(result: ExtractionResult) -> tuple[list[dict[str, object]], int]:
+    items: list[dict[str, object]] = []
+    text_truncated_count = 0
+    for element in result.elements[:_MAX_RESULT_JSON_ELEMENTS]:
+        safe_text = safe_metadata_text(
+            element.text,
+            limit=_MAX_RESULT_JSON_ELEMENT_TEXT_CHARS,
+        )
+        if len(element.text) > len(safe_text):
+            text_truncated_count += 1
+        items.append(
+            {
+                "kind": safe_metadata_text(element.kind, limit=120),
+                "text": safe_text,
+                "page_number": element.page_number,
+                "time_start_ms": element.time_start_ms,
+                "time_end_ms": element.time_end_ms,
+                "bbox": element.bbox,
+                "confidence": element.confidence,
+                "metadata": safe_metadata(element.metadata),
+            }
+        )
+    return items, text_truncated_count
 
 
 def _extraction_source_refs(

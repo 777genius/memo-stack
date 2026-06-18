@@ -107,6 +107,33 @@ def test_extraction_result_json_redacts_provider_metadata() -> None:
     assert "[redacted]" in payload["elements"][0]["metadata"]["source"]
 
 
+def test_extraction_result_json_bounds_elements_and_text() -> None:
+    rendered = result_json(
+        ExtractionResult(
+            status="succeeded",
+            normalized_content_type="text/plain",
+            title="Large extraction",
+            parser_name="large_parser",
+            elements=tuple(
+                ExtractedElement(
+                    kind="text",
+                    text=f"{index}-" + ("x" * 5_000),
+                    metadata={"source": "provider"},
+                )
+                for index in range(120)
+            ),
+        )
+    )
+    payload = json.loads(rendered)
+
+    assert payload["element_count_total"] == 120
+    assert payload["element_count_serialized"] == 100
+    assert payload["elements_truncated"] is True
+    assert payload["element_text_truncated_count"] == 100
+    assert len(payload["elements"]) == 100
+    assert all(len(item["text"]) == 4_000 for item in payload["elements"])
+
+
 def test_asset_extraction_chunk_metadata_redacts_provider_source() -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     now = datetime(2026, 6, 14, 10, tzinfo=UTC)
