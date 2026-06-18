@@ -115,6 +115,26 @@ class ExtractionCapabilityDiagnostics:
         status = provider.get("status")
         return str(status) if status is not None else None
 
+    def provider_action(self, name: str) -> str | None:
+        provider = self.providers.get(name)
+        if provider is None:
+            return None
+        action = provider.get("operator_action")
+        return str(action) if action is not None else None
+
+    def provider_user_retryable(self, name: str) -> bool | None:
+        provider = self.providers.get(name)
+        if provider is None:
+            return None
+        retryable = provider.get("user_retryable")
+        return bool(retryable) if retryable is not None else None
+
+    def degraded_component(self, component_type: str, name: str) -> dict[str, Any] | None:
+        for component in self.degraded_components:
+            if component.get("component_type") == component_type and component.get("name") == name:
+                return component
+        return None
+
     def modality_action(self, modality: str, action: str) -> dict[str, Any] | None:
         actions = self.modality_actions.get(modality)
         if actions is None:

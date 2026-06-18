@@ -369,6 +369,13 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                     ],
                     "providers": {
                         "transcription_api": {"status": "ok", "configured": True},
+                        "openai_vision": {
+                            "status": "blocked",
+                            "configured": False,
+                            "reason": "provider_credential_missing",
+                            "user_retryable": False,
+                            "operator_action": "configure_provider_credential",
+                        },
                     },
                     "policy": {"schema_version": 2, "external_ai_allowed": True},
                     "evidence_contract": {
@@ -447,12 +454,16 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "name": "openai_vision",
                             "status": "blocked",
                             "reason": "provider_credential_missing",
+                            "user_retryable": False,
+                            "operator_action": "configure_provider_credential",
                         },
                         {
                             "component_type": "modality_action",
                             "name": "image.vision",
                             "status": "blocked",
                             "reason": "provider_credential_missing",
+                            "user_retryable": False,
+                            "operator_action": "configure_provider_credential",
                         },
                     ],
                     "limits": {"max_media_seconds": 600},
@@ -525,16 +536,31 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
             "name": "openai_vision",
             "status": "blocked",
             "reason": "provider_credential_missing",
+            "user_retryable": False,
+            "operator_action": "configure_provider_credential",
         },
         {
             "component_type": "modality_action",
             "name": "image.vision",
             "status": "blocked",
             "reason": "provider_credential_missing",
+            "user_retryable": False,
+            "operator_action": "configure_provider_credential",
         },
     )
     assert diagnostics.limits["max_media_seconds"] == 600
     assert diagnostics.provider_status("transcription_api") == "ok"
+    assert diagnostics.provider_action("openai_vision") == "configure_provider_credential"
+    assert diagnostics.provider_user_retryable("openai_vision") is False
+    assert diagnostics.degraded_component("provider", "openai_vision") == {
+        "component_type": "provider",
+        "name": "openai_vision",
+        "status": "blocked",
+        "reason": "provider_credential_missing",
+        "user_retryable": False,
+        "operator_action": "configure_provider_credential",
+    }
+    assert diagnostics.degraded_component("provider", "missing") is None
     media_api = diagnostics.profile("media_api")
     assert media_api is not None
     assert media_api.status == "ok"

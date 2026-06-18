@@ -187,6 +187,7 @@ class _ProviderState:
         }
         if self.reason is not None:
             payload["reason"] = self.reason
+        payload.update(_recovery_policy(status=self.status, reason=self.reason))
         payload.update(self.metadata)
         return payload
 
@@ -451,6 +452,7 @@ def _profile_payload(
     }
     if reason is not None:
         payload["reason"] = reason
+    payload.update(_recovery_policy(status=status, reason=reason))
     if deprecated:
         payload["deprecated"] = True
     if replacement_profiles:
@@ -677,6 +679,12 @@ def _modality_action_payload(
     reason = profile.get("reason")
     if isinstance(reason, str) and reason:
         payload["reason"] = reason
+    payload.update(
+        _recovery_policy(
+            status=str(profile.get("status") or "unknown"),
+            reason=reason if isinstance(reason, str) else None,
+        )
+    )
     return payload
 
 
@@ -733,7 +741,41 @@ def _append_degraded_component(
     }
     if reason is not None:
         item["reason"] = reason
+    item.update(_recovery_policy(status=status, reason=reason))
     components.append(item)
+
+
+def _recovery_policy(*, status: str, reason: str | None) -> dict[str, object]:
+    if status == "ok":
+        return {}
+    normalized = (reason or status).strip().lower()
+    action = {
+        "extraction_disabled": "enable_extraction",
+        "external_ai_disabled": "enable_external_ai",
+        "provider_credential_missing": "configure_provider_credential",
+        "provider_disabled": "enable_provider",
+        "provider_package_missing": "install_provider_package",
+    }.get(normalized)
+    if action is None:
+        action = {
+            "blocked": "fix_configuration",
+            "disabled": "enable_component",
+            "unavailable": "check_provider_runtime",
+        }.get(status, "check_component")
+    retryable = any(
+        marker in normalized
+        for marker in (
+            "connection",
+            "rate_limited",
+            "timeout",
+            "transient",
+            "unavailable",
+        )
+    )
+    return {
+        "user_retryable": retryable,
+        "operator_action": action,
+    }
 
 
 def _optional_reason(value: object) -> str | None:

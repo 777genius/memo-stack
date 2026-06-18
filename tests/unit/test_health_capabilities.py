@@ -340,18 +340,24 @@ def test_capabilities_return_noop_adapters() -> None:
         "name": "openai_vision",
         "status": openai_vision["status"],
         "reason": openai_vision["reason"],
+        "user_retryable": openai_vision["user_retryable"],
+        "operator_action": openai_vision["operator_action"],
     }
     assert degraded_components[("profile", "standard_vision")] == {
         "component_type": "profile",
         "name": "standard_vision",
         "status": standard_vision["status"],
         "reason": standard_vision["reason"],
+        "user_retryable": standard_vision["user_retryable"],
+        "operator_action": standard_vision["operator_action"],
     }
     assert degraded_components[("modality_action", "image.vision")] == {
         "component_type": "modality_action",
         "name": "image.vision",
         "status": image_vision["status"],
         "reason": image_vision["reason"],
+        "user_retryable": image_vision["user_retryable"],
+        "operator_action": image_vision["operator_action"],
     }
     assert ("profile", "standard_local") not in degraded_components
     assert ("modality_action", "image.metadata") not in degraded_components
@@ -586,9 +592,13 @@ def test_capabilities_keep_transcription_disabled_when_provider_is_disabled(
     assert extraction["optional_extras"]["transcription_api"]["provider"] == "disabled"
     assert extraction["providers"]["transcription_api"]["status"] == "blocked"
     assert extraction["providers"]["transcription_api"]["reason"] == "provider_disabled"
+    assert extraction["providers"]["transcription_api"]["user_retryable"] is False
+    assert extraction["providers"]["transcription_api"]["operator_action"] == "enable_provider"
     profile_states = {profile["name"]: profile for profile in extraction["profiles_v2"]}
     assert profile_states["media_api"]["status"] == "blocked"
     assert profile_states["media_api"]["reason"] == "provider_disabled"
+    assert profile_states["media_api"]["user_retryable"] is False
+    assert profile_states["media_api"]["operator_action"] == "enable_provider"
     assert "sk-unused-transcription-secret" not in response.text
 
 
