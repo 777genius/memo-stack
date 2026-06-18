@@ -122,6 +122,7 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                 end_ms=_duration_to_ms(result.duration_seconds or probe.duration_seconds),
             ),
         )
+        transcript_features = _transcript_feature_metadata(segments, result.words)
         elements = tuple(
             ExtractedElement(
                 kind="transcript_segment",
@@ -200,6 +201,7 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                     metadata={
                         "parser": self.name,
                         "segment_count": len(segments),
+                        **transcript_features,
                         "transcription_provider": safe_metadata_text(result.provider_name),
                         "transcription_model": safe_metadata_text(result.provider_model)
                         if result.provider_model
@@ -215,6 +217,7 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                         "parser": self.name,
                         "segment_count": len(segments),
                         "word_count": len(result.words),
+                        **transcript_features,
                         "transcription_provider": safe_metadata_text(result.provider_name),
                         "transcription_model": safe_metadata_text(result.provider_model)
                         if result.provider_model
@@ -235,6 +238,7 @@ class SpeechTranscriptionExtractionEngine(ExtractionEngine):
                 "transcription_provider_version": result.provider_version,
                 "transcript_json_status": "extracted",
                 "transcript_word_count": len(result.words),
+                **transcript_features,
                 "keyframe_status": "extracted" if keyframes else "not_applicable",
                 "output_chars": len(markdown),
                 **(frame_evidence.metadata if frame_evidence is not None else {}),
@@ -305,11 +309,36 @@ def _transcript_json_bytes(
             else None,
             "diagnostics": safe_metadata(result.diagnostics),
         },
+        "features": _transcript_feature_metadata(segments, result.words),
         "text": result.text,
         "segments": [_segment_payload(segment) for segment in segments],
         "words": [_word_payload(word) for word in result.words],
     }
     return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _transcript_feature_metadata(
+    segments: tuple[SpeechTranscriptSegment, ...],
+    words: tuple[SpeechTranscriptWord, ...],
+) -> dict[str, object]:
+    features: list[str] = []
+    if segments:
+        features.append("segments")
+    if any(segment.start_ms is not None or segment.end_ms is not None for segment in segments):
+        features.append("time_ranges")
+    if any(segment.speaker for segment in segments) or any(word.speaker for word in words):
+        features.append("speaker_labels")
+    if words:
+        features.append("words")
+    if any(word.start_ms is not None or word.end_ms is not None for word in words):
+        features.append("word_timestamps")
+    return {
+        "transcript_features": features,
+        "transcript_feature_names": ",".join(features),
+        "has_time_ranges": "time_ranges" in features,
+        "has_speaker_labels": "speaker_labels" in features,
+        "has_word_timestamps": "word_timestamps" in features,
+    }
 
 
 def _segment_payload(segment: SpeechTranscriptSegment) -> dict[str, object]:

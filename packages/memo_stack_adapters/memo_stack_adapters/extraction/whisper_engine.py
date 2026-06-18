@@ -157,6 +157,7 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
             f"{_format_timestamp_ms(item.end_ms)}\n{item.text}"
             for item in segment_items
         )
+        transcript_features = _local_transcript_feature_metadata(segment_items)
         duration_seconds = (
             _positive_float(getattr(info, "duration", None)) or probe.duration_seconds
         )
@@ -172,6 +173,7 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
             "asr_compute_type": self._compute_type,
             "language_probability": _positive_float(getattr(info, "language_probability", None)),
             "output_chars": len(markdown),
+            **transcript_features,
             **(probe.metadata or {}),
         }
         transcript_json = json.dumps(
@@ -188,6 +190,7 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
                     "model": model_name,
                     "version": _faster_whisper_version(),
                 },
+                "features": transcript_features,
                 "text": "\n".join(item.text for item in segment_items),
                 "segments": [
                     {
@@ -226,6 +229,7 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
                         "parser": self.name,
                         "segment_count": len(elements),
                         "asr_model": model_name,
+                        **transcript_features,
                     },
                 ),
                 ExtractionArtifactCandidate(
@@ -238,6 +242,7 @@ class FasterWhisperTranscriptionEngine(ExtractionEngine):
                         "segment_count": len(elements),
                         "word_count": 0,
                         "asr_model": model_name,
+                        **transcript_features,
                     },
                 ),
             ),
@@ -307,6 +312,23 @@ def _segment_item(segment: object) -> _SegmentItem:
         text=_safe_text(getattr(segment, "text", None)) or "",
         confidence=_segment_confidence(segment),
     )
+
+
+def _local_transcript_feature_metadata(
+    segment_items: tuple[_SegmentItem, ...],
+) -> dict[str, object]:
+    features: list[str] = []
+    if segment_items:
+        features.append("segments")
+    if any(item.start_ms is not None or item.end_ms is not None for item in segment_items):
+        features.append("time_ranges")
+    return {
+        "transcript_features": features,
+        "transcript_feature_names": ",".join(features),
+        "has_time_ranges": "time_ranges" in features,
+        "has_speaker_labels": False,
+        "has_word_timestamps": False,
+    }
 
 
 def _segment_confidence(segment: object) -> float | None:

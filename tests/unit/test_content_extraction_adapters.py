@@ -505,12 +505,64 @@ def test_speech_transcription_engine_extracts_timecoded_transcript_artifact() ->
     assert result.model_version == "gpt-4o-mini-transcribe"
     assert result.technical_metadata["transcript_status"] == "extracted"
     assert result.technical_metadata["transcription_provider"] == "openai_transcription"
+    assert result.technical_metadata["transcript_features"] == ["segments", "time_ranges"]
+    assert result.technical_metadata["has_time_ranges"] is True
+    assert result.technical_metadata["has_speaker_labels"] is False
+    assert result.technical_metadata["has_word_timestamps"] is False
     assert {artifact.artifact_type for artifact in result.artifacts} == {
         "media_manifest",
         "transcript",
         "transcript_json",
     }
+    transcript_json = next(
+        artifact for artifact in result.artifacts if artifact.artifact_type == "transcript_json"
+    )
+    payload = json.loads(transcript_json.content.decode("utf-8"))
+    assert payload["features"] == {
+        "transcript_features": ["segments", "time_ranges"],
+        "transcript_feature_names": "segments,time_ranges",
+        "has_time_ranges": True,
+        "has_speaker_labels": False,
+        "has_word_timestamps": False,
+    }
     assert "00:00:00.000 --> 00:00:02.000" in (result.markdown or "")
+
+
+def test_speech_transcription_engine_marks_diarized_transcript_features() -> None:
+    engine = SpeechTranscriptionExtractionEngine(
+        transcription=OpenAISpeechTranscriptionAdapter(
+            api_key=None,
+            model="gpt-4o-transcribe-diarize",
+            client_factory=lambda: _FakeDiarizedTranscriptionClient(),
+        )
+    )
+    request = _request(
+        parser_profile="media_api",
+        detected_content_type="audio/mpeg",
+        content=b"fake mp3 bytes",
+        filename="call.mp3",
+        enable_external_ai=True,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.technical_metadata["transcript_features"] == [
+        "segments",
+        "time_ranges",
+        "speaker_labels",
+    ]
+    assert result.technical_metadata["transcript_feature_names"] == (
+        "segments,time_ranges,speaker_labels"
+    )
+    assert result.technical_metadata["has_speaker_labels"] is True
+    assert result.technical_metadata["has_word_timestamps"] is False
+    transcript_json = next(
+        artifact for artifact in result.artifacts if artifact.artifact_type == "transcript_json"
+    )
+    payload = json.loads(transcript_json.content.decode("utf-8"))
+    assert payload["features"]["has_speaker_labels"] is True
+    assert payload["segments"][0]["speaker"] == "agent"
 
 
 def test_speech_transcription_engine_disabled_egress_falls_back_to_media_metadata() -> None:
@@ -657,10 +709,25 @@ def test_faster_whisper_engine_extracts_transcript_artifact() -> None:
     assert result.language == "en"
     assert result.technical_metadata["segment_count"] == 2
     assert result.technical_metadata["asr_model"] == "tiny"
+    assert result.technical_metadata["transcript_features"] == ["segments", "time_ranges"]
+    assert result.technical_metadata["has_time_ranges"] is True
+    assert result.technical_metadata["has_speaker_labels"] is False
+    assert result.technical_metadata["has_word_timestamps"] is False
     assert {artifact.artifact_type for artifact in result.artifacts} == {
         "media_manifest",
         "transcript",
         "transcript_json",
+    }
+    transcript_json = next(
+        artifact for artifact in result.artifacts if artifact.artifact_type == "transcript_json"
+    )
+    payload = json.loads(transcript_json.content.decode("utf-8"))
+    assert payload["features"] == {
+        "transcript_features": ["segments", "time_ranges"],
+        "transcript_feature_names": "segments,time_ranges",
+        "has_time_ranges": True,
+        "has_speaker_labels": False,
+        "has_word_timestamps": False,
     }
     assert "Alex discussed memory scopes" in (result.markdown or "")
 

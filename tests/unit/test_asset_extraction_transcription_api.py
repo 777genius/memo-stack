@@ -212,6 +212,10 @@ def test_audio_asset_extraction_uses_api_first_transcription(
         assert extracted["model_version"] == "gpt-4o-mini-transcribe"
         assert extracted["metadata"]["transcript_status"] == "extracted"
         assert extracted["metadata"]["transcription_provider"] == "openai_transcription"
+        assert extracted["metadata"]["transcript_feature_names"] == "segments,time_ranges"
+        assert extracted["metadata"]["has_time_ranges"] is True
+        assert extracted["metadata"]["has_speaker_labels"] is False
+        assert extracted["metadata"]["has_word_timestamps"] is False
         assert extracted["usage"]["media_analysis_seconds_actual"] == 1
         assert {item["artifact_type"] for item in extracted["artifacts"]} == {
             "extracted_json",
@@ -230,6 +234,13 @@ def test_audio_asset_extraction_uses_api_first_transcription(
         assert transcript_download.status_code == 200, transcript_download.text
         transcript_payload = json.loads(transcript_download.content.decode("utf-8"))
         assert transcript_payload["schema_name"] == "memo_stack.transcript"
+        assert transcript_payload["features"] == {
+            "transcript_features": ["segments", "time_ranges"],
+            "transcript_feature_names": "segments,time_ranges",
+            "has_time_ranges": True,
+            "has_speaker_labels": False,
+            "has_word_timestamps": False,
+        }
         assert transcript_payload["segments"][0]["start_ms"] == 0
         assert transcript_payload["segments"][0]["end_ms"] == 1000
         assert _PROVIDER_SECRET not in transcript_download.text
