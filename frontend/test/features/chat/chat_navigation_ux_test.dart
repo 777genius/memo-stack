@@ -513,6 +513,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Approve visible (1)'), findsOneWidget);
+    expect(find.text('Reject visible (1)'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('memory_link_batch_approve_visible_button')),
@@ -533,11 +534,114 @@ void main() {
     );
   });
 
+  testWidgets('operations console batch rejects only visible pending links', (
+    tester,
+  ) async {
+    final repo = _UxFakeChatRepository();
+    repo.contextLinkSuggestions = [
+      _suggestion(
+        'ctxlinksug-pending-fact',
+        metadata: const {
+          'target_label': 'Q3 roadmap',
+          'target_preview': 'Alex confirmed Q3 rollout.',
+        },
+      ),
+      _suggestion(
+        'ctxlinksug-pending-anchor',
+        targetType: 'anchor',
+        targetId: 'anchor-alex',
+        metadata: const {
+          'target_label': 'Alex',
+          'target_preview': 'Person anchor observed from capture text.',
+          'anchor_kind': 'person',
+          'normalized_key': 'alex',
+        },
+      ),
+      _suggestion(
+        'ctxlinksug-approved-anchor',
+        status: 'approved',
+        targetType: 'anchor',
+        targetId: 'anchor-approved-alex',
+        metadata: const {
+          'target_label': 'Approved Alex',
+          'target_preview': 'Already approved person anchor.',
+          'anchor_kind': 'person',
+          'normalized_key': 'approved-alex',
+        },
+      ),
+    ];
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await store.refreshOperationsConsole();
+    await _pumpWithStore(
+      tester,
+      store: store,
+      child: const Scaffold(
+        body: SizedBox(width: 340, height: 620, child: ChatListSidebar()),
+      ),
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey('memory_operations_open_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link suggestions'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_link_type_filter_person_anchor')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reject visible (1)'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('memory_link_batch_reject_visible_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.batchReviewedSuggestionIds, [
+      ['ctxlinksug-pending-anchor'],
+    ]);
+    expect(repo.reviewedSuggestions, ['ctxlinksug-pending-anchor:reject']);
+    expect(
+      repo.contextLinkSuggestions.map((item) => item.id),
+      contains('ctxlinksug-pending-fact'),
+    );
+    expect(
+      repo.contextLinkSuggestions.map((item) => item.id),
+      contains('ctxlinksug-approved-anchor'),
+    );
+  });
+
   testWidgets('operations console opens suggestion evidence modal', (
     tester,
   ) async {
     final repo = _UxFakeChatRepository();
-    repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
+    repo.contextLinkSuggestions = [
+      _suggestion(
+        'ctxlinksug-1',
+        metadata: const {
+          'target_label': 'Q3 roadmap',
+          'target_preview': 'Alex confirmed Q3 rollout.',
+          'matched_terms': ['alex', 'q3'],
+          'evidence_has_bbox_ref': true,
+          'evidence_has_time_range_ref': true,
+          'evidence_refs': [
+            {
+              'source_type': 'asset_extraction',
+              'source_id': 'extract-image-1',
+              'kind': 'ocr_text',
+              'bbox': [0, 0, 10, 10],
+              'time_start_ms': 1200,
+              'time_end_ms': 2400,
+              'quote_preview': 'Alex confirmed Q3 rollout.',
+            },
+          ],
+        },
+      ),
+    ];
     final store = ChatStore(repo, null);
     addTearDown(store.dispose);
     addTearDown(repo.close);
@@ -565,6 +669,10 @@ void main() {
         findsOneWidget);
     expect(find.text('Link evidence'), findsOneWidget);
     expect(find.text('capture capture-1'), findsOneWidget);
+    expect(find.text('Evidence refs'), findsOneWidget);
+    expect(find.text('ocr_text'), findsOneWidget);
+    expect(find.textContaining('source_id: extract-image-1'), findsWidgets);
+    expect(find.textContaining('bbox: 0, 0, 10, 10'), findsWidgets);
     expect(find.textContaining('matched_terms: alex, q3'), findsOneWidget);
   });
 

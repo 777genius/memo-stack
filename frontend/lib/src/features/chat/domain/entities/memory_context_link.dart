@@ -182,6 +182,16 @@ class MemoryContextLinkSuggestion extends Equatable {
 
   List<String> get evidenceKinds => _stringList(metadata['evidence_kinds']);
 
+  List<Map<String, dynamic>> get evidenceRefs =>
+      _mapList(metadata['evidence_refs']);
+
+  bool get hasBBoxEvidence => metadata['evidence_has_bbox_ref'] == true;
+
+  bool get hasTimeRangeEvidence =>
+      metadata['evidence_has_time_range_ref'] == true;
+
+  bool get hasPageEvidence => metadata['evidence_has_page_ref'] == true;
+
   List<String> get reasonSignalLabels {
     final labels = reasonCodes
         .map(_reasonSignalLabel)
@@ -261,6 +271,14 @@ List<String> _stringList(Object? value) {
   return value
       .map((item) => item.toString().trim())
       .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+}
+
+List<Map<String, dynamic>> _mapList(Object? value) {
+  if (value is! List) return const <Map<String, dynamic>>[];
+  return value
+      .whereType<Map>()
+      .map((item) => item.map((key, value) => MapEntry(key.toString(), value)))
       .toList(growable: false);
 }
 

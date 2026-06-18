@@ -69,7 +69,13 @@ class _MemoryOperationsLinkReviewTabState
                       ),
                 ),
               ),
-              _BatchReviewActions(visiblePending: visiblePending),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _BatchReviewActions(visiblePending: visiblePending),
+                ),
+              ),
             ],
           ),
         ),
@@ -104,10 +110,11 @@ class _BatchReviewActions extends StatelessWidget {
     final store = context.read<ChatStore?>();
     if (store == null) return const SizedBox.shrink();
     if (visiblePending.isEmpty) {
-      return _approveVisibleButton(
+      return _reviewButtons(
         count: 0,
         busy: false,
-        onPressed: null,
+        onApprove: null,
+        onReject: null,
       );
     }
     return Observer(
@@ -115,36 +122,55 @@ class _BatchReviewActions extends StatelessWidget {
         final busy = visiblePending.any(
           (item) => store.contextLinkSuggestionReviewing[item.id] == true,
         );
-        return _approveVisibleButton(
+        return _reviewButtons(
           count: visiblePending.length,
           busy: busy,
-          onPressed: busy
+          onApprove: busy
               ? null
               : () => store.reviewContextLinkSuggestionsBatch(
                     visiblePending,
                     approve: true,
+                  ),
+          onReject: busy
+              ? null
+              : () => store.reviewContextLinkSuggestionsBatch(
+                    visiblePending,
+                    approve: false,
                   ),
         );
       },
     );
   }
 
-  Widget _approveVisibleButton({
+  Widget _reviewButtons({
     required int count,
     required bool busy,
-    required VoidCallback? onPressed,
+    required VoidCallback? onApprove,
+    required VoidCallback? onReject,
   }) {
-    return FilledButton.icon(
-      key: const ValueKey('memory_link_batch_approve_visible_button'),
-      onPressed: onPressed,
-      icon: busy
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.done_all_outlined, size: 16),
-      label: Text('Approve visible ($count)'),
+    final busyIcon = const SizedBox(
+      width: 16,
+      height: 16,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        FilledButton.icon(
+          key: const ValueKey('memory_link_batch_approve_visible_button'),
+          onPressed: onApprove,
+          icon: busy ? busyIcon : const Icon(Icons.done_all_outlined, size: 16),
+          label: Text('Approve visible ($count)'),
+        ),
+        OutlinedButton.icon(
+          key: const ValueKey('memory_link_batch_reject_visible_button'),
+          onPressed: onReject,
+          icon: const Icon(Icons.block_outlined, size: 16),
+          label: Text('Reject visible ($count)'),
+        ),
+      ],
     );
   }
 }
@@ -327,6 +353,12 @@ class _SuggestionTile extends StatelessWidget {
                 _DetailChip(
                   label: 'evidence kinds: ${evidenceKinds.take(3).join(', ')}',
                 ),
+              if (suggestion.hasPageEvidence)
+                const _DetailChip(label: 'page evidence'),
+              if (suggestion.hasBBoxEvidence)
+                const _DetailChip(label: 'bbox evidence'),
+              if (suggestion.hasTimeRangeEvidence)
+                const _DetailChip(label: 'time range evidence'),
               if (suggestion.policyDecision != null)
                 _DetailChip(label: 'policy: ${suggestion.policyDecision}'),
               if (suggestion.reviewGate != null)
@@ -787,6 +819,7 @@ class _SuggestionEvidenceDialog extends StatelessWidget {
         .where((entry) => entry.value != null)
         .toList(growable: false)
       ..sort((a, b) => a.key.compareTo(b.key));
+    final evidenceRefs = suggestion.evidenceRefs;
     return AlertDialog(
       key: const ValueKey('memory_link_evidence_dialog'),
       title: const Text('Link evidence'),
@@ -814,6 +847,21 @@ class _SuggestionEvidenceDialog extends StatelessWidget {
                   label: 'Reviewed',
                   value: _timeLabel(suggestion.reviewedAt!),
                 ),
+              if (evidenceRefs.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Evidence refs',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                for (final ref in evidenceRefs.take(5))
+                  _EvidenceRow(
+                    label: _compactRefLabel(ref),
+                    value: _compactRefValue(ref),
+                  ),
+              ],
               const SizedBox(height: 8),
               Text(
                 'Metadata',
@@ -1024,6 +1072,32 @@ String _compactValue(Object? value) {
   final text = value?.toString() ?? '';
   if (text.length <= 80) return text;
   return '${text.substring(0, 77)}...';
+}
+
+String _compactRefLabel(Map<String, dynamic> ref) {
+  final kind = ref['kind']?.toString().trim();
+  if (kind != null && kind.isNotEmpty) return kind;
+  final sourceType = ref['source_type']?.toString().trim();
+  if (sourceType != null && sourceType.isNotEmpty) return sourceType;
+  return 'evidence';
+}
+
+String _compactRefValue(Map<String, dynamic> ref) {
+  final parts = <String>[];
+  for (final key in const [
+    'source_id',
+    'chunk_id',
+    'page_number',
+    'time_start_ms',
+    'time_end_ms',
+    'bbox',
+    'quote_preview',
+  ]) {
+    final value = ref[key];
+    if (value == null) continue;
+    parts.add('$key: ${_compactValue(value)}');
+  }
+  return parts.isEmpty ? _compactValue(ref) : parts.join(' - ');
 }
 
 String _timeLabel(DateTime value) {

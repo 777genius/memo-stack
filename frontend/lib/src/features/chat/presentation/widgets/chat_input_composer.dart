@@ -147,7 +147,17 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
     if (!mounted) return;
     if (drafts.isEmpty) return;
     final store = context.read<UploadStore?>();
-    await upload.uploadAll(drafts, progress: store);
+    final uploaded = await upload.uploadAll(drafts, progress: store);
+    if (!mounted || uploaded.isEmpty) return;
+    final chatStore = context.read<ChatStore?>();
+    if (chatStore == null || chatStore.running) return;
+    final text = controller.text.trim();
+    try {
+      await chatStore.sendTask(text);
+      controller.clear();
+    } catch (_) {
+      // The repository emits a visible error message. Keep the draft for retry.
+    }
   }
 
   @override

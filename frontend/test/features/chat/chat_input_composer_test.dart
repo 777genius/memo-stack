@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend/src/features/chat/application/services/attachment_upload_models.dart';
+import 'package:frontend/src/features/chat/application/services/attachment_upload_service.dart';
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
@@ -63,10 +65,112 @@ void main() {
     expect(repo.sentTasks, ['Captured from stale controller']);
     expect(textField.controller!.text, isEmpty);
   });
+
+  testWidgets('file picker upload creates a file-only capture', (
+    tester,
+  ) async {
+    final repo = _RecordingChatRepository();
+    final picker = _RecordingAttachmentFilePicker([
+      AttachmentUploadDraft.file(
+        name: 'atlas-note.txt',
+        bytes: [65, 116, 108, 97, 115],
+        mime: 'text/plain',
+      ),
+    ]);
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ChatRepository>.value(value: repo),
+          Provider<ChatStore>.value(value: store),
+          Provider<AttachmentFilePicker>.value(value: picker),
+          Provider<AttachmentUploadService>.value(
+            value: AttachmentUploadService(repo: repo),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: InkRipple.splashFactory),
+          home: const Scaffold(body: ChatInputComposer()),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('quick_capture_attach_button')));
+    await tester.pumpAndSettle();
+
+    expect(picker.pickCalls, 1);
+    expect(repo.uploadedNames, ['atlas-note.txt']);
+    expect(repo.sentTasks, ['']);
+    expect(store.assetExtractions.map((job) => job.id), ['extract-1']);
+  });
+
+  testWidgets('file picker upload saves current text as capture note', (
+    tester,
+  ) async {
+    final repo = _RecordingChatRepository();
+    final picker = _RecordingAttachmentFilePicker([
+      AttachmentUploadDraft.file(
+        name: 'atlas-screenshot-note.txt',
+        bytes: [65, 108, 101, 120],
+        mime: 'text/plain',
+      ),
+    ]);
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ChatRepository>.value(value: repo),
+          Provider<ChatStore>.value(value: store),
+          Provider<AttachmentFilePicker>.value(value: picker),
+          Provider<AttachmentUploadService>.value(
+            value: AttachmentUploadService(repo: repo),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: InkRipple.splashFactory),
+          home: const Scaffold(body: ChatInputComposer()),
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('quick_capture_input')),
+      'Screenshot from Alex call',
+    );
+    await tester.tap(find.byKey(const ValueKey('quick_capture_attach_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.uploadedNames, ['atlas-screenshot-note.txt']);
+    expect(repo.sentTasks, ['Screenshot from Alex call']);
+    final textField = tester.widget<TextField>(
+      find.byKey(const ValueKey('quick_capture_input')),
+    );
+    expect(textField.controller!.text, isEmpty);
+  });
+}
+
+class _RecordingAttachmentFilePicker implements AttachmentFilePicker {
+  final List<AttachmentUploadDraft> drafts;
+  int pickCalls = 0;
+
+  _RecordingAttachmentFilePicker(this.drafts);
+
+  @override
+  Future<List<AttachmentUploadDraft>> pickFiles() async {
+    pickCalls += 1;
+    return drafts;
+  }
 }
 
 class _RecordingChatRepository implements ChatRepository {
   final sentTasks = <String>[];
+  final uploadedNames = <String>[];
   final assetExtractions = <AssetExtractionJob>[];
   final _messages = StreamController<ChatMessage>.broadcast();
   final _usage = StreamController<CostUsage>.broadcast();
@@ -175,6 +279,7 @@ class _RecordingChatRepository implements ChatRepository {
     int? batchSize,
     int? batchIndex,
   }) async {
+    uploadedNames.add(name);
     final assetId = 'file-${++_assetSeq}';
     final job = _assetExtractionJob(
       id: 'extract-${++_extractionSeq}',

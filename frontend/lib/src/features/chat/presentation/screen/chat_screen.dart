@@ -9,6 +9,7 @@ import 'package:frontend/src/features/chat/application/services/attachment_uploa
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
 import 'package:frontend/src/features/chat/domain/entities/connection_status.dart';
 import 'package:frontend/src/features/chat/presentation/screen/chat_list_overlay_screen.dart';
+import 'package:frontend/src/features/chat/presentation/widgets/capture_review_dock.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/chat_input_composer.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/chat_list_sidebar.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/chat_messages_list.dart';
@@ -183,6 +184,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
               const Expanded(child: ChatMessagesList()),
+              const CaptureReviewDock(),
               ChatInputComposer(key: _inputKey),
             ],
           ),
@@ -424,6 +426,7 @@ class _ChatDropAreaState extends State<_ChatDropArea> {
             final upload = context.read<AttachmentUploadService?>();
             if (upload == null) return;
             final store = context.read<UploadStore?>();
+            final chatStore = context.read<ChatStore?>();
             final drafts = <AttachmentUploadDraft>[];
             for (final file in details.files) {
               try {
@@ -439,7 +442,9 @@ class _ChatDropAreaState extends State<_ChatDropArea> {
               } catch (_) {}
             }
             if (!mounted || drafts.isEmpty) return;
-            await upload.uploadAll(drafts, progress: store);
+            final uploaded = await upload.uploadAll(drafts, progress: store);
+            if (!mounted || uploaded.isEmpty) return;
+            await chatStore?.sendTask('');
           },
           child: widget.child,
         ),
