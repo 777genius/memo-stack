@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     extraction_max_output_chars: int = Field(default=500_000, ge=1_000, le=10_000_000)
     extraction_max_tables: int = Field(default=100, ge=0, le=10_000)
     extraction_execution_lease_seconds: int = Field(default=15 * 60, ge=30, le=24 * 3600)
+    extraction_cancellation_poll_seconds: float = Field(default=1.0, ge=0.05, le=60)
+    extraction_heartbeat_seconds: float = Field(default=15.0, ge=0.05, le=60 * 60)
     extraction_parser_timeout_seconds: int = Field(default=5 * 60, ge=5, le=24 * 3600)
     extraction_subprocess_timeout_seconds: int = Field(default=60, ge=1, le=60 * 60)
     extraction_provider_timeout_seconds: int = Field(default=60, ge=1, le=60 * 60)

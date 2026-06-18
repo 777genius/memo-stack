@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -346,6 +347,8 @@ class RunAssetExtractionUseCase:
         limits: ExtractionLimits,
         artifact_storage_backend: str = "local",
         execution_lease_seconds: int = 900,
+        cancellation_poll_seconds: float = 1.0,
+        heartbeat_seconds: float = 15.0,
         retry_policy: ExtractionRetryPolicy | None = None,
     ) -> None:
         self._uow_factory = uow_factory
@@ -358,6 +361,10 @@ class RunAssetExtractionUseCase:
         self._limits = limits
         self._artifact_storage_backend = artifact_storage_backend
         self._execution_lease = timedelta(seconds=max(30, execution_lease_seconds))
+        self._cancellation_poll_seconds = max(0.05, float(cancellation_poll_seconds))
+        self._heartbeat_interval = timedelta(
+            seconds=max(self._cancellation_poll_seconds, float(heartbeat_seconds))
+        )
         self._retry_policy = retry_policy or ExtractionRetryPolicy()
 
     async def execute(self, command: RunAssetExtractionCommand) -> AssetExtractionResult:
@@ -414,8 +421,9 @@ class RunAssetExtractionUseCase:
             job = await self._cancel_if_requested(job)
             if job.status == AssetExtractionStatus.CANCELED:
                 return AssetExtractionResult(job=job, indexing_status="canceled")
-            result = await self._extractor.extract(
-                ExtractionRequest(
+            job, result = await self._extract_with_supervision(
+                job,
+                request=ExtractionRequest(
                     job_id=str(job.id),
                     asset_id=str(asset.id),
                     filename=asset.filename,
@@ -426,8 +434,13 @@ class RunAssetExtractionUseCase:
                     content=content,
                     parser_profile=job.parser_profile,
                     limits=self._limits,
-                )
+                ),
             )
+            if result is None:
+                return AssetExtractionResult(
+                    job=job,
+                    indexing_status=indexing_status(job.status),
+                )
             job = await self._cancel_if_requested(job)
             if job.status == AssetExtractionStatus.CANCELED:
                 return AssetExtractionResult(job=job, indexing_status="canceled")
@@ -525,6 +538,62 @@ class RunAssetExtractionUseCase:
             if isinstance(exc, MemoryInfrastructureError):
                 raise
             raise MemoryInfrastructureError("Asset extraction failed") from exc
+
+    async def _extract_with_supervision(
+        self,
+        job: AssetExtractionJob,
+        *,
+        request: ExtractionRequest,
+    ) -> tuple[AssetExtractionJob, ExtractionResult | None]:
+        task = asyncio.create_task(self._extractor.extract(request))
+        last_heartbeat_at = self._clock.now()
+        try:
+            while True:
+                done, _pending = await asyncio.wait(
+                    {task},
+                    timeout=self._cancellation_poll_seconds,
+                )
+                if task in done:
+                    return job, task.result()
+                current = await self._get_current_job(str(job.id))
+                if current.status != AssetExtractionStatus.RUNNING:
+                    await self._cancel_supervised_task(task)
+                    return current, None
+                if current.cancellation_requested_at is not None:
+                    canceled = await self._cancel_if_requested(current)
+                    await self._cancel_supervised_task(task)
+                    return canceled, None
+                now = self._clock.now()
+                if _datetime_after(now, last_heartbeat_at + self._heartbeat_interval):
+                    job = await self._save_progress(
+                        current,
+                        stage="extracting_content",
+                        percent=45,
+                        message="Extracting searchable content",
+                    )
+                    last_heartbeat_at = now
+                else:
+                    job = current
+        except asyncio.CancelledError:
+            await self._cancel_supervised_task(task)
+            raise
+        except Exception:
+            await self._cancel_supervised_task(task)
+            raise
+
+    async def _cancel_supervised_task(self, task: asyncio.Task[ExtractionResult]) -> None:
+        if task.done():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _get_current_job(self, job_id: str) -> AssetExtractionJob:
+        async with self._uow_factory() as uow:
+            current = await uow.asset_extractions.get_by_id(job_id)
+        if current is None:
+            raise MemoryNotFoundError("Asset extraction job not found")
+        return current
 
     async def _mark_running(self, command: RunAssetExtractionCommand) -> AssetExtractionJob:
         async with self._uow_factory() as uow:

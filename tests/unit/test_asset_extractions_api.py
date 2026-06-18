@@ -2,6 +2,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+import threading
 import wave
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -238,6 +239,21 @@ class _PermanentFailureExtractor:
             parser_name="permanent_failure_test",
             parser_version="v1",
         )
+
+
+class _SlowCancelableExtractor:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.cancelled = threading.Event()
+
+    async def extract(self, request: Any) -> ExtractionResult:
+        self.started.set()
+        try:
+            while True:
+                await asyncio.sleep(0.02)
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
 
 
 class _OversizedArtifactExtractor:
@@ -767,6 +783,93 @@ def test_cancel_requested_running_asset_extraction_is_honored(tmp_path: Path) ->
         assert result.job.status.value == "canceled"
         assert result.job.attempt_count == 1
         assert result.job.result_document_ids == ()
+
+
+def test_cancel_during_slow_asset_extraction_interrupts_worker_without_artifacts(
+    tmp_path: Path,
+) -> None:
+    with make_client(
+        tmp_path,
+        extraction_cancellation_poll_seconds=0.05,
+        extraction_heartbeat_seconds=0.05,
+    ) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "thread_external_ref": "slow-cancel",
+                "filename": "slow-cancel.txt",
+                "extract": "true",
+            },
+            content=b"Slow extraction should be cancelable while parser work is still running.",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        assert upload.status_code == 201, upload.text
+        extraction_id = upload.json()["data"]["extraction"]["id"]
+
+        run_use_case = client.app.state.container.run_asset_extraction
+        original_extractor = run_use_case._extractor
+        slow_extractor = _SlowCancelableExtractor()
+        run_use_case._extractor = slow_extractor
+        worker_error: list[BaseException] = []
+        worker_processed: list[int] = []
+
+        def run_worker() -> None:
+            try:
+                processed = asyncio.run(
+                    OutboxWorker(client.app.state.container).run_once(limit=10)
+                )
+            except BaseException as exc:  # pragma: no cover - asserted through worker_error
+                worker_error.append(exc)
+            else:
+                worker_processed.append(processed)
+
+        worker_thread = threading.Thread(target=run_worker, daemon=True)
+        try:
+            worker_thread.start()
+            assert slow_extractor.started.wait(timeout=3)
+
+            running = client.get(
+                f"/v1/asset-extractions/{extraction_id}",
+                headers=auth_headers(),
+            )
+            assert running.status_code == 200, running.text
+            running_data = running.json()["data"]
+            assert running_data["status"] == "running"
+            assert running_data["progress"]["stage"] == "extracting_content"
+            assert running_data["execution"]["lease_state"] == "active"
+            assert running_data["execution"]["heartbeat_at"] is not None
+
+            canceled = client.post(
+                f"/v1/asset-extractions/{extraction_id}/cancel",
+                headers=auth_headers(),
+            )
+            assert canceled.status_code == 202, canceled.text
+            assert canceled.json()["data"]["status"] == "running"
+            assert canceled.json()["data"]["execution"]["cancellation_requested_at"] is not None
+
+            worker_thread.join(timeout=5)
+            assert not worker_thread.is_alive()
+            assert worker_error == []
+            assert worker_processed == [1]
+            assert slow_extractor.cancelled.wait(timeout=1)
+
+            extracted = client.get(
+                f"/v1/asset-extractions/{extraction_id}",
+                headers=auth_headers(),
+            )
+            assert extracted.status_code == 200, extracted.text
+            data = extracted.json()["data"]
+            assert data["status"] == "canceled"
+            assert data["safe_error_code"] == "asset_extraction.canceled"
+            assert data["progress"]["terminal"] is True
+            assert data["execution"]["lease_state"] == "none"
+            assert data["execution"]["cancellation_requested_at"] is not None
+            assert data["result_document_ids"] == []
+            assert data["artifacts"] == []
+        finally:
+            run_use_case._extractor = original_extractor
 
 
 def test_asset_extraction_ignores_cancel_after_document_commit(tmp_path: Path) -> None:

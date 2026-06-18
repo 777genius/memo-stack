@@ -437,6 +437,8 @@ def build_container(settings: Settings | None = None) -> Container:
         ids=ids,
         limits=extraction_limits,
         execution_lease_seconds=resolved_settings.extraction_execution_lease_seconds,
+        cancellation_poll_seconds=resolved_settings.extraction_cancellation_poll_seconds,
+        heartbeat_seconds=resolved_settings.extraction_heartbeat_seconds,
     )
     create_anchor = CreateAnchorUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     update_anchor = UpdateAnchorUseCase(uow_factory=uow_factory, clock=clock)

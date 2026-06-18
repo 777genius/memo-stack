@@ -397,6 +397,9 @@ def test_capabilities_return_noop_adapters() -> None:
     ]
     assert body["extraction"]["limits"]["max_media_seconds"] == 600
     assert body["extraction"]["limits"]["provider_timeout_seconds"] == 60
+    assert body["extraction"]["limits"]["execution_lease_seconds"] == 15 * 60
+    assert body["extraction"]["limits"]["cancellation_poll_seconds"] == 1.0
+    assert body["extraction"]["limits"]["heartbeat_seconds"] == 15.0
     assert body["captures"]["max_pending_per_memory_scope"] == 5_000
     assert body["captures"]["ingress_limit_code"] == "memory.capture.ingress_limited"
     assert body["supports_legacy_client_routes"] is False
@@ -426,6 +429,9 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
             transcription_openai_model="gpt-4o-transcribe",
             transcription_openai_max_upload_bytes=12_345,
             extraction_provider_timeout_seconds=17,
+            extraction_execution_lease_seconds=45,
+            extraction_cancellation_poll_seconds=0.25,
+            extraction_heartbeat_seconds=2.5,
             openai_api_key="sk-capabilities-secret",
             plan_media_analysis_seconds_per_month=3_600,
         )
@@ -463,6 +469,9 @@ def test_capabilities_expose_configured_external_media_extraction(tmp_path: Path
     assert extraction["limits"]["parser_timeout_seconds"] == 5 * 60
     assert extraction["limits"]["subprocess_timeout_seconds"] == 60
     assert extraction["limits"]["provider_timeout_seconds"] == 17
+    assert extraction["limits"]["execution_lease_seconds"] == 45
+    assert extraction["limits"]["cancellation_poll_seconds"] == 0.25
+    assert extraction["limits"]["heartbeat_seconds"] == 2.5
     assert extraction["providers"]["openai_vision"]["enabled"] is True
     assert extraction["providers"]["openai_vision"]["status"] == "ok"
     assert extraction["providers"]["transcription_api"]["enabled"] is True

@@ -760,6 +760,9 @@ def _limits_payload(settings: Settings) -> dict[str, object]:
         "parser_timeout_seconds": settings.extraction_parser_timeout_seconds,
         "subprocess_timeout_seconds": settings.extraction_subprocess_timeout_seconds,
         "provider_timeout_seconds": settings.extraction_provider_timeout_seconds,
+        "execution_lease_seconds": settings.extraction_execution_lease_seconds,
+        "cancellation_poll_seconds": settings.extraction_cancellation_poll_seconds,
+        "heartbeat_seconds": settings.extraction_heartbeat_seconds,
     }
 
 
