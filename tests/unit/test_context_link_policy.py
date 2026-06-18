@@ -355,6 +355,87 @@ def test_policy_uses_relation_specific_high_impact_signals() -> None:
     assert result.candidates == ()
 
 
+def test_policy_blocks_evidence_relations_without_source_or_text_signal() -> None:
+    unsupported_support = _candidate(
+        target_id="unsupported-support",
+        score=82,
+        reason_codes=["temporal_intent_match"],
+        metadata={"relation_type": "supports"},
+    )
+    unsupported_evidence = _candidate(
+        target_id="unsupported-evidence",
+        score=82,
+        reason_codes=["temporal_intent_match"],
+        metadata={"relation_type": "evidence_of"},
+    )
+
+    result = apply_context_link_policy(
+        (unsupported_support, unsupported_evidence),
+        limit=10,
+        persist=True,
+    )
+
+    assert result.candidates == ()
+    assert result.diagnostics["link_policy_denied_reason_counts"] == {
+        "evidence_relation_requires_source_signal": 2
+    }
+
+
+def test_policy_allows_evidence_relation_with_multimodal_source_signal() -> None:
+    candidate = _candidate(
+        target_id="image-evidence",
+        score=82,
+        reason_codes=["temporal_intent_match"],
+        metadata={
+            "relation_type": "evidence_of",
+            "evidence_source_ref_count": 1,
+            "evidence_modalities": ["image"],
+            "evidence_has_bbox_ref": True,
+        },
+    )
+
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "needs_review"
+    assert decision.auto_approve_eligible is False
+    assert result.candidates[0].metadata["policy_relation_type"] == "evidence_of"
+    assert result.candidates[0].metadata["review_gate"] == "required"
+
+
+def test_policy_blocks_mentions_without_entity_or_text_signal() -> None:
+    candidate = _candidate(
+        target_id="weak-mention",
+        score=82,
+        reason_codes=["temporal_intent_match"],
+        metadata={"relation_type": "mentions"},
+    )
+
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "deny"
+    assert decision.reason_codes == ("mentions_relation_requires_entity_signal",)
+    assert result.candidates == ()
+
+
+def test_policy_allows_mentions_with_entity_signal_for_review() -> None:
+    candidate = _candidate(
+        target_id="person-mention",
+        score=82,
+        reason_codes=["person_name"],
+        metadata={"relation_type": "mentions"},
+    )
+
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "needs_review"
+    assert decision.auto_approve_eligible is False
+    assert result.candidates[0].metadata["policy_relation_type"] == "mentions"
+    assert result.candidates[0].metadata["policy_decision_canonical"] == "pending_review"
+
+
 def test_policy_caps_candidates_considered_before_review_decisions() -> None:
     candidates = tuple(
         _candidate(

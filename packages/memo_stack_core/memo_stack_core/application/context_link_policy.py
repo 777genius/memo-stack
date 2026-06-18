@@ -32,6 +32,7 @@ _ALLOWED_RELATION_TYPES = frozenset(
     }
 )
 _HIGH_IMPACT_RELATION_TYPES = frozenset({"supersedes", "contradicts", "duplicates"})
+_EVIDENCE_RELATION_TYPES = frozenset({"supports", "evidence_of"})
 _REASON_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _BASE_STRONG_REVIEW_SIGNAL_CODES = frozenset(
     {
@@ -77,6 +78,16 @@ _HIGH_IMPACT_SIGNAL_CODES = frozenset(
 )
 _STRONG_REVIEW_SIGNAL_CODES = _BASE_STRONG_REVIEW_SIGNAL_CODES | _HIGH_IMPACT_SIGNAL_CODES
 _AUTO_APPROVE_SIGNAL_CODES = _STRONG_REVIEW_SIGNAL_CODES - frozenset({"recent_context"})
+_MENTION_RELATION_SIGNAL_CODES = frozenset(
+    {
+        "text_match",
+        "person_name",
+        "organization_reference",
+        "explicit_project_reference",
+        "known_project_tool_reference",
+        "event_phrase",
+    }
+)
 MIN_AUTO_APPROVE_INDEPENDENT_SIGNALS = 2
 
 
@@ -298,12 +309,45 @@ def _deny_reason_codes(
         reason_codes,
     ):
         codes.append("high_impact_relation_requires_explicit_signal")
+    if relation_type in _EVIDENCE_RELATION_TYPES and not _has_evidence_relation_signal(
+        candidate,
+        reason_codes,
+    ):
+        codes.append("evidence_relation_requires_source_signal")
+    if relation_type == "mentions" and not _MENTION_RELATION_SIGNAL_CODES.intersection(
+        reason_codes
+    ):
+        codes.append("mentions_relation_requires_entity_signal")
     return tuple(codes)
 
 
 def _has_high_impact_signal(relation_type: str, reason_codes: tuple[str, ...]) -> bool:
     signal_codes = _HIGH_IMPACT_RELATION_SIGNAL_CODES.get(relation_type, frozenset())
     return bool(signal_codes.intersection(reason_codes))
+
+
+def _has_evidence_relation_signal(
+    candidate: ContextLinkCandidate,
+    reason_codes: tuple[str, ...],
+) -> bool:
+    if "text_match" in reason_codes:
+        return True
+    metadata = candidate.metadata or {}
+    evidence_ref_count = metadata.get("evidence_source_ref_count")
+    if isinstance(evidence_ref_count, int) and evidence_ref_count > 0:
+        return True
+    evidence_refs = metadata.get("evidence_refs")
+    if isinstance(evidence_refs, (list, tuple)) and evidence_refs:
+        return True
+    for key in (
+        "evidence_has_page_ref",
+        "evidence_has_bbox_ref",
+        "evidence_has_time_range_ref",
+    ):
+        if metadata.get(key) is True:
+            return True
+    evidence_modalities = metadata.get("evidence_modalities")
+    return isinstance(evidence_modalities, (list, tuple)) and bool(evidence_modalities)
 
 
 def _auto_approve_signal_count(reason_codes: tuple[str, ...]) -> int:
