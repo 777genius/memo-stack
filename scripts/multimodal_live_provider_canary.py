@@ -45,6 +45,7 @@ DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
+INVALID_KEY_PROBE_VALUE = "sk-invalid-live-provider-canary-not-a-real-secret"
 SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
 SYNTHETIC_VISION_TEXT = "INFINITY CONTEXT 24"
 OPENAI_AUDIO_MAX_UPLOAD_BYTES = OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
@@ -102,6 +103,13 @@ async def run_multimodal_live_provider_canary(
 ) -> dict[str, object]:
     api_key = _provider_api_key()
     report = _base_report(args, has_provider_key=bool(api_key))
+    if args.probe_invalid_key:
+        report["components"]["invalid_key_probe"] = await _run_invalid_key_probe(args=args)
+    else:
+        report["components"]["invalid_key_probe"] = _component(
+            "skipped",
+            reason="invalid_key_probe_not_requested",
+        )
     if not api_key:
         report["components"]["provider_key"] = _component(
             "degraded",
@@ -299,6 +307,27 @@ async def _run_transcription(
     )
 
 
+async def _run_invalid_key_probe(args: argparse.Namespace) -> dict[str, object]:
+    result = await _run_vision(api_key=INVALID_KEY_PROBE_VALUE, args=args)
+    reason = str(result.get("reason") or "")
+    if result.get("status") == "failed" and "invalid_api_key" in reason:
+        return _component(
+            "succeeded",
+            proof="live_invalid_credential_call",
+            observed_reason=reason,
+            observed_status=result.get("status"),
+            diagnostics=_safe_diagnostics(result.get("diagnostics") or {}),
+        )
+    return _component(
+        "failed",
+        reason="invalid_key_probe_unexpected_result",
+        message="Invalid key probe did not return an invalid_api_key classification",
+        observed_status=result.get("status"),
+        observed_reason=reason or None,
+        diagnostics=_safe_diagnostics(result.get("diagnostics") or {}),
+    )
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -337,6 +366,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
                 "MEMORY_EXTRACTION_PROVIDER_TIMEOUT_SECONDS",
                 DEFAULT_TIMEOUT_SECONDS,
             )
+        ),
+    )
+    parser.add_argument(
+        "--probe-invalid-key",
+        action="store_true",
+        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY") == "1",
+        help=(
+            "Make a live provider call with a synthetic invalid key to verify "
+            "invalid_api_key classification and redaction."
         ),
     )
     return parser.parse_args(argv)
@@ -392,6 +430,7 @@ def _base_report(
             "provider_key": _component("unknown"),
             "vision": _component("unknown"),
             "transcription": _component("unknown"),
+            "invalid_key_probe": _component("unknown"),
         },
     }
 
@@ -460,6 +499,7 @@ def _proof_matrix(
             expected_operator_action="replace_provider_credential",
             expected_retryable=False,
         ),
+        "invalid_key_live_probe": _invalid_key_probe_requirement(components),
         "rate_limit_classification": _contract_requirement(
             failure_policy_contract,
             "rate_limited",
@@ -622,6 +662,32 @@ def _contract_requirement(
         "reason": case.get("reason"),
         "operator_action": case.get("operator_action"),
         "user_retryable": case.get("user_retryable"),
+    }
+
+
+def _invalid_key_probe_requirement(components: dict[object, object]) -> dict[str, object]:
+    component = components.get("invalid_key_probe")
+    if not isinstance(component, dict):
+        return {
+            "status": "missing",
+            "proof": "live_invalid_credential_call",
+            "requires_provider_key": False,
+            "ok": False,
+        }
+    status = str(component.get("status") or "unknown")
+    reason = component.get("reason") if isinstance(component.get("reason"), str) else None
+    observed_reason = (
+        component.get("observed_reason")
+        if isinstance(component.get("observed_reason"), str)
+        else None
+    )
+    return {
+        "status": status,
+        "proof": "live_invalid_credential_call",
+        "requires_provider_key": False,
+        "ok": status == "succeeded",
+        **({"reason": reason} if reason else {}),
+        **({"observed_reason": observed_reason} if observed_reason else {}),
     }
 
 

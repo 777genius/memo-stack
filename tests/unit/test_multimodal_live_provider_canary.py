@@ -88,7 +88,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert proof["schema_version"] == "multimodal-provider-proof-matrix-v1"
     assert proof["summary"] == {
         "contract_requirements_passed": 4,
-        "contract_requirements_total": 4,
+        "contract_requirements_total": 5,
         "live_requirements_passed": 0,
         "live_requirements_total": 4,
     }
@@ -122,6 +122,13 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "status": "skipped",
     }
     assert requirements["invalid_key_classification"]["status"] == "contract_covered"
+    assert requirements["invalid_key_live_probe"] == {
+        "ok": False,
+        "proof": "live_invalid_credential_call",
+        "reason": "invalid_key_probe_not_requested",
+        "requires_provider_key": False,
+        "status": "skipped",
+    }
     assert requirements["rate_limit_classification"]["status"] == "contract_covered"
     assert requirements["timeout_classification"]["status"] == "contract_covered"
     assert requirements["no_secret_leak_guard"] == {
@@ -148,6 +155,12 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert file_report["components"]["transcription"] == {
         "operator_action": "configure_provider_credential",
         "reason": "provider_credential_missing",
+        "status": "skipped",
+        "user_retryable": False,
+    }
+    assert file_report["components"]["invalid_key_probe"] == {
+        "operator_action": "inspect_provider_canary",
+        "reason": "invalid_key_probe_not_requested",
         "status": "skipped",
         "user_retryable": False,
     }
@@ -210,6 +223,63 @@ def test_multimodal_live_provider_canary_maps_invalid_key_to_operator_action() -
         "reason": "asset_extraction.vision.invalid_api_key",
         "status": "failed",
         "user_retryable": False,
+    }
+
+
+def test_multimodal_live_provider_canary_invalid_key_probe_is_redacted(
+    monkeypatch,
+) -> None:
+    module = _load_canary_module()
+
+    async def fake_run_vision(*, api_key: str, args: object) -> dict[str, object]:
+        assert api_key == module.INVALID_KEY_PROBE_VALUE
+        assert args is not None
+        return {
+            "diagnostics": {"message": f"provider rejected {api_key}"},
+            "reason": "asset_extraction.vision.invalid_api_key",
+            "status": "failed",
+        }
+
+    monkeypatch.setattr(module, "_run_vision", fake_run_vision)
+
+    component = asyncio.run(
+        module._run_invalid_key_probe(args=module._parse_args(["--probe-invalid-key"]))
+    )
+    rendered = json.dumps(component, sort_keys=True)
+
+    assert component["status"] == "succeeded"
+    assert component["proof"] == "live_invalid_credential_call"
+    assert component["observed_status"] == "failed"
+    assert component["observed_reason"] == "asset_extraction.vision.invalid_api_key"
+    assert component["diagnostics"] == {"message": "provider rejected <redacted>"}
+    assert module.INVALID_KEY_PROBE_VALUE not in rendered
+
+
+def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe() -> None:
+    module = _load_canary_module()
+    components = {
+        "vision": {"status": "skipped", "reason": "provider_credential_missing"},
+        "transcription": {"status": "skipped", "reason": "provider_credential_missing"},
+        "invalid_key_probe": {
+            "observed_reason": "asset_extraction.vision.invalid_api_key",
+            "proof": "live_invalid_credential_call",
+            "status": "succeeded",
+        },
+    }
+
+    proof = module._proof_matrix(
+        components=components,
+        failure_policy_contract=module._failure_policy_contract(),
+        provider_key_present=False,
+        secrets_redacted=True,
+    )
+
+    assert proof["requirements"]["invalid_key_live_probe"] == {
+        "ok": True,
+        "observed_reason": "asset_extraction.vision.invalid_api_key",
+        "proof": "live_invalid_credential_call",
+        "requires_provider_key": False,
+        "status": "succeeded",
     }
 
 
