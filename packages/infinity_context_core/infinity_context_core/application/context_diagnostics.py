@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from infinity_context_core.application.context_quality import retrieval_quality_summary
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.application.safe_payload import safe_metadata, safe_metadata_text
 
@@ -364,6 +365,10 @@ def normalize_context_bundle_diagnostics(
         retrieval_sources=retrieval_sources,
     )
     normalized["provenance_summary"] = _provenance_summary(normalized, items)
+    normalized["retrieval_quality_summary"] = retrieval_quality_summary(
+        normalized,
+        items,
+    )
     return normalized
 
 

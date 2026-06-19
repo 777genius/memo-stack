@@ -208,6 +208,10 @@ def test_context_bundle_diagnostics_count_evidence_kinds_and_modalities() -> Non
     }
     assert diagnostics["items_with_evidence_kind"] == 3
     assert diagnostics["items_with_evidence_modality"] == 3
+    assert diagnostics["retrieval_quality_summary"]["retrieval_mode"] == (
+        "multimodal_single_source"
+    )
+    assert diagnostics["retrieval_quality_summary"]["multimodal_item_ratio"] == 0.6667
 
 
 def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
@@ -258,6 +262,150 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     assert diagnostics["evidence_modality_counts"] == {}
     assert diagnostics["items_with_evidence_kind"] == 0
     assert diagnostics["items_with_evidence_modality"] == 0
+    assert diagnostics["retrieval_quality_summary"] == {
+        "schema_version": "retrieval-quality-v1",
+        "evidence_strength": "empty",
+        "retrieval_mode": "empty",
+        "items_total": 0,
+        "retrieval_source_count": 0,
+        "hybrid_item_ratio": 0.0,
+        "citation_coverage_ratio": 0.0,
+        "precise_location_coverage_ratio": 0.0,
+        "query_snippet_coverage_ratio": 0.0,
+        "multimodal_item_ratio": 0.0,
+        "review_pressure_ratio": 0.0,
+        "stale_item_ratio": 0.0,
+        "high_confidence_items": 0,
+        "medium_confidence_items": 0,
+        "low_confidence_items": 0,
+        "evidence_kind_count": 0,
+        "evidence_modality_count": 0,
+        "actionable_gaps": ["no_context_items"],
+    }
+
+
+def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() -> None:
+    fact = ContextItem(
+        item_id="fact_atlas",
+        item_type="fact",
+        text="Alex approved the Atlas renewal.",
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="fact",
+                source_id="fact_atlas",
+                char_start=8,
+                char_end=36,
+                quote_preview="Alex approved the Atlas renewal.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["postgres_facts", "approved_context_linked_facts"],
+        },
+    )
+    transcript = ContextItem(
+        item_id="artifact_audio",
+        item_type="extraction_artifact",
+        text="Audio transcript says the Atlas renewal was approved.",
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact_audio",
+                chunk_id="segment_1",
+                time_start_ms=1200,
+                time_end_ms=5400,
+                quote_preview="Atlas renewal was approved.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["artifact_evidence", "rag_recall"],
+            "evidence_kind": "transcript_segment",
+            "evidence_modality": "audio",
+            "query_snippet": "Atlas renewal was approved.",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "hybrid_items_used": 2,
+            "query_snippet_items_used": 1,
+        },
+        items=(fact, transcript),
+    )
+
+    assert diagnostics["retrieval_quality_summary"] == {
+        "schema_version": "retrieval-quality-v1",
+        "evidence_strength": "strong",
+        "retrieval_mode": "hybrid_multimodal",
+        "items_total": 2,
+        "retrieval_source_count": 4,
+        "hybrid_item_ratio": 1.0,
+        "citation_coverage_ratio": 1.0,
+        "precise_location_coverage_ratio": 1.0,
+        "query_snippet_coverage_ratio": 0.5,
+        "multimodal_item_ratio": 0.5,
+        "review_pressure_ratio": 0.0,
+        "stale_item_ratio": 0.0,
+        "high_confidence_items": 2,
+        "medium_confidence_items": 0,
+        "low_confidence_items": 0,
+        "evidence_kind_count": 1,
+        "evidence_modality_count": 1,
+        "actionable_gaps": [],
+    }
+
+
+def test_context_bundle_diagnostics_report_weak_retrieval_quality_gaps() -> None:
+    stale_review = ContextItem(
+        item_id="suggestion_conflict",
+        item_type="suggestion",
+        text="Pending conflict review item.",
+        score=0.42,
+        source_refs=(),
+        diagnostics={
+            "retrieval_source": "pending_conflict_suggestion",
+            "review_only": True,
+            "stale_reason": "superseded",
+        },
+    )
+    low_score = ContextItem(
+        item_id="chunk_low",
+        item_type="chunk",
+        text="Low confidence chunk.",
+        score=0.5,
+        source_refs=(),
+        diagnostics={"retrieval_source": "keyword_chunks"},
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "dropped_by_budget": 1,
+            "dropped_by_source_cap": 1,
+            "sensitive_item_text_redacted": 1,
+        },
+        items=(stale_review, low_score),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["evidence_strength"] == "weak"
+    assert summary["retrieval_mode"] == "hybrid"
+    assert summary["citation_coverage_ratio"] == 0.0
+    assert summary["review_pressure_ratio"] == 1.0
+    assert summary["stale_item_ratio"] == 0.5
+    assert summary["low_confidence_items"] == 2
+    assert summary["actionable_gaps"] == [
+        "low_citation_coverage",
+        "no_query_focused_snippets",
+        "low_confidence_items_present",
+        "stale_items_present",
+        "review_items_present",
+        "budget_drops_present",
+        "source_cap_drops_present",
+        "sensitive_text_redacted",
+    ]
 
 
 def test_context_bundle_retrieval_sources_use_stable_priority_order() -> None:

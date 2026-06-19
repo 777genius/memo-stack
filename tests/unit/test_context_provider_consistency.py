@@ -572,9 +572,18 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
     assert api_data["diagnostics"]["items_with_citations"] == 1
     assert api_data["diagnostics"]["provenance_summary"]["citation_coverage_ratio"] == 1.0
     assert api_data["diagnostics"]["provenance_summary"]["citation_density"] == 3.0
+    assert api_data["diagnostics"]["retrieval_quality_summary"]["evidence_strength"] == (
+        "strong"
+    )
+    assert api_data["diagnostics"]["retrieval_quality_summary"]["retrieval_mode"] == (
+        "multimodal_single_source"
+    )
+    assert api_data["diagnostics"]["retrieval_quality_summary"]["multimodal_item_ratio"] == 1.0
     sdk_context = context_bundle_from_response({"data": api_data})
     assert sdk_context.diagnostics.provenance_summary is not None
     assert sdk_context.diagnostics.provenance_summary["items_with_precise_locations"] == 1
+    assert sdk_context.diagnostics.retrieval_quality_summary is not None
+    assert sdk_context.diagnostics.retrieval_quality_summary["evidence_strength"] == "strong"
     assert api_data["diagnostics"]["retrieval_trace"][0]["retrieval_source"] == (
         "keyword_chunks"
     )

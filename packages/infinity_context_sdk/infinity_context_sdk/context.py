@@ -185,6 +185,7 @@ class ContextBundleDiagnostics:
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
     provenance_summary: Mapping[str, object] | None = None
+    retrieval_quality_summary: Mapping[str, object] | None = None
     retrieval_trace: tuple[ContextRetrievalTraceEntry, ...] = ()
 
 
@@ -512,6 +513,9 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
             raw.get("sensitive_citation_quote_previews_skipped")
         ),
         provenance_summary=_bounded_mapping(raw.get("provenance_summary")),
+        retrieval_quality_summary=_bounded_mapping(
+            raw.get("retrieval_quality_summary")
+        ),
         retrieval_trace=retrieval_trace,
     )
 
