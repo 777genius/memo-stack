@@ -533,6 +533,12 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["extraction"]["limits"]["execution_lease_seconds"] == 15 * 60
     assert body["extraction"]["limits"]["cancellation_poll_seconds"] == 1.0
     assert body["extraction"]["limits"]["heartbeat_seconds"] == 15.0
+    assert body["extraction"]["resource_policy"]["limits_normalized_before_provider"] is True
+    assert body["extraction"]["resource_policy"]["rejects_oversized_asset_before_blob_read"] is True
+    assert (
+        body["extraction"]["resource_policy"]["oversized_asset_error_code"]
+        == "asset_extraction.file_too_large"
+    )
     assert body["captures"]["max_pending_per_memory_scope"] == 5_000
     assert body["captures"]["ingress_limit_code"] == "memory.capture.ingress_limited"
     assert body["supports_legacy_client_routes"] is False

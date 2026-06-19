@@ -31,6 +31,11 @@ from infinity_context_core.application.dto import (
     RetryAssetExtractionCommand,
     RunAssetExtractionCommand,
 )
+from infinity_context_core.application.extraction_resource_policy import (
+    assess_extraction_resource_limits,
+    extraction_limits_metadata,
+    normalize_extraction_limits,
+)
 from infinity_context_core.application.multimodal_manifest import (
     multimodal_manifest_artifact_candidate,
     should_store_generic_multimodal_manifest,
@@ -362,7 +367,8 @@ class RunAssetExtractionUseCase:
         self._ingest_document = ingest_document
         self._clock = clock
         self._ids = ids
-        self._limits = limits
+        self._limits_metadata = extraction_limits_metadata(limits)
+        self._limits = normalize_extraction_limits(limits)
         self._artifact_storage_backend = artifact_storage_backend
         self._execution_lease = timedelta(seconds=max(30, execution_lease_seconds))
         self._cancellation_poll_seconds = max(0.05, float(cancellation_poll_seconds))
@@ -393,9 +399,40 @@ class RunAssetExtractionUseCase:
                 message="Asset is missing or unavailable",
             )
             return AssetExtractionResult(job=failed, indexing_status="failed")
+        resource_decision = assess_extraction_resource_limits(
+            asset_byte_size=asset.byte_size,
+            limits=self._limits,
+        )
+        if not resource_decision.allowed:
+            unsupported = await self._mark_unsupported(
+                job,
+                result=_resource_limit_result(
+                    asset=asset,
+                    code=resource_decision.code,
+                    message=resource_decision.message,
+                    metadata={**resource_decision.metadata, **self._limits_metadata},
+                ),
+            )
+            return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
 
         try:
             content = await self._blob_storage.read_bytes(storage_key=asset.storage_key)
+            resource_decision = assess_extraction_resource_limits(
+                asset_byte_size=len(content),
+                limits=self._limits,
+                byte_size_source="blob_content_length",
+            )
+            if not resource_decision.allowed:
+                unsupported = await self._mark_unsupported(
+                    job,
+                    result=_resource_limit_result(
+                        asset=asset,
+                        code=resource_decision.code,
+                        message=resource_decision.message,
+                        metadata={**resource_decision.metadata, **self._limits_metadata},
+                    ),
+                )
+                return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
             job = await self._save_progress(
                 job,
                 stage="detecting_type",
@@ -660,6 +697,7 @@ class RunAssetExtractionUseCase:
                     "progress_percent": 10,
                     "progress_message": "Reading uploaded asset",
                     "execution_lease_seconds": int(self._execution_lease.total_seconds()),
+                    **self._limits_metadata,
                 },
             )
             saved = await uow.asset_extractions.save(running)
@@ -1076,6 +1114,27 @@ def _file_type_detection_metadata(
         "detector_confidence": safe_metadata_text(detection.confidence),
         **safe_metadata(detection.diagnostics),
     }
+
+
+def _resource_limit_result(
+    *,
+    asset: MemoryAsset,
+    code: str | None,
+    message: str | None,
+    metadata: dict[str, object],
+) -> ExtractionResult:
+    return ExtractionResult(
+        status="unsupported",
+        normalized_content_type=safe_metadata_text(asset.content_type),
+        title=asset.filename,
+        parser_name="resource_policy",
+        parser_version=metadata.get("extraction_resource_policy_version")
+        if isinstance(metadata.get("extraction_resource_policy_version"), str)
+        else None,
+        safe_error_code=code or "asset_extraction.resource_limit",
+        safe_error_message=message or "Asset exceeds extraction resource policy",
+        technical_metadata=metadata,
+    )
 
 
 def _bounded_artifact_candidate(

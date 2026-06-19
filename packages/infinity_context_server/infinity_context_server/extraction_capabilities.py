@@ -22,6 +22,10 @@ from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES,
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
 )
+from infinity_context_core.application.extraction_resource_policy import (
+    EXTRACTION_RESOURCE_LIMIT_CAPS,
+    EXTRACTION_RESOURCE_POLICY_VERSION,
+)
 from infinity_context_core.application.multimodal_manifest import (
     multimodal_manifest_contract_payload,
 )
@@ -312,6 +316,7 @@ def build_extraction_capability_payload(settings: Settings) -> dict[str, object]
         "provider_contract": _provider_contract_payload(settings),
         "manifest_contract": multimodal_manifest_contract_payload(),
         "file_type_detection": _file_type_detection_contract_payload(),
+        "resource_policy": _resource_policy_payload(),
         "modality_actions": modality_actions,
         "degraded_components": _degraded_components(
             providers=providers,
@@ -793,6 +798,28 @@ def _file_type_detection_contract_payload() -> dict[str, object]:
             "asset_empty_content",
         ],
         "public_api_policy": "bounded_metadata_without_raw_bytes",
+    }
+
+
+def _resource_policy_payload() -> dict[str, object]:
+    return {
+        "schema_version": "infinity_context.extraction_resource_policy.v1",
+        "policy_version": EXTRACTION_RESOURCE_POLICY_VERSION,
+        "limits_normalized_before_provider": True,
+        "rejects_oversized_asset_before_blob_read": True,
+        "rejects_blob_content_length_overflow_before_provider": True,
+        "oversized_asset_status": "unsupported",
+        "oversized_asset_error_code": "asset_extraction.file_too_large",
+        "diagnostic_fields": [
+            "extraction_resource_policy_version",
+            "extraction_limits_normalized",
+            "extraction_limits_clamped_fields",
+            "extraction_asset_byte_size",
+            "extraction_asset_byte_size_source",
+            "extraction_resource_limit_exceeded",
+        ],
+        "hard_caps": dict(EXTRACTION_RESOURCE_LIMIT_CAPS),
+        "public_api_policy": "bounded_metadata_without_raw_bytes_or_provider_payloads",
     }
 
 
