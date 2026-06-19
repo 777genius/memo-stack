@@ -259,6 +259,45 @@ def test_anchor_extraction_structures_event_identity_metadata() -> None:
     ]
 
 
+def test_anchor_extraction_structures_event_project_identity_metadata() -> None:
+    anchors = extract_observed_anchors(
+        "Call with Alex about Project Atlas 2 hours ago. "
+        "Созвон с Марией вчера про backend."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata
+        for anchor in anchors
+        if anchor.kind.value == "event"
+    }
+
+    assert "call with alex about atlas 2 hours ago" in events
+    assert "call with alex 2 hours ago" in events
+    assert "созвон с марией про backend вчера" in events
+    call = events["call with alex about atlas 2 hours ago"]
+    assert call["event_project_label"] == "atlas"
+    assert call["event_project_relation"] == "about"
+    assert call["event_project_canonical_key"] == "atlas"
+    assert call["project_canonical_key"] == "atlas"
+    assert call["event_identity_terms"] == [
+        "call",
+        "aleks",
+        "atlas",
+        "hours_ago:2:hour",
+    ]
+
+    russian = events["созвон с марией про backend вчера"]
+    assert russian["event_project_label"] == "backend"
+    assert russian["event_project_relation"] == "про"
+    assert russian["event_project_canonical_key"] == "backend"
+    assert russian["event_identity_terms"] == [
+        "sozvon",
+        "mariya",
+        "backend",
+        "yesterday:1:day",
+    ]
+
+
 def test_anchor_extraction_structures_people_projects_and_organizations() -> None:
     anchors = extract_observed_anchors(
         "Alex discussed Project Atlas with OpenAI team."

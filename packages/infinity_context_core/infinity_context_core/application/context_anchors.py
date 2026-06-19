@@ -23,6 +23,10 @@ _IDENTITY_METADATA_KEYS = (
     "event_participant_label",
     "event_participant_relation",
     "event_participant_canonical_key",
+    "event_project_label",
+    "event_project_relation",
+    "event_project_canonical_key",
+    "project_canonical_key",
     "event_temporal_phrase",
     "event_temporal_hint_code",
     "event_temporal_quantity",
@@ -145,6 +149,9 @@ def _event_render_parts(metadata: dict[str, object]) -> tuple[str, ...]:
     if participant := _metadata_text(metadata.get("event_participant_label"), limit=120):
         relation = _metadata_text(metadata.get("event_participant_relation"), limit=80) or "with"
         parts.append(f"{relation}: {participant}")
+    if project := _metadata_text(metadata.get("event_project_label"), limit=120):
+        relation = _metadata_text(metadata.get("event_project_relation"), limit=80) or "about"
+        parts.append(f"{relation}: {project}")
     if temporal := _metadata_text(metadata.get("event_temporal_phrase"), limit=160):
         parts.append(f"time: {temporal}")
     return tuple(parts)

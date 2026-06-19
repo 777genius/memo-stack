@@ -55,6 +55,13 @@ _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
     r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
 )
+_EVENT_PROJECT_PATTERN = re.compile(
+    r"\b(?P<prep>about|for|по|про|для)\s+"
+    r"(?:(?:project|проект(?:у|е|а|ом)?)\s+)?"
+    r"(?P<label>[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}"
+    r"(?:\s+[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}){0,3})",
+    re.IGNORECASE,
+)
 _EVENT_PREFIX_PARTICIPANT_PATTERN = re.compile(
     r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\s*$"
 )
@@ -298,6 +305,8 @@ class _EventComponents:
     event_type: str
     participant_label: str
     participant_relation: str
+    project_label: str
+    project_relation: str
     temporal_phrase: str
     temporal_hint_code: str
     temporal_quantity: int | None
@@ -458,6 +467,7 @@ def _structured_anchor_metadata(
         "event_type": components.event_type,
         "event_type_canonical": canonical_anchor_key(components.event_type),
         "event_has_participant": bool(components.participant_label),
+        "event_has_project": bool(components.project_label),
         "event_has_temporal": bool(components.temporal_phrase),
         "event_identity_terms": _event_identity_terms(components),
     }
@@ -469,6 +479,16 @@ def _structured_anchor_metadata(
                 "event_participant_canonical_key": _canonical_person_key(
                     components.participant_label
                 ),
+            }
+        )
+    if components.project_label:
+        project_canonical_key = canonical_anchor_key(components.project_label)
+        metadata.update(
+            {
+                "event_project_label": components.project_label,
+                "event_project_relation": components.project_relation,
+                "event_project_canonical_key": project_canonical_key,
+                "project_canonical_key": project_canonical_key,
             }
         )
     if components.temporal_phrase:
@@ -486,6 +506,8 @@ def _event_identity_terms(components: _EventComponents) -> list[str]:
     terms = [canonical_anchor_key(components.event_type)]
     if components.participant_label:
         terms.append(_canonical_person_key(components.participant_label))
+    if components.project_label:
+        terms.append(canonical_anchor_key(components.project_label))
     if components.temporal_hint_code:
         temporal = components.temporal_hint_code
         if components.temporal_quantity is not None and components.temporal_unit:
@@ -502,16 +524,31 @@ def _event_components(label: str) -> _EventComponents:
     temporal_parts = set(normalize_anchor_key(temporal_phrase).split())
     participant_relation = ""
     participant_label = ""
+    project_relation = ""
+    project_label = ""
     for index, part in enumerate(parts):
         if part not in {"with", "from", "с", "от"}:
             continue
         participant_relation = part
         participant_tokens: list[str] = []
         for token in parts[index + 1 :]:
-            if token in temporal_parts:
+            if token in temporal_parts or token in {"about", "for", "по", "про", "для"}:
                 break
             participant_tokens.append(token)
         participant_label = " ".join(participant_tokens).strip()
+        break
+    for index, part in enumerate(parts):
+        if part not in {"about", "for", "по", "про", "для"}:
+            continue
+        project_relation = part
+        project_tokens: list[str] = []
+        for token in parts[index + 1 :]:
+            if token in temporal_parts:
+                break
+            if token in {"project", "проект", "проекту", "проекте", "проекта", "проектом"}:
+                continue
+            project_tokens.append(token)
+        project_label = _clean_project_label(" ".join(project_tokens)).casefold()
         break
     temporal_hint_code, temporal_quantity, temporal_unit = _temporal_hint_payload(
         temporal_phrase
@@ -520,6 +557,8 @@ def _event_components(label: str) -> _EventComponents:
         event_type=event_type,
         participant_label=participant_label,
         participant_relation=participant_relation,
+        project_label=project_label,
+        project_relation=project_relation,
         temporal_phrase=temporal_phrase,
         temporal_hint_code=temporal_hint_code,
         temporal_quantity=temporal_quantity,
@@ -615,13 +654,24 @@ def _event_labels(text: str) -> tuple[str, ...]:
             text,
             match.end(),
         ) or _nearby_event_participant_before(text, match.start())
+        project = _event_project_in_phrase(match.group(0)) or _nearby_event_project(
+            text,
+            match.end(),
+        )
         temporal = (
             match.group(2)
             or _nearby_temporal_after(text, match.end())
             or _nearby_temporal_before(text, match.start())
         ).strip()
-        label = " ".join(part for part in (event, participant, temporal) if part).strip()
+        label = " ".join(
+            part for part in (event, participant, project, temporal) if part
+        ).strip()
         labels.append(label)
+        generic_participant_label = " ".join(
+            part for part in (event, participant, temporal) if part
+        ).strip()
+        if project and generic_participant_label != label:
+            labels.append(generic_participant_label)
         generic_temporal_label = f"{event} {temporal}".strip()
         if participant and temporal and generic_temporal_label != label:
             labels.append(generic_temporal_label)
@@ -666,6 +716,23 @@ def _nearby_event_participant(text: str, start: int) -> str:
         return ""
     label = match.group("label")
     if not _is_probable_person_label(label):
+        return ""
+    return f"{match.group('prep')} {label}"
+
+
+def _nearby_event_project(text: str, start: int) -> str:
+    tail = re.split(r"[.!?\n]", text[start : start + 100], maxsplit=1)[0]
+    if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
+        tail = tail[: next_event.start()]
+    return _event_project_in_phrase(tail)
+
+
+def _event_project_in_phrase(text: str) -> str:
+    match = _EVENT_PROJECT_PATTERN.search(text)
+    if not match:
+        return ""
+    label = _clean_project_label(match.group("label"))
+    if not _is_probable_event_project_label(label):
         return ""
     return f"{match.group('prep')} {label}"
 
@@ -722,6 +789,20 @@ def _is_probable_organization_label(label: str) -> bool:
     if normalized.split()[0] in _ORGANIZATION_LEADING_STOP_WORDS:
         return False
     return normalized not in _PERSON_STOP_WORDS
+
+
+def _is_probable_event_project_label(label: str) -> bool:
+    normalized = normalize_anchor_key(label)
+    if len(normalized) < 2 or len(normalized) > 120:
+        return False
+    first = normalized.split()[0]
+    if normalized in _PROJECT_HINTS or first in _PROJECT_HINTS:
+        return True
+    if normalized in _PERSON_STOP_WORDS:
+        return False
+    if first in _PROJECT_LABEL_STOP_WORDS:
+        return False
+    return _looks_like_project_label_continuation(label.split()[0])
 
 
 def _clean_organization_label(label: str) -> str:
