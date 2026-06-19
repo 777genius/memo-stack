@@ -117,6 +117,23 @@ def test_upload_policy_rejects_archive_uncompressed_size_limit() -> None:
         )
 
 
+def test_upload_policy_marks_duplicate_archive_paths_for_review() -> None:
+    result = assess_asset_upload(
+        filename="payload.zip",
+        declared_content_type="application/zip",
+        content=_zip_bytes(
+            {
+                "notes/summary.txt": b"first",
+                "notes\\SUMMARY.txt": b"second",
+            }
+        ),
+    )
+
+    assert result.metadata["upload_archive_review_required"] is True
+    assert result.metadata["upload_archive_review_reason"] == "zip_archive_contains_duplicate_paths"
+    assert result.metadata["upload_archive_duplicate_path_count"] == 1
+
+
 @pytest.mark.parametrize("filename", ["../secret.txt", "nested/secret.txt", "run.exe"])
 def test_upload_policy_blocks_dangerous_filenames(filename: str) -> None:
     with pytest.raises(MemoryIngressLimitError):

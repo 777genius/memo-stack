@@ -238,6 +238,7 @@ def _inspect_zip_archive(
         if _extension(entry.filename) in _NESTED_ARCHIVE_EXTENSIONS
     )
     encrypted_count = sum(1 for entry in file_entries if entry.flag_bits & 0x1)
+    duplicate_path_count = _archive_duplicate_path_count(entry.filename for entry in file_entries)
     metadata = {
         "upload_archive_inspection_status": "ok",
         "upload_archive_entry_count": entry_count,
@@ -250,6 +251,7 @@ def _inspect_zip_archive(
         "upload_archive_encrypted_entry_count": encrypted_count,
         "upload_archive_nested_archive_count": len(nested_entries),
         "upload_archive_unsafe_path_count": len(dangerous_paths),
+        "upload_archive_duplicate_path_count": duplicate_path_count,
         "upload_archive_limits": {
             "max_entries": max_entries,
             "max_uncompressed_bytes": max_uncompressed_bytes,
@@ -270,12 +272,12 @@ def _inspect_zip_archive(
         and total_uncompressed >= _ARCHIVE_RATIO_MIN_UNCOMPRESSED_BYTES
     ):
         raise MemoryIngressLimitError("Asset archive compression ratio exceeds configured limit")
-    if nested_entries or encrypted_count:
+    if nested_entries or encrypted_count or duplicate_path_count:
         metadata["upload_archive_review_required"] = True
-        metadata["upload_archive_review_reason"] = (
-            "zip_archive_contains_encrypted_entries"
-            if encrypted_count
-            else "zip_archive_contains_nested_archives"
+        metadata["upload_archive_review_reason"] = _archive_review_reason_from_flags(
+            encrypted_count=encrypted_count,
+            nested_archive_count=len(nested_entries),
+            duplicate_path_count=duplicate_path_count,
         )
     return metadata
 
@@ -316,6 +318,41 @@ def _max_archive_compression_ratio(entries: Iterable[zipfile.ZipInfo]) -> float:
         ratio = float("inf") if compressed_size <= 0 else file_size / compressed_size
         max_ratio = max(max_ratio, ratio)
     return max_ratio
+
+
+def _archive_duplicate_path_count(filenames: Iterable[str]) -> int:
+    seen: set[str] = set()
+    duplicates = 0
+    for filename in filenames:
+        normalized = _archive_member_identity(filename)
+        if not normalized:
+            continue
+        if normalized in seen:
+            duplicates += 1
+            continue
+        seen.add(normalized)
+    return duplicates
+
+
+def _archive_member_identity(filename: str) -> str:
+    normalized = filename.replace("\\", "/")
+    parts = [part for part in PurePosixPath(normalized).parts if part not in {"", "."}]
+    return "/".join(parts).casefold()
+
+
+def _archive_review_reason_from_flags(
+    *,
+    encrypted_count: int,
+    nested_archive_count: int,
+    duplicate_path_count: int,
+) -> str:
+    if encrypted_count:
+        return "zip_archive_contains_encrypted_entries"
+    if nested_archive_count:
+        return "zip_archive_contains_nested_archives"
+    if duplicate_path_count:
+        return "zip_archive_contains_duplicate_paths"
+    return "zip_archive_requires_review"
 
 
 def _archive_review_reason(
