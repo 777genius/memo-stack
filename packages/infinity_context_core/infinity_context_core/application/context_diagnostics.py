@@ -233,9 +233,10 @@ _RETRIEVAL_SOURCE_PRIORITY = {
 }
 
 
-def context_rank_key(item: ContextItem) -> tuple[float, str, str, str, int, int, str, str]:
+def context_rank_key(item: ContextItem) -> tuple[float, int, str, str, str, int, int, str, str]:
     return (
         -round(item.score, 8),
+        -_source_ref_quality_score(item),
         item.item_type,
         _memory_scope_id(item),
         _source_key(item),
@@ -588,6 +589,29 @@ def _source_ref_counts(items: tuple[ContextItem, ...]) -> dict[str, int | bool]:
         "citations_truncated": total > returned,
         "items_with_citations": sum(1 for item in items if item.source_refs),
     }
+
+
+def _source_ref_quality_score(item: ContextItem) -> int:
+    refs = item.source_refs[:3]
+    if not refs:
+        return 0
+    score = min(3, len(refs))
+    for ref in refs:
+        if ref.source_type and ref.source_id:
+            score += 1
+        if ref.chunk_id:
+            score += 2
+        if ref.quote_preview and ref.quote_preview.strip():
+            score += 3
+        if ref.char_start is not None or ref.char_end is not None:
+            score += 4
+        if ref.page_number is not None:
+            score += 4
+        if ref.time_start_ms is not None or ref.time_end_ms is not None:
+            score += 4
+        if ref.bbox is not None:
+            score += 5
+    return min(99, score)
 
 
 def _item_type_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:

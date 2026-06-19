@@ -186,6 +186,98 @@ def test_memory_items_render_multimodal_citation_locations() -> None:
     assert result.bundle.diagnostics["sensitive_citation_quote_previews_skipped"] == 0
 
 
+def test_context_packer_prefers_precise_citations_when_scores_tie() -> None:
+    low_provenance = ContextItem(
+        item_id="chunk_low_provenance",
+        item_type="chunk",
+        text="Atlas renewal threshold mentioned without exact location.",
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="aaa_low_provenance",
+            ),
+        ),
+        diagnostics={"memory_scope_id": "memory_scope_default"},
+    )
+    precise = ContextItem(
+        item_id="chunk_precise_provenance",
+        item_type="chunk",
+        text="Atlas renewal threshold shown in screenshot and transcript.",
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="zzz_precise_evidence",
+                chunk_id="ocr_region_7",
+                quote_preview="Atlas renewal threshold: $25k",
+                page_number=3,
+                time_start_ms=2100,
+                time_end_ms=4800,
+                bbox=(16.0, 24.0, 280.0, 64.0),
+            ),
+        ),
+        diagnostics={"memory_scope_id": "memory_scope_default"},
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_precise_citation_tie",
+        items=(low_provenance, precise),
+        token_budget=512,
+    )
+
+    rendered_lines = result.bundle.rendered_text.splitlines()
+    assert rendered_lines[3].startswith("[1] chunk:chunk_precise_provenance ")
+    assert 'page=3 time_ms=2100-4800 bbox=16,24,280,64' in rendered_lines[3]
+
+
+def test_context_dedupe_prefers_precise_citations_when_duplicate_scores_tie() -> None:
+    low_provenance = ContextItem(
+        item_id="chunk_same",
+        item_type="chunk",
+        text="Atlas renewal threshold mentioned without exact location.",
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="aaa_low_provenance",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_chunks",
+        },
+    )
+    precise = ContextItem(
+        item_id="chunk_same",
+        item_type="chunk",
+        text="Atlas renewal threshold shown in screenshot and transcript.",
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="zzz_precise_evidence",
+                chunk_id="ocr_region_7",
+                quote_preview="Atlas renewal threshold: $25k",
+                page_number=3,
+                time_start_ms=2100,
+                time_end_ms=4800,
+                bbox=(16.0, 24.0, 280.0, 64.0),
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_chunks",
+        },
+    )
+
+    (result,) = dedupe_rank_items((low_provenance, precise))
+
+    assert result.text == precise.text
+    assert result.source_refs[0].source_type == "asset_extraction"
+    assert result.source_refs[0].bbox == (16.0, 24.0, 280.0, 64.0)
+
+
 def test_memory_items_skip_sensitive_citation_quote_previews() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_sensitive_citation_quote",
