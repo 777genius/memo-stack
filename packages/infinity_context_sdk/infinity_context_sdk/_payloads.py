@@ -154,6 +154,12 @@ def suggestions_batch_body(
     memory_scope_external_ref: str | None,
     continue_on_error: bool,
 ) -> dict[str, Any]:
+    for index, item in enumerate(items):
+        _validate_target_fact_version(
+            target_fact_id=item.get("target_fact_id"),
+            target_fact_version=item.get("target_fact_version"),
+            field_prefix=f"items[{index}].",
+        )
     return without_none(
         {
             "space_id": space_id,
@@ -187,6 +193,10 @@ def suggestion_body(
     review_payload: dict[str, Any] | None,
     candidate_fingerprint: str | None = None,
 ) -> dict[str, Any]:
+    _validate_target_fact_version(
+        target_fact_id=target_fact_id,
+        target_fact_version=target_fact_version,
+    )
     return without_none(
         {
             "space_id": space_id,
@@ -209,6 +219,18 @@ def suggestion_body(
             "review_payload": review_payload,
         }
     )
+
+
+def _validate_target_fact_version(
+    *,
+    target_fact_id: object,
+    target_fact_version: object,
+    field_prefix: str = "",
+) -> None:
+    if target_fact_id and target_fact_version is None:
+        raise ValueError(
+            f"{field_prefix}target_fact_version is required when target_fact_id is set"
+        )
 
 
 def validate_single_scope_payload(payload: dict[str, Any]) -> None:

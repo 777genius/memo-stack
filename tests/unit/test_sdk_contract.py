@@ -2650,6 +2650,32 @@ def test_sdk_preserves_suggestion_review_audit_response() -> None:
     assert audit["events"][0]["action"] == "approve"
 
 
+def test_sdk_rejects_targeted_suggestion_without_version() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(201, json={"data": {"id": "sug_1"}})
+
+    client = InfinityContextClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match="target_fact_version is required"):
+        client.create_suggestion(
+            space_id="space_client_app",
+            memory_scope_id="memory_scope_default",
+            candidate_text="Unsafe targeted suggestion.",
+            safe_reason="review",
+            target_fact_id="fact_1",
+        )
+
+    assert calls == 0
+
+
 @pytest.mark.parametrize(
     ("items", "message"),
     [
@@ -2727,6 +2753,37 @@ def test_sdk_supports_create_suggestions_batch() -> None:
             "continue_on_error": True,
         },
     }
+
+
+def test_sdk_rejects_batch_targeted_suggestion_without_version() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(201, json={"data": {"created": 1, "failed": 0}})
+
+    client = InfinityContextClient(
+        base_url="http://memory.test",
+        token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ValueError, match=r"items\[1\]\.target_fact_version"):
+        client.create_suggestions_batch(
+            space_slug="client-app",
+            memory_scope_external_ref="default",
+            items=[
+                {"candidate_text": "Batch SDK fact A.", "safe_reason": "review"},
+                {
+                    "candidate_text": "Unsafe batch update.",
+                    "safe_reason": "review",
+                    "target_fact_id": "fact_1",
+                },
+            ],
+        )
+
+    assert calls == 0
 
 
 def test_sdk_supports_memory_scope_snapshot_export_import() -> None:
