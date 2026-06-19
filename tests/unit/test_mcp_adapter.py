@@ -364,6 +364,59 @@ def test_service_remember_fact_does_not_dedupe_different_engine_neighbor() -> No
     asyncio.run(run())
 
 
+def test_service_remember_fact_routes_numeric_neighbor_to_review() -> None:
+    class NumericNeighborGateway(RecordingGateway):
+        async def list_facts(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(("list_facts", kwargs))
+            return {
+                "data": [
+                    {
+                        "id": "fact_atlas_retention",
+                        "text": "Project Atlas keeps billing logs for 7 days.",
+                    }
+                ]
+            }
+
+    async def run() -> None:
+        gateway = NumericNeighborGateway()
+        service = MemoryToolService(
+            gateway=gateway,
+            settings=MemoryMcpSettings(write_mode=MemoryMcpWriteMode.DIRECT),
+        )
+
+        result = await service.remember_fact(
+            text="Project Atlas keeps billing logs for 30 days.",
+            kind="architecture_decision",
+            source_type="manual",
+            source_id="manual-note-1",
+        )
+
+        assert result["ok"] is True
+        assert result["data"]["id"] == "sug_1"
+        assert result["data"]["status"] == "pending"
+        assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
+        assert result["diagnostics"]["warnings"] == [
+            "infinity_context_mcp.conflict.requires_review"
+        ]
+        assert gateway.calls[-1][1]["review_payload"] == {
+            "conflicting_fact_id": "fact_atlas_retention",
+            "conflict_source": "mcp_preflight",
+            "conflict_match_type": "numeric_value_mismatch",
+            "conflict_score": 1.0,
+            "conflict_reason_codes": ["semantic_conflict", "numeric_value_mismatch"],
+            "conflict_overlap_terms": [
+                "atlas",
+                "billing",
+                "days",
+                "keeps",
+                "logs",
+                "project",
+            ],
+        }
+
+    asyncio.run(run())
+
+
 def test_service_remember_fact_routes_conflicting_existing_fact_to_review() -> None:
     class ConflictGateway(RecordingGateway):
         async def list_facts(self, **kwargs: Any) -> dict[str, Any]:
