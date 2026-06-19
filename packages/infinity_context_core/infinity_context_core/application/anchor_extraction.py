@@ -766,8 +766,12 @@ def _normalize_cyrillic_person_case(part: str) -> str:
         return part
     if part.endswith("ией"):
         return f"{part[:-3]}ия"
+    if part.endswith("ии"):
+        return f"{part[:-2]}ия"
     if part.endswith("еем"):
         return f"{part[:-3]}ей"
+    if part.endswith("ея"):
+        return f"{part[:-2]}ей"
     if part.endswith("ием"):
         return f"{part[:-3]}ий"
     if part.endswith("ой"):
