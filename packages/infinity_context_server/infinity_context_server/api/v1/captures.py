@@ -13,7 +13,11 @@ from infinity_context_core.application import (
     PurgeCaptureCommand,
     ReceiveCaptureCommand,
 )
-from infinity_context_core.domain.capture import CanonicalCapture, CaptureStatus, ConsolidationStatus
+from infinity_context_core.domain.capture import (
+    CanonicalCapture,
+    CaptureStatus,
+    ConsolidationStatus,
+)
 from infinity_context_core.domain.errors import (
     MemoryIngressLimitError,
     MemoryPolicyBlockedError,
@@ -25,11 +29,11 @@ from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import ensure_server_writes_enabled, should_capture
 from infinity_context_server.api.public_payload import safe_public_metadata, safe_public_text
-from infinity_context_server.api.v1.facts import SourceRefRequest, map_source_ref
 from infinity_context_server.api.v1.scope_resolution import (
     resolve_existing_single_scope,
     resolve_single_scope,
 )
+from infinity_context_server.api.v1.source_refs import SourceRefRequest, map_source_ref
 from infinity_context_server.composition import Container
 from infinity_context_server.config import CaptureMode
 

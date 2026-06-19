@@ -765,6 +765,42 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "internal",
             None,
         ),
+        (
+            "alex_atlas_recent",
+            alpha_memory_scope_id,
+            (
+                "QUALITY_FACT_ALEX_ATLAS_RECENT: Alex discussed Project Atlas billing "
+                "one hour ago during the renewal review."
+            ),
+            "quality-alex-atlas-recent",
+            "quality-alex-atlas-recent-v1",
+            "internal",
+            None,
+        ),
+        (
+            "maria_atlas_week",
+            alpha_memory_scope_id,
+            (
+                "QUALITY_FACT_MARIA_ATLAS_WEEK: Maria discussed Project Atlas billing "
+                "last week during a separate vendor review."
+            ),
+            "quality-maria-atlas-week",
+            "quality-maria-atlas-week-v1",
+            "internal",
+            None,
+        ),
+        (
+            "ru_alex_atlas",
+            alpha_memory_scope_id,
+            (
+                "QUALITY_FACT_RU_ALEX_ATLAS: Час назад я переписывался с Алексом "
+                "по Project Atlas billing."
+            ),
+            "quality-ru-alex-atlas",
+            "quality-ru-alex-atlas-v1",
+            "internal",
+            None,
+        ),
     )
     for (
         check_name,
@@ -888,6 +924,35 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
                 "classification": "internal",
             },
             headers=_with_idempotency(headers, "quality-doc-prompt-injection-v1"),
+        ).status_code
+    )
+    checks["quality_multimodal_source_ref_document"] = _status_ok(
+        client.post(
+            "/v1/documents",
+            json={
+                "space_id": space_id,
+                "memory_scope_id": alpha_memory_scope_id,
+                "title": "Quality multimodal evidence note",
+                "text": (
+                    "QUALITY_MM_CONTEXT: Project Atlas screenshot OCR and transcript "
+                    "segment confirm the invoice review timeline."
+                ),
+                "source_type": "asset_extraction",
+                "source_external_id": "quality-mm-extract",
+                "classification": "internal",
+                "source_refs": [
+                    {
+                        "source_type": "asset_extraction",
+                        "source_id": "quality-mm-extract",
+                        "quote_preview": "Project Atlas invoice review appears in screenshot OCR.",
+                        "page_number": 2,
+                        "time_start_ms": 1200,
+                        "time_end_ms": 5400,
+                        "bbox": [12.0, 32.0, 300.0, 88.0],
+                    }
+                ],
+            },
+            headers=_with_idempotency(headers, "quality-doc-mm-source-refs-v1"),
         ).status_code
     )
     hybrid_document_response = client.post(
@@ -1207,7 +1272,10 @@ def _seed_long_memory_golden(
         space_slug="eval-long-memory",
         memory_scope_external_ref="eval-long-alpha",
         thread_external_ref="long-kickoff",
-        text="LONGMEM_SESSION_KICKOFF: first interview session enabled Infinity Context active context.",
+        text=(
+            "LONGMEM_SESSION_KICKOFF: first interview session enabled Infinity Context "
+            "active context."
+        ),
         source_id="longmem-session-kickoff",
         idempotency_key="longmem-session-kickoff-v1",
         classification="internal",

@@ -65,6 +65,7 @@ def test_openapi_contains_stable_v1_fields() -> None:
     assert "consistency_mode" in schemas["ContextRequest"]["properties"]
     assert "classification" in schemas["RememberFactRequest"]["properties"]
     assert "classification" in schemas["IngestDocumentRequest"]["properties"]
+    assert "source_refs" in schemas["IngestDocumentRequest"]["properties"]
     for schema_name in (
         "ContextRequest",
         "DigestRequest",

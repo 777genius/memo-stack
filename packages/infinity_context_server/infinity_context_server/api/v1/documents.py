@@ -12,7 +12,9 @@ from infinity_context_core.application import (
     ListDocumentChunksQuery,
     ProcessDocumentCommand,
 )
-from infinity_context_core.application.document_fragments import document_fragment_summary_from_nodes
+from infinity_context_core.application.document_fragments import (
+    document_fragment_summary_from_nodes,
+)
 from infinity_context_core.domain.entities import MemoryChunk, MemoryDocument
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,6 +23,7 @@ from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import ensure_server_writes_enabled
 from infinity_context_server.api.public_payload import safe_public_metadata
 from infinity_context_server.api.v1.scope_resolution import resolve_single_scope
+from infinity_context_server.api.v1.source_refs import SourceRefRequest
 from infinity_context_server.backpressure import document_ingest_backpressure_response
 from infinity_context_server.composition import Container
 from infinity_context_server.pagination import cursor_int, cursor_str, decode_cursor, encode_cursor
@@ -46,6 +49,7 @@ class IngestDocumentRequest(BaseModel):
     source_type: str = Field(default="document", min_length=1, max_length=80)
     source_external_id: str = Field(min_length=1, max_length=240)
     classification: str = Field(default="unknown", max_length=40)
+    source_refs: list[SourceRefRequest] = Field(default_factory=list, max_length=24)
 
 
 def document_to_response(
@@ -148,6 +152,7 @@ async def ingest_document(
             source_external_id=request.source_external_id,
             idempotency_key=idempotency_key,
             classification=request.classification,
+            chunk_metadata=_document_chunk_metadata(request.source_refs),
         )
     )
     if result.indexing_status == "already_indexed_or_pending":
@@ -160,6 +165,17 @@ async def ingest_document(
             duplicate_chunks=result.duplicate_chunks,
             indexing_status=result.indexing_status,
         )
+    }
+
+
+def _document_chunk_metadata(source_refs: list[SourceRefRequest]) -> dict[str, object] | None:
+    if not source_refs:
+        return None
+    return {
+        "source_refs": [
+            item.model_dump(exclude_none=True, mode="json") for item in source_refs[:24]
+        ],
+        "source_ref_count": len(source_refs[:24]),
     }
 
 

@@ -1541,6 +1541,16 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
         title="Architecture notes",
         text="Postgres is canonical truth.",
         source_external_id="doc-1",
+        source_refs=[
+            {
+                "source_type": "asset_extraction",
+                "source_id": "extract-doc-1",
+                "page_number": 1,
+                "time_start_ms": 1000,
+                "time_end_ms": 2500,
+                "bbox": [12, 20, 120, 40],
+            }
+        ],
     )
     client.build_context(
         space_slug="client-app",
@@ -1572,6 +1582,8 @@ def test_sdk_context_search_and_documents_support_external_scope() -> None:
     ]
     assert seen[0][2]["space_slug"] == "client-app"
     assert seen[0][2]["thread_external_ref"] == "session-docs"
+    assert seen[0][2]["source_refs"][0]["source_id"] == "extract-doc-1"
+    assert seen[0][2]["source_refs"][0]["bbox"] == [12, 20, 120, 40]
     assert "space_id" not in seen[0][2]
     assert seen[1][2]["max_facts"] == 4
     assert seen[1][2]["max_chunks"] == 6

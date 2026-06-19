@@ -340,6 +340,7 @@ class InfinityContextClient(
         thread_external_ref: str | None = None,
         idempotency_key: str | None = None,
         classification: str = "unknown",
+        source_refs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -357,6 +358,7 @@ class InfinityContextClient(
                     "source_type": source_type,
                     "source_external_id": source_external_id,
                     "classification": classification,
+                    "source_refs": source_refs,
                 }
             ),
             idempotency_key=idempotency_key,

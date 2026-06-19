@@ -34,15 +34,14 @@ from infinity_context_server.api.public_payload import (
     safe_public_text,
 )
 from infinity_context_server.api.v1.facts import (
-    SourceRefRequest,
     fact_to_response,
     map_memory_kind,
-    map_source_ref,
 )
 from infinity_context_server.api.v1.scope_resolution import (
     resolve_existing_single_scope,
     resolve_single_scope,
 )
+from infinity_context_server.api.v1.source_refs import SourceRefRequest, map_source_ref
 from infinity_context_server.composition import Container
 
 router = APIRouter(
