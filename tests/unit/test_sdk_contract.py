@@ -948,6 +948,32 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "items_with_citations": 1,
                         "citation_quote_previews_rendered": 9,
                         "sensitive_citation_quote_previews_skipped": 1,
+                        "retrieval_trace": [
+                            {
+                                "retrieval_source": "vector_chunks",
+                                "item_count": 1,
+                                "item_types": {"chunk": 1},
+                                "source_ref_count": 25,
+                                "multimodal_source_ref_count": 25,
+                                "evidence_kind_counts": {
+                                    "transcript_segment": 1,
+                                },
+                                "evidence_modality_counts": {"audio": 1},
+                                "max_score": 0.91,
+                                "review_only_count": 1,
+                                "stale_count": 1,
+                            },
+                            {
+                                "retrieval_source": raw_secret,
+                                "item_count": 99,
+                                "item_types": {"secret": 99},
+                                "source_ref_count": 99,
+                                "multimodal_source_ref_count": 99,
+                                "evidence_kind_counts": {"secret": 99},
+                                "evidence_modality_counts": {"secret": 99},
+                                "max_score": 99.0,
+                            },
+                        ],
                         "api_key": raw_secret,
                     },
                     "items": [
@@ -1132,7 +1158,21 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.items_with_citations == 1
     assert bundle.diagnostics.citation_quote_previews_rendered == 9
     assert bundle.diagnostics.sensitive_citation_quote_previews_skipped == 1
+    assert len(bundle.diagnostics.retrieval_trace) == 2
+    trace = bundle.diagnostics.retrieval_trace[0]
+    assert trace.retrieval_source == "vector_chunks"
+    assert trace.item_count == 1
+    assert trace.item_types == {"chunk": 1}
+    assert trace.source_ref_count == 25
+    assert trace.multimodal_source_ref_count == 25
+    assert trace.evidence_kind_counts == {"transcript_segment": 1}
+    assert trace.evidence_modality_counts == {"audio": 1}
+    assert trace.max_score == 0.91
+    assert trace.review_only_count == 1
+    assert trace.stale_count == 1
+    assert bundle.diagnostics.retrieval_trace[1].retrieval_source == "[redacted]"
     assert "api_key" not in bundle.diagnostics.raw
+    assert raw_secret not in str(bundle.diagnostics.raw)
 
     item = bundle.items[0]
     assert item.memory_scope_id == "memory_scope_default"

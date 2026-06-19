@@ -83,6 +83,20 @@ class ContextItemDiagnostics:
 
 
 @dataclass(frozen=True)
+class ContextRetrievalTraceEntry:
+    retrieval_source: str
+    item_count: int
+    item_types: Mapping[str, int]
+    source_ref_count: int
+    multimodal_source_ref_count: int
+    evidence_kind_counts: Mapping[str, int]
+    evidence_modality_counts: Mapping[str, int]
+    max_score: float
+    review_only_count: int = 0
+    stale_count: int = 0
+
+
+@dataclass(frozen=True)
 class ContextItem:
     item_id: str
     item_type: str
@@ -170,6 +184,7 @@ class ContextBundleDiagnostics:
     items_with_citations: int = 0
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
+    retrieval_trace: tuple[ContextRetrievalTraceEntry, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -324,6 +339,7 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
 
 
 def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
+    payload = _as_mapping(value)
     raw = _bounded_mapping(value, max_items=MAX_BUNDLE_DIAGNOSTIC_ITEMS)
     retrieval_sources_used = _safe_text_tuple(
         raw.get("retrieval_sources_used"),
@@ -345,6 +361,14 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
     safe_raw["retrieval_sources_total"] = retrieval_sources_total
     safe_raw["retrieval_sources_returned"] = retrieval_sources_returned
     safe_raw["retrieval_sources_truncated"] = retrieval_sources_truncated
+    retrieval_trace = tuple(
+        _retrieval_trace_entry_from_payload(entry)
+        for entry in _as_list(payload.get("retrieval_trace"))[:MAX_RETRIEVAL_SOURCES]
+        if isinstance(entry, Mapping)
+    )
+    safe_raw["retrieval_trace"] = [
+        _retrieval_trace_entry_to_raw(entry) for entry in retrieval_trace
+    ]
     return ContextBundleDiagnostics(
         context_assembly_version=_safe_text(raw.get("context_assembly_version"), default="unknown"),
         consistency_mode=_safe_text(raw.get("consistency_mode"), default="unknown"),
@@ -486,7 +510,55 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         sensitive_citation_quote_previews_skipped=_non_negative_int(
             raw.get("sensitive_citation_quote_previews_skipped")
         ),
+        retrieval_trace=retrieval_trace,
     )
+
+
+def _retrieval_trace_entry_from_payload(
+    payload: Mapping[str, object],
+) -> ContextRetrievalTraceEntry:
+    return ContextRetrievalTraceEntry(
+        retrieval_source=_safe_text(
+            payload.get("retrieval_source"),
+            default="unknown",
+            limit=MAX_KEY_CHARS,
+        ),
+        item_count=_non_negative_int(payload.get("item_count")),
+        item_types=_int_mapping(payload.get("item_types")),
+        source_ref_count=_non_negative_int(payload.get("source_ref_count")),
+        multimodal_source_ref_count=_non_negative_int(
+            payload.get("multimodal_source_ref_count")
+        ),
+        evidence_kind_counts=_int_mapping(payload.get("evidence_kind_counts")),
+        evidence_modality_counts=_int_mapping(payload.get("evidence_modality_counts")),
+        max_score=_safe_float(payload.get("max_score")),
+        review_only_count=_non_negative_int(payload.get("review_only_count")),
+        stale_count=_non_negative_int(payload.get("stale_count")),
+    )
+
+
+def _retrieval_trace_entry_to_raw(entry: ContextRetrievalTraceEntry) -> dict[str, object]:
+    return {
+        "retrieval_source": entry.retrieval_source,
+        "item_count": entry.item_count,
+        "item_types": dict(entry.item_types),
+        "source_ref_count": entry.source_ref_count,
+        "multimodal_source_ref_count": entry.multimodal_source_ref_count,
+        "evidence_kind_counts": dict(entry.evidence_kind_counts),
+        "evidence_modality_counts": dict(entry.evidence_modality_counts),
+        "max_score": entry.max_score,
+        "review_only_count": entry.review_only_count,
+        "stale_count": entry.stale_count,
+    }
+
+
+def _int_mapping(value: object) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for key, item in _bounded_mapping(value).items():
+        if not isinstance(key, str):
+            continue
+        result[key] = _non_negative_int(item)
+    return result
 
 
 def _ranking_reason_for(retrieval_sources: tuple[str, ...]) -> str:

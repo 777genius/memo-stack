@@ -521,6 +521,20 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
     assert context.diagnostics["citations_returned"] == 3
     assert context.diagnostics["citations_truncated"] is False
     assert context.diagnostics["items_with_citations"] == 1
+    assert context.diagnostics["retrieval_trace"] == [
+        {
+            "retrieval_source": "keyword_chunks",
+            "item_count": 1,
+            "item_types": {"chunk": 1},
+            "source_ref_count": 3,
+            "multimodal_source_ref_count": 3,
+            "evidence_kind_counts": {},
+            "evidence_modality_counts": {},
+            "max_score": round(context.items[0].score, 4),
+            "review_only_count": 0,
+            "stale_count": 0,
+        }
+    ]
     item = context.items[0]
     assert len(item.source_refs) == 3
     assert item.diagnostics["provenance"]["source_ref_count"] == 3
@@ -535,6 +549,13 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
     assert api_data["diagnostics"]["citations_total"] == 3
     assert api_data["diagnostics"]["citations_returned"] == 3
     assert api_data["diagnostics"]["items_with_citations"] == 1
+    assert api_data["diagnostics"]["retrieval_trace"][0]["retrieval_source"] == (
+        "keyword_chunks"
+    )
+    assert api_data["diagnostics"]["retrieval_trace"][0]["source_ref_count"] == 3
+    assert api_data["diagnostics"]["retrieval_trace"][0][
+        "multimodal_source_ref_count"
+    ] == 3
     assert api_item["citations"][0]["page_number"] == 2
     assert api_item["citations"][1]["time_range_ms"] == {"start": 1200, "end": 5400}
     assert api_item["citations"][2]["bbox"] == [12.0, 32.0, 300.0, 88.0]

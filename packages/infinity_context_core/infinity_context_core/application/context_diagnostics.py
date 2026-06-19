@@ -10,6 +10,7 @@ from infinity_context_core.application.safe_payload import safe_metadata, safe_m
 
 _MAX_RETRIEVAL_SOURCES = 8
 _MAX_RETRIEVAL_SOURCE_CANDIDATES = 64
+_MAX_RETRIEVAL_TRACE_ENTRIES = 8
 _MAX_DIAGNOSTIC_MAPPING_ITEMS = 24
 _MAX_BUNDLE_DIAGNOSTIC_MAPPING_ITEMS = 64
 _MAX_DIAGNOSTIC_LIST_ITEMS = 8
@@ -358,6 +359,10 @@ def normalize_context_bundle_diagnostics(
     normalized.update(_multimodal_source_ref_counts(items))
     normalized.update(_evidence_kind_modality_counts(items))
     normalized.update(_query_snippet_counts(items))
+    normalized["retrieval_trace"] = _retrieval_trace(
+        items,
+        retrieval_sources=retrieval_sources,
+    )
     return normalized
 
 
@@ -725,6 +730,99 @@ def _query_snippet_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
         "query_snippet_items_used": items_with_snippets,
         "query_snippet_source_refs_enriched": enriched_refs,
     }
+
+
+def _retrieval_trace(
+    items: tuple[ContextItem, ...],
+    *,
+    retrieval_sources: tuple[str, ...],
+) -> list[dict[str, object]]:
+    by_source: dict[str, dict[str, object]] = {}
+    source_order = retrieval_sources or ("unknown",)
+    for source in source_order:
+        by_source[source] = _empty_retrieval_trace_entry(source)
+
+    for item in items:
+        item_sources = diagnostic_retrieval_sources(item.diagnostics)
+        if not item_sources:
+            item_sources = ("unknown",)
+            by_source.setdefault("unknown", _empty_retrieval_trace_entry("unknown"))
+        for source in item_sources:
+            entry = by_source.setdefault(source, _empty_retrieval_trace_entry(source))
+            _add_item_to_retrieval_trace_entry(entry, item)
+
+    return [
+        _finalize_retrieval_trace_entry(entry)
+        for source in source_order[:_MAX_RETRIEVAL_TRACE_ENTRIES]
+        if (entry := by_source.get(source)) and entry["item_count"] > 0
+    ]
+
+
+def _empty_retrieval_trace_entry(source: str) -> dict[str, object]:
+    return {
+        "retrieval_source": _safe_optional_text(
+            source,
+            limit=_MAX_DIAGNOSTIC_KEY_CHARS,
+        )
+        or "unknown",
+        "item_count": 0,
+        "item_types": {},
+        "source_ref_count": 0,
+        "multimodal_source_ref_count": 0,
+        "evidence_kind_counts": {},
+        "evidence_modality_counts": {},
+        "max_score": 0.0,
+        "review_only_count": 0,
+        "stale_count": 0,
+    }
+
+
+def _add_item_to_retrieval_trace_entry(
+    entry: dict[str, object],
+    item: ContextItem,
+) -> None:
+    entry["item_count"] = int(entry["item_count"]) + 1
+    entry["source_ref_count"] = int(entry["source_ref_count"]) + len(item.source_refs)
+    entry["multimodal_source_ref_count"] = int(entry["multimodal_source_ref_count"]) + sum(
+        1 for ref in item.source_refs if _is_multimodal_source_ref(ref)
+    )
+    entry["max_score"] = max(float(entry["max_score"]), round(float(item.score), 4))
+    diagnostics = _as_dict(item.diagnostics)
+    if diagnostics.get("review_only") is True:
+        entry["review_only_count"] = int(entry["review_only_count"]) + 1
+    if _safe_optional_text(diagnostics.get("stale_reason"), limit=_MAX_DIAGNOSTIC_KEY_CHARS):
+        entry["stale_count"] = int(entry["stale_count"]) + 1
+    _increment_count_mapping(entry, "item_types", item.item_type)
+    _increment_count_mapping(entry, "evidence_kind_counts", _diagnostic_text(item, "evidence_kind"))
+    _increment_count_mapping(
+        entry,
+        "evidence_modality_counts",
+        _diagnostic_text(item, "evidence_modality"),
+    )
+
+
+def _increment_count_mapping(
+    entry: dict[str, object],
+    key: str,
+    raw_value: object,
+) -> None:
+    value = _safe_optional_text(raw_value, limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+    if not value or "[redacted]" in value:
+        return
+    counts = entry[key]
+    if not isinstance(counts, dict):
+        counts = {}
+        entry[key] = counts
+    counts[value] = int(counts.get(value, 0)) + 1
+
+
+def _finalize_retrieval_trace_entry(entry: dict[str, object]) -> dict[str, object]:
+    finalized = dict(entry)
+    for key in ("item_types", "evidence_kind_counts", "evidence_modality_counts"):
+        counts = finalized.get(key)
+        finalized[key] = dict(sorted(counts.items())) if isinstance(counts, dict) else {}
+    finalized["max_score"] = round(float(finalized.get("max_score") or 0.0), 4)
+    return finalized
 
 
 def _is_multimodal_source_ref(ref: Any) -> bool:
