@@ -3,8 +3,6 @@ import json
 from typing import Any
 
 import pytest
-from mcp.shared.version import LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
-from mcp_adapter_fakes import RecordingGateway
 from infinity_context_mcp.application.service import MemoryToolService
 from infinity_context_mcp.config import (
     MemoryMcpDeleteMode,
@@ -19,6 +17,8 @@ from infinity_context_mcp.domain.models import (
     MemoryScope,
 )
 from infinity_context_mcp.server import create_mcp_server
+from mcp.shared.version import LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
+from mcp_adapter_fakes import RecordingGateway
 
 
 def test_load_settings_uses_memory_service_token_fallback() -> None:
@@ -136,7 +136,10 @@ def test_service_memory_scope_snapshot_export_and_import_are_policy_gated() -> N
         assert exported["data"]["manifest"] == {}
         assert dry_run["data"]["dry_run"] is True
         assert refused["ok"] is False
-        assert refused["error"]["code"] == "infinity_context_mcp.policy.explicit_confirmation_required"
+        assert (
+            refused["error"]["code"]
+            == "infinity_context_mcp.policy.explicit_confirmation_required"
+        )
         assert imported["ok"] is True
         assert imported["diagnostics"]["side_effects"] == ["imported_memory_scope_snapshot"]
         assert (
@@ -293,7 +296,9 @@ def test_service_remember_fact_routes_negated_semantic_neighbor_to_review() -> N
         assert result["data"]["id"] == "sug_1"
         assert result["data"]["status"] == "pending"
         assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
-        assert result["diagnostics"]["warnings"] == ["infinity_context_mcp.conflict.requires_review"]
+        assert result["diagnostics"]["warnings"] == [
+            "infinity_context_mcp.conflict.requires_review"
+        ]
         assert [name for name, _ in gateway.calls] == [
             "list_facts",
             "list_suggestions",
@@ -302,6 +307,10 @@ def test_service_remember_fact_routes_negated_semantic_neighbor_to_review() -> N
         assert gateway.calls[-1][1]["review_payload"] == {
             "conflicting_fact_id": "fact_qdrant_negated",
             "conflict_source": "mcp_preflight",
+            "conflict_match_type": "negation_mismatch",
+            "conflict_score": 0.75,
+            "conflict_reason_codes": ["semantic_conflict", "negation_mismatch"],
+            "conflict_overlap_terms": ["document", "qdrant", "vector"],
         }
 
     asyncio.run(run())
@@ -346,6 +355,10 @@ def test_service_remember_fact_does_not_dedupe_different_engine_neighbor() -> No
         assert gateway.calls[-1][1]["review_payload"] == {
             "conflicting_fact_id": "fact_qdrant_documents",
             "conflict_source": "mcp_preflight",
+            "conflict_match_type": "exclusive_anchor_mismatch",
+            "conflict_score": 0.667,
+            "conflict_reason_codes": ["semantic_conflict", "exclusive_anchor_mismatch"],
+            "conflict_overlap_terms": ["document", "owns", "retrieval", "vector"],
         }
 
     asyncio.run(run())
@@ -381,7 +394,9 @@ def test_service_remember_fact_routes_conflicting_existing_fact_to_review() -> N
         assert result["ok"] is True
         assert result["data"]["id"] == "sug_1"
         assert result["diagnostics"]["side_effects"] == ["created_suggestion"]
-        assert result["diagnostics"]["warnings"] == ["infinity_context_mcp.conflict.requires_review"]
+        assert result["diagnostics"]["warnings"] == [
+            "infinity_context_mcp.conflict.requires_review"
+        ]
         assert "remember_fact" not in [name for name, _ in gateway.calls]
         assert [name for name, _ in gateway.calls] == [
             "list_facts",
@@ -413,7 +428,10 @@ def test_service_remember_fact_routes_low_trust_source_to_suggestion() -> None:
         assert result["data"]["status"] == "pending"
         assert result["diagnostics"]["policy"]["decision"] == "allow_suggestion"
         assert gateway.calls[0][0] == "create_suggestion"
-        assert gateway.calls[0][1]["safe_reason"] == "infinity_context_mcp.policy.source_requires_review"
+        assert (
+            gateway.calls[0][1]["safe_reason"]
+            == "infinity_context_mcp.policy.source_requires_review"
+        )
 
     asyncio.run(run())
 
@@ -836,7 +854,10 @@ def test_service_rejects_token_source_id_and_quote_preview() -> None:
         )
 
         assert source_result["ok"] is False
-        assert source_result["error"]["code"] == "infinity_context_mcp.validation.invalid_source_ref"
+        assert (
+            source_result["error"]["code"]
+            == "infinity_context_mcp.validation.invalid_source_ref"
+        )
         assert quote_result["ok"] is False
         assert quote_result["error"]["code"] == "infinity_context_mcp.policy.secret_detected"
         assert gateway.calls == []

@@ -6,7 +6,8 @@ from dataclasses import asdict
 from typing import Any
 
 from infinity_context_core.application.semantic_dedupe import (
-    looks_conflicting_fact,
+    FactConflictMatch,
+    describe_conflicting_fact_match,
     looks_equivalent_fact,
 )
 
@@ -519,7 +520,7 @@ class MemoryToolService(
                 )
             duplicate = await self._find_duplicate(scope, text)
             if duplicate is not None:
-                duplicate_kind, duplicate_id = duplicate
+                duplicate_kind, duplicate_id, duplicate_payload = duplicate
                 if duplicate_kind == "duplicate":
                     return self._ok(
                         "Existing memory already matches this fact. No new fact was created.",
@@ -546,6 +547,7 @@ class MemoryToolService(
                     review_payload={
                         "conflicting_fact_id": duplicate_id,
                         "conflict_source": "mcp_preflight",
+                        **duplicate_payload,
                     },
                 )
                 return self._ok(
@@ -1938,7 +1940,7 @@ class MemoryToolService(
         )
         duplicate = await self._find_duplicate(scope, candidate.text)
         if duplicate is not None:
-            duplicate_kind, duplicate_id = duplicate
+            duplicate_kind, duplicate_id, _duplicate_payload = duplicate
             if duplicate_kind == "conflict":
                 return {
                     **build_candidate_result(
@@ -2176,19 +2178,24 @@ class MemoryToolService(
         required = max(1, min(3, len(candidate_terms) // 2))
         return len(overlap) < required
 
-    async def _find_duplicate(self, scope: MemoryScope, text: str) -> tuple[str, str] | None:
+    async def _find_duplicate(
+        self,
+        scope: MemoryScope,
+        text: str,
+    ) -> tuple[str, str, dict[str, Any]] | None:
         normalized = normalize_candidate(text)
         facts = await self._gateway.list_facts(scope=scope, status="active", limit=50, cursor=None)
-        possible_conflict: str | None = None
+        possible_conflict: tuple[str, dict[str, Any]] | None = None
         for item in payload_items(facts):
             item_text = str(item.get("text", ""))
             item_id = str(item.get("id") or item.get("fact_id") or "")
             if normalize_candidate(item_text) == normalized:
-                return ("duplicate", item_id)
+                return ("duplicate", item_id, {})
             if looks_equivalent_fact(text, item_text):
-                return ("duplicate", item_id)
-            if possible_conflict is None and looks_conflicting_fact(text, item_text):
-                possible_conflict = item_id
+                return ("duplicate", item_id, {})
+            conflict_match = describe_conflicting_fact_match(text, item_text)
+            if possible_conflict is None and conflict_match is not None:
+                possible_conflict = (item_id, _conflict_review_payload(conflict_match))
         suggestions = await self._gateway.list_suggestions(
             scope=scope,
             status="pending",
@@ -2200,12 +2207,22 @@ class MemoryToolService(
         for item in payload_items(suggestions):
             candidate_text = str(item.get("candidate_text") or item.get("text") or "")
             if normalize_candidate(candidate_text) == normalized:
-                return ("duplicate", str(item.get("id") or item.get("suggestion_id") or ""))
+                return ("duplicate", str(item.get("id") or item.get("suggestion_id") or ""), {})
             if looks_equivalent_fact(text, candidate_text):
-                return ("duplicate", str(item.get("id") or item.get("suggestion_id") or ""))
+                return ("duplicate", str(item.get("id") or item.get("suggestion_id") or ""), {})
         if possible_conflict is not None:
-            return ("conflict", possible_conflict)
+            conflict_id, conflict_payload = possible_conflict
+            return ("conflict", conflict_id, conflict_payload)
         return None
+
+
+def _conflict_review_payload(match: FactConflictMatch) -> dict[str, Any]:
+    return {
+        "conflict_match_type": match.match_type,
+        "conflict_score": match.score,
+        "conflict_reason_codes": list(match.reason_codes),
+        "conflict_overlap_terms": list(match.overlap_terms),
+    }
 
 
 def _ensure_optional_choice(name: str, value: str | None, allowed: set[str]) -> None:
