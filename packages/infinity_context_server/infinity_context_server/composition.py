@@ -92,6 +92,7 @@ from infinity_context_core.application import (
     ReviewContextLinkSuggestionUseCase,
     ReviewSuggestionsBatchUseCase,
     RunAssetExtractionUseCase,
+    RunBlobStorageCleanupUseCase,
     SplitAnchorUseCase,
     SuggestAnchorMergesUseCase,
     SuggestContextLinksUseCase,
@@ -114,7 +115,7 @@ from infinity_context_core.ports.adapters import (
     MemoryAdapterPort,
     VectorMemoryPort,
 )
-from infinity_context_core.ports.assets import BlobStoragePort
+from infinity_context_core.ports.assets import BlobStorageMaintenancePort
 from infinity_context_core.ports.auto_memory import MemoryExtractorPort
 from infinity_context_core.ports.capabilities import DocumentMemoryPort
 from infinity_context_core.ports.clock import ClockPort
@@ -153,7 +154,7 @@ class Container:
     vector_index: VectorMemoryPort
     graph_index: GraphMemoryPort
     embedder: EmbeddingPort
-    blob_storage: BlobStoragePort
+    blob_storage: BlobStorageMaintenancePort
     get_capabilities: GetCapabilitiesUseCase
     create_space: CreateSpaceUseCase
     list_spaces: ListSpacesUseCase
@@ -233,6 +234,7 @@ class Container:
     purge_capture: PurgeCaptureUseCase
     consolidate_capture: ConsolidateCaptureUseCase
     expire_pending_suggestions: ExpirePendingSuggestionsUseCase
+    run_blob_storage_cleanup: RunBlobStorageCleanupUseCase
     runtime_metrics: RuntimeMetrics
     provider_circuits: tuple[ProviderCircuitBreaker, ...]
 
@@ -539,6 +541,11 @@ def build_container(settings: Settings | None = None) -> Container:
         uow_factory=uow_factory,
         clock=clock,
     )
+    run_blob_storage_cleanup = RunBlobStorageCleanupUseCase(
+        uow_factory=uow_factory,
+        blob_storage=blob_storage,
+        clock=clock,
+    )
     runtime_metrics = RuntimeMetrics()
 
     return Container(
@@ -632,6 +639,7 @@ def build_container(settings: Settings | None = None) -> Container:
         purge_capture=purge_capture,
         consolidate_capture=consolidate_capture,
         expire_pending_suggestions=expire_pending_suggestions,
+        run_blob_storage_cleanup=run_blob_storage_cleanup,
         runtime_metrics=runtime_metrics,
         provider_circuits=provider_circuits,
     )
@@ -648,7 +656,7 @@ async def _close_resource(resource: object) -> None:
         return
 
 
-def _build_blob_storage(settings: Settings) -> BlobStoragePort:
+def _build_blob_storage(settings: Settings) -> BlobStorageMaintenancePort:
     if settings.asset_storage_backend == "local":
         return LocalBlobStorage(root_dir=settings.asset_storage_dir)
     if settings.asset_storage_backend == "s3":

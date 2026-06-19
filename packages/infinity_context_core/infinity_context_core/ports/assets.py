@@ -19,6 +19,19 @@ class StoredBlob:
     byte_size: int
 
 
+@dataclass(frozen=True)
+class StoredBlobObject:
+    storage_key: str
+    byte_size: int | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class StoredBlobPage:
+    objects: tuple[StoredBlobObject, ...]
+    next_cursor: str | None = None
+
+
 class BlobStoragePort(Protocol):
     async def write_bytes(self, *, storage_key: str, content: bytes) -> StoredBlob:
         """Write a blob under a logical storage key."""
@@ -28,6 +41,17 @@ class BlobStoragePort(Protocol):
 
     async def delete(self, *, storage_key: str) -> None:
         """Delete a blob if it exists."""
+
+
+class BlobStorageMaintenancePort(BlobStoragePort, Protocol):
+    async def list_objects(
+        self,
+        *,
+        prefix: str = "",
+        limit: int = 500,
+        cursor: str | None = None,
+    ) -> StoredBlobPage:
+        """List provider-neutral blob objects under a logical storage key prefix."""
 
 
 class AssetRepositoryPort(Protocol):
@@ -67,6 +91,14 @@ class AssetRepositoryPort(Protocol):
         excluding_asset_id: str | None = None,
     ) -> bool:
         """Check whether a stored asset still references a blob storage key."""
+
+    async def list_stored_storage_keys(
+        self,
+        *,
+        storage_backend: str,
+        storage_keys: tuple[str, ...],
+    ) -> set[str]:
+        """Return storage keys referenced by active stored assets."""
 
     async def list_for_scope(
         self,

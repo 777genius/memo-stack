@@ -141,6 +141,25 @@ class PostgresAssetRepository(AssetRepositoryPort):
         ).scalar_one_or_none()
         return row is not None
 
+    async def list_stored_storage_keys(
+        self,
+        *,
+        storage_backend: str,
+        storage_keys: tuple[str, ...],
+    ) -> set[str]:
+        if not storage_keys:
+            return set()
+        rows = (
+            await self._session.execute(
+                select(MemoryAssetRow.storage_key).where(
+                    MemoryAssetRow.storage_backend == storage_backend,
+                    MemoryAssetRow.storage_key.in_(storage_keys),
+                    MemoryAssetRow.status == "stored",
+                )
+            )
+        ).scalars()
+        return {str(row) for row in rows}
+
     async def list_for_scope(
         self,
         *,
@@ -271,6 +290,30 @@ class PostgresAssetExtractionRepository(AssetExtractionRepositoryPort):
     async def get_artifact_by_id(self, artifact_id: str) -> ExtractionArtifact | None:
         row = await self._session.get(MemoryAssetExtractionArtifactRow, artifact_id)
         return extraction_artifact_row_to_domain(row) if row is not None else None
+
+    async def list_retained_artifact_storage_keys(
+        self,
+        *,
+        storage_backend: str,
+        storage_keys: tuple[str, ...],
+    ) -> set[str]:
+        if not storage_keys:
+            return set()
+        rows = (
+            await self._session.execute(
+                select(MemoryAssetExtractionArtifactRow.storage_key)
+                .join(
+                    MemoryAssetRow,
+                    MemoryAssetRow.id == MemoryAssetExtractionArtifactRow.asset_id,
+                )
+                .where(
+                    MemoryAssetExtractionArtifactRow.storage_backend == storage_backend,
+                    MemoryAssetExtractionArtifactRow.storage_key.in_(storage_keys),
+                    MemoryAssetRow.status == "stored",
+                )
+            )
+        ).scalars()
+        return {str(row) for row in rows}
 
     async def list_for_asset(
         self,

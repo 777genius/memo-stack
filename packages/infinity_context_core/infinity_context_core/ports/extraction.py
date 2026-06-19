@@ -133,6 +133,14 @@ class AssetExtractionRepositoryPort(Protocol):
     async def get_artifact_by_id(self, artifact_id: str) -> ExtractionArtifact | None:
         """Load one extraction artifact."""
 
+    async def list_retained_artifact_storage_keys(
+        self,
+        *,
+        storage_backend: str,
+        storage_keys: tuple[str, ...],
+    ) -> set[str]:
+        """Return artifact storage keys retained by active stored assets."""
+
     async def list_for_asset(
         self,
         *,

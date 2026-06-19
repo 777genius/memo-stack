@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 
 import pytest
 from infinity_context_adapters.s3_blob import S3BlobStorage
@@ -26,10 +27,13 @@ class _FakeS3NotFound(Exception):
 class _FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
+        self.last_modified: dict[tuple[str, str], datetime] = {}
         self.deleted: list[tuple[str, str]] = []
+        self.list_requests: list[dict[str, object]] = []
 
     def put_object(self, *, Bucket: str, Key: str, Body: bytes) -> None:
         self.objects[(Bucket, Key)] = Body
+        self.last_modified[(Bucket, Key)] = datetime(2026, 6, 19, tzinfo=UTC)
 
     def get_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
         content = self.objects.get((Bucket, Key))
@@ -40,6 +44,32 @@ class _FakeS3Client:
     def delete_object(self, *, Bucket: str, Key: str) -> None:
         self.deleted.append((Bucket, Key))
         self.objects.pop((Bucket, Key), None)
+        self.last_modified.pop((Bucket, Key), None)
+
+    def list_objects_v2(self, **kwargs: object) -> dict[str, object]:
+        self.list_requests.append(dict(kwargs))
+        bucket = str(kwargs["Bucket"])
+        prefix = str(kwargs.get("Prefix") or "")
+        max_keys = int(kwargs.get("MaxKeys") or 1000)
+        continuation_token = kwargs.get("ContinuationToken")
+        keys = sorted(key for item_bucket, key in self.objects if item_bucket == bucket)
+        if prefix:
+            keys = [key for key in keys if key.startswith(prefix)]
+        if continuation_token:
+            keys = [key for key in keys if key > str(continuation_token)]
+        page_keys = keys[:max_keys]
+        contents = [
+            {
+                "Key": key,
+                "Size": len(self.objects[(bucket, key)]),
+                "LastModified": self.last_modified[(bucket, key)],
+            }
+            for key in page_keys
+        ]
+        return {
+            "Contents": contents,
+            "NextContinuationToken": page_keys[-1] if len(keys) > len(page_keys) else None,
+        }
 
 
 def test_s3_blob_storage_round_trips_with_prefix() -> None:
@@ -68,6 +98,33 @@ def test_s3_blob_storage_missing_object_raises_not_found() -> None:
 
         with pytest.raises(MemoryNotFoundError):
             await storage.read_bytes(storage_key="space/scope/missing.txt")
+
+    asyncio.run(run())
+
+
+def test_s3_blob_storage_lists_logical_objects_with_configured_prefix() -> None:
+    async def run() -> None:
+        client = _FakeS3Client()
+        storage = S3BlobStorage(bucket="memory-assets", prefix="tenant-a/assets", client=client)
+        await storage.write_bytes(storage_key="space/scope/a.txt", content=b"a")
+        await storage.write_bytes(storage_key="space/scope/b.txt", content=b"bb")
+        await storage.write_bytes(storage_key="space/other/c.txt", content=b"ccc")
+
+        first_page = await storage.list_objects(prefix="space/scope", limit=1)
+        second_page = await storage.list_objects(
+            prefix="space/scope",
+            limit=10,
+            cursor=first_page.next_cursor,
+        )
+
+        assert [item.storage_key for item in first_page.objects] == ["space/scope/a.txt"]
+        assert first_page.objects[0].byte_size == 1
+        assert first_page.objects[0].updated_at == datetime(2026, 6, 19, tzinfo=UTC)
+        assert first_page.next_cursor == "tenant-a/assets/space/scope/a.txt"
+        assert [item.storage_key for item in second_page.objects] == ["space/scope/b.txt"]
+        assert second_page.next_cursor is None
+        assert client.list_requests[0]["Prefix"] == "tenant-a/assets/space/scope"
+        assert client.list_requests[1]["ContinuationToken"] == first_page.next_cursor
 
     asyncio.run(run())
 

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from infinity_context_adapters.postgres.models import (
     MemoryScopeRow,
     MemorySpaceRow,
 )
-from infinity_context_core.application import EnsureScopeCommand
+from infinity_context_core.application import BlobStorageCleanupCommand, EnsureScopeCommand
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,14 +158,18 @@ async def active_context_readiness_gate(
         _gate_check(
             "outbox_dead_count",
             "ok" if dead_outbox == 0 else "failed",
-            remediation="python -m infinity_context_server.admin replay-outbox --status dead --limit 50",
+            remediation=(
+                "python -m infinity_context_server.admin replay-outbox --status dead --limit 50"
+            ),
             dead=dead_outbox,
             pending=pending_outbox,
         ),
         _gate_check(
             "invariant_check",
             "ok" if invariant_result.get("status") == "ok" else "failed",
-            remediation="python -m infinity_context_server.admin check-invariants --include-projections",
+            remediation=(
+                "python -m infinity_context_server.admin check-invariants --include-projections"
+            ),
             invariant_status=str(invariant_result.get("status")),
             dead_outbox_jobs=int(invariant_result.get("dead_outbox_jobs") or 0),
         ),
@@ -449,6 +454,59 @@ async def import_memory_scope_command(
         await container.engine.dispose()
 
 
+async def cleanup_asset_storage(
+    *,
+    prefix: str,
+    limit: int,
+    max_deletions: int,
+    grace_period_seconds: int,
+    cursor: str | None,
+    apply_changes: bool,
+) -> dict[str, object]:
+    container = build_container(Settings())
+    try:
+        result = await container.run_blob_storage_cleanup.execute(
+            BlobStorageCleanupCommand(
+                storage_backend=container.settings.asset_storage_backend,
+                prefix=prefix,
+                dry_run=not apply_changes,
+                max_objects=limit,
+                max_deletions=max_deletions,
+                grace_period_seconds=grace_period_seconds,
+                cursor=cursor,
+            )
+        )
+        return {
+            "status": result.status,
+            "operation": "cleanup-asset-storage",
+            "dry_run": result.dry_run,
+            "storage_backend": result.storage_backend,
+            "prefix": result.prefix,
+            "scanned_count": result.scanned_count,
+            "referenced_count": result.referenced_count,
+            "recent_count": result.recent_count,
+            "unknown_updated_at_count": result.unknown_updated_at_count,
+            "orphan_candidate_count": result.orphan_candidate_count,
+            "delete_attempt_count": result.delete_attempt_count,
+            "deleted_count": result.deleted_count,
+            "delete_error_count": result.delete_error_count,
+            "deletion_limit_count": result.deletion_limit_count,
+            "next_cursor": result.next_cursor,
+            "decisions": [_cleanup_decision_payload(item) for item in result.decisions],
+            "diagnostics": result.diagnostics,
+        }
+    finally:
+        await container.engine.dispose()
+
+
+def _cleanup_decision_payload(decision: object) -> dict[str, object]:
+    payload = asdict(decision)
+    updated_at = payload.get("updated_at")
+    if isinstance(updated_at, datetime):
+        payload["updated_at"] = updated_at.isoformat()
+    return payload
+
+
 async def _count_outbox(session: AsyncSession, status: str) -> int:
     return int(
         (
@@ -500,6 +558,15 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             older_than_seconds=args.older_than_seconds,
             limit=args.limit,
             dry_run=args.dry_run,
+        )
+    if args.command == "cleanup-asset-storage":
+        return await cleanup_asset_storage(
+            prefix=args.prefix,
+            limit=args.limit,
+            max_deletions=args.max_deletions,
+            grace_period_seconds=args.grace_period_seconds,
+            cursor=args.cursor,
+            apply_changes=args.apply,
         )
     if args.command == "token":
         if args.token_command == "create":
@@ -565,6 +632,13 @@ def main() -> None:
     compact.add_argument("--older-than-seconds", type=int, default=86_400)
     compact.add_argument("--limit", type=int, default=500)
     compact.add_argument("--dry-run", action="store_true")
+    cleanup_storage = sub.add_parser("cleanup-asset-storage")
+    cleanup_storage.add_argument("--prefix", default="")
+    cleanup_storage.add_argument("--limit", type=int, default=500)
+    cleanup_storage.add_argument("--max-deletions", type=int, default=100)
+    cleanup_storage.add_argument("--grace-period-seconds", type=int, default=86_400)
+    cleanup_storage.add_argument("--cursor", default=None)
+    cleanup_storage.add_argument("--apply", action="store_true")
     token = sub.add_parser("token")
     token_sub = token.add_subparsers(dest="token_command", required=True)
     token_create_parser = token_sub.add_parser("create")

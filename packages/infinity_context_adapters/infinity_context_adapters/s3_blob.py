@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Any
 
 from infinity_context_core.domain.errors import MemoryNotFoundError, MemoryValidationError
-from infinity_context_core.ports.assets import StoredBlob
+from infinity_context_core.ports.assets import StoredBlob, StoredBlobObject, StoredBlobPage
 
 
 class S3BlobStorage:
@@ -79,9 +80,69 @@ class S3BlobStorage:
             Key=object_key,
         )
 
+    async def list_objects(
+        self,
+        *,
+        prefix: str = "",
+        limit: int = 500,
+        cursor: str | None = None,
+    ) -> StoredBlobPage:
+        request: dict[str, object] = {
+            "Bucket": self._bucket,
+            "Prefix": self._object_prefix(prefix),
+            "MaxKeys": max(1, min(limit, 5_000)),
+        }
+        if cursor:
+            request["ContinuationToken"] = cursor
+        response = await asyncio.to_thread(self._client.list_objects_v2, **request)
+        objects: list[StoredBlobObject] = []
+        for item in response.get("Contents", ()):
+            stored_object = self._stored_object_from_s3(item)
+            if stored_object is not None:
+                objects.append(stored_object)
+        next_cursor = response.get("NextContinuationToken")
+        return StoredBlobPage(
+            objects=tuple(objects),
+            next_cursor=str(next_cursor) if next_cursor else None,
+        )
+
     def _object_key(self, storage_key: str) -> str:
         normalized = _normalize_storage_key(storage_key)
         return f"{self._prefix}/{normalized}" if self._prefix else normalized
+
+    def _object_prefix(self, prefix: str) -> str:
+        normalized = _normalize_list_prefix(prefix)
+        if self._prefix and normalized:
+            return f"{self._prefix}/{normalized}"
+        if self._prefix:
+            return f"{self._prefix}/"
+        return normalized
+
+    def _logical_storage_key(self, object_key: str) -> str | None:
+        if not self._prefix:
+            return object_key
+        prefix = f"{self._prefix}/"
+        if not object_key.startswith(prefix):
+            return None
+        logical = object_key[len(prefix) :]
+        return logical or None
+
+    def _stored_object_from_s3(self, item: object) -> StoredBlobObject | None:
+        if not isinstance(item, dict):
+            return None
+        raw_key = item.get("Key")
+        if not isinstance(raw_key, str):
+            return None
+        storage_key = self._logical_storage_key(raw_key)
+        if storage_key is None:
+            return None
+        raw_size = item.get("Size")
+        raw_updated_at = item.get("LastModified")
+        return StoredBlobObject(
+            storage_key=storage_key,
+            byte_size=int(raw_size) if isinstance(raw_size, int) else None,
+            updated_at=raw_updated_at if isinstance(raw_updated_at, datetime) else None,
+        )
 
 
 def _build_s3_client(
@@ -131,6 +192,13 @@ def _normalize_storage_key(storage_key: str) -> str:
     ):
         raise MemoryValidationError("Invalid storage key")
     return normalized
+
+
+def _normalize_list_prefix(prefix: str) -> str:
+    normalized = prefix.strip().replace("\\", "/").strip("/")
+    if not normalized:
+        return ""
+    return _normalize_storage_key(normalized)
 
 
 def _unsafe_key_parts(value: str) -> bool:
