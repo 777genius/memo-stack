@@ -1,3 +1,4 @@
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
@@ -350,6 +351,69 @@ def test_create_suggestions_batch_marks_existing_pending_duplicates(tmp_path: Pa
     assert data["results"][0]["suggestion"]["id"] == existing.json()["data"]["id"]
     assert data["results"][1]["status"] == "created"
     assert len(listed.json()["data"]) == 2
+
+
+def test_create_suggestions_batch_reports_targeted_item_missing_version(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact_response = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "BATCH_TARGET_VERSION_REQUIRED original fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "batch-target-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        fact = fact_response.json()["data"]
+        created = client.post(
+            "/v1/suggestions/batch",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "continue_on_error": True,
+                "items": [
+                    {
+                        "candidate_text": "BATCH_TARGET_VERSION_REQUIRED unsafe update.",
+                        "safe_reason": "batch_review",
+                        "target_fact_id": fact["id"],
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-bad"}],
+                    },
+                    {
+                        "candidate_text": "BATCH_TARGET_VERSION_REQUIRED safe new memory.",
+                        "safe_reason": "batch_review",
+                        "source_refs": [{"source_type": "manual", "source_id": "batch-good"}],
+                    },
+                ],
+            },
+            headers=auth_headers(),
+        )
+        listed = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "status": "pending",
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert fact_response.status_code == 201
+    assert created.status_code == 201
+    data = created.json()["data"]
+    assert data["created"] == 1
+    assert data["failed"] == 1
+    assert data["stopped"] is False
+    assert data["results"][0]["status"] == "failed"
+    assert data["results"][0]["error_code"] == "memory.validation"
+    assert data["results"][1]["status"] == "created"
+    assert [item["candidate_text"] for item in listed.json()["data"]] == [
+        "BATCH_TARGET_VERSION_REQUIRED safe new memory."
+    ]
 
 
 def test_review_suggestion_rejects_unknown_fields(tmp_path: Path) -> None:
@@ -852,6 +916,159 @@ def test_weak_source_cannot_supersede_strong_fact_without_force(tmp_path: Path) 
     assert conflict.json()["error"]["code"] == "memory.conflict"
     assert forced.status_code == 200
     assert forced.json()["data"]["fact"]["version"] == 2
+
+
+def test_targeted_suggestion_requires_target_fact_version(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        fact_response = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "TARGET_VERSION_REQUIRED original fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "target-version-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        fact = fact_response.json()["data"]
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="TARGET_VERSION_REQUIRED unsafe update.",
+                target_fact_id=fact["id"],
+                source_refs=[{"source_type": "manual", "source_id": "target-version-suggestion"}],
+            ),
+            headers=auth_headers(),
+        )
+        suggestions = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "status": "pending",
+            },
+            headers=auth_headers(),
+        )
+
+    assert fact_response.status_code == 201
+    assert created.status_code == 400
+    assert created.json()["error"]["code"] == "memory.validation"
+    assert suggestions.json()["data"] == []
+
+
+def test_approve_rejects_legacy_targeted_suggestion_without_version(tmp_path: Path) -> None:
+    database_path = tmp_path / "memory.db"
+    with make_client(tmp_path) as client:
+        fact_response = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "LEGACY_TARGET_VERSION original fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "legacy-target-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        fact = fact_response.json()["data"]
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="LEGACY_TARGET_VERSION unsafe update.",
+                target_fact_id=fact["id"],
+                target_fact_version=fact["version"],
+                source_refs=[{"source_type": "manual", "source_id": "legacy-target-suggestion"}],
+            ),
+            headers=auth_headers(),
+        )
+        suggestion_id = created.json()["data"]["id"]
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "UPDATE memory_suggestions SET target_fact_version = NULL WHERE id = ?",
+                (suggestion_id,),
+            )
+        approved = client.post(
+            f"/v1/suggestions/{suggestion_id}/approve",
+            json={"reason": "must require target version"},
+            headers=auth_headers(),
+        )
+        unchanged = client.get(f"/v1/facts/{fact['id']}", headers=auth_headers())
+        pending = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "status": "pending",
+            },
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    assert approved.status_code == 400
+    assert approved.json()["error"]["code"] == "memory.validation"
+    assert unchanged.json()["data"]["text"] == "LEGACY_TARGET_VERSION original fact."
+    assert [item["id"] for item in pending.json()["data"]] == [suggestion_id]
+
+
+def test_approve_rejects_stale_target_fact_version(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        fact_response = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "STALE_TARGET_VERSION original fact.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "stale-target-fact"}],
+            },
+            headers=auth_headers(),
+        )
+        fact = fact_response.json()["data"]
+        created = client.post(
+            "/v1/suggestions",
+            json=suggestion_payload(
+                candidate_text="STALE_TARGET_VERSION stale suggestion update.",
+                target_fact_id=fact["id"],
+                target_fact_version=fact["version"],
+                source_refs=[{"source_type": "manual", "source_id": "stale-target-suggestion"}],
+            ),
+            headers=auth_headers(),
+        )
+        suggestion_id = created.json()["data"]["id"]
+        updated = client.patch(
+            f"/v1/facts/{fact['id']}",
+            json={
+                "expected_version": fact["version"],
+                "text": "STALE_TARGET_VERSION already updated fact.",
+                "reason": "concurrent reviewer update",
+                "source_refs": [{"source_type": "manual", "source_id": "stale-target-update"}],
+            },
+            headers=auth_headers(),
+        )
+        approved = client.post(
+            f"/v1/suggestions/{suggestion_id}/approve",
+            json={"reason": "must not overwrite updated fact"},
+            headers=auth_headers(),
+        )
+        unchanged = client.get(f"/v1/facts/{fact['id']}", headers=auth_headers())
+        pending = client.get(
+            "/v1/suggestions",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "status": "pending",
+            },
+            headers=auth_headers(),
+        )
+
+    assert created.status_code == 201
+    assert updated.status_code == 200
+    assert approved.status_code == 409
+    assert approved.json()["error"]["code"] == "memory.conflict"
+    assert unchanged.json()["data"]["text"] == "STALE_TARGET_VERSION already updated fact."
+    assert unchanged.json()["data"]["version"] == 2
+    assert [item["id"] for item in pending.json()["data"]] == [suggestion_id]
 
 
 def test_suggestion_cannot_update_target_fact_from_another_memory_scope(tmp_path: Path) -> None:

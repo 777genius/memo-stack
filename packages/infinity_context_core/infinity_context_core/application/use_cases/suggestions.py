@@ -61,6 +61,10 @@ class CreateSuggestionUseCase:
         now = self._clock.now()
         trust = TrustLevel(command.trust_level)
         operation = SuggestionOperation(command.operation)
+        if command.target_fact_id and command.target_fact_version is None:
+            raise MemoryValidationError(
+                "Target fact version is required for targeted suggestion"
+            )
         candidate_fingerprint = command.candidate_fingerprint or _suggestion_fingerprint(
             command=command,
             operation=operation,
@@ -230,6 +234,10 @@ class ApproveSuggestionUseCase:
             if not _has_independent_source(suggestion):
                 raise MemoryValidationError(
                     "Suggestion approval requires non-assistant source refs"
+                )
+            if suggestion.target_fact_id and suggestion.target_fact_version is None:
+                raise MemoryValidationError(
+                    "Target fact version is required for targeted suggestion approval"
                 )
 
             now = self._clock.now()

@@ -118,8 +118,8 @@ def _candidate_rejection_code(
         if not candidate.target_fact_id and not candidate.target_hint:
             return "target_fact_or_hint_required"
         if (
-            operation == CandidateOperation.UPDATE
-            and candidate.target_fact_id
+            candidate.target_fact_id
+            and not candidate.target_hint
             and candidate.target_fact_version is None
         ):
             return "target_version_required"

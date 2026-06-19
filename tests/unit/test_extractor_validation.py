@@ -107,6 +107,24 @@ def test_extractor_validation_rejects_review_target_fact_id() -> None:
     assert result.rejected_codes == ("target_fact_not_allowed",)
 
 
+def test_extractor_validation_rejects_target_fact_id_without_version() -> None:
+    for operation in (CandidateOperation.UPDATE, CandidateOperation.DELETE):
+        result = validate_extractor_candidates(
+            candidates=(
+                _candidate(
+                    valid_from=None,
+                    valid_until=None,
+                    operation=operation,
+                    target_fact_id="fact_existing",
+                ),
+            ),
+            source_text="TEMPORAL_MARKER fact from source.",
+        )
+
+        assert result.candidates == ()
+        assert result.rejected_codes == ("target_version_required",)
+
+
 def test_extractor_validation_allows_review_target_hint() -> None:
     result = validate_extractor_candidates(
         candidates=(
