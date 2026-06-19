@@ -346,6 +346,7 @@ def normalize_context_bundle_diagnostics(
                 raw.get(key),
                 default=_BUNDLE_COUNTER_DEFAULTS.get(key, 0),
             )
+    normalized["item_type_counts"] = _item_type_counts(items)
     normalized.update(_source_ref_counts(items))
     normalized.update(_multimodal_source_ref_counts(items))
     normalized.update(_query_snippet_counts(items))
@@ -586,6 +587,16 @@ def _source_ref_counts(items: tuple[ContextItem, ...]) -> dict[str, int | bool]:
         "citations_truncated": total > returned,
         "items_with_citations": sum(1 for item in items if item.source_refs),
     }
+
+
+def _item_type_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        key = _safe_optional_text(item.item_type, limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _diagnostic_source_ref_count(item: ContextItem) -> int:

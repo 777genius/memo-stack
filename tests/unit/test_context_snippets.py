@@ -74,3 +74,34 @@ def test_source_refs_with_query_snippet_can_include_snippet_char_range() -> None
     assert enriched[0].char_end == snippet.char_end
     assert enriched[0].time_start_ms == 1200
     assert enriched[0].time_end_ms == 5400
+
+
+def test_query_focused_snippet_matches_russian_case_variants() -> None:
+    text = (
+        "Шум до полезного фрагмента. " * 10
+        + "Встреча с Алексом по проекту Атлас завершилась решением сохранить запись. "
+        + "Шум после полезного фрагмента. " * 10
+    )
+
+    snippet = query_focused_snippet(
+        query="встречу Алекс проектом Атласом",
+        text=text,
+        window_chars=180,
+    )
+
+    assert snippet is not None
+    assert "Встреча с Алексом по проекту Атлас" in snippet.text
+    assert snippet.unique_term_hits == 4
+    assert snippet.matched_terms == ("встречу", "алекс", "проектом", "атласом")
+
+
+def test_query_focused_snippet_matches_english_plural_variants() -> None:
+    snippet = query_focused_snippet(
+        query="renewal meetings approvals",
+        text="The renewal meeting approval was linked to the Atlas scope.",
+    )
+
+    assert snippet is not None
+    assert "renewal meeting approval" in snippet.text
+    assert snippet.unique_term_hits == 3
+    assert snippet.matched_terms == ("renewal", "meetings", "approvals")

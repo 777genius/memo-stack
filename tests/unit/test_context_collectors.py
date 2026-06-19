@@ -39,6 +39,25 @@ def test_canonical_fact_candidate_limit_overfetches_before_relevance_ranking() -
     assert _canonical_fact_candidate_limit(30) == 100
 
 
+def test_rank_facts_for_query_uses_normalized_lexical_variants() -> None:
+    decoy = _fact(
+        "fact_decoy",
+        "Проект Apollo обсуждал релиз без участия Алекса.",
+    )
+    current = _fact(
+        "fact_current",
+        "Встреча с Алексом по проекту Атлас завершилась решением сохранить запись.",
+    )
+
+    ranked = _rank_facts_for_query(
+        (decoy, current),
+        query_text="встречу Алекс проектом Атласом",
+        limit=1,
+    )
+
+    assert ranked == (current,)
+
+
 def _fact(fact_id: str, text: str) -> MemoryFact:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     return MemoryFact.create(

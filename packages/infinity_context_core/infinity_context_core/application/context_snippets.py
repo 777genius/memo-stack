@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
 
+from infinity_context_core.application.context_lexical import (
+    LexicalQueryTerm,
+    matching_token_spans,
+    query_terms,
+)
 from infinity_context_core.application.safe_payload import safe_metadata_text
 from infinity_context_core.domain.entities import SourceRef
 
@@ -12,7 +16,6 @@ _DEFAULT_WINDOW_CHARS = 320
 _MAX_QUERY_TERMS = 12
 _MAX_SNIPPET_CHARS = 360
 _MAX_BOUNDARY_SCAN_CHARS = 40
-_TERM_RE = re.compile(r"\w+")
 
 
 @dataclass(frozen=True)
@@ -36,8 +39,7 @@ def query_focused_snippet(
     if not terms or not text.strip():
         return None
 
-    lowered = text.lower()
-    hits = _term_hits(lowered, terms)
+    hits = _term_hits(text, terms)
     if not hits:
         return None
 
@@ -102,28 +104,15 @@ def query_snippet_score_signals(snippet: QuerySnippet | None) -> dict[str, objec
     }
 
 
-def _query_terms(query: str) -> tuple[str, ...]:
-    terms: list[str] = []
-    seen: set[str] = set()
-    for raw_term in _TERM_RE.findall(query.lower()):
-        if len(raw_term) < 3 or raw_term in seen:
-            continue
-        terms.append(raw_term)
-        seen.add(raw_term)
-        if len(terms) >= _MAX_QUERY_TERMS:
-            break
-    return tuple(terms)
+def _query_terms(query: str) -> tuple[LexicalQueryTerm, ...]:
+    return query_terms(query, max_terms=_MAX_QUERY_TERMS)
 
 
-def _term_hits(text: str, terms: tuple[str, ...]) -> tuple[tuple[int, int, str], ...]:
-    hits: list[tuple[int, int, str]] = []
-    for term in terms:
-        start = text.find(term)
-        while start >= 0:
-            end = start + len(term)
-            hits.append((start, end, term))
-            start = text.find(term, end)
-    return tuple(sorted(hits, key=lambda hit: (hit[0], hit[1], hit[2])))
+def _term_hits(
+    text: str,
+    terms: tuple[LexicalQueryTerm, ...],
+) -> tuple[tuple[int, int, str], ...]:
+    return matching_token_spans(text=text, terms=terms)
 
 
 def _best_window(
