@@ -577,6 +577,7 @@ def _pending_review_suggestion_item(
     review_kind = _suggestion_review_kind(suggestion)
     retrieval_source = _pending_suggestion_retrieval_source(review_kind)
     score = _pending_suggestion_score(review_kind)
+    review_resolution = _suggestion_review_resolution_diagnostics(suggestion)
     return ContextItem(
         item_id=str(suggestion.id),
         item_type="suggestion",
@@ -611,6 +612,7 @@ def _pending_review_suggestion_item(
             "canonical": False,
             "target_fact_id": target_fact_id,
             "conflicting_fact_id": target_fact_id,
+            **review_resolution,
         },
     )
 
@@ -619,6 +621,45 @@ def _suggestion_review_kind(suggestion) -> str:
     payload = suggestion.review_payload or {}
     value = payload.get("review_kind")
     return str(value).strip() if value else "conflict_review"
+
+
+def _suggestion_review_resolution_diagnostics(suggestion) -> dict[str, object]:
+    payload = suggestion.review_payload or {}
+    diagnostics: dict[str, object] = {}
+    recommended_action = _bounded_metadata_text(payload.get("recommended_action"), limit=80)
+    default_resolution = _bounded_metadata_text(payload.get("default_resolution"), limit=80)
+    if recommended_action:
+        diagnostics["review_recommended_action"] = recommended_action
+    if default_resolution:
+        diagnostics["review_default_resolution"] = default_resolution
+    options = payload.get("resolution_options")
+    if not isinstance(options, list):
+        return diagnostics
+    safe_options: list[dict[str, str]] = []
+    for option in options[:8]:
+        if not isinstance(option, dict):
+            continue
+        safe_option = {
+            key: value
+            for key, value in (
+                ("id", _bounded_metadata_text(option.get("id"), limit=80)),
+                ("review_action", _bounded_metadata_text(option.get("review_action"), limit=40)),
+                ("effect", _bounded_metadata_text(option.get("effect"), limit=120)),
+                ("availability", _bounded_metadata_text(option.get("availability"), limit=40)),
+            )
+            if value
+        }
+        if safe_option:
+            safe_options.append(safe_option)
+    if safe_options:
+        diagnostics["review_resolution_options"] = safe_options
+    return diagnostics
+
+
+def _bounded_metadata_text(value: object, *, limit: int) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()[:limit]
 
 
 def _pending_suggestion_retrieval_source(review_kind: str) -> str:

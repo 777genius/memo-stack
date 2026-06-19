@@ -20,6 +20,7 @@ from infinity_context_core.application import (
     ForgetFactCommand,
     IngestDocumentCommand,
 )
+from infinity_context_core.application.review_payloads import conflict_review_contract
 from infinity_context_core.domain.entities import MemoryScopeId, SourceRef, SpaceId
 from infinity_context_core.domain.extraction import (
     AssetExtractionJob,
@@ -2318,6 +2319,9 @@ def test_context_surfaces_pending_conflict_suggestions_for_visible_facts(
                 "trust_level": "medium",
                 "safe_reason": "test_conflict_requires_review",
                 "review_payload": {
+                    **conflict_review_contract(
+                        approve_effect="create_new_fact_keep_conflicting_fact"
+                    ),
                     "conflicting_fact_id": fact_id,
                     "conflict_source": "unit_test",
                 },
@@ -2349,6 +2353,13 @@ def test_context_surfaces_pending_conflict_suggestions_for_visible_facts(
     assert suggestion_items[0]["diagnostics"]["retrieval_source"] == ("pending_conflict_suggestion")
     assert suggestion_items[0]["diagnostics"]["canonical"] is False
     assert suggestion_items[0]["diagnostics"]["conflicting_fact_id"] == fact_id
+    assert (
+        suggestion_items[0]["diagnostics"]["review_recommended_action"]
+        == "manual_conflict_review"
+    )
+    assert suggestion_items[0]["diagnostics"]["review_resolution_options"][1]["effect"] == (
+        "create_new_fact_keep_conflicting_fact"
+    )
 
 
 def test_context_surfaces_pending_duplicate_merge_suggestions_for_visible_facts(
