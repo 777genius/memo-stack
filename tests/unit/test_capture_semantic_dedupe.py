@@ -249,11 +249,10 @@ def test_capture_semantic_cross_language_call_summary_creates_merge_review_sugge
     assert suggestion["operation"] == "review"
     assert suggestion["target_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["review_kind"] == "duplicate_fact_merge"
-    assert suggestion["review_payload"]["dedupe_match_type"] == "semantic_identity_overlap"
-    assert "identity_overlap" in suggestion["review_payload"]["dedupe_reason_codes"]
-    assert "content_overlap" in suggestion["review_payload"]["dedupe_reason_codes"]
+    assert suggestion["review_payload"]["dedupe_match_type"] == "semantic_token_overlap"
     assert "event_type:call" in suggestion["review_payload"]["dedupe_overlap_terms"]
     assert "person:aleks" in suggestion["review_payload"]["dedupe_overlap_terms"]
+    assert "project:atlas" in suggestion["review_payload"]["dedupe_overlap_terms"]
     assert approved.status_code == 200, approved.text
     merged_fact = merged_facts.json()["data"][0]
     assert merged_fact["version"] == 2

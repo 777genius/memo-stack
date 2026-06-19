@@ -378,6 +378,12 @@ def semantic_memory_terms(text: str) -> set[str]:
 def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
     terms: list[str] = []
     anchors = tuple(extract_observed_anchors(text))
+    project_keys = {
+        str(anchor.metadata.get("canonical_key") or anchor.normalized_key).strip().casefold()
+        for anchor in anchors
+        if anchor.kind == MemoryAnchorKind.PROJECT
+    }
+    project_keys.discard("")
     has_event = any(anchor.kind == MemoryAnchorKind.EVENT for anchor in anchors)
     explicit_event_participants = {
         str(anchor.metadata.get("event_participant_canonical_key") or "").strip().casefold()
@@ -401,6 +407,8 @@ def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
         if anchor.kind == MemoryAnchorKind.PERSON and _is_false_person_anchor_key(
             canonical_key
         ):
+            continue
+        if anchor.kind == MemoryAnchorKind.PERSON and canonical_key.casefold() in project_keys:
             continue
         normalized_key = canonical_key.casefold()
         terms.append(f"{anchor.kind.value}:{normalized_key}")
@@ -801,12 +809,20 @@ def _named_anchor_keys(
     kind: MemoryAnchorKind,
     reasons: set[str] | None = None,
 ) -> set[str]:
+    anchors = tuple(extract_observed_anchors(text))
+    project_keys = {
+        _canonical_named_anchor_key(anchor)
+        for anchor in anchors
+        if anchor.kind == MemoryAnchorKind.PROJECT
+    }
+    project_keys.discard("")
     return {
         key
-        for anchor in extract_observed_anchors(text)
+        for anchor in anchors
         if (key := _canonical_named_anchor_key(anchor))
         if anchor.kind == kind and (reasons is None or anchor.reason in reasons)
         and not (kind == MemoryAnchorKind.PERSON and _is_false_person_anchor_key(key))
+        and not (kind == MemoryAnchorKind.PERSON and key in project_keys)
     }
 
 

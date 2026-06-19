@@ -5,6 +5,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from infinity_context_core.application.anchor_identity_normalization import (
+    canonical_token,
+    normalize_cyrillic_person_case,
+    normalize_cyrillic_project_case,
+)
 from infinity_context_core.domain.entities import MemoryAnchorKind
 
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
@@ -26,6 +31,12 @@ _ORGANIZATION_SUFFIX_PATTERN = re.compile(
     r"\b([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9&.-]{1,60}"
     r"(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9&.-]{1,60}){0,3})\s+"
     r"(?:Inc|LLC|Ltd|Corp|Corporation|GmbH|AG|SAS|ООО|АО|ЗАО)\b"
+)
+_IMPLICIT_PROJECT_CONTEXT_PATTERN = re.compile(
+    r"\b(?P<label>[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9][\w.-]{1,80})\s+"
+    r"(?P<context>billing|dashboard|document|documents|docs|invoice|memo|notes|pricing|"
+    r"retrieval|screenshot|storage|transcript|video|документ|документы|заметка|заметки|"
+    r"инвойс|поиск|скриншот|транскрипт)\b"
 )
 _TEMPORAL_PHRASE = (
     r"last week|yesterday|today|tomorrow|an hour ago|hour ago|"
@@ -56,7 +67,7 @@ _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
 )
 _EVENT_PROJECT_PATTERN = re.compile(
-    r"\b(?P<prep>about|for|по|про|для)\s+"
+    r"\b(?P<prep>about|for|in|по|про|для|в)\s+"
     r"(?:(?:project|проект(?:у|е|а|ом)?)\s+)?"
     r"(?P<label>[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}"
     r"(?:\s+[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}){0,3})",
@@ -165,6 +176,8 @@ _PERSON_STOP_WORDS = {
     "стендап",
     "ретро",
     "интервью",
+    "итог",
+    "итоги",
     "воркшоп",
     "релиз",
     "запуск",
@@ -247,48 +260,6 @@ _ORGANIZATION_HINTS = {
     "stripe": "Stripe",
     "figma": "Figma",
 }
-_CYRILLIC_TO_LATIN = str.maketrans(
-    {
-        "а": "a",
-        "б": "b",
-        "в": "v",
-        "г": "g",
-        "д": "d",
-        "е": "e",
-        "ё": "e",
-        "ж": "zh",
-        "з": "z",
-        "и": "i",
-        "й": "i",
-        "к": "k",
-        "л": "l",
-        "м": "m",
-        "н": "n",
-        "о": "o",
-        "п": "p",
-        "р": "r",
-        "с": "s",
-        "т": "t",
-        "у": "u",
-        "ф": "f",
-        "х": "h",
-        "ц": "ts",
-        "ч": "ch",
-        "ш": "sh",
-        "щ": "sch",
-        "ъ": "",
-        "ы": "y",
-        "ь": "",
-        "э": "e",
-        "ю": "yu",
-        "я": "ya",
-    }
-)
-_CYRILLIC_PERSON_CASE_OVERRIDES = {
-    "алекса": "алекс",
-}
-
-
 @dataclass(frozen=True)
 class ObservedAnchor:
     kind: MemoryAnchorKind
@@ -343,6 +314,24 @@ def extract_observed_anchors(text: str) -> tuple[ObservedAnchor, ...]:
             reason="known project/tool reference",
             score_boost=18,
         )
+    for raw in _event_project_labels(text):
+        _append_anchor(
+            anchors,
+            seen,
+            kind=MemoryAnchorKind.PROJECT,
+            label=raw,
+            reason="event project reference",
+            score_boost=19,
+        )
+    for raw in _implicit_project_context_labels(text):
+        _append_anchor(
+            anchors,
+            seen,
+            kind=MemoryAnchorKind.PROJECT,
+            label=raw,
+            reason="implicit project context",
+            score_boost=17,
+        )
     for raw in _event_labels(text):
         _append_anchor(
             anchors,
@@ -371,14 +360,14 @@ def normalize_anchor_key(label: str) -> str:
 
 def canonical_anchor_key(label: str) -> str:
     normalized = normalize_anchor_key(label)
-    return " ".join(
-        part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks") for part in normalized.split()
-    )
+    return " ".join(canonical_token(part) for part in normalized.split())
 
 
 def canonical_anchor_key_for_kind(kind: MemoryAnchorKind, label: str) -> str:
     if kind == MemoryAnchorKind.PERSON:
         return _canonical_person_key(label)
+    if kind == MemoryAnchorKind.PROJECT:
+        return _canonical_project_key(label)
     if kind == MemoryAnchorKind.EVENT:
         return _canonical_event_key(label)
     return canonical_anchor_key(label)
@@ -470,7 +459,13 @@ def _append_anchor(
 def _normalized_anchor_key_for_kind(kind: MemoryAnchorKind, label: str) -> str:
     if kind == MemoryAnchorKind.PERSON:
         parts = [
-            _normalize_cyrillic_person_case(part)
+            normalize_cyrillic_person_case(part)
+            for part in normalize_anchor_key(label).split()
+        ]
+        return " ".join(part for part in parts if part)
+    if kind == MemoryAnchorKind.PROJECT:
+        parts = [
+            normalize_cyrillic_project_case(part)
             for part in normalize_anchor_key(label).split()
         ]
         return " ".join(part for part in parts if part)
@@ -522,7 +517,7 @@ def _structured_anchor_metadata(
             }
         )
     if components.project_label:
-        project_canonical_key = canonical_anchor_key(components.project_label)
+        project_canonical_key = _canonical_project_key(components.project_label)
         metadata.update(
             {
                 "event_project_label": components.project_label,
@@ -547,7 +542,7 @@ def _event_identity_terms(components: _EventComponents) -> list[str]:
     if components.participant_label:
         terms.append(_canonical_person_key(components.participant_label))
     if components.project_label:
-        terms.append(canonical_anchor_key(components.project_label))
+        terms.append(_canonical_project_key(components.project_label))
     if components.temporal_hint_code:
         temporal = components.temporal_hint_code
         if components.temporal_quantity is not None and components.temporal_unit:
@@ -572,13 +567,21 @@ def _event_components(label: str) -> _EventComponents:
         participant_relation = part
         participant_tokens: list[str] = []
         for token in parts[index + 1 :]:
-            if token in temporal_parts or token in {"about", "for", "по", "про", "для"}:
+            if token in temporal_parts or token in {
+                "about",
+                "for",
+                "in",
+                "по",
+                "про",
+                "для",
+                "в",
+            }:
                 break
             participant_tokens.append(token)
         participant_label = " ".join(participant_tokens).strip()
         break
     for index, part in enumerate(parts):
-        if part not in {"about", "for", "по", "про", "для"}:
+        if part not in {"about", "for", "in", "по", "про", "для", "в"}:
             continue
         project_relation = part
         project_tokens: list[str] = []
@@ -683,6 +686,29 @@ def _project_hint_labels(text: str) -> tuple[str, ...]:
     for hint in sorted(_PROJECT_HINTS, key=len, reverse=True):
         if (" " in hint and hint in lowered) or (" " not in hint and hint in terms):
             labels.append(" ".join(part.capitalize() for part in hint.split()))
+    return tuple(labels)
+
+
+def _event_project_labels(text: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    for event_label in _event_labels(text):
+        project = _event_components(event_label).project_label
+        if project:
+            labels.append(project)
+    return tuple(labels)
+
+
+def _implicit_project_context_labels(text: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    for match in _IMPLICIT_PROJECT_CONTEXT_PATTERN.finditer(text):
+        label = _clean_project_label(match.group("label"))
+        normalized = normalize_anchor_key(label)
+        if (
+            label
+            and normalized not in _PERSON_STOP_WORDS
+            and normalized not in _ORGANIZATION_HINTS
+        ):
+            labels.append(label)
     return tuple(labels)
 
 
@@ -882,48 +908,36 @@ def _looks_like_project_label_continuation(token: str) -> bool:
 
 def _canonical_person_key(label: str) -> str:
     normalized = normalize_anchor_key(label)
-    parts = [_normalize_cyrillic_person_case(part) for part in normalized.split()]
-    return " ".join(part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks") for part in parts if part)
+    parts = [normalize_cyrillic_person_case(part) for part in normalized.split()]
+    return " ".join(canonical_token(part) for part in parts if part)
+
+
+def _canonical_project_key(label: str) -> str:
+    normalized = normalize_anchor_key(label)
+    parts = [normalize_cyrillic_project_case(part) for part in normalized.split()]
+    return " ".join(canonical_token(part) for part in parts if part)
 
 
 def _canonical_event_key(label: str) -> str:
     normalized_parts: list[str] = []
     normalize_next_person = False
+    normalize_next_project = False
     for part in normalize_anchor_key(label).split():
         if normalize_next_person:
-            normalized_parts.append(_normalize_cyrillic_person_case(part))
+            normalized_parts.append(normalize_cyrillic_person_case(part))
             normalize_next_person = False
+        elif normalize_next_project:
+            if part in {"project", "проект", "проекту", "проекте", "проекта", "проектом"}:
+                continue
+            normalized_parts.append(normalize_cyrillic_project_case(part))
+            normalize_next_project = False
         else:
             normalized_parts.append(part)
         if part in {"with", "from", "с", "от"}:
             normalize_next_person = True
-    return " ".join(
-        part.translate(_CYRILLIC_TO_LATIN).replace("x", "ks") for part in normalized_parts if part
-    )
-
-
-def _normalize_cyrillic_person_case(part: str) -> str:
-    if not re.search(r"[а-яё]", part, re.IGNORECASE):
-        return part
-    if part in _CYRILLIC_PERSON_CASE_OVERRIDES:
-        return _CYRILLIC_PERSON_CASE_OVERRIDES[part]
-    if len(part) <= 4:
-        return part
-    if part.endswith("ией"):
-        return f"{part[:-3]}ия"
-    if part.endswith("ии"):
-        return f"{part[:-2]}ия"
-    if part.endswith("еем"):
-        return f"{part[:-3]}ей"
-    if part.endswith("ея"):
-        return f"{part[:-2]}ей"
-    if part.endswith("ием"):
-        return f"{part[:-3]}ий"
-    if part.endswith("ой"):
-        return f"{part[:-2]}а"
-    if part.endswith(("ом", "ем")):
-        return part[:-2]
-    return part
+        if part in {"about", "for", "in", "по", "про", "для", "в"}:
+            normalize_next_project = True
+    return " ".join(canonical_token(part) for part in normalized_parts if part)
 
 
 def _terms(text: str) -> tuple[str, ...]:

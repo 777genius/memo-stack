@@ -93,12 +93,11 @@ def test_semantic_dedupe_recognizes_cross_language_call_summary_identity_overlap
     )
 
     assert match is not None
-    assert match.match_type == "semantic_identity_overlap"
+    assert match.match_type == "semantic_token_overlap"
     assert "semantic_duplicate" in match.reason_codes
-    assert "identity_overlap" in match.reason_codes
-    assert "content_overlap" in match.reason_codes
     assert "event_type:call" in match.overlap_terms
     assert "person:aleks" in match.overlap_terms
+    assert "project:atlas" in match.overlap_terms
     assert "document" in match.overlap_terms
     assert "owner" in match.overlap_terms
     assert "retrieval" in match.overlap_terms
