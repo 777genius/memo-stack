@@ -792,6 +792,8 @@ def _merge_score(
     anchor: MemoryAnchor,
     other: MemoryAnchor,
 ) -> tuple[float, list[str], dict[str, object]]:
+    if anchor.kind == MemoryAnchorKind.EVENT:
+        return _event_merge_score(anchor, other)
     anchor_keys = _canonical_anchor_keys(anchor)
     other_keys = _canonical_anchor_keys(other)
     shared = sorted(anchor_keys & other_keys)
@@ -814,8 +816,6 @@ def _merge_score(
     if alias_overlap:
         reasons.append("alias overlap")
         return 92.0, reasons, {"shared_aliases": alias_overlap}
-    if anchor.kind == MemoryAnchorKind.EVENT:
-        return _event_merge_score(anchor, other)
     anchor_key = canonical_anchor_key(anchor.label)
     other_key = canonical_anchor_key(other.label)
     ratio = SequenceMatcher(a=anchor_key, b=other_key).ratio()
@@ -860,10 +860,14 @@ def _event_identity(anchor: MemoryAnchor) -> dict[str, str]:
         _first_anchor_token(anchor.label)
     )
     participant = _metadata_text(metadata, "event_participant_canonical_key")
+    project = _metadata_text(metadata, "event_project_canonical_key") or _metadata_text(
+        metadata, "project_canonical_key"
+    )
     temporal = _event_temporal_identity(metadata)
     return {
         "event_type": event_type,
         "participant": participant,
+        "project": project,
         "temporal": temporal,
     }
 
@@ -872,7 +876,7 @@ def _event_identities_compatible(
     left: dict[str, str],
     right: dict[str, str],
 ) -> tuple[bool, str | None]:
-    for key in ("event_type", "participant", "temporal"):
+    for key in ("event_type", "participant", "project", "temporal"):
         left_value = left.get(key, "")
         right_value = right.get(key, "")
         if left_value != right_value:
