@@ -1511,7 +1511,7 @@ def test_persisted_context_link_suggestions_merge_russian_genitive_person_varian
                 "event_type": "QuickCapture",
                 "actor_role": "user",
                 "source_event_id": "capture-maria",
-                "text": "Мария подтвердила Project Atlas.",
+                "text": "Мария и Алекс подтвердили Project Atlas.",
                 "source_authority": "user_statement",
             },
             headers=auth_headers(),
@@ -1527,7 +1527,7 @@ def test_persisted_context_link_suggestions_merge_russian_genitive_person_varian
                 "event_type": "QuickCapture",
                 "actor_role": "user",
                 "source_event_id": "capture-marii",
-                "text": "От Марии пришел follow-up по Project Atlas.",
+                "text": "От Марии и Алекса пришел follow-up по Project Atlas.",
                 "source_authority": "user_statement",
             },
             headers=auth_headers(),
@@ -1536,8 +1536,8 @@ def test_persisted_context_link_suggestions_merge_russian_genitive_person_varian
         assert second_capture.status_code == 201, second_capture.text
 
         for capture, text in (
-            (first_capture, "Мария Project Atlas"),
-            (second_capture, "Марии Project Atlas follow-up"),
+            (first_capture, "Мария и Алекс Project Atlas"),
+            (second_capture, "Марии и Алекса Project Atlas follow-up"),
         ):
             suggestions = client.post(
                 "/v1/link-suggestions",
@@ -1567,10 +1567,12 @@ def test_persisted_context_link_suggestions_merge_russian_genitive_person_varian
         )
         assert anchors.status_code == 200, anchors.text
         person_anchors = anchors.json()["data"]
-        assert len(person_anchors) == 1
-        assert person_anchors[0]["normalized_key"] == "мария"
-        assert {"Мария", "Марии"}.issubset(set(person_anchors[0]["aliases"]))
-        assert person_anchors[0]["metadata"]["canonical_key"] == "mariya"
+        by_key = {item["normalized_key"]: item for item in person_anchors}
+        assert set(by_key) == {"алекс", "мария"}
+        assert {"Мария", "Марии"}.issubset(set(by_key["мария"]["aliases"]))
+        assert by_key["мария"]["metadata"]["canonical_key"] == "mariya"
+        assert {"Алекс", "Алекса"}.issubset(set(by_key["алекс"]["aliases"]))
+        assert by_key["алекс"]["metadata"]["canonical_key"] == "aleks"
 
 
 def test_context_linking_quality_golden_handles_people_events_projects_and_decoys(

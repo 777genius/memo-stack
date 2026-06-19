@@ -277,6 +277,9 @@ _CYRILLIC_TO_LATIN = str.maketrans(
         "я": "ya",
     }
 )
+_CYRILLIC_PERSON_CASE_OVERRIDES = {
+    "алекса": "алекс",
+}
 
 
 @dataclass(frozen=True)
@@ -762,6 +765,8 @@ def _canonical_event_key(label: str) -> str:
 def _normalize_cyrillic_person_case(part: str) -> str:
     if not re.search(r"[а-яё]", part, re.IGNORECASE):
         return part
+    if part in _CYRILLIC_PERSON_CASE_OVERRIDES:
+        return _CYRILLIC_PERSON_CASE_OVERRIDES[part]
     if len(part) <= 4:
         return part
     if part.endswith("ией"):

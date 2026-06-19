@@ -206,7 +206,8 @@ def test_anchor_extraction_handles_russian_temporal_person_cases() -> None:
 def test_anchor_extraction_merges_common_russian_person_case_variants() -> None:
     anchors = extract_observed_anchors(
         "Мария подтвердила Project Atlas. От Марии пришел follow-up. "
-        "Сергей owns backend. От Сергея пришел Qdrant note."
+        "Сергей owns backend. От Сергея пришел Qdrant note. "
+        "Алекс согласовал timeline. От Алекса пришел update."
     )
 
     person_keys = {
@@ -219,6 +220,8 @@ def test_anchor_extraction_merges_common_russian_person_case_variants() -> None:
     assert person_keys["марии"] == "mariya"
     assert person_keys["сергей"] == "sergei"
     assert person_keys["сергея"] == "sergei"
+    assert person_keys["алекс"] == "aleks"
+    assert person_keys["алекса"] == "aleks"
 
 
 def test_anchor_extraction_structures_event_identity_metadata() -> None:
