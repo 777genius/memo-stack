@@ -33,6 +33,7 @@ from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES,
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
     OpenAISpeechTranscriptionAdapter,
+    openai_transcription_request_contract,
 )
 from infinity_context_core.ports.transcription import SpeechTranscriptionRequest
 from infinity_context_core.ports.vision import ImageVisionRequest
@@ -216,6 +217,11 @@ async def _run_vision(
         payload_status=result.payload_status,
         visible_text_count=visible_text_count,
         summary_chars=summary_chars,
+        evidence_contract={
+            "summary_or_visible_text_required": True,
+            "visible_text_items_bounded": True,
+            "summary_chars_bounded": True,
+        },
         diagnostics=_safe_diagnostics(result.diagnostics),
     )
 
@@ -302,6 +308,7 @@ async def _run_transcription(
         provider_model=result.provider_model,
         provider_version=result.provider_version,
         fixture=fixture,
+        request_contract=openai_transcription_request_contract(args.transcription_model),
         transcript_chars=len(result.text),
         segment_count=len(result.segments),
         word_count=len(result.words),
@@ -389,6 +396,29 @@ def _base_report(
     *,
     has_provider_key: bool,
 ) -> dict[str, object]:
+    provider_contract = {
+        "external_ai_required": True,
+        "timeout_seconds": args.timeout_seconds,
+        "vision": {
+            "endpoint_family": OPENAI_VISION_ENDPOINT_FAMILY,
+            "model": args.vision_model,
+            "detail": args.vision_detail,
+            "detail_levels": list(openai_vision_supported_detail_levels(args.vision_model)),
+            "supported_file_types": sorted(OPENAI_VISION_SUPPORTED_SUFFIXES),
+            "docs_url": OPENAI_VISION_DOCS_URL,
+            "max_provider_payload_bytes": OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
+            "max_provider_binary_upload_bytes": OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
+            "max_images_per_request": OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
+        },
+        "transcription": {
+            "endpoint": OPENAI_TRANSCRIPTION_ENDPOINT,
+            "model": args.transcription_model,
+            "request_contract": openai_transcription_request_contract(args.transcription_model),
+            "max_upload_bytes": OPENAI_AUDIO_MAX_UPLOAD_BYTES,
+            "supported_file_types": sorted(OPENAI_AUDIO_SUPPORTED_SUFFIXES),
+            "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
+        },
+    }
     return {
         "suite": SUITE,
         "ok": False,
@@ -397,32 +427,12 @@ def _base_report(
         "generated_at": _utc_now(),
         "git": _git_info(),
         "provider_key_present": has_provider_key,
-        "provider_contract": {
-            "external_ai_required": True,
-            "timeout_seconds": args.timeout_seconds,
-            "vision": {
-                "endpoint_family": OPENAI_VISION_ENDPOINT_FAMILY,
-                "model": args.vision_model,
-                "detail": args.vision_detail,
-                "detail_levels": list(openai_vision_supported_detail_levels(args.vision_model)),
-                "supported_file_types": sorted(OPENAI_VISION_SUPPORTED_SUFFIXES),
-                "docs_url": OPENAI_VISION_DOCS_URL,
-                "max_provider_payload_bytes": OPENAI_VISION_MAX_PROVIDER_PAYLOAD_BYTES,
-                "max_provider_binary_upload_bytes": OPENAI_VISION_MAX_PROVIDER_BINARY_BYTES,
-                "max_images_per_request": OPENAI_VISION_MAX_IMAGES_PER_REQUEST,
-            },
-            "transcription": {
-                "endpoint": OPENAI_TRANSCRIPTION_ENDPOINT,
-                "model": args.transcription_model,
-                "max_upload_bytes": OPENAI_AUDIO_MAX_UPLOAD_BYTES,
-                "supported_file_types": sorted(OPENAI_AUDIO_SUPPORTED_SUFFIXES),
-                "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
-            },
-        },
+        "provider_contract": provider_contract,
         "failure_policy_contract": _failure_policy_contract(),
         "proof_matrix": _proof_matrix(
             components={},
             failure_policy_contract={},
+            provider_contract=provider_contract,
             provider_key_present=has_provider_key,
             secrets_redacted=True,
         ),
@@ -451,6 +461,11 @@ def _update_proof_matrix(report: dict[str, object]) -> None:
     report["proof_matrix"] = _proof_matrix(
         components=components,
         failure_policy_contract=failure_policy_contract,
+        provider_contract=(
+            report.get("provider_contract")
+            if isinstance(report.get("provider_contract"), dict)
+            else {}
+        ),
         provider_key_present=bool(report.get("provider_key_present")),
         secrets_redacted=report.get("secrets_redacted") is True,
     )
@@ -465,9 +480,11 @@ def _proof_matrix(
     *,
     components: dict[object, object],
     failure_policy_contract: dict[object, object],
+    provider_contract: dict[object, object] | None = None,
     provider_key_present: bool,
     secrets_redacted: bool,
 ) -> dict[str, object]:
+    provider_contract = provider_contract or {}
     requirements = {
         "vision_real_provider": _live_component_requirement(
             components,
@@ -475,10 +492,18 @@ def _proof_matrix(
             requires_provider_key=True,
             provider_key_present=provider_key_present,
         ),
+        "vision_response_evidence": _vision_response_evidence_requirement(
+            components,
+            provider_key_present=provider_key_present,
+        ),
         "audio_transcription_real_provider": _live_component_requirement(
             components,
             "transcription",
             requires_provider_key=True,
+            provider_key_present=provider_key_present,
+        ),
+        "transcription_response_artifact": _transcription_response_artifact_requirement(
+            components,
             provider_key_present=provider_key_present,
         ),
         "vision_fixture_contract": _fixture_component_requirement(
@@ -498,6 +523,9 @@ def _proof_matrix(
             supported_suffixes=OPENAI_AUDIO_SUPPORTED_SUFFIXES,
             requires_provider_key=False,
             provider_key_present=provider_key_present,
+        ),
+        "transcription_request_contract": _transcription_request_contract_requirement(
+            provider_contract,
         ),
         "invalid_key_classification": _contract_requirement(
             failure_policy_contract,
@@ -527,7 +555,9 @@ def _proof_matrix(
     }
     live_names = (
         "vision_real_provider",
+        "vision_response_evidence",
         "audio_transcription_real_provider",
+        "transcription_response_artifact",
         "invalid_key_live_probe",
     )
     contract_names = tuple(name for name in requirements if name not in live_names)
@@ -574,6 +604,107 @@ def _live_component_requirement(
             if isinstance(component.get("reason"), str)
             else {}
         ),
+    }
+
+
+def _vision_response_evidence_requirement(
+    components: dict[object, object],
+    *,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    component = components.get("vision")
+    if not isinstance(component, dict):
+        return {
+            "status": "not_run" if provider_key_present else "skipped",
+            "proof": "live_provider_evidence_shape",
+            "requires_provider_key": True,
+            "ok": False,
+        }
+    status = str(component.get("status") or "unknown")
+    if status != "succeeded":
+        return {
+            "status": status,
+            "proof": "live_provider_evidence_shape",
+            "requires_provider_key": True,
+            "ok": False,
+            **(
+                {"reason": component.get("reason")}
+                if isinstance(component.get("reason"), str)
+                else {}
+            ),
+        }
+    visible_text_count = component.get("visible_text_count")
+    summary_chars = component.get("summary_chars")
+    ok = (
+        isinstance(visible_text_count, int)
+        and visible_text_count >= 0
+        and isinstance(summary_chars, int)
+        and summary_chars >= 0
+        and (visible_text_count > 0 or summary_chars > 0)
+    )
+    return {
+        "status": "contract_covered" if ok else "failed",
+        "proof": "live_provider_evidence_shape",
+        "requires_provider_key": True,
+        "ok": ok,
+        "visible_text_count": visible_text_count,
+        "summary_chars": summary_chars,
+    }
+
+
+def _transcription_response_artifact_requirement(
+    components: dict[object, object],
+    *,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    component = components.get("transcription")
+    if not isinstance(component, dict):
+        return {
+            "status": "not_run" if provider_key_present else "skipped",
+            "proof": "live_provider_artifact_shape",
+            "requires_provider_key": True,
+            "ok": False,
+        }
+    status = str(component.get("status") or "unknown")
+    if status != "succeeded":
+        return {
+            "status": status,
+            "proof": "live_provider_artifact_shape",
+            "requires_provider_key": True,
+            "ok": False,
+            **(
+                {"reason": component.get("reason")}
+                if isinstance(component.get("reason"), str)
+                else {}
+            ),
+        }
+    transcript_chars = component.get("transcript_chars")
+    segment_count = component.get("segment_count")
+    word_count = component.get("word_count")
+    request_contract = (
+        component.get("request_contract")
+        if isinstance(component.get("request_contract"), dict)
+        else {}
+    )
+    response_format = request_contract.get("response_format")
+    ok = (
+        isinstance(transcript_chars, int)
+        and transcript_chars > 0
+        and isinstance(segment_count, int)
+        and segment_count >= 0
+        and isinstance(word_count, int)
+        and word_count >= 0
+        and response_format in {"json", "verbose_json", "diarized_json"}
+    )
+    return {
+        "status": "contract_covered" if ok else "failed",
+        "proof": "live_provider_artifact_shape",
+        "requires_provider_key": True,
+        "ok": ok,
+        "response_format": response_format,
+        "transcript_chars": transcript_chars,
+        "segment_count": segment_count,
+        "word_count": word_count,
     }
 
 
@@ -636,6 +767,50 @@ def _fixture_component_requirement(
         "ok": ok,
         "suffix": suffix,
         "content_type": content_type,
+    }
+
+
+def _transcription_request_contract_requirement(
+    provider_contract: dict[object, object],
+) -> dict[str, object]:
+    transcription = provider_contract.get("transcription")
+    if not isinstance(transcription, dict):
+        return {
+            "status": "missing",
+            "proof": "adapter_request_contract",
+            "requires_provider_key": False,
+            "ok": False,
+        }
+    request_contract = transcription.get("request_contract")
+    if not isinstance(request_contract, dict):
+        return {
+            "status": "missing",
+            "proof": "adapter_request_contract",
+            "requires_provider_key": False,
+            "ok": False,
+            "reason": "request_contract_missing",
+        }
+    response_format = request_contract.get("response_format")
+    timestamp_granularities = request_contract.get("timestamp_granularities")
+    ok = (
+        response_format in {"json", "verbose_json", "diarized_json"}
+        and isinstance(request_contract.get("supports_prompt"), bool)
+        and isinstance(request_contract.get("supports_segment_timestamps"), bool)
+        and isinstance(timestamp_granularities, list)
+        and all(item == "segment" for item in timestamp_granularities)
+        and isinstance(request_contract.get("requires_chunking_strategy"), bool)
+        and request_contract.get("chunking_strategy") in {None, "auto"}
+        and isinstance(request_contract.get("speaker_segments_supported"), bool)
+    )
+    return {
+        "status": "contract_covered" if ok else "failed",
+        "proof": "adapter_request_contract",
+        "requires_provider_key": False,
+        "ok": ok,
+        "response_format": response_format,
+        "supports_prompt": request_contract.get("supports_prompt"),
+        "supports_segment_timestamps": request_contract.get("supports_segment_timestamps"),
+        "requires_chunking_strategy": request_contract.get("requires_chunking_strategy"),
     }
 
 

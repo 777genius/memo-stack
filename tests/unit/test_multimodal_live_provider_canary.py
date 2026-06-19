@@ -65,6 +65,15 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "endpoint": "/v1/audio/transcriptions",
         "max_upload_bytes": 26214400,
         "model": "gpt-4o-mini-transcribe",
+        "request_contract": {
+            "chunking_strategy": None,
+            "requires_chunking_strategy": False,
+            "response_format": "json",
+            "speaker_segments_supported": False,
+            "supports_prompt": True,
+            "supports_segment_timestamps": False,
+            "timestamp_granularities": [],
+        },
         "supported_file_types": [
             ".flac",
             ".m4a",
@@ -92,10 +101,10 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     proof = file_report["proof_matrix"]
     assert proof["schema_version"] == "multimodal-provider-proof-matrix-v1"
     assert proof["summary"] == {
-        "contract_requirements_passed": 6,
-        "contract_requirements_total": 6,
+        "contract_requirements_passed": 7,
+        "contract_requirements_total": 7,
         "live_requirements_passed": 0,
-        "live_requirements_total": 3,
+        "live_requirements_total": 5,
     }
     requirements = proof["requirements"]
     assert requirements["vision_real_provider"] == {
@@ -105,9 +114,23 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "requires_provider_key": True,
         "status": "skipped",
     }
+    assert requirements["vision_response_evidence"] == {
+        "ok": False,
+        "proof": "live_provider_evidence_shape",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
     assert requirements["audio_transcription_real_provider"] == {
         "ok": False,
         "proof": "live_provider_call",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
+    assert requirements["transcription_response_artifact"] == {
+        "ok": False,
+        "proof": "live_provider_artifact_shape",
         "reason": "provider_credential_missing",
         "requires_provider_key": True,
         "status": "skipped",
@@ -127,6 +150,16 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert audio_contract["suffix"] == ".wav"
     assert audio_contract["content_type"] == "audio/wav"
     assert requirements["invalid_key_classification"]["status"] == "contract_covered"
+    assert requirements["transcription_request_contract"] == {
+        "ok": True,
+        "proof": "adapter_request_contract",
+        "requires_chunking_strategy": False,
+        "requires_provider_key": False,
+        "response_format": "json",
+        "status": "contract_covered",
+        "supports_prompt": True,
+        "supports_segment_timestamps": False,
+    }
     assert requirements["invalid_key_live_probe"] == {
         "ok": False,
         "proof": "live_invalid_credential_call",
@@ -279,6 +312,10 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe()
     proof = module._proof_matrix(
         components=components,
         failure_policy_contract=module._failure_policy_contract(),
+        provider_contract=module._base_report(
+            module._parse_args([]),
+            has_provider_key=False,
+        )["provider_contract"],
         provider_key_present=False,
         secrets_redacted=True,
     )
@@ -289,6 +326,57 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe()
         "proof": "live_invalid_credential_call",
         "requires_provider_key": False,
         "status": "succeeded",
+    }
+
+
+def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() -> None:
+    module = _load_canary_module()
+    args = module._parse_args([])
+    request_contract = module.openai_transcription_request_contract(
+        args.transcription_model
+    )
+
+    proof = module._proof_matrix(
+        components={
+            "vision": {
+                "status": "succeeded",
+                "summary_chars": 40,
+                "visible_text_count": 1,
+            },
+            "transcription": {
+                "status": "succeeded",
+                "request_contract": request_contract,
+                "transcript_chars": 52,
+                "segment_count": 0,
+                "word_count": 0,
+            },
+            "invalid_key_probe": {"status": "skipped"},
+        },
+        failure_policy_contract=module._failure_policy_contract(),
+        provider_contract=module._base_report(args, has_provider_key=True)[
+            "provider_contract"
+        ],
+        provider_key_present=True,
+        secrets_redacted=True,
+    )
+
+    assert proof["requirements"]["vision_response_evidence"] == {
+        "ok": True,
+        "proof": "live_provider_evidence_shape",
+        "requires_provider_key": True,
+        "status": "contract_covered",
+        "summary_chars": 40,
+        "visible_text_count": 1,
+    }
+    assert proof["requirements"]["transcription_response_artifact"] == {
+        "ok": True,
+        "proof": "live_provider_artifact_shape",
+        "requires_provider_key": True,
+        "response_format": "json",
+        "segment_count": 0,
+        "status": "contract_covered",
+        "transcript_chars": 52,
+        "word_count": 0,
     }
 
 
@@ -461,6 +549,9 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
             "invalid_key_probe": {"status": "skipped", "reason": "invalid_key_probe_not_requested"},
         },
         failure_policy_contract=module._failure_policy_contract(),
+        provider_contract=module._base_report(args, has_provider_key=False)[
+            "provider_contract"
+        ],
         provider_key_present=False,
         secrets_redacted=True,
     )
@@ -474,10 +565,10 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
     assert proof["requirements"]["audio_fixture_contract"]["ok"] is True
     assert proof["requirements"]["audio_fixture_contract"]["requires_provider_key"] is False
     assert proof["summary"] == {
-        "contract_requirements_passed": 6,
-        "contract_requirements_total": 6,
+        "contract_requirements_passed": 7,
+        "contract_requirements_total": 7,
         "live_requirements_passed": 0,
-        "live_requirements_total": 3,
+        "live_requirements_total": 5,
     }
 
 

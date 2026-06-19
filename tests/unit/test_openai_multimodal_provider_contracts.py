@@ -11,12 +11,43 @@ from infinity_context_adapters.extraction.openai_vision import (
 )
 from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OpenAISpeechTranscriptionAdapter,
+    openai_transcription_request_contract,
 )
 from infinity_context_core.ports.transcription import SpeechTranscriptionRequest
 from infinity_context_core.ports.vision import ImageVisionRequest
 
 _IMAGE_BYTES = b"\x89PNG\r\n\x1a\nfake image bytes"
 _AUDIO_BYTES = b"RIFF0000WAVEfake audio bytes"
+
+
+def test_openai_transcription_request_contract_documents_model_shapes() -> None:
+    assert openai_transcription_request_contract("gpt-4o-mini-transcribe") == {
+        "chunking_strategy": None,
+        "requires_chunking_strategy": False,
+        "response_format": "json",
+        "speaker_segments_supported": False,
+        "supports_prompt": True,
+        "supports_segment_timestamps": False,
+        "timestamp_granularities": [],
+    }
+    assert openai_transcription_request_contract("whisper-1") == {
+        "chunking_strategy": None,
+        "requires_chunking_strategy": False,
+        "response_format": "verbose_json",
+        "speaker_segments_supported": False,
+        "supports_prompt": True,
+        "supports_segment_timestamps": True,
+        "timestamp_granularities": ["segment"],
+    }
+    assert openai_transcription_request_contract("gpt-4o-transcribe-diarize") == {
+        "chunking_strategy": "auto",
+        "requires_chunking_strategy": True,
+        "response_format": "diarized_json",
+        "speaker_segments_supported": True,
+        "supports_prompt": False,
+        "supports_segment_timestamps": False,
+        "timestamp_granularities": [],
+    }
 
 
 def test_openai_vision_adapter_sends_structured_responses_contract() -> None:

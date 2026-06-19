@@ -52,6 +52,22 @@ OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES = (
 _SUPPORTED_CONTENT_TYPES = frozenset(OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES)
 
 
+def openai_transcription_request_contract(model: str) -> dict[str, object]:
+    """Return the provider request shape expected for an OpenAI transcription model."""
+    response_format = _response_format_for_model(model)
+    segment_timestamps = _supports_segment_timestamps(model)
+    chunking = _requires_chunking_strategy(model)
+    return {
+        "response_format": response_format,
+        "supports_prompt": not chunking,
+        "supports_segment_timestamps": segment_timestamps,
+        "timestamp_granularities": ["segment"] if segment_timestamps else [],
+        "requires_chunking_strategy": chunking,
+        "chunking_strategy": "auto" if chunking else None,
+        "speaker_segments_supported": chunking,
+    }
+
+
 class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
     provider_name = "openai_transcription"
     provider_version = "audio-transcriptions-api"
@@ -150,17 +166,19 @@ class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
     def _request_kwargs(self, request: SpeechTranscriptionRequest) -> dict[str, object]:
         file_obj = BytesIO(request.content)
         file_obj.name = _safe_filename(request.filename, request.content_type)
+        contract = openai_transcription_request_contract(self._model)
         kwargs: dict[str, object] = {
             "model": self._model,
             "file": file_obj,
-            "response_format": _response_format_for_model(self._model),
+            "response_format": str(contract["response_format"]),
         }
-        if _supports_segment_timestamps(self._model):
-            kwargs["timestamp_granularities"] = ["segment"]
-        if _requires_chunking_strategy(self._model):
+        timestamp_granularities = contract["timestamp_granularities"]
+        if isinstance(timestamp_granularities, list) and timestamp_granularities:
+            kwargs["timestamp_granularities"] = timestamp_granularities
+        if contract["requires_chunking_strategy"] is True:
             kwargs["chunking_strategy"] = "auto"
         prompt = request.prompt or self._prompt
-        if prompt and not _requires_chunking_strategy(self._model):
+        if prompt and contract["supports_prompt"] is True:
             kwargs["prompt"] = prompt[:2000]
         return kwargs
 
@@ -323,10 +341,12 @@ def _requires_chunking_strategy(model: str) -> bool:
 
 
 def _request_diagnostics(model: str) -> dict[str, object]:
-    diagnostics: dict[str, object] = {"response_format": _response_format_for_model(model)}
-    if _supports_segment_timestamps(model):
-        diagnostics["timestamp_granularities"] = ["segment"]
-    if _requires_chunking_strategy(model):
+    contract = openai_transcription_request_contract(model)
+    diagnostics: dict[str, object] = {"response_format": contract["response_format"]}
+    timestamp_granularities = contract["timestamp_granularities"]
+    if isinstance(timestamp_granularities, list) and timestamp_granularities:
+        diagnostics["timestamp_granularities"] = timestamp_granularities
+    if contract["requires_chunking_strategy"] is True:
         diagnostics["chunking_strategy"] = "auto"
     return diagnostics
 
