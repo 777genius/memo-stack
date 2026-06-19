@@ -431,13 +431,11 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "provider_name": "transcription_api",
                             "endpoint": "/v1/audio/transcriptions",
                             "supported_file_types": [
-                                ".flac",
                                 ".m4a",
                                 ".mp3",
                                 ".mp4",
                                 ".mpeg",
                                 ".mpga",
-                                ".ogg",
                                 ".wav",
                                 ".webm",
                             ],
@@ -566,13 +564,11 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         ".webp",
     ]
     assert diagnostics.provider_contract["transcription"]["supported_file_types"] == [
-        ".flac",
         ".m4a",
         ".mp3",
         ".mp4",
         ".mpeg",
         ".mpga",
-        ".ogg",
         ".wav",
         ".webm",
     ]

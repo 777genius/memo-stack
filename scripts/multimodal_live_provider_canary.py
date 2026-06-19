@@ -58,13 +58,11 @@ SECRET_VALUE_PATTERNS = (
 )
 
 _CONTENT_TYPES_BY_SUFFIX = {
-    ".flac": "audio/flac",
     ".m4a": "audio/m4a",
     ".mp3": "audio/mpeg",
     ".mp4": "video/mp4",
     ".mpeg": "audio/mpeg",
     ".mpga": "audio/mpga",
-    ".ogg": "audio/ogg",
     ".wav": "audio/wav",
     ".webm": "audio/webm",
 }
@@ -1178,10 +1176,6 @@ def _audio_fixture_magic_check(*, path: Path, content_type: str) -> dict[str, ob
 def _audio_magic_matches(*, content_type: str, head: bytes) -> bool:
     if content_type == "audio/wav":
         return len(head) >= 12 and head.startswith(b"RIFF") and head[8:12] == b"WAVE"
-    if content_type == "audio/flac":
-        return head.startswith(b"fLaC")
-    if content_type == "audio/ogg":
-        return head.startswith(b"OggS")
     if content_type in {"audio/mpeg", "audio/mpga"}:
         return head.startswith(b"ID3") or _looks_like_mp3_frame(head)
     if content_type in {"audio/m4a", "audio/webm", "video/mp4"}:

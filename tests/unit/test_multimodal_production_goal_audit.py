@@ -240,7 +240,7 @@ def test_multimodal_production_goal_audit_rejects_stale_provider_contract(
         "transcription": {
             "endpoint": "/v1/audio/transcriptions",
             "max_upload_bytes": 25 * 1024 * 1024,
-            "supported_file_types": [".flac", ".mp3", ".ogg", ".wav"],
+            "supported_file_types": [".mp3", ".wav"],
         },
         "vision": {
             "endpoint_family": "responses",
@@ -514,13 +514,11 @@ def _docker_report() -> dict[str, object]:
                     "transcription_max_provider_upload_bytes": 25 * 1024 * 1024,
                     "transcription_effective_max_upload_bytes": 25 * 1024 * 1024,
                     "transcription_supported_file_types": [
-                        ".flac",
                         ".m4a",
                         ".mp3",
                         ".mp4",
                         ".mpeg",
                         ".mpga",
-                        ".ogg",
                         ".wav",
                         ".webm",
                     ],
@@ -572,13 +570,11 @@ def _provider_report() -> dict[str, object]:
                 "max_upload_bytes": 25 * 1024 * 1024,
                 "model": "gpt-4o-mini-transcribe",
                 "supported_file_types": [
-                    ".flac",
                     ".m4a",
                     ".mp3",
                     ".mp4",
                     ".mpeg",
                     ".mpga",
-                    ".ogg",
                     ".wav",
                     ".webm",
                 ],
