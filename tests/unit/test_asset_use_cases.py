@@ -378,6 +378,30 @@ def test_create_asset_rejects_archive_bomb_before_blob_write() -> None:
     asyncio.run(run())
 
 
+def test_create_asset_rejects_image_pixel_bomb_before_blob_write() -> None:
+    async def run() -> None:
+        assets = FakeAssetRepository()
+        storage = FakeBlobStorage()
+
+        try:
+            await _create_use_case(assets=assets, storage=storage).execute(
+                _command(
+                    filename="huge-screenshot.png",
+                    content_type="image/png",
+                    content=_png_bytes(width=100_000, height=100_000),
+                )
+            )
+        except MemoryIngressLimitError as exc:
+            assert "pixel count" in str(exc)
+        else:
+            raise AssertionError("expected MemoryIngressLimitError")
+
+        assert storage.writes == []
+        assert assets.created == []
+
+    asyncio.run(run())
+
+
 def _create_use_case(
     *,
     assets: FakeAssetRepository,
@@ -395,6 +419,7 @@ def _command(
     *,
     filename: str,
     content: bytes,
+    content_type: str = "text/plain",
     metadata: dict[str, object] | None = None,
 ) -> CreateAssetCommand:
     return CreateAssetCommand(
@@ -402,7 +427,7 @@ def _command(
         memory_scope_id=MEMORY_SCOPE_ID,
         thread_id=THREAD_ID,
         filename=filename,
-        content_type="text/plain",
+        content_type=content_type,
         content=content,
         metadata=metadata,
     )
@@ -442,3 +467,14 @@ def _zip_bytes(entries: dict[str, bytes]) -> bytes:
         for name, content in entries.items():
             archive.writestr(name, content)
     return buffer.getvalue()
+
+
+def _png_bytes(*, width: int, height: int) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\r"
+        b"IHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x02\x00\x00\x00"
+    )

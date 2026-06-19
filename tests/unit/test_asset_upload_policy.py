@@ -46,6 +46,71 @@ def test_upload_policy_reports_declared_and_extension_mismatch() -> None:
     assert result.metadata["upload_extension_mismatch"] is True
 
 
+def test_upload_policy_records_image_dimensions_without_decoding() -> None:
+    result = assess_asset_upload(
+        filename="screenshot.png",
+        declared_content_type="image/png",
+        content=_png_bytes(width=320, height=200),
+    )
+
+    assert result.metadata["upload_image_detected"] is True
+    assert result.metadata["upload_image_inspection_status"] == "ok"
+    assert result.metadata["upload_image_width"] == 320
+    assert result.metadata["upload_image_height"] == 200
+    assert result.metadata["upload_image_pixels"] == 64_000
+    assert result.metadata["upload_image_max_pixels"] == 50_000_000
+
+
+def test_upload_policy_rejects_image_pixel_bomb() -> None:
+    with pytest.raises(MemoryIngressLimitError, match="pixel count"):
+        assess_asset_upload(
+            filename="huge-screenshot.png",
+            declared_content_type="image/png",
+            content=_png_bytes(width=100_000, height=100_000),
+            max_image_pixels=50_000_000,
+        )
+
+
+def test_upload_policy_rejects_corrupted_magic_image_header() -> None:
+    with pytest.raises(MemoryIngressLimitError, match="dimensions"):
+        assess_asset_upload(
+            filename="broken-screenshot.png",
+            declared_content_type="image/png",
+            content=b"\x89PNG\r\n\x1a\ntruncated",
+        )
+
+
+@pytest.mark.parametrize(
+    ("filename", "kind", "expected_width", "expected_height"),
+    [
+        ("photo.jpg", "jpeg", 640, 480),
+        ("animation.gif", "gif", 32, 24),
+        ("capture.webp", "webp", 1024, 768),
+    ],
+)
+def test_upload_policy_reads_common_image_dimensions(
+    filename: str,
+    kind: str,
+    expected_width: int,
+    expected_height: int,
+) -> None:
+    content = {
+        "jpeg": _jpeg_bytes,
+        "gif": _gif_bytes,
+        "webp": _webp_vp8x_bytes,
+    }[kind](width=expected_width, height=expected_height)
+
+    result = assess_asset_upload(
+        filename=filename,
+        declared_content_type="application/octet-stream",
+        content=content,
+    )
+
+    assert result.metadata["upload_image_inspection_status"] == "ok"
+    assert result.metadata["upload_image_width"] == expected_width
+    assert result.metadata["upload_image_height"] == expected_height
+
+
 def test_upload_policy_marks_non_document_zip_archive_for_review() -> None:
     result = assess_asset_upload(
         filename="payload.zip",
@@ -150,3 +215,46 @@ def _zip_bytes(entries: dict[str, bytes]) -> bytes:
         for name, content in entries.items():
             archive.writestr(name, content)
     return buffer.getvalue()
+
+
+def _png_bytes(*, width: int, height: int) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\r"
+        b"IHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x02\x00\x00\x00"
+    )
+
+
+def _jpeg_bytes(*, width: int, height: int) -> bytes:
+    return (
+        b"\xff\xd8"
+        b"\xff\xc0"
+        b"\x00\x11"
+        b"\x08"
+        + height.to_bytes(2, "big")
+        + width.to_bytes(2, "big")
+        + b"\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00"
+        b"\xff\xd9"
+    )
+
+
+def _gif_bytes(*, width: int, height: int) -> bytes:
+    return (
+        b"GIF89a"
+        + width.to_bytes(2, "little")
+        + height.to_bytes(2, "little")
+        + b"\x00\x00\x00"
+    )
+
+
+def _webp_vp8x_bytes(*, width: int, height: int) -> bytes:
+    payload = (
+        b"\x00\x00\x00\x00"
+        + (width - 1).to_bytes(3, "little")
+        + (height - 1).to_bytes(3, "little")
+    )
+    chunk = b"VP8X" + len(payload).to_bytes(4, "little") + payload
+    return b"RIFF" + (4 + len(chunk)).to_bytes(4, "little") + b"WEBP" + chunk

@@ -39,6 +39,7 @@ class CreateAssetUseCase:
         blob_storage: BlobStoragePort,
         storage_backend: str = "local",
         max_bytes: int = 25 * 1024 * 1024,
+        max_image_pixels: int = 50_000_000,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
@@ -46,6 +47,7 @@ class CreateAssetUseCase:
         self._blob_storage = blob_storage
         self._storage_backend = storage_backend
         self._max_bytes = max(1, max_bytes)
+        self._max_image_pixels = max(1, max_image_pixels)
 
     async def execute(self, command: CreateAssetCommand) -> AssetResult:
         if not command.content:
@@ -56,6 +58,7 @@ class CreateAssetUseCase:
             filename=command.filename,
             declared_content_type=command.content_type,
             content=command.content,
+            max_image_pixels=self._max_image_pixels,
         )
         now = self._clock.now()
         digest = hashlib.sha256(command.content).hexdigest()

@@ -19,6 +19,7 @@ _MAX_ARCHIVE_UNCOMPRESSED_BYTES = 250 * 1024 * 1024
 _MAX_ARCHIVE_SINGLE_ENTRY_BYTES = 100 * 1024 * 1024
 _MAX_ARCHIVE_COMPRESSION_RATIO = 100.0
 _ARCHIVE_RATIO_MIN_UNCOMPRESSED_BYTES = 1 * 1024 * 1024
+_DEFAULT_MAX_IMAGE_PIXELS = 50_000_000
 _BLOCKED_EXTENSIONS = {
     ".app",
     ".bat",
@@ -82,6 +83,24 @@ _EXTENSION_CONTENT_TYPES = {
     ".zip": "application/zip",
 }
 _TEXT_BYTES = set(range(32, 127)) | {9, 10, 13}
+_IMAGE_DIMENSION_CONTENT_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
+_JPEG_SOF_MARKERS = frozenset(
+    {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -90,6 +109,16 @@ class AssetUploadAssessment:
     extension_content_type: str | None
     magic_content_type: str
     metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class _ImageDimensions:
+    width: int
+    height: int
+
+    @property
+    def pixels(self) -> int:
+        return self.width * self.height
 
 
 def assess_asset_upload(
@@ -101,6 +130,7 @@ def assess_asset_upload(
     max_archive_uncompressed_bytes: int = _MAX_ARCHIVE_UNCOMPRESSED_BYTES,
     max_archive_single_entry_bytes: int = _MAX_ARCHIVE_SINGLE_ENTRY_BYTES,
     max_archive_compression_ratio: float = _MAX_ARCHIVE_COMPRESSION_RATIO,
+    max_image_pixels: int = _DEFAULT_MAX_IMAGE_PIXELS,
 ) -> AssetUploadAssessment:
     safe_filename = safe_metadata_text(filename.strip(), limit=_MAX_FILENAME_CHARS)
     if not safe_filename:
@@ -143,6 +173,11 @@ def assess_asset_upload(
         archive_review_required = archive_review_required or bool(
             archive_metadata.get("upload_archive_review_required")
         )
+    image_metadata = _inspect_image_payload(
+        content,
+        content_type=magic_content_type,
+        max_image_pixels=max_image_pixels,
+    )
     metadata = {
         "upload_policy_version": UPLOAD_POLICY_VERSION,
         "upload_declared_content_type": declared or "application/octet-stream",
@@ -155,6 +190,7 @@ def assess_asset_upload(
         "upload_archive_review_required": archive_review_required,
         "upload_dangerous_extension_blocked": False,
         **archive_metadata,
+        **image_metadata,
     }
     metadata["upload_archive_review_reason"] = _archive_review_reason(
         raw_archive_review_required=archive_detected
@@ -280,6 +316,163 @@ def _inspect_zip_archive(
             duplicate_path_count=duplicate_path_count,
         )
     return metadata
+
+
+def _inspect_image_payload(
+    content: bytes,
+    *,
+    content_type: str,
+    max_image_pixels: int,
+) -> dict[str, object]:
+    if not content_type.startswith("image/"):
+        return {
+            "upload_image_detected": False,
+            "upload_image_inspection_status": None,
+            "upload_image_review_required": False,
+        }
+
+    normalized_limit = max(1, int(max_image_pixels))
+    metadata: dict[str, object] = {
+        "upload_image_detected": True,
+        "upload_image_content_type": content_type,
+        "upload_image_max_pixels": normalized_limit,
+        "upload_image_review_required": False,
+    }
+    if content_type not in _IMAGE_DIMENSION_CONTENT_TYPES:
+        return {
+            **metadata,
+            "upload_image_inspection_status": "unsupported_content_type",
+        }
+
+    dimensions = _image_dimensions(content, content_type=content_type)
+    if dimensions is None:
+        raise MemoryIngressLimitError("Asset image dimensions could not be read")
+    if dimensions.width <= 0 or dimensions.height <= 0:
+        raise MemoryIngressLimitError("Asset image dimensions are invalid")
+    if dimensions.pixels > normalized_limit:
+        raise MemoryIngressLimitError("Asset image pixel count exceeds configured limit")
+    return {
+        **metadata,
+        "upload_image_inspection_status": "ok",
+        "upload_image_width": dimensions.width,
+        "upload_image_height": dimensions.height,
+        "upload_image_pixels": dimensions.pixels,
+    }
+
+
+def _image_dimensions(content: bytes, *, content_type: str) -> _ImageDimensions | None:
+    if content_type == "image/png":
+        return _png_dimensions(content)
+    if content_type == "image/gif":
+        return _gif_dimensions(content)
+    if content_type == "image/jpeg":
+        return _jpeg_dimensions(content)
+    if content_type == "image/webp":
+        return _webp_dimensions(content)
+    return None
+
+
+def _png_dimensions(content: bytes) -> _ImageDimensions | None:
+    if len(content) < 24 or not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    if content[12:16] != b"IHDR":
+        return None
+    return _ImageDimensions(
+        width=int.from_bytes(content[16:20], "big"),
+        height=int.from_bytes(content[20:24], "big"),
+    )
+
+
+def _gif_dimensions(content: bytes) -> _ImageDimensions | None:
+    if len(content) < 10 or not content.startswith((b"GIF87a", b"GIF89a")):
+        return None
+    return _ImageDimensions(
+        width=int.from_bytes(content[6:8], "little"),
+        height=int.from_bytes(content[8:10], "little"),
+    )
+
+
+def _jpeg_dimensions(content: bytes) -> _ImageDimensions | None:
+    if len(content) < 4 or not content.startswith(b"\xff\xd8"):
+        return None
+    offset = 2
+    while offset < len(content):
+        while offset < len(content) and content[offset] == 0xFF:
+            offset += 1
+        if offset >= len(content):
+            return None
+        marker = content[offset]
+        offset += 1
+        if marker in {0xD8, 0xD9}:
+            continue
+        if marker == 0xDA:
+            return None
+        if offset + 2 > len(content):
+            return None
+        segment_length = int.from_bytes(content[offset : offset + 2], "big")
+        if segment_length < 2:
+            return None
+        segment_start = offset + 2
+        segment_end = offset + segment_length
+        if segment_end > len(content):
+            return None
+        if marker in _JPEG_SOF_MARKERS:
+            if segment_length < 7:
+                return None
+            height = int.from_bytes(content[segment_start + 1 : segment_start + 3], "big")
+            width = int.from_bytes(content[segment_start + 3 : segment_start + 5], "big")
+            return _ImageDimensions(width=width, height=height)
+        offset = segment_end
+    return None
+
+
+def _webp_dimensions(content: bytes) -> _ImageDimensions | None:
+    if len(content) < 20 or not (content.startswith(b"RIFF") and content[8:12] == b"WEBP"):
+        return None
+    offset = 12
+    while offset + 8 <= len(content):
+        chunk_type = content[offset : offset + 4]
+        chunk_size = int.from_bytes(content[offset + 4 : offset + 8], "little")
+        chunk_start = offset + 8
+        chunk_end = chunk_start + chunk_size
+        if chunk_end > len(content):
+            return None
+        chunk = content[chunk_start:chunk_end]
+        if chunk_type == b"VP8X":
+            return _webp_vp8x_dimensions(chunk)
+        if chunk_type == b"VP8L":
+            return _webp_vp8l_dimensions(chunk)
+        if chunk_type == b"VP8 ":
+            return _webp_vp8_dimensions(chunk)
+        offset = chunk_end + (chunk_size % 2)
+    return None
+
+
+def _webp_vp8x_dimensions(chunk: bytes) -> _ImageDimensions | None:
+    if len(chunk) < 10:
+        return None
+    return _ImageDimensions(
+        width=int.from_bytes(chunk[4:7], "little") + 1,
+        height=int.from_bytes(chunk[7:10], "little") + 1,
+    )
+
+
+def _webp_vp8l_dimensions(chunk: bytes) -> _ImageDimensions | None:
+    if len(chunk) < 5 or chunk[0] != 0x2F:
+        return None
+    b0, b1, b2, b3 = chunk[1], chunk[2], chunk[3], chunk[4]
+    width = 1 + (((b1 & 0x3F) << 8) | b0)
+    height = 1 + (((b3 & 0x0F) << 10) | (b2 << 2) | ((b1 & 0xC0) >> 6))
+    return _ImageDimensions(width=width, height=height)
+
+
+def _webp_vp8_dimensions(chunk: bytes) -> _ImageDimensions | None:
+    if len(chunk) < 10 or chunk[3:6] != b"\x9d\x01\x2a":
+        return None
+    return _ImageDimensions(
+        width=int.from_bytes(chunk[6:8], "little") & 0x3FFF,
+        height=int.from_bytes(chunk[8:10], "little") & 0x3FFF,
+    )
 
 
 def _looks_like_path(filename: str) -> bool:

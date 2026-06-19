@@ -339,6 +339,7 @@ def build_container(settings: Settings | None = None) -> Container:
         blob_storage=blob_storage,
         storage_backend=resolved_settings.asset_storage_backend,
         max_bytes=resolved_settings.max_asset_upload_bytes,
+        max_image_pixels=resolved_settings.extraction_max_image_pixels,
     )
     get_asset = GetAssetUseCase(uow_factory=uow_factory)
     list_assets = ListAssetsUseCase(uow_factory=uow_factory)
