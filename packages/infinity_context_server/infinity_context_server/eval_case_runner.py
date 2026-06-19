@@ -39,6 +39,7 @@ def _run_eval_case(
         "token_budget": case.token_budget,
         "max_facts": case.max_facts,
         "max_chunks": case.max_chunks,
+        "max_evidence_items": case.max_evidence_items,
     }
     if case.include_stale:
         payload["include_stale"] = True

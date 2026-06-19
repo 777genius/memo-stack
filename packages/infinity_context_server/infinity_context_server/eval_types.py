@@ -65,6 +65,7 @@ class EvalCase:
     token_budget: int = 512
     max_facts: int = 20
     max_chunks: int = 30
+    max_evidence_items: int = 12
     consistency_mode: str = "best_effort"
     include_stale: bool = False
     require_evidence_guard: bool = True

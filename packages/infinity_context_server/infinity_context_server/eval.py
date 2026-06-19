@@ -3,15 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
+from hashlib import sha256
 from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
 from infinity_context_core.application.sensitive_text import redact_sensitive_text
+from infinity_context_core.domain.entities import MemoryScopeId, SpaceId
+from infinity_context_core.domain.extraction import (
+    AssetExtractionJob,
+    AssetExtractionJobId,
+    ExtractionArtifact,
+    ExtractionArtifactId,
+)
 
 from infinity_context_server.config import CaptureMode, DeployProfile, Settings
 from infinity_context_server.eval_auto_memory import _execute_auto_memory_golden
@@ -1035,7 +1044,7 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
                 "title": "Quality multimodal evidence note",
                 "text": (
                     "QUALITY_MM_CONTEXT: Project Atlas screenshot OCR and transcript "
-                    "segment confirm the invoice review timeline."
+                    "segment confirm the invoice review timeline and owner Alex."
                 ),
                 "source_type": "asset_extraction",
                 "source_external_id": "quality-mm-extract",
@@ -1044,7 +1053,9 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
                     {
                         "source_type": "asset_extraction",
                         "source_id": "quality-mm-extract",
-                        "quote_preview": "Project Atlas invoice review appears in screenshot OCR.",
+                        "quote_preview": (
+                            "Project Atlas screenshot invoice owner Alex appears in OCR."
+                        ),
                         "page_number": 2,
                         "time_start_ms": 1200,
                         "time_end_ms": 5400,
@@ -1054,6 +1065,12 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             },
             headers=_with_idempotency(headers, "quality-doc-mm-source-refs-v1"),
         ).status_code
+    )
+    checks["quality_media_manifest_artifact"] = _seed_quality_media_manifest_artifact(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=alpha_memory_scope_id,
     )
     checks["quality_context_diversity_document"] = _status_ok(
         client.post(
@@ -1122,6 +1139,120 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         other_thread_id=other_thread_id,
         hybrid_chunk_id=hybrid_chunk_id,
     )
+
+
+def _seed_quality_media_manifest_artifact(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    upload = client.post(
+        "/v1/assets",
+        params={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "filename": "quality-atlas-invoice-screenshot.png",
+            "classification": "internal",
+        },
+        content=b"quality eval png bytes",
+        headers={**headers, "Content-Type": "image/png"},
+    )
+    if upload.status_code != 201:
+        return False
+    try:
+        asyncio.run(
+            _store_quality_media_manifest_artifact(
+                client.app.state.container,
+                asset=upload.json()["data"],
+                payload={
+                    "schema_version": "infinity_context.multimodal_manifest.v1",
+                    "evidence_items": [
+                        {
+                            "id": "quality-mm-manifest-ocr-owner",
+                            "kind": "ocr_region",
+                            "modality": "image",
+                            "text_preview": (
+                                "QUALITY_MM_CONTEXT: Project Atlas screenshot invoice "
+                                "owner Alex appears in OCR transcript evidence."
+                            ),
+                            "time_range": {"start_ms": 1200, "end_ms": 5400},
+                            "bbox": [12.0, 32.0, 300.0, 88.0],
+                            "confidence": 0.93,
+                        },
+                        {
+                            "id": "quality-mm-manifest-decoy",
+                            "kind": "ocr_region",
+                            "modality": "image",
+                            "text_preview": "Calendar footer without the requested owner.",
+                            "bbox": [1.0, 2.0, 20.0, 30.0],
+                            "confidence": 0.99,
+                        },
+                    ],
+                },
+            )
+        )
+    except Exception:
+        return False
+    return True
+
+
+async def _store_quality_media_manifest_artifact(
+    container,
+    *,
+    asset: dict[str, object],
+    payload: dict[str, object],
+) -> None:
+    now = container.clock.now()
+    job_id = container.ids.new_id("job")
+    artifact_id = container.ids.new_id("artifact")
+    content = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    storage_key = (
+        f"{asset['space_id']}/{asset['memory_scope_id']}/extractions/"
+        f"{artifact_id}/media_manifest.json"
+    )
+    job = AssetExtractionJob.create(
+        job_id=AssetExtractionJobId(job_id),
+        asset_id=str(asset["id"]),
+        space_id=SpaceId(str(asset["space_id"])),
+        memory_scope_id=MemoryScopeId(str(asset["memory_scope_id"])),
+        thread_id=str(asset["thread_id"]) if asset.get("thread_id") else None,
+        parser_profile="quality-media-manifest",
+        parser_config_hash="quality-media-manifest-v1",
+        source_sha256_hex=str(asset["sha256_hex"]),
+        now=now,
+        metadata={"eval_fixture": True},
+    ).mark_running(now=now, lease_owner="quality-eval")
+    job = job.mark_succeeded(
+        now=now,
+        result_document_ids=(),
+        parser_name="quality-media-manifest",
+        parser_version="1",
+        model_version=None,
+        metadata={"eval_fixture": True},
+    )
+    artifact = ExtractionArtifact.create(
+        artifact_id=ExtractionArtifactId(artifact_id),
+        job_id=AssetExtractionJobId(job_id),
+        asset_id=str(asset["id"]),
+        artifact_type="media_manifest",
+        storage_backend="local",
+        storage_key=storage_key,
+        sha256_hex=sha256(content).hexdigest(),
+        byte_size=len(content),
+        now=now,
+        metadata={
+            "schema_version": "infinity_context.multimodal_manifest.v1",
+            "content_type": "application/json",
+            "eval_fixture": True,
+        },
+    )
+    await container.blob_storage.write_bytes(storage_key=storage_key, content=content)
+    async with container.uow_factory() as uow:
+        await uow.asset_extractions.create(job)
+        await uow.asset_extractions.create_artifact(artifact)
+        await uow.commit()
 
 
 def _first_document_chunk_id(

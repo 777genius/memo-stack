@@ -66,6 +66,7 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "hybrid_document_beats_single_source",
     "context_diversity_preserves_fact_and_chunk_evidence",
     "multimodal_source_refs_recall_with_citations",
+    "multilingual_multimodal_source_refs_recall",
     "pending_duplicate_merge_review_visible",
     "canonical_project_anchor_recall_with_citation",
     "canonical_event_anchor_recall_by_identity",
