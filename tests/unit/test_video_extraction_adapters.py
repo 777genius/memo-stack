@@ -125,6 +125,52 @@ def test_media_metadata_engine_emits_video_keyframe_timeline(
     ]
 
 
+def test_media_metadata_skips_keyframes_when_video_frame_exceeds_pixel_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = MediaProbeResult(
+        status="succeeded",
+        duration_seconds=8.0,
+        stream_summaries=("video/h264 12000x8000", "audio/aac 48000Hz 2ch"),
+        streams=(
+            MediaStreamSummary(
+                index=0,
+                codec_type="video",
+                codec_name="h264",
+                width=12_000,
+                height=8_000,
+            ),
+        ),
+        metadata={
+            "probe_status": "succeeded",
+            "video_width": 12_000,
+            "video_height": 8_000,
+        },
+    )
+    monkeypatch.setattr(content_module, "probe_media_with_ffprobe", lambda _: probe)
+
+    def fail_keyframes(*_args: object, **_kwargs: object) -> tuple[VideoKeyframe, ...]:
+        raise AssertionError("oversized video must not invoke ffmpeg keyframe extraction")
+
+    monkeypatch.setattr(content_module, "extract_selected_video_keyframes", fail_keyframes)
+    engine = MediaMetadataExtractionEngine()
+    request = _request(parser_profile="standard_local", max_image_pixels=50_000_000)
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.parser_name == "media_metadata"
+    assert result.technical_metadata["keyframe_status"] == "skipped_video_too_large"
+    assert result.technical_metadata["video_frame_pixel_limit_allowed"] is False
+    assert result.technical_metadata["video_frame_pixels"] == 96_000_000
+    assert result.technical_metadata["max_video_frame_pixels"] == 50_000_000
+    assert "Keyframes: skipped because video frame pixels exceed limit" in (
+        result.markdown or ""
+    )
+    assert {artifact.artifact_type for artifact in result.artifacts} == {"media_manifest"}
+    assert [element.kind for element in result.elements] == ["media_metadata"]
+
+
 def test_video_without_audio_skips_transcription_provider_and_keeps_keyframes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -192,6 +238,75 @@ def test_video_without_audio_skips_transcription_provider_and_keeps_keyframes(
         "media_manifest",
         "video_frame_timeline",
     }
+
+
+def test_speech_transcription_skips_keyframes_when_video_frame_exceeds_pixel_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = MediaProbeResult(
+        status="succeeded",
+        duration_seconds=8.0,
+        stream_summaries=("video/h264 12000x8000", "audio/aac 48000Hz 2ch"),
+        streams=(
+            MediaStreamSummary(
+                index=0,
+                codec_type="video",
+                codec_name="h264",
+                width=12_000,
+                height=8_000,
+            ),
+            MediaStreamSummary(
+                index=1,
+                codec_type="audio",
+                codec_name="aac",
+            ),
+        ),
+        metadata={
+            "probe_status": "succeeded",
+            "video_width": 12_000,
+            "video_height": 8_000,
+        },
+    )
+    monkeypatch.setattr(transcription_engine_module, "probe_media_with_ffprobe", lambda _: probe)
+
+    def fail_keyframes(*_args: object, **_kwargs: object) -> tuple[VideoKeyframe, ...]:
+        raise AssertionError("oversized video must not invoke ffmpeg keyframe extraction")
+
+    monkeypatch.setattr(
+        transcription_engine_module,
+        "extract_selected_video_keyframes",
+        fail_keyframes,
+    )
+    engine = SpeechTranscriptionExtractionEngine(
+        transcription=OpenAISpeechTranscriptionAdapter(
+            api_key=None,
+            model="gpt-4o-mini-transcribe",
+            client_factory=lambda: _FakeTranscriptionClient(),
+        )
+    )
+    request = _request(
+        parser_profile="media_api",
+        enable_external_ai=True,
+        max_image_pixels=50_000_000,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.parser_name == "speech_transcription"
+    assert result.technical_metadata["keyframe_status"] == "skipped_video_too_large"
+    assert result.technical_metadata["video_frame_pixel_limit_allowed"] is False
+    assert result.technical_metadata["video_frame_pixels"] == 96_000_000
+    assert result.technical_metadata["max_video_frame_pixels"] == 50_000_000
+    assert {artifact.artifact_type for artifact in result.artifacts} == {
+        "media_manifest",
+        "transcript",
+        "transcript_json",
+    }
+    assert [element.kind for element in result.elements] == [
+        "transcript_segment",
+        "transcript_segment",
+    ]
 
 
 def test_selected_keyframe_windows_cover_video_duration() -> None:
@@ -309,6 +424,7 @@ def _request(
     parser_profile: str,
     enable_external_ai: bool = False,
     subprocess_timeout_seconds: int = 60,
+    max_image_pixels: int = 50_000_000,
 ) -> ExtractionRequest:
     content = b"\x00\x00\x00\x18ftypmp42fake video bytes"
     return ExtractionRequest(
@@ -325,6 +441,7 @@ def _request(
             max_bytes=10_000_000,
             enable_external_ai=enable_external_ai,
             subprocess_timeout_seconds=subprocess_timeout_seconds,
+            max_image_pixels=max_image_pixels,
         ),
     )
 

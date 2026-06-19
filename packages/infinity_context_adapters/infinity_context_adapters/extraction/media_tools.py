@@ -76,6 +76,25 @@ class VideoKeyframe:
         )
 
 
+@dataclass(frozen=True)
+class VideoFramePixelLimitDecision:
+    allowed: bool
+    width: int | None
+    height: int | None
+    pixels: int | None
+    max_pixels: int
+
+    @property
+    def metadata(self) -> dict[str, object]:
+        return {
+            "video_frame_pixel_limit_allowed": self.allowed,
+            "video_frame_width": self.width,
+            "video_frame_height": self.height,
+            "video_frame_pixels": self.pixels,
+            "max_video_frame_pixels": self.max_pixels,
+        }
+
+
 def probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
@@ -144,6 +163,35 @@ def extract_first_video_keyframe(
 ) -> ExtractionArtifactCandidate | None:
     keyframes = extract_selected_video_keyframes(request, max_frames=1)
     return keyframes[0].to_artifact() if keyframes else None
+
+
+def video_frame_pixel_limit_decision(
+    probe: MediaProbeResult,
+    *,
+    max_pixels: int,
+) -> VideoFramePixelLimitDecision:
+    width, height = _largest_video_dimensions(probe)
+    pixels = width * height if width is not None and height is not None else None
+    return VideoFramePixelLimitDecision(
+        allowed=pixels is None or pixels <= max(1, int(max_pixels)),
+        width=width,
+        height=height,
+        pixels=pixels,
+        max_pixels=max(1, int(max_pixels)),
+    )
+
+
+def video_keyframe_status(
+    *,
+    content_type: str,
+    keyframes_extracted: bool,
+    frame_limit_allowed: bool,
+) -> str:
+    if not content_type.startswith("video/"):
+        return "not_applicable"
+    if not frame_limit_allowed:
+        return "skipped_video_too_large"
+    return "extracted" if keyframes_extracted else "not_applicable"
 
 
 def extract_selected_video_keyframes(
@@ -345,6 +393,28 @@ def _safe_suffix(filename: str) -> str:
         return ".bin"
     safe = "".join(ch for ch in extension if ch.isalnum())[:16]
     return f".{safe or 'bin'}"
+
+
+def _largest_video_dimensions(probe: MediaProbeResult) -> tuple[int | None, int | None]:
+    best_width: int | None = None
+    best_height: int | None = None
+    best_pixels = 0
+    for stream in probe.streams:
+        if stream.codec_type != "video" or stream.width is None or stream.height is None:
+            continue
+        pixels = stream.width * stream.height
+        if pixels > best_pixels:
+            best_width = stream.width
+            best_height = stream.height
+            best_pixels = pixels
+    metadata = probe.metadata or {}
+    metadata_width = _positive_int(metadata.get("video_width"))
+    metadata_height = _positive_int(metadata.get("video_height"))
+    if metadata_width is not None and metadata_height is not None:
+        metadata_pixels = metadata_width * metadata_height
+        if metadata_pixels > best_pixels:
+            return metadata_width, metadata_height
+    return best_width, best_height
 
 
 def _subprocess_timeout_seconds(request: ExtractionRequest) -> int:

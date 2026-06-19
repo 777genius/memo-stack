@@ -30,6 +30,8 @@ from infinity_context_adapters.extraction.media_tools import (
     extract_selected_video_keyframes,
     media_manifest_artifact,
     probe_media_with_ffprobe,
+    video_frame_pixel_limit_decision,
+    video_keyframe_status,
 )
 from infinity_context_adapters.extraction.video_evidence import analyze_video_keyframes
 
@@ -596,7 +598,12 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
 
         keyframes = ()
         frame_evidence = None
-        if request.detected_content_type.startswith("video/"):
+        frame_limit = video_frame_pixel_limit_decision(
+            probe,
+            max_pixels=request.limits.max_image_pixels,
+        )
+        is_video = request.detected_content_type.startswith("video/")
+        if is_video and frame_limit.allowed:
             keyframes = extract_selected_video_keyframes(
                 request,
                 duration_seconds=probe.duration_seconds,
@@ -620,6 +627,8 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
         ]
         if keyframes:
             lines.append(f"- Keyframes: {len(keyframes)} extracted")
+        elif is_video and not frame_limit.allowed:
+            lines.append("- Keyframes: skipped because video frame pixels exceed limit")
         markdown = _limit_text("\n".join(lines), request.limits.max_output_chars)
         artifacts = (
             media_manifest_artifact(
@@ -655,8 +664,17 @@ class MediaMetadataExtractionEngine(ExtractionEngine):
                 "duration_seconds": probe.duration_seconds,
                 "stream_count": len(probe.stream_summaries),
                 "transcript_status": "not_configured",
-                "keyframe_status": "extracted" if keyframes else "not_applicable",
+                "keyframe_status": video_keyframe_status(
+                    content_type=request.detected_content_type,
+                    keyframes_extracted=bool(keyframes),
+                    frame_limit_allowed=frame_limit.allowed,
+                ),
                 "output_chars": len(markdown),
+                **(
+                    frame_limit.metadata
+                    if is_video
+                    else {}
+                ),
                 **(frame_evidence.metadata if frame_evidence is not None else {}),
                 **(probe.metadata or {}),
             },
