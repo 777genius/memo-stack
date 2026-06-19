@@ -1,4 +1,8 @@
-from infinity_context_core.application.anchor_extraction import extract_observed_anchors
+from infinity_context_core.application.anchor_extraction import (
+    extract_observed_anchors,
+    structured_anchor_metadata_for_label,
+)
+from infinity_context_core.domain.entities import MemoryAnchorKind
 
 
 def test_anchor_extraction_ignores_document_metadata_as_people() -> None:
@@ -23,6 +27,18 @@ def test_anchor_extraction_keeps_real_people_projects_and_events() -> None:
     assert ("project", "atlas") in keys
     assert ("project", "qdrant") in keys
     assert ("event", "meeting last week") in keys
+
+
+def test_anchor_metadata_includes_bounded_alias_identity_terms() -> None:
+    metadata = structured_anchor_metadata_for_label(
+        MemoryAnchorKind.PERSON,
+        "Alexander",
+        aliases=("Alex", "Алекс", "Alexander"),
+    )
+
+    assert metadata["identity_key"] == "person:aleksander"
+    assert metadata["person_canonical_key"] == "aleksander"
+    assert metadata["alias_identity_terms"] == ["aleks"]
 
 
 def test_anchor_extraction_ignores_temporal_leading_words_as_people() -> None:

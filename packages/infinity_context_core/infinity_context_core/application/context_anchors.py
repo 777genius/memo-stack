@@ -34,7 +34,7 @@ _IDENTITY_METADATA_KEYS = (
     "identity_key",
     "identity_scope",
 )
-_IDENTITY_LIST_METADATA_KEYS = ("event_identity_terms",)
+_IDENTITY_LIST_METADATA_KEYS = ("event_identity_terms", "alias_identity_terms")
 
 
 def anchor_retrieval_text(anchor: MemoryAnchor) -> str:
@@ -167,6 +167,7 @@ def _identity_terms(metadata: dict[str, object]) -> tuple[str, ...]:
             for item in value[:6]
             if (text := _metadata_text(item, limit=120))
         )
+    terms: list[str] = []
     for key in (
         "person_canonical_key",
         "project_canonical_key",
@@ -174,8 +175,16 @@ def _identity_terms(metadata: dict[str, object]) -> tuple[str, ...]:
         "canonical_key",
     ):
         if text := _metadata_text(metadata.get(key), limit=120):
-            return (text,)
-    return ()
+            terms.append(text)
+            break
+    value = metadata.get("alias_identity_terms")
+    if isinstance(value, list):
+        terms.extend(
+            text
+            for item in value[:6]
+            if (text := _metadata_text(item, limit=120))
+        )
+    return tuple(_dedupe_preserve_order(tuple(terms)))
 
 
 def _anchor_score(

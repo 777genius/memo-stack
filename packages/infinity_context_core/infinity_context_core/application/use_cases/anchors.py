@@ -118,6 +118,7 @@ class CreateAnchorUseCase:
         metadata = _manual_anchor_metadata(
             kind=kind,
             label=label,
+            aliases=command.aliases,
             metadata=command.metadata,
             audit={"creation_source": "manual"},
         )
@@ -236,7 +237,8 @@ class UpdateAnchorUseCase:
                     valid_to=command.valid_to,
                     metadata=_manual_anchor_metadata(
                         kind=anchor.kind,
-                        label=label,
+                        label=label or anchor.label,
+                        aliases=command.aliases,
                         metadata=command.metadata,
                         audit={"last_edit_source": "manual"},
                     ),
@@ -391,7 +393,11 @@ class SplitAnchorUseCase:
                         "resolver_version": _ANCHOR_RESOLVER_VERSION,
                         "split_from_anchor_id": str(anchor.id),
                         "split_reason": reason,
-                        **structured_anchor_metadata_for_label(anchor.kind, label),
+                        **structured_anchor_metadata_for_label(
+                            anchor.kind,
+                            label,
+                            aliases=(alias,),
+                        ),
                     },
                     now=now,
                 )
@@ -415,7 +421,11 @@ class SplitAnchorUseCase:
                         "resolver_version": _ANCHOR_RESOLVER_VERSION,
                         "split_from_anchor_id": str(anchor.id),
                         "split_reason": reason,
-                        **structured_anchor_metadata_for_label(anchor.kind, label),
+                        **structured_anchor_metadata_for_label(
+                            anchor.kind,
+                            label,
+                            aliases=(alias,),
+                        ),
                     },
                     now=now,
                 )
@@ -899,11 +909,16 @@ def _manual_anchor_metadata(
     *,
     kind: MemoryAnchorKind,
     label: str | None,
+    aliases: tuple[str, ...],
     metadata: dict[str, object] | None,
     audit: dict[str, object],
 ) -> dict[str, object]:
     return {
-        **(structured_anchor_metadata_for_label(kind, label) if label else {}),
+        **(
+            structured_anchor_metadata_for_label(kind, label, aliases=aliases)
+            if label
+            else {}
+        ),
         **dict(metadata or {}),
         "resolver_version": _ANCHOR_RESOLVER_VERSION,
         **audit,

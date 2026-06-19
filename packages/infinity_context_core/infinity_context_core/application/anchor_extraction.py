@@ -387,13 +387,40 @@ def canonical_anchor_key_for_kind(kind: MemoryAnchorKind, label: str) -> str:
 def structured_anchor_metadata_for_label(
     kind: MemoryAnchorKind,
     label: str,
+    aliases: tuple[str, ...] = (),
 ) -> dict[str, object]:
     canonical_key = canonical_anchor_key_for_kind(kind, label)
+    alias_identity_terms = alias_identity_terms_for_kind(
+        kind,
+        label=label,
+        aliases=aliases,
+    )
     return {
         "canonical_key": canonical_key,
         **_identity_anchor_metadata(kind, canonical_key),
+        **({"alias_identity_terms": alias_identity_terms} if alias_identity_terms else {}),
         **_structured_anchor_metadata(kind, label, canonical_key=canonical_key),
     }
+
+
+def alias_identity_terms_for_kind(
+    kind: MemoryAnchorKind,
+    *,
+    label: str,
+    aliases: tuple[str, ...],
+) -> list[str]:
+    canonical_key = canonical_anchor_key_for_kind(kind, label)
+    terms: list[str] = []
+    seen = {canonical_key}
+    for alias in aliases:
+        alias_key = canonical_anchor_key_for_kind(kind, alias)
+        if not alias_key or alias_key in seen:
+            continue
+        seen.add(alias_key)
+        terms.append(alias_key)
+        if len(terms) >= 12:
+            break
+    return terms
 
 
 def _identity_anchor_metadata(

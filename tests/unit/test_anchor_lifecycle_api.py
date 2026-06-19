@@ -264,6 +264,7 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
         assert manual_anchor_data["valid_from"] == "2026-01-01T00:00:00+00:00"
         assert manual_anchor_data["valid_to"] == "2026-12-31T23:59:59+00:00"
         assert manual_anchor_data["metadata"]["creation_source"] == "manual"
+        assert manual_anchor_data["metadata"]["alias_identity_terms"] == ["project atlas"]
 
         manual_anchor_duplicate = client.post(
             "/v1/anchors",
@@ -287,6 +288,7 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
         assert duplicate_data["observed_at"] == "2026-01-02T03:04:05+00:00"
         assert duplicate_data["valid_from"] == "2026-01-01T00:00:00+00:00"
         assert duplicate_data["valid_to"] == "2026-12-31T23:59:59+00:00"
+        assert duplicate_data["metadata"]["alias_identity_terms"] == ["atlas roadmap"]
 
         edited_anchor = client.patch(
             f"/v1/anchors/{manual_anchor_data['id']}",
@@ -318,6 +320,10 @@ def test_anchor_backfill_merge_and_split_lifecycle(tmp_path: Path) -> None:
             "atlas-roadmap-doc",
         }
         assert edited_data["observed_at"] == "2026-01-03T00:00:00+00:00"
+        assert edited_data["metadata"]["alias_identity_terms"] == [
+            "project atlas",
+            "atlas delivery",
+        ]
         assert edited_data["metadata"]["last_edit_source"] == "manual"
 
         deleted_anchor = client.request(
