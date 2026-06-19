@@ -915,6 +915,12 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         space_id=space_id,
         memory_scope_id=alpha_memory_scope_id,
     )
+    checks["quality_project_anchor"] = _seed_quality_project_anchor(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=alpha_memory_scope_id,
+    )
     checks["deleted_fact"] = _seed_quality_deleted_fact(
         client,
         headers,
@@ -1317,6 +1323,46 @@ def _seed_quality_duplicate_merge_review(
         headers=_with_idempotency(headers, "quality-duplicate-merge-suggestion-v1"),
     )
     return _status_ok(suggestion.status_code)
+
+
+def _seed_quality_project_anchor(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    response = client.post(
+        "/v1/anchors",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "kind": "project",
+            "label": "Project Atlas",
+            "aliases": ["Atlas", "Atlas owner review"],
+            "description": "Canonical project anchor for Project Atlas owner evidence.",
+            "confidence": "high",
+            "evidence_refs": [
+                {
+                    "source_type": "asset_extraction",
+                    "source_id": "quality-anchor-atlas-extract",
+                    "chunk_id": "quality-anchor-atlas-chunk",
+                    "time_start_ms": 1200,
+                    "time_end_ms": 5400,
+                    "bbox": [12.0, 32.0, 300.0, 88.0],
+                    "quote_preview": "Project Atlas owner appears in screenshot OCR.",
+                }
+            ],
+            "observed_at": "2026-01-03T12:00:00+00:00",
+            "metadata": {
+                "anchor_family": "project",
+                "canonical_key": "atlas",
+                "project_canonical_key": "atlas",
+            },
+        },
+        headers=_with_idempotency(headers, "quality-project-anchor-v1"),
+    )
+    return _status_ok(response.status_code)
 
 
 def _seed_long_memory_golden(

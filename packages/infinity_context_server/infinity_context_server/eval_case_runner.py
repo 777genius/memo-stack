@@ -416,6 +416,9 @@ def _quality_golden_metrics(
     duplicate_merge_cases = tuple(
         result for result in case_results if result.case.category == "duplicate_merge"
     )
+    anchor_context_cases = tuple(
+        result for result in case_results if result.case.category == "anchor_context"
+    )
     multi_memory_scope_cases = tuple(
         result for result in case_results if result.case.category == "multi_memory_scope"
     )
@@ -474,6 +477,10 @@ def _quality_golden_metrics(
             sum(1 for result in duplicate_merge_cases if not result.failures),
             len(duplicate_merge_cases),
         ),
+        "anchor_context_recall_rate": _ratio(
+            sum(1 for result in anchor_context_cases if not result.failures),
+            len(anchor_context_cases),
+        ),
         "multi_memory_scope_recall_at_5": _ratio(
             sum(1 for result in multi_memory_scope_cases if result.recall_ok),
             len(multi_memory_scope_cases),
@@ -502,6 +509,7 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "citation_support_rate": metrics["citation_support_rate"] == 1.0,
         "source_citation_failure_count": metrics["source_citation_failure_count"] == 0,
         "duplicate_merge_review_rate": metrics["duplicate_merge_review_rate"] == 1.0,
+        "anchor_context_recall_rate": metrics["anchor_context_recall_rate"] == 1.0,
         "multi_memory_scope_recall_at_5": metrics["multi_memory_scope_recall_at_5"] == 1.0,
         "thread_recall_at_5": metrics["thread_recall_at_5"] == 1.0,
         "stale_memory_rate": metrics["stale_memory_rate"] == 0.0,

@@ -353,6 +353,41 @@ def _quality_golden_cases(
             ),
         ),
         EvalCase(
+            case_id="canonical_project_anchor_recall_with_citation",
+            category="anchor_context",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="Project Atlas canonical owner screenshot OCR anchor",
+            must_include=("project: Project Atlas",),
+            max_facts=0,
+            max_chunks=0,
+            required_diagnostics=(
+                ("anchors_used", "gte", 1),
+                ("citations_rendered", "gte", 1),
+                ("retrieval_sources_used", "contains", "canonical_anchors"),
+            ),
+            required_source_ref_matches=(
+                (
+                    ("source_type", "eq", "asset_extraction"),
+                    ("source_id", "eq", "quality-anchor-atlas-extract"),
+                    ("chunk_id", "eq", "quality-anchor-atlas-chunk"),
+                    ("time_start_ms", "eq", 1200),
+                    ("time_end_ms", "eq", 5400),
+                    ("bbox", "eq", [12.0, 32.0, 300.0, 88.0]),
+                ),
+            ),
+            required_citation_matches=(
+                (
+                    ("source_type", "eq", "asset_extraction"),
+                    ("source_id", "eq", "quality-anchor-atlas-extract"),
+                    ("chunk_id", "eq", "quality-anchor-atlas-chunk"),
+                    ("time_range_ms.start", "eq", 1200),
+                    ("time_range_ms.end", "eq", 5400),
+                    ("bbox", "eq", [12.0, 32.0, 300.0, 88.0]),
+                ),
+            ),
+        ),
+        EvalCase(
             case_id="multimodal_source_refs_recall_with_citations",
             category="documents",
             space_id=space_id,
