@@ -98,20 +98,106 @@ def test_approved_link_expands_media_manifest_artifact_evidence() -> None:
     )
 
     assert result.diagnostics["approved_context_linked_extraction_artifacts_used"] == 1
-    assert result.diagnostics[
-        "approved_context_linked_extraction_artifact_manifest_items_used"
-    ] == 1
+    assert (
+        result.diagnostics["approved_context_linked_extraction_artifact_manifest_items_used"] == 1
+    )
     assert result.diagnostics["stale_context_linked_extraction_artifact_drop_count"] == 0
     item = result.items[0]
     assert item.item_type == "extraction_artifact"
-    assert item.diagnostics["retrieval_source"] == (
-        "approved_context_linked_extraction_artifacts"
-    )
+    assert item.diagnostics["retrieval_source"] == ("approved_context_linked_extraction_artifacts")
     assert item.diagnostics["context_link_relation_type"] == "evidence_of"
     assert "Atlas billing cutoff" in item.text
     assert item.source_refs[0].time_start_ms == 1200
     assert item.source_refs[0].time_end_ms == 6400
     assert item.source_refs[0].bbox == (0.0, 0.0, 320.0, 180.0)
+
+
+def test_approved_asset_link_expands_latest_media_manifest_evidence() -> None:
+    now = datetime(2026, 6, 19, tzinfo=UTC)
+    link = MemoryContextLink.create(
+        link_id=MemoryContextLinkId("context_link_anchor_asset"),
+        space_id=SpaceId("space_client_app"),
+        memory_scope_id=MemoryScopeId("memory_scope_default"),
+        source_type="anchor",
+        source_id="anchor_event_alex",
+        target_type="asset",
+        target_id="asset_video_1",
+        relation_type="evidence_of",
+        confidence="high",
+        reason="event anchor points to the uploaded call asset",
+        now=now,
+    )
+    uow = _LinkedArtifactUnitOfWork(now=now, link=link)
+    expander = ApprovedContextLinkExpander(
+        uow_factory=lambda: uow,
+        hydrator=object(),
+        blob_storage=_BlobStorage(
+            {
+                "artifact/manifest.json": json.dumps(
+                    {
+                        "schema_version": "infinity_context.multimodal_manifest.v1",
+                        "evidence_items": [
+                            {
+                                "id": "segment_1",
+                                "kind": "transcript_segment",
+                                "modality": "video",
+                                "text_preview": (
+                                    "Alex confirmed the Atlas billing cutoff in the "
+                                    "uploaded customer call."
+                                ),
+                                "confidence": 0.92,
+                                "time_range": {"start_ms": 2200, "end_ms": 7800},
+                                "bbox": [12, 24, 420, 260],
+                            }
+                        ],
+                    }
+                ).encode("utf-8")
+            }
+        ),
+    )
+
+    result = asyncio.run(
+        expander.collect(
+            items=(
+                ContextItem(
+                    item_id="anchor_event_alex",
+                    item_type="anchor",
+                    text="event: Customer call. with: Alex",
+                    score=0.86,
+                    source_refs=(),
+                    diagnostics={"memory_scope_id": "memory_scope_default"},
+                ),
+            ),
+            query=BuildContextQuery(
+                space_id=SpaceId("space_client_app"),
+                memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                query="Alex billing cutoff",
+                max_facts=0,
+                max_chunks=0,
+                max_evidence_items=4,
+            ),
+            memory_scope_ids=("memory_scope_default",),
+        )
+    )
+
+    assert result.diagnostics["approved_context_linked_assets_used"] == 1
+    assert result.diagnostics["approved_context_linked_asset_manifest_jobs_considered"] == 1
+    assert result.diagnostics["approved_context_linked_asset_manifest_artifacts_considered"] == 1
+    assert result.diagnostics["approved_context_linked_asset_manifest_items_used"] == 1
+    assert result.diagnostics["stale_context_linked_asset_drop_count"] == 0
+    item = result.items[0]
+    assert item.item_type == "extraction_artifact"
+    assert item.item_id == "artifact_manifest_1:segment_1"
+    assert item.diagnostics["retrieval_source"] == (
+        "approved_context_linked_asset_manifest_evidence"
+    )
+    assert item.diagnostics["context_link_relation_type"] == "evidence_of"
+    assert item.diagnostics["asset_id"] == "asset_video_1"
+    assert item.diagnostics["asset_filename"] == "alex-call.mp4"
+    assert "Atlas billing cutoff" in item.text
+    assert item.source_refs[0].time_start_ms == 2200
+    assert item.source_refs[0].time_end_ms == 7800
+    assert item.source_refs[0].bbox == (12.0, 24.0, 420.0, 260.0)
 
 
 def test_linked_fact_context_item_uses_query_focused_source_quote() -> None:
@@ -185,16 +271,18 @@ class _ContextLinksRepository:
         self._link = link
 
     async def list_for_source(self, **kwargs: object) -> list[MemoryContextLink]:
-        if kwargs.get("source_type") == self._link.source_type and kwargs.get(
-            "source_id"
-        ) == self._link.source_id:
+        if (
+            kwargs.get("source_type") == self._link.source_type
+            and kwargs.get("source_id") == self._link.source_id
+        ):
             return [self._link]
         return []
 
     async def list_for_scope(self, **kwargs: object) -> list[MemoryContextLink]:
-        if kwargs.get("target_type") == self._link.source_type and kwargs.get(
-            "target_id"
-        ) == self._link.source_id:
+        if (
+            kwargs.get("target_type") == self._link.source_type
+            and kwargs.get("target_id") == self._link.source_id
+        ):
             return [self._link]
         return []
 
@@ -217,6 +305,24 @@ class _AssetExtractionsRepository:
 
     async def get_by_id(self, job_id: str) -> AssetExtractionJob | None:
         return self._job if job_id == str(self._job.id) else None
+
+    async def list_for_asset(
+        self,
+        *,
+        asset_id: str,
+        status: str | None,
+        limit: int,
+        cursor_created_at: datetime | None = None,
+        cursor_id: str | None = None,
+    ) -> list[AssetExtractionJob]:
+        if asset_id != str(self._job.asset_id):
+            return []
+        if status is not None and status != self._job.status.value:
+            return []
+        return [self._job][:limit]
+
+    async def list_artifacts(self, *, job_id: str) -> list[ExtractionArtifact]:
+        return [self._artifact] if job_id == str(self._job.id) else []
 
 
 class _BlobStorage:
@@ -243,21 +349,25 @@ def _asset(*, now: datetime) -> MemoryAsset:
 
 
 def _job(*, now: datetime) -> AssetExtractionJob:
-    return AssetExtractionJob.create(
-        job_id=AssetExtractionJobId("extract_video_1"),
-        asset_id=MemoryAssetId("asset_video_1"),
-        space_id=SpaceId("space_client_app"),
-        memory_scope_id=MemoryScopeId("memory_scope_default"),
-        parser_profile="standard_local",
-        parser_config_hash="profile_hash",
-        source_sha256_hex="a" * 64,
-        now=now,
-    ).mark_running(now=now).mark_succeeded(
-        now=now,
-        result_document_ids=("doc_video_1",),
-        parser_name="video_pipeline",
-        parser_version="v1",
-        model_version=None,
+    return (
+        AssetExtractionJob.create(
+            job_id=AssetExtractionJobId("extract_video_1"),
+            asset_id=MemoryAssetId("asset_video_1"),
+            space_id=SpaceId("space_client_app"),
+            memory_scope_id=MemoryScopeId("memory_scope_default"),
+            parser_profile="standard_local",
+            parser_config_hash="profile_hash",
+            source_sha256_hex="a" * 64,
+            now=now,
+        )
+        .mark_running(now=now)
+        .mark_succeeded(
+            now=now,
+            result_document_ids=("doc_video_1",),
+            parser_name="video_pipeline",
+            parser_version="v1",
+            model_version=None,
+        )
     )
 
 
