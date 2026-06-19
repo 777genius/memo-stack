@@ -128,6 +128,8 @@ class ContextBundleDiagnostics:
     artifact_evidence_candidate_cap_reached_count: int = 0
     artifact_evidence_confidence_signal_count: int = 0
     artifact_evidence_coordinate_signal_count: int = 0
+    artifact_evidence_invalid_time_range_count: int = 0
+    artifact_evidence_invalid_bbox_count: int = 0
     artifact_evidence_query_drop_count: int = 0
     artifact_evidence_sensitive_drop_count: int = 0
     artifact_evidence_prompt_injection_drop_count: int = 0
@@ -393,6 +395,12 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         ),
         artifact_evidence_coordinate_signal_count=_non_negative_int(
             raw.get("artifact_evidence_coordinate_signal_count")
+        ),
+        artifact_evidence_invalid_time_range_count=_non_negative_int(
+            raw.get("artifact_evidence_invalid_time_range_count")
+        ),
+        artifact_evidence_invalid_bbox_count=_non_negative_int(
+            raw.get("artifact_evidence_invalid_bbox_count")
         ),
         artifact_evidence_query_drop_count=_non_negative_int(
             raw.get("artifact_evidence_query_drop_count")

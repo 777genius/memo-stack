@@ -336,6 +336,7 @@ def _context_items_from_manifest(
                     raw_item=raw_item,
                     index=index,
                     text=snippet.text if snippet else text,
+                    diagnostics=diagnostics,
                 ),
             ),
             snippet,
@@ -431,16 +432,18 @@ def _source_ref(
     raw_item: Mapping[str, object],
     index: int,
     text: str,
+    diagnostics: dict[str, object],
 ) -> SourceRef:
+    time_start_ms, time_end_ms = _time_range_ms(raw_item, diagnostics=diagnostics)
     return SourceRef(
         source_type="extraction_artifact",
         source_id=str(artifact.id),
         chunk_id=_safe_evidence_id(raw_item, index=index),
         quote_preview=safe_metadata_text(text, limit=_MAX_QUOTE_PREVIEW_CHARS),
         page_number=_positive_int(raw_item.get("page_number")),
-        time_start_ms=_time_ms(raw_item, "start_ms"),
-        time_end_ms=_time_ms(raw_item, "end_ms"),
-        bbox=_bbox(raw_item.get("bbox")),
+        time_start_ms=time_start_ms,
+        time_end_ms=time_end_ms,
+        bbox=_bbox(raw_item.get("bbox"), diagnostics=diagnostics),
     )
 
 
@@ -449,11 +452,25 @@ def _safe_evidence_id(raw_item: Mapping[str, object], *, index: int) -> str:
     return raw_id or f"element:{index}"
 
 
-def _time_ms(raw_item: Mapping[str, object], key: str) -> int | None:
+def _time_range_ms(
+    raw_item: Mapping[str, object],
+    *,
+    diagnostics: dict[str, object],
+) -> tuple[int | None, int | None]:
     time_range = raw_item.get("time_range")
     if not isinstance(time_range, Mapping):
-        return None
-    return _non_negative_int(time_range.get(key))
+        return None, None
+    start_present = "start_ms" in time_range
+    end_present = "end_ms" in time_range
+    start = _non_negative_int(time_range.get("start_ms"))
+    end = _non_negative_int(time_range.get("end_ms"))
+    if (start_present and start is None) or (end_present and end is None):
+        _increment_diagnostic(diagnostics, "artifact_evidence_invalid_time_range_count")
+        return None, None
+    if start is not None and end is not None and end < start:
+        _increment_diagnostic(diagnostics, "artifact_evidence_invalid_time_range_count")
+        return None, None
+    return start, end
 
 
 def _positive_int(value: object) -> int | None:
@@ -471,14 +488,26 @@ def _non_negative_int(value: object) -> int | None:
     return parsed if parsed >= 0 else None
 
 
-def _bbox(value: object) -> tuple[float, float, float, float] | None:
+def _bbox(
+    value: object,
+    *,
+    diagnostics: dict[str, object],
+) -> tuple[float, float, float, float] | None:
+    if value is None:
+        return None
     if not isinstance(value, (list, tuple)) or len(value) != 4:
+        _increment_diagnostic(diagnostics, "artifact_evidence_invalid_bbox_count")
         return None
     try:
         parsed = tuple(float(item) for item in value)
     except (TypeError, ValueError):
+        _increment_diagnostic(diagnostics, "artifact_evidence_invalid_bbox_count")
         return None
     if not all(isfinite(item) for item in parsed):
+        _increment_diagnostic(diagnostics, "artifact_evidence_invalid_bbox_count")
+        return None
+    if any(item < 0 for item in parsed) or parsed[2] <= parsed[0] or parsed[3] <= parsed[1]:
+        _increment_diagnostic(diagnostics, "artifact_evidence_invalid_bbox_count")
         return None
     return (parsed[0], parsed[1], parsed[2], parsed[3])
 
@@ -560,6 +589,8 @@ def _init_diagnostics(diagnostics: dict[str, object]) -> None:
         "artifact_evidence_candidate_cap_reached_count",
         "artifact_evidence_confidence_signal_count",
         "artifact_evidence_coordinate_signal_count",
+        "artifact_evidence_invalid_time_range_count",
+        "artifact_evidence_invalid_bbox_count",
         "artifact_evidence_query_drop_count",
         "artifact_evidence_sensitive_drop_count",
         "artifact_evidence_prompt_injection_drop_count",
