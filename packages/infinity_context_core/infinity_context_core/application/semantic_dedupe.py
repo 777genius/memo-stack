@@ -230,6 +230,9 @@ def semantic_memory_terms(text: str) -> set[str]:
 def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
     terms: list[str] = []
     for anchor in extract_observed_anchors(text):
+        if anchor.kind == MemoryAnchorKind.EVENT:
+            terms.extend(_event_semantic_terms(anchor))
+            continue
         if anchor.kind not in {
             MemoryAnchorKind.PERSON,
             MemoryAnchorKind.PROJECT,
@@ -240,6 +243,21 @@ def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
         if not canonical_key:
             continue
         terms.append(f"{anchor.kind.value}:{canonical_key.casefold()}")
+    return tuple(terms)
+
+
+def _event_semantic_terms(anchor: ObservedAnchor) -> tuple[str, ...]:
+    metadata = anchor.metadata
+    terms: list[str] = []
+    event_type = str(metadata.get("event_type_canonical") or "").strip().casefold()
+    if event_type:
+        terms.append(f"event_type:{event_type}")
+    participant = str(metadata.get("event_participant_canonical_key") or "").strip().casefold()
+    if participant:
+        terms.append(f"event_participant:{participant}")
+    temporal = _event_temporal_identity(metadata).strip().casefold()
+    if temporal:
+        terms.append(f"event_temporal:{temporal}")
     return tuple(terms)
 
 

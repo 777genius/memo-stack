@@ -106,6 +106,24 @@ def test_semantic_dedupe_rejects_similar_but_different_event_time() -> None:
     )
 
 
+def test_semantic_dedupe_exposes_structured_event_overlap_terms() -> None:
+    terms = semantic_memory_terms(
+        "Chat with Alex an hour ago covered Project Atlas pricing."
+    )
+    match = describe_duplicate_fact_match(
+        "Chat with Alex an hour ago covered Project Atlas pricing.",
+        "Chat with Alex hour ago covered Project Atlas pricing.",
+    )
+
+    assert "event_type:chat" in terms
+    assert "event_participant:aleks" in terms
+    assert "event_temporal:hours_ago:1:hour" in terms
+    assert match is not None
+    assert "event_type:chat" in match.overlap_terms
+    assert "event_participant:aleks" in match.overlap_terms
+    assert "event_temporal:hours_ago:1:hour" in match.overlap_terms
+
+
 def test_semantic_dedupe_rejects_numeric_value_mismatch_as_duplicate() -> None:
     assert not looks_equivalent_fact(
         "Project Atlas keeps billing logs for 7 days.",
