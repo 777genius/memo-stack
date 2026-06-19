@@ -354,6 +354,115 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             )
         )
 
+    implicit_project_capture = _capture(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_event_id="implicit-project-anchor-capture",
+        text="Alex owns Atlas document retrieval notes from the call.",
+        thread_external_ref="quality-review",
+    )
+    implicit_project_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_id=str(implicit_project_capture.get("id", "")),
+        text="Alex owns Atlas document retrieval notes from the call",
+        thread_external_ref="quality-review",
+        limit=16,
+    )
+    implicit_project_candidate = next(
+        (
+            item
+            for item in implicit_project_suggestions.get("candidates", [])
+            if item.get("target_type") == "anchor"
+            and item.get("metadata", {}).get("anchor_kind") == "project"
+            and item.get("metadata", {}).get("canonical_key") == "atlas"
+            and item.get("metadata", {}).get("extraction_reason") == "implicit project context"
+        ),
+        {},
+    )
+    checks["implicit_project_context_anchor_suggested"] = bool(
+        implicit_project_capture
+    ) and bool(implicit_project_candidate)
+    cases.append(
+        {
+            "case_id": "implicit_project_context_anchor_suggested",
+            "ok": checks["implicit_project_context_anchor_suggested"],
+            "target_id": implicit_project_candidate.get("target_id"),
+            "score": implicit_project_candidate.get("score"),
+            "metadata": {
+                key: implicit_project_candidate.get("metadata", {}).get(key)
+                for key in ("anchor_kind", "canonical_key", "extraction_reason")
+            },
+        }
+    )
+    if not checks["implicit_project_context_anchor_suggested"]:
+        failures.append(
+            _failure(
+                "implicit_project_context_anchor_suggested",
+                "anchor_disambiguation",
+                "implicit_project_context_anchor_missing",
+            )
+        )
+
+    russian_locative_capture = _capture(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_event_id="russian-locative-event-anchor-capture",
+        text="Созвон с Алексом в Атласе час назад про документы.",
+        thread_external_ref="quality-review",
+    )
+    russian_locative_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_id=str(russian_locative_capture.get("id", "")),
+        text="Созвон с Алексом в Атласе час назад про документы",
+        thread_external_ref="quality-review",
+        limit=16,
+    )
+    russian_locative_event_candidate = next(
+        (
+            item
+            for item in russian_locative_suggestions.get("candidates", [])
+            if item.get("target_type") == "anchor"
+            and item.get("metadata", {}).get("anchor_kind") == "event"
+            and item.get("metadata", {}).get("event_participant_canonical_key") == "aleks"
+            and item.get("metadata", {}).get("event_project_canonical_key") == "atlas"
+            and item.get("metadata", {}).get("event_temporal_hint_code") == "hours_ago"
+        ),
+        {},
+    )
+    checks["russian_locative_event_project_anchor_canonicalized"] = bool(
+        russian_locative_capture
+    ) and bool(russian_locative_event_candidate)
+    cases.append(
+        {
+            "case_id": "russian_locative_event_project_anchor_canonicalized",
+            "ok": checks["russian_locative_event_project_anchor_canonicalized"],
+            "target_id": russian_locative_event_candidate.get("target_id"),
+            "score": russian_locative_event_candidate.get("score"),
+            "metadata": {
+                key: russian_locative_event_candidate.get("metadata", {}).get(key)
+                for key in (
+                    "event_participant_canonical_key",
+                    "event_project_canonical_key",
+                    "event_temporal_hint_code",
+                )
+            },
+        }
+    )
+    if not checks["russian_locative_event_project_anchor_canonicalized"]:
+        failures.append(
+            _failure(
+                "russian_locative_event_project_anchor_canonicalized",
+                "anchor_disambiguation",
+                "russian_locative_event_project_anchor_not_canonicalized",
+            )
+        )
+
     policy_case = _high_impact_relation_policy_case()
     checks["high_impact_relation_requires_explicit_signal"] = bool(policy_case["ok"])
     cases.append(policy_case)

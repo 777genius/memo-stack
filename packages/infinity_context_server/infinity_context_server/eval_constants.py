@@ -90,6 +90,8 @@ SEMANTIC_LINKING_REQUIRED_CASE_IDS = (
     "same_name_person_project_anchors_separate",
     "cross_script_project_anchor_resolves_canonical",
     "mixed_script_event_anchor_preserves_person_project_time",
+    "implicit_project_context_anchor_suggested",
+    "russian_locative_event_project_anchor_canonicalized",
     "high_impact_relation_requires_explicit_signal",
     "weak_overlap_below_review_threshold_denied",
     "evidence_relation_requires_source_signal",
