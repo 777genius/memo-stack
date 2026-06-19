@@ -55,6 +55,11 @@ def main() -> int:
     flow_report_path = tmp_root / "marionette-flow-report.json"
     processes: list[subprocess.Popen[bytes]] = []
     try:
+        _ensure_flutter_packages(
+            flutter_bin=flutter_bin,
+            frontend_dir=frontend_dir,
+            report=report,
+        )
         server_env = _server_env(
             tmp_root=tmp_root,
             host=args.host,
@@ -205,6 +210,7 @@ def _base_report(
             "memory_scope_external_ref": scope_ref,
         },
         "components": {
+            "flutter_pub_get": _component("unknown"),
             "server": _component("unknown"),
             "worker": _component("unknown"),
             "flutter_marionette": _component("unknown"),
@@ -269,6 +275,36 @@ def _mark_unknown_components_failed(report: dict[str, object], exc: Exception) -
             continue
         value["status"] = "failed"
         value["reason"] = exc.__class__.__name__
+
+
+def _ensure_flutter_packages(
+    *,
+    flutter_bin: Path,
+    frontend_dir: Path,
+    report: dict[str, object],
+) -> None:
+    command = [str(flutter_bin), "pub", "get", "--enforce-lockfile"]
+    result = subprocess.run(
+        command,
+        cwd=frontend_dir,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=120,
+    )
+    output = _safe_log_snippet(result.stdout[-1000:])
+    report["components"]["flutter_pub_get"] = _component(
+        "succeeded" if result.returncode == 0 else "failed",
+        exit_code=result.returncode,
+        command="flutter pub get --enforce-lockfile",
+        output_tail=output,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "flutter pub get --enforce-lockfile failed; "
+            "pubspec.lock does not match the configured Flutter SDK"
+        )
 
 
 def _run_streaming_process_and_collect_runtime_log(

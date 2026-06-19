@@ -92,7 +92,7 @@ infinity-context-frontend-check: infinity-context-frontend-analyze infinity-cont
 .PHONY: infinity-context-frontend-marionette-memory-e2e
 infinity-context-frontend-marionette-memory-e2e: infinity-context-up-lite
 	for i in $$(seq 1 90); do curl -fsS http://127.0.0.1:7788/v1/health >/dev/null && break; if [ $$i -eq 90 ]; then $(COMPOSE) logs --tail=120 infinity_context_server; exit 1; fi; sleep 1; done
-	cd $(FRONTEND_DIR) && dart_bin="$$(dirname "$(FLUTTER)")/dart"; if [ ! -x "$$dart_bin" ]; then dart_bin=dart; fi; FLUTTER_BIN="$(FLUTTER)" INFINITY_CONTEXT_BACKEND_HOST=127.0.0.1 INFINITY_CONTEXT_BACKEND_PORT=7788 INFINITY_CONTEXT_SERVICE_TOKEN=local-dev-token INFINITY_CONTEXT_SPACE_SLUG=marionette-anchor-e2e "$$dart_bin" run tool/marionette_anchor_lifecycle_e2e.dart
+	cd $(FRONTEND_DIR) && $(FLUTTER) pub get --enforce-lockfile && dart_bin="$$(dirname "$(FLUTTER)")/dart"; if [ ! -x "$$dart_bin" ]; then dart_bin=dart; fi; FLUTTER_BIN="$(FLUTTER)" INFINITY_CONTEXT_BACKEND_HOST=127.0.0.1 INFINITY_CONTEXT_BACKEND_PORT=7788 INFINITY_CONTEXT_SERVICE_TOKEN=local-dev-token INFINITY_CONTEXT_SPACE_SLUG=marionette-anchor-e2e "$$dart_bin" run tool/marionette_anchor_lifecycle_e2e.dart
 
 .PHONY: infinity-context-frontend-marionette-local-e2e
 infinity-context-frontend-marionette-local-e2e:

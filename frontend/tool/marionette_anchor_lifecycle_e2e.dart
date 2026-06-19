@@ -53,8 +53,10 @@ class MarionetteAnchorLifecycleConfig {
       device: _env(env, 'INFINITY_CONTEXT_E2E_DEVICE') ?? 'macos',
       backendHost: _env(env, 'INFINITY_CONTEXT_BACKEND_HOST') ?? '127.0.0.1',
       backendPort: _env(env, 'INFINITY_CONTEXT_BACKEND_PORT') ?? '7788',
-      serviceToken: _env(env, 'INFINITY_CONTEXT_SERVICE_TOKEN') ?? 'local-dev-token',
-      spaceSlug: _env(env, 'INFINITY_CONTEXT_SPACE_SLUG') ?? 'marionette-anchor-e2e',
+      serviceToken:
+          _env(env, 'INFINITY_CONTEXT_SERVICE_TOKEN') ?? 'local-dev-token',
+      spaceSlug:
+          _env(env, 'INFINITY_CONTEXT_SPACE_SLUG') ?? 'marionette-anchor-e2e',
       scopeRef: _env(env, 'INFINITY_CONTEXT_MEMORY_SCOPE_EXTERNAL_REF') ??
           'marionette-anchor-e2e-$runId',
       vmServiceUri:
@@ -62,10 +64,12 @@ class MarionetteAnchorLifecycleConfig {
       keepAppRunning: _truthy(env['INFINITY_CONTEXT_E2E_KEEP_APP_RUNNING']),
       startupTimeout: Duration(
         seconds:
-            int.tryParse(env['INFINITY_CONTEXT_E2E_STARTUP_TIMEOUT'] ?? '') ?? 120,
+            int.tryParse(env['INFINITY_CONTEXT_E2E_STARTUP_TIMEOUT'] ?? '') ??
+                120,
       ),
       callTimeout: Duration(
-        seconds: int.tryParse(env['INFINITY_CONTEXT_E2E_CALL_TIMEOUT'] ?? '') ?? 30,
+        seconds:
+            int.tryParse(env['INFINITY_CONTEXT_E2E_CALL_TIMEOUT'] ?? '') ?? 30,
       ),
       flowReportOut: _env(env, 'INFINITY_CONTEXT_E2E_FLOW_REPORT_OUT'),
     );
@@ -269,7 +273,8 @@ class MarionetteAnchorLifecycleRunner {
     try {
       _log('connecting to VM service at $vmServiceUri');
       client = await VmServiceClient.connect(vmServiceUri, config.callTimeout);
-      infinityContext = InfinityContextExtensionClient(client, config.callTimeout);
+      infinityContext =
+          InfinityContextExtensionClient(client, config.callTimeout);
       await infinityContext.init();
 
       final state = await infinityContext.waitUntilReady();
@@ -409,7 +414,8 @@ class MarionetteAnchorLifecycleRunner {
       );
 
       await _cleanupRunAnchors(infinityContext, runMarker);
-      final cleanState = await infinityContext.call('infinityContext.e2eState', {});
+      final cleanState =
+          await infinityContext.call('infinityContext.e2eState', {});
       final remaining = _anchorsWithMarker(cleanState, runMarker);
       _expect(
         remaining.isEmpty,
@@ -666,7 +672,8 @@ class MarionetteAnchorLifecycleRunner {
       'rejected suggestion target did not match the requested anchor',
     );
 
-    final rejectedState = await infinityContext.call('infinityContext.refresh', {});
+    final rejectedState =
+        await infinityContext.call('infinityContext.refresh', {});
     final remainingForTarget = _pendingSuggestionsForTarget(
       rejectedState,
       targetAnchorId,

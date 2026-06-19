@@ -182,7 +182,8 @@ class InfinityContextExtensionClient {
     );
     final payload = _decodeExtensionPayload(response['result']);
     if (payload['ok'] != true) {
-      throw StateError('Infinity Context extension failed: $extension $payload');
+      throw StateError(
+          'Infinity Context extension failed: $extension $payload');
     }
     return payload;
   }
@@ -196,6 +197,7 @@ Future<FlutterRunHandle> _startFlutterApp(
     '-d',
     config.device,
     '--debug',
+    '--no-pub',
     '--dart-define=INFINITY_CONTEXT_BACKEND_HOST=${config.backendHost}',
     '--dart-define=INFINITY_CONTEXT_BACKEND_PORT=${config.backendPort}',
     '--dart-define=INFINITY_CONTEXT_SERVICE_TOKEN=${config.serviceToken}',
