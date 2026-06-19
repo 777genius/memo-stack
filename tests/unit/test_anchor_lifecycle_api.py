@@ -581,6 +581,77 @@ def test_anchor_backfill_skips_legacy_alias_conflict_without_mutating_anchor(
     }
 
 
+def test_project_merge_suggestions_skip_prefix_variant_projects(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        seed_scope = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "project-merge-prefix-guard",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "project-review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "project-merge-prefix-seed",
+                "text": "Seed project merge prefix guard scope.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert seed_scope.status_code == 201, seed_scope.text
+
+        atlas = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "project-merge-prefix-guard",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "label": "Project Atlas",
+            },
+            headers=auth_headers(),
+        )
+        assert atlas.status_code == 200, atlas.text
+
+        atlas_mobile = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "project-merge-prefix-guard",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "label": "Project Atlas Mobile",
+            },
+            headers=auth_headers(),
+        )
+        assert atlas_mobile.status_code == 200, atlas_mobile.text
+
+        suggestions = client.get(
+            "/v1/anchors/merge-suggestions",
+            params={
+                "space_slug": "project-merge-prefix-guard",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+
+    anchor_ids = {
+        atlas.json()["data"]["id"],
+        atlas_mobile.json()["data"]["id"],
+    }
+    suggested_pairs = {
+        frozenset(
+            {
+                candidate["source_anchor"]["id"],
+                candidate["target_anchor"]["id"],
+            }
+        )
+        for candidate in suggestions.json()["data"]["candidates"]
+    }
+    assert frozenset(anchor_ids) not in suggested_pairs
+
+
 def test_organization_anchor_alias_conflicts_and_split_preserve_lineage(
     tmp_path: Path,
 ) -> None:

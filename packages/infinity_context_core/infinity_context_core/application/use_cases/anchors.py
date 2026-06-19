@@ -61,6 +61,7 @@ from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort, UnitOfWorkPort
 
 _ANCHOR_RESOLVER_VERSION = "anchor-lifecycle-v2"
+_LABEL_SIMILARITY_MERGE_THRESHOLD = 0.86
 
 
 @dataclass(frozen=True)
@@ -768,7 +769,7 @@ def _rank_merge_candidates(anchors: list[MemoryAnchor]) -> list[AnchorMergeCandi
             if anchor.kind != other.kind:
                 continue
             score, reasons, metadata = _merge_score(anchor, other)
-            if score < 78:
+            if score < 78 or not reasons:
                 continue
             source, target = _merge_order(anchor, other)
             key = (str(source.id), str(target.id))
@@ -820,8 +821,9 @@ def _merge_score(
     anchor_key = canonical_anchor_key(anchor.label)
     other_key = canonical_anchor_key(other.label)
     ratio = SequenceMatcher(a=anchor_key, b=other_key).ratio()
-    if ratio >= 0.78:
-        reasons.append("label similarity")
+    if ratio < _LABEL_SIMILARITY_MERGE_THRESHOLD:
+        return 0.0, reasons, {"label_similarity": ratio, "keys": [anchor_key, other_key]}
+    reasons.append("label similarity")
     score = round(ratio * 100, 2)
     return score, reasons, {"label_similarity": ratio, "keys": [anchor_key, other_key]}
 
