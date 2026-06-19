@@ -199,7 +199,11 @@ def run_goal_audit(
         "docker": _report_summary(docker),
         "provider": _report_summary(provider),
     }
-    blocked_requirements = _blocked_requirements(docker=docker, provider=provider)
+    blocked_requirements = _blocked_requirements(
+        frontend=frontend,
+        docker=docker,
+        provider=provider,
+    )
     return GoalAuditResult(
         ok=all(checks.values()),
         checks=checks,
@@ -236,7 +240,8 @@ def _audit_frontend_report(
         failures,
         "frontend_marionette_passed",
         report.get("ok") is True,
-        "Frontend Marionette local E2E did not pass",
+        "Frontend Marionette local E2E did not pass"
+        + _failure_suffix(report, components, preferred_component="flutter_marionette"),
     )
     _check(
         checks,
@@ -727,10 +732,24 @@ def _failure_suffix(
 
 def _blocked_requirements(
     *,
+    frontend: Mapping[str, object] | None,
     docker: Mapping[str, object] | None,
     provider: Mapping[str, object] | None,
 ) -> tuple[dict[str, object], ...]:
     blocked: list[dict[str, object]] = []
+    frontend_blocker = _proof_blocker(
+        frontend,
+        area="frontend_marionette_proof",
+        preferred_component="flutter_marionette",
+    )
+    if frontend_blocker is not None:
+        frontend_blocker["downstream_checks"] = [
+            "frontend_marionette_passed",
+            "frontend_marionette_flows_complete",
+            "frontend_marionette_components_succeeded",
+        ]
+        blocked.append(frontend_blocker)
+
     docker_blocker = _proof_blocker(
         docker,
         area="docker_live_proof",

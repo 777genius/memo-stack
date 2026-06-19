@@ -21,6 +21,7 @@ from pathlib import Path
 SUITE = "infinity-context-frontend-marionette-local-e2e"
 MAX_RUNTIME_LOG_MARKERS = 12
 MAX_RUNTIME_LOG_SNIPPET_CHARS = 240
+DEGRADED_EXIT_CODE = 2
 FLUTTER_RUNTIME_ERROR_MARKERS = (
     "EXCEPTION CAUGHT BY",
     "Another exception was thrown",
@@ -32,13 +33,27 @@ FLUTTER_RUNTIME_ERROR_MARKERS = (
 )
 
 
+class FrontendRuntimeUnavailable(RuntimeError):
+    def __init__(
+        self,
+        *,
+        component: str,
+        reason: str,
+        message: str,
+        operator_action: str,
+        command: str,
+    ) -> None:
+        super().__init__(message)
+        self.component = component
+        self.reason = reason
+        self.operator_action = operator_action
+        self.command = command
+
+
 def main() -> int:
     args = _parse_args()
     root = Path(__file__).resolve().parents[1]
     frontend_dir = (root / args.frontend_dir).resolve()
-    python_bin = _resolve_python(args.python, root=root)
-    flutter_bin = _resolve_flutter(args.flutter)
-    dart_bin = _resolve_dart(flutter_bin)
     run_id = str(int(time.time() * 1000))
     scope_ref = args.scope_ref or f"marionette-local-proof-{run_id}"
     report = _base_report(
@@ -49,6 +64,33 @@ def main() -> int:
         run_id=run_id,
     )
     exit_code = 1
+
+    try:
+        python_bin = _resolve_python(args.python, root=root)
+        flutter_bin = _require_executable(
+            _resolve_flutter(args.flutter),
+            component="flutter_pub_get",
+            reason="flutter_runtime_missing",
+            operator_action="install_flutter_sdk_or_set_FLUTTER",
+        )
+        dart_bin = _require_executable(
+            _resolve_dart(flutter_bin),
+            component="flutter_marionette",
+            reason="dart_runtime_missing",
+            operator_action="install_flutter_sdk_or_set_DART_on_PATH",
+        )
+    except FrontendRuntimeUnavailable as exc:
+        exit_code = DEGRADED_EXIT_CODE
+        _mark_frontend_runtime_unavailable(report, exc)
+        report["exit_code"] = exit_code
+        report["finished_at"] = _utc_now()
+        report["flow_coverage"] = _component(
+            "skipped",
+            reason=exc.reason,
+            operator_action=exc.operator_action,
+        )
+        _write_report(report, args.report_out)
+        return exit_code
 
     tmp_ctx = tempfile.TemporaryDirectory(prefix="infinity-context-marionette.")
     tmp_root = Path(tmp_ctx.name)
@@ -225,6 +267,60 @@ def _component(status: str, **values: object) -> dict[str, object]:
         if value is not None:
             component[key] = value
     return component
+
+
+def _mark_frontend_runtime_unavailable(
+    report: dict[str, object],
+    exc: FrontendRuntimeUnavailable,
+) -> None:
+    failure = {
+        "type": exc.__class__.__name__,
+        "component": exc.component,
+        "reason": exc.reason,
+        "message": _safe_log_snippet(str(exc)),
+        "degraded": True,
+        "operator_action": exc.operator_action,
+        "user_retryable": False,
+        "command": exc.command,
+    }
+    report["ok"] = False
+    report["failure"] = failure
+    report["blocked_requirements"] = [
+        {
+            "area": "frontend_marionette_proof",
+            "component": exc.component,
+            "reason": exc.reason,
+            "operator_action": exc.operator_action,
+            "user_retryable": False,
+            "downstream_checks": [
+                "frontend_marionette_passed",
+                "frontend_marionette_flows_complete",
+                "frontend_marionette_components_succeeded",
+            ],
+        }
+    ]
+    components = report.get("components")
+    if not isinstance(components, dict):
+        return
+    components["server"] = _component("skipped", reason=exc.reason)
+    components["worker"] = _component("skipped", reason=exc.reason)
+    components[exc.component] = _component(
+        "degraded",
+        reason=exc.reason,
+        operator_action=exc.operator_action,
+        command=exc.command,
+        degraded=True,
+        user_retryable=False,
+    )
+    if exc.component != "flutter_pub_get":
+        components["flutter_pub_get"] = _component("skipped", reason=exc.reason)
+    if exc.component != "flutter_marionette":
+        components["flutter_marionette"] = _component(
+            "skipped",
+            reason=exc.reason,
+            operator_action=exc.operator_action,
+        )
+    components["flutter_runtime_log"] = _component("skipped", reason=exc.reason)
 
 
 def _write_report(report: dict[str, object], report_out: str | None) -> None:
@@ -449,6 +545,28 @@ def _resolve_dart(flutter_bin: Path) -> Path:
     if dart:
         return Path(dart).resolve()
     return Path("dart")
+
+
+def _require_executable(
+    value: Path,
+    *,
+    component: str,
+    reason: str,
+    operator_action: str,
+) -> Path:
+    raw = str(value)
+    resolved = shutil.which(raw) if os.path.sep not in raw else raw
+    if resolved:
+        path = Path(resolved)
+        if path.exists() and os.access(path, os.X_OK):
+            return path.resolve()
+    raise FrontendRuntimeUnavailable(
+        component=component,
+        reason=reason,
+        message=f"Required frontend runtime executable is unavailable: {raw}",
+        operator_action=operator_action,
+        command=raw,
+    )
 
 
 def _start(

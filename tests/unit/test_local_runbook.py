@@ -158,6 +158,59 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
     assert "OPENAI_API_KEY" not in rendered
 
 
+def test_frontend_marionette_local_e2e_reports_missing_flutter_runtime(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_frontend_marionette_local_e2e(
+        ROOT / "scripts" / "frontend_marionette_local_e2e.py"
+    )
+    report_out = tmp_path / "frontend-marionette-report.json"
+    missing_flutter = tmp_path / "missing-flutter"
+
+    monkeypatch.setattr(module, "_resolve_flutter", lambda _value: missing_flutter)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "frontend_marionette_local_e2e.py",
+            "--flutter",
+            str(missing_flutter),
+            "--report-out",
+            str(report_out),
+        ],
+    )
+
+    exit_code = module.main()
+    persisted = json.loads(report_out.read_text(encoding="utf-8"))
+    rendered = json.dumps(persisted)
+
+    assert exit_code == module.DEGRADED_EXIT_CODE
+    assert persisted["ok"] is False
+    assert persisted["exit_code"] == module.DEGRADED_EXIT_CODE
+    assert persisted["failure"] == {
+        "command": str(missing_flutter),
+        "component": "flutter_pub_get",
+        "degraded": True,
+        "message": f"Required frontend runtime executable is unavailable: {missing_flutter}",
+        "operator_action": "install_flutter_sdk_or_set_FLUTTER",
+        "reason": "flutter_runtime_missing",
+        "type": "FrontendRuntimeUnavailable",
+        "user_retryable": False,
+    }
+    assert persisted["components"]["server"]["status"] == "skipped"
+    assert persisted["components"]["worker"]["status"] == "skipped"
+    assert persisted["components"]["flutter_pub_get"]["status"] == "degraded"
+    assert persisted["components"]["flutter_marionette"]["status"] == "skipped"
+    assert persisted["components"]["flutter_runtime_log"]["status"] == "skipped"
+    assert persisted["flow_coverage"]["status"] == "skipped"
+    assert persisted["blocked_requirements"][0]["area"] == "frontend_marionette_proof"
+    assert persisted["blocked_requirements"][0]["reason"] == "flutter_runtime_missing"
+    assert str(ROOT) not in rendered
+    assert "local-dev-token" not in rendered
+    assert "OPENAI_API_KEY" not in rendered
+
+
 def test_frontend_marionette_runtime_log_component_flags_flutter_errors() -> None:
     module = _load_frontend_marionette_local_e2e(
         ROOT / "scripts" / "frontend_marionette_local_e2e.py"

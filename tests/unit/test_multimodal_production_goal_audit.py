@@ -161,6 +161,57 @@ def test_multimodal_production_goal_audit_rejects_frontend_runtime_log_failure(
     assert any("runtime log component failed" in failure for failure in result.failures)
 
 
+def test_multimodal_production_goal_audit_reports_frontend_runtime_blocker(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    frontend = _frontend_report()
+    frontend["ok"] = False
+    frontend["failure"] = {
+        "component": "flutter_pub_get",
+        "degraded": True,
+        "operator_action": "install_flutter_sdk_or_set_FLUTTER",
+        "reason": "flutter_runtime_missing",
+        "user_retryable": False,
+    }
+    frontend["components"]["flutter_pub_get"] = {
+        "status": "degraded",
+        "reason": "flutter_runtime_missing",
+    }
+    frontend["components"]["flutter_marionette"] = {
+        "status": "skipped",
+        "reason": "flutter_runtime_missing",
+    }
+    frontend_report.write_text(json.dumps(frontend), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(_provider_report()), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    blocked_by_area = {item["area"]: item for item in result.blocked_requirements}
+
+    assert result.ok is False
+    assert result.checks["frontend_marionette_passed"] is False
+    assert blocked_by_area["frontend_marionette_proof"]["component"] == "flutter_pub_get"
+    assert (
+        blocked_by_area["frontend_marionette_proof"]["operator_action"]
+        == "install_flutter_sdk_or_set_FLUTTER"
+    )
+    assert "frontend_marionette_flows_complete" in result.not_evaluable_checks
+    assert any("flutter_runtime_missing" in failure for failure in result.failures)
+
+
 def test_multimodal_production_goal_audit_rejects_provider_proof_without_git(
     tmp_path: Path,
 ) -> None:
