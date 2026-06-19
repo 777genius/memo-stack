@@ -7,7 +7,11 @@ from typing import Any
 
 from infinity_context_core.application.dto import CreateAssetCommand
 from infinity_context_core.application.use_cases.assets import CreateAssetUseCase
-from infinity_context_core.domain.assets import MemoryAsset, MemoryAssetId
+from infinity_context_core.domain.assets import (
+    MemoryAsset,
+    MemoryAssetId,
+    MemoryContextLinkSuggestion,
+)
 from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
 from infinity_context_core.domain.errors import MemoryConflictError, MemoryIngressLimitError
 from infinity_context_core.ports.assets import StoredBlob
@@ -106,9 +110,63 @@ class FakeAssetRepository:
         return asset
 
 
+class FakeContextLinksRepository:
+    def __init__(self) -> None:
+        self.active_links: dict[tuple[str, str, str, str, str], object] = {}
+        self.find_active_calls: list[tuple[str, str, str, str, str]] = []
+
+    async def find_active(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+    ) -> object | None:
+        key = (source_type, source_id, target_type, target_id, relation_type)
+        self.find_active_calls.append(key)
+        return self.active_links.get(key)
+
+
+class FakeContextLinkSuggestionsRepository:
+    def __init__(self) -> None:
+        self.latest: dict[tuple[str, str, str, str, str], MemoryContextLinkSuggestion] = {}
+        self.created: list[MemoryContextLinkSuggestion] = []
+
+    async def find_latest_for_pair(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        source_type: str,
+        source_id: str,
+        target_type: str,
+        target_id: str,
+        relation_type: str,
+    ) -> MemoryContextLinkSuggestion | None:
+        return self.latest.get((source_type, source_id, target_type, target_id, relation_type))
+
+    async def create(
+        self,
+        suggestion: MemoryContextLinkSuggestion,
+    ) -> MemoryContextLinkSuggestion:
+        self.created.append(suggestion)
+        return suggestion
+
+
 class FakeUnitOfWork:
-    def __init__(self, assets: FakeAssetRepository) -> None:
+    def __init__(
+        self,
+        assets: FakeAssetRepository,
+        context_links: FakeContextLinksRepository,
+        context_link_suggestions: FakeContextLinkSuggestionsRepository,
+    ) -> None:
         self.assets = assets
+        self.context_links = context_links
+        self.context_link_suggestions = context_link_suggestions
         self.commits = 0
 
     async def __aenter__(self) -> "FakeUnitOfWork":
@@ -132,9 +190,15 @@ class FakeUnitOfWork:
 class FakeUnitOfWorkFactory:
     def __init__(self, assets: FakeAssetRepository) -> None:
         self.assets = assets
+        self.context_links = FakeContextLinksRepository()
+        self.context_link_suggestions = FakeContextLinkSuggestionsRepository()
 
     def __call__(self) -> FakeUnitOfWork:
-        return FakeUnitOfWork(self.assets)
+        return FakeUnitOfWork(
+            self.assets,
+            self.context_links,
+            self.context_link_suggestions,
+        )
 
 
 def test_create_asset_cleans_unreferenced_blob_on_late_duplicate() -> None:
@@ -230,6 +294,8 @@ def test_create_asset_reuses_scope_blob_for_different_thread_duplicate() -> None
         assert result.deduplication.reason_code == "asset_dedup.scope_blob_reused"
         assert result.deduplication.scope == "memory_scope"
         assert result.deduplication.duplicate_of_asset_id == str(reusable.id)
+        assert result.deduplication.suggestion_id == "ctxlinksug_2"
+        assert result.deduplication.suggestion_status == "pending"
         assert result.deduplication.storage_key_reused is True
         assert result.deduplication.blob_written is False
         assert result.asset.id != reusable.id

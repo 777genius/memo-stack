@@ -2401,10 +2401,45 @@ def test_same_scope_different_thread_duplicate_upload_reuses_blob_contract(
         assert second_data["deduplication"]["status"] == "scope_blob_reused"
         assert second_data["deduplication"]["scope"] == "memory_scope"
         assert second_data["deduplication"]["duplicate_of_asset_id"] == first_data["id"]
+        assert second_data["deduplication"]["suggestion_status"] == "pending"
         assert second_data["deduplication"]["storage_key_reused"] is True
         assert second_data["deduplication"]["blob_written"] is False
         assert second_data["id"] != first_data["id"]
         assert second_data["thread_id"] != first_data["thread_id"]
+
+        suggestion_id = second_data["deduplication"]["suggestion_id"]
+        suggestions = client.get(
+            "/v1/context-link-suggestions",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "source_type": "asset",
+                "source_id": second_data["id"],
+                "target_type": "asset",
+                "target_id": first_data["id"],
+                "relation_type": "duplicates",
+            },
+            headers=auth_headers(),
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        suggestion = suggestions.json()["data"][0]
+        assert suggestion["id"] == suggestion_id
+        assert suggestion["confidence"] == "high"
+        assert suggestion["metadata"]["dedupe_match_type"] == "exact_sha256"
+
+        approved = client.post(
+            f"/v1/context-link-suggestions/{suggestion_id}/review",
+            json={"action": "approve", "reason": "confirmed duplicate asset bytes"},
+            headers=auth_headers(),
+        )
+        assert approved.status_code == 200, approved.text
+        approved_data = approved.json()["data"]
+        assert approved_data["suggestion"]["status"] == "approved"
+        assert approved_data["link"]["source_type"] == "asset"
+        assert approved_data["link"]["source_id"] == second_data["id"]
+        assert approved_data["link"]["target_type"] == "asset"
+        assert approved_data["link"]["target_id"] == first_data["id"]
+        assert approved_data["link"]["relation_type"] == "duplicates"
 
 
 def test_unsupported_asset_extraction_finishes_without_document_or_retry(

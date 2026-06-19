@@ -363,6 +363,8 @@ def deduplication_to_response(info: DeduplicationInfo | None) -> dict[str, Any] 
     optional_fields = {
         "duplicate_of_asset_id": info.duplicate_of_asset_id,
         "duplicate_of_job_id": info.duplicate_of_job_id,
+        "suggestion_id": info.suggestion_id,
+        "suggestion_status": info.suggestion_status,
         "storage_key_reused": info.storage_key_reused,
         "blob_written": info.blob_written,
         "temporary_blob_cleaned_up": info.temporary_blob_cleaned_up,

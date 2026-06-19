@@ -164,6 +164,8 @@ class DeduplicationInfo:
     scope: str = "none"
     duplicate_of_asset_id: str | None = None
     duplicate_of_job_id: str | None = None
+    suggestion_id: str | None = None
+    suggestion_status: str | None = None
     storage_key_reused: bool | None = None
     blob_written: bool | None = None
     temporary_blob_cleaned_up: bool | None = None

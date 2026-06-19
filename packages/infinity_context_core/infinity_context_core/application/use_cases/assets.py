@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import datetime
 
 from infinity_context_core.application.asset_upload_policy import assess_asset_upload
 from infinity_context_core.application.dto import (
@@ -15,7 +16,14 @@ from infinity_context_core.application.dto import (
     ListAssetsQuery,
 )
 from infinity_context_core.application.safe_payload import safe_metadata
-from infinity_context_core.domain.assets import AssetStatus, MemoryAsset, MemoryAssetId
+from infinity_context_core.domain.assets import (
+    AssetStatus,
+    ContextLinkSuggestionStatus,
+    MemoryAsset,
+    MemoryAssetId,
+    MemoryContextLinkSuggestion,
+    MemoryContextLinkSuggestionId,
+)
 from infinity_context_core.domain.errors import (
     MemoryConflictError,
     MemoryIngressLimitError,
@@ -24,7 +32,7 @@ from infinity_context_core.domain.errors import (
 from infinity_context_core.ports.assets import BlobStoragePort
 from infinity_context_core.ports.clock import ClockPort
 from infinity_context_core.ports.ids import IdGeneratorPort
-from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
+from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort, UnitOfWorkPort
 
 _MAX_FILENAME_CHARS = 240
 _SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
@@ -111,6 +119,8 @@ class CreateAssetUseCase:
             **safe_metadata(command.metadata or {}),
             **upload_assessment.metadata,
         }
+        dedupe_suggestion_id: str | None = None
+        dedupe_suggestion_status: str | None = None
         if reusable_asset is not None:
             metadata.update(
                 {
@@ -164,6 +174,17 @@ class CreateAssetUseCase:
                         ),
                     )
                 saved = await uow.assets.create(asset)
+                if reusable_asset is not None:
+                    suggestion = await self._ensure_duplicate_asset_suggestion(
+                        uow,
+                        source=saved,
+                        target=reusable_asset,
+                        sha256_hex=digest,
+                        now=now,
+                    )
+                    if suggestion is not None:
+                        dedupe_suggestion_id = str(suggestion.id)
+                        dedupe_suggestion_status = suggestion.status.value
                 await uow.commit()
         except MemoryConflictError:
             if wrote_blob:
@@ -186,6 +207,8 @@ class CreateAssetUseCase:
                 reason_code="asset_dedup.scope_blob_reused",
                 scope="memory_scope",
                 duplicate_of_asset_id=str(reusable_asset.id),
+                suggestion_id=dedupe_suggestion_id,
+                suggestion_status=dedupe_suggestion_status,
                 storage_key_reused=True,
                 blob_written=False,
             )
@@ -203,6 +226,83 @@ class CreateAssetUseCase:
             duplicate=reusable_asset is not None,
             deduplication=deduplication,
         )
+
+    async def _ensure_duplicate_asset_suggestion(
+        self,
+        uow: UnitOfWorkPort,
+        *,
+        source: MemoryAsset,
+        target: MemoryAsset,
+        sha256_hex: str,
+        now: datetime,
+    ) -> MemoryContextLinkSuggestion | None:
+        existing_link = await uow.context_links.find_active(
+            space_id=str(source.space_id),
+            memory_scope_id=str(source.memory_scope_id),
+            source_type="asset",
+            source_id=str(source.id),
+            target_type="asset",
+            target_id=str(target.id),
+            relation_type="duplicates",
+        )
+        if existing_link is not None:
+            return None
+        reverse_link = await uow.context_links.find_active(
+            space_id=str(source.space_id),
+            memory_scope_id=str(source.memory_scope_id),
+            source_type="asset",
+            source_id=str(target.id),
+            target_type="asset",
+            target_id=str(source.id),
+            relation_type="duplicates",
+        )
+        if reverse_link is not None:
+            return None
+        existing = await uow.context_link_suggestions.find_latest_for_pair(
+            space_id=str(source.space_id),
+            memory_scope_id=str(source.memory_scope_id),
+            source_type="asset",
+            source_id=str(source.id),
+            target_type="asset",
+            target_id=str(target.id),
+            relation_type="duplicates",
+        )
+        if existing is not None:
+            if existing.status in {
+                ContextLinkSuggestionStatus.APPROVED,
+                ContextLinkSuggestionStatus.REJECTED,
+            }:
+                return None
+            return existing
+        suggestion = MemoryContextLinkSuggestion.create(
+            suggestion_id=MemoryContextLinkSuggestionId(self._ids.new_id("ctxlinksug")),
+            space_id=source.space_id,
+            memory_scope_id=source.memory_scope_id,
+            source_type="asset",
+            source_id=str(source.id),
+            target_type="asset",
+            target_id=str(target.id),
+            relation_type="duplicates",
+            confidence="high",
+            reason="Exact same asset bytes already exist in this memory scope",
+            score=100.0,
+            metadata={
+                "dedupe_match_type": "exact_sha256",
+                "dedupe_reason_codes": [
+                    "exact_sha256",
+                    "same_memory_scope",
+                    "blob_reused",
+                ],
+                "sha256_prefix": sha256_hex[:12],
+                "source_asset_filename": source.filename,
+                "target_asset_filename": target.filename,
+                "source_label": source.filename,
+                "target_label": target.filename,
+                "recommended_action": "link_duplicate_asset_contexts",
+            },
+            now=now,
+        )
+        return await uow.context_link_suggestions.create(suggestion)
 
     async def _delete_blob_if_unreferenced(
         self,
