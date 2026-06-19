@@ -277,6 +277,18 @@ def test_upload_policy_marks_duplicate_archive_paths_for_review() -> None:
     assert result.metadata["upload_archive_duplicate_path_count"] == 1
 
 
+def test_upload_policy_marks_nested_archive_for_review() -> None:
+    result = assess_asset_upload(
+        filename="payload.zip",
+        declared_content_type="application/zip",
+        content=_zip_bytes({"nested/inner.zip": _zip_bytes({"notes.txt": b"hello"})}),
+    )
+
+    assert result.metadata["upload_archive_review_required"] is True
+    assert result.metadata["upload_archive_review_reason"] == "zip_archive_contains_nested_archives"
+    assert result.metadata["upload_archive_nested_archive_count"] == 1
+
+
 @pytest.mark.parametrize("filename", ["../secret.txt", "nested/secret.txt", "run.exe"])
 def test_upload_policy_blocks_dangerous_filenames(filename: str) -> None:
     with pytest.raises(MemoryIngressLimitError):
