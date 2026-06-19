@@ -306,6 +306,9 @@ def test_service_remember_fact_routes_negated_semantic_neighbor_to_review() -> N
         ]
         assert gateway.calls[-1][1]["review_payload"] == {
             "review_kind": "conflict_review",
+            "recommended_action": "manual_conflict_review",
+            "default_resolution": "reject_or_edit_before_approve",
+            "resolution_options": _conflict_resolution_options(),
             "conflicting_fact_id": "fact_qdrant_negated",
             "conflict_source": "mcp_preflight",
             "conflict_match_type": "negation_mismatch",
@@ -355,6 +358,9 @@ def test_service_remember_fact_does_not_dedupe_different_engine_neighbor() -> No
         ]
         assert gateway.calls[-1][1]["review_payload"] == {
             "review_kind": "conflict_review",
+            "recommended_action": "manual_conflict_review",
+            "default_resolution": "reject_or_edit_before_approve",
+            "resolution_options": _conflict_resolution_options(),
             "conflicting_fact_id": "fact_qdrant_documents",
             "conflict_source": "mcp_preflight",
             "conflict_match_type": "exclusive_anchor_mismatch",
@@ -402,6 +408,9 @@ def test_service_remember_fact_routes_numeric_neighbor_to_review() -> None:
         ]
         assert gateway.calls[-1][1]["review_payload"] == {
             "review_kind": "conflict_review",
+            "recommended_action": "manual_conflict_review",
+            "default_resolution": "reject_or_edit_before_approve",
+            "resolution_options": _conflict_resolution_options(),
             "conflicting_fact_id": "fact_atlas_retention",
             "conflict_source": "mcp_preflight",
             "conflict_match_type": "numeric_value_mismatch",
@@ -419,6 +428,35 @@ def test_service_remember_fact_routes_numeric_neighbor_to_review() -> None:
         }
 
     asyncio.run(run())
+
+
+def _conflict_resolution_options() -> list[dict[str, str]]:
+    return [
+        {
+            "id": "reject_candidate",
+            "review_action": "reject",
+            "effect": "keep_existing_fact",
+            "availability": "available",
+        },
+        {
+            "id": "approve_candidate",
+            "review_action": "approve",
+            "effect": "create_new_fact_keep_conflicting_fact",
+            "availability": "available",
+        },
+        {
+            "id": "expire_candidate",
+            "review_action": "expire",
+            "effect": "hide_pending_suggestion",
+            "availability": "available",
+        },
+        {
+            "id": "replace_existing_fact",
+            "review_action": "manual_targeted_update",
+            "effect": "update_conflicting_fact_with_candidate",
+            "availability": "manual_only",
+        },
+    ]
 
 
 def test_service_remember_fact_routes_conflicting_existing_fact_to_review() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from infinity_context_core.application.review_payloads import conflict_review_contract
 from infinity_context_core.application.semantic_dedupe import (
     FactConflictMatch,
     describe_conflicting_fact_match,
@@ -545,7 +546,9 @@ class MemoryToolService(
                     tags=safe_tags,
                     ttl_policy=ttl_policy,
                     review_payload={
-                        "review_kind": "conflict_review",
+                        **conflict_review_contract(
+                            approve_effect="create_new_fact_keep_conflicting_fact"
+                        ),
                         "conflicting_fact_id": duplicate_id,
                         "conflict_source": "mcp_preflight",
                         **duplicate_payload,

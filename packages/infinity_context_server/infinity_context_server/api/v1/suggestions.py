@@ -153,6 +153,8 @@ class ReviewSuggestionsBatchRequest(BaseModel):
 
 
 def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
+    review_actionable = suggestion.status == SuggestionStatus.PENDING
+    review_payload = safe_public_metadata(suggestion.review_payload or {}, max_items=40)
     return {
         "id": str(suggestion.id),
         "space_id": str(suggestion.space_id),
@@ -186,13 +188,46 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
         "expiry_reason": suggestion.expiry_reason,
         "created_from_capture_id": suggestion.created_from_capture_id,
         "candidate_fingerprint": suggestion.candidate_fingerprint,
-        "review_payload": safe_public_metadata(suggestion.review_payload or {}, max_items=40),
+        "review_payload": review_payload,
+        "review_kind": _suggestion_review_kind(review_payload),
+        "review_actionable": review_actionable,
+        "available_review_actions": _available_review_actions(review_actionable),
+        "review_state_reason": _suggestion_review_state_reason(suggestion),
+        "review_resolution_options": _suggestion_review_resolution_options(review_payload),
         "review_reason": _safe_optional_reason(suggestion.review_reason, limit=320),
         "review_audit": _suggestion_review_audit_to_response(suggestion),
         "created_at": suggestion.created_at.isoformat(),
         "updated_at": suggestion.updated_at.isoformat(),
         "reviewed_at": suggestion.reviewed_at.isoformat() if suggestion.reviewed_at else None,
     }
+
+
+def _suggestion_review_kind(review_payload: dict[str, Any]) -> str:
+    value = review_payload.get("review_kind")
+    return str(value).strip() if value else "candidate_review"
+
+
+def _available_review_actions(review_actionable: bool) -> list[str]:
+    return ["approve", "reject", "expire"] if review_actionable else []
+
+
+def _suggestion_review_state_reason(suggestion: MemorySuggestion) -> str:
+    if suggestion.status == SuggestionStatus.PENDING:
+        return "pending_review"
+    return f"{suggestion.status.value}_review"
+
+
+def _suggestion_review_resolution_options(review_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    options = review_payload.get("resolution_options")
+    if not isinstance(options, list):
+        return []
+    safe_options: list[dict[str, Any]] = []
+    for option in options[:10]:
+        if isinstance(option, dict):
+            safe_option = safe_public_metadata(option, max_items=20)
+            if safe_option:
+                safe_options.append(safe_option)
+    return safe_options
 
 
 def _suggestion_review_audit_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:

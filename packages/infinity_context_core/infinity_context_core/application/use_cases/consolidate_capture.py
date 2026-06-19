@@ -13,6 +13,7 @@ from infinity_context_core.application.extractor import (
     RuleBasedMemoryExtractor,
     validate_extractor_candidates,
 )
+from infinity_context_core.application.review_payloads import conflict_review_contract
 from infinity_context_core.application.semantic_dedupe import (
     describe_conflicting_fact_match,
     describe_duplicate_fact_match,
@@ -407,7 +408,9 @@ class ConsolidateCaptureUseCase:
                     candidate_fingerprint=fingerprint,
                     review_payload={
                         **(
-                            {"review_kind": "conflict_review"}
+                            conflict_review_contract(
+                                approve_effect="create_new_fact_keep_conflicting_fact"
+                            )
                             if active_conflict is not None
                             else {}
                         ),

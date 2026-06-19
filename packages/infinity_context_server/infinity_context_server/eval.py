@@ -13,6 +13,7 @@ from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
+from infinity_context_core.application.review_payloads import conflict_review_contract
 from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.domain.entities import MemoryScopeId, SpaceId
 from infinity_context_core.domain.extraction import (
@@ -1554,7 +1555,9 @@ def _seed_quality_pending_conflict_review(
             "trust_level": "medium",
             "safe_reason": "quality_pending_conflict_requires_review",
             "review_payload": {
-                "review_kind": "conflict_review",
+                **conflict_review_contract(
+                    approve_effect="create_new_fact_keep_conflicting_fact"
+                ),
                 "conflicting_fact_id": fact_id,
                 "conflicting_fact_version": 1,
                 "conflict_match_type": "numeric_value_mismatch",
