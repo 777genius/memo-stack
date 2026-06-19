@@ -643,6 +643,102 @@ def test_context_retrieves_media_manifest_artifact_evidence(tmp_path: Path) -> N
     assert {item["item_type"] for item in data["items"]} == {"extraction_artifact"}
 
 
+def test_context_artifact_evidence_is_thread_scoped(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        container = client.app.state.container
+        upload_a = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-artifact-target",
+                "filename": "target-thread-call.wav",
+            },
+            content=b"fake target wav bytes",
+            headers={**auth_headers(), "Content-Type": "audio/wav"},
+        )
+        upload_b = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-artifact-other",
+                "filename": "other-thread-call.wav",
+            },
+            content=b"fake other wav bytes",
+            headers={**auth_headers(), "Content-Type": "audio/wav"},
+        )
+        assert upload_a.status_code == 201, upload_a.text
+        assert upload_b.status_code == 201, upload_b.text
+        asset_a = upload_a.json()["data"]
+        asset_b = upload_b.json()["data"]
+        asyncio.run(
+            _store_media_manifest_artifact(
+                container,
+                asset=asset_a,
+                payload={
+                    "schema_version": "infinity_context.multimodal_manifest.v1",
+                    "evidence_items": [
+                        {
+                            "id": "target-thread-evidence",
+                            "kind": "transcript_segment",
+                            "modality": "audio",
+                            "text_preview": (
+                                "THREAD_SCOPE_MARKER target thread Atlas approval."
+                            ),
+                            "confidence": 0.9,
+                        },
+                    ],
+                },
+            )
+        )
+        asyncio.run(
+            _store_media_manifest_artifact(
+                container,
+                asset=asset_b,
+                payload={
+                    "schema_version": "infinity_context.multimodal_manifest.v1",
+                    "evidence_items": [
+                        {
+                            "id": "other-thread-evidence",
+                            "kind": "transcript_segment",
+                            "modality": "audio",
+                            "text_preview": (
+                                "THREAD_SCOPE_MARKER other thread Atlas should not leak."
+                            ),
+                            "confidence": 0.99,
+                        },
+                    ],
+                },
+            )
+        )
+
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-artifact-target",
+                "query": "THREAD_SCOPE_MARKER Atlas",
+                "max_facts": 0,
+                "max_chunks": 0,
+                "max_evidence_items": 5,
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    rendered = data["rendered_text"]
+    assert "target thread Atlas approval" in rendered
+    assert "other thread Atlas should not leak" not in rendered
+    assert len(data["items"]) == 1
+    assert data["items"][0]["citations"][0]["chunk_id"] == "target-thread-evidence"
+    assert data["diagnostics"]["artifact_evidence_manifests_considered"] == 1
+    assert data["diagnostics"]["artifact_evidence_items_used"] == 1
+
+
 def test_context_ranks_media_manifest_evidence_before_limiting(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         container = client.app.state.container
