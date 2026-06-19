@@ -49,7 +49,7 @@ def test_anchor_extraction_handles_russian_project_case_inflections() -> None:
     person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
     event_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "event"}
     assert ("project", "атлас") in keys
-    assert ("person", "алексом") in keys
+    assert ("person", "алекс") in keys
     assert "атлас" not in person_keys
     assert "созвон с алексом на прошлой неделе" in event_keys
 
@@ -197,8 +197,8 @@ def test_anchor_extraction_handles_russian_temporal_person_cases() -> None:
     event_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "event"}
     assert ("час", "chas") not in person_keys
     assert ("созвон", "sozvon") not in person_keys
-    assert ("алексом", "aleks") in person_keys
-    assert ("марией", "mariya") in person_keys
+    assert ("алекс", "aleks") in person_keys
+    assert ("мария", "mariya") in person_keys
     assert "переписывался с алексом час назад" in event_keys
     assert "созвон с марией вчера" in event_keys
 
@@ -217,11 +217,11 @@ def test_anchor_extraction_merges_common_russian_person_case_variants() -> None:
     }
 
     assert person_keys["мария"] == "mariya"
-    assert person_keys["марии"] == "mariya"
     assert person_keys["сергей"] == "sergei"
-    assert person_keys["сергея"] == "sergei"
     assert person_keys["алекс"] == "aleks"
-    assert person_keys["алекса"] == "aleks"
+    assert "марии" not in person_keys
+    assert "сергея" not in person_keys
+    assert "алекса" not in person_keys
 
 
 def test_anchor_extraction_structures_event_identity_metadata() -> None:

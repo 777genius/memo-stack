@@ -167,6 +167,72 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
             chat_distractor_fact["id"],
         )
 
+        multilingual_fact = _remember_fact(
+            client,
+            text=(
+                "Alex Project Atlas payment escalation call an hour ago confirmed "
+                "invoice threshold approval with finance."
+            ),
+            source_id="atlas-payment-escalation-call",
+        )
+        multilingual_distractor_fact = _remember_fact(
+            client,
+            text=(
+                "Alex Project Aurora payment escalation chat an hour ago covered "
+                "brand landing page copy."
+            ),
+            source_id="aurora-payment-escalation-chat",
+        )
+        multilingual_capture = _capture(
+            client,
+            source_event_id="ru-atlas-payment-escalation-capture",
+            text=(
+                "Скрин после созвона с Алексом час назад по проекту Atlas: "
+                "нужно одобрить invoice threshold с finance."
+            ),
+            thread_external_ref="quality-review",
+        )
+        multilingual_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quality-review",
+                "source_type": "capture",
+                "source_id": multilingual_capture["id"],
+                "text": (
+                    "Скрин после созвона с Алексом час назад по проекту Atlas "
+                    "одобрить invoice threshold finance"
+                ),
+                "persist": True,
+                "limit": 10,
+            },
+        )
+        assert multilingual_suggestions.status_code == 200, multilingual_suggestions.text
+        multilingual_data = multilingual_suggestions.json()["data"]
+        multilingual_fact_candidates = [
+            item for item in multilingual_data["candidates"] if item["target_type"] == "fact"
+        ]
+        assert multilingual_fact_candidates[0]["target_id"] == multilingual_fact["id"]
+        assert multilingual_fact_candidates[0]["score"] > _candidate_score(
+            multilingual_fact_candidates,
+            multilingual_distractor_fact["id"],
+        )
+        assert {"person:aleks", "atlas", "invoice", "threshold", "finance"}.issubset(
+            set(multilingual_fact_candidates[0]["metadata"]["matched_terms"])
+        )
+        multilingual_anchor_labels = {
+            (item["metadata"].get("anchor_kind"), item["metadata"].get("normalized_key"))
+            for item in multilingual_data["candidates"]
+            if item["target_type"] == "anchor"
+        }
+        assert ("person", "алекс") in multilingual_anchor_labels
+        assert ("project", "atlas") in multilingual_anchor_labels
+        assert any(
+            kind == "event" and "час назад" in key
+            for kind, key in multilingual_anchor_labels
+        )
+
         document = _ingest_document(
             client,
             title="Project Atlas onboarding pricing SOP",

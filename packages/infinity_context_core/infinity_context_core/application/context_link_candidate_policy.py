@@ -10,6 +10,7 @@ from math import log
 
 from infinity_context_core.application.dto import ContextLinkCandidate, SuggestContextLinksCommand
 from infinity_context_core.application.safe_payload import safe_metadata_text
+from infinity_context_core.application.semantic_dedupe import semantic_memory_terms
 from infinity_context_core.application.sensitive_text import (
     contains_sensitive_text,
     redact_sensitive_text,
@@ -24,6 +25,7 @@ _MAX_EVIDENCE_SOURCE_TYPE_CHARS = 80
 _MAX_QUERY_TERMS = 64
 _MAX_QUERY_TERM_CHARS = 80
 _MAX_PROMPT_INJECTION_SIGNAL_CODES = 8
+_MAX_TEXT_MATCH_SCORE = 125.0
 _LINK_STOP_TERMS = {
     "about",
     "after",
@@ -241,11 +243,13 @@ class TemporalHint:
 def terms(text: str) -> tuple[str, ...]:
     seen: dict[str, None] = {}
     for raw in _TERM_PATTERN.findall(redact_sensitive_text(text).lower()):
-        term = raw.strip("._-:/#")[:_MAX_QUERY_TERM_CHARS]
-        if len(term) >= 3 and term not in _LINK_STOP_TERMS and term not in seen:
-            seen[term] = None
-            if len(seen) >= _MAX_QUERY_TERMS:
-                break
+        if len(seen) >= _MAX_QUERY_TERMS:
+            break
+        _add_term(seen, raw.strip("._-:/#"))
+    for term in sorted(semantic_memory_terms(text)):
+        if len(seen) >= _MAX_QUERY_TERMS:
+            break
+        _add_term(seen, term)
     return tuple(seen)
 
 
@@ -284,9 +288,22 @@ def score_text_candidate(
     score = base
     reasons: list[str] = []
     lowered = target_text.lower()
-    hits = tuple(term for term in query_terms if term in lowered)
+    target_terms = set(terms(target_text))
+    raw_hits = tuple(
+        term
+        for term in query_terms
+        if _is_raw_link_term(term) and (term in target_terms or _term_matches_text(term, lowered))
+    )
+    semantic_hits = tuple(
+        term
+        for term in query_terms
+        if _is_semantic_link_term(term) and term in target_terms
+    )
+    hits = (*raw_hits, *semantic_hits)
     if hits:
-        score += min(48.0, 8.0 * len(hits))
+        score += min(48.0, 8.0 * len(raw_hits))
+        if semantic_hits and not raw_hits:
+            score += min(14.0, 3.5 * len(semantic_hits))
         reasons.append("matching text")
     relative_age_hours = _relative_age_hours(updated_at, now)
     if _matches_temporal_hint(temporal_hints, relative_age_hours):
@@ -304,7 +321,25 @@ def score_text_candidate(
         reasons.append("near in time")
     if not reasons:
         reasons.append("recent context")
-    return min(score, 99.0), reasons, hits
+    return min(score, _MAX_TEXT_MATCH_SCORE), reasons, hits
+
+
+def _add_term(seen: dict[str, None], value: str) -> None:
+    term = value.strip("._-:/#")[:_MAX_QUERY_TERM_CHARS]
+    if len(term) >= 3 and term not in _LINK_STOP_TERMS and term not in seen:
+        seen[term] = None
+
+
+def _term_matches_text(term: str, lowered_text: str) -> bool:
+    return _is_raw_link_term(term) and term in lowered_text
+
+
+def _is_raw_link_term(term: str) -> bool:
+    return ":" not in term
+
+
+def _is_semantic_link_term(term: str) -> bool:
+    return ":" in term
 
 
 def has_link_signal(*, matched_terms: tuple[str, ...], reasons: list[str]) -> bool:

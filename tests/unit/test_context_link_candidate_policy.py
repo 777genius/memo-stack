@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from infinity_context_core.application.context_link_candidate_policy import (
     _MAX_QUERY_TERM_CHARS,
     _MAX_QUERY_TERMS,
@@ -6,8 +8,10 @@ from infinity_context_core.application.context_link_candidate_policy import (
     chunk_multimodal_evidence_metadata,
     evidence_summary,
     multimodal_reason_hints,
+    score_text_candidate,
     source_text_risk_metadata,
     source_text_risk_metadata_from_mapping,
+    temporal_hints,
     terms,
 )
 from infinity_context_core.domain.entities import SourceRef
@@ -146,6 +150,55 @@ def test_prompt_injection_terms_are_not_used_as_link_terms() -> None:
     assert "instructions" not in result
     assert "system" not in result
     assert "prompt" not in result
+
+
+def test_query_terms_include_multilingual_semantic_anchor_terms() -> None:
+    result = terms(
+        "Скрин после созвона с Алексом час назад по проекту Atlas "
+        "одобрить invoice threshold finance"
+    )
+
+    assert "person:aleks" in result
+    assert "project:atlas" in result
+    assert "event_temporal:hours_ago:1:hour" in result
+    assert "atlas" in result
+    assert "invoice" in result
+
+
+def test_multilingual_scoring_preserves_precise_lexical_ranking() -> None:
+    query = (
+        "Скрин после созвона с Алексом час назад по проекту Atlas "
+        "одобрить invoice threshold finance"
+    )
+    now = datetime(2026, 6, 19, 12, tzinfo=UTC)
+
+    target_score, _target_reasons, target_hits = score_text_candidate(
+        query_terms=terms(query),
+        temporal_hints=temporal_hints(query),
+        target_text=(
+            "Alex Project Atlas payment escalation call an hour ago confirmed "
+            "invoice threshold approval with finance."
+        ),
+        updated_at=now,
+        now=now,
+        base=52,
+    )
+    old_related_score, _old_reasons, old_hits = score_text_candidate(
+        query_terms=terms(query),
+        temporal_hints=temporal_hints(query),
+        target_text=(
+            "Alex and Project Atlas onboarding pricing summary from an hour ago. "
+            "The action item is invoice threshold approval."
+        ),
+        updated_at=now,
+        now=now,
+        base=52,
+    )
+
+    assert "person:aleks" in target_hits
+    assert "finance" in target_hits
+    assert "finance" not in old_hits
+    assert target_score > old_related_score
 
 
 def test_evidence_summary_is_bounded_and_multimodal_without_quotes() -> None:

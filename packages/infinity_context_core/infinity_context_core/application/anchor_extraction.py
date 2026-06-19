@@ -395,7 +395,7 @@ def _append_anchor(
     reason: str,
     score_boost: float,
 ) -> None:
-    normalized_key = normalize_anchor_key(label)
+    normalized_key = _normalized_anchor_key_for_kind(kind, label)
     key = (kind.value, normalized_key)
     if not normalized_key or key in seen:
         return
@@ -416,6 +416,16 @@ def _append_anchor(
             },
         )
     )
+
+
+def _normalized_anchor_key_for_kind(kind: MemoryAnchorKind, label: str) -> str:
+    if kind == MemoryAnchorKind.PERSON:
+        parts = [
+            _normalize_cyrillic_person_case(part)
+            for part in normalize_anchor_key(label).split()
+        ]
+        return " ".join(part for part in parts if part)
+    return normalize_anchor_key(label)
 
 
 def _structured_anchor_metadata(
