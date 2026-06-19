@@ -105,6 +105,8 @@ async def run_multimodal_live_provider_canary(
 ) -> dict[str, object]:
     api_key = _provider_api_key()
     report = _base_report(args, has_provider_key=bool(api_key))
+    report["components"]["vision_fixture"] = _vision_fixture_preflight()
+    report["components"]["audio_fixture"] = _audio_fixture_preflight(args)
     if args.probe_invalid_key:
         report["components"]["invalid_key_probe"] = await _run_invalid_key_probe(args=args)
     else:
@@ -432,6 +434,8 @@ def _base_report(
             "provider_key": _component("unknown"),
             "vision": _component("unknown"),
             "transcription": _component("unknown"),
+            "vision_fixture": _component("unknown"),
+            "audio_fixture": _component("unknown"),
             "invalid_key_probe": _component("unknown"),
         },
     }
@@ -479,20 +483,20 @@ def _proof_matrix(
         ),
         "vision_fixture_contract": _fixture_component_requirement(
             components,
-            "vision",
+            "vision_fixture",
             expected_role="image_vision",
             expected_content_type="image/png",
             supported_suffixes=OPENAI_VISION_SUPPORTED_SUFFIXES,
-            requires_provider_key=True,
+            requires_provider_key=False,
             provider_key_present=provider_key_present,
         ),
         "audio_fixture_contract": _fixture_component_requirement(
             components,
-            "transcription",
+            "audio_fixture",
             expected_role="audio_transcription",
             expected_content_type=None,
             supported_suffixes=OPENAI_AUDIO_SUPPORTED_SUFFIXES,
-            requires_provider_key=True,
+            requires_provider_key=False,
             provider_key_present=provider_key_present,
         ),
         "invalid_key_classification": _contract_requirement(
@@ -524,8 +528,7 @@ def _proof_matrix(
     live_names = (
         "vision_real_provider",
         "audio_transcription_real_provider",
-        "vision_fixture_contract",
-        "audio_fixture_contract",
+        "invalid_key_live_probe",
     )
     contract_names = tuple(name for name in requirements if name not in live_names)
     return {
@@ -698,6 +701,47 @@ def _provider_api_key() -> str | None:
     if value and value.strip():
         return value.strip()
     return None
+
+
+def _vision_fixture_preflight() -> dict[str, object]:
+    image = _sample_png_bytes()
+    fixture = _bytes_fixture_summary(
+        role="image_vision",
+        source="generated_png_fixture",
+        filename="infinity-context-live-vision-canary.png",
+        content_type="image/png",
+        content=image,
+        expected_visible_text=SYNTHETIC_VISION_TEXT,
+    )
+    return _component("succeeded", fixture=fixture)
+
+
+def _audio_fixture_preflight(args: argparse.Namespace) -> dict[str, object]:
+    with tempfile.TemporaryDirectory(prefix="infinity-context-live-asr-preflight-") as tmp:
+        generated_audio = args.audio_fixture is None
+        audio_path = _audio_fixture_path(args.audio_fixture, Path(tmp))
+        if audio_path is None:
+            return _component(
+                "degraded",
+                reason="audio_fixture_missing",
+                message=(
+                    "Set MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE or run on macOS "
+                    "with the say command available"
+                ),
+            )
+        validation = _audio_fixture_contract_check(audio_path)
+        if validation["status"] != "succeeded":
+            return validation
+        content = audio_path.read_bytes()
+        return _component(
+            "succeeded",
+            fixture=_audio_fixture_summary(
+                path=audio_path,
+                content_type=_content_type_for_path(audio_path),
+                content=content,
+                generated=generated_audio,
+            ),
+        )
 
 
 def _bytes_fixture_summary(

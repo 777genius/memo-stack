@@ -25,9 +25,12 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     tmp_path: Path,
 ) -> None:
     report_path = tmp_path / "provider-canary.json"
+    audio_fixture = tmp_path / "fixture.wav"
+    audio_fixture.write_bytes(b"RIFF" + b"\0" * 64)
     sentinel = "sk-test-secret-that-must-not-leak"
     env = _test_env_without_openai_keys()
     env["MEMORY_AGENT_BENCH_OPENAI_API_KEY"] = sentinel
+    env["MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE"] = str(audio_fixture)
 
     result = subprocess.run(
         [
@@ -89,10 +92,10 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     proof = file_report["proof_matrix"]
     assert proof["schema_version"] == "multimodal-provider-proof-matrix-v1"
     assert proof["summary"] == {
-        "contract_requirements_passed": 4,
-        "contract_requirements_total": 5,
+        "contract_requirements_passed": 6,
+        "contract_requirements_total": 6,
         "live_requirements_passed": 0,
-        "live_requirements_total": 4,
+        "live_requirements_total": 3,
     }
     requirements = proof["requirements"]
     assert requirements["vision_real_provider"] == {
@@ -109,20 +112,20 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "requires_provider_key": True,
         "status": "skipped",
     }
-    assert requirements["vision_fixture_contract"] == {
-        "ok": False,
-        "proof": "local_fixture_contract",
-        "reason": "provider_credential_missing",
-        "requires_provider_key": True,
-        "status": "skipped",
-    }
-    assert requirements["audio_fixture_contract"] == {
-        "ok": False,
-        "proof": "local_fixture_contract",
-        "reason": "provider_credential_missing",
-        "requires_provider_key": True,
-        "status": "skipped",
-    }
+    vision_fixture = requirements["vision_fixture_contract"]
+    assert vision_fixture["ok"] is True
+    assert vision_fixture["proof"] == "local_fixture_contract"
+    assert vision_fixture["requires_provider_key"] is False
+    assert vision_fixture["status"] == "contract_covered"
+    assert vision_fixture["suffix"] == ".png"
+    assert vision_fixture["content_type"] == "image/png"
+    audio_contract = requirements["audio_fixture_contract"]
+    assert audio_contract["ok"] is True
+    assert audio_contract["proof"] == "local_fixture_contract"
+    assert audio_contract["requires_provider_key"] is False
+    assert audio_contract["status"] == "contract_covered"
+    assert audio_contract["suffix"] == ".wav"
+    assert audio_contract["content_type"] == "audio/wav"
     assert requirements["invalid_key_classification"]["status"] == "contract_covered"
     assert requirements["invalid_key_live_probe"] == {
         "ok": False,
@@ -160,6 +163,10 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "status": "skipped",
         "user_retryable": False,
     }
+    assert file_report["components"]["vision_fixture"]["status"] == "succeeded"
+    assert file_report["components"]["vision_fixture"]["fixture"]["role"] == "image_vision"
+    assert file_report["components"]["audio_fixture"]["status"] == "succeeded"
+    assert file_report["components"]["audio_fixture"]["fixture"]["role"] == "audio_transcription"
     assert file_report["components"]["invalid_key_probe"] == {
         "operator_action": "inspect_provider_canary",
         "reason": "invalid_key_probe_not_requested",
@@ -422,6 +429,45 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
     assert too_large["reason"] == "audio_fixture_too_large"
     assert too_large["operator_action"] == "replace_audio_fixture"
     assert too_large["max_upload_bytes"] == 26214400
+
+
+def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    audio_fixture = tmp_path / "fixture.wav"
+    audio_fixture.write_bytes(b"RIFF" + b"\0" * 64)
+    args = module._parse_args(["--audio-fixture", str(audio_fixture)])
+
+    vision = module._vision_fixture_preflight()
+    audio = module._audio_fixture_preflight(args)
+    proof = module._proof_matrix(
+        components={
+            "vision": {"status": "skipped", "reason": "provider_credential_missing"},
+            "transcription": {"status": "skipped", "reason": "provider_credential_missing"},
+            "vision_fixture": vision,
+            "audio_fixture": audio,
+            "invalid_key_probe": {"status": "skipped", "reason": "invalid_key_probe_not_requested"},
+        },
+        failure_policy_contract=module._failure_policy_contract(),
+        provider_key_present=False,
+        secrets_redacted=True,
+    )
+
+    assert vision["status"] == "succeeded"
+    assert vision["fixture"]["role"] == "image_vision"
+    assert audio["status"] == "succeeded"
+    assert audio["fixture"]["role"] == "audio_transcription"
+    assert proof["requirements"]["vision_fixture_contract"]["ok"] is True
+    assert proof["requirements"]["vision_fixture_contract"]["requires_provider_key"] is False
+    assert proof["requirements"]["audio_fixture_contract"]["ok"] is True
+    assert proof["requirements"]["audio_fixture_contract"]["requires_provider_key"] is False
+    assert proof["summary"] == {
+        "contract_requirements_passed": 6,
+        "contract_requirements_total": 6,
+        "live_requirements_passed": 0,
+        "live_requirements_total": 3,
+    }
 
 
 def test_multimodal_live_provider_canary_requires_strong_synthetic_transcript() -> None:
