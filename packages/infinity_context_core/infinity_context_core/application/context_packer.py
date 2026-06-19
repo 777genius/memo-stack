@@ -101,7 +101,12 @@ class ContextPacker:
             ):
                 diversity_items_used += 1
 
-        for item in selectable_items:
+        selection_items = _source_diversified_order(selectable_items)
+        source_diversity_chunks_reordered = _source_diversity_reordered_chunk_count(
+            selectable_items,
+            selection_items,
+        )
+        for item in selection_items:
             key = _selection_key(item)
             if key in state.selected_keys:
                 continue
@@ -140,6 +145,13 @@ class ContextPacker:
                     ),
                     "diversity_items_used": diversity_items_used,
                     "item_type_counts": _item_type_counts(selected),
+                    "chunk_sources_considered": len(_chunk_source_counts(selectable_items)),
+                    "chunk_sources_used": len(_chunk_source_counts(selected)),
+                    "max_chunks_used_per_source": max(
+                        _chunk_source_counts(selected).values(),
+                        default=0,
+                    ),
+                    "source_diversity_chunks_reordered": source_diversity_chunks_reordered,
                     "dropped_by_instruction_flag": dropped_by_instruction_flag,
                     "dropped_by_budget": dropped_by_budget,
                     "dropped_by_source_cap": dropped_by_source_cap,
@@ -235,6 +247,46 @@ def _item_type_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
     for item in items:
         counts[item.item_type] = counts.get(item.item_type, 0) + 1
     return counts
+
+
+def _chunk_source_counts(items: tuple[ContextItem, ...] | list[ContextItem]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        if item.item_type != "chunk":
+            continue
+        source_key = _source_key(item)
+        counts[source_key] = counts.get(source_key, 0) + 1
+    return counts
+
+
+def _source_diversified_order(items: list[ContextItem]) -> tuple[ContextItem, ...]:
+    source_positions: dict[str, int] = {}
+    indexed: list[tuple[int, int, ContextItem]] = []
+    for index, item in enumerate(items):
+        if item.item_type != "chunk":
+            indexed.append((0, index, item))
+            continue
+        source_key = _source_key(item)
+        source_position = source_positions.get(source_key, 0)
+        source_positions[source_key] = source_position + 1
+        indexed.append((source_position, index, item))
+    return tuple(item for _, _, item in sorted(indexed, key=lambda value: (value[0], value[1])))
+
+
+def _source_diversity_reordered_chunk_count(
+    original_items: list[ContextItem],
+    ordered_items: tuple[ContextItem, ...],
+) -> int:
+    original_chunk_positions = {
+        _selection_key(item): index
+        for index, item in enumerate(original_items)
+        if item.item_type == "chunk"
+    }
+    return sum(
+        1
+        for index, item in enumerate(ordered_items)
+        if item.item_type == "chunk" and original_chunk_positions.get(_selection_key(item)) != index
+    )
 
 
 def _rendered_char_count(items: tuple[ContextItem, ...]) -> int:

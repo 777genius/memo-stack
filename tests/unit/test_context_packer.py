@@ -54,6 +54,59 @@ def test_context_packer_keeps_memory_scope_sections_and_caps_chunks_per_source()
     assert "OTHER_DOC_MARKER" in rendered
     assert result.bundle.diagnostics["dropped_by_source_cap"] == 2
     assert result.bundle.diagnostics["dropped_by_budget"] == 0
+    assert result.bundle.diagnostics["chunk_sources_considered"] == 2
+    assert result.bundle.diagnostics["chunk_sources_used"] == 2
+    assert result.bundle.diagnostics["max_chunks_used_per_source"] == 4
+
+
+def test_context_packer_preserves_chunk_source_diversity_under_budget() -> None:
+    dominant_chunks = tuple(
+        ContextItem(
+            item_id=f"chunk_dominant_{index}",
+            item_type="chunk",
+            text=f"DOMINANT_DOC_MARKER chunk {index} " + ("detail " * 6),
+            score=1.0 - index * 0.01,
+            source_refs=(
+                SourceRef(
+                    source_type="document",
+                    source_id="dominant-doc",
+                    chunk_id=f"chunk_dominant_{index}",
+                ),
+            ),
+            diagnostics={"memory_scope_id": "memory_scope_default"},
+        )
+        for index in range(4)
+    )
+    secondary_chunk = ContextItem(
+        item_id="chunk_secondary_0",
+        item_type="chunk",
+        text="SECONDARY_DOC_MARKER first relevant chunk " + ("detail " * 4),
+        score=0.5,
+        source_refs=(
+            SourceRef(
+                source_type="document",
+                source_id="secondary-doc",
+                chunk_id="chunk_secondary_0",
+            ),
+        ),
+        diagnostics={"memory_scope_id": "memory_scope_default"},
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_source_diversity",
+        items=(*dominant_chunks, secondary_chunk),
+        token_budget=110,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "DOMINANT_DOC_MARKER chunk 0" in rendered
+    assert "DOMINANT_DOC_MARKER chunk 1" in rendered
+    assert "DOMINANT_DOC_MARKER chunk 2" not in rendered
+    assert "SECONDARY_DOC_MARKER" in rendered
+    assert result.bundle.diagnostics["chunk_sources_considered"] == 2
+    assert result.bundle.diagnostics["chunk_sources_used"] == 2
+    assert result.bundle.diagnostics["max_chunks_used_per_source"] == 2
+    assert result.bundle.diagnostics["source_diversity_chunks_reordered"] > 0
 
 
 def test_memory_block_header_is_stable() -> None:

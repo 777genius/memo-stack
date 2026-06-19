@@ -111,6 +111,26 @@ def _quality_document_text() -> str:
     )
 
 
+def _quality_source_diversity_dominant_document_text() -> str:
+    return "\n".join(
+        (
+            "claim: QUALITY_SOURCE_DIVERSITY_DOMINANT_0 sourcedivsignal "
+            "dominantstream roundrobinclip dominantslot0 dominantphase0.",
+            "claim: QUALITY_SOURCE_DIVERSITY_DOMINANT_1 sourcedivsignal "
+            "dominantstream roundrobinclip dominantslot1 dominantphase1.",
+            "claim: QUALITY_SOURCE_DIVERSITY_DOMINANT_2 sourcedivsignal "
+            "dominantstream roundrobinclip dominantslot2 dominantphase2.",
+        )
+    )
+
+
+def _quality_source_diversity_secondary_document_text() -> str:
+    return (
+        "QUALITY_SOURCE_DIVERSITY_SECONDARY: sourcedivsignal secondarystream "
+        "roundrobinclip secondaryslot0 secondaryphase0."
+    )
+
+
 def _long_memory_document_text() -> str:
     filler_a = " ".join(f"long scope filler {index}" for index in range(130))
     filler_b = " ".join(f"long adapter filler {index}" for index in range(130))

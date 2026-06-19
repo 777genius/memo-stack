@@ -286,6 +286,26 @@ def _quality_golden_cases(
             max_chunks=1,
         ),
         EvalCase(
+            case_id="document_source_diversity_preserves_secondary_source",
+            category="documents",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="sourcedivsignal dominantstream secondarystream roundrobinclip",
+            must_include=(
+                "QUALITY_SOURCE_DIVERSITY_DOMINANT_0",
+                "QUALITY_SOURCE_DIVERSITY_SECONDARY",
+            ),
+            must_not_include=("QUALITY_SOURCE_DIVERSITY_DOMINANT_2",),
+            token_budget=190,
+            max_facts=0,
+            max_chunks=5,
+            required_diagnostics=(
+                ("chunk_sources_considered", "gte", 2),
+                ("chunk_sources_used", "gte", 2),
+                ("source_diversity_chunks_reordered", "gte", 1),
+            ),
+        ),
+        EvalCase(
             case_id="hybrid_document_beats_single_source",
             category="hybrid_retrieval",
             space_id=space_id,

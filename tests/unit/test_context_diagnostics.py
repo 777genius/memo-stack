@@ -103,6 +103,10 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     assert diagnostics["diversity_families_considered"] == 0
     assert diagnostics["diversity_families_used"] == 0
     assert diagnostics["diversity_items_used"] == 0
+    assert diagnostics["chunk_sources_considered"] == 0
+    assert diagnostics["chunk_sources_used"] == 0
+    assert diagnostics["max_chunks_used_per_source"] == 0
+    assert diagnostics["source_diversity_chunks_reordered"] == 0
     assert diagnostics["dropped_by_instruction_flag"] == 0
     assert diagnostics["dropped_by_budget"] == 0
     assert diagnostics["anchors_considered"] == 0

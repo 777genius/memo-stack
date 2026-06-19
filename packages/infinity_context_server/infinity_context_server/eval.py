@@ -68,6 +68,8 @@ from infinity_context_server.eval_constants import (
 from infinity_context_server.eval_fixtures import (
     _long_memory_document_text,
     _quality_document_text,
+    _quality_source_diversity_dominant_document_text,
+    _quality_source_diversity_secondary_document_text,
     _seed_deleted_fact,
     _seed_quality_deleted_fact,
     _seed_quality_updated_fact,
@@ -944,6 +946,36 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
                 "classification": "internal",
             },
             headers=_with_idempotency(headers, "quality-doc-decoy-v1"),
+        ).status_code
+    )
+    checks["quality_source_diversity_dominant_document"] = _status_ok(
+        client.post(
+            "/v1/documents",
+            json={
+                "space_id": space_id,
+                "memory_scope_id": alpha_memory_scope_id,
+                "title": "Quality source diversity dominant",
+                "text": _quality_source_diversity_dominant_document_text(),
+                "source_type": "document",
+                "source_external_id": "quality-doc-source-diversity-dominant",
+                "classification": "internal",
+            },
+            headers=_with_idempotency(headers, "quality-doc-source-diversity-dominant-v1"),
+        ).status_code
+    )
+    checks["quality_source_diversity_secondary_document"] = _status_ok(
+        client.post(
+            "/v1/documents",
+            json={
+                "space_id": space_id,
+                "memory_scope_id": alpha_memory_scope_id,
+                "title": "Quality source diversity secondary",
+                "text": _quality_source_diversity_secondary_document_text(),
+                "source_type": "document",
+                "source_external_id": "quality-doc-source-diversity-secondary",
+                "classification": "internal",
+            },
+            headers=_with_idempotency(headers, "quality-doc-source-diversity-secondary-v1"),
         ).status_code
     )
     checks["quality_prompt_injection_document"] = _status_ok(
