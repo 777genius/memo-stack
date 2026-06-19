@@ -103,6 +103,77 @@ def test_context_bundle_diagnostics_count_char_range_source_refs() -> None:
     assert diagnostics["source_refs_with_time_range_count"] == 0
 
 
+def test_context_bundle_diagnostics_count_evidence_kinds_and_modalities() -> None:
+    transcript = ContextItem(
+        item_id="artifact_transcript",
+        item_type="extraction_artifact",
+        text="Transcript says Atlas billing moved.",
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact_audio",
+                chunk_id="segment_1",
+                time_start_ms=1200,
+                time_end_ms=6400,
+            ),
+        ),
+        diagnostics={
+            "evidence_kind": "transcript_segment",
+            "evidence_modality": "audio",
+        },
+    )
+    ocr = ContextItem(
+        item_id="artifact_ocr",
+        item_type="extraction_artifact",
+        text="Screenshot OCR shows Atlas invoice.",
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact_image",
+                chunk_id="region_1",
+                bbox=(10.0, 12.0, 90.0, 44.0),
+            ),
+        ),
+        diagnostics={
+            "provenance": {
+                "evidence_kind": "ocr_region",
+                "evidence_modality": "image",
+            },
+        },
+    )
+    keyframe = ContextItem(
+        item_id="artifact_video_frame",
+        item_type="extraction_artifact",
+        text="Video keyframe shows the dashboard.",
+        score=0.82,
+        source_refs=(),
+        diagnostics={
+            "evidence_kind": "video_keyframe",
+            "evidence_modality": "video",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {"context_assembly_version": "context-v2-hybrid-explainable"},
+        items=(transcript, ocr, keyframe),
+    )
+
+    assert diagnostics["evidence_kind_counts"] == {
+        "ocr_region": 1,
+        "transcript_segment": 1,
+        "video_keyframe": 1,
+    }
+    assert diagnostics["evidence_modality_counts"] == {
+        "audio": 1,
+        "image": 1,
+        "video": 1,
+    }
+    assert diagnostics["items_with_evidence_kind"] == 3
+    assert diagnostics["items_with_evidence_modality"] == 3
+
+
 def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     diagnostics = normalize_context_bundle_diagnostics(
         {
@@ -147,6 +218,10 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     assert diagnostics["source_refs_total"] == 0
     assert diagnostics["source_refs_returned"] == 0
     assert diagnostics["source_refs_truncated"] is False
+    assert diagnostics["evidence_kind_counts"] == {}
+    assert diagnostics["evidence_modality_counts"] == {}
+    assert diagnostics["items_with_evidence_kind"] == 0
+    assert diagnostics["items_with_evidence_modality"] == 0
 
 
 def test_context_bundle_retrieval_sources_use_stable_priority_order() -> None:

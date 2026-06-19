@@ -79,6 +79,11 @@ def test_context_sanitizes_invalid_media_manifest_coordinates(tmp_path) -> None:
     assert "time_ms=5000-1000" not in rendered
     assert "bbox=-1" not in rendered
     assert diagnostics["artifact_evidence_items_used"] == 2
+    assert diagnostics["evidence_kind_counts"] == {
+        "ocr_region": 1,
+        "transcript_segment": 1,
+    }
+    assert diagnostics["evidence_modality_counts"] == {"audio": 1, "image": 1}
     assert diagnostics["artifact_evidence_invalid_time_range_count"] == 1
     assert diagnostics["artifact_evidence_invalid_bbox_count"] == 1
     assert diagnostics["artifact_evidence_coordinate_signal_count"] == 0

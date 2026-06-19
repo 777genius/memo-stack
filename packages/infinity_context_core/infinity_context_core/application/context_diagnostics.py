@@ -349,6 +349,7 @@ def normalize_context_bundle_diagnostics(
     normalized["item_type_counts"] = _item_type_counts(items)
     normalized.update(_source_ref_counts(items))
     normalized.update(_multimodal_source_ref_counts(items))
+    normalized.update(_evidence_kind_modality_counts(items))
     normalized.update(_query_snippet_counts(items))
     return normalized
 
@@ -597,6 +598,34 @@ def _item_type_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
             continue
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _evidence_kind_modality_counts(items: tuple[ContextItem, ...]) -> dict[str, object]:
+    kind_counts: dict[str, int] = {}
+    modality_counts: dict[str, int] = {}
+    for item in items:
+        kind = _diagnostic_text(item, "evidence_kind")
+        if kind:
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        modality = _diagnostic_text(item, "evidence_modality")
+        if modality:
+            modality_counts[modality] = modality_counts.get(modality, 0) + 1
+    return {
+        "evidence_kind_counts": dict(sorted(kind_counts.items())),
+        "evidence_modality_counts": dict(sorted(modality_counts.items())),
+        "items_with_evidence_kind": sum(kind_counts.values()),
+        "items_with_evidence_modality": sum(modality_counts.values()),
+    }
+
+
+def _diagnostic_text(item: ContextItem, key: str) -> str:
+    diagnostics = _as_dict(item.diagnostics)
+    provenance = _as_dict(diagnostics.get("provenance"))
+    value = diagnostics.get(key) or provenance.get(key)
+    text = _safe_optional_text(value, limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+    if not text or "[redacted]" in text:
+        return ""
+    return text
 
 
 def _diagnostic_source_ref_count(item: ContextItem) -> int:
