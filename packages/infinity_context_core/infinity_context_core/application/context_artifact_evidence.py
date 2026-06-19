@@ -340,6 +340,7 @@ def _context_items_from_manifest(
                 ),
             ),
             snippet,
+            include_char_range=True,
         )
         source_ref = source_refs[0]
         confidence = _confidence(raw_item.get("confidence"))

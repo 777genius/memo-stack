@@ -64,10 +64,20 @@ def query_focused_snippet(
 def source_refs_with_query_snippet(
     source_refs: tuple[SourceRef, ...],
     snippet: QuerySnippet | None,
+    *,
+    include_char_range: bool = False,
 ) -> tuple[SourceRef, ...]:
     if snippet is None or not source_refs:
         return source_refs
-    return tuple(replace(ref, quote_preview=snippet.text) for ref in source_refs)
+    return tuple(
+        replace(
+            ref,
+            quote_preview=snippet.text,
+            char_start=snippet.char_start if include_char_range else ref.char_start,
+            char_end=snippet.char_end if include_char_range else ref.char_end,
+        )
+        for ref in source_refs
+    )
 
 
 def query_snippet_diagnostics(snippet: QuerySnippet | None) -> dict[str, object]:

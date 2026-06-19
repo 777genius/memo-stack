@@ -765,6 +765,10 @@ def test_context_enriches_multimodal_evidence_with_query_focused_snippet(
     snippet = item["diagnostics"]["query_snippet"]
     assert "MEDIA_SNIPPET_MARKER Alex confirmed the Atlas launch date" in snippet
     assert snippet in item["citations"][0]["quote_preview"]
+    assert item["citations"][0]["char_range"] == {
+        "start": item["diagnostics"]["query_snippet_char_start"],
+        "end": item["diagnostics"]["query_snippet_char_end"],
+    }
     assert item["citations"][0]["time_range_ms"] == {"start": 420000, "end": 427000}
     assert "time_ms=420000-427000" in data["rendered_text"]
 
