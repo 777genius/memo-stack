@@ -49,5 +49,7 @@ def test_event_anchor_context_includes_project_identity_metadata() -> None:
 
     assert "atlas" in retrieval_text
     assert "about: atlas" in item.text
+    assert item.diagnostics["identity_scope"] == "event"
+    assert item.diagnostics["identity_key"] == "event:call with aleks about atlas 2 hours ago"
     assert item.diagnostics["event_project_label"] == "atlas"
     assert item.diagnostics["project_canonical_key"] == "atlas"

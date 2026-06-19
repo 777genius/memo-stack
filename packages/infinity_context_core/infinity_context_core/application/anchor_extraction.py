@@ -391,7 +391,20 @@ def structured_anchor_metadata_for_label(
     canonical_key = canonical_anchor_key_for_kind(kind, label)
     return {
         "canonical_key": canonical_key,
+        **_identity_anchor_metadata(kind, canonical_key),
         **_structured_anchor_metadata(kind, label, canonical_key=canonical_key),
+    }
+
+
+def _identity_anchor_metadata(
+    kind: MemoryAnchorKind,
+    canonical_key: str,
+) -> dict[str, object]:
+    identity_scope = kind.value
+    return {
+        "identity_scope": identity_scope,
+        "identity_key": f"{identity_scope}:{canonical_key}",
+        "identity_resolver_version": "anchor-identity-v1",
     }
 
 

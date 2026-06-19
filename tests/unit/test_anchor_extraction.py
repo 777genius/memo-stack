@@ -238,6 +238,8 @@ def test_anchor_extraction_structures_event_identity_metadata() -> None:
 
     call = events["call with alex 2 hours ago"]
     assert call["anchor_family"] == "event"
+    assert call["identity_scope"] == "event"
+    assert call["identity_key"] == "event:call with aleks 2 hours ago"
     assert call["event_type"] == "call"
     assert call["event_participant_label"] == "alex"
     assert call["event_participant_canonical_key"] == "aleks"
@@ -308,6 +310,11 @@ def test_anchor_extraction_structures_people_projects_and_organizations() -> Non
         for anchor in anchors
     }
 
+    assert by_key[("person", "alex")]["identity_scope"] == "person"
+    assert by_key[("person", "alex")]["identity_key"] == "person:aleks"
     assert by_key[("person", "alex")]["person_canonical_key"] == "aleks"
+    assert by_key[("project", "atlas")]["identity_scope"] == "project"
+    assert by_key[("project", "atlas")]["identity_key"] == "project:atlas"
     assert by_key[("project", "atlas")]["project_canonical_key"] == "atlas"
+    assert by_key[("organization", "openai")]["identity_key"] == "organization:openai"
     assert by_key[("organization", "openai")]["organization_canonical_key"] == "openai"

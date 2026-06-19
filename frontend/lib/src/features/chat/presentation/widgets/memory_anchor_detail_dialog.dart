@@ -132,6 +132,11 @@ class MemoryAnchorDetailDialog extends StatelessWidget {
                       label:
                           'canonical: ${_metadataText(anchor, 'canonical_key')}',
                     ),
+                  if (_metadataText(anchor, 'identity_key') != null)
+                    _AnchorChip(
+                      label:
+                          'identity: ${_metadataText(anchor, 'identity_key')}',
+                    ),
                   if (_metadataText(anchor, 'merged_into_anchor_id') != null)
                     _AnchorChip(
                       label:

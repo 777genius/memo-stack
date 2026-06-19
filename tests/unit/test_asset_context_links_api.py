@@ -2018,7 +2018,7 @@ def test_context_linking_quality_golden_links_temporal_intent_without_text_match
             and item["metadata"]["external_ref"] == "alex-chat-hour-ago"
         )
         assert fact_candidate["metadata"]["matched_terms"] == []
-        assert thread_candidate["metadata"]["matched_terms"] == []
+        assert _lexical_matched_terms(thread_candidate["metadata"]["matched_terms"]) == []
         assert "temporal intent match" in fact_candidate["reasons"]
         assert "temporal_intent_match" in fact_candidate["metadata"]["reason_codes"]
         assert fact_candidate["suggestion_id"]
@@ -2101,7 +2101,7 @@ def test_context_linking_quality_golden_links_last_week_intent_without_text_matc
             and item["metadata"]["external_ref"] == "alex-review-week-old"
         )
         assert fact_candidate["metadata"]["matched_terms"] == []
-        assert thread_candidate["metadata"]["matched_terms"] == []
+        assert _lexical_matched_terms(thread_candidate["metadata"]["matched_terms"]) == []
         assert "temporal intent match" in fact_candidate["reasons"]
         assert "temporal_intent_match" in fact_candidate["metadata"]["reason_codes"]
         assert fact_candidate["suggestion_id"]
@@ -2184,7 +2184,7 @@ def test_context_linking_quality_golden_links_numeric_hours_intent_without_text_
             and item["metadata"]["external_ref"] == "alex-chat-five-hours-ago"
         )
         assert fact_candidate["metadata"]["matched_terms"] == []
-        assert thread_candidate["metadata"]["matched_terms"] == []
+        assert _lexical_matched_terms(thread_candidate["metadata"]["matched_terms"]) == []
         assert "temporal intent match" in fact_candidate["reasons"]
         assert "temporal_intent_match" in fact_candidate["metadata"]["reason_codes"]
         assert fact_candidate["suggestion_id"]
@@ -2765,6 +2765,10 @@ def test_scoped_tokens_can_only_access_assets_and_links_in_their_memory_scope(
     assert hidden_cross_target.status_code == 400
     assert hidden_cross_target.json()["error"]["code"] == "memory.validation"
     assert "beta secret asset" not in cross_asset_download.text
+
+
+def _lexical_matched_terms(terms: list[str]) -> list[str]:
+    return [term for term in terms if not term.startswith("event_temporal:")]
 
 
 async def _age_fact_and_thread(

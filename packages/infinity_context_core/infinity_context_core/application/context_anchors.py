@@ -31,6 +31,8 @@ _IDENTITY_METADATA_KEYS = (
     "event_temporal_hint_code",
     "event_temporal_quantity",
     "event_temporal_unit",
+    "identity_key",
+    "identity_scope",
 )
 _IDENTITY_LIST_METADATA_KEYS = ("event_identity_terms",)
 
