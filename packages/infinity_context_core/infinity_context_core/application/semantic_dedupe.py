@@ -6,7 +6,10 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from infinity_context_core.application.anchor_extraction import extract_observed_anchors
+from infinity_context_core.application.anchor_extraction import (
+    ObservedAnchor,
+    extract_observed_anchors,
+)
 from infinity_context_core.domain.entities import MemoryAnchorKind
 
 _NUMERIC_VALUE_RE = re.compile(
@@ -156,10 +159,14 @@ def semantic_memory_terms(text: str) -> set[str]:
         "документах": "document",
         "документов": "document",
         "документы": "document",
+        "использовать": "uses",
+        "использует": "uses",
         "искать": "retrieval",
         "ищем": "retrieval",
         "поиск": "retrieval",
+        "проект": "project",
         "проекта": "project",
+        "проекте": "project",
         "проектам": "project",
         "проектами": "project",
         "проектах": "project",
@@ -557,10 +564,17 @@ def _named_anchor_keys(
     reasons: set[str] | None = None,
 ) -> set[str]:
     return {
-        anchor.normalized_key
+        _canonical_named_anchor_key(anchor)
         for anchor in extract_observed_anchors(text)
         if anchor.kind == kind and (reasons is None or anchor.reason in reasons)
     }
+
+
+def _canonical_named_anchor_key(anchor: ObservedAnchor) -> str:
+    canonical_key = anchor.metadata.get("canonical_key")
+    if isinstance(canonical_key, str) and canonical_key.strip():
+        return canonical_key.strip().casefold()
+    return anchor.normalized_key.strip().casefold()
 
 
 def _has_event_anchor(text: str) -> bool:

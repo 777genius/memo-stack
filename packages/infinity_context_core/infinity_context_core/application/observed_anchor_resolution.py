@@ -16,6 +16,21 @@ from infinity_context_core.domain.entities import (
 )
 from infinity_context_core.ports.unit_of_work import UnitOfWorkPort
 
+_CROSS_SCRIPT_CANONICAL_KINDS = {
+    MemoryAnchorKind.ORGANIZATION,
+    MemoryAnchorKind.PROJECT,
+}
+_UNSAFE_CROSS_SCRIPT_CANONICAL_KEYS = {
+    "api",
+    "app",
+    "chat",
+    "demo",
+    "dev",
+    "docs",
+    "test",
+    "team",
+}
+
 
 async def find_active_by_observed_canonical_key(
     uow: UnitOfWorkPort,
@@ -35,9 +50,10 @@ async def find_active_by_observed_canonical_key(
         limit=500,
     )
     for anchor in anchors:
-        if observed_key in canonical_anchor_keys(anchor) and _same_script_family(
-            anchor.label,
-            observed.label,
+        if observed_key in canonical_anchor_keys(anchor) and _safe_canonical_identity_match(
+            anchor=anchor,
+            observed=observed,
+            observed_key=observed_key,
         ):
             return anchor
     return None
@@ -84,10 +100,40 @@ def canonical_anchor_keys(anchor: MemoryAnchor) -> set[str]:
         canonical_anchor_key(anchor.label),
     }
     keys.update(canonical_anchor_key(alias) for alias in anchor.aliases)
-    metadata_key = anchor.metadata.get("canonical_key")
-    if isinstance(metadata_key, str):
-        keys.add(metadata_key)
+    for metadata_name in (
+        "canonical_key",
+        "person_canonical_key",
+        "project_canonical_key",
+        "organization_canonical_key",
+    ):
+        metadata_key = anchor.metadata.get(metadata_name)
+        if isinstance(metadata_key, str):
+            keys.add(metadata_key.strip().casefold())
     return {key for key in keys if key}
+
+
+def _safe_canonical_identity_match(
+    *,
+    anchor: MemoryAnchor,
+    observed: ObservedAnchor,
+    observed_key: str,
+) -> bool:
+    if _same_script_family(anchor.label, observed.label):
+        return True
+    return (
+        anchor.kind in _CROSS_SCRIPT_CANONICAL_KINDS
+        and observed.kind == anchor.kind
+        and _is_stable_cross_script_canonical_key(observed_key)
+    )
+
+
+def _is_stable_cross_script_canonical_key(value: str) -> bool:
+    compact = "".join(value.split()).casefold()
+    return (
+        len(compact) >= 4
+        and compact not in _UNSAFE_CROSS_SCRIPT_CANONICAL_KEYS
+        and any("a" <= char <= "z" for char in compact)
+    )
 
 
 def _same_script_family(left: str, right: str) -> bool:

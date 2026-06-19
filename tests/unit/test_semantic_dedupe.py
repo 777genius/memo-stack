@@ -47,6 +47,17 @@ def test_semantic_dedupe_recognizes_russian_document_retrieval_paraphrase() -> N
     assert "project:qdrant" in match.overlap_terms
 
 
+def test_semantic_dedupe_recognizes_cross_script_project_identity() -> None:
+    match = describe_duplicate_fact_match(
+        "Project Atlas uses Qdrant for documents.",
+        "проект Атлас использует Qdrant для документов.",
+    )
+
+    assert match is not None
+    assert match.match_type == "semantic_token_overlap"
+    assert "project:atlas" in match.overlap_terms
+
+
 def test_semantic_dedupe_rejects_exclusive_engine_mismatch() -> None:
     assert not looks_equivalent_fact(
         "Docs retrieval should use Qdrant vectors.",

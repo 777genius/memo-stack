@@ -481,6 +481,83 @@ def test_anchor_backfill_collapses_russian_person_case_variants(tmp_path: Path) 
         assert person_anchors[0]["metadata"]["canonical_key"] == "aleks"
 
 
+def test_anchor_backfill_collapses_cross_script_project_identity(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        latin_capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-cross-script-project",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-project-atlas-latin",
+                "text": "Project Atlas keeps Qdrant document retrieval notes.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert latin_capture.status_code == 201, latin_capture.text
+
+        cyrillic_capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "anchor-cross-script-project",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "review",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-project-atlas-cyrillic",
+                "text": "В проекте Атлас хранится заметка про документы.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert cyrillic_capture.status_code == 201, cyrillic_capture.text
+
+        backfill = client.post(
+            "/v1/anchors/backfill",
+            json={
+                "space_slug": "anchor-cross-script-project",
+                "memory_scope_external_ref": "default",
+                "limit_per_source": 20,
+            },
+            headers=auth_headers(),
+        )
+        assert backfill.status_code == 200, backfill.text
+
+        anchors = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "anchor-cross-script-project",
+                "memory_scope_external_ref": "default",
+                "kind": "project",
+                "limit": 100,
+            },
+            headers=auth_headers(),
+        )
+        assert anchors.status_code == 200, anchors.text
+        atlas_anchors = [
+            item
+            for item in anchors.json()["data"]
+            if item["metadata"].get("canonical_key") == "atlas"
+        ]
+
+        assert len(atlas_anchors) == 1
+        assert atlas_anchors[0]["normalized_key"] in {"atlas", "атлас"}
+        assert {"Atlas", "Атлас"}.issubset(set(atlas_anchors[0]["aliases"]))
+        assert {
+            ref["source_id"] for ref in atlas_anchors[0]["evidence_refs"]
+        } == {
+            latin_capture.json()["data"]["id"],
+            cyrillic_capture.json()["data"]["id"],
+        }
+
+
 def test_anchor_backfill_skips_legacy_alias_conflict_without_mutating_anchor(
     tmp_path: Path,
 ) -> None:
