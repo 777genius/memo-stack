@@ -22,9 +22,23 @@ from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _MEDIA_MANIFEST_SCHEMA_VERSION = "infinity_context.multimodal_manifest.v1"
 _MAX_MANIFEST_BYTES = 1_000_000
+_MAX_EVIDENCE_CANDIDATES = 240
 _MAX_EVIDENCE_TEXT_CHARS = 700
 _MAX_QUOTE_PREVIEW_CHARS = 240
 _MAX_JOBS_PER_SCOPE = 120
+_EVIDENCE_KIND_BOOSTS = {
+    "transcript_segment": 0.035,
+    "ocr_region": 0.03,
+    "vision_summary": 0.025,
+    "document_chunk": 0.02,
+    "table": 0.015,
+}
+_EVIDENCE_MODALITY_BOOSTS = {
+    "audio": 0.012,
+    "video": 0.012,
+    "image": 0.01,
+    "document": 0.008,
+}
 _INJECTION_PATTERNS = (
     re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+instructions\b", re.I),
     re.compile(r"\b(system|developer|hidden)\s+(prompt|message|instructions?)\b", re.I),
@@ -90,28 +104,40 @@ class ArtifactEvidenceContextCollector:
             diagnostics["artifact_evidence_status"] = "ok"
             return ()
 
-        items: list[ContextItem] = []
+        ranked_candidates: list[ContextItem] = []
+        candidate_limit = min(
+            _MAX_EVIDENCE_CANDIDATES,
+            max(query.max_evidence_items * 8, query.max_evidence_items),
+        )
         for candidate in manifests:
-            if len(items) >= query.max_evidence_items:
-                break
             payload = await self._read_manifest(candidate.artifact, diagnostics=diagnostics)
             if payload is None:
                 continue
             diagnostics["artifact_evidence_manifests_used"] = (
                 int(diagnostics["artifact_evidence_manifests_used"]) + 1
             )
-            for item in _context_items_from_manifest(
-                candidate=candidate,
-                payload=payload,
-                query=query,
-                diagnostics=diagnostics,
-            ):
-                items.append(item)
-                if len(items) >= query.max_evidence_items:
-                    break
+            ranked_candidates.extend(
+                _context_items_from_manifest(
+                    candidate=candidate,
+                    payload=payload,
+                    query=query,
+                    diagnostics=diagnostics,
+                )
+            )
+            if len(ranked_candidates) > candidate_limit:
+                ranked_candidates = sorted(
+                    ranked_candidates,
+                    key=_artifact_evidence_rank_key,
+                )[:candidate_limit]
+                diagnostics["artifact_evidence_candidate_cap_reached_count"] = (
+                    int(diagnostics["artifact_evidence_candidate_cap_reached_count"]) + 1
+                )
+        ranked_candidates = sorted(ranked_candidates, key=_artifact_evidence_rank_key)
+        items = tuple(ranked_candidates[: query.max_evidence_items])
+        diagnostics["artifact_evidence_ranked_candidate_count"] = len(ranked_candidates)
         diagnostics["artifact_evidence_items_used"] = len(items)
         diagnostics["artifact_evidence_status"] = "ok"
-        return tuple(items)
+        return items
 
     async def _list_candidate_manifests(
         self,
@@ -252,7 +278,33 @@ def _context_items_from_manifest(
             continue
         artifact = candidate.artifact
         source_ref = _source_ref(artifact=artifact, raw_item=raw_item, index=index, text=text)
-        score = min(0.86, round(0.7 + relevance.score_boost, 4))
+        confidence = _confidence(raw_item.get("confidence"))
+        kind = safe_metadata_text(str(raw_item.get("kind") or "unknown"))
+        modality = safe_metadata_text(str(raw_item.get("modality") or "unknown"))
+        kind_boost = _evidence_kind_boost(kind)
+        modality_boost = _evidence_modality_boost(modality)
+        confidence_boost = _confidence_boost(confidence)
+        coordinate_boost = _coordinate_boost(source_ref)
+        if confidence is not None:
+            diagnostics["artifact_evidence_confidence_signal_count"] = (
+                int(diagnostics["artifact_evidence_confidence_signal_count"]) + 1
+            )
+        if coordinate_boost > 0:
+            diagnostics["artifact_evidence_coordinate_signal_count"] = (
+                int(diagnostics["artifact_evidence_coordinate_signal_count"]) + 1
+            )
+        score = min(
+            0.92,
+            round(
+                0.68
+                + relevance.score_boost
+                + confidence_boost
+                + coordinate_boost
+                + kind_boost
+                + modality_boost,
+                4,
+            ),
+        )
         items.append(
             ContextItem(
                 item_id=f"{artifact.id}:{_safe_evidence_id(raw_item, index=index)}",
@@ -266,9 +318,14 @@ def _context_items_from_manifest(
                     "retrieval_sources": ["artifact_evidence"],
                     "ranking_reason": "matched first-party multimodal extraction evidence",
                     "score_signals": {
-                        "base_score": 0.7,
+                        "base_score": 0.68,
                         "final_score": score,
                         "retrieval_channel": "artifact_evidence",
+                        "evidence_confidence": confidence,
+                        "confidence_boost": confidence_boost,
+                        "coordinate_boost": coordinate_boost,
+                        "evidence_kind_boost": kind_boost,
+                        "evidence_modality_boost": modality_boost,
                         "query_term_count": relevance.query_term_count,
                         "unique_term_hits": relevance.unique_term_hits,
                         "capped_frequency_hits": relevance.capped_frequency_hits,
@@ -283,18 +340,16 @@ def _context_items_from_manifest(
                         "job_id": candidate.job_id,
                         "artifact_type": artifact.artifact_type.value,
                         "manifest_schema_version": _MEDIA_MANIFEST_SCHEMA_VERSION,
-                        "evidence_kind": safe_metadata_text(str(raw_item.get("kind") or "unknown")),
-                        "evidence_modality": safe_metadata_text(
-                            str(raw_item.get("modality") or "unknown")
-                        ),
+                        "evidence_kind": kind,
+                        "evidence_modality": modality,
+                        "evidence_confidence": confidence,
                         **source_ref_location_summary((source_ref,)),
                     },
                     "artifact_id": str(artifact.id),
                     "asset_id": str(artifact.asset_id),
-                    "evidence_kind": safe_metadata_text(str(raw_item.get("kind") or "unknown")),
-                    "evidence_modality": safe_metadata_text(
-                        str(raw_item.get("modality") or "unknown")
-                    ),
+                    "evidence_kind": kind,
+                    "evidence_modality": modality,
+                    "evidence_confidence": confidence,
                     **source_ref_location_summary((source_ref,)),
                 },
             )
@@ -360,6 +415,60 @@ def _bbox(value: object) -> tuple[float, float, float, float] | None:
     return (parsed[0], parsed[1], parsed[2], parsed[3])
 
 
+def _confidence(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(parsed):
+        return None
+    return min(1.0, max(0.0, parsed))
+
+
+def _confidence_boost(confidence: float | None) -> float:
+    if confidence is None:
+        return 0.0
+    return round(confidence * 0.045, 4)
+
+
+def _coordinate_boost(source_ref: SourceRef) -> float:
+    coordinate_count = sum(
+        (
+            source_ref.page_number is not None,
+            source_ref.bbox is not None,
+            source_ref.time_start_ms is not None or source_ref.time_end_ms is not None,
+        )
+    )
+    return min(0.03, round(coordinate_count * 0.012, 4))
+
+
+def _evidence_kind_boost(kind: str) -> float:
+    return _EVIDENCE_KIND_BOOSTS.get(kind.casefold().strip(), 0.0)
+
+
+def _evidence_modality_boost(modality: str) -> float:
+    return _EVIDENCE_MODALITY_BOOSTS.get(modality.casefold().strip(), 0.0)
+
+
+def _artifact_evidence_rank_key(item: ContextItem) -> tuple[float, float, str, str, str]:
+    diagnostics = item.diagnostics if isinstance(item.diagnostics, dict) else {}
+    score_signals = diagnostics.get("score_signals")
+    confidence = 0.0
+    if isinstance(score_signals, dict):
+        raw_confidence = score_signals.get("evidence_confidence")
+        if isinstance(raw_confidence, (int, float)) and not isinstance(raw_confidence, bool):
+            confidence = float(raw_confidence)
+    return (
+        -round(item.score, 8),
+        -round(confidence, 8),
+        str(diagnostics.get("asset_id") or ""),
+        str(item.source_refs[0].chunk_id if item.source_refs else ""),
+        item.item_id,
+    )
+
+
 def _looks_like_prompt_injection(text: str) -> bool:
     return any(pattern.search(text) for pattern in _INJECTION_PATTERNS)
 
@@ -379,6 +488,10 @@ def _init_diagnostics(diagnostics: dict[str, object]) -> None:
         "artifact_evidence_manifests_used",
         "artifact_evidence_items_considered",
         "artifact_evidence_items_used",
+        "artifact_evidence_ranked_candidate_count",
+        "artifact_evidence_candidate_cap_reached_count",
+        "artifact_evidence_confidence_signal_count",
+        "artifact_evidence_coordinate_signal_count",
         "artifact_evidence_query_drop_count",
         "artifact_evidence_sensitive_drop_count",
         "artifact_evidence_prompt_injection_drop_count",

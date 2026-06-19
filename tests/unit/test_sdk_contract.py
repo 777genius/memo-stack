@@ -886,6 +886,10 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "artifact_evidence_manifests_used": 2,
                         "artifact_evidence_items_considered": 5,
                         "artifact_evidence_items_used": 4,
+                        "artifact_evidence_ranked_candidate_count": 8,
+                        "artifact_evidence_candidate_cap_reached_count": 1,
+                        "artifact_evidence_confidence_signal_count": 6,
+                        "artifact_evidence_coordinate_signal_count": 3,
                         "artifact_evidence_query_drop_count": 1,
                         "artifact_evidence_sensitive_drop_count": 2,
                         "artifact_evidence_prompt_injection_drop_count": 1,
@@ -1031,6 +1035,10 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.artifact_evidence_manifests_used == 2
     assert bundle.diagnostics.artifact_evidence_items_considered == 5
     assert bundle.diagnostics.artifact_evidence_items_used == 4
+    assert bundle.diagnostics.artifact_evidence_ranked_candidate_count == 8
+    assert bundle.diagnostics.artifact_evidence_candidate_cap_reached_count == 1
+    assert bundle.diagnostics.artifact_evidence_confidence_signal_count == 6
+    assert bundle.diagnostics.artifact_evidence_coordinate_signal_count == 3
     assert bundle.diagnostics.artifact_evidence_query_drop_count == 1
     assert bundle.diagnostics.artifact_evidence_sensitive_drop_count == 2
     assert bundle.diagnostics.artifact_evidence_prompt_injection_drop_count == 1

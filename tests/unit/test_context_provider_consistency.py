@@ -614,6 +614,95 @@ def test_context_retrieves_media_manifest_artifact_evidence(tmp_path: Path) -> N
     assert {item["item_type"] for item in data["items"]} == {"extraction_artifact"}
 
 
+def test_context_ranks_media_manifest_evidence_before_limiting(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        container = client.app.state.container
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-ranked-media-context",
+                "filename": "ranked-atlas-call.wav",
+            },
+            content=b"fake wav bytes",
+            headers={**auth_headers(), "Content-Type": "audio/wav"},
+        )
+        assert upload.status_code == 201, upload.text
+        asset = upload.json()["data"]
+        asyncio.run(
+            _store_media_manifest_artifact(
+                container,
+                asset=asset,
+                payload={
+                    "schema_version": "infinity_context.multimodal_manifest.v1",
+                    "evidence_items": [
+                        {
+                            "id": "element:0",
+                            "kind": "metadata_note",
+                            "modality": "audio",
+                            "text_preview": (
+                                "RANKED_CONTEXT_MARKER Atlas background mention only."
+                            ),
+                            "confidence": 0.05,
+                        },
+                        {
+                            "id": "element:1",
+                            "kind": "transcript_segment",
+                            "modality": "audio",
+                            "text_preview": (
+                                "RANKED_CONTEXT_MARKER Atlas renewal decision approved by Alex."
+                            ),
+                            "time_range": {"start_ms": 42000, "end_ms": 49100},
+                            "confidence": 0.97,
+                        },
+                        {
+                            "id": "element:2",
+                            "kind": "ocr_region",
+                            "modality": "image",
+                            "text_preview": (
+                                "RANKED_CONTEXT_MARKER Atlas sidebar note without decision."
+                            ),
+                            "bbox": [8.0, 10.0, 120.0, 44.0],
+                            "confidence": 0.4,
+                        },
+                    ],
+                },
+            )
+        )
+
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-ranked-media-context",
+                "query": "RANKED_CONTEXT_MARKER Atlas renewal decision",
+                "max_facts": 0,
+                "max_chunks": 0,
+                "max_evidence_items": 1,
+                "token_budget": 384,
+            },
+            headers=auth_headers(),
+        )
+
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    rendered = data["rendered_text"]
+    diagnostics = data["diagnostics"]
+    assert "Atlas renewal decision approved by Alex" in rendered
+    assert "Atlas background mention only" not in rendered
+    assert "time_ms=42000-49100" in rendered
+    assert diagnostics["artifact_evidence_ranked_candidate_count"] == 3
+    assert diagnostics["artifact_evidence_items_used"] == 1
+    assert diagnostics["artifact_evidence_confidence_signal_count"] == 3
+    assert diagnostics["artifact_evidence_coordinate_signal_count"] == 2
+    item = data["items"][0]
+    assert item["diagnostics"]["evidence_confidence"] == 0.97
+    assert item["diagnostics"]["score_signals"]["confidence_boost"] > 0
+    assert item["diagnostics"]["score_signals"]["coordinate_boost"] > 0
+
+
 def test_context_skips_media_manifest_evidence_for_deleted_asset(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         container = client.app.state.container
