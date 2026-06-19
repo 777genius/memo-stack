@@ -925,6 +925,10 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "source_refs_total": 25,
                         "source_refs_returned": 20,
                         "source_refs_truncated": True,
+                        "citations_total": 25,
+                        "citations_returned": 20,
+                        "citations_truncated": True,
+                        "items_with_citations": 1,
                         "citation_quote_previews_rendered": 9,
                         "sensitive_citation_quote_previews_skipped": 1,
                         "api_key": raw_secret,
@@ -950,6 +954,24 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                 }
                                 for index in range(25)
                             ],
+                            "citations": [
+                                {
+                                    "citation_id": f"chunk:chunk_1:citation:{index + 1}",
+                                    "label": f"[{index + 1}] document doc_{index} p.{index + 1}",
+                                    "source_type": "document",
+                                    "source_id": f"doc_{index}",
+                                    "chunk_id": f"chunk_{index}",
+                                    "quote_preview": f"preview {index}",
+                                    "char_range": {"start": index, "end": index + 10},
+                                    "page_number": index + 1,
+                                    "time_range_ms": {
+                                        "start": index * 1000,
+                                        "end": index * 1000 + 500,
+                                    },
+                                    "bbox": [0, 1, 120, 40],
+                                }
+                                for index in range(25)
+                            ],
                             "diagnostics": {
                                 "retrieval_source": "vector_chunks",
                                 "retrieval_sources": [
@@ -959,6 +981,9 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                 "retrieval_sources_total": 12,
                                 "retrieval_sources_returned": 8,
                                 "retrieval_sources_truncated": True,
+                                "citations_total": 25,
+                                "citations_returned": 20,
+                                "citations_truncated": True,
                                 "review_only": True,
                                 "stale_reason": "fact_status_superseded",
                                 "score_signals": {
@@ -1074,6 +1099,10 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.source_refs_total == 25
     assert bundle.diagnostics.source_refs_returned == 20
     assert bundle.diagnostics.source_refs_truncated is True
+    assert bundle.diagnostics.citations_total == 25
+    assert bundle.diagnostics.citations_returned == 20
+    assert bundle.diagnostics.citations_truncated is True
+    assert bundle.diagnostics.items_with_citations == 1
     assert bundle.diagnostics.citation_quote_previews_rendered == 9
     assert bundle.diagnostics.sensitive_citation_quote_previews_skipped == 1
     assert "api_key" not in bundle.diagnostics.raw
@@ -1081,16 +1110,28 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     item = bundle.items[0]
     assert item.memory_scope_id == "memory_scope_default"
     assert len(item.source_refs) == 20
+    assert len(item.citations) == 20
     assert item.source_refs[0].source_id == "doc_0"
     assert item.source_refs[0].page_number == 1
     assert item.source_refs[0].time_start_ms == 0
     assert item.source_refs[0].time_end_ms == 500
     assert item.source_refs[0].bbox == (0.0, 1.0, 120.0, 40.0)
+    assert item.citations[0].citation_id == "chunk:chunk_1:citation:1"
+    assert item.citations[0].source_id == "doc_0"
+    assert item.citations[0].char_start == 0
+    assert item.citations[0].char_end == 10
+    assert item.citations[0].page_number == 1
+    assert item.citations[0].time_start_ms == 0
+    assert item.citations[0].time_end_ms == 500
+    assert item.citations[0].bbox == (0.0, 1.0, 120.0, 40.0)
     assert item.diagnostics.retrieval_source == "vector_chunks"
     assert item.diagnostics.retrieval_sources == ("vector_chunks", "keyword_chunks")
     assert item.diagnostics.retrieval_sources_total == 12
     assert item.diagnostics.retrieval_sources_returned == 8
     assert item.diagnostics.retrieval_sources_truncated is True
+    assert item.diagnostics.citations_total == 25
+    assert item.diagnostics.citations_returned == 20
+    assert item.diagnostics.citations_truncated is True
     assert item.diagnostics.ranking_reason == "hybrid match via vector_chunks, keyword_chunks"
     assert item.diagnostics.review_only is True
     assert item.diagnostics.stale_reason == "fact_status_superseded"

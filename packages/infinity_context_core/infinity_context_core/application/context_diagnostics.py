@@ -477,6 +477,10 @@ def _source_ref_counts(items: tuple[ContextItem, ...]) -> dict[str, int | bool]:
         "source_refs_total": total,
         "source_refs_returned": returned,
         "source_refs_truncated": total > returned,
+        "citations_total": total,
+        "citations_returned": returned,
+        "citations_truncated": total > returned,
+        "items_with_citations": sum(1 for item in items if item.source_refs),
     }
 
 

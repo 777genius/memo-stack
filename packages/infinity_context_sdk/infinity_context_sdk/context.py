@@ -10,6 +10,7 @@ from infinity_context_sdk._redaction import redact_sensitive_text
 MAX_RETRIEVAL_SOURCES = 8
 MAX_SOURCE_REFS = 20
 MAX_MAPPING_ITEMS = 24
+MAX_BUNDLE_DIAGNOSTIC_ITEMS = 96
 MAX_LIST_ITEMS = 8
 MAX_KEY_CHARS = 80
 MAX_STRING_CHARS = 240
@@ -43,6 +44,22 @@ class ContextSourceRef:
 
 
 @dataclass(frozen=True)
+class ContextCitation:
+    citation_id: str
+    label: str
+    source_type: str
+    source_id: str
+    chunk_id: str | None = None
+    quote_preview: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    page_number: int | None = None
+    time_start_ms: int | None = None
+    time_end_ms: int | None = None
+    bbox: tuple[float, float, float, float] | None = None
+
+
+@dataclass(frozen=True)
 class ContextItemDiagnostics:
     retrieval_source: str | None
     retrieval_sources: tuple[str, ...]
@@ -55,6 +72,9 @@ class ContextItemDiagnostics:
     raw: Mapping[str, object]
     review_only: bool = False
     stale_reason: str | None = None
+    citations_total: int = 0
+    citations_returned: int = 0
+    citations_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,6 +85,7 @@ class ContextItem:
     text: str
     score: float
     source_refs: tuple[ContextSourceRef, ...]
+    citations: tuple[ContextCitation, ...]
     is_instruction: bool
     diagnostics: ContextItemDiagnostics
 
@@ -133,6 +154,10 @@ class ContextBundleDiagnostics:
     source_refs_total: int = 0
     source_refs_returned: int = 0
     source_refs_truncated: bool = False
+    citations_total: int = 0
+    citations_returned: int = 0
+    citations_truncated: bool = False
+    items_with_citations: int = 0
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
 
@@ -176,6 +201,11 @@ def _context_item_from_payload(payload: Mapping[str, object]) -> ContextItem:
             for ref in _as_list(payload.get("source_refs"))[:MAX_SOURCE_REFS]
             if isinstance(ref, Mapping)
         ),
+        citations=tuple(
+            _citation_from_payload(citation)
+            for citation in _as_list(payload.get("citations"))[:MAX_SOURCE_REFS]
+            if isinstance(citation, Mapping)
+        ),
         is_instruction=bool(payload.get("is_instruction")),
         diagnostics=diagnostics,
     )
@@ -192,6 +222,25 @@ def _source_ref_from_payload(payload: Mapping[str, object]) -> ContextSourceRef:
         page_number=_optional_int(payload.get("page_number")),
         time_start_ms=_optional_int(payload.get("time_start_ms")),
         time_end_ms=_optional_int(payload.get("time_end_ms")),
+        bbox=_optional_bbox(payload.get("bbox")),
+    )
+
+
+def _citation_from_payload(payload: Mapping[str, object]) -> ContextCitation:
+    char_range = _as_mapping(payload.get("char_range"))
+    time_range_ms = _as_mapping(payload.get("time_range_ms"))
+    return ContextCitation(
+        citation_id=_safe_text(payload.get("citation_id"), default="", limit=MAX_STRING_CHARS),
+        label=_safe_text(payload.get("label"), default="", limit=MAX_STRING_CHARS),
+        source_type=_safe_text(payload.get("source_type"), default=""),
+        source_id=_safe_text(payload.get("source_id"), default=""),
+        chunk_id=_optional_text(payload.get("chunk_id")),
+        quote_preview=_optional_text(payload.get("quote_preview")),
+        char_start=_optional_int(char_range.get("start")),
+        char_end=_optional_int(char_range.get("end")),
+        page_number=_optional_int(payload.get("page_number")),
+        time_start_ms=_optional_int(time_range_ms.get("start")),
+        time_end_ms=_optional_int(time_range_ms.get("end")),
         bbox=_optional_bbox(payload.get("bbox")),
     )
 
@@ -232,6 +281,12 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
     safe_raw["review_only"] = review_only
     if stale_reason:
         safe_raw["stale_reason"] = stale_reason
+    citations_total = _non_negative_int(raw.get("citations_total"))
+    citations_returned = _non_negative_int(raw.get("citations_returned"))
+    citations_truncated = _safe_bool(raw.get("citations_truncated"))
+    safe_raw["citations_total"] = citations_total
+    safe_raw["citations_returned"] = citations_returned
+    safe_raw["citations_truncated"] = citations_truncated
     return ContextItemDiagnostics(
         retrieval_source=retrieval_source,
         retrieval_sources=retrieval_sources,
@@ -244,11 +299,14 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
         raw=safe_raw,
         review_only=review_only,
         stale_reason=stale_reason,
+        citations_total=citations_total,
+        citations_returned=citations_returned,
+        citations_truncated=citations_truncated,
     )
 
 
 def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
-    raw = _bounded_mapping(value, max_items=64)
+    raw = _bounded_mapping(value, max_items=MAX_BUNDLE_DIAGNOSTIC_ITEMS)
     retrieval_sources_used = _safe_text_tuple(
         raw.get("retrieval_sources_used"),
         limit=MAX_RETRIEVAL_SOURCES,
@@ -387,6 +445,10 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         source_refs_total=_non_negative_int(raw.get("source_refs_total")),
         source_refs_returned=_non_negative_int(raw.get("source_refs_returned")),
         source_refs_truncated=_safe_bool(raw.get("source_refs_truncated")),
+        citations_total=_non_negative_int(raw.get("citations_total")),
+        citations_returned=_non_negative_int(raw.get("citations_returned")),
+        citations_truncated=_safe_bool(raw.get("citations_truncated")),
+        items_with_citations=_non_negative_int(raw.get("items_with_citations")),
         citation_quote_previews_rendered=_non_negative_int(
             raw.get("citation_quote_previews_rendered")
         ),

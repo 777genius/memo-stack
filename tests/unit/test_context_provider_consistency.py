@@ -497,6 +497,17 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
                 )
             )
         )
+        api_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "MULTIMODAL_CONTEXT_MARKER citation coordinates",
+                "consistency_mode": "canonical_only",
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
 
     assert len(result.chunks) == 1
     assert "page=2" in context.rendered_text
@@ -506,10 +517,28 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
     assert context.diagnostics["source_refs_with_time_range_count"] == 1
     assert context.diagnostics["source_refs_with_bbox_count"] == 1
     assert context.diagnostics["items_with_multimodal_source_refs"] == 1
+    assert context.diagnostics["citations_total"] == 3
+    assert context.diagnostics["citations_returned"] == 3
+    assert context.diagnostics["citations_truncated"] is False
+    assert context.diagnostics["items_with_citations"] == 1
     item = context.items[0]
     assert len(item.source_refs) == 3
     assert item.diagnostics["provenance"]["source_ref_count"] == 3
     assert item.diagnostics["provenance"]["source_refs_with_bbox_count"] == 1
+    assert api_context.status_code == 200, api_context.text
+    api_data = api_context.json()["data"]
+    api_item = api_data["items"][0]
+    assert len(api_item["citations"]) == 3
+    assert api_item["diagnostics"]["citations_total"] == 3
+    assert api_item["diagnostics"]["citations_returned"] == 3
+    assert api_item["diagnostics"]["citations_truncated"] is False
+    assert api_data["diagnostics"]["citations_total"] == 3
+    assert api_data["diagnostics"]["citations_returned"] == 3
+    assert api_data["diagnostics"]["items_with_citations"] == 1
+    assert api_item["citations"][0]["page_number"] == 2
+    assert api_item["citations"][1]["time_range_ms"] == {"start": 1200, "end": 5400}
+    assert api_item["citations"][2]["bbox"] == [12.0, 32.0, 300.0, 88.0]
+    assert api_item["citations"][2]["label"].endswith("bbox")
 
 
 def test_context_retrieves_media_manifest_artifact_evidence(tmp_path: Path) -> None:

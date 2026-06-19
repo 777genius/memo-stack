@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import should_retrieve
+from infinity_context_server.api.public_payload import safe_public_text
 from infinity_context_server.api.v1.scope_resolution import (
     resolve_existing_context_scope,
 )
@@ -56,9 +57,21 @@ def context_item_to_response(item) -> dict[str, Any]:
     diagnostics = dict(item.diagnostics or {})
     source_refs = tuple(item.source_refs)
     public_source_refs = source_refs[:_MAX_PUBLIC_CONTEXT_SOURCE_REFS]
+    citations = [
+        _source_ref_to_citation(
+            ref,
+            item_id=str(item.item_id),
+            item_type=str(item.item_type),
+            index=index,
+        )
+        for index, ref in enumerate(public_source_refs)
+    ]
     diagnostics["source_refs_total"] = len(source_refs)
     diagnostics["source_refs_returned"] = len(public_source_refs)
     diagnostics["source_refs_truncated"] = len(source_refs) > len(public_source_refs)
+    diagnostics["citations_total"] = len(source_refs)
+    diagnostics["citations_returned"] = len(citations)
+    diagnostics["citations_truncated"] = len(source_refs) > len(citations)
     return {
         "item_id": item.item_id,
         "item_type": item.item_type,
@@ -66,9 +79,115 @@ def context_item_to_response(item) -> dict[str, Any]:
         "text": item.text,
         "score": item.score,
         "source_refs": [source_ref_to_response(ref) for ref in public_source_refs],
+        "citations": citations,
         "is_instruction": item.is_instruction,
         "diagnostics": diagnostics,
     }
+
+
+def _source_ref_to_citation(
+    ref: object,
+    *,
+    item_id: str,
+    item_type: str,
+    index: int,
+) -> dict[str, Any]:
+    source = source_ref_to_response(ref)
+    citation_id = _citation_id(
+        item_id=item_id,
+        item_type=item_type,
+        index=index,
+    )
+    char_range = _range_payload(source.get("char_start"), source.get("char_end"))
+    time_range_ms = _range_payload(source.get("time_start_ms"), source.get("time_end_ms"))
+    return {
+        "citation_id": citation_id,
+        "label": _citation_label(source, index=index),
+        "source_type": source["source_type"],
+        "source_id": source["source_id"],
+        "chunk_id": source["chunk_id"],
+        "quote_preview": source["quote_preview"],
+        "char_range": char_range,
+        "page_number": source["page_number"],
+        "time_range_ms": time_range_ms,
+        "bbox": source["bbox"],
+    }
+
+
+def _citation_id(*, item_id: str, item_type: str, index: int) -> str:
+    safe_item_type = re.sub(r"[^a-zA-Z0-9_.:-]+", "_", item_type)[:80] or "item"
+    safe_item_id = re.sub(r"[^a-zA-Z0-9_.:-]+", "_", item_id)[:120] or "unknown"
+    return f"{safe_item_type}:{safe_item_id}:citation:{index + 1}"
+
+
+def _citation_label(source: dict[str, Any], *, index: int) -> str:
+    parts = [f"[{index + 1}]", str(source.get("source_type") or "source")]
+    source_id = str(source.get("source_id") or "")
+    if source_id:
+        parts.append(source_id)
+    if source.get("page_number") is not None:
+        parts.append(f"p.{source['page_number']}")
+    if source.get("time_start_ms") is not None or source.get("time_end_ms") is not None:
+        parts.append(
+            f"{source.get('time_start_ms') or 0}-{source.get('time_end_ms') or 0}ms"
+        )
+    if source.get("bbox") is not None:
+        parts.append("bbox")
+    return safe_public_text(" ".join(parts))[:240]
+
+
+def _range_payload(start: object, end: object) -> dict[str, int | None] | None:
+    if start is None and end is None:
+        return None
+    return {
+        "start": int(start) if isinstance(start, int) else None,
+        "end": int(end) if isinstance(end, int) else None,
+    }
+
+
+def _context_diagnostics_to_response(
+    diagnostics: dict[str, Any],
+    *,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    response = dict(diagnostics)
+    item_diagnostics = [
+        item.get("diagnostics")
+        for item in items
+        if isinstance(item.get("diagnostics"), dict)
+    ]
+    source_refs_total = sum(
+        _non_negative_int(item.get("source_refs_total")) for item in item_diagnostics
+    )
+    source_refs_returned = sum(
+        _non_negative_int(item.get("source_refs_returned")) for item in item_diagnostics
+    )
+    citations_total = sum(
+        _non_negative_int(item.get("citations_total")) for item in item_diagnostics
+    )
+    citations_returned = sum(len(item.get("citations") or []) for item in items)
+    response.update(
+        {
+            "source_refs_total": source_refs_total,
+            "source_refs_returned": source_refs_returned,
+            "source_refs_truncated": source_refs_total > source_refs_returned,
+            "citations_total": citations_total,
+            "citations_returned": citations_returned,
+            "citations_truncated": citations_total > citations_returned,
+            "items_with_citations": sum(1 for item in items if item.get("citations")),
+        }
+    )
+    return response
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
 
 
 @router.post("/context")
@@ -136,18 +255,23 @@ async def build_context(
             tags_none=_normalize_tags(request.tags_none),
         )
     )
+    response_items = [context_item_to_response(item) for item in bundle.items]
+    response_diagnostics = _context_diagnostics_to_response(
+        bundle.diagnostics,
+        items=response_items,
+    )
     response = {
         "meta": {"request_id": request_id},
         "data": {
             "bundle_id": bundle.bundle_id,
             "rendered_text": bundle.rendered_text,
-            "items": [context_item_to_response(item) for item in bundle.items],
-            "diagnostics": bundle.diagnostics,
+            "items": response_items,
+            "diagnostics": response_diagnostics,
         },
     }
     container.runtime_metrics.record_context(
         latency_ms=_elapsed_ms(started),
-        diagnostics=bundle.diagnostics,
+        diagnostics=response_diagnostics,
         request_id=request_id,
         use_case="build_context",
         scope=_trace_scope(scope),
@@ -227,17 +351,22 @@ async def search_memory(
             tags_none=_normalize_tags(request.tags_none),
         )
     )
+    response_items = [context_item_to_response(item) for item in bundle.items]
+    response_diagnostics = _context_diagnostics_to_response(
+        bundle.diagnostics,
+        items=response_items,
+    )
     response = {
         "meta": {"request_id": request_id},
         "data": {
-            "items": [context_item_to_response(item) for item in bundle.items],
+            "items": response_items,
             "next_cursor": None,
-            "diagnostics": bundle.diagnostics,
+            "diagnostics": response_diagnostics,
         },
     }
     container.runtime_metrics.record_context(
         latency_ms=_elapsed_ms(started),
-        diagnostics=bundle.diagnostics,
+        diagnostics=response_diagnostics,
         request_id=request_id,
         use_case="search_memory",
         scope=_trace_scope(scope),
