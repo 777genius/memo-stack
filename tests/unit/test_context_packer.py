@@ -293,6 +293,130 @@ def test_context_packer_preserves_evidence_family_diversity_under_budget() -> No
     assert result.bundle.diagnostics["dropped_by_budget"] == 2
 
 
+def test_context_packer_preserves_anchor_kind_diversity_under_budget() -> None:
+    person_anchor = ContextItem(
+        item_id="anchor_person_alex",
+        item_type="anchor",
+        text="person: Alex. identity: alex canonical person " + ("detail " * 4),
+        score=0.92,
+        source_refs=(),
+        diagnostics={"memory_scope_id": "memory_scope_default", "anchor_kind": "person"},
+    )
+    duplicate_person_anchor = ContextItem(
+        item_id="anchor_person_alex_duplicate",
+        item_type="anchor",
+        text="person: Alex Cooper. identity: alex duplicate " + ("detail " * 6),
+        score=0.9,
+        source_refs=(),
+        diagnostics={"memory_scope_id": "memory_scope_default", "anchor_kind": "person"},
+    )
+    project_anchor = ContextItem(
+        item_id="anchor_project_atlas",
+        item_type="anchor",
+        text="project: Atlas. identity: billing migration project " + ("detail " * 4),
+        score=0.55,
+        source_refs=(),
+        diagnostics={"memory_scope_id": "memory_scope_default", "anchor_kind": "project"},
+    )
+    event_anchor = ContextItem(
+        item_id="anchor_event_call",
+        item_type="anchor",
+        text="event: call with Alex. identity: time one hour ago " + ("detail " * 4),
+        score=0.54,
+        source_refs=(),
+        diagnostics={"memory_scope_id": "memory_scope_default", "anchor_kind": "event"},
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_anchor_kind_diversity",
+        items=(person_anchor, duplicate_person_anchor, project_anchor, event_anchor),
+        token_budget=130,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "person: Alex." in rendered
+    assert "project: Atlas." in rendered
+    assert "event: call with Alex." in rendered
+    assert "person: Alex Cooper." not in rendered
+    assert result.bundle.diagnostics["diversity_families_considered"] == 3
+    assert result.bundle.diagnostics["diversity_families_used"] == 3
+    assert result.bundle.diagnostics["diversity_items_used"] == 3
+
+
+def test_context_packer_preserves_multimodal_evidence_modality_diversity() -> None:
+    image_evidence = ContextItem(
+        item_id="artifact_image_primary",
+        item_type="extraction_artifact",
+        text="IMAGE_EVIDENCE_MARKER screenshot OCR says Atlas billing " + ("detail " * 6),
+        score=0.86,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-image",
+                chunk_id="image-region-1",
+                bbox=(10.0, 12.0, 90.0, 44.0),
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "image",
+        },
+    )
+    duplicate_image_evidence = ContextItem(
+        item_id="artifact_image_duplicate",
+        item_type="extraction_artifact",
+        text="IMAGE_DUPLICATE_MARKER another screenshot OCR line " + ("detail " * 8),
+        score=0.84,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-image",
+                chunk_id="image-region-2",
+                bbox=(10.0, 48.0, 90.0, 80.0),
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "image",
+        },
+    )
+    audio_evidence = ContextItem(
+        item_id="artifact_audio_transcript",
+        item_type="extraction_artifact",
+        text="AUDIO_EVIDENCE_MARKER transcript mentions Atlas billing " + ("detail " * 4),
+        score=0.5,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-audio",
+                chunk_id="audio-segment-1",
+                time_start_ms=1200,
+                time_end_ms=2800,
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "audio",
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_multimodal_modality_diversity",
+        items=(image_evidence, duplicate_image_evidence, audio_evidence),
+        token_budget=110,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "IMAGE_EVIDENCE_MARKER" in rendered
+    assert "AUDIO_EVIDENCE_MARKER" in rendered
+    assert "IMAGE_DUPLICATE_MARKER" not in rendered
+    assert "bbox=10,12,90,44" in rendered
+    assert "time_ms=1200-2800" in rendered
+    assert result.bundle.diagnostics["diversity_families_considered"] == 2
+    assert result.bundle.diagnostics["diversity_families_used"] == 2
+    assert result.bundle.diagnostics["diversity_items_used"] == 2
+
+
 def test_memory_block_drops_instruction_marked_items() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_no_instruction_role",

@@ -229,17 +229,74 @@ def _ordered_diversity_families(candidates: dict[str, ContextItem]) -> tuple[str
         sorted(
             candidates,
             key=lambda family: (
-                priority.get(family, len(priority)),
+                priority.get(_diversity_family_base(family), len(priority)),
                 context_rank_key(candidates[family]),
+                family,
             ),
         )
     )
 
 
 def _diversity_family(item: ContextItem) -> str:
+    if item.item_type == "anchor":
+        return _typed_diversity_family(
+            "anchor",
+            _diagnostic_text(item, "anchor_kind"),
+        )
+    if item.item_type == "extraction_artifact":
+        return _typed_diversity_family(
+            "extraction_artifact",
+            _diagnostic_text(item, "evidence_modality") or _source_ref_modality_hint(item),
+        )
     if item.item_type in _DIVERSITY_FAMILY_PRIORITY:
         return item.item_type
     return item.item_type or "unknown"
+
+
+def _diversity_family_base(family: str) -> str:
+    return family.split(":", 1)[0]
+
+
+def _typed_diversity_family(base: str, suffix: str) -> str:
+    safe_suffix = _safe_diversity_suffix(suffix)
+    return f"{base}:{safe_suffix}" if safe_suffix else base
+
+
+def _diagnostic_text(item: ContextItem, key: str) -> str:
+    diagnostics = item.diagnostics or {}
+    value = diagnostics.get(key)
+    if value is None:
+        provenance = diagnostics.get("provenance")
+        if isinstance(provenance, dict):
+            value = provenance.get(key)
+    return str(value).strip() if value is not None else ""
+
+
+def _safe_diversity_suffix(value: str) -> str:
+    text = value.strip().casefold()
+    if not text or "redacted" in text:
+        return ""
+    chars: list[str] = []
+    previous_dash = False
+    for char in text[:64]:
+        if char.isalnum():
+            chars.append(char)
+            previous_dash = False
+        elif not previous_dash:
+            chars.append("-")
+            previous_dash = True
+    return "".join(chars).strip("-")[:48]
+
+
+def _source_ref_modality_hint(item: ContextItem) -> str:
+    refs = item.source_refs
+    if any(ref.time_start_ms is not None or ref.time_end_ms is not None for ref in refs):
+        return "time_range"
+    if any(ref.bbox is not None for ref in refs):
+        return "image"
+    if any(ref.page_number is not None for ref in refs):
+        return "document"
+    return ""
 
 
 def _item_type_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
