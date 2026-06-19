@@ -18,6 +18,7 @@ class RuntimeMetrics:
     _context_latency_ms: list[float] = field(default_factory=list)
     _last_context_trace: dict[str, Any] | None = None
     _storage_maintenance_run_count: int = 0
+    _storage_maintenance_skipped_count: int = 0
     _storage_maintenance_degraded_count: int = 0
     _last_storage_maintenance_trace: dict[str, Any] | None = None
     _last_storage_maintenance_started_at: datetime | None = None
@@ -73,7 +74,9 @@ class RuntimeMetrics:
         safe_trace = _storage_maintenance_trace(trace)
         with self._lock:
             self._storage_maintenance_run_count += 1
-            if status != "ok":
+            if status == "skipped":
+                self._storage_maintenance_skipped_count += 1
+            elif status != "ok":
                 self._storage_maintenance_degraded_count += 1
             self._last_storage_maintenance_started_at = started_at
             self._last_storage_maintenance_trace = safe_trace
@@ -81,6 +84,7 @@ class RuntimeMetrics:
     def storage_maintenance_snapshot(self) -> dict[str, Any]:
         with self._lock:
             run_count = self._storage_maintenance_run_count
+            skipped_count = self._storage_maintenance_skipped_count
             degraded_count = self._storage_maintenance_degraded_count
             last_trace = (
                 dict(self._last_storage_maintenance_trace)
@@ -89,6 +93,7 @@ class RuntimeMetrics:
             )
         return {
             "run_count": run_count,
+            "skipped_count": skipped_count,
             "degraded_count": degraded_count,
             "degraded_rate": _rate(degraded_count, run_count),
             "last_trace": last_trace,
@@ -195,6 +200,9 @@ def _storage_maintenance_trace(trace: dict[str, Any]) -> dict[str, Any]:
         "duration_ms",
         "storage_backend",
         "maintenance_enabled",
+        "lock_backend",
+        "lock_acquired",
+        "lock_skipped",
         "cleanup_status",
         "cleanup_dry_run",
         "cleanup_scanned_count",

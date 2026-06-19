@@ -5,6 +5,11 @@ from typing import Any
 from fastapi.testclient import TestClient
 from infinity_context_server.config import CaptureMode, DeployProfile, Settings
 from infinity_context_server.main import create_app
+from infinity_context_server.storage_maintenance import (
+    _IN_PROCESS_LOCK,
+    acquire_asset_storage_maintenance_lock,
+    run_asset_storage_maintenance,
+)
 from infinity_context_server.worker import OutboxWorker, OutboxWorkerFilter
 
 
@@ -78,6 +83,65 @@ def test_worker_runs_due_asset_storage_maintenance_and_reports_integrity_degrada
     assert "missing-blob.txt" not in str(data)
 
 
+def test_asset_storage_maintenance_skips_when_in_process_lock_is_held(tmp_path: Path) -> None:
+    async def run() -> dict[str, Any]:
+        with _make_client(
+            tmp_path,
+            asset_storage_maintenance_enabled=True,
+        ) as client:
+            await _IN_PROCESS_LOCK.acquire()
+            try:
+                trace = await run_asset_storage_maintenance(client.app.state.container)
+            finally:
+                _IN_PROCESS_LOCK.release()
+            metrics = client.get("/v1/diagnostics/metrics", headers=_auth_headers())
+            return {"trace": trace, "metrics": metrics.json()["data"]}
+
+    result = asyncio.run(run())
+    trace = result["trace"]
+    maintenance = result["metrics"]["storage"]["maintenance"]
+    assert trace["status"] == "skipped"
+    assert trace["lock_backend"] == "in_process"
+    assert trace["lock_acquired"] is False
+    assert maintenance["run_count"] == 1
+    assert maintenance["skipped_count"] == 1
+    assert maintenance["degraded_count"] == 0
+    assert maintenance["last_trace"]["lock_skipped"] is True
+    assert not any(
+        alert["name"] == "asset_storage_maintenance_degraded"
+        for alert in result["metrics"]["alerts"]
+    )
+
+
+def test_postgres_advisory_lock_releases_after_success() -> None:
+    async def run() -> _FakePostgresEngine:
+        engine = _FakePostgresEngine(results=[True, True])
+        container = _FakeLockContainer(engine)
+        async with acquire_asset_storage_maintenance_lock(container) as lock:
+            assert lock.acquired is True
+            assert lock.backend == "postgres_advisory_lock"
+        return engine
+
+    engine = asyncio.run(run())
+    assert engine.connection.calls == [
+        "select pg_try_advisory_lock(:lock_key)",
+        "select pg_advisory_unlock(:lock_key)",
+    ]
+
+
+def test_postgres_advisory_lock_skip_does_not_unlock_unheld_lock() -> None:
+    async def run() -> _FakePostgresEngine:
+        engine = _FakePostgresEngine(results=[False])
+        container = _FakeLockContainer(engine)
+        async with acquire_asset_storage_maintenance_lock(container) as lock:
+            assert lock.acquired is False
+            assert lock.backend == "postgres_advisory_lock"
+        return engine
+
+    engine = asyncio.run(run())
+    assert engine.connection.calls == ["select pg_try_advisory_lock(:lock_key)"]
+
+
 def _make_client(tmp_path: Path, **overrides: Any) -> TestClient:
     settings_values: dict[str, Any] = {
         "deploy_profile": DeployProfile.TEST,
@@ -102,3 +166,38 @@ def _auth_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
     if extra:
         headers.update(extra)
     return headers
+
+
+class _FakeDialect:
+    name = "postgresql"
+
+
+class _FakePostgresConnection:
+    def __init__(self, results: list[bool]) -> None:
+        self._results = results
+        self.calls: list[str] = []
+
+    async def __aenter__(self) -> "_FakePostgresConnection":
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def scalar(self, statement: object, _params: object) -> bool:
+        self.calls.append(str(statement))
+        return self._results.pop(0)
+
+
+class _FakePostgresEngine:
+    dialect = _FakeDialect()
+
+    def __init__(self, results: list[bool]) -> None:
+        self.connection = _FakePostgresConnection(results)
+
+    def connect(self) -> _FakePostgresConnection:
+        return self.connection
+
+
+class _FakeLockContainer:
+    def __init__(self, engine: _FakePostgresEngine) -> None:
+        self.engine = engine
