@@ -271,6 +271,7 @@ def test_selfhost_compose_has_team_deployment_contract() -> None:
     assert "infinity_context_extraction_worker:" in compose
     assert "--role projection" in compose
     assert "--role extraction" in compose
+    assert "--concurrency ${MEMORY_EXTRACTION_WORKER_CONCURRENCY:-1}" in compose
     assert "infinity_context_assets:/var/lib/infinity-context/assets" in compose
     assert (
         "MEMORY_EXTRACTION_CANCELLATION_POLL_SECONDS: "

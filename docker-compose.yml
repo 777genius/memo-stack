@@ -132,7 +132,7 @@ services:
   infinity_context_extraction_worker:
     <<: *infinity-context-server-common
     profiles: ["lite"]
-    command: sh -c "pip install -e '.[dev,docling]' && python -m infinity_context_server.worker --loop --role extraction --limit 2 --sleep-seconds 2"
+    command: sh -c "pip install -e '.[dev,docling]' && python -m infinity_context_server.worker --loop --role extraction --limit 2 --concurrency ${MEMORY_EXTRACTION_WORKER_CONCURRENCY:-1} --sleep-seconds 2"
     environment:
       <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "false"
@@ -209,7 +209,7 @@ services:
   infinity_context_extraction_worker_full:
     <<: *infinity-context-server-common
     profiles: ["full"]
-    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m infinity_context_server.worker --loop --role extraction --limit 2 --sleep-seconds 2"
+    command: sh -c "pip install -e '.[dev,qdrant,openai,graphiti,docling]' && python -m infinity_context_server.worker --loop --role extraction --limit 2 --concurrency ${MEMORY_EXTRACTION_WORKER_CONCURRENCY:-1} --sleep-seconds 2"
     environment:
       <<: *infinity-context-server-base-env
       MEMORY_QDRANT_ENABLED: "true"

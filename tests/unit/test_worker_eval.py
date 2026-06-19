@@ -158,6 +158,37 @@ async def outbox_summary(client: TestClient) -> list[tuple[str, str, str]]:
     ]
 
 
+async def _seed_outbox_rows(container, *, count: int) -> None:
+    now = container.clock.now()
+    async with AsyncSession(container.engine) as session:
+        for index in range(count):
+            session.add(
+                MemoryOutboxRow(
+                    event_type="test.concurrent",
+                    aggregate_type="test",
+                    aggregate_id=f"concurrent-job-{index + 1}",
+                    aggregate_version=None,
+                    payload_json={},
+                    status="pending",
+                    workload_class="extraction",
+                    fairness_key=f"test:{index + 1}",
+                    attempt_count=0,
+                    next_attempt_at=now,
+                    created_at=now + timedelta(microseconds=index),
+                    updated_at=now,
+                )
+            )
+        await session.commit()
+
+
+async def _outbox_statuses(container) -> list[str]:
+    async with AsyncSession(container.engine) as session:
+        rows = (
+            await session.execute(select(MemoryOutboxRow.status).order_by(MemoryOutboxRow.id))
+        ).scalars()
+        return [str(status) for status in rows]
+
+
 def test_outbox_worker_no_pending_jobs_is_stable(tmp_path: Path) -> None:
     async def run() -> int:
         container = build_container(
@@ -233,6 +264,81 @@ def test_projection_worker_filter_runs_suggestion_maintenance(tmp_path: Path) ->
 
     assert processed == 0
     assert calls == 1
+
+
+def test_outbox_worker_respects_configured_concurrency(tmp_path: Path) -> None:
+    async def run() -> tuple[int, int, list[str]]:
+        container = build_container(
+            Settings(
+                deploy_profile=DeployProfile.TEST,
+                database_url=f"sqlite+aiosqlite:///{tmp_path / 'worker-concurrency.db'}",
+                service_token="test-token",
+            )
+        )
+        await create_schema(container.engine)
+        await _seed_outbox_rows(container, count=3)
+        worker = OutboxWorker(container)
+        active = 0
+        max_active = 0
+
+        async def handle(_job) -> None:
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.05)
+            active -= 1
+
+        worker._handle = handle  # type: ignore[method-assign]  # noqa: SLF001
+        processed = await worker.run_once(limit=3, concurrency=2)
+        statuses = await _outbox_statuses(container)
+        await container.aclose()
+        return processed, max_active, statuses
+
+    processed, max_active, statuses = asyncio.run(run())
+
+    assert processed == 3
+    assert max_active == 2
+    assert statuses == ["done", "done", "done"]
+
+
+def test_outbox_worker_concurrent_job_failure_does_not_cancel_other_jobs(
+    tmp_path: Path,
+) -> None:
+    async def run() -> tuple[int, list[tuple[str, str | None]]]:
+        container = build_container(
+            Settings(
+                deploy_profile=DeployProfile.TEST,
+                database_url=f"sqlite+aiosqlite:///{tmp_path / 'worker-concurrency-failure.db'}",
+                service_token="test-token",
+            )
+        )
+        await create_schema(container.engine)
+        await _seed_outbox_rows(container, count=2)
+        worker = OutboxWorker(container)
+
+        async def handle(job) -> None:
+            await asyncio.sleep(0.01)
+            if job.aggregate_id == "concurrent-job-1":
+                raise RuntimeError("simulated worker item failure")
+
+        worker._handle = handle  # type: ignore[method-assign]  # noqa: SLF001
+        processed = await worker.run_once(limit=2, concurrency=2)
+        async with AsyncSession(container.engine) as session:
+            rows = (
+                await session.execute(
+                    select(
+                        MemoryOutboxRow.status,
+                        MemoryOutboxRow.last_safe_error,
+                    ).order_by(MemoryOutboxRow.id)
+                )
+            ).all()
+        await container.aclose()
+        return processed, [(str(status), error) for status, error in rows]
+
+    processed, rows = asyncio.run(run())
+
+    assert processed == 2
+    assert rows == [("retry_pending", "RuntimeError"), ("done", None)]
 
 
 def test_outbox_worker_marks_disabled_projection_jobs_done(tmp_path: Path) -> None:

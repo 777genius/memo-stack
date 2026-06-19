@@ -69,6 +69,12 @@ python -m infinity_context_server.worker --loop --role all
 processes `workload_class=extraction` jobs such as `asset.extract`. `all` keeps
 the legacy behavior for tests, local debugging and emergency draining.
 
+For extraction workers, `MEMORY_EXTRACTION_WORKER_LIMIT` controls the number of
+claimed outbox jobs per poll. `MEMORY_EXTRACTION_WORKER_CONCURRENCY` controls
+how many claimed extraction jobs run concurrently inside one process and
+defaults to `1`; scale it only after parser/provider limits are sized for the
+host.
+
 ## Full provider profile
 
 The default self-hosted stack keeps Qdrant, Graphiti and external embeddings

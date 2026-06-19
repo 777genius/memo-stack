@@ -94,19 +94,14 @@ class OutboxWorker:
             running_heartbeat_interval or RUNNING_HEARTBEAT_INTERVAL
         )
 
-    async def run_once(self, *, limit: int = 25) -> int:
+    async def run_once(self, *, limit: int = 25, concurrency: int = 1) -> int:
+        normalized_limit = max(0, int(limit))
         if _should_run_suggestion_maintenance(self._filter):
-            await self._container.expire_pending_suggestions.execute(limit=limit)
+            await self._container.expire_pending_suggestions.execute(limit=normalized_limit)
         if self._should_run_storage_maintenance():
             await run_asset_storage_maintenance(self._container)
-        jobs = await self._claim_pending(limit=limit)
-        for job in jobs:
-            try:
-                await self._handle_with_heartbeat(job)
-            except Exception as exc:
-                await self._mark_retry_or_dead(job.id, exc)
-            else:
-                await self._mark_done(job.id)
+        jobs = await self._claim_pending(limit=normalized_limit)
+        await self._process_claimed_jobs(jobs, concurrency=concurrency)
         return len(jobs)
 
     def _should_run_storage_maintenance(self) -> bool:
@@ -139,6 +134,35 @@ class OutboxWorker:
                     return
                 row.updated_at = self._container.clock.now()
                 await session.commit()
+
+    async def _process_claimed_jobs(
+        self,
+        jobs: list[ClaimedOutboxJob],
+        *,
+        concurrency: int,
+    ) -> None:
+        max_concurrency = _bounded_worker_concurrency(concurrency, job_count=len(jobs))
+        if max_concurrency <= 0:
+            return
+        if max_concurrency == 1:
+            for job in jobs:
+                await self._process_claimed_job(job)
+            return
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def process(job: ClaimedOutboxJob) -> None:
+            async with semaphore:
+                await self._process_claimed_job(job)
+
+        await asyncio.gather(*(process(job) for job in jobs))
+
+    async def _process_claimed_job(self, job: ClaimedOutboxJob) -> None:
+        try:
+            await self._handle_with_heartbeat(job)
+        except Exception as exc:
+            await self._mark_retry_or_dead(job.id, exc)
+        else:
+            await self._mark_done(job.id)
 
     async def _claim_pending(self, *, limit: int) -> list[ClaimedOutboxJob]:
         now = self._container.clock.now()
@@ -505,6 +529,16 @@ def _retry_after_from_exception(exc: Exception) -> datetime | None:
     return value if isinstance(value, datetime) else None
 
 
+def _bounded_worker_concurrency(value: int, *, job_count: int) -> int:
+    if job_count <= 0:
+        return 0
+    try:
+        requested = int(value)
+    except (TypeError, ValueError):
+        requested = 1
+    return min(max(1, requested), job_count)
+
+
 def _normalize_filter_values(values: Iterable[str]) -> tuple[str, ...]:
     normalized = tuple(dict.fromkeys(value.strip() for value in values if value.strip()))
     return normalized
@@ -551,7 +585,7 @@ async def _run(args: argparse.Namespace) -> None:
     worker = OutboxWorker(container, worker_filter=_worker_filter_from_args(args))
     try:
         while True:
-            count = await worker.run_once(limit=args.limit)
+            count = await worker.run_once(limit=args.limit, concurrency=args.concurrency)
             print({"processed": count})
             if args.once:
                 return
@@ -565,6 +599,15 @@ def main() -> None:
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--limit", type=int, default=25)
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help=(
+            "Maximum claimed outbox jobs handled concurrently in this process. "
+            "Defaults to 1 for conservative parser/provider resource isolation."
+        ),
+    )
     parser.add_argument("--sleep-seconds", type=float, default=2.0)
     parser.add_argument(
         "--role",

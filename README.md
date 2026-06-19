@@ -200,6 +200,10 @@ full           Postgres + Qdrant + Neo4j + Infinity Context Server + workers, wi
 Both profiles run separate projection and extraction workers. The extraction
 worker only claims `workload_class=extraction` jobs, so file parsing can be
 scaled independently from vector, graph and auto-memory projection work.
+`MEMORY_EXTRACTION_WORKER_LIMIT` controls how many outbox jobs are claimed per
+poll. `MEMORY_EXTRACTION_WORKER_CONCURRENCY` controls how many claimed
+extraction jobs run at once in one process, and defaults to `1` for conservative
+parser/provider resource isolation.
 
 Recommended local MVP:
 

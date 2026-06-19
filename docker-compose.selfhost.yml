@@ -150,6 +150,7 @@ services:
       --loop
       --role extraction
       --limit ${MEMORY_EXTRACTION_WORKER_LIMIT:-2}
+      --concurrency ${MEMORY_EXTRACTION_WORKER_CONCURRENCY:-1}
       --sleep-seconds ${MEMORY_EXTRACTION_WORKER_SLEEP_SECONDS:-2}
     depends_on:
       infinity_context_server:
