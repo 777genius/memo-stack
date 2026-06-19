@@ -96,11 +96,13 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
                             "max_provider_upload_bytes": 26214400,
                             "effective_max_upload_bytes": 26214400,
                             "supported_file_types": [
+                                ".flac",
                                 ".m4a",
                                 ".mp3",
                                 ".mp4",
                                 ".mpeg",
                                 ".mpga",
+                                ".ogg",
                                 ".wav",
                                 ".webm",
                             ],
@@ -327,6 +329,8 @@ def test_docker_live_proof_degrades_on_compose_config_timeout(monkeypatch) -> No
         [
             "--project-name",
             "infinity-context-proof-test",
+            "--service-token",
+            "secret-proof-token",
             "--compose-timeout-seconds",
             "1",
             "--server-port",
@@ -372,6 +376,8 @@ def test_docker_live_proof_degrades_on_compose_up_timeout_and_cleans_project(
         [
             "--project-name",
             "infinity-context-proof-test",
+            "--service-token",
+            "secret-proof-token",
             "--compose-timeout-seconds",
             "1",
             "--server-port",
@@ -395,7 +401,12 @@ def test_docker_live_proof_degrades_on_compose_up_timeout_and_cleans_project(
         if command[:2] == ["docker", "info"]:
             return _completed(command, stdout="29.0.0\n")
         if "up" in command:
-            raise subprocess.TimeoutExpired(command, timeout=1)
+            raise subprocess.TimeoutExpired(
+                command,
+                timeout=1,
+                output="building layer with secret-proof-token\n",
+                stderr="pulling base image\n",
+            )
         if "down" in command:
             return _completed(command)
         if command[:3] == ["docker", "ps", "-a"]:
@@ -423,6 +434,9 @@ def test_docker_live_proof_degrades_on_compose_up_timeout_and_cleans_project(
     assert report["failure"]["component"] == "compose_stack"
     assert report["failure"]["reason"] == "compose_up_timeout"
     assert report["failure"]["degraded"] is True
+    assert "building layer with <redacted>" in report["failure"]["message"]
+    assert "pulling base image" in report["failure"]["message"]
+    assert "secret-proof-token" not in json.dumps(report)
     assert report["components"]["compose_stack"]["status"] == "degraded"
     assert report["components"]["cleanup"]["status"] == "succeeded"
     assert any("down" in command for command in commands)

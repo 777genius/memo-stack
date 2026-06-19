@@ -310,7 +310,10 @@ def _start_stack(
         raise DockerProofFailure(
             "compose_stack",
             "compose_up_timeout",
-            (f"Docker Compose stack did not start within {args.compose_timeout_seconds}s"),
+            (
+                f"Docker Compose stack did not start within {args.compose_timeout_seconds}s\n"
+                f"{_safe_timeout(exc, env=env)}"
+            ),
             degraded=True,
         ) from exc
     if result.returncode != 0:
@@ -1315,6 +1318,32 @@ def _safe_completed(result: subprocess.CompletedProcess[str], *, env: dict[str, 
         f"stderr:\n{result.stderr[-2000:]}"
     )
     return _safe_text(text, env=env)
+
+
+def _safe_timeout(exc: subprocess.TimeoutExpired, *, env: dict[str, str]) -> str:
+    stdout = _decode_timeout_output(exc.stdout)
+    stderr = _decode_timeout_output(exc.stderr)
+    text = (
+        f"timeout={exc.timeout}\n"
+        f"cmd={_safe_command(exc.cmd)}\n"
+        f"stdout_tail:\n{stdout[-2000:]}\n"
+        f"stderr_tail:\n{stderr[-2000:]}"
+    )
+    return _safe_text(text, env=env)
+
+
+def _decode_timeout_output(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _safe_command(command: object) -> str:
+    if isinstance(command, list):
+        return " ".join(shlex.quote(str(part)) for part in command[:16])
+    return str(command)[:500]
 
 
 def _safe_text(value: str, *, env: dict[str, str]) -> str:
