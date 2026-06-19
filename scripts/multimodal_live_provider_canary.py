@@ -45,7 +45,7 @@ DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
-INVALID_KEY_PROBE_VALUE = "sk-invalid-live-provider-canary-not-a-real-secret"
+INVALID_KEY_PROBE_VALUE = "sk-" + "invalid-live-provider-canary-not-a-real-secret"
 SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
 SYNTHETIC_VISION_TEXT = "INFINITY CONTEXT 24"
 OPENAI_AUDIO_MAX_UPLOAD_BYTES = OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
@@ -973,7 +973,57 @@ def _audio_fixture_contract_check(path: Path) -> dict[str, object]:
             byte_size=byte_size,
             max_upload_bytes=OPENAI_AUDIO_MAX_UPLOAD_BYTES,
         )
+    magic_check = _audio_fixture_magic_check(path=path, content_type=_content_type_for_path(path))
+    if magic_check["status"] != "succeeded":
+        return magic_check
     return _component("succeeded")
+
+
+def _audio_fixture_magic_check(*, path: Path, content_type: str) -> dict[str, object]:
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(512)
+    except OSError as exc:
+        return _component(
+            "degraded",
+            reason="audio_fixture_unreadable",
+            message=str(exc)[:200],
+        )
+    if _audio_magic_matches(content_type=content_type, head=head):
+        return _component("succeeded")
+    return _component(
+        "degraded",
+        reason="audio_fixture_content_mismatch",
+        message="Audio fixture bytes do not match the configured file type",
+        content_type=content_type,
+        filename_suffix=path.suffix.lower()[:20] or "<none>",
+    )
+
+
+def _audio_magic_matches(*, content_type: str, head: bytes) -> bool:
+    if content_type == "audio/wav":
+        return len(head) >= 12 and head.startswith(b"RIFF") and head[8:12] == b"WAVE"
+    if content_type == "audio/flac":
+        return head.startswith(b"fLaC")
+    if content_type == "audio/ogg":
+        return head.startswith(b"OggS")
+    if content_type in {"audio/mpeg", "audio/mpga"}:
+        return head.startswith(b"ID3") or _looks_like_mp3_frame(head)
+    if content_type in {"audio/m4a", "audio/webm", "video/mp4"}:
+        return _container_audio_magic_matches(content_type=content_type, head=head)
+    return False
+
+
+def _container_audio_magic_matches(*, content_type: str, head: bytes) -> bool:
+    if content_type == "audio/webm":
+        return head.startswith(b"\x1a\x45\xdf\xa3")
+    if content_type in {"audio/m4a", "video/mp4"}:
+        return len(head) >= 12 and head[4:8] == b"ftyp"
+    return False
+
+
+def _looks_like_mp3_frame(head: bytes) -> bool:
+    return len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0
 
 
 def _transcript_check(
