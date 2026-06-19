@@ -22,6 +22,31 @@ def test_semantic_dedupe_recognizes_document_vector_paraphrase() -> None:
     assert "semantic_duplicate" in match.reason_codes
 
 
+def test_semantic_dedupe_recognizes_russian_person_project_paraphrase() -> None:
+    match = describe_duplicate_fact_match(
+        "Алекс согласовал срок по проекту Атлас 7 дней.",
+        "От Алекса пришло подтверждение: проект Атлас срок 7 дней.",
+    )
+
+    assert match is not None
+    assert match.match_type == "semantic_token_overlap"
+    assert "semantic_duplicate" in match.reason_codes
+    assert "person:aleks" in match.overlap_terms
+    assert "project:atlas" in match.overlap_terms
+
+
+def test_semantic_dedupe_recognizes_russian_document_retrieval_paraphrase() -> None:
+    match = describe_duplicate_fact_match(
+        "Алекс сказал использовать Qdrant для документов.",
+        "От Алекса пришло: документы ищем через Qdrant.",
+    )
+
+    assert match is not None
+    assert "document" in match.overlap_terms
+    assert "person:aleks" in match.overlap_terms
+    assert "project:qdrant" in match.overlap_terms
+
+
 def test_semantic_dedupe_rejects_exclusive_engine_mismatch() -> None:
     assert not looks_equivalent_fact(
         "Docs retrieval should use Qdrant vectors.",

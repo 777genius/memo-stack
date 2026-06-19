@@ -149,12 +149,34 @@ def semantic_memory_terms(text: str) -> set[str]:
         "notes": "note",
         "retrieves": "retrieval",
         "vectors": "vector",
+        "документ": "document",
+        "документа": "document",
+        "документам": "document",
+        "документами": "document",
+        "документах": "document",
+        "документов": "document",
+        "документы": "document",
+        "искать": "retrieval",
+        "ищем": "retrieval",
+        "поиск": "retrieval",
+        "проекта": "project",
+        "проектам": "project",
+        "проектами": "project",
+        "проектах": "project",
+        "проектов": "project",
+        "проекту": "project",
+        "проекты": "project",
+        "хранилище": "storage",
+        "хранит": "storage",
+        "хранить": "storage",
+        "хранят": "storage",
     }
-    terms: set[str] = set()
+    terms = set(_semantic_anchor_terms(text))
     for raw_token in normalize_memory_text(text).split():
         token = raw_token.strip(".,:;!?()[]{}\"'")
         if not token:
             continue
+        token = aliases.get(token, _normalize_russian_semantic_token(token))
         token = aliases.get(token, token)
         if token.endswith("s") and len(token) > 5 and token not in {"postgres", "redis"}:
             token = token[:-1]
@@ -174,11 +196,76 @@ def semantic_memory_terms(text: str) -> set[str]:
             "uses",
             "using",
             "with",
+            "был",
+            "была",
+            "были",
+            "для",
+            "его",
+            "или",
+            "как",
+            "надо",
+            "нужно",
+            "пришел",
+            "пришла",
+            "пришло",
+            "сказал",
+            "сказала",
+            "через",
+            "что",
+            "это",
         }:
             continue
         if len(token) >= 4:
             terms.add(token)
     return terms
+
+
+def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
+    terms: list[str] = []
+    for anchor in extract_observed_anchors(text):
+        if anchor.kind not in {
+            MemoryAnchorKind.PERSON,
+            MemoryAnchorKind.PROJECT,
+            MemoryAnchorKind.ORGANIZATION,
+        }:
+            continue
+        canonical_key = str(anchor.metadata.get("canonical_key") or anchor.normalized_key).strip()
+        if not canonical_key:
+            continue
+        terms.append(f"{anchor.kind.value}:{canonical_key.casefold()}")
+    return tuple(terms)
+
+
+def _normalize_russian_semantic_token(token: str) -> str:
+    if not re.search(r"[а-яё]", token, re.IGNORECASE):
+        return token
+    if len(token) <= 4:
+        return token
+    suffixes = (
+        ("иями", "ия"),
+        ("ями", "я"),
+        ("ами", "а"),
+        ("ого", ""),
+        ("ему", ""),
+        ("ыми", ""),
+        ("ими", ""),
+        ("ах", ""),
+        ("ях", "я"),
+        ("ов", ""),
+        ("ев", "й"),
+        ("ом", ""),
+        ("ем", ""),
+        ("ам", ""),
+        ("ям", "я"),
+        ("у", ""),
+        ("а", ""),
+        ("ы", ""),
+        ("и", ""),
+    )
+    for suffix, replacement in suffixes:
+        if token.endswith(suffix) and len(token) - len(suffix) >= 4:
+            return f"{token[: -len(suffix)]}{replacement}"
+    return token
 
 
 def looks_conflicting_fact(candidate_text: str, existing_text: str) -> bool:
