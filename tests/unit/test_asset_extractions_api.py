@@ -153,6 +153,23 @@ async def _get_asset_extract_outbox_row(client: TestClient, extraction_id: str) 
         return row
 
 
+async def _get_asset_extract_outbox_row_or_none(
+    client: TestClient,
+    extraction_id: str,
+) -> MemoryOutboxRow | None:
+    async with AsyncSession(client.app.state.container.engine) as session:
+        row = (
+            await session.execute(
+                select(MemoryOutboxRow)
+                .where(MemoryOutboxRow.event_type == "asset.extract")
+                .where(MemoryOutboxRow.aggregate_id == extraction_id)
+                .order_by(MemoryOutboxRow.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return row
+
+
 def sample_pdf_bytes(text: str) -> bytes:
     stream = f"BT /F1 18 Tf 72 720 Td ({text}) Tj ET".encode("latin-1")
     return (
@@ -2440,6 +2457,87 @@ def test_same_scope_different_thread_duplicate_upload_reuses_blob_contract(
         assert approved_data["link"]["target_type"] == "asset"
         assert approved_data["link"]["target_id"] == first_data["id"]
         assert approved_data["link"]["relation_type"] == "duplicates"
+
+
+def test_same_scope_duplicate_asset_reuses_succeeded_extraction_without_worker(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        base_params = {
+            "space_slug": "quick-capture",
+            "memory_scope_external_ref": "frontend",
+            "filename": "shared-transcript.txt",
+            "extract": "true",
+        }
+        content = b"Project Atlas launch note from Alex call."
+        headers = auth_headers({"Content-Type": "text/plain"})
+
+        first = client.post(
+            "/v1/assets",
+            params={**base_params, "thread_external_ref": "thread-source"},
+            content=content,
+            headers=headers,
+        )
+        assert first.status_code == 201, first.text
+        first_data = first.json()["data"]
+        source_extraction_id = first_data["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+        source_extraction = client.get(
+            f"/v1/asset-extractions/{source_extraction_id}",
+            headers=auth_headers(),
+        )
+        assert source_extraction.status_code == 200, source_extraction.text
+        source_extraction_data = source_extraction.json()["data"]
+        assert source_extraction_data["status"] == "succeeded"
+        assert source_extraction_data["artifacts"]
+
+        second = client.post(
+            "/v1/assets",
+            params={**base_params, "thread_external_ref": "thread-copy"},
+            content=content,
+            headers=headers,
+        )
+        assert second.status_code == 201, second.text
+        second_data = second.json()["data"]
+        reused_extraction = second_data["extraction"]
+
+        assert second_data["id"] != first_data["id"]
+        assert second_data["deduplication"]["status"] == "scope_blob_reused"
+        assert reused_extraction["id"] != source_extraction_id
+        assert reused_extraction["asset_id"] == second_data["id"]
+        assert reused_extraction["status"] == "succeeded"
+        assert reused_extraction["duplicate"] is True
+        assert reused_extraction["deduplication"]["status"] == "source_job_reused"
+        assert reused_extraction["deduplication"]["duplicate_of_job_id"] == source_extraction_id
+        assert (
+            reused_extraction["metadata"]["reused_from_job_id"]
+            == source_extraction_id
+        )
+        assert reused_extraction["metadata"]["reused_from_asset_id"] == first_data["id"]
+        assert reused_extraction["metadata"]["usage_media_analysis_seconds_requested"] == 0
+
+        assert (
+            asyncio.run(
+                _get_asset_extract_outbox_row_or_none(
+                    client,
+                    reused_extraction["id"],
+                )
+            )
+            is None
+        )
+
+        fetched_reuse = client.get(
+            f"/v1/asset-extractions/{reused_extraction['id']}",
+            headers=auth_headers(),
+        )
+        assert fetched_reuse.status_code == 200, fetched_reuse.text
+        fetched_reuse_data = fetched_reuse.json()["data"]
+        assert fetched_reuse_data["status"] == "succeeded"
+        assert [item["id"] for item in fetched_reuse_data["artifacts"]] == [
+            item["id"] for item in source_extraction_data["artifacts"]
+        ]
 
 
 def test_unsupported_asset_extraction_finishes_without_document_or_retry(

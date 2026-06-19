@@ -333,6 +333,33 @@ def test_retry_clears_execution_state() -> None:
     assert retried.retry_disposition is None
 
 
+def test_pending_extraction_can_be_marked_reused_without_worker_lease() -> None:
+    now = datetime(2026, 6, 14, 10, tzinfo=UTC)
+
+    reused = _job(now).mark_reused(
+        now=now + timedelta(seconds=2),
+        source_job_id="extract-source",
+        source_asset_id="asset-source",
+        source_artifact_count=3,
+        result_document_ids=("doc-1",),
+        parser_name="docling",
+        parser_version="1.0",
+        model_version=None,
+    )
+
+    assert reused.status == AssetExtractionStatus.SUCCEEDED
+    assert reused.attempt_count == 0
+    assert reused.started_at == now + timedelta(seconds=2)
+    assert reused.finished_at == now + timedelta(seconds=2)
+    assert reused.lease_owner is None
+    assert reused.result_document_ids == ("doc-1",)
+    assert reused.parser_name == "docling"
+    assert reused.metadata["processing_stage"] == "reused"
+    assert reused.metadata["reused_from_job_id"] == "extract-source"
+    assert reused.metadata["reused_from_asset_id"] == "asset-source"
+    assert reused.metadata["reused_artifact_count"] == 3
+
+
 def _artifact(artifact_type: str) -> ExtractionArtifact:
     return ExtractionArtifact.create(
         artifact_id=ExtractionArtifactId(f"artifact-{artifact_type}"),

@@ -158,6 +158,67 @@ class RequestAssetExtractionUseCase:
                         artifact_count=len(artifacts),
                     ),
                 )
+            reusable = await uow.asset_extractions.find_reusable_succeeded_for_scope_source(
+                space_id=str(asset.space_id),
+                memory_scope_id=str(asset.memory_scope_id),
+                asset_id=str(asset.id),
+                parser_profile=parser_profile,
+                parser_config_hash=parser_config_hash_value,
+                source_sha256_hex=asset.sha256_hex,
+            )
+            if reusable is not None:
+                now = self._clock.now()
+                source_artifacts = await uow.asset_extractions.list_artifacts(
+                    job_id=str(reusable.id)
+                )
+                job = AssetExtractionJob.create(
+                    job_id=AssetExtractionJobId(self._ids.new_id("extract")),
+                    asset_id=asset.id,
+                    space_id=asset.space_id,
+                    memory_scope_id=asset.memory_scope_id,
+                    thread_id=asset.thread_id,
+                    parser_profile=parser_profile,
+                    parser_config_hash=parser_config_hash_value,
+                    source_sha256_hex=asset.sha256_hex,
+                    now=now,
+                    metadata={
+                        "filename": asset.filename,
+                        "content_type": asset.content_type,
+                        "usage_plan_tier": self._plan.tier.value,
+                        "usage_media_analysis_seconds_requested": 0,
+                    },
+                ).mark_reused(
+                    now=now,
+                    source_job_id=str(reusable.id),
+                    source_asset_id=str(reusable.asset_id),
+                    source_artifact_count=len(source_artifacts),
+                    result_document_ids=reusable.result_document_ids,
+                    parser_name=reusable.parser_name or "asset-extraction-reuse",
+                    parser_version=reusable.parser_version,
+                    model_version=reusable.model_version,
+                    metadata={
+                        "source_parser_profile": reusable.parser_profile,
+                        "source_parser_config_hash": reusable.parser_config_hash,
+                    },
+                )
+                saved = await uow.asset_extractions.create(job)
+                await uow.commit()
+                return AssetExtractionResult(
+                    job=saved,
+                    artifacts=tuple(source_artifacts),
+                    duplicate=True,
+                    indexing_status=indexing_status(saved.status),
+                    deduplication=DeduplicationInfo(
+                        duplicate=True,
+                        status="source_job_reused",
+                        reason_code="asset_extraction_dedup.source_job_reused",
+                        scope="memory_scope",
+                        duplicate_of_asset_id=str(reusable.asset_id),
+                        duplicate_of_job_id=str(reusable.id),
+                        blob_written=False,
+                        artifact_count=len(source_artifacts),
+                    ),
+                )
 
             now = self._clock.now()
             window = UsageWindow.calendar_month_for(now)
@@ -275,6 +336,12 @@ class GetAssetExtractionUseCase:
             if job is None:
                 raise MemoryNotFoundError("Asset extraction job not found")
             artifacts = await uow.asset_extractions.list_artifacts(job_id=str(job.id))
+            if not artifacts:
+                reused_from_job_id = _metadata_text(job.metadata, "reused_from_job_id")
+                if reused_from_job_id:
+                    artifacts = await uow.asset_extractions.list_artifacts(
+                        job_id=reused_from_job_id
+                    )
         return AssetExtractionResult(
             job=job,
             artifacts=tuple(artifacts),
@@ -1120,6 +1187,16 @@ def _datetime_after(value: datetime, reference: datetime) -> bool:
     elif value.tzinfo is not None and reference.tzinfo is None:
         value = value.replace(tzinfo=None)
     return value > reference
+
+
+def _metadata_text(metadata: object, key: str, *, limit: int = 120) -> str | None:
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get(key)
+    if not isinstance(value, str):
+        return None
+    safe_value = safe_metadata_text(value, limit=limit).strip()
+    return safe_value or None
 
 
 def _artifact_byte_limit(limits: ExtractionLimits) -> int:

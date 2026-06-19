@@ -119,6 +119,18 @@ class AssetExtractionRepositoryPort(Protocol):
     ) -> AssetExtractionJob | None:
         """Find an active idempotent extraction job for an asset/profile/config."""
 
+    async def find_reusable_succeeded_for_scope_source(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        asset_id: str,
+        parser_profile: str,
+        parser_config_hash: str,
+        source_sha256_hex: str,
+    ) -> AssetExtractionJob | None:
+        """Find a succeeded same-source extraction from another stored asset in the scope."""
+
     async def save(self, job: AssetExtractionJob) -> AssetExtractionJob:
         """Persist changed extraction job state."""
 

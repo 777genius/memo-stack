@@ -248,6 +248,61 @@ class AssetExtractionJob:
             updated_at=now,
         )
 
+    def mark_reused(
+        self,
+        *,
+        now: datetime,
+        source_job_id: str,
+        source_asset_id: str,
+        source_artifact_count: int,
+        result_document_ids: tuple[str, ...],
+        parser_name: str,
+        parser_version: str | None,
+        model_version: str | None,
+        metadata: Mapping[str, object] | None = None,
+    ) -> AssetExtractionJob:
+        if self.status != AssetExtractionStatus.PENDING:
+            raise MemoryValidationError("Asset extraction job must be pending to reuse")
+        safe_source_job_id = _required(source_job_id, "source_job_id", max_chars=80)
+        safe_source_asset_id = _required(source_asset_id, "source_asset_id", max_chars=80)
+        return replace(
+            self,
+            status=AssetExtractionStatus.SUCCEEDED,
+            result_document_ids=tuple(str(value) for value in result_document_ids if str(value)),
+            parser_name=_optional(parser_name, max_chars=120) or "asset-extraction-reuse",
+            parser_version=_optional(parser_version, max_chars=120),
+            model_version=_optional(model_version, max_chars=120),
+            metadata=_safe_metadata(
+                {
+                    **dict(self.metadata),
+                    **dict(metadata or {}),
+                    "processing_stage": "reused",
+                    "progress_percent": 100,
+                    "progress_message": "Reused extraction from exact duplicate asset",
+                    "reused_from_job_id": safe_source_job_id,
+                    "reused_from_asset_id": safe_source_asset_id,
+                    "reused_artifact_count": max(0, int(source_artifact_count)),
+                    "dedupe_match_type": "exact_sha256",
+                    "dedupe_reason_codes": [
+                        "exact_sha256",
+                        "same_memory_scope",
+                        "source_extraction_succeeded",
+                    ],
+                }
+            ),
+            safe_error_code=None,
+            safe_error_message=None,
+            lease_owner=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            retry_after_at=None,
+            retry_disposition=None,
+            cancellation_requested_at=None,
+            started_at=now,
+            finished_at=now,
+            updated_at=now,
+        )
+
     def mark_failed(
         self,
         *,

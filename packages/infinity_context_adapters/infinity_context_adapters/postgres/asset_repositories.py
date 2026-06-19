@@ -279,6 +279,43 @@ class PostgresAssetExtractionRepository(AssetExtractionRepositoryPort):
         ).scalar_one_or_none()
         return asset_extraction_job_row_to_domain(row) if row is not None else None
 
+    async def find_reusable_succeeded_for_scope_source(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        asset_id: str,
+        parser_profile: str,
+        parser_config_hash: str,
+        source_sha256_hex: str,
+    ) -> AssetExtractionJob | None:
+        row = (
+            await self._session.execute(
+                select(MemoryAssetExtractionJobRow)
+                .join(
+                    MemoryAssetRow,
+                    MemoryAssetRow.id == MemoryAssetExtractionJobRow.asset_id,
+                )
+                .where(
+                    MemoryAssetExtractionJobRow.space_id == space_id,
+                    MemoryAssetExtractionJobRow.memory_scope_id == memory_scope_id,
+                    MemoryAssetExtractionJobRow.asset_id != asset_id,
+                    MemoryAssetExtractionJobRow.parser_profile == parser_profile,
+                    MemoryAssetExtractionJobRow.parser_config_hash == parser_config_hash,
+                    MemoryAssetExtractionJobRow.source_sha256_hex == source_sha256_hex,
+                    MemoryAssetExtractionJobRow.status == "succeeded",
+                    MemoryAssetRow.status == "stored",
+                )
+                .order_by(
+                    MemoryAssetExtractionJobRow.finished_at.desc().nullslast(),
+                    MemoryAssetExtractionJobRow.created_at.desc(),
+                    MemoryAssetExtractionJobRow.id.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return asset_extraction_job_row_to_domain(row) if row is not None else None
+
     async def save(self, job: AssetExtractionJob) -> AssetExtractionJob:
         row = await self._session.get(MemoryAssetExtractionJobRow, str(job.id))
         if row is None:
