@@ -20,9 +20,7 @@ def test_context_api_expands_approved_media_manifest_artifact_link(tmp_path: Pat
                 "filename": "alex-review.pdf",
                 "extract": "true",
             },
-            content=sample_pdf_bytes(
-                f"{marker} Alex last week approved the Atlas billing cutoff."
-            ),
+            content=sample_pdf_bytes(f"{marker} Alex last week approved the Atlas billing cutoff."),
             headers=auth_headers({"Content-Type": "application/pdf"}),
         )
         assert upload.status_code == 201, upload.text
@@ -112,9 +110,128 @@ def test_context_api_expands_approved_media_manifest_artifact_link(tmp_path: Pat
     assert linked_items[0]["citations"][0]["page_number"] == 1
     assert data["diagnostics"]["approved_context_linked_extraction_artifacts_used"] == 1
     assert (
-        data["diagnostics"]["approved_context_linked_extraction_artifact_manifest_items_used"]
-        == 1
+        data["diagnostics"]["approved_context_linked_extraction_artifact_manifest_items_used"] == 1
     )
+
+
+def test_context_api_expands_approved_asset_link_to_media_manifest_evidence(
+    tmp_path: Path,
+) -> None:
+    marker = "LINKED_ASSET_MARKER"
+    with make_client(tmp_path) as client:
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "linked-asset-context",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "alex-review",
+                "filename": "alex-review.pdf",
+                "extract": "true",
+            },
+            content=sample_pdf_bytes(f"{marker} Alex last week approved the Atlas billing cutoff."),
+            headers=auth_headers({"Content-Type": "application/pdf"}),
+        )
+        assert upload.status_code == 201, upload.text
+        asset = upload.json()["data"]
+        extraction_id = asset["extraction"]["id"]
+
+        processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
+        assert processed >= 1
+
+        extraction = client.get(
+            f"/v1/asset-extractions/{extraction_id}",
+            headers=auth_headers(),
+        )
+        assert extraction.status_code == 200, extraction.text
+        extraction_data = extraction.json()["data"]
+        assert extraction_data["status"] == "succeeded"
+        assert any(
+            item["artifact_type"] == "media_manifest" for item in extraction_data["artifacts"]
+        )
+
+        anchor = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "linked-asset-context",
+                "memory_scope_external_ref": "default",
+                "kind": "event",
+                "label": "Alex review",
+                "confidence": "high",
+                "metadata": {
+                    "anchor_family": "event",
+                    "event_type": "meeting",
+                    "event_participant_label": "Alex",
+                    "event_participant_canonical_key": "alex",
+                    "event_temporal_phrase": "last week",
+                    "event_temporal_hint_code": "last_week",
+                    "event_identity_terms": ["alex", "last_week:1:week"],
+                },
+            },
+            headers=auth_headers(),
+        )
+        assert anchor.status_code == 200, anchor.text
+
+        link = client.post(
+            "/v1/context-links",
+            json={
+                "space_slug": "linked-asset-context",
+                "memory_scope_external_ref": "default",
+                "source_type": "anchor",
+                "source_id": anchor.json()["data"]["id"],
+                "target_type": "asset",
+                "target_id": asset["id"],
+                "relation_type": "evidence_of",
+                "confidence": "high",
+                "reason": "anchor is grounded by the uploaded asset extraction evidence",
+            },
+            headers=auth_headers(),
+        )
+        assert link.status_code == 200, link.text
+
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_slug": "linked-asset-context",
+                "memory_scope_external_ref": "default",
+                "query": "Alex last week",
+                "token_budget": 1200,
+                "max_facts": 0,
+                "max_chunks": 0,
+                "max_evidence_items": 6,
+            },
+            headers=auth_headers(),
+        )
+        assert context.status_code == 200, context.text
+        data = context.json()["data"]
+
+    assert marker in data["rendered_text"]
+    assert "Linked file alex-review.pdf" not in data["rendered_text"]
+    linked_items = [
+        item
+        for item in data["items"]
+        if "approved_context_linked_asset_manifest_evidence"
+        in item["diagnostics"].get("retrieval_sources", ())
+    ]
+    assert len(linked_items) == 1
+    assert linked_items[0]["item_type"] == "extraction_artifact"
+    assert linked_items[0]["diagnostics"]["retrieval_source"] == "artifact_evidence"
+    assert linked_items[0]["diagnostics"]["ranking_reason"] == (
+        "hybrid match via artifact_evidence, approved_context_linked_asset_manifest_evidence"
+    )
+    assert linked_items[0]["diagnostics"]["context_link_relation_type"] == "evidence_of"
+    assert linked_items[0]["diagnostics"]["asset_id"] == asset["id"]
+    assert linked_items[0]["diagnostics"]["provenance"]["context_link_relation_type"] == (
+        "evidence_of"
+    )
+    assert linked_items[0]["source_refs"][0]["page_number"] == 1
+    assert linked_items[0]["citations"][0]["page_number"] == 1
+    assert linked_items[0]["citations"][0]["ranking_reason"] == (
+        "hybrid match via artifact_evidence, approved_context_linked_asset_manifest_evidence"
+    )
+    assert data["diagnostics"]["approved_context_linked_assets_used"] == 1
+    assert data["diagnostics"]["approved_context_linked_asset_manifest_jobs_considered"] == 1
+    assert data["diagnostics"]["approved_context_linked_asset_manifest_artifacts_considered"] >= 1
+    assert data["diagnostics"]["approved_context_linked_asset_manifest_items_used"] == 1
 
 
 def make_client(tmp_path: Path, **overrides: Any) -> TestClient:
