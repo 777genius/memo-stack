@@ -283,7 +283,7 @@ class _SuggestionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final matchedTerms = _metadataList(suggestion.metadata['matched_terms']);
-    final reasonCodes = _metadataList(suggestion.metadata['reason_codes']);
+    final reasonCodes = suggestion.reasonCodes;
     final policyCodes =
         _metadataList(suggestion.metadata['policy_reason_codes']);
     final signalLabels = suggestion.reasonSignalLabels;
@@ -343,6 +343,9 @@ class _SuggestionTile extends StatelessWidget {
                 _DetailChip(
                   label: 'codes: ${reasonCodes.take(3).join(', ')}',
                 ),
+              if (suggestion.recommendedActionLabel != null)
+                _DetailChip(
+                    label: 'action: ${suggestion.recommendedActionLabel}'),
               if (signalLabels.isNotEmpty)
                 _DetailChip(
                   label: 'signals: ${signalLabels.take(4).join(', ')}',

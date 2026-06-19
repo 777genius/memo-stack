@@ -58,6 +58,12 @@ class MemoryContextLink extends Equatable {
     return '$targetType $targetId';
   }
 
+  String get sourceLabel {
+    final label = metadata['source_label']?.toString().trim();
+    if (label != null && label.isNotEmpty) return label;
+    return '$sourceType $sourceId';
+  }
+
   @override
   List<Object?> get props => [
         id,
@@ -144,6 +150,12 @@ class MemoryContextLinkSuggestion extends Equatable {
     return '$targetType $targetId';
   }
 
+  String get sourceLabel {
+    final label = metadata['source_label']?.toString().trim();
+    if (label != null && label.isNotEmpty) return label;
+    return '$sourceType $sourceId';
+  }
+
   String? get anchorKind {
     final value = metadata['anchor_kind']?.toString().trim();
     return value == null || value.isEmpty ? null : value;
@@ -172,7 +184,31 @@ class MemoryContextLinkSuggestion extends Equatable {
 
   bool get autoApproveEligible => metadata['auto_approve_eligible'] == true;
 
-  List<String> get reasonCodes => _stringList(metadata['reason_codes']);
+  List<String> get reasonCodes => _uniqueStrings([
+        ..._stringList(metadata['reason_codes']),
+        ..._stringList(metadata['dedupe_reason_codes']),
+      ]);
+
+  String? get dedupeMatchType {
+    final value = metadata['dedupe_match_type']?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  String? get recommendedAction {
+    final value = metadata['recommended_action']?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  String? get recommendedActionLabel {
+    return switch (recommendedAction) {
+      'link_duplicate_asset_contexts' => 'link duplicate contexts',
+      'reuse_existing_asset' => 'reuse existing asset',
+      'merge_duplicate_fact' => 'merge duplicate fact',
+      'mark_conflict_for_review' => 'review conflict',
+      final value? => value.replaceAll('_', ' '),
+      _ => null,
+    };
+  }
 
   List<String> get policyReasonCodes =>
       _stringList(metadata['policy_reason_codes']);
@@ -284,6 +320,11 @@ List<Map<String, dynamic>> _mapList(Object? value) {
 
 String? _reasonSignalLabel(String code) {
   return switch (code) {
+    'exact_sha256' => 'exact duplicate',
+    'same_memory_scope' => 'same scope',
+    'same_thread' => 'same thread',
+    'blob_reused' => 'blob reused',
+    'existing_asset_reused' => 'asset reused',
     'visual_text_match' => 'visual text',
     'transcript_match' => 'transcript',
     'keyframe_match' => 'keyframe',
@@ -295,6 +336,17 @@ String? _reasonSignalLabel(String code) {
     'explicit_project_reference' => 'project',
     _ => null,
   };
+}
+
+List<String> _uniqueStrings(Iterable<String> values) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final value in values) {
+    final normalized = value.trim();
+    if (normalized.isEmpty || !seen.add(normalized)) continue;
+    result.add(normalized);
+  }
+  return result;
 }
 
 String? _evidenceModalityLabel(String modality) {
