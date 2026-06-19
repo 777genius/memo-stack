@@ -482,6 +482,7 @@ def _audit_provider_contract(
     )
     vision = contract.get("vision") if isinstance(contract.get("vision"), dict) else {}
     audio_suffixes = set(_string_list(transcription.get("supported_file_types")))
+    required_live_audio_suffixes = set(_string_list(transcription.get("required_live_file_types")))
     vision_suffixes = set(_string_list(vision.get("supported_file_types")))
     vision_detail_levels = set(_string_list(vision.get("detail_levels")))
     _check(
@@ -529,6 +530,13 @@ def _audit_provider_contract(
         "live_provider_contract_includes_current_audio_suffixes",
         REQUIRED_OPENAI_AUDIO_SUFFIXES.issubset(audio_suffixes),
         "Live provider transcription contract is missing current OpenAI audio suffixes",
+    )
+    _check(
+        checks,
+        failures,
+        "live_provider_contract_requires_wav_mp3_proof",
+        {".wav", ".mp3"}.issubset(required_live_audio_suffixes),
+        "Live provider transcription contract must require wav and mp3 proof",
     )
 
 
@@ -585,9 +593,11 @@ def _audit_provider_proof_matrix(
     expected = {
         "vision_real_provider": "succeeded",
         "audio_transcription_real_provider": "succeeded",
+        "audio_transcription_format_matrix": "succeeded",
         "invalid_key_live_probe": "succeeded",
         "vision_fixture_contract": "contract_covered",
         "audio_fixture_contract": "contract_covered",
+        "audio_fixture_format_coverage": "contract_covered",
         "invalid_key_classification": "contract_covered",
         "rate_limit_classification": "contract_covered",
         "timeout_classification": "contract_covered",

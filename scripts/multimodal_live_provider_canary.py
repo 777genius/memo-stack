@@ -46,6 +46,7 @@ DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
+DEFAULT_REQUIRED_AUDIO_SUFFIXES = (".wav", ".mp3")
 INVALID_KEY_PROBE_VALUE = "sk-" + "invalid-live-provider-canary-not-a-real-secret"
 SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
 SYNTHETIC_VISION_TEXT = "INFINITY CONTEXT 24"
@@ -105,7 +106,11 @@ async def run_multimodal_live_provider_canary(
     api_key = _provider_api_key()
     report = _base_report(args, has_provider_key=bool(api_key))
     report["components"]["vision_fixture"] = _vision_fixture_preflight()
-    report["components"]["audio_fixture"] = _audio_fixture_preflight(args)
+    audio_fixture_components = _audio_fixtures_preflight(args)
+    report["components"]["audio_fixtures"] = audio_fixture_components
+    report["components"]["audio_fixture"] = _primary_audio_fixture_component(
+        audio_fixture_components
+    )
     invalid_key_probe_mode = _invalid_key_probe_mode(args, has_provider_key=bool(api_key))
     if invalid_key_probe_mode:
         report["components"]["invalid_key_probe"] = await _run_invalid_key_probe(
@@ -234,9 +239,8 @@ async def _run_transcription(
     args: argparse.Namespace,
 ) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="infinity-context-live-asr-") as tmp:
-        generated_audio = args.audio_fixture is None
-        audio_path = _audio_fixture_path(args.audio_fixture, Path(tmp))
-        if audio_path is None:
+        audio_candidates = _audio_fixture_candidates(args, Path(tmp))
+        if not audio_candidates:
             return _component(
                 "degraded",
                 reason="audio_fixture_missing",
@@ -245,35 +249,57 @@ async def _run_transcription(
                     "with the say command available"
                 ),
             )
-        audio_validation = _audio_fixture_contract_check(audio_path)
-        if audio_validation["status"] != "succeeded":
-            return audio_validation
-        content = audio_path.read_bytes()
-        content_type = _content_type_for_path(audio_path)
-        fixture = _audio_fixture_summary(
-            path=audio_path,
-            content_type=content_type,
-            content=content,
-            generated=generated_audio,
+        results = []
+        for audio_path, generated_audio in audio_candidates:
+            results.append(
+                await _run_transcription_fixture(
+                    api_key=api_key,
+                    args=args,
+                    audio_path=audio_path,
+                    generated_audio=generated_audio,
+                )
+            )
+        return _aggregate_transcription_results(
+            results,
+            required_suffixes=_required_audio_suffixes(args),
         )
-        request = SpeechTranscriptionRequest(
-            job_id=f"live-canary-{uuid.uuid4()}",
-            asset_id=f"asset-{uuid.uuid4()}",
-            filename=audio_path.name,
-            content_type=content_type,
-            byte_size=len(content),
-            sha256_hex=hashlib.sha256(content).hexdigest(),
-            content=content,
-            max_output_chars=4000,
-            prompt="This is a short Infinity Context provider canary.",
-        )
-        adapter = OpenAISpeechTranscriptionAdapter(
-            api_key=api_key,
-            model=args.transcription_model,
-            request_timeout_seconds=args.timeout_seconds,
-        )
-        result = await adapter.transcribe(request)
 
+
+async def _run_transcription_fixture(
+    *,
+    api_key: str,
+    args: argparse.Namespace,
+    audio_path: Path,
+    generated_audio: bool,
+) -> dict[str, object]:
+    audio_validation = _audio_fixture_contract_check(audio_path)
+    if audio_validation["status"] != "succeeded":
+        return audio_validation
+    content = audio_path.read_bytes()
+    content_type = _content_type_for_path(audio_path)
+    fixture = _audio_fixture_summary(
+        path=audio_path,
+        content_type=content_type,
+        content=content,
+        generated=generated_audio,
+    )
+    request = SpeechTranscriptionRequest(
+        job_id=f"live-canary-{uuid.uuid4()}",
+        asset_id=f"asset-{uuid.uuid4()}",
+        filename=audio_path.name,
+        content_type=content_type,
+        byte_size=len(content),
+        sha256_hex=hashlib.sha256(content).hexdigest(),
+        content=content,
+        max_output_chars=4000,
+        prompt="This is a short Infinity Context provider canary.",
+    )
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key=api_key,
+        model=args.transcription_model,
+        request_timeout_seconds=args.timeout_seconds,
+    )
+    result = await adapter.transcribe(request)
     if result.status != "succeeded":
         return _component(
             "failed",
@@ -286,7 +312,10 @@ async def _run_transcription(
             diagnostics=_safe_diagnostics(result.diagnostics),
         )
 
-    transcript_check = _transcript_check(result.text, audio_path=args.audio_fixture)
+    transcript_check = _transcript_check(
+        result.text,
+        audio_path=None if generated_audio else str(audio_path),
+    )
     if transcript_check["status"] != "succeeded":
         return _component(
             "failed",
@@ -317,6 +346,61 @@ async def _run_transcription(
         language=result.language,
         duration_seconds=result.duration_seconds,
         diagnostics=_safe_diagnostics(result.diagnostics),
+    )
+
+
+def _aggregate_transcription_results(
+    results: list[dict[str, object]],
+    *,
+    required_suffixes: frozenset[str],
+) -> dict[str, object]:
+    if not results:
+        return _component(
+            "degraded",
+            reason="audio_fixture_missing",
+            message="No usable audio fixtures were available for transcription canary",
+        )
+    succeeded = [item for item in results if item.get("status") == "succeeded"]
+    covered_suffixes = _covered_audio_suffixes(results)
+    failed = [item for item in results if item.get("status") != "succeeded"]
+    if failed:
+        first = failed[0]
+        return _component(
+            str(first.get("status") or "failed"),
+            reason=first.get("reason"),
+            message=first.get("message"),
+            required_suffixes=sorted(required_suffixes),
+            covered_suffixes=sorted(covered_suffixes),
+            format_results=results,
+        )
+    missing_suffixes = sorted(required_suffixes.difference(covered_suffixes))
+    if missing_suffixes:
+        return _component(
+            "degraded",
+            reason="audio_fixture_required_format_missing",
+            message="Required live audio fixture formats are not covered",
+            required_suffixes=sorted(required_suffixes),
+            covered_suffixes=sorted(covered_suffixes),
+            missing_suffixes=missing_suffixes,
+            format_results=results,
+        )
+    primary = succeeded[0]
+    return _component(
+        "succeeded",
+        provider_name=primary.get("provider_name"),
+        provider_model=primary.get("provider_model"),
+        provider_version=primary.get("provider_version"),
+        fixture=primary.get("fixture"),
+        request_contract=primary.get("request_contract"),
+        transcript_chars=primary.get("transcript_chars"),
+        segment_count=primary.get("segment_count"),
+        word_count=primary.get("word_count"),
+        language=primary.get("language"),
+        duration_seconds=primary.get("duration_seconds"),
+        diagnostics=primary.get("diagnostics"),
+        required_suffixes=sorted(required_suffixes),
+        covered_suffixes=sorted(covered_suffixes),
+        format_results=results,
     )
 
 
@@ -383,6 +467,25 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--audio-fixture",
         default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE"),
         help="Optional speech fixture path for OpenAI transcription.",
+    )
+    parser.add_argument(
+        "--audio-fixtures",
+        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURES"),
+        help="Optional comma/pathsep-separated speech fixture paths.",
+    )
+    parser.add_argument(
+        "--extra-audio-fixture",
+        action="append",
+        default=[],
+        help="Additional speech fixture path. Can be repeated for wav/mp3 matrix proof.",
+    )
+    parser.add_argument(
+        "--require-audio-file-types",
+        default=os.environ.get(
+            "MEMORY_MULTIMODAL_PROVIDER_REQUIRED_AUDIO_TYPES",
+            ",".join(DEFAULT_REQUIRED_AUDIO_SUFFIXES),
+        ),
+        help="Comma-separated audio suffixes that must be covered by live canary.",
     )
     parser.add_argument(
         "--vision-model",
@@ -455,6 +558,7 @@ def _base_report(
             "request_contract": openai_transcription_request_contract(args.transcription_model),
             "max_upload_bytes": OPENAI_AUDIO_MAX_UPLOAD_BYTES,
             "supported_file_types": sorted(OPENAI_AUDIO_SUPPORTED_SUFFIXES),
+            "required_live_file_types": sorted(_required_audio_suffixes(args)),
             "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
         },
     }
@@ -485,6 +589,7 @@ def _base_report(
             "transcription": _component("unknown"),
             "vision_fixture": _component("unknown"),
             "audio_fixture": _component("unknown"),
+            "audio_fixtures": [],
             "invalid_key_probe": _component("unknown"),
         },
     }
@@ -545,6 +650,11 @@ def _proof_matrix(
             components,
             provider_key_present=provider_key_present,
         ),
+        "audio_transcription_format_matrix": _transcription_format_matrix_requirement(
+            components,
+            provider_contract,
+            provider_key_present=provider_key_present,
+        ),
         "vision_fixture_contract": _fixture_component_requirement(
             components,
             "vision_fixture",
@@ -562,6 +672,10 @@ def _proof_matrix(
             supported_suffixes=OPENAI_AUDIO_SUPPORTED_SUFFIXES,
             requires_provider_key=False,
             provider_key_present=provider_key_present,
+        ),
+        "audio_fixture_format_coverage": _audio_fixture_format_coverage_requirement(
+            components,
+            provider_contract,
         ),
         "transcription_request_contract": _transcription_request_contract_requirement(
             provider_contract,
@@ -597,6 +711,7 @@ def _proof_matrix(
         "vision_response_evidence",
         "audio_transcription_real_provider",
         "transcription_response_artifact",
+        "audio_transcription_format_matrix",
         "invalid_key_live_probe",
     )
     contract_names = tuple(name for name in requirements if name not in live_names)
@@ -638,11 +753,7 @@ def _live_component_requirement(
         "proof": "live_provider_call",
         "requires_provider_key": requires_provider_key,
         "ok": component_status == "succeeded",
-        **(
-            {"reason": component.get("reason")}
-            if isinstance(component.get("reason"), str)
-            else {}
-        ),
+        **({"reason": component.get("reason")} if isinstance(component.get("reason"), str) else {}),
     }
 
 
@@ -747,6 +858,43 @@ def _transcription_response_artifact_requirement(
     }
 
 
+def _transcription_format_matrix_requirement(
+    components: dict[object, object],
+    provider_contract: dict[object, object] | None,
+    *,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    required_suffixes = _required_audio_suffixes_from_contract(provider_contract)
+    component = components.get("transcription")
+    if not isinstance(component, dict):
+        return {
+            "status": "not_run" if provider_key_present else "skipped",
+            "proof": "live_provider_format_matrix",
+            "requires_provider_key": True,
+            "ok": False,
+            "required_suffixes": sorted(required_suffixes),
+        }
+    status = str(component.get("status") or "unknown")
+    covered_suffixes = _covered_audio_suffixes(_format_results_from_component(component))
+    ok = status == "succeeded" and required_suffixes.issubset(covered_suffixes)
+    requirement_status = (
+        "succeeded"
+        if ok
+        else "skipped"
+        if not provider_key_present and status == "skipped"
+        else "failed"
+    )
+    return {
+        "status": requirement_status,
+        "proof": "live_provider_format_matrix",
+        "requires_provider_key": True,
+        "ok": ok,
+        "required_suffixes": sorted(required_suffixes),
+        "covered_suffixes": sorted(covered_suffixes),
+        **({"reason": component.get("reason")} if isinstance(component.get("reason"), str) else {}),
+    }
+
+
 def _fixture_component_requirement(
     components: dict[object, object],
     name: str,
@@ -806,6 +954,23 @@ def _fixture_component_requirement(
         "ok": ok,
         "suffix": suffix,
         "content_type": content_type,
+    }
+
+
+def _audio_fixture_format_coverage_requirement(
+    components: dict[object, object],
+    provider_contract: dict[object, object] | None,
+) -> dict[str, object]:
+    required_suffixes = _required_audio_suffixes_from_contract(provider_contract)
+    covered_suffixes = _covered_audio_suffixes(_audio_fixture_components(components))
+    ok = required_suffixes.issubset(covered_suffixes)
+    return {
+        "status": "contract_covered" if ok else "degraded",
+        "proof": "local_fixture_format_matrix",
+        "requires_provider_key": False,
+        "ok": ok,
+        "required_suffixes": sorted(required_suffixes),
+        "covered_suffixes": sorted(covered_suffixes),
     }
 
 
@@ -910,11 +1075,74 @@ def _invalid_key_probe_requirement(components: dict[object, object]) -> dict[str
     }
 
 
+def _format_results_from_component(component: dict[object, object]) -> list[dict[str, object]]:
+    results = component.get("format_results")
+    if isinstance(results, list):
+        return [item for item in results if isinstance(item, dict)]
+    return [component]
+
+
+def _audio_fixture_components(components: dict[object, object]) -> list[dict[str, object]]:
+    fixtures = components.get("audio_fixtures")
+    if isinstance(fixtures, list):
+        return [item for item in fixtures if isinstance(item, dict)]
+    fixture = components.get("audio_fixture")
+    return [fixture] if isinstance(fixture, dict) else []
+
+
+def _covered_audio_suffixes(components: list[dict[str, object]]) -> set[str]:
+    covered: set[str] = set()
+    for component in components:
+        if component.get("status") != "succeeded":
+            continue
+        fixture = component.get("fixture")
+        if not isinstance(fixture, dict):
+            continue
+        suffix = fixture.get("suffix")
+        if isinstance(suffix, str) and suffix:
+            covered.add(suffix.lower())
+    return covered
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
 def _provider_api_key() -> str | None:
     value = os.environ.get("MEMORY_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if value and value.strip():
         return value.strip()
     return None
+
+
+def _required_audio_suffixes(args: argparse.Namespace) -> frozenset[str]:
+    values = _split_configured_values(args.require_audio_file_types)
+    suffixes = {
+        value if value.startswith(".") else f".{value}" for value in values if value.strip()
+    }
+    normalized = {suffix.lower() for suffix in suffixes}
+    supported = normalized.intersection(OPENAI_AUDIO_SUPPORTED_SUFFIXES)
+    return frozenset(supported or DEFAULT_REQUIRED_AUDIO_SUFFIXES)
+
+
+def _required_audio_suffixes_from_contract(
+    provider_contract: dict[object, object] | None,
+) -> frozenset[str]:
+    transcription = (
+        provider_contract.get("transcription")
+        if isinstance(provider_contract, dict)
+        and isinstance(provider_contract.get("transcription"), dict)
+        else {}
+    )
+    values = transcription.get("required_live_file_types")
+    suffixes = {
+        value.lower()
+        for value in _string_list(values)
+        if value.lower() in OPENAI_AUDIO_SUPPORTED_SUFFIXES
+    }
+    return frozenset(suffixes or DEFAULT_REQUIRED_AUDIO_SUFFIXES)
 
 
 def _vision_fixture_preflight() -> dict[str, object]:
@@ -931,31 +1159,58 @@ def _vision_fixture_preflight() -> dict[str, object]:
 
 
 def _audio_fixture_preflight(args: argparse.Namespace) -> dict[str, object]:
+    return _primary_audio_fixture_component(_audio_fixtures_preflight(args))
+
+
+def _audio_fixtures_preflight(args: argparse.Namespace) -> list[dict[str, object]]:
     with tempfile.TemporaryDirectory(prefix="infinity-context-live-asr-preflight-") as tmp:
-        generated_audio = args.audio_fixture is None
-        audio_path = _audio_fixture_path(args.audio_fixture, Path(tmp))
-        if audio_path is None:
-            return _component(
-                "degraded",
-                reason="audio_fixture_missing",
-                message=(
-                    "Set MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE or run on macOS "
-                    "with the say command available"
-                ),
-            )
-        validation = _audio_fixture_contract_check(audio_path)
-        if validation["status"] != "succeeded":
-            return validation
-        content = audio_path.read_bytes()
-        return _component(
-            "succeeded",
-            fixture=_audio_fixture_summary(
-                path=audio_path,
-                content_type=_content_type_for_path(audio_path),
-                content=content,
-                generated=generated_audio,
-            ),
-        )
+        candidates = _audio_fixture_candidates(args, Path(tmp))
+        if not candidates:
+            return [
+                _component(
+                    "degraded",
+                    reason="audio_fixture_missing",
+                    message=(
+                        "Set MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE or run on macOS "
+                        "with the say command available"
+                    ),
+                )
+            ]
+        return [
+            _audio_fixture_component(path=path, generated=generated)
+            for path, generated in candidates
+        ]
+
+
+def _primary_audio_fixture_component(
+    components: list[dict[str, object]],
+) -> dict[str, object]:
+    for component in components:
+        if component.get("status") == "succeeded":
+            return component
+    if components:
+        return components[0]
+    return _component(
+        "degraded",
+        reason="audio_fixture_missing",
+        message="No usable audio fixtures were available",
+    )
+
+
+def _audio_fixture_component(*, path: Path, generated: bool) -> dict[str, object]:
+    validation = _audio_fixture_contract_check(path)
+    if validation["status"] != "succeeded":
+        return validation
+    content = path.read_bytes()
+    return _component(
+        "succeeded",
+        fixture=_audio_fixture_summary(
+            path=path,
+            content_type=_content_type_for_path(path),
+            content=content,
+            generated=generated,
+        ),
+    )
 
 
 def _bytes_fixture_summary(
@@ -1115,12 +1370,86 @@ def _utc_now() -> str:
 
 
 def _audio_fixture_path(configured: str | None, tmp_dir: Path) -> Path | None:
+    candidates = _configured_audio_fixture_paths(
+        argparse.Namespace(
+            audio_fixture=configured,
+            audio_fixtures=None,
+            extra_audio_fixture=[],
+            require_audio_file_types=",".join(DEFAULT_REQUIRED_AUDIO_SUFFIXES),
+        )
+    )
+    if candidates:
+        return candidates[0][0]
+    synthesized = _synthesize_audio_fixtures(
+        tmp_dir,
+        required_suffixes=frozenset({".wav"}),
+    )
+    return synthesized[0][0] if synthesized else None
+
+
+def _audio_fixture_candidates(
+    args: argparse.Namespace,
+    tmp_dir: Path,
+) -> list[tuple[Path, bool]]:
+    configured = _configured_audio_fixture_paths(args)
     if configured:
-        path = Path(configured).expanduser()
+        return configured
+    return _synthesize_audio_fixtures(
+        tmp_dir,
+        required_suffixes=_required_audio_suffixes(args),
+    )
+
+
+def _configured_audio_fixture_paths(args: argparse.Namespace) -> list[tuple[Path, bool]]:
+    raw_values = []
+    raw_values.extend(_split_configured_values(getattr(args, "audio_fixture", None)))
+    raw_values.extend(_split_configured_values(getattr(args, "audio_fixtures", None)))
+    for item in getattr(args, "extra_audio_fixture", []) or []:
+        raw_values.extend(_split_configured_values(item))
+    paths: list[tuple[Path, bool]] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        path = Path(raw).expanduser()
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
         if path.is_file() and path.stat().st_size > 0:
-            return path
-        return None
-    return _synthesize_audio_fixture(tmp_dir)
+            paths.append((path, False))
+    return paths
+
+
+def _split_configured_values(value: object) -> list[str]:
+    if not isinstance(value, str) or not value.strip():
+        return []
+    separators = {",", ";", "\n", os.pathsep}
+    parts = [value]
+    for separator in separators:
+        next_parts: list[str] = []
+        for part in parts:
+            next_parts.extend(part.split(separator))
+        parts = next_parts
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _synthesize_audio_fixtures(
+    tmp_dir: Path,
+    *,
+    required_suffixes: frozenset[str],
+) -> list[tuple[Path, bool]]:
+    wav = _synthesize_audio_fixture(tmp_dir)
+    if wav is None:
+        return []
+    fixtures: list[tuple[Path, bool]] = []
+    if ".wav" in required_suffixes:
+        fixtures.append((wav, True))
+    if ".mp3" in required_suffixes:
+        mp3 = _synthesize_mp3_fixture(wav, tmp_dir)
+        if mp3 is not None:
+            fixtures.append((mp3, True))
+    if not fixtures:
+        fixtures.append((wav, True))
+    return fixtures
 
 
 def _synthesize_audio_fixture(tmp_dir: Path) -> Path | None:
@@ -1135,6 +1464,39 @@ def _synthesize_audio_fixture(tmp_dir: Path) -> Path | None:
         "--file-format=WAVE",
         "--data-format=LEI16@16000",
         SYNTHETIC_AUDIO_PHRASE,
+    ]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    if output.is_file() and output.stat().st_size > 0:
+        return output
+    return None
+
+
+def _synthesize_mp3_fixture(source_wav: Path, tmp_dir: Path) -> Path | None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    output = tmp_dir / "infinity-context-live-transcription-canary.mp3"
+    command = [
+        ffmpeg,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(source_wav),
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        "64k",
+        str(output),
     ]
     try:
         subprocess.run(

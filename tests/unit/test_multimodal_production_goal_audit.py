@@ -267,6 +267,7 @@ def test_multimodal_production_goal_audit_rejects_stale_provider_contract(
     assert result.checks["live_provider_vision_detail_contract_docs_aligned"] is False
     assert result.checks["live_provider_vision_binary_limit_present"] is False
     assert result.checks["live_provider_contract_includes_current_audio_suffixes"] is False
+    assert result.checks["live_provider_contract_requires_wav_mp3_proof"] is False
     assert any("transcription contract" in failure for failure in result.failures)
     assert any("vision contract" in failure for failure in result.failures)
     assert any("current OpenAI audio suffixes" in failure for failure in result.failures)
@@ -371,9 +372,7 @@ def test_multimodal_production_goal_audit_requires_live_invalid_key_probe(
 
     assert result.ok is False
     assert result.checks["live_provider_proof_matrix_invalid_key_live_probe"] is False
-    assert (
-        result.checks["live_provider_proof_matrix_invalid_key_live_probe_observed"] is False
-    )
+    assert result.checks["live_provider_proof_matrix_invalid_key_live_probe_observed"] is False
     assert any("invalid-key probe" in failure for failure in result.failures)
 
 
@@ -569,6 +568,7 @@ def _provider_report() -> dict[str, object]:
                 "endpoint": "/v1/audio/transcriptions",
                 "max_upload_bytes": 25 * 1024 * 1024,
                 "model": "gpt-4o-mini-transcribe",
+                "required_live_file_types": [".mp3", ".wav"],
                 "supported_file_types": [
                     ".m4a",
                     ".mp3",
@@ -613,6 +613,14 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "requires_provider_key": True,
                 "ok": True,
             },
+            "audio_transcription_format_matrix": {
+                "status": "succeeded",
+                "proof": "live_provider_format_matrix",
+                "requires_provider_key": True,
+                "ok": True,
+                "required_suffixes": [".mp3", ".wav"],
+                "covered_suffixes": [".mp3", ".wav"],
+            },
             "invalid_key_live_probe": {
                 "status": "succeeded",
                 "proof": "live_invalid_credential_call",
@@ -635,6 +643,14 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "ok": True,
                 "suffix": ".wav",
                 "content_type": "audio/wav",
+            },
+            "audio_fixture_format_coverage": {
+                "status": "contract_covered",
+                "proof": "local_fixture_format_matrix",
+                "requires_provider_key": False,
+                "ok": True,
+                "required_suffixes": [".mp3", ".wav"],
+                "covered_suffixes": [".mp3", ".wav"],
             },
             "invalid_key_classification": {
                 "status": "contract_covered",
@@ -671,10 +687,10 @@ def _provider_proof_matrix() -> dict[str, object]:
             },
         },
         "summary": {
-            "live_requirements_passed": 4,
-            "live_requirements_total": 4,
-            "contract_requirements_passed": 4,
-            "contract_requirements_total": 4,
+            "live_requirements_passed": 5,
+            "live_requirements_total": 5,
+            "contract_requirements_passed": 5,
+            "contract_requirements_total": 5,
         },
     }
 

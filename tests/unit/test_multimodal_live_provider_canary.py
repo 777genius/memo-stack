@@ -66,6 +66,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "endpoint": "/v1/audio/transcriptions",
         "max_upload_bytes": 26214400,
         "model": "gpt-4o-mini-transcribe",
+        "required_live_file_types": [".mp3", ".wav"],
         "request_contract": {
             "chunking_strategy": None,
             "requires_chunking_strategy": False,
@@ -101,9 +102,9 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert proof["schema_version"] == "multimodal-provider-proof-matrix-v1"
     assert proof["summary"] == {
         "contract_requirements_passed": 7,
-        "contract_requirements_total": 7,
+        "contract_requirements_total": 8,
         "live_requirements_passed": 0,
-        "live_requirements_total": 5,
+        "live_requirements_total": 6,
     }
     requirements = proof["requirements"]
     assert requirements["vision_real_provider"] == {
@@ -134,6 +135,15 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "requires_provider_key": True,
         "status": "skipped",
     }
+    assert requirements["audio_transcription_format_matrix"] == {
+        "covered_suffixes": [],
+        "ok": False,
+        "proof": "live_provider_format_matrix",
+        "reason": "provider_credential_missing",
+        "required_suffixes": [".mp3", ".wav"],
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
     vision_fixture = requirements["vision_fixture_contract"]
     assert vision_fixture["ok"] is True
     assert vision_fixture["proof"] == "local_fixture_contract"
@@ -148,6 +158,14 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert audio_contract["status"] == "contract_covered"
     assert audio_contract["suffix"] == ".wav"
     assert audio_contract["content_type"] == "audio/wav"
+    assert requirements["audio_fixture_format_coverage"] == {
+        "covered_suffixes": [".wav"],
+        "ok": False,
+        "proof": "local_fixture_format_matrix",
+        "required_suffixes": [".mp3", ".wav"],
+        "requires_provider_key": False,
+        "status": "degraded",
+    }
     assert requirements["invalid_key_classification"]["status"] == "contract_covered"
     assert requirements["transcription_request_contract"] == {
         "ok": True,
@@ -350,9 +368,9 @@ def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_ke
     }
     assert report["proof_matrix"]["summary"] == {
         "contract_requirements_passed": 7,
-        "contract_requirements_total": 7,
+        "contract_requirements_total": 8,
         "live_requirements_passed": 1,
-        "live_requirements_total": 5,
+        "live_requirements_total": 6,
     }
 
 
@@ -415,9 +433,7 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe()
 def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() -> None:
     module = _load_canary_module()
     args = module._parse_args([])
-    request_contract = module.openai_transcription_request_contract(
-        args.transcription_model
-    )
+    request_contract = module.openai_transcription_request_contract(args.transcription_model)
 
     proof = module._proof_matrix(
         components={
@@ -436,9 +452,7 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
             "invalid_key_probe": {"status": "skipped"},
         },
         failure_policy_contract=module._failure_policy_contract(),
-        provider_contract=module._base_report(args, has_provider_key=True)[
-            "provider_contract"
-        ],
+        provider_contract=module._base_report(args, has_provider_key=True)["provider_contract"],
         provider_key_present=True,
         secrets_redacted=True,
     )
@@ -460,6 +474,14 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
         "status": "contract_covered",
         "transcript_chars": 52,
         "word_count": 0,
+    }
+    assert proof["requirements"]["audio_transcription_format_matrix"] == {
+        "covered_suffixes": [],
+        "ok": False,
+        "proof": "live_provider_format_matrix",
+        "required_suffixes": [".mp3", ".wav"],
+        "requires_provider_key": True,
+        "status": "failed",
     }
 
 
@@ -527,6 +549,86 @@ def test_multimodal_live_provider_canary_redacts_configured_key_from_failures(
     assert report["components"]["transcription"]["operator_action"] == "retry_later"
     assert sentinel not in rendered
     assert "Bearer sk-" not in rendered
+
+
+def test_multimodal_live_provider_canary_transcribes_wav_and_mp3_matrix(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    wav_fixture = tmp_path / "fixture.wav"
+    mp3_fixture = tmp_path / "fixture.mp3"
+    wav_fixture.write_bytes(_valid_wav_bytes())
+    mp3_fixture.write_bytes(_valid_mp3_bytes())
+
+    class SuccessfulTranscriptionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def transcribe(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="succeeded",
+                text=f"transcribed {request.content_type}",
+                segments=[],
+                words=[],
+                language="en",
+                duration_seconds=1.0,
+                provider_name="fake_transcription",
+                provider_model="fake-transcription-model",
+                provider_version="fake-version",
+                diagnostics={"request_timeout_seconds": 1},
+            )
+
+    monkeypatch.setattr(module, "OpenAISpeechTranscriptionAdapter", SuccessfulTranscriptionAdapter)
+    args = module._parse_args(
+        [
+            "--audio-fixture",
+            str(wav_fixture),
+            "--extra-audio-fixture",
+            str(mp3_fixture),
+            "--timeout-seconds",
+            "1",
+        ]
+    )
+
+    result = asyncio.run(module._run_transcription(api_key="sk-test-provider-key", args=args))
+    proof = module._proof_matrix(
+        components={
+            "vision": {"status": "succeeded", "summary_chars": 10, "visible_text_count": 0},
+            "transcription": result,
+            "vision_fixture": module._vision_fixture_preflight(),
+            "audio_fixtures": module._audio_fixtures_preflight(args),
+            "audio_fixture": module._audio_fixture_preflight(args),
+            "invalid_key_probe": {
+                "status": "succeeded",
+                "observed_reason": "asset_extraction.vision.invalid_api_key",
+            },
+        },
+        failure_policy_contract=module._failure_policy_contract(),
+        provider_contract=module._base_report(args, has_provider_key=True)["provider_contract"],
+        provider_key_present=True,
+        secrets_redacted=True,
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["covered_suffixes"] == [".mp3", ".wav"]
+    assert len(result["format_results"]) == 2
+    assert proof["requirements"]["audio_transcription_format_matrix"] == {
+        "covered_suffixes": [".mp3", ".wav"],
+        "ok": True,
+        "proof": "live_provider_format_matrix",
+        "required_suffixes": [".mp3", ".wav"],
+        "requires_provider_key": True,
+        "status": "succeeded",
+    }
+    assert proof["requirements"]["audio_fixture_format_coverage"] == {
+        "covered_suffixes": [".mp3", ".wav"],
+        "ok": True,
+        "proof": "local_fixture_format_matrix",
+        "required_suffixes": [".mp3", ".wav"],
+        "requires_provider_key": False,
+        "status": "contract_covered",
+    }
 
 
 def test_multimodal_live_provider_canary_failure_policy_contract_covers_provider_errors() -> None:
@@ -646,9 +748,7 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
             "invalid_key_probe": {"status": "skipped", "reason": "invalid_key_probe_not_requested"},
         },
         failure_policy_contract=module._failure_policy_contract(),
-        provider_contract=module._base_report(args, has_provider_key=False)[
-            "provider_contract"
-        ],
+        provider_contract=module._base_report(args, has_provider_key=False)["provider_contract"],
         provider_key_present=False,
         secrets_redacted=True,
     )
@@ -663,9 +763,9 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
     assert proof["requirements"]["audio_fixture_contract"]["requires_provider_key"] is False
     assert proof["summary"] == {
         "contract_requirements_passed": 7,
-        "contract_requirements_total": 7,
+        "contract_requirements_total": 8,
         "live_requirements_passed": 0,
-        "live_requirements_total": 5,
+        "live_requirements_total": 6,
     }
 
 
@@ -812,3 +912,7 @@ def _expected_failure_policy_contract() -> dict[str, dict[str, object]]:
 
 def _valid_wav_bytes() -> bytes:
     return b"RIFF$\x00\x00\x00WAVEfmt " + b"\0" * 32
+
+
+def _valid_mp3_bytes() -> bytes:
+    return b"ID3\x04\x00\x00\x00\x00\x00\x15TIT2\x00\x00\x00\x0b\x00\x00canary mp3"
