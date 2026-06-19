@@ -50,6 +50,56 @@ _RUSSIAN_SUFFIXES = (
     "и",
 )
 _RUSSIAN_VOWELS = str.maketrans("", "", "аеёиоуыэюя")
+_CROSS_LANGUAGE_ALIASES = {
+    "alex": ("aleks", "алекс"),
+    "aleks": ("alex", "алекс"),
+    "atlas": ("атлас",),
+    "audio": ("аудио",),
+    "bill": ("invoice", "счет", "счёт"),
+    "billing": ("биллинг",),
+    "call": ("созвон", "звонок", "встреч"),
+    "demo": ("демо",),
+    "document": ("документ",),
+    "image": ("изображение", "картинка", "фото"),
+    "invoice": ("инвойс", "счет", "счёт", "bill"),
+    "launch": ("запуск",),
+    "meeting": ("встреч", "созвон"),
+    "owner": ("владелец", "владельц"),
+    "project": ("проект",),
+    "recording": ("запись", "транскрипт", "transcript"),
+    "screenshot": ("скриншот", "снимок"),
+    "summary": ("резюме", "саммари"),
+    "transcript": ("транскрипт", "запись", "recording"),
+    "video": ("видео", "видеозапись", "видеофрагмент"),
+    "алекс": ("alex", "aleks"),
+    "атлас": ("atlas",),
+    "аудио": ("audio",),
+    "биллинг": ("billing",),
+    "видео": ("video",),
+    "видеозапись": ("video",),
+    "видеофрагмент": ("video",),
+    "владелец": ("owner",),
+    "владельц": ("owner",),
+    "встреч": ("meeting", "call"),
+    "демо": ("demo",),
+    "документ": ("document",),
+    "запись": ("recording", "transcript"),
+    "запуск": ("launch",),
+    "звонок": ("call",),
+    "изображение": ("image",),
+    "инвойс": ("invoice", "bill"),
+    "картинка": ("image",),
+    "проект": ("project",),
+    "резюме": ("summary",),
+    "саммари": ("summary",),
+    "снимок": ("screenshot",),
+    "созвон": ("call", "meeting"),
+    "скриншот": ("screenshot",),
+    "счет": ("invoice", "bill"),
+    "счёт": ("invoice", "bill"),
+    "транскрипт": ("transcript", "recording"),
+    "фото": ("image",),
+}
 
 
 @dataclass(frozen=True)
@@ -122,7 +172,9 @@ def lexical_variants(token: str) -> tuple[str, ...]:
         variants.extend(_russian_variants(normalized))
     elif _has_latin(normalized):
         variants.extend(_english_variants(normalized))
-    return _dedupe(variant for variant in variants if len(variant) >= 2)
+    return _expand_cross_language_aliases(
+        variant for variant in variants if len(variant) >= 2
+    )
 
 
 def _tokens(text: str, *, split_underscores: bool) -> tuple[str, ...]:
@@ -191,6 +243,22 @@ def _english_stems(token: str) -> tuple[str, ...]:
     if len(token) > 3 and token.endswith("s"):
         stems.append(token[:-1])
     return tuple(stem for stem in stems if len(stem) >= 3)
+
+
+def _expand_cross_language_aliases(values: Iterable[str]) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for value in values:
+        expanded.append(value)
+        for alias in _CROSS_LANGUAGE_ALIASES.get(value, ()):
+            normalized_alias = _normalize_token(alias)
+            if len(normalized_alias) < 2:
+                continue
+            expanded.append(normalized_alias)
+            if _has_cyrillic(normalized_alias):
+                expanded.extend(_russian_variants(normalized_alias))
+            elif _has_latin(normalized_alias):
+                expanded.extend(_english_stems(normalized_alias))
+    return _dedupe(variant for variant in expanded if len(variant) >= 2)
 
 
 def _has_cyrillic(token: str) -> bool:

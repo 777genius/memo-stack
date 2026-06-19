@@ -773,6 +773,85 @@ def test_context_enriches_multimodal_evidence_with_query_focused_snippet(
     assert "time_ms=420000-427000" in data["rendered_text"]
 
 
+def test_context_retrieves_cross_language_multimodal_manifest_evidence(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        container = client.app.state.container
+        upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-cross-language-media-context",
+                "filename": "atlas-invoice-screenshot.png",
+            },
+            content=b"fake png bytes",
+            headers={**auth_headers(), "Content-Type": "image/png"},
+        )
+        assert upload.status_code == 201, upload.text
+        asset = upload.json()["data"]
+        asyncio.run(
+            _store_media_manifest_artifact(
+                container,
+                asset=asset,
+                payload={
+                    "schema_version": "infinity_context.multimodal_manifest.v1",
+                    "evidence_items": [
+                        {
+                            "id": "invoice-owner-region",
+                            "kind": "ocr_region",
+                            "modality": "image",
+                            "text_preview": (
+                                "The screenshot invoice owner Alex approved "
+                                "Project Atlas renewal."
+                            ),
+                            "bbox": [12.0, 32.0, 300.0, 88.0],
+                            "confidence": 0.91,
+                        },
+                        {
+                            "id": "unrelated-region",
+                            "kind": "ocr_region",
+                            "modality": "image",
+                            "text_preview": "Calendar footer without the requested invoice owner.",
+                            "bbox": [1.0, 2.0, 10.0, 20.0],
+                            "confidence": 0.99,
+                        },
+                    ],
+                },
+            )
+        )
+
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_slug": container.settings.default_space_slug,
+                "memory_scope_external_ref": container.settings.default_memory_scope_external_ref,
+                "thread_external_ref": "thread-cross-language-media-context",
+                "query": "скриншот инвойса владелец Атлас Алекс",
+                "max_facts": 0,
+                "max_chunks": 0,
+                "max_evidence_items": 1,
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    rendered = data["rendered_text"]
+    assert "screenshot invoice owner Alex" in rendered
+    assert "Calendar footer" not in rendered
+    assert data["diagnostics"]["artifact_evidence_items_considered"] == 2
+    assert data["diagnostics"]["artifact_evidence_items_used"] == 1
+    assert data["diagnostics"]["query_snippet_items_used"] == 1
+    item = data["items"][0]
+    assert item["item_type"] == "extraction_artifact"
+    assert item["citations"][0]["chunk_id"] == "invoice-owner-region"
+    assert item["citations"][0]["bbox"] == [12.0, 32.0, 300.0, 88.0]
+    assert item["diagnostics"]["query_snippet_unique_term_hits"] == 5
+
+
 def test_context_artifact_evidence_is_thread_scoped(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         container = client.app.state.container

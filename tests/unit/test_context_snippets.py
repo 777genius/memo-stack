@@ -105,3 +105,25 @@ def test_query_focused_snippet_matches_english_plural_variants() -> None:
     assert "renewal meeting approval" in snippet.text
     assert snippet.unique_term_hits == 3
     assert snippet.matched_terms == ("renewal", "meetings", "approvals")
+
+
+def test_query_focused_snippet_matches_cross_language_multimodal_aliases() -> None:
+    snippet = query_focused_snippet(
+        query="скриншот инвойса владелец Атлас Алекс",
+        text=(
+            "Background noise. The screenshot invoice owner Alex approved the "
+            "Project Atlas renewal. More background noise."
+        ),
+    )
+
+    assert snippet is not None
+    assert "screenshot invoice owner Alex" in snippet.text
+    assert "Project Atlas" in snippet.text
+    assert snippet.unique_term_hits == 5
+    assert set(snippet.matched_terms) == {
+        "скриншот",
+        "инвойса",
+        "владелец",
+        "атлас",
+        "алекс",
+    }
