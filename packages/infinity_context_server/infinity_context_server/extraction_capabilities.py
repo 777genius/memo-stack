@@ -737,6 +737,14 @@ def _file_type_detection_contract_payload() -> dict[str, object]:
             "review_duplicate_paths": True,
             "raw_archive_defaults_to_review": True,
         },
+        "binary_executable_policy": {
+            "reject_magic_signatures": True,
+            "blocked_magic_content_types": [
+                "application/x-elf",
+                "application/x-mach-binary",
+                "application/x-msdownload",
+            ],
+        },
         "image_policy": {
             "inspect_dimensions_from_headers": True,
             "supported_dimension_content_types": [

@@ -345,9 +345,20 @@ def test_asset_upload_blocks_path_and_dangerous_extension_before_storage(
             content=b"MZ fake executable",
             headers=auth_headers({"Content-Type": "application/octet-stream"}),
         )
+        disguised_executable_upload = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "default",
+                "filename": "meeting-notes.txt",
+            },
+            content=b"MZ\x90\x00renamed exe",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
 
     assert path_upload.status_code == 429, path_upload.text
     assert executable_upload.status_code == 429, executable_upload.text
+    assert disguised_executable_upload.status_code == 429, disguised_executable_upload.text
     assert stored_blob_files(asset_storage_dir) == []
 
 

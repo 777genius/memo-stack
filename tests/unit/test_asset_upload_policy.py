@@ -30,6 +30,11 @@ def test_upload_policy_detects_magic_content_types() -> None:
     )
     assert detect_magic_content_type(b"\x1a\x45\xdf\xa3\x00\x00webm") == "video/webm"
     assert detect_magic_content_type(b"plain text body") == "text/plain"
+    assert detect_magic_content_type(b"MZ\x90\x00renamed exe") == "application/x-msdownload"
+    assert detect_magic_content_type(b"\x7fELF\x02\x01\x01") == "application/x-elf"
+    assert detect_magic_content_type(b"\xcf\xfa\xed\xfe\x07\x00\x00\x01") == (
+        "application/x-mach-binary"
+    )
 
 
 def test_upload_policy_reports_declared_and_extension_mismatch() -> None:
@@ -44,6 +49,23 @@ def test_upload_policy_reports_declared_and_extension_mismatch() -> None:
     assert result.metadata["upload_magic_content_type"] == "text/plain"
     assert result.metadata["upload_content_type_mismatch"] is True
     assert result.metadata["upload_extension_mismatch"] is True
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"MZ\x90\x00renamed exe",
+        b"\x7fELF\x02\x01\x01",
+        b"\xcf\xfa\xed\xfe\x07\x00\x00\x01",
+    ],
+)
+def test_upload_policy_rejects_binary_executable_magic(content: bytes) -> None:
+    with pytest.raises(MemoryIngressLimitError, match="binary executable"):
+        assess_asset_upload(
+            filename="meeting-notes.txt",
+            declared_content_type="text/plain",
+            content=content,
+        )
 
 
 def test_upload_policy_records_image_dimensions_without_decoding() -> None:

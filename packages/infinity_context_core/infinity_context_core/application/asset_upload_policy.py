@@ -33,6 +33,11 @@ _BLOCKED_EXTENSIONS = {
     ".scr",
     ".sh",
 }
+_BLOCKED_MAGIC_CONTENT_TYPES = {
+    "application/x-elf",
+    "application/x-mach-binary",
+    "application/x-msdownload",
+}
 _NESTED_ARCHIVE_EXTENSIONS = {
     ".7z",
     ".bz2",
@@ -146,6 +151,8 @@ def assess_asset_upload(
     declared = _normalize_content_type(declared_content_type)
     extension_content_type = _EXTENSION_CONTENT_TYPES.get(extension)
     magic_content_type = detect_magic_content_type(content)
+    if magic_content_type in _BLOCKED_MAGIC_CONTENT_TYPES:
+        raise MemoryIngressLimitError("Asset binary executable content is blocked")
     extension_mismatch = bool(
         extension_content_type
         and magic_content_type != "application/octet-stream"
@@ -210,6 +217,21 @@ def assess_asset_upload(
 
 def detect_magic_content_type(content: bytes) -> str:
     head = content[:512]
+    if head.startswith(b"MZ"):
+        return "application/x-msdownload"
+    if head.startswith(b"\x7fELF"):
+        return "application/x-elf"
+    if head.startswith(
+        (
+            b"\xfe\xed\xfa\xce",
+            b"\xce\xfa\xed\xfe",
+            b"\xfe\xed\xfa\xcf",
+            b"\xcf\xfa\xed\xfe",
+            b"\xca\xfe\xba\xbe",
+            b"\xbe\xba\xfe\xca",
+        )
+    ):
+        return "application/x-mach-binary"
     if head.startswith(b"%PDF-"):
         return "application/pdf"
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
