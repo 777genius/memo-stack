@@ -204,6 +204,44 @@ def test_docling_engine_extracts_markdown_when_profile_requests_docling() -> Non
     }
 
 
+def test_docling_engine_bounds_large_element_evidence() -> None:
+    engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _HugeDoclingConverter())
+    request = _request(
+        parser_profile="standard_docling",
+        detected_content_type="application/pdf",
+        content=b"%PDF fake bytes",
+        max_output_chars=128,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    assert result.status == "succeeded"
+    assert result.markdown == "short docling markdown"
+    assert len(result.elements) == 1
+    assert sum(len(element.text) for element in result.elements) == 128
+    assert result.technical_metadata["docling_element_count_total"] == 600
+    assert result.technical_metadata["docling_elements_truncated"] is True
+    assert result.technical_metadata["docling_element_text_truncated_count"] == 1
+    assert result.technical_metadata["docling_element_text_chars"] == 128
+
+
+def test_docling_engine_bounds_table_html_artifact() -> None:
+    engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _HugeTableDoclingConverter())
+    request = _request(
+        parser_profile="standard_docling",
+        detected_content_type="application/pdf",
+        content=b"%PDF fake bytes",
+        max_output_chars=2_048,
+    )
+
+    result = asyncio.run(engine.extract(request))
+
+    table_artifact = next(item for item in result.artifacts if item.artifact_type == "table_html")
+    assert len(table_artifact.content.decode("utf-8")) == 2_048
+    assert table_artifact.metadata["table_html_truncated"] is True
+    assert table_artifact.metadata["table_html_char_limit"] == 2_048
+
+
 def test_docling_engine_ignores_standard_local_profile() -> None:
     engine = DoclingDocumentExtractionEngine(converter_factory=lambda: _FakeDoclingConverter())
     request = _request(
@@ -1037,12 +1075,56 @@ class _FakeDoclingDocument:
         return {"schema_name": "DoclingDocument", "texts": ["memory scope"]}
 
 
+class _HugeDoclingDocument:
+    elements = tuple(
+        {"kind": "text", "text": f"oversized docling evidence {index} " + ("x" * 200)}
+        for index in range(600)
+    )
+
+    def export_to_markdown(self) -> str:
+        return "short docling markdown"
+
+    def export_to_dict(self, **kwargs) -> dict[str, object]:
+        return {"schema_name": "DoclingDocument", "bounded": True}
+
+
+class _HugeTableItem:
+    kind = "table"
+    text = "| huge | table |"
+
+    def export_to_markdown(self, **kwargs) -> str:
+        return "| huge | table |\n| --- | --- |\n| value | value |"
+
+    def export_to_html(self, **kwargs) -> str:
+        return "<table>" + ("<tr><td>value</td></tr>" * 1_000) + "</table>"
+
+
+class _HugeTableDoclingDocument:
+    elements = (_HugeTableItem(),)
+
+    def export_to_markdown(self) -> str:
+        return "| huge | table |\n| --- | --- |\n| value | value |"
+
+    def export_to_dict(self, **kwargs) -> dict[str, object]:
+        return {"schema_name": "DoclingDocument", "table": "huge"}
+
+
 class _FakeDoclingConverter:
     def convert(self, source_path: str, **kwargs) -> _FakeDoclingConversion:
         assert source_path.endswith(".pdf")
         assert kwargs["max_num_pages"] == 100
         assert kwargs["max_file_size"] == 10_000_000
         return _FakeDoclingConversion(document=_FakeDoclingDocument(), errors=[])
+
+
+class _HugeDoclingConverter:
+    def convert(self, source_path: str, **kwargs) -> _FakeDoclingConversion:
+        return _FakeDoclingConversion(document=_HugeDoclingDocument(), errors=[])
+
+
+class _HugeTableDoclingConverter:
+    def convert(self, source_path: str, **kwargs) -> _FakeDoclingConversion:
+        return _FakeDoclingConversion(document=_HugeTableDoclingDocument(), errors=[])
 
 
 class _FailingDoclingConverter:

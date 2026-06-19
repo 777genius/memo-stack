@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
 from typing import Any
 
@@ -11,6 +11,11 @@ from infinity_context_core.ports.extraction import (
     ExtractedElement,
     ExtractionArtifactCandidate,
 )
+
+_MAX_DOCLING_ELEMENTS = 500
+_MAX_DOCLING_ELEMENT_TEXT_CHARS = 4_000
+_MIN_TABLE_HTML_CHARS = 1_024
+_MAX_TABLE_HTML_CHARS = 100_000
 
 
 @dataclass(frozen=True)
@@ -33,10 +38,15 @@ def normalize_docling_document(
     if not elements:
         elements = _markdown_block_elements(markdown=markdown, parser_name=parser_name)
 
+    elements, bound_metadata = _bounded_elements(
+        elements,
+        max_output_chars=max_output_chars,
+    )
     artifacts = _table_artifacts(
         document=document,
         elements=elements,
         max_tables=max_tables,
+        max_output_chars=max_output_chars,
         parser_name=parser_name,
     )
     metadata = _evidence_metadata(
@@ -44,6 +54,7 @@ def normalize_docling_document(
         artifacts=artifacts,
         strategy=strategy,
         markdown_chars=min(len(markdown), max_output_chars),
+        bound_metadata=bound_metadata,
     )
     return NormalizedDocumentEvidence(
         elements=tuple(elements),
@@ -139,6 +150,7 @@ def _table_artifacts(
     document: Any,
     elements: list[ExtractedElement],
     max_tables: int,
+    max_output_chars: int,
     parser_name: str,
 ) -> list[ExtractionArtifactCandidate]:
     artifacts: list[ExtractionArtifactCandidate] = []
@@ -149,7 +161,9 @@ def _table_artifacts(
         if len(artifacts) >= max_tables:
             break
         table_item = table_items[index] if index < len(table_items) else None
-        html = _table_html(table_item=table_item, document=document, fallback=element.text)
+        raw_html = _table_html(table_item=table_item, document=document, fallback=element.text)
+        html_limit = _table_html_limit(max_output_chars)
+        html = _bounded_text(raw_html, limit=html_limit)
         if not html.strip():
             continue
         artifacts.append(
@@ -161,6 +175,8 @@ def _table_artifacts(
                 metadata={
                     "parser": parser_name,
                     "element_kind": element.kind,
+                    "table_html_truncated": len(raw_html) > len(html),
+                    "table_html_char_limit": html_limit,
                     **(
                         {"page_number": element.page_number}
                         if element.page_number is not None
@@ -194,6 +210,7 @@ def _evidence_metadata(
     artifacts: list[ExtractionArtifactCandidate],
     strategy: str,
     markdown_chars: int,
+    bound_metadata: dict[str, object],
 ) -> dict[str, object]:
     return {
         "docling_element_strategy": strategy,
@@ -204,7 +221,52 @@ def _evidence_metadata(
         "docling_page_ref_count": sum(1 for item in elements if item.page_number is not None),
         "docling_bbox_ref_count": sum(1 for item in elements if item.bbox is not None),
         "docling_markdown_chars": markdown_chars,
+        **bound_metadata,
     }
+
+
+def _bounded_elements(
+    elements: list[ExtractedElement],
+    *,
+    max_output_chars: int,
+) -> tuple[list[ExtractedElement], dict[str, object]]:
+    total_candidates = len(elements)
+    max_total_chars = max(1, int(max_output_chars))
+    bounded: list[ExtractedElement] = []
+    text_chars = 0
+    text_truncated_count = 0
+    for element in elements[:_MAX_DOCLING_ELEMENTS]:
+        remaining_chars = max_total_chars - text_chars
+        if remaining_chars <= 0:
+            break
+        text_limit = min(_MAX_DOCLING_ELEMENT_TEXT_CHARS, remaining_chars)
+        text = _bounded_text(element.text, limit=text_limit)
+        if len(element.text) > len(text):
+            text_truncated_count += 1
+        text_chars += len(text)
+        bounded.append(replace(element, text=text))
+    return bounded, {
+        "docling_element_count_total": total_candidates,
+        "docling_elements_truncated": total_candidates > len(bounded),
+        "docling_element_limit": _MAX_DOCLING_ELEMENTS,
+        "docling_element_text_char_limit": _MAX_DOCLING_ELEMENT_TEXT_CHARS,
+        "docling_element_text_chars": text_chars,
+        "docling_element_text_truncated_count": text_truncated_count,
+    }
+
+
+def _bounded_text(text: str, *, limit: int) -> str:
+    limit = max(1, int(limit))
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+def _table_html_limit(max_output_chars: int) -> int:
+    return min(
+        max(_MIN_TABLE_HTML_CHARS, int(max_output_chars)),
+        _MAX_TABLE_HTML_CHARS,
+    )
 
 
 def _item_kind(item: Any) -> str:
