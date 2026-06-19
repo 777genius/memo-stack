@@ -334,6 +334,9 @@ def _event_semantic_terms(anchor: ObservedAnchor) -> tuple[str, ...]:
     participant = str(metadata.get("event_participant_canonical_key") or "").strip().casefold()
     if participant:
         terms.append(f"event_participant:{participant}")
+    project = str(metadata.get("event_project_canonical_key") or "").strip().casefold()
+    if project:
+        terms.append(f"event_project:{project}")
     temporal = _event_temporal_identity(metadata).strip().casefold()
     if temporal:
         terms.append(f"event_temporal:{temporal}")
@@ -613,6 +616,14 @@ def _has_event_identity_mismatch(candidate_text: str, existing_text: str) -> boo
     existing_events = _event_identity_payloads(existing_text)
     if not candidate_events or not existing_events:
         return False
+    candidate_project_events = tuple(event for event in candidate_events if event.get("project"))
+    existing_project_events = tuple(event for event in existing_events if event.get("project"))
+    if candidate_project_events and existing_project_events:
+        for candidate in candidate_project_events:
+            for existing in existing_project_events:
+                if _event_payloads_compatible(candidate, existing):
+                    return False
+        return True
     for candidate in candidate_events:
         for existing in existing_events:
             if _event_payloads_compatible(candidate, existing):
@@ -629,6 +640,7 @@ def _event_identity_payloads(text: str) -> tuple[dict[str, str], ...]:
         payload = {
             "event_type": _normalized_event_type(metadata.get("event_type_canonical")),
             "participant": str(metadata.get("event_participant_canonical_key") or ""),
+            "project": str(metadata.get("event_project_canonical_key") or ""),
             "temporal": _event_temporal_identity(metadata),
         }
         if any(payload.values()):
@@ -637,7 +649,7 @@ def _event_identity_payloads(text: str) -> tuple[dict[str, str], ...]:
 
 
 def _event_payloads_compatible(candidate: dict[str, str], existing: dict[str, str]) -> bool:
-    for key in ("event_type", "participant", "temporal"):
+    for key in ("event_type", "participant", "project", "temporal"):
         left = candidate.get(key, "")
         right = existing.get(key, "")
         if left and right and left != right:
