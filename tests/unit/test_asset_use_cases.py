@@ -158,6 +158,13 @@ def test_create_asset_cleans_unreferenced_blob_on_late_duplicate() -> None:
 
         written_key = storage.writes[0][0]
         assert result.duplicate is True
+        assert result.deduplication is not None
+        assert result.deduplication.status == "late_exact_asset_match"
+        assert result.deduplication.reason_code == "asset_dedup.late_exact_asset_match"
+        assert result.deduplication.scope == "thread"
+        assert result.deduplication.duplicate_of_asset_id == str(existing.id)
+        assert result.deduplication.blob_written is True
+        assert result.deduplication.temporary_blob_cleaned_up is True
         assert result.asset == existing
         assert assets.created == []
         assert storage.deletes == [written_key]
@@ -187,6 +194,9 @@ def test_create_asset_keeps_late_duplicate_blob_when_storage_key_is_referenced()
         result = await use_case.execute(command)
 
         assert result.duplicate is True
+        assert result.deduplication is not None
+        assert result.deduplication.status == "late_exact_asset_match"
+        assert result.deduplication.temporary_blob_cleaned_up is False
         assert result.asset == existing
         assert storage.writes[0][0] == expected_key
         assert storage.deletes == []
@@ -215,6 +225,13 @@ def test_create_asset_reuses_scope_blob_for_different_thread_duplicate() -> None
         )
 
         assert result.duplicate is True
+        assert result.deduplication is not None
+        assert result.deduplication.status == "scope_blob_reused"
+        assert result.deduplication.reason_code == "asset_dedup.scope_blob_reused"
+        assert result.deduplication.scope == "memory_scope"
+        assert result.deduplication.duplicate_of_asset_id == str(reusable.id)
+        assert result.deduplication.storage_key_reused is True
+        assert result.deduplication.blob_written is False
         assert result.asset.id != reusable.id
         assert result.asset.thread_id == THREAD_ID
         assert result.asset.storage_key == reusable.storage_key
@@ -248,6 +265,12 @@ def test_create_asset_same_thread_duplicate_returns_existing_without_scope_looku
         )
 
         assert result.duplicate is True
+        assert result.deduplication is not None
+        assert result.deduplication.status == "exact_asset_match"
+        assert result.deduplication.reason_code == "asset_dedup.exact_asset_match"
+        assert result.deduplication.scope == "thread"
+        assert result.deduplication.duplicate_of_asset_id == str(existing.id)
+        assert result.deduplication.blob_written is False
         assert result.asset == existing
         assert assets.scope_lookup_calls == 0
         assert assets.created == []
@@ -332,7 +355,7 @@ def test_create_asset_sanitizes_user_metadata_and_preserves_upload_policy() -> N
         assets = FakeAssetRepository()
         storage = FakeBlobStorage()
 
-        await _create_use_case(assets=assets, storage=storage).execute(
+        result = await _create_use_case(assets=assets, storage=storage).execute(
             _command(
                 filename="note.txt",
                 content=b"plain text",
@@ -345,6 +368,12 @@ def test_create_asset_sanitizes_user_metadata_and_preserves_upload_policy() -> N
             )
         )
 
+        assert result.duplicate is False
+        assert result.deduplication is not None
+        assert result.deduplication.status == "new_blob_stored"
+        assert result.deduplication.reason_code == "asset_dedup.new_blob_stored"
+        assert result.deduplication.storage_key_reused is False
+        assert result.deduplication.blob_written is True
         metadata = assets.created[0].metadata
         assert "secret_token" not in metadata
         assert metadata["nested"] == {"safe": "ok"}

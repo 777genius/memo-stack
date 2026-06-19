@@ -22,6 +22,7 @@ from infinity_context_core.application.dto import (
     AssetExtractionResult,
     AssetExtractionsResult,
     CancelAssetExtractionCommand,
+    DeduplicationInfo,
     ExtractionArtifactBytesResult,
     GetAssetExtractionQuery,
     GetExtractionArtifactQuery,
@@ -146,6 +147,16 @@ class RequestAssetExtractionUseCase:
                     artifacts=tuple(artifacts),
                     duplicate=True,
                     indexing_status=indexing_status(existing.status),
+                    deduplication=DeduplicationInfo(
+                        duplicate=True,
+                        status="active_job_match",
+                        reason_code="asset_extraction_dedup.active_job_match",
+                        scope="asset",
+                        duplicate_of_job_id=str(existing.id),
+                        storage_key_reused=None,
+                        blob_written=False,
+                        artifact_count=len(artifacts),
+                    ),
                 )
 
             now = self._clock.now()
@@ -241,7 +252,17 @@ class RequestAssetExtractionUseCase:
                     )
             await uow.outbox.enqueue(asset_extract_event(saved))
             await uow.commit()
-        return AssetExtractionResult(job=saved, indexing_status="pending")
+        return AssetExtractionResult(
+            job=saved,
+            indexing_status="pending",
+            deduplication=DeduplicationInfo(
+                duplicate=False,
+                status="new_job_queued",
+                reason_code="asset_extraction_dedup.new_job_queued",
+                scope="none",
+                blob_written=False,
+            ),
+        )
 
 
 class GetAssetExtractionUseCase:

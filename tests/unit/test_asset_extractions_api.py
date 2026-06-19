@@ -2304,7 +2304,15 @@ def test_asset_extraction_request_is_idempotent_before_and_after_worker(
         first_data = first.json()["data"]
         second_data = second.json()["data"]
         assert first_data["duplicate"] is False
+        assert first_data["deduplication"]["status"] == "new_job_queued"
+        assert first_data["deduplication"]["reason_code"] == "asset_extraction_dedup.new_job_queued"
         assert second_data["duplicate"] is True
+        assert second_data["deduplication"]["status"] == "active_job_match"
+        assert (
+            second_data["deduplication"]["reason_code"]
+            == "asset_extraction_dedup.active_job_match"
+        )
+        assert second_data["deduplication"]["duplicate_of_job_id"] == first_data["id"]
         assert second_data["id"] == first_data["id"]
 
         processed = asyncio.run(OutboxWorker(client.app.state.container).run_once(limit=10))
@@ -2317,8 +2325,86 @@ def test_asset_extraction_request_is_idempotent_before_and_after_worker(
         assert after_worker.status_code == 202, after_worker.text
         after_worker_data = after_worker.json()["data"]
         assert after_worker_data["duplicate"] is True
+        assert after_worker_data["deduplication"]["status"] == "active_job_match"
+        assert after_worker_data["deduplication"]["artifact_count"] >= 1
         assert after_worker_data["id"] == first_data["id"]
         assert after_worker_data["status"] == "succeeded"
+
+
+def test_duplicate_upload_with_extract_reuses_existing_asset_and_extraction_contract(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        params = {
+            "space_slug": "quick-capture",
+            "memory_scope_external_ref": "frontend",
+            "thread_external_ref": "same-thread",
+            "filename": "duplicate-capture.txt",
+            "extract": "true",
+        }
+        headers = auth_headers({"Content-Type": "text/plain"})
+        content = b"Same-thread duplicate upload should not create duplicate extraction jobs."
+
+        first = client.post("/v1/assets", params=params, content=content, headers=headers)
+        second = client.post("/v1/assets", params=params, content=content, headers=headers)
+
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+        first_data = first.json()["data"]
+        second_data = second.json()["data"]
+        assert first_data["duplicate"] is False
+        assert first_data["deduplication"]["status"] == "new_blob_stored"
+        assert second_data["duplicate"] is True
+        assert second_data["deduplication"]["status"] == "exact_asset_match"
+        assert second_data["deduplication"]["duplicate_of_asset_id"] == first_data["id"]
+        assert second_data["id"] == first_data["id"]
+        assert second_data["extraction"]["duplicate"] is True
+        assert second_data["extraction"]["deduplication"]["status"] == "active_job_match"
+        assert (
+            second_data["extraction"]["deduplication"]["duplicate_of_job_id"]
+            == first_data["extraction"]["id"]
+        )
+
+
+def test_same_scope_different_thread_duplicate_upload_reuses_blob_contract(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        base_params = {
+            "space_slug": "quick-capture",
+            "memory_scope_external_ref": "frontend",
+            "filename": "shared-note.txt",
+        }
+        content = b"same bytes for two thread contexts"
+        headers = auth_headers({"Content-Type": "text/plain"})
+
+        first = client.post(
+            "/v1/assets",
+            params={**base_params, "thread_external_ref": "thread-a"},
+            content=content,
+            headers=headers,
+        )
+        second = client.post(
+            "/v1/assets",
+            params={**base_params, "thread_external_ref": "thread-b"},
+            content=content,
+            headers=headers,
+        )
+
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+        first_data = first.json()["data"]
+        second_data = second.json()["data"]
+        assert first_data["duplicate"] is False
+        assert first_data["deduplication"]["status"] == "new_blob_stored"
+        assert second_data["duplicate"] is True
+        assert second_data["deduplication"]["status"] == "scope_blob_reused"
+        assert second_data["deduplication"]["scope"] == "memory_scope"
+        assert second_data["deduplication"]["duplicate_of_asset_id"] == first_data["id"]
+        assert second_data["deduplication"]["storage_key_reused"] is True
+        assert second_data["deduplication"]["blob_written"] is False
+        assert second_data["id"] != first_data["id"]
+        assert second_data["thread_id"] != first_data["thread_id"]
 
 
 def test_unsupported_asset_extraction_finishes_without_document_or_retry(

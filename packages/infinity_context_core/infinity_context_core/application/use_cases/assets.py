@@ -9,6 +9,7 @@ from infinity_context_core.application.asset_upload_policy import assess_asset_u
 from infinity_context_core.application.dto import (
     AssetResult,
     CreateAssetCommand,
+    DeduplicationInfo,
     DeleteAssetCommand,
     GetAssetQuery,
     ListAssetsQuery,
@@ -71,7 +72,19 @@ class CreateAssetUseCase:
                 sha256_hex=digest,
             )
             if existing is not None:
-                return AssetResult(asset=existing, duplicate=True)
+                return AssetResult(
+                    asset=existing,
+                    duplicate=True,
+                    deduplication=DeduplicationInfo(
+                        duplicate=True,
+                        status="exact_asset_match",
+                        reason_code="asset_dedup.exact_asset_match",
+                        scope="thread",
+                        duplicate_of_asset_id=str(existing.id),
+                        storage_key_reused=True,
+                        blob_written=False,
+                    ),
+                )
             reusable_asset = await uow.assets.find_any_stored_by_sha256(
                 space_id=str(command.space_id),
                 memory_scope_id=str(command.memory_scope_id),
@@ -131,9 +144,25 @@ class CreateAssetUseCase:
                 )
                 if existing is not None:
                     await uow.commit()
+                    cleaned_up = False
                     if wrote_blob:
-                        await self._delete_blob_if_unreferenced(storage_key=storage_key)
-                    return AssetResult(asset=existing, duplicate=True)
+                        cleaned_up = await self._delete_blob_if_unreferenced(
+                            storage_key=storage_key
+                        )
+                    return AssetResult(
+                        asset=existing,
+                        duplicate=True,
+                        deduplication=DeduplicationInfo(
+                            duplicate=True,
+                            status="late_exact_asset_match",
+                            reason_code="asset_dedup.late_exact_asset_match",
+                            scope="thread",
+                            duplicate_of_asset_id=str(existing.id),
+                            storage_key_reused=True,
+                            blob_written=wrote_blob,
+                            temporary_blob_cleaned_up=cleaned_up,
+                        ),
+                    )
                 saved = await uow.assets.create(asset)
                 await uow.commit()
         except MemoryConflictError:
@@ -150,22 +179,47 @@ class CreateAssetUseCase:
                     suppress_errors=True,
                 )
             raise
-        return AssetResult(asset=saved, duplicate=reusable_asset is not None)
+        if reusable_asset is not None:
+            deduplication = DeduplicationInfo(
+                duplicate=True,
+                status="scope_blob_reused",
+                reason_code="asset_dedup.scope_blob_reused",
+                scope="memory_scope",
+                duplicate_of_asset_id=str(reusable_asset.id),
+                storage_key_reused=True,
+                blob_written=False,
+            )
+        else:
+            deduplication = DeduplicationInfo(
+                duplicate=False,
+                status="new_blob_stored",
+                reason_code="asset_dedup.new_blob_stored",
+                scope="none",
+                storage_key_reused=False,
+                blob_written=True,
+            )
+        return AssetResult(
+            asset=saved,
+            duplicate=reusable_asset is not None,
+            deduplication=deduplication,
+        )
 
     async def _delete_blob_if_unreferenced(
         self,
         *,
         storage_key: str,
         suppress_errors: bool = False,
-    ) -> None:
+    ) -> bool:
         async with self._uow_factory() as uow:
             has_reference = await uow.assets.has_stored_with_storage_key(storage_key=storage_key)
         if not has_reference:
             try:
                 await self._blob_storage.delete(storage_key=storage_key)
+                return True
             except Exception:
                 if not suppress_errors:
                     raise
+        return False
 
 
 class GetAssetUseCase:

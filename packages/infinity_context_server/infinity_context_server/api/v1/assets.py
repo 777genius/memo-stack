@@ -19,6 +19,7 @@ from infinity_context_core.application import (
     RequestAssetExtractionCommand,
     RetryAssetExtractionCommand,
 )
+from infinity_context_core.application.dto import DeduplicationInfo
 from infinity_context_core.domain.assets import AssetStatus, MemoryAsset
 from infinity_context_core.domain.errors import (
     MemoryIngressLimitError,
@@ -96,7 +97,11 @@ async def upload_asset(
             },
         )
     )
-    data: dict[str, Any] = {**asset_to_response(result.asset), "duplicate": result.duplicate}
+    data: dict[str, Any] = {
+        **asset_to_response(result.asset),
+        "duplicate": result.duplicate,
+        "deduplication": deduplication_to_response(result.deduplication),
+    }
     if extract:
         _ensure_extraction_enabled(container)
         try:
@@ -109,6 +114,11 @@ async def upload_asset(
             data["extraction"] = asset_extraction_to_response(
                 extraction.job,
                 now=container.clock.now(),
+            )
+            data["extraction"]["duplicate"] = extraction.duplicate
+            data["extraction"]["indexing_status"] = extraction.indexing_status
+            data["extraction"]["deduplication"] = deduplication_to_response(
+                extraction.deduplication
             )
         except MemoryQuotaExceededError as exc:
             data["extraction_error"] = {
@@ -193,6 +203,7 @@ async def request_asset_extraction(
             **asset_extraction_to_response(result.job, now=container.clock.now()),
             "duplicate": result.duplicate,
             "indexing_status": result.indexing_status,
+            "deduplication": deduplication_to_response(result.deduplication),
         }
     }
 
@@ -338,6 +349,27 @@ def asset_to_response(asset: MemoryAsset) -> dict[str, Any]:
         "created_at": asset.created_at.isoformat(),
         "updated_at": asset.updated_at.isoformat(),
     }
+
+
+def deduplication_to_response(info: DeduplicationInfo | None) -> dict[str, Any] | None:
+    if info is None:
+        return None
+    data: dict[str, Any] = {
+        "duplicate": info.duplicate,
+        "status": info.status,
+        "reason_code": info.reason_code,
+        "scope": info.scope,
+    }
+    optional_fields = {
+        "duplicate_of_asset_id": info.duplicate_of_asset_id,
+        "duplicate_of_job_id": info.duplicate_of_job_id,
+        "storage_key_reused": info.storage_key_reused,
+        "blob_written": info.blob_written,
+        "temporary_blob_cleaned_up": info.temporary_blob_cleaned_up,
+        "artifact_count": info.artifact_count,
+    }
+    data.update({key: value for key, value in optional_fields.items() if value is not None})
+    return data
 
 
 def asset_extraction_to_response(

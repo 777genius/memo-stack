@@ -157,9 +157,24 @@ class DeleteAssetCommand:
 
 
 @dataclass(frozen=True)
+class DeduplicationInfo:
+    duplicate: bool
+    status: str
+    reason_code: str
+    scope: str = "none"
+    duplicate_of_asset_id: str | None = None
+    duplicate_of_job_id: str | None = None
+    storage_key_reused: bool | None = None
+    blob_written: bool | None = None
+    temporary_blob_cleaned_up: bool | None = None
+    artifact_count: int | None = None
+
+
+@dataclass(frozen=True)
 class AssetResult:
     asset: MemoryAsset
     duplicate: bool = False
+    deduplication: DeduplicationInfo | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +245,7 @@ class AssetExtractionResult:
     artifacts: tuple[ExtractionArtifact, ...] = ()
     duplicate: bool = False
     indexing_status: str = "pending"
+    deduplication: DeduplicationInfo | None = None
 
 
 @dataclass(frozen=True)
