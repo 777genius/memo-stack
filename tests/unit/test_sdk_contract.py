@@ -1,13 +1,16 @@
 import json
+from dataclasses import fields
 
 import httpx
 import pytest
+from infinity_context_core.application.context_diagnostics import _BUNDLE_COUNTER_KEYS
 from infinity_context_sdk import (
     ContextBundle,
     InfinityContextClient,
     InfinityContextError,
     MemoryScope,
     ReadScope,
+    context_bundle_from_response,
 )
 
 
@@ -1287,6 +1290,29 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert active_item.diagnostics.review_only is False
     assert active_item.diagnostics.stale_reason is None
     assert raw_secret not in str(bundle)
+
+
+def test_sdk_typed_context_covers_core_bundle_counter_contract() -> None:
+    counters = {key: index + 1 for index, key in enumerate(_BUNDLE_COUNTER_KEYS)}
+    bundle = context_bundle_from_response(
+        {
+            "data": {
+                "bundle_id": "ctx_counter_contract",
+                "rendered_text": "",
+                "diagnostics": {
+                    "context_assembly_version": "context-v2-hybrid-explainable",
+                    "consistency_mode": "best_effort",
+                    **counters,
+                },
+                "items": [],
+            }
+        }
+    )
+
+    diagnostic_fields = {field.name for field in fields(type(bundle.diagnostics))}
+    assert sorted(set(_BUNDLE_COUNTER_KEYS) - diagnostic_fields) == []
+    for key, value in counters.items():
+        assert getattr(bundle.diagnostics, key) == value
 
 
 def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
