@@ -336,6 +336,47 @@ def test_multimodal_production_goal_audit_rejects_missing_provider_proof_matrix(
     assert any("provider proof matrix" in failure for failure in result.failures)
 
 
+def test_multimodal_production_goal_audit_requires_live_invalid_key_probe(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    proof_matrix = provider["proof_matrix"]
+    assert isinstance(proof_matrix, dict)
+    requirements = proof_matrix["requirements"]
+    assert isinstance(requirements, dict)
+    requirements["invalid_key_live_probe"] = {
+        "ok": False,
+        "proof": "live_invalid_credential_call",
+        "reason": "invalid_key_probe_not_requested",
+        "requires_provider_key": False,
+        "status": "skipped",
+    }
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["live_provider_proof_matrix_invalid_key_live_probe"] is False
+    assert (
+        result.checks["live_provider_proof_matrix_invalid_key_live_probe_observed"] is False
+    )
+    assert any("invalid-key probe" in failure for failure in result.failures)
+
+
 def test_multimodal_production_goal_audit_rejects_docker_without_provider_contract(
     tmp_path: Path,
 ) -> None:
@@ -575,6 +616,13 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "proof": "live_provider_call",
                 "requires_provider_key": True,
                 "ok": True,
+            },
+            "invalid_key_live_probe": {
+                "status": "succeeded",
+                "proof": "live_invalid_credential_call",
+                "requires_provider_key": False,
+                "ok": True,
+                "observed_reason": "asset_extraction.vision.invalid_api_key",
             },
             "vision_fixture_contract": {
                 "status": "contract_covered",

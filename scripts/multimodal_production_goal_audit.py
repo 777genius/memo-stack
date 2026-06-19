@@ -585,6 +585,7 @@ def _audit_provider_proof_matrix(
     expected = {
         "vision_real_provider": "succeeded",
         "audio_transcription_real_provider": "succeeded",
+        "invalid_key_live_probe": "succeeded",
         "vision_fixture_contract": "contract_covered",
         "audio_fixture_contract": "contract_covered",
         "invalid_key_classification": "contract_covered",
@@ -601,6 +602,22 @@ def _audit_provider_proof_matrix(
             case.get("status") == status and case.get("ok") is True,
             f"Live provider proof matrix requirement {name} is missing or not proven",
         )
+    invalid_key_probe = (
+        requirements.get("invalid_key_live_probe")
+        if isinstance(requirements.get("invalid_key_live_probe"), dict)
+        else {}
+    )
+    observed_reason = invalid_key_probe.get("observed_reason")
+    _check(
+        checks,
+        failures,
+        "live_provider_proof_matrix_invalid_key_live_probe_observed",
+        invalid_key_probe.get("proof") == "live_invalid_credential_call"
+        and invalid_key_probe.get("requires_provider_key") is False
+        and isinstance(observed_reason, str)
+        and "invalid_api_key" in observed_reason,
+        "Live provider proof matrix invalid-key probe did not prove invalid_api_key classification",
+    )
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
