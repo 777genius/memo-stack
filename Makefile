@@ -176,9 +176,11 @@ infinity-context-top-evidence-preflight:
 .PHONY: infinity-context-top-evidence-bundle
 infinity-context-top-evidence-bundle:
 	@set -e; \
+	export MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY="$${MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY:-1}"; \
 	$(PYTHON) -m infinity_context_server.top_evidence_preflight --json; \
 	evidence_dir="$${MEMORY_QUALITY_EVIDENCE_DIR:-.tmp/infinity-context-top-evidence}"; \
 	external_report="$$evidence_dir/full-provider-agent-public.json"; \
+	multimodal_report="$$evidence_dir/multimodal-live-provider.json"; \
 	expected_git_commit="$$(git rev-parse HEAD)"; \
 	allow_dirty_arg=""; \
 	case "$${MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP:-}" in 1|true|yes|on) allow_dirty_arg="--allow-dirty-top-evidence";; esac; \
@@ -194,10 +196,13 @@ infinity-context-top-evidence-bundle:
 	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"; \
 	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
+	export MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT="$$multimodal_report"; \
+	$(PYTHON) scripts/multimodal_live_provider_canary.py; \
 	$(PYTHON) scripts/clean_full_smoke.py; \
 	$(PYTHON) scripts/quality_evidence_bundle.py \
 		--output-dir "$$evidence_dir" \
 		--extra-report "$$external_report" \
+		--extra-report "$$multimodal_report" \
 		--expected-git-commit "$$expected_git_commit" \
 		$$allow_dirty_arg \
 		--require-top-evidence

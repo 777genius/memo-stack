@@ -29,12 +29,16 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
         "infinity_context_extraction_worker"
     ) in makefile
     assert (
-        "infinity-context-test-quality: infinity-context-lint infinity-context-test-all infinity-context-eval"
+        "infinity-context-test-quality: infinity-context-lint "
+        "infinity-context-test-all infinity-context-eval"
         in makefile
     )
     assert "$(MAKE) infinity-context-secret-scan" in quality_recipe
     assert "$(PYTHON) -m infinity_context_server eval run --suite quality-golden" in makefile
-    assert "$(PYTHON) -m infinity_context_server eval run --suite semantic-linking-golden" in makefile
+    assert (
+        "$(PYTHON) -m infinity_context_server eval run --suite semantic-linking-golden"
+        in makefile
+    )
     assert "$(PYTHON) -m infinity_context_server eval run --suite long-memory-golden" in makefile
     assert "$(PYTHON) -m pytest tests/e2e" in makefile
     assert ".PHONY: infinity-context-multimodal-production-e2e" in makefile
@@ -62,7 +66,8 @@ def test_makefile_has_frontend_quality_gate() -> None:
     assert ".PHONY: infinity-context-frontend-check" in makefile
     assert ".PHONY: infinity-context-frontend-marionette-local-e2e" in makefile
     assert (
-        "infinity-context-frontend-check: infinity-context-frontend-analyze infinity-context-frontend-test"
+        "infinity-context-frontend-check: infinity-context-frontend-analyze "
+        "infinity-context-frontend-test"
     ) in makefile
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) pub get" in makefile
     assert "cd $(FRONTEND_DIR) && $(FLUTTER) analyze" in makefile
@@ -293,9 +298,15 @@ def test_makefile_runs_graph_native_eval_in_quality_gates() -> None:
     eval_recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-eval"))
 
     assert "$(PYTHON) -m infinity_context_server eval run --suite long-memory-golden" in eval_recipe
-    assert "$(PYTHON) -m infinity_context_server eval run --suite semantic-linking-golden" in eval_recipe
+    assert (
+        "$(PYTHON) -m infinity_context_server eval run --suite semantic-linking-golden"
+        in eval_recipe
+    )
     assert ".PHONY: infinity-context-graph-native-eval" in makefile
-    assert "$(PYTHON) -m infinity_context_server eval run --suite graph-native-golden" in eval_recipe
+    assert (
+        "$(PYTHON) -m infinity_context_server eval run --suite graph-native-golden"
+        in eval_recipe
+    )
     assert (
         "infinity-context-auto-memory-quality: infinity-context-capture-test "
         "infinity-context-hook-capture-smoke infinity-context-auto-memory-eval "
@@ -335,6 +346,13 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
         _make_target_recipe(makefile, "infinity-context-top-evidence-bundle")
     )
     assert 'MEMORY_CLEAN_SMOKE_REPORT_OUT="$$external_report"' in top_evidence_recipe
+    assert (
+        'MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY="$${MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY:-1}"'
+        in top_evidence_recipe
+    )
+    assert 'multimodal_report="$$evidence_dir/multimodal-live-provider.json"' in (
+        top_evidence_recipe
+    )
     assert "$(PYTHON) -m infinity_context_server.top_evidence_preflight --json" in (
         top_evidence_recipe
     )
@@ -346,6 +364,8 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
     assert "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET" in top_evidence_preflight
     assert "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET" in top_evidence_preflight
     assert "MEMORY_AGENT_BENCH_SCENARIO_SET=all" in top_evidence_preflight
+    assert "MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY=1" in top_evidence_preflight
+    assert "MEMORY_MULTIMODAL_PROVIDER_REQUIRED_AUDIO_TYPES" in top_evidence_preflight
     assert 'MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"' in (
         top_evidence_recipe
     )
@@ -357,9 +377,14 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
         'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"'
         in top_evidence_recipe
     )
+    assert 'MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT="$$multimodal_report"' in (
+        top_evidence_recipe
+    )
+    assert "$(PYTHON) scripts/multimodal_live_provider_canary.py" in top_evidence_recipe
     assert '$(PYTHON) scripts/quality_evidence_bundle.py \\' in top_evidence_recipe
     assert '--output-dir "$$evidence_dir"' in top_evidence_recipe
     assert '--extra-report "$$external_report"' in top_evidence_recipe
+    assert '--extra-report "$$multimodal_report"' in top_evidence_recipe
     assert "--require-top-evidence" in top_evidence_recipe
     assert "--suite-report" in makefile
     assert "--require-top-evidence" in makefile
@@ -392,7 +417,8 @@ def test_makefile_has_manual_prod_load_canary_target() -> None:
     assert "MEMORY_CLEAN_SMOKE_SKIP_MCP=false" in "\n".join(recipe)
     assert "MEMORY_OPENAI_API_KEY" in "\n".join(recipe)
     assert (
-        "infinity-context-test-quality: infinity-context-lint infinity-context-test-all infinity-context-eval"
+        "infinity-context-test-quality: infinity-context-lint "
+        "infinity-context-test-all infinity-context-eval"
         in makefile
     )
     assert "infinity-context-test-quality: infinity-context-prod-load-canary" not in makefile
@@ -456,7 +482,10 @@ def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     assert ".PHONY: infinity-context-prod-confidence-strict" in makefile
     assert ".PHONY: infinity-context-prod-confidence-full" in makefile
     assert ".PHONY: infinity-context-prod-confidence-strict-preflight" in makefile
-    assert "infinity-context-prod-confidence-full: infinity-context-prod-confidence-strict" in makefile
+    assert (
+        "infinity-context-prod-confidence-full: infinity-context-prod-confidence-strict"
+        in makefile
+    )
     assert "trap cleanup EXIT INT TERM" in recipe
     assert "$(MAKE) infinity-context-prod-confidence-strict-preflight" in recipe
     assert "$(MAKE) infinity-context-down" in recipe
@@ -484,7 +513,10 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
     )
 
     assert ".PHONY: infinity-context-full-provider-canary" in makefile
-    assert "infinity-context-full-provider-canary: infinity-context-clean-full-mcp-smoke" in makefile
+    assert (
+        "infinity-context-full-provider-canary: infinity-context-clean-full-mcp-smoke"
+        in makefile
+    )
     assert ".PHONY: infinity-context-full-provider-public-benchmark-canary" in makefile
     assert ".PHONY: infinity-context-full-provider-public-benchmark-suite" in makefile
     public_recipe = "\n".join(
@@ -591,7 +623,11 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
 def test_memory_agent_plugin_wrappers_support_runtime_env_overrides() -> None:
     wrappers = [
         ROOT / "plugins" / "infinity-context-agent-plugin" / "bin" / "infinity-context-mcp",
-        ROOT / "plugins" / "infinity-context-agent-plugin-cursor-workspace" / "bin" / "infinity-context-mcp",
+        ROOT
+        / "plugins"
+        / "infinity-context-agent-plugin-cursor-workspace"
+        / "bin"
+        / "infinity-context-mcp",
     ]
 
     for wrapper_path in wrappers:
@@ -665,7 +701,8 @@ def test_makefile_has_auto_memory_eval_quality_gate() -> None:
     )
     assert (
         "infinity-context-auto-memory-quality: "
-        "infinity-context-capture-test infinity-context-hook-capture-smoke infinity-context-auto-memory-eval"
+        "infinity-context-capture-test infinity-context-hook-capture-smoke "
+        "infinity-context-auto-memory-eval"
     ) in makefile
 
 

@@ -25,6 +25,7 @@ def _top_evidence_env(
     env = {
         "MEMORY_OPENAI_API_KEY": "sk-test-secret-value",
         "MEMORY_AGENT_BENCH_MODEL": "gpt-test",
+        "MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY": "1",
         "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET": str(locomo),
         "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET": str(longmemeval),
     }
@@ -61,9 +62,17 @@ def test_top_evidence_preflight_accepts_clean_publishable_config(tmp_path: Path)
     assert result.failures == ()
     assert payload["checks"]["public_benchmark_case_count_representative"] is True
     assert payload["checks"]["agent_bench_scenario_set_all"] is True
+    assert payload["checks"]["multimodal_live_invalid_key_probe_enabled"] is True
+    assert payload["checks"]["multimodal_live_audio_format_matrix"] is True
     assert payload["checks"]["locomo_dataset_valid"] is True
     assert payload["checks"]["longmemeval_dataset_valid"] is True
     assert payload["sanitized_config"]["agent_bench_scenario_set"] == "all"
+    assert payload["sanitized_config"]["multimodal_required_audio_types"] == [
+        ".mp3",
+        ".wav",
+    ]
+    assert payload["sanitized_config"]["multimodal_invalid_key_probe_enabled"] is True
+    assert payload["sanitized_config"]["multimodal_skip_invalid_key_probe"] is False
     assert payload["sanitized_config"]["locomo_case_count"] == 600
     assert payload["sanitized_config"]["longmemeval_case_count"] == 600
     assert "sk-test-secret-value" not in json.dumps(payload)
@@ -127,6 +136,88 @@ def test_top_evidence_preflight_rejects_partial_agent_scenario_set(
     assert result.checks["agent_bench_scenario_set_all"] is False
     assert result.sanitized_config["agent_bench_scenario_set"] == "realistic"
     assert any("SCENARIO_SET=all" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_requires_multimodal_invalid_key_probe(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(
+            tmp_path,
+            MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY="0",
+        ),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["multimodal_live_invalid_key_probe_enabled"] is False
+    assert result.sanitized_config["multimodal_invalid_key_probe_enabled"] is False
+    assert any("PROBE_INVALID_KEY=1" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_rejects_skipped_multimodal_invalid_key_probe(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(
+            tmp_path,
+            MEMORY_MULTIMODAL_PROVIDER_SKIP_INVALID_KEY_PROBE="1",
+        ),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["multimodal_live_invalid_key_probe_enabled"] is False
+    assert result.sanitized_config["multimodal_skip_invalid_key_probe"] is True
+    assert any("SKIP_INVALID_KEY_PROBE" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_requires_wav_and_mp3_multimodal_audio_matrix(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(
+            tmp_path,
+            MEMORY_MULTIMODAL_PROVIDER_REQUIRED_AUDIO_TYPES="wav",
+        ),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["multimodal_live_audio_format_matrix"] is False
+    assert result.sanitized_config["multimodal_required_audio_types"] == [".wav"]
+    assert any("both .wav and .mp3" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_rejects_non_provider_multimodal_models(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(
+            tmp_path,
+            MEMORY_EXTRACTION_VISION_MODEL="mock",
+            MEMORY_TRANSCRIPTION_OPENAI_MODEL="disabled",
+            MEMORY_EXTRACTION_VISION_DETAIL="ultra",
+            MEMORY_EXTRACTION_PROVIDER_TIMEOUT_SECONDS="240",
+        ),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["multimodal_live_vision_model_present"] is False
+    assert result.checks["multimodal_live_transcription_model_present"] is False
+    assert result.checks["multimodal_live_vision_detail_valid"] is False
+    assert result.checks["multimodal_live_timeout_bounded"] is False
+    assert result.sanitized_config["vision_model"] == "mock"
+    assert result.sanitized_config["transcription_model"] == "disabled"
 
 
 def test_top_evidence_preflight_ignores_lower_publishable_floor_overrides(

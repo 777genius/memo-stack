@@ -19,8 +19,13 @@ from infinity_context_server.public_benchmark import (
 
 DEFAULT_MIN_PUBLIC_CASES = 600
 DEFAULT_MIN_PUBLIC_ACCURACY = 0.902
+DEFAULT_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS = 60.0
+MAX_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS = 120.0
+MIN_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS = 5.0
+REQUIRED_MULTIMODAL_AUDIO_TYPES = frozenset({".mp3", ".wav"})
 REQUIRED_AGENT_SCENARIO_SET = "all"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+SAFE_VISION_DETAILS = frozenset({"auto", "high", "low"})
 
 
 @dataclass(frozen=True)
@@ -74,6 +79,30 @@ def run_top_evidence_preflight(
     )
     if min_public_accuracy > 1.0:
         min_public_accuracy = 1.0
+    multimodal_required_audio_types = _suffix_set_env(
+        env,
+        "MEMORY_MULTIMODAL_PROVIDER_REQUIRED_AUDIO_TYPES",
+        REQUIRED_MULTIMODAL_AUDIO_TYPES,
+    )
+    multimodal_invalid_key_probe = _bool_env(
+        env,
+        "MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY",
+    )
+    multimodal_skip_invalid_key_probe = _bool_env(
+        env,
+        "MEMORY_MULTIMODAL_PROVIDER_SKIP_INVALID_KEY_PROBE",
+    )
+    multimodal_timeout_seconds = _float_env(
+        env,
+        "MEMORY_EXTRACTION_PROVIDER_TIMEOUT_SECONDS",
+        DEFAULT_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS,
+    )
+    vision_model = env.get("MEMORY_EXTRACTION_VISION_MODEL", "gpt-4.1-mini").strip()
+    vision_detail = env.get("MEMORY_EXTRACTION_VISION_DETAIL", "low").strip().lower()
+    transcription_model = env.get(
+        "MEMORY_TRANSCRIPTION_OPENAI_MODEL",
+        "gpt-4o-mini-transcribe",
+    ).strip()
 
     failures: list[str] = []
     checks: dict[str, bool] = {}
@@ -118,6 +147,72 @@ def run_top_evidence_preflight(
         failures,
         "openai_key_present",
         "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running top evidence",
+    )
+
+    checks["multimodal_live_invalid_key_probe_enabled"] = (
+        multimodal_invalid_key_probe and not multimodal_skip_invalid_key_probe
+    )
+    _append_failure(
+        checks,
+        failures,
+        "multimodal_live_invalid_key_probe_enabled",
+        (
+            "Set MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY=1 and do not set "
+            "MEMORY_MULTIMODAL_PROVIDER_SKIP_INVALID_KEY_PROBE for publishable "
+            "multimodal provider evidence"
+        ),
+    )
+
+    checks["multimodal_live_audio_format_matrix"] = REQUIRED_MULTIMODAL_AUDIO_TYPES.issubset(
+        multimodal_required_audio_types
+    )
+    _append_failure(
+        checks,
+        failures,
+        "multimodal_live_audio_format_matrix",
+        "Top multimodal evidence must require both .wav and .mp3 transcription fixtures",
+    )
+
+    checks["multimodal_live_vision_model_present"] = _safe_model_name(vision_model)
+    _append_failure(
+        checks,
+        failures,
+        "multimodal_live_vision_model_present",
+        "Set MEMORY_EXTRACTION_VISION_MODEL to a real provider model",
+    )
+
+    checks["multimodal_live_transcription_model_present"] = _safe_model_name(
+        transcription_model
+    )
+    _append_failure(
+        checks,
+        failures,
+        "multimodal_live_transcription_model_present",
+        "Set MEMORY_TRANSCRIPTION_OPENAI_MODEL to a real provider model",
+    )
+
+    checks["multimodal_live_vision_detail_valid"] = vision_detail in SAFE_VISION_DETAILS
+    _append_failure(
+        checks,
+        failures,
+        "multimodal_live_vision_detail_valid",
+        "MEMORY_EXTRACTION_VISION_DETAIL must be low, high or auto",
+    )
+
+    checks["multimodal_live_timeout_bounded"] = (
+        MIN_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS
+        <= multimodal_timeout_seconds
+        <= MAX_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS
+    )
+    _append_failure(
+        checks,
+        failures,
+        "multimodal_live_timeout_bounded",
+        (
+            "MEMORY_EXTRACTION_PROVIDER_TIMEOUT_SECONDS must be between "
+            f"{MIN_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS:g} and "
+            f"{MAX_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS:g}"
+        ),
     )
 
     agent_model = env.get("MEMORY_AGENT_BENCH_MODEL", "").strip()
@@ -285,12 +380,19 @@ def run_top_evidence_preflight(
             ),
             "locomo_case_count": locomo_case_count,
             "longmemeval_case_count": longmemeval_case_count,
+            "multimodal_invalid_key_probe_enabled": multimodal_invalid_key_probe,
+            "multimodal_required_audio_types": sorted(multimodal_required_audio_types),
+            "multimodal_skip_invalid_key_probe": multimodal_skip_invalid_key_probe,
+            "multimodal_timeout_seconds": multimodal_timeout_seconds,
             "openai_key_present": openai_key_present,
             "public_benchmark_max_cases": configured_cases,
             "public_benchmark_min_accuracy": configured_accuracy,
             "public_benchmark_name": benchmark_name,
             "top_evidence_min_public_accuracy": min_public_accuracy,
             "top_evidence_min_public_cases": min_public_cases,
+            "transcription_model": transcription_model or None,
+            "vision_detail": vision_detail,
+            "vision_model": vision_model or None,
         },
     )
 
@@ -369,8 +471,32 @@ def _float_env(env: Mapping[str, str], name: str, default: float) -> float:
         return -1.0
 
 
+def _suffix_set_env(
+    env: Mapping[str, str],
+    name: str,
+    default: frozenset[str],
+) -> frozenset[str]:
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    suffixes: set[str] = set()
+    for raw_item in value.replace(";", ",").split(","):
+        item = raw_item.strip().lower()
+        if not item:
+            continue
+        suffixes.add(item if item.startswith(".") else f".{item}")
+    return frozenset(suffixes)
+
+
 def _bool_env(env: Mapping[str, str], name: str) -> bool:
     return env.get(name, "").strip().lower() in TRUE_VALUES
+
+
+def _safe_model_name(value: str) -> bool:
+    text = value.strip().lower()
+    if not text:
+        return False
+    return text not in {"disabled", "mock", "noop", "none", "off"}
 
 
 def _repository_root() -> Path | None:

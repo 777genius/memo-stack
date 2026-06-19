@@ -75,6 +75,47 @@ def _minimal_full_provider_report(
     return report
 
 
+def _minimal_multimodal_live_provider_report(
+    *,
+    commit: str = "abc123",
+    dirty: bool = False,
+) -> dict[str, object]:
+    required_requirements = (
+        "vision_real_provider",
+        "vision_response_evidence",
+        "audio_transcription_real_provider",
+        "audio_transcription_format_matrix",
+        "transcription_response_artifact",
+        "invalid_key_live_probe",
+        "no_secret_leak_guard",
+    )
+    return {
+        "suite": "infinity-context-multimodal-live-provider-canary",
+        "ok": True,
+        "provider_key_present": True,
+        "provenance": _strict_provenance(
+            generated_by="scripts/multimodal_live_provider_canary.py",
+            suite="infinity-context-multimodal-live-provider-canary",
+            commit=commit,
+            dirty=dirty,
+        ),
+        "proof_matrix": {
+            "schema_version": "multimodal-provider-proof-matrix-v1",
+            "summary": {
+                "contract_requirements_passed": 8,
+                "contract_requirements_total": 8,
+                "live_requirements_passed": 6,
+                "live_requirements_total": 6,
+            },
+            "requirements": {
+                name: {"ok": True, "status": "succeeded"}
+                for name in required_requirements
+            },
+        },
+        "secrets_redacted": True,
+    }
+
+
 def _minimal_agent_behavior_report(
     *,
     include_provenance: bool = True,
@@ -343,6 +384,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     tmp_path: Path,
 ) -> None:
     external_report = tmp_path / "full-provider-agent-public.json"
+    multimodal_report = tmp_path / "multimodal-live-provider.json"
     live_smoke_report = tmp_path / "agent-live-smoke.json"
     external_report.write_text(
         json.dumps(
@@ -482,10 +524,14 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         json.dumps(_minimal_agent_live_smoke_report()),
         encoding="utf-8",
     )
+    multimodal_report.write_text(
+        json.dumps(_minimal_multimodal_live_provider_report()),
+        encoding="utf-8",
+    )
 
     result = build_quality_evidence_bundle(
         output_dir=tmp_path / "evidence",
-        extra_report_paths=(external_report, live_smoke_report),
+        extra_report_paths=(external_report, multimodal_report, live_smoke_report),
         require_top_evidence=True,
         expected_git_commit="abc123",
     )
@@ -494,7 +540,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
     assert result["expected_git_commit"] == "abc123"
     assert result["allow_dirty_top_evidence"] is False
     assert result["scorecard"]["confidence_tier"] == (
-        "full_provider_and_agent_behavior_and_agent_live_smoke_and_"
+        "full_provider_and_multimodal_live_provider_and_agent_behavior_and_agent_live_smoke_and_"
         "public_benchmark_evaluated"
     )
     assert result["scorecard"]["top_library_comparison_ready"] is True
@@ -533,7 +579,7 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         "min_case_count": 500,
     }
     assert result["manifest_path"].endswith("quality-evidence-manifest.json")
-    assert len(external_artifacts) == 2
+    assert len(external_artifacts) == 3
     assert external_artifacts[0]["path"] == str(external_report)
     assert external_artifacts[0]["relative_path"] is None
     assert external_artifacts[0]["report"]["suite"] == "infinity-context-full-provider-canary"
@@ -541,9 +587,16 @@ def test_quality_evidence_bundle_can_pass_strict_top_evidence_with_external_repo
         "scripts/clean_full_smoke.py"
     )
     assert external_artifacts[0]["report"]["provenance"]["git"]["commit"] == "abc123"
-    assert external_artifacts[1]["path"] == str(live_smoke_report)
-    assert external_artifacts[1]["report"]["suite"] == "infinity-context-agent-live-smoke"
+    assert external_artifacts[1]["path"] == str(multimodal_report)
+    assert external_artifacts[1]["report"]["suite"] == (
+        "infinity-context-multimodal-live-provider-canary"
+    )
     assert external_artifacts[1]["report"]["provenance"]["generated_by"] == (
+        "scripts/multimodal_live_provider_canary.py"
+    )
+    assert external_artifacts[2]["path"] == str(live_smoke_report)
+    assert external_artifacts[2]["report"]["suite"] == "infinity-context-agent-live-smoke"
+    assert external_artifacts[2]["report"]["provenance"]["generated_by"] == (
         "scripts/agent_install_verification.py"
     )
 
@@ -979,6 +1032,7 @@ def test_quality_evidence_bundle_accepts_provenanced_standalone_top_reports(
     assert result["scorecard"]["top_library_comparison_ready"] is False
     assert result["scorecard"]["evidence_gaps"] == [
         "full_provider_canary_missing",
+        "multimodal_live_provider_canary_missing",
         "agent_live_smoke_missing",
     ]
 
