@@ -106,12 +106,16 @@ async def run_multimodal_live_provider_canary(
     report = _base_report(args, has_provider_key=bool(api_key))
     report["components"]["vision_fixture"] = _vision_fixture_preflight()
     report["components"]["audio_fixture"] = _audio_fixture_preflight(args)
-    if args.probe_invalid_key:
-        report["components"]["invalid_key_probe"] = await _run_invalid_key_probe(args=args)
+    invalid_key_probe_mode = _invalid_key_probe_mode(args, has_provider_key=bool(api_key))
+    if invalid_key_probe_mode:
+        report["components"]["invalid_key_probe"] = await _run_invalid_key_probe(
+            args=args,
+            probe_mode=invalid_key_probe_mode,
+        )
     else:
         report["components"]["invalid_key_probe"] = _component(
             "skipped",
-            reason="invalid_key_probe_not_requested",
+            reason=_invalid_key_probe_skip_reason(args, has_provider_key=bool(api_key)),
         )
     if not api_key:
         report["components"]["provider_key"] = _component(
@@ -316,13 +320,18 @@ async def _run_transcription(
     )
 
 
-async def _run_invalid_key_probe(args: argparse.Namespace) -> dict[str, object]:
+async def _run_invalid_key_probe(
+    args: argparse.Namespace,
+    *,
+    probe_mode: str = "explicit",
+) -> dict[str, object]:
     result = await _run_vision(api_key=INVALID_KEY_PROBE_VALUE, args=args)
     reason = str(result.get("reason") or "")
     if result.get("status") == "failed" and "invalid_api_key" in reason:
         return _component(
             "succeeded",
             proof="live_invalid_credential_call",
+            probe_mode=probe_mode,
             observed_reason=reason,
             observed_status=result.get("status"),
             diagnostics=_safe_diagnostics(result.get("diagnostics") or {}),
@@ -331,10 +340,33 @@ async def _run_invalid_key_probe(args: argparse.Namespace) -> dict[str, object]:
         "failed",
         reason="invalid_key_probe_unexpected_result",
         message="Invalid key probe did not return an invalid_api_key classification",
+        probe_mode=probe_mode,
         observed_status=result.get("status"),
         observed_reason=reason or None,
         diagnostics=_safe_diagnostics(result.get("diagnostics") or {}),
     )
+
+
+def _invalid_key_probe_mode(
+    args: argparse.Namespace,
+    *,
+    has_provider_key: bool,
+) -> str | None:
+    if args.probe_invalid_key:
+        return "explicit"
+    if not has_provider_key and not args.skip_invalid_key_probe:
+        return "auto_no_key"
+    return None
+
+
+def _invalid_key_probe_skip_reason(
+    args: argparse.Namespace,
+    *,
+    has_provider_key: bool,
+) -> str:
+    if not has_provider_key and args.skip_invalid_key_probe:
+        return "invalid_key_probe_skipped_by_request"
+    return "invalid_key_probe_not_requested"
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -384,6 +416,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=(
             "Make a live provider call with a synthetic invalid key to verify "
             "invalid_api_key classification and redaction."
+        ),
+    )
+    parser.add_argument(
+        "--skip-invalid-key-probe",
+        action="store_true",
+        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_SKIP_INVALID_KEY_PROBE") == "1",
+        help=(
+            "Skip the automatic synthetic invalid-key probe in no-key degraded mode. "
+            "Explicit --probe-invalid-key still runs the probe."
         ),
     )
     return parser.parse_args(argv)

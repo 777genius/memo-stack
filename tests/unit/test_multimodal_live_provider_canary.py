@@ -38,6 +38,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             str(SCRIPT),
             "--report-out",
             str(report_path),
+            "--skip-invalid-key-probe",
         ],
         cwd=ROOT,
         env=env,
@@ -161,7 +162,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert requirements["invalid_key_live_probe"] == {
         "ok": False,
         "proof": "live_invalid_credential_call",
-        "reason": "invalid_key_probe_not_requested",
+        "reason": "invalid_key_probe_skipped_by_request",
         "requires_provider_key": False,
         "status": "skipped",
     }
@@ -200,7 +201,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert file_report["components"]["audio_fixture"]["fixture"]["role"] == "audio_transcription"
     assert file_report["components"]["invalid_key_probe"] == {
         "operator_action": "inspect_provider_canary",
-        "reason": "invalid_key_probe_not_requested",
+        "reason": "invalid_key_probe_skipped_by_request",
         "status": "skipped",
         "user_retryable": False,
     }
@@ -289,10 +290,94 @@ def test_multimodal_live_provider_canary_invalid_key_probe_is_redacted(
 
     assert component["status"] == "succeeded"
     assert component["proof"] == "live_invalid_credential_call"
+    assert component["probe_mode"] == "explicit"
     assert component["observed_status"] == "failed"
     assert component["observed_reason"] == "asset_extraction.vision.invalid_api_key"
     assert component["diagnostics"] == {"message": "provider rejected <redacted>"}
     assert module.INVALID_KEY_PROBE_VALUE not in rendered
+
+
+def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_key(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    audio_fixture = tmp_path / "fixture.wav"
+    audio_fixture.write_bytes(_valid_wav_bytes())
+    monkeypatch.delenv("MEMORY_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    async def fake_invalid_key_probe(
+        *,
+        args: object,
+        probe_mode: str = "explicit",
+    ) -> dict[str, object]:
+        assert args is not None
+        return module._component(
+            "succeeded",
+            proof="live_invalid_credential_call",
+            probe_mode=probe_mode,
+            observed_reason="asset_extraction.vision.invalid_api_key",
+            observed_status="failed",
+            diagnostics={"message": "provider rejected <redacted>"},
+        )
+
+    monkeypatch.setattr(module, "_run_invalid_key_probe", fake_invalid_key_probe)
+
+    report = asyncio.run(
+        module.run_multimodal_live_provider_canary(
+            module._parse_args(["--audio-fixture", str(audio_fixture)])
+        )
+    )
+
+    assert report["ok"] is False
+    assert report["provider_key_present"] is False
+    assert report["components"]["provider_key"]["reason"] == "provider_credential_missing"
+    assert report["components"]["invalid_key_probe"] == {
+        "diagnostics": {"message": "provider rejected <redacted>"},
+        "observed_reason": "asset_extraction.vision.invalid_api_key",
+        "observed_status": "failed",
+        "probe_mode": "auto_no_key",
+        "proof": "live_invalid_credential_call",
+        "status": "succeeded",
+    }
+    assert report["proof_matrix"]["requirements"]["invalid_key_live_probe"] == {
+        "ok": True,
+        "observed_reason": "asset_extraction.vision.invalid_api_key",
+        "proof": "live_invalid_credential_call",
+        "requires_provider_key": False,
+        "status": "succeeded",
+    }
+    assert report["proof_matrix"]["summary"] == {
+        "contract_requirements_passed": 7,
+        "contract_requirements_total": 7,
+        "live_requirements_passed": 1,
+        "live_requirements_total": 5,
+    }
+
+
+def test_multimodal_live_provider_canary_can_skip_auto_invalid_key_probe() -> None:
+    module = _load_canary_module()
+    args = module._parse_args(["--skip-invalid-key-probe"])
+
+    assert module._invalid_key_probe_mode(args, has_provider_key=False) is None
+    assert (
+        module._invalid_key_probe_skip_reason(args, has_provider_key=False)
+        == "invalid_key_probe_skipped_by_request"
+    )
+    assert module._invalid_key_probe_mode(args, has_provider_key=True) is None
+    assert (
+        module._invalid_key_probe_skip_reason(args, has_provider_key=True)
+        == "invalid_key_probe_not_requested"
+    )
+
+
+def test_multimodal_live_provider_canary_explicit_invalid_key_probe_overrides_skip() -> None:
+    module = _load_canary_module()
+    args = module._parse_args(["--probe-invalid-key", "--skip-invalid-key-probe"])
+
+    assert module._invalid_key_probe_mode(args, has_provider_key=False) == "explicit"
+    assert module._invalid_key_probe_mode(args, has_provider_key=True) == "explicit"
 
 
 def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe() -> None:
