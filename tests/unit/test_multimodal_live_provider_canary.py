@@ -60,6 +60,15 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert file_report["git"]["commit"]
     assert file_report["git"]["short_commit"]
     assert isinstance(file_report["git"]["dirty"], bool)
+    assert file_report["provenance"]["schema_version"] == 1
+    assert file_report["provenance"]["generated_by"] == (
+        "scripts/multimodal_live_provider_canary.py"
+    )
+    assert file_report["provenance"]["suite"] == (
+        "infinity-context-multimodal-live-provider-canary"
+    )
+    assert file_report["provenance"]["git"]["commit"]
+    assert file_report["provenance"]["runtime"]["python_version"]
     assert file_report["provider_key_present"] is False
     assert file_report["provider_contract"]["transcription"] == {
         "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
@@ -372,6 +381,12 @@ def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_ke
         "live_requirements_passed": 1,
         "live_requirements_total": 6,
     }
+    assert report["provenance"]["generated_by"] == (
+        "scripts/multimodal_live_provider_canary.py"
+    )
+    assert report["provenance"]["suite"] == (
+        "infinity-context-multimodal-live-provider-canary"
+    )
 
 
 def test_multimodal_live_provider_canary_can_skip_auto_invalid_key_probe() -> None:

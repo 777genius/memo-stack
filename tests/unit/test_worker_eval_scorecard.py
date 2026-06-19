@@ -324,6 +324,68 @@ def _full_provider_canary_report() -> dict[str, Any]:
     }
 
 
+def _multimodal_live_provider_canary_report() -> dict[str, Any]:
+    requirements = {
+        "vision_real_provider": {"ok": True, "status": "succeeded"},
+        "vision_response_evidence": {"ok": True, "status": "succeeded"},
+        "audio_transcription_real_provider": {"ok": True, "status": "succeeded"},
+        "audio_transcription_format_matrix": {
+            "covered_suffixes": [".mp3", ".wav"],
+            "ok": True,
+            "status": "succeeded",
+        },
+        "transcription_response_artifact": {"ok": True, "status": "succeeded"},
+        "invalid_key_live_probe": {"ok": True, "status": "succeeded"},
+        "no_secret_leak_guard": {"ok": True, "status": "contract_covered"},
+    }
+    return {
+        "suite": "infinity-context-multimodal-live-provider-canary",
+        "ok": True,
+        "provider_key_present": True,
+        "provenance": _scorecard_provenance(
+            generated_by="scripts/multimodal_live_provider_canary.py",
+            suite="infinity-context-multimodal-live-provider-canary",
+        ),
+        "proof_matrix": {
+            "schema_version": "multimodal-provider-proof-matrix-v1",
+            "summary": {
+                "contract_requirements_passed": 8,
+                "contract_requirements_total": 8,
+                "live_requirements_passed": 6,
+                "live_requirements_total": 6,
+            },
+            "requirements": requirements,
+        },
+        "secrets_redacted": True,
+    }
+
+
+def _degraded_multimodal_live_provider_canary_report() -> dict[str, Any]:
+    report = _multimodal_live_provider_canary_report()
+    report["ok"] = False
+    report["provider_key_present"] = False
+    requirements = report["proof_matrix"]["requirements"]
+    for name in (
+        "vision_real_provider",
+        "vision_response_evidence",
+        "audio_transcription_real_provider",
+        "audio_transcription_format_matrix",
+        "transcription_response_artifact",
+    ):
+        requirements[name] = {
+            "ok": False,
+            "reason": "provider_credential_missing",
+            "status": "skipped",
+        }
+    report["proof_matrix"]["summary"] = {
+        "contract_requirements_passed": 8,
+        "contract_requirements_total": 8,
+        "live_requirements_passed": 1,
+        "live_requirements_total": 6,
+    }
+    return report
+
+
 def _agent_behavior_benchmark_report() -> dict[str, Any]:
     return {
         "suite": "memory_mcp_agent_behavior",
@@ -534,6 +596,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["external_evidence"]["top_library_comparison_ready"] is False
     assert result["external_evidence"]["evidence_gaps"] == [
         "full_provider_canary_missing",
+        "multimodal_live_provider_canary_missing",
         "agent_behavior_benchmark_missing",
         "agent_live_smoke_missing",
         "public_benchmark_evidence_missing",
@@ -600,6 +663,14 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "qdrant",
         "graphiti",
         "embeddings",
+    ]
+    assert policy["multimodal_live_provider"]["requires_live_vision"] is True
+    assert policy["multimodal_live_provider"]["requires_live_audio_transcription"] is True
+    assert "vision_real_provider" in policy["multimodal_live_provider"][
+        "required_requirements"
+    ]
+    assert "audio_transcription_format_matrix" in policy["multimodal_live_provider"][
+        "required_requirements"
     ]
     assert (
         "mcp_search_has_qdrant_document_chunk_after_worker"
@@ -721,6 +792,7 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
     assert evidence["confidence_tier"] == "full_provider_and_agent_behavior_evaluated"
     assert evidence["top_library_comparison_ready"] is False
     assert evidence["evidence_gaps"] == [
+        "multimodal_live_provider_canary_missing",
         "agent_live_smoke_missing",
         "public_benchmark_evidence_missing",
     ]
@@ -752,6 +824,9 @@ def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:
 def test_memory_quality_scorecard_requires_live_agent_smoke_for_top_ready() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
 
@@ -763,9 +838,39 @@ def test_memory_quality_scorecard_requires_live_agent_smoke_for_top_ready() -> N
     assert evidence["evidence_gaps"] == ["agent_live_smoke_missing"]
 
 
+def test_memory_quality_scorecard_reports_degraded_multimodal_live_provider() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _degraded_multimodal_live_provider_canary_report()
+    )
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    provider = evidence["multimodal_live_provider"]
+    assert result["ok"] is False
+    assert provider["present"] is True
+    assert provider["ok"] is False
+    assert provider["provider_key_present"] is False
+    assert provider["requirement_reasons"]["vision_real_provider"] == (
+        "provider_credential_missing"
+    )
+    assert "provider_key_present" in provider["failed_required_checks"]
+    assert "vision_real_provider_ok" in provider["failed_required_checks"]
+    assert "multimodal_live_provider_canary_failed" in evidence["evidence_gaps"]
+    assert "multimodal_live_provider_key_missing" in evidence["evidence_gaps"]
+
+
 def test_memory_quality_scorecard_rejects_weak_live_agent_smoke_evidence() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -792,6 +897,9 @@ def test_memory_quality_scorecard_rejects_weak_live_agent_smoke_evidence() -> No
 def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmarks() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -801,7 +909,7 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
     evidence = result["external_evidence"]
     assert result["ok"] is True
     assert evidence["confidence_tier"] == (
-        "full_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
+        "full_provider_and_multimodal_live_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
     )
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
@@ -816,6 +924,9 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
 def test_memory_quality_scorecard_accepts_split_public_benchmark_reports() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["locomo"] = {
@@ -1324,6 +1435,9 @@ def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> 
     full_provider = _full_provider_canary_report()
     full_provider["public_benchmark"] = _public_benchmark_report()
     suite_results["infinity-context-full-provider-canary"] = full_provider
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
 
@@ -1333,7 +1447,7 @@ def test_memory_quality_scorecard_can_use_nested_public_benchmark_evidence() -> 
     assert result["ok"] is True
     assert result["gates"]["top_library_external_evidence"] is True
     assert evidence["confidence_tier"] == (
-        "full_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
+        "full_provider_and_multimodal_live_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
     )
     assert evidence["top_library_comparison_ready"] is True
     assert evidence["evidence_gaps"] == []
@@ -1377,6 +1491,9 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_provenance() -> N
     agent_behavior = _agent_behavior_benchmark_report()
     agent_behavior.pop("provenance")
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = agent_behavior
     suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -1411,6 +1528,11 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_proven
             "full_provider_canary_provenance_failed",
         ),
         (
+            "infinity-context-multimodal-live-provider-canary",
+            "multimodal_live_provider",
+            "multimodal_live_provider_canary_provenance_failed",
+        ),
+        (
             "infinity-context-agent-live-smoke",
             "agent_live_smoke",
             "agent_live_smoke_provenance_failed",
@@ -1423,6 +1545,9 @@ def test_memory_quality_scorecard_strict_top_evidence_requires_all_report_proven
     ):
         suite_results = _scorecard_fixture_results()
         suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["infinity-context-multimodal-live-provider-canary"] = (
+            _multimodal_live_provider_canary_report()
+        )
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
         suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -1446,6 +1571,11 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
             "full_provider_canary_safety_failed",
         ),
         (
+            "infinity-context-multimodal-live-provider-canary",
+            "multimodal_live_provider",
+            "multimodal_live_provider_canary_safety_failed",
+        ),
+        (
             "memory_mcp_agent_behavior",
             "agent_behavior_benchmark",
             "agent_behavior_benchmark_safety_failed",
@@ -1463,6 +1593,9 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_sensitive_reports(
     ):
         suite_results = _scorecard_fixture_results()
         suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["infinity-context-multimodal-live-provider-canary"] = (
+            _multimodal_live_provider_canary_report()
+        )
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
         suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -1488,6 +1621,11 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
             "full_provider_canary_safety_failed",
         ),
         (
+            "infinity-context-multimodal-live-provider-canary",
+            "multimodal_live_provider",
+            "multimodal_live_provider_canary_safety_failed",
+        ),
+        (
             "memory_mcp_agent_behavior",
             "agent_behavior_benchmark",
             "agent_behavior_benchmark_safety_failed",
@@ -1505,6 +1643,9 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
     ):
         suite_results = _scorecard_fixture_results()
         suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+        suite_results["infinity-context-multimodal-live-provider-canary"] = (
+            _multimodal_live_provider_canary_report()
+        )
         suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
         suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
         suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -1527,6 +1668,9 @@ def test_memory_quality_scorecard_strict_top_evidence_rejects_local_home_paths()
 def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    suite_results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
     suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
     suite_results["public-memory-benchmark"] = _public_benchmark_report()
@@ -1538,6 +1682,8 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     assert result["external_evidence"]["required_for_gate"] is True
     assert result["external_evidence"]["full_provider_canary"]["provenance_ok"] is True
     assert result["external_evidence"]["full_provider_canary"]["safety_ok"] is True
+    assert result["external_evidence"]["multimodal_live_provider"]["provenance_ok"] is True
+    assert result["external_evidence"]["multimodal_live_provider"]["safety_ok"] is True
     assert result["external_evidence"]["agent_behavior_benchmark"]["provenance_ok"] is True
     assert result["external_evidence"]["agent_behavior_benchmark"]["safety_ok"] is True
     assert result["external_evidence"]["agent_live_smoke"]["provenance_ok"] is True
@@ -1546,7 +1692,7 @@ def test_memory_quality_scorecard_strict_top_evidence_passes_with_reports() -> N
     assert result["external_evidence"]["public_benchmark"]["safety_ok"] is True
     assert result["external_evidence"]["public_benchmark"]["dataset_evidence_ok"] is True
     assert result["external_evidence"]["confidence_tier"] == (
-        "full_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
+        "full_provider_and_multimodal_live_provider_and_agent_behavior_and_agent_live_smoke_and_public_benchmark_evaluated"
     )
 
 

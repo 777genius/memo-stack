@@ -30,6 +30,17 @@ FULL_PROVIDER_TOP_EVIDENCE_SUITES = frozenset(
         "clean_full_smoke",
     }
 )
+MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_GENERATORS = frozenset(
+    {"scripts/multimodal_live_provider_canary.py"}
+)
+MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_SUITES = frozenset(
+    {
+        "infinity-context-multimodal-live-provider-canary",
+        "infinity_context_multimodal_live_provider_canary",
+        "multimodal-live-provider-canary",
+        "multimodal_live_provider_canary",
+    }
+)
 AGENT_BEHAVIOR_TOP_EVIDENCE_GENERATORS = frozenset(
     {"infinity_context_mcp.agent_behavior_bench"}
 )
@@ -77,6 +88,13 @@ TOP_EVIDENCE_REPORT_POLICIES = {
             provenance_suites=FULL_PROVIDER_TOP_EVIDENCE_SUITES,
         )
         for suite in FULL_PROVIDER_TOP_EVIDENCE_SUITES
+    },
+    **{
+        suite: TopEvidenceReportPolicy(
+            expected_generators=MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_GENERATORS,
+            provenance_suites=MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_SUITES,
+        )
+        for suite in MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_SUITES
     },
     **{
         suite: TopEvidenceReportPolicy(

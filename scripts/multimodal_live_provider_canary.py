@@ -37,8 +37,10 @@ from infinity_context_adapters.extraction.transcription.openai_adapter import (
 )
 from infinity_context_core.ports.transcription import SpeechTranscriptionRequest
 from infinity_context_core.ports.vision import ImageVisionRequest
+from infinity_context_core.reporting import build_report_provenance
 
 SUITE = "infinity-context-multimodal-live-provider-canary"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROOF_MATRIX_VERSION = "multimodal-provider-proof-matrix-v1"
 REQUIRED_ENV = "MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"
 DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
@@ -618,6 +620,12 @@ def _update_proof_matrix(report: dict[str, object]) -> None:
 def _finalize_report(report: dict[str, object]) -> None:
     report["secrets_redacted"] = not _contains_secret_like_value(report)
     _update_proof_matrix(report)
+    report["provenance"] = build_report_provenance(
+        generated_by="scripts/multimodal_live_provider_canary.py",
+        suite=SUITE,
+        run_id=str(report.get("generated_at") or ""),
+        cwd=PROJECT_ROOT,
+    )
 
 
 def _proof_matrix(

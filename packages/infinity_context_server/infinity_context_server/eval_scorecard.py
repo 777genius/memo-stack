@@ -29,6 +29,8 @@ from infinity_context_server.eval_constants import (
     _MEMORY_QUALITY_SCORECARD_MIN_SCORE_10,
     _MEMORY_QUALITY_SCORECARD_MIN_SEMANTIC_EXTRACTION_CASES,
     _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES,
+    _MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE_ALIASES,
+    _MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS,
     _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS,
     _PUBLIC_MEMORY_BENCHMARK_DATASET_SOURCE_KINDS,
     _PUBLIC_MEMORY_BENCHMARK_NAME_ALIASES,
@@ -46,6 +48,7 @@ from infinity_context_server.eval_constants import (
     GRAPH_NATIVE_GOLDEN_SUITE,
     LONG_MEMORY_GOLDEN_SUITE,
     MEMORY_QUALITY_SCORECARD_SUITE,
+    MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE,
     MULTIMODAL_OFFLINE_GOLDEN_SUITE,
     PROMPT_CONTRACT_SUITE,
     PUBLIC_MEMORY_BENCHMARK_SUITE,
@@ -122,6 +125,19 @@ def memory_quality_scorecard_policy_snapshot(
             "required_adapters": list(_FULL_PROVIDER_REQUIRED_ADAPTERS),
             "required_checks": list(_FULL_PROVIDER_REQUIRED_CHECK_KEYS),
             "requires_mcp_lifecycle": True,
+            "top_evidence_requires_provenance": True,
+            "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
+            "top_evidence_requires_safety_scan": True,
+            "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
+        },
+        "multimodal_live_provider": {
+            "suite_aliases": list(_MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE_ALIASES),
+            "required_requirements": list(_MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS),
+            "requires_contract_matrix": True,
+            "requires_live_vision": True,
+            "requires_live_audio_transcription": True,
+            "requires_invalid_key_probe": True,
+            "requires_no_secret_leak_guard": True,
             "top_evidence_requires_provenance": True,
             "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
             "top_evidence_requires_safety_scan": True,
@@ -622,10 +638,15 @@ def _scorecard_external_evidence(
     require_top_evidence: bool = False,
 ) -> dict[str, object]:
     full_provider = _scorecard_find_full_provider_report(suite_results)
+    multimodal_live_provider = _scorecard_find_multimodal_live_provider_report(suite_results)
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
     agent_live_smoke = _scorecard_find_agent_live_smoke_report(suite_results)
     full_provider_summary = _scorecard_full_provider_evidence_summary(
         full_provider,
+        require_top_evidence=require_top_evidence,
+    )
+    multimodal_live_provider_summary = _scorecard_multimodal_live_provider_evidence_summary(
+        multimodal_live_provider,
         require_top_evidence=require_top_evidence,
     )
     agent_behavior_summary = _scorecard_agent_behavior_evidence_summary(
@@ -642,11 +663,13 @@ def _scorecard_external_evidence(
         require_top_evidence=require_top_evidence,
     )
     full_provider_ok = full_provider_summary["ok"] is True
+    multimodal_live_provider_ok = multimodal_live_provider_summary["ok"] is True
     agent_behavior_ok = agent_behavior_summary["ok"] is True
     agent_live_smoke_ok = agent_live_smoke_summary["ok"] is True
     public_benchmark_ok = public_benchmark_summary["ok"] is True
     confidence_tier = _scorecard_confidence_tier(
         full_provider_ok=full_provider_ok,
+        multimodal_live_provider_ok=multimodal_live_provider_ok,
         agent_behavior_ok=agent_behavior_ok,
         agent_live_smoke_ok=agent_live_smoke_ok,
         public_benchmark_ok=public_benchmark_ok,
@@ -661,6 +684,16 @@ def _scorecard_external_evidence(
             evidence_gaps.append("full_provider_canary_provenance_failed")
         if full_provider_summary.get("safety_ok") is False:
             evidence_gaps.append("full_provider_canary_safety_failed")
+    if not multimodal_live_provider_summary["present"]:
+        evidence_gaps.append("multimodal_live_provider_canary_missing")
+    elif not multimodal_live_provider_ok:
+        evidence_gaps.append("multimodal_live_provider_canary_failed")
+        if multimodal_live_provider_summary.get("provenance_ok") is False:
+            evidence_gaps.append("multimodal_live_provider_canary_provenance_failed")
+        if multimodal_live_provider_summary.get("safety_ok") is False:
+            evidence_gaps.append("multimodal_live_provider_canary_safety_failed")
+        if multimodal_live_provider_summary.get("provider_key_present") is False:
+            evidence_gaps.append("multimodal_live_provider_key_missing")
     if not agent_behavior_summary["present"]:
         evidence_gaps.append("agent_behavior_benchmark_missing")
     elif not agent_behavior_ok:
@@ -698,16 +731,18 @@ def _scorecard_external_evidence(
         "confidence_tier": confidence_tier,
         "required_for_gate": require_top_evidence,
         "top_library_comparison_ready": full_provider_ok
+        and multimodal_live_provider_ok
         and agent_behavior_ok
         and agent_live_smoke_ok
         and public_benchmark_ok,
         "benchmark_note": (
             "Internal deterministic suites are the local quality gate. "
-            "Full-provider, real-agent and public benchmark reports are "
+            "Full-provider, multimodal live-provider, real-agent and public benchmark reports are "
             "optional evidence for production/top-library comparison claims."
         ),
         "evidence_gaps": evidence_gaps,
         "full_provider_canary": full_provider_summary,
+        "multimodal_live_provider": multimodal_live_provider_summary,
         "agent_behavior_benchmark": agent_behavior_summary,
         "agent_live_smoke": agent_live_smoke_summary,
         "public_benchmark": public_benchmark_summary,
@@ -718,6 +753,16 @@ def _scorecard_find_full_provider_report(
     suite_results: Mapping[str, dict[str, object]],
 ) -> dict[str, object] | None:
     for suite in _FULL_PROVIDER_CANARY_SUITE_ALIASES:
+        result = suite_results.get(suite)
+        if result is not None:
+            return result
+    return None
+
+
+def _scorecard_find_multimodal_live_provider_report(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object] | None:
+    for suite in _MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE_ALIASES:
         result = suite_results.get(suite)
         if result is not None:
             return result
@@ -750,6 +795,7 @@ def _scorecard_find_agent_live_smoke_report(
 def _scorecard_confidence_tier(
     *,
     full_provider_ok: bool,
+    multimodal_live_provider_ok: bool,
     agent_behavior_ok: bool,
     agent_live_smoke_ok: bool,
     public_benchmark_ok: bool,
@@ -757,6 +803,8 @@ def _scorecard_confidence_tier(
     labels = []
     if full_provider_ok:
         labels.append("full_provider")
+    if multimodal_live_provider_ok:
+        labels.append("multimodal_live_provider")
     if agent_behavior_ok:
         labels.append("agent_behavior")
     if agent_live_smoke_ok:
@@ -1291,6 +1339,80 @@ def _scorecard_full_provider_evidence_summary(
         },
         "mcp_included": mcp_map.get("skipped") is not True if mcp_map else None,
         "prod_load_included": isinstance(result.get("prod_load"), dict),
+    }
+
+
+def _scorecard_multimodal_live_provider_evidence_summary(
+    result: dict[str, object] | None,
+    *,
+    require_top_evidence: bool = False,
+) -> dict[str, object]:
+    if result is None:
+        return {"present": False, "ok": None}
+    proof_matrix = result.get("proof_matrix")
+    proof_matrix_map = proof_matrix if isinstance(proof_matrix, Mapping) else {}
+    requirements = proof_matrix_map.get("requirements")
+    requirements_map = requirements if isinstance(requirements, Mapping) else {}
+    summary = proof_matrix_map.get("summary")
+    summary_map = summary if isinstance(summary, Mapping) else {}
+    contract_passed = _scorecard_int(summary_map.get("contract_requirements_passed"))
+    contract_total = _scorecard_int(summary_map.get("contract_requirements_total"))
+    live_passed = _scorecard_int(summary_map.get("live_requirements_passed"))
+    live_total = _scorecard_int(summary_map.get("live_requirements_total"))
+    required_checks: dict[str, bool] = {
+        "result_ok": result.get("ok") is True,
+        "proof_matrix_present": bool(requirements_map),
+        "provider_key_present": result.get("provider_key_present") is True,
+        "contract_requirements_passed": (
+            contract_total is not None
+            and contract_total > 0
+            and contract_passed == contract_total
+        ),
+        "live_requirements_passed": (
+            live_total is not None and live_total > 0 and live_passed == live_total
+        ),
+    }
+    requirement_reasons: dict[str, str] = {}
+    for name in _MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS:
+        requirement = requirements_map.get(name)
+        requirement_map = requirement if isinstance(requirement, Mapping) else {}
+        ok = requirement_map.get("ok") is True
+        required_checks[f"{name}_ok"] = ok
+        if not ok:
+            reason = requirement_map.get("reason")
+            status = requirement_map.get("status")
+            if isinstance(reason, str) and reason:
+                requirement_reasons[name] = reason
+            elif isinstance(status, str) and status:
+                requirement_reasons[name] = status
+            else:
+                requirement_reasons[name] = "missing"
+    failed_required_checks = sorted(
+        check for check, ok in required_checks.items() if ok is not True
+    )
+    provenance = top_evidence_provenance_summary(result)
+    safety = top_evidence_safety_summary(result)
+    quality_ok = not failed_required_checks
+    return {
+        "present": True,
+        "suite": result.get("suite", MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE),
+        "ok": quality_ok
+        and (not require_top_evidence or (provenance["ok"] is True and safety["ok"] is True)),
+        "quality_ok": quality_ok,
+        "provider_key_present": result.get("provider_key_present") is True,
+        "provenance_ok": provenance["ok"] if require_top_evidence else None,
+        "provenance": provenance,
+        "safety_ok": safety["ok"] if require_top_evidence else None,
+        "safety": safety,
+        "required_checks": required_checks,
+        "failed_required_checks": failed_required_checks,
+        "requirement_reasons": requirement_reasons,
+        "proof_matrix_summary": {
+            "contract_requirements_passed": contract_passed,
+            "contract_requirements_total": contract_total,
+            "live_requirements_passed": live_passed,
+            "live_requirements_total": live_total,
+        },
     }
 
 

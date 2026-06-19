@@ -3,6 +3,8 @@ from infinity_context_server.top_evidence_policy import (
     AGENT_LIVE_SMOKE_TOP_EVIDENCE_SUITES,
     FULL_PROVIDER_TOP_EVIDENCE_GENERATORS,
     FULL_PROVIDER_TOP_EVIDENCE_SUITES,
+    MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_GENERATORS,
+    MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_SUITES,
     PUBLIC_BENCHMARK_TOP_EVIDENCE_GENERATORS,
     TOP_EVIDENCE_PROVENANCE_CHECKS,
     TOP_EVIDENCE_SAFETY_CHECKS,
@@ -33,6 +35,15 @@ def test_top_evidence_policy_accepts_full_provider_aliases() -> None:
         assert policy is not None
         assert policy.expected_generators == FULL_PROVIDER_TOP_EVIDENCE_GENERATORS
         assert policy.provenance_suites == FULL_PROVIDER_TOP_EVIDENCE_SUITES
+
+
+def test_top_evidence_policy_accepts_multimodal_live_provider_aliases() -> None:
+    for suite in MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_SUITES:
+        policy = top_evidence_report_policy(suite)
+
+        assert policy is not None
+        assert policy.expected_generators == MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_GENERATORS
+        assert policy.provenance_suites == MULTIMODAL_LIVE_PROVIDER_TOP_EVIDENCE_SUITES
 
 
 def test_top_evidence_policy_accepts_agent_live_smoke_aliases() -> None:

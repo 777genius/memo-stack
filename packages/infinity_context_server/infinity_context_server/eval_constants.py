@@ -14,6 +14,7 @@ AUTO_MEMORY_GOLDEN_SUITE = "auto-memory-golden"
 GRAPH_NATIVE_GOLDEN_SUITE = "graph-native-golden"
 MEMORY_QUALITY_SCORECARD_SUITE = "memory-quality-scorecard"
 FULL_PROVIDER_CANARY_SUITE = "infinity-context-full-provider-canary"
+MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE = "infinity-context-multimodal-live-provider-canary"
 AGENT_BEHAVIOR_BENCH_SUITE = "memory_mcp_agent_behavior"
 AGENT_LIVE_SMOKE_SUITE = "infinity-context-agent-live-smoke"
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
@@ -50,7 +51,7 @@ _MEMORY_QUALITY_SCORECARD_REQUIRED_SUITES = (
 _MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS = {
     SMALL_GOLDEN_SUITE: 8,
     QUALITY_GOLDEN_SUITE: 16,
-    SEMANTIC_LINKING_GOLDEN_SUITE: 15,
+    SEMANTIC_LINKING_GOLDEN_SUITE: 17,
     MULTIMODAL_OFFLINE_GOLDEN_SUITE: 10,
     LONG_MEMORY_GOLDEN_SUITE: 16,
     AUTO_MEMORY_GOLDEN_SUITE: 13,
@@ -110,6 +111,21 @@ _FULL_PROVIDER_CANARY_SUITE_ALIASES = (
     "infinity-context-clean-full-smoke",
     "clean-full-smoke",
     "clean_full_smoke",
+)
+_MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE_ALIASES = (
+    MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE,
+    "infinity_context_multimodal_live_provider_canary",
+    "multimodal-live-provider-canary",
+    "multimodal_live_provider_canary",
+)
+_MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS = (
+    "vision_real_provider",
+    "vision_response_evidence",
+    "audio_transcription_real_provider",
+    "audio_transcription_format_matrix",
+    "transcription_response_artifact",
+    "invalid_key_live_probe",
+    "no_secret_leak_guard",
 )
 _FULL_PROVIDER_REQUIRED_ADAPTERS = ("qdrant", "graphiti", "embeddings")
 _FULL_PROVIDER_REQUIRED_CHECK_KEYS = (
