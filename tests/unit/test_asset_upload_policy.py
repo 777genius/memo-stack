@@ -1,3 +1,4 @@
+import stat
 import zipfile
 from io import BytesIO
 
@@ -197,6 +198,24 @@ def test_upload_policy_rejects_archive_path_traversal() -> None:
         )
 
 
+def test_upload_policy_rejects_archive_symlink_entries() -> None:
+    with pytest.raises(MemoryIngressLimitError, match="symbolic links"):
+        assess_asset_upload(
+            filename="payload.zip",
+            declared_content_type="application/zip",
+            content=_zip_with_unix_mode("safe-name.txt", b"/etc/passwd", stat.S_IFLNK | 0o777),
+        )
+
+
+def test_upload_policy_rejects_archive_special_file_entries() -> None:
+    with pytest.raises(MemoryIngressLimitError, match="special file"):
+        assess_asset_upload(
+            filename="payload.zip",
+            declared_content_type="application/zip",
+            content=_zip_with_unix_mode("safe-name.txt", b"", stat.S_IFIFO | 0o644),
+        )
+
+
 def test_upload_policy_rejects_archive_compression_bomb_ratio() -> None:
     with pytest.raises(MemoryIngressLimitError, match="compression ratio"):
         assess_asset_upload(
@@ -249,6 +268,15 @@ def _zip_bytes(entries: dict[str, bytes]) -> bytes:
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in entries.items():
             archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def _zip_with_unix_mode(filename: str, content: bytes, mode: int) -> bytes:
+    info = zipfile.ZipInfo(filename)
+    info.external_attr = mode << 16
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr(info, content)
     return buffer.getvalue()
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -296,6 +297,12 @@ def _inspect_zip_archive(
         for entry in file_entries
         if _extension(entry.filename) in _NESTED_ARCHIVE_EXTENSIONS
     )
+    symlink_entries = tuple(
+        entry.filename for entry in file_entries if _archive_entry_is_symlink(entry)
+    )
+    special_entries = tuple(
+        entry.filename for entry in file_entries if _archive_entry_is_special_file(entry)
+    )
     encrypted_count = sum(1 for entry in file_entries if entry.flag_bits & 0x1)
     duplicate_path_count = _archive_duplicate_path_count(entry.filename for entry in file_entries)
     metadata = {
@@ -309,6 +316,8 @@ def _inspect_zip_archive(
         "upload_archive_max_compression_ratio": round(max_ratio, 3),
         "upload_archive_encrypted_entry_count": encrypted_count,
         "upload_archive_nested_archive_count": len(nested_entries),
+        "upload_archive_symlink_entry_count": len(symlink_entries),
+        "upload_archive_special_entry_count": len(special_entries),
         "upload_archive_unsafe_path_count": len(dangerous_paths),
         "upload_archive_duplicate_path_count": duplicate_path_count,
         "upload_archive_limits": {
@@ -320,6 +329,10 @@ def _inspect_zip_archive(
     }
     if dangerous_paths:
         raise MemoryIngressLimitError("Asset archive contains unsafe paths")
+    if symlink_entries:
+        raise MemoryIngressLimitError("Asset archive contains symbolic links")
+    if special_entries:
+        raise MemoryIngressLimitError("Asset archive contains special file entries")
     if entry_count > max_entries:
         raise MemoryIngressLimitError("Asset archive exceeds configured entry limit")
     if max_entry_size > max_single_entry_bytes:
@@ -548,6 +561,23 @@ def _archive_duplicate_path_count(filenames: Iterable[str]) -> int:
             continue
         seen.add(normalized)
     return duplicates
+
+
+def _archive_entry_is_symlink(entry: zipfile.ZipInfo) -> bool:
+    return _archive_entry_unix_file_type(entry) == stat.S_IFLNK
+
+
+def _archive_entry_is_special_file(entry: zipfile.ZipInfo) -> bool:
+    file_type = _archive_entry_unix_file_type(entry)
+    if file_type is None:
+        return False
+    return file_type not in {stat.S_IFREG, stat.S_IFDIR, stat.S_IFLNK}
+
+
+def _archive_entry_unix_file_type(entry: zipfile.ZipInfo) -> int | None:
+    mode = (entry.external_attr >> 16) & 0xFFFF
+    file_type = stat.S_IFMT(mode)
+    return file_type or None
 
 
 def _archive_member_identity(filename: str) -> str:
