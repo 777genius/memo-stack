@@ -417,6 +417,66 @@ def test_context_packer_preserves_multimodal_evidence_modality_diversity() -> No
     assert result.bundle.diagnostics["diversity_items_used"] == 2
 
 
+def test_context_packer_caps_extraction_artifacts_per_source() -> None:
+    dominant_items = tuple(
+        ContextItem(
+            item_id=f"artifact_manifest_segment_{index}",
+            item_type="extraction_artifact",
+            text=f"DOMINANT_MANIFEST_MARKER segment {index} " + ("detail " * 8),
+            score=0.94 - index * 0.01,
+            source_refs=(
+                SourceRef(
+                    source_type="extraction_artifact",
+                    source_id="artifact-heavy-video",
+                    chunk_id=f"segment-{index}",
+                    time_start_ms=index * 1000,
+                    time_end_ms=index * 1000 + 900,
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "evidence_modality": "video",
+            },
+        )
+        for index in range(6)
+    )
+    secondary_item = ContextItem(
+        item_id="artifact_secondary_screenshot",
+        item_type="extraction_artifact",
+        text="SECONDARY_SCREENSHOT_MARKER OCR says Atlas owner is Alex " + ("detail " * 6),
+        score=0.5,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-screenshot",
+                chunk_id="region-1",
+                bbox=(8.0, 12.0, 160.0, 44.0),
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "image",
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_artifact_source_cap",
+        items=(*dominant_items, secondary_item),
+        token_budget=2000,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert rendered.count("DOMINANT_MANIFEST_MARKER") == 4
+    assert "segment 4" not in rendered
+    assert "segment 5" not in rendered
+    assert "SECONDARY_SCREENSHOT_MARKER" in rendered
+    assert "bbox=8,12,160,44" in rendered
+    assert result.bundle.diagnostics["dropped_by_source_cap"] == 2
+    assert result.bundle.diagnostics["source_capped_sources_considered"] == 2
+    assert result.bundle.diagnostics["source_capped_sources_used"] == 2
+    assert result.bundle.diagnostics["max_source_capped_items_used_per_source"] == 4
+
+
 def test_memory_block_drops_instruction_marked_items() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_no_instruction_role",

@@ -13,7 +13,8 @@ from infinity_context_core.application.normalize import estimate_tokens
 from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.domain.entities import SourceRef
 
-_MAX_CHUNKS_PER_SOURCE = 4
+_MAX_ITEMS_PER_SOURCE = 4
+_SOURCE_CAPPED_ITEM_TYPES = frozenset({"chunk", "extraction_artifact"})
 _MAX_CITATION_QUOTE_CHARS = 160
 _DEFAULT_MAX_RENDERED_CHARS = 18000
 _DIVERSITY_FAMILY_PRIORITY = (
@@ -51,6 +52,7 @@ class _SelectionState:
     selected: list[ContextItem]
     selected_keys: set[tuple[str, str]]
     selected_chunks_by_source: dict[str, int]
+    selected_source_capped_items_by_source: dict[str, int]
     used_tokens: int = 0
 
 
@@ -88,6 +90,7 @@ class ContextPacker:
             selected=[],
             selected_keys=set(),
             selected_chunks_by_source={},
+            selected_source_capped_items_by_source={},
         )
         diversity_items_used = 0
         diversity_families = _diversity_candidates(selectable_items)
@@ -110,10 +113,10 @@ class ContextPacker:
             key = _selection_key(item)
             if key in state.selected_keys:
                 continue
-            if item.item_type == "chunk":
+            if _source_cap_applies(item):
                 source_key = _source_key(item)
-                source_count = state.selected_chunks_by_source.get(source_key, 0)
-                if source_count >= _MAX_CHUNKS_PER_SOURCE:
+                source_count = state.selected_source_capped_items_by_source.get(source_key, 0)
+                if source_count >= _MAX_ITEMS_PER_SOURCE:
                     dropped_by_source_cap += 1
                     continue
             item_tokens = estimate_tokens(item.text) + 16
@@ -151,6 +154,14 @@ class ContextPacker:
                         _chunk_source_counts(selected).values(),
                         default=0,
                     ),
+                    "source_capped_sources_considered": len(
+                        _source_capped_source_counts(selectable_items)
+                    ),
+                    "source_capped_sources_used": len(_source_capped_source_counts(selected)),
+                    "max_source_capped_items_used_per_source": max(
+                        _source_capped_source_counts(selected).values(),
+                        default=0,
+                    ),
                     "source_diversity_chunks_reordered": source_diversity_chunks_reordered,
                     "dropped_by_instruction_flag": dropped_by_instruction_flag,
                     "dropped_by_budget": dropped_by_budget,
@@ -183,9 +194,11 @@ def _try_select_item(
 ) -> bool:
     if _selection_key(item) in state.selected_keys:
         return False
-    if item.item_type == "chunk":
+    if _source_cap_applies(item):
         source_key = _source_key(item)
-        if state.selected_chunks_by_source.get(source_key, 0) >= _MAX_CHUNKS_PER_SOURCE:
+        if state.selected_source_capped_items_by_source.get(source_key, 0) >= (
+            _MAX_ITEMS_PER_SOURCE
+        ):
             return False
     item_tokens = estimate_tokens(item.text) + 16
     if state.used_tokens + item_tokens > budget:
@@ -208,6 +221,11 @@ def _select_item(
         source_key = _source_key(item)
         state.selected_chunks_by_source[source_key] = (
             state.selected_chunks_by_source.get(source_key, 0) + 1
+        )
+    if _source_cap_applies(item):
+        source_key = _source_key(item)
+        state.selected_source_capped_items_by_source[source_key] = (
+            state.selected_source_capped_items_by_source.get(source_key, 0) + 1
         )
     state.used_tokens += item_tokens
 
@@ -314,6 +332,22 @@ def _chunk_source_counts(items: tuple[ContextItem, ...] | list[ContextItem]) -> 
         source_key = _source_key(item)
         counts[source_key] = counts.get(source_key, 0) + 1
     return counts
+
+
+def _source_capped_source_counts(
+    items: tuple[ContextItem, ...] | list[ContextItem],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        if not _source_cap_applies(item):
+            continue
+        source_key = _source_key(item)
+        counts[source_key] = counts.get(source_key, 0) + 1
+    return counts
+
+
+def _source_cap_applies(item: ContextItem) -> bool:
+    return item.item_type in _SOURCE_CAPPED_ITEM_TYPES
 
 
 def _source_diversified_order(items: list[ContextItem]) -> tuple[ContextItem, ...]:
