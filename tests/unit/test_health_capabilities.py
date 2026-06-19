@@ -40,6 +40,10 @@ from infinity_context_core.ports import (
 )
 from infinity_context_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
 from infinity_context_server.diagnostics import storage_diagnostics
+from infinity_context_server.extraction_capabilities import (
+    FILE_TYPE_DETECTION_RECOGNIZED_CONTENT_TYPES,
+    FILE_TYPE_DETECTION_RECOGNIZED_FILE_SUFFIXES,
+)
 from infinity_context_server.main import create_app
 
 
@@ -350,6 +354,9 @@ def test_capabilities_return_noop_adapters() -> None:
         "declared_content_type_trusted": False,
         "filename_extension_trusted": False,
         "magic_bytes_preferred_for_binary_mismatch": True,
+        "recognized_content_types": list(FILE_TYPE_DETECTION_RECOGNIZED_CONTENT_TYPES),
+        "recognized_file_suffixes": list(FILE_TYPE_DETECTION_RECOGNIZED_FILE_SUFFIXES),
+        "recognized_content_types_are_extraction_hints_not_guarantees": True,
         "textual_subtype_overrides_supported": True,
         "empty_upload_policy": "reject_at_upload",
         "mismatch_diagnostics_persisted": True,

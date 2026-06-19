@@ -446,6 +446,13 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                     "file_type_detection": {
                         "schema_version": "infinity_context.file_type_detection_contract.v1",
                         "declared_content_type_trusted": False,
+                        "recognized_content_types": [
+                            "image/webp",
+                            "audio/ogg",
+                            "video/webm",
+                        ],
+                        "recognized_file_suffixes": [".webp", ".ogg", ".webm"],
+                        "recognized_content_types_are_extraction_hints_not_guarantees": True,
                         "diagnostic_fields": [
                             "detected_content_type",
                             "mime_content_type_mismatch",
@@ -571,6 +578,22 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         "infinity_context.file_type_detection_contract.v1"
     )
     assert diagnostics.file_type_detection["declared_content_type_trusted"] is False
+    assert diagnostics.file_type_detection["recognized_content_types"] == [
+        "image/webp",
+        "audio/ogg",
+        "video/webm",
+    ]
+    assert diagnostics.file_type_detection["recognized_file_suffixes"] == [
+        ".webp",
+        ".ogg",
+        ".webm",
+    ]
+    assert (
+        diagnostics.file_type_detection[
+            "recognized_content_types_are_extraction_hints_not_guarantees"
+        ]
+        is True
+    )
     assert diagnostics.file_type_detection["diagnostic_fields"] == [
         "detected_content_type",
         "mime_content_type_mismatch",
