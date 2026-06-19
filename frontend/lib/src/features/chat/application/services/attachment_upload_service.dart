@@ -1,21 +1,27 @@
 import 'package:frontend/src/features/chat/application/services/attachment_upload_models.dart';
 import 'package:frontend/src/features/chat/application/services/image_attachment_preprocessor.dart';
+import 'package:frontend/src/features/chat/domain/entities/attachment_extraction_plan.dart';
+import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
+import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 
 class AttachmentUploadService {
   static const int inlinePreviewMaxBytes = 2 * 1024 * 1024;
 
   final ChatRepository _repo;
   final AttachmentUploadLimits? _limits;
+  final ExtractionCapabilityProvider? _capabilityProvider;
   final int _fallbackMaxBytes;
 
   const AttachmentUploadService({
     required ChatRepository repo,
     AttachmentUploadLimits? limits,
+    ExtractionCapabilityProvider? capabilityProvider,
     int maxBytes = AttachmentUploadDefaults.maxBytes,
   })  : _repo = repo,
         _limits = limits,
+        _capabilityProvider = capabilityProvider,
         _fallbackMaxBytes = maxBytes;
 
   Future<List<String>> uploadAll(
@@ -26,17 +32,31 @@ class AttachmentUploadService {
     final batchId = DateTime.now().microsecondsSinceEpoch.toString();
     final uploaded = <String>[];
     final maxBytes = await _maxBytes();
+    final capabilities = await _capabilities();
     final prepared = <_PreparedUpload>[];
 
     for (final draft in drafts) {
       final result = await _prepare(draft);
       final bytes = result.bytes;
+      final plan = _planAttachment(
+        capabilities: capabilities,
+        draft: draft,
+        bytes: bytes.length,
+        mime: result.mime,
+      );
       if (bytes.length > maxBytes) {
-        progress?.start(draft.name, bytes.length);
+        progress?.start(
+          draft.name,
+          bytes.length,
+          analysisLabel: plan?.compactLabel,
+          analysisDegraded: true,
+        );
         progress?.fail(draft.name, _tooLargeMessage(bytes.length, maxBytes));
         continue;
       }
-      prepared.add(_PreparedUpload(draft: draft, attachment: result));
+      prepared.add(
+        _PreparedUpload(draft: draft, attachment: result, plan: plan),
+      );
     }
 
     final total = prepared.length;
@@ -56,6 +76,8 @@ class AttachmentUploadService {
           cancelNetwork?.call();
         },
         previewBytes: bytes.length > inlinePreviewMaxBytes ? null : bytes,
+        analysisLabel: item.plan?.compactLabel,
+        analysisDegraded: item.plan?.hasDegradedActions ?? false,
       );
 
       try {
@@ -112,6 +134,30 @@ class AttachmentUploadService {
     return _fallbackMaxBytes;
   }
 
+  Future<ExtractionCapabilities?> _capabilities() async {
+    final provider = _capabilityProvider;
+    if (provider == null) return null;
+    try {
+      return await provider.getExtractionCapabilities();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  AttachmentExtractionPlan? _planAttachment({
+    required ExtractionCapabilities? capabilities,
+    required AttachmentUploadDraft draft,
+    required int bytes,
+    required String mime,
+  }) {
+    if (capabilities == null) return null;
+    return capabilities.planAttachment(
+      filename: draft.name,
+      mime: mime,
+      bytes: bytes,
+    );
+  }
+
   String _tooLargeMessage(int actualBytes, int maxBytes) {
     return 'File is too large: ${_formatBytes(actualBytes)} exceeds '
         '${_formatBytes(maxBytes)} upload limit';
@@ -145,9 +191,11 @@ class _PreparedAttachment {
 class _PreparedUpload {
   final AttachmentUploadDraft draft;
   final _PreparedAttachment attachment;
+  final AttachmentExtractionPlan? plan;
 
   const _PreparedUpload({
     required this.draft,
     required this.attachment,
+    required this.plan,
   });
 }

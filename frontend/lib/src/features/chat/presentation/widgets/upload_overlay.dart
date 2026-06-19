@@ -11,13 +11,17 @@ class UploadItem {
   String? error;
   void Function()? cancel;
   List<int>? previewBytes; // optional small preview
+  String? analysisLabel;
+  bool analysisDegraded;
   UploadItem(
       {required this.name,
       required this.total,
       this.sent = 0,
       this.error,
       this.cancel,
-      this.previewBytes});
+      this.previewBytes,
+      this.analysisLabel,
+      this.analysisDegraded = false});
 }
 
 class UploadStore extends ChangeNotifier implements AttachmentUploadProgress {
@@ -35,13 +39,18 @@ class UploadStore extends ChangeNotifier implements AttachmentUploadProgress {
 
   @override
   void start(String name, int total,
-      {void Function()? onCancel, List<int>? previewBytes}) {
+      {void Function()? onCancel,
+      List<int>? previewBytes,
+      String? analysisLabel,
+      bool analysisDegraded = false}) {
     _items.add(UploadItem(
         name: name,
         total: total,
         sent: 0,
         cancel: onCancel,
-        previewBytes: previewBytes));
+        previewBytes: previewBytes,
+        analysisLabel: analysisLabel,
+        analysisDegraded: analysisDegraded));
     _visible = true;
     notifyListeners();
   }
@@ -239,6 +248,34 @@ class UploadOverlay extends StatelessWidget {
                                       minHeight: 6,
                                     ),
                                   ),
+                                  if (it.analysisLabel != null &&
+                                      it.analysisLabel!.isNotEmpty) ...[
+                                    const SizedBox(height: 5),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          it.analysisDegraded
+                                              ? Icons.info_outline
+                                              : Icons.task_alt_outlined,
+                                          size: 13,
+                                          color: it.analysisDegraded
+                                              ? cs.tertiary
+                                              : cs.primary,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            it.analysisLabel!,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: context.theme.style(
+                                                (t) => t.caption,
+                                                (c) => c.assistantBubbleFg),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

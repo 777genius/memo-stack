@@ -280,6 +280,16 @@ class ExtractionModalityAction extends Equatable {
   final String? reason;
   final List<String> profiles;
   final List<String> providers;
+  final List<String> artifactTypes;
+  final List<String> evidenceCoordinates;
+  final bool externalProviderEgress;
+  final bool requiresExplicitExternalAi;
+  final List<String> fallbackProfiles;
+  final String memoryPromotion;
+  final String sourceTextPolicy;
+  final bool artifactPayloadsBounded;
+  final String? operatorAction;
+  final bool? userRetryable;
   final Map<String, dynamic> raw;
 
   const ExtractionModalityAction({
@@ -290,6 +300,16 @@ class ExtractionModalityAction extends Equatable {
     required this.reason,
     required this.profiles,
     required this.providers,
+    required this.artifactTypes,
+    required this.evidenceCoordinates,
+    required this.externalProviderEgress,
+    required this.requiresExplicitExternalAi,
+    required this.fallbackProfiles,
+    required this.memoryPromotion,
+    required this.sourceTextPolicy,
+    required this.artifactPayloadsBounded,
+    required this.operatorAction,
+    required this.userRetryable,
     required this.raw,
   });
 
@@ -306,8 +326,37 @@ class ExtractionModalityAction extends Equatable {
       reason: _nullableString(map['reason']),
       profiles: _stringList(map['profiles']),
       providers: _stringList(map['providers']),
+      artifactTypes: _stringList(map['artifact_types']),
+      evidenceCoordinates: _stringList(map['evidence_coordinates']),
+      externalProviderEgress: map['external_provider_egress'] == true,
+      requiresExplicitExternalAi: map['requires_explicit_external_ai'] == true,
+      fallbackProfiles: _stringList(map['fallback_profiles']),
+      memoryPromotion: _string(map['memory_promotion']),
+      sourceTextPolicy: _string(map['source_text_policy']),
+      artifactPayloadsBounded: map['artifact_payloads_bounded'] != false,
+      operatorAction: _nullableString(map['operator_action']),
+      userRetryable: _nullableBool(map['user_retryable']),
       raw: Map<String, dynamic>.from(map),
     );
+  }
+
+  bool get isDegraded =>
+      !enabled ||
+      status == 'blocked' ||
+      status == 'unavailable' ||
+      status == 'degraded' ||
+      status == 'disabled';
+
+  String get label {
+    final actionText = operatorAction;
+    if (actionText != null && actionText.isNotEmpty) {
+      return '$modality.$action: $actionText';
+    }
+    final reasonText = reason;
+    if (reasonText != null && reasonText.isNotEmpty) {
+      return '$modality.$action: $reasonText';
+    }
+    return '$modality.$action: $status';
   }
 
   @override
@@ -319,6 +368,16 @@ class ExtractionModalityAction extends Equatable {
         reason,
         profiles,
         providers,
+        artifactTypes,
+        evidenceCoordinates,
+        externalProviderEgress,
+        requiresExplicitExternalAi,
+        fallbackProfiles,
+        memoryPromotion,
+        sourceTextPolicy,
+        artifactPayloadsBounded,
+        operatorAction,
+        userRetryable,
         raw,
       ];
 }

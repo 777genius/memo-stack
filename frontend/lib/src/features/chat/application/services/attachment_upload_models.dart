@@ -56,6 +56,8 @@ abstract class AttachmentUploadProgress {
     int total, {
     void Function()? onCancel,
     List<int>? previewBytes,
+    String? analysisLabel,
+    bool analysisDegraded = false,
   });
 
   void progress(String name, int sent, int total);

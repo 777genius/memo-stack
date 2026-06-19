@@ -17,6 +17,7 @@ import 'package:frontend/src/features/chat/data/services/local_downloaded_file_o
 import 'package:frontend/src/features/chat/data/services/pasteboard_clipboard_attachment_reader.dart';
 import 'package:frontend/src/features/chat/data/services/platform_attachment_file_picker.dart';
 import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
+import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 import 'package:frontend/src/app/config/app_config.dart';
 import 'package:frontend/src/presentation/stores/theme_store.dart';
 import 'package:frontend/src/presentation/theme/app_theme.dart';
@@ -148,6 +149,9 @@ class AppRoot extends StatelessWidget {
                 repo: repo,
                 limits: repo is AttachmentUploadLimits
                     ? repo as AttachmentUploadLimits
+                    : null,
+                capabilityProvider: repo is ExtractionCapabilityProvider
+                    ? repo as ExtractionCapabilityProvider
                     : null,
               ),
             ),

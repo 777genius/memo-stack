@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend/src/features/chat/domain/entities/attachment_extraction_plan.dart';
 import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 
 void main() {
@@ -88,6 +89,81 @@ void main() {
       expect(
         capabilities.providerContract['openai_transcription'],
         isA<Map<String, dynamic>>(),
+      );
+    });
+
+    test('plans image upload from modality actions and degraded provider state',
+        () {
+      final capabilities = ExtractionCapabilities.fromMap({
+        'enabled': true,
+        'profiles_v2': const [],
+        'modality_actions': {
+          'image': {
+            'metadata': {
+              'enabled': true,
+              'status': 'ok',
+              'providers': ['image_metadata'],
+              'artifact_types': ['image_regions', 'media_manifest'],
+              'evidence_coordinates': ['bbox'],
+              'memory_promotion': 'review_required',
+              'source_text_policy': 'untrusted_evidence',
+            },
+            'vision': {
+              'enabled': false,
+              'status': 'blocked',
+              'reason': 'provider_credential_missing',
+              'operator_action': 'configure_provider_credential',
+              'providers': ['openai_vision'],
+              'artifact_types': ['vision_json'],
+              'evidence_coordinates': ['bbox'],
+              'external_provider_egress': true,
+              'requires_explicit_external_ai': true,
+              'fallback_profiles': ['standard_local'],
+            },
+          },
+        },
+        'limits': {'max_bytes': 1024},
+      });
+
+      final plan = capabilities.planAttachment(
+        filename: 'alex-call.png',
+        mime: 'image/png',
+        bytes: 512,
+      );
+
+      expect(plan.modality, 'image');
+      expect(plan.withinExtractionLimit, isTrue);
+      expect(plan.compactLabel, 'Image: metadata, 1 degraded');
+      expect(plan.enabledActions.map((action) => action.displayName), [
+        'metadata',
+      ]);
+      expect(plan.degradedActions.single.displayName, 'vision');
+      expect(plan.degradedActions.single.externalProviderEgress, isTrue);
+      expect(plan.warnings, contains('vision: configure_provider_credential'));
+    });
+
+    test('plans unknown oversized file without faking extraction support', () {
+      final capabilities = ExtractionCapabilities.fromMap({
+        'enabled': true,
+        'profiles_v2': const [],
+        'modality_actions': const {},
+        'limits': {'max_bytes': 3},
+      });
+
+      final plan = capabilities.planAttachment(
+        filename: 'payload.bin',
+        mime: 'application/octet-stream',
+        bytes: 4,
+      );
+
+      expect(plan.modality, 'unknown');
+      expect(plan.withinExtractionLimit, isFalse);
+      expect(plan.actions, isEmpty);
+      expect(plan.compactLabel, 'Extraction limit exceeded');
+      expect(
+        plan.warnings,
+        contains(
+            'Unknown file type; backend will store the file and inspect it safely'),
       );
     });
   });

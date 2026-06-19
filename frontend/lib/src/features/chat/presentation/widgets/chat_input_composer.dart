@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend/src/features/chat/application/services/attachment_upload_models.dart';
 import 'package:frontend/src/features/chat/application/services/attachment_upload_service.dart';
 import 'package:frontend/src/features/chat/application/stores/chat_store.dart';
+import 'package:frontend/src/features/chat/domain/entities/attachment_extraction_plan.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/upload_overlay.dart';
 
 class ChatInputComposer extends StatefulWidget {
@@ -240,6 +241,8 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
                   },
                 ),
               ),
+            if (_pendingImages.isNotEmpty)
+              _PendingAttachmentPlanStrip(drafts: _pendingImages),
 
             // ── Input bar ──
             Container(
@@ -429,6 +432,95 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PendingAttachmentPlanStrip extends StatelessWidget {
+  final List<AttachmentUploadDraft> drafts;
+
+  const _PendingAttachmentPlanStrip({required this.drafts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Observer(
+      builder: (_) {
+        final capabilities =
+            context.read<ChatStore?>()?.extractionCapabilities.value;
+        if (capabilities == null) return const SizedBox.shrink();
+        final plans = drafts
+            .map(
+              (draft) => capabilities.planAttachment(
+                filename: draft.name,
+                mime: draft.mime,
+                bytes: draft.bytes.length,
+              ),
+            )
+            .toList(growable: false);
+        if (plans.isEmpty) return const SizedBox.shrink();
+        final degradedCount =
+            plans.where((plan) => plan.hasDegradedActions).length;
+        final first = plans.first;
+        final label = plans.length == 1
+            ? first.compactLabel
+            : '${plans.length} files: '
+                '${plans.map((plan) => plan.displayModality).toSet().join(', ')}';
+        final scheme = Theme.of(context).colorScheme;
+        final isDegraded =
+            degradedCount > 0 || !plans.every((p) => p.withinExtractionLimit);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            key: const ValueKey('pending_attachment_extraction_plan'),
+            constraints: const BoxConstraints(minHeight: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.58),
+              border: Border.all(color: scheme.outlineVariant),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isDegraded ? Icons.info_outline : Icons.task_alt_outlined,
+                  size: 15,
+                  color: isDegraded ? scheme.tertiary : scheme.primary,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                if (degradedCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: plans
+                        .expand((plan) => plan.warnings)
+                        .take(4)
+                        .join('\n'),
+                    child: Text(
+                      '$degradedCount degraded',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: scheme.tertiary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

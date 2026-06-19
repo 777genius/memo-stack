@@ -5,8 +5,10 @@ import 'package:frontend/src/features/chat/application/services/attachment_uploa
 import 'package:frontend/src/features/chat/application/services/attachment_upload_service.dart';
 import 'package:frontend/src/features/chat/domain/entities/asset_extraction.dart';
 import 'package:frontend/src/features/chat/domain/entities/chat_message.dart';
+import 'package:frontend/src/features/chat/domain/entities/extraction_capabilities.dart';
 import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
+import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 
 void main() {
   group('AttachmentUploadDraft', () {
@@ -113,6 +115,57 @@ void main() {
       expect(progress.failures.single, startsWith('too-large.txt:'));
       expect(progress.completed, ['first.txt', 'second.txt']);
     });
+
+    test('emits capability-derived analysis label for upload progress',
+        () async {
+      final repo = _RecordingUploadRepository();
+      final progress = _RecordingUploadProgress();
+      final service = AttachmentUploadService(
+        repo: repo,
+        capabilityProvider: _StaticExtractionCapabilityProvider(
+          ExtractionCapabilities.fromMap({
+            'enabled': true,
+            'profiles_v2': const [],
+            'modality_actions': {
+              'image': {
+                'metadata': {
+                  'enabled': true,
+                  'status': 'ok',
+                  'artifact_types': ['image_regions'],
+                  'evidence_coordinates': ['bbox'],
+                },
+                'vision': {
+                  'enabled': false,
+                  'status': 'blocked',
+                  'reason': 'provider_credential_missing',
+                  'operator_action': 'configure_provider_credential',
+                  'artifact_types': ['vision_json'],
+                  'evidence_coordinates': ['bbox'],
+                  'external_provider_egress': true,
+                  'requires_explicit_external_ai': true,
+                },
+              },
+            },
+            'limits': {'max_bytes': 1024},
+          }),
+        ),
+      );
+
+      final uploaded = await service.uploadAll(
+        [
+          AttachmentUploadDraft.file(
+            name: 'screen.png',
+            bytes: [1, 2, 3],
+            mime: 'image/png',
+          ),
+        ],
+        progress: progress,
+      );
+
+      expect(uploaded, ['file-1']);
+      expect(progress.analysisLabels, ['Image: metadata, 1 degraded']);
+      expect(progress.analysisDegraded, [true]);
+    });
   });
 }
 
@@ -150,8 +203,12 @@ class _RecordingUploadProgress implements AttachmentUploadProgress {
     int total, {
     void Function()? onCancel,
     List<int>? previewBytes,
+    String? analysisLabel,
+    bool analysisDegraded = false,
   }) {
     started.add(name);
+    analysisLabels.add(analysisLabel);
+    this.analysisDegraded.add(analysisDegraded);
   }
 
   @override
@@ -165,6 +222,21 @@ class _RecordingUploadProgress implements AttachmentUploadProgress {
   @override
   void complete(String name) {
     completed.add(name);
+  }
+
+  final analysisLabels = <String?>[];
+  final analysisDegraded = <bool>[];
+}
+
+class _StaticExtractionCapabilityProvider
+    implements ExtractionCapabilityProvider {
+  final ExtractionCapabilities capabilities;
+
+  const _StaticExtractionCapabilityProvider(this.capabilities);
+
+  @override
+  Future<ExtractionCapabilities> getExtractionCapabilities() async {
+    return capabilities;
   }
 }
 
