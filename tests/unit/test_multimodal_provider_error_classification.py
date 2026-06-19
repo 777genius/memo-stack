@@ -146,11 +146,13 @@ def test_openai_transcription_adapter_classifies_provider_quota_as_permanent() -
     assert raw_secret not in json.dumps(result.diagnostics)
 
 
-def test_openai_transcription_adapter_rejects_undocumented_file_types() -> None:
+def test_openai_transcription_adapter_accepts_documented_flac_and_ogg_types() -> None:
     adapter = OpenAISpeechTranscriptionAdapter(
         api_key="test-key",
         model="gpt-4o-mini-transcribe",
-        client_factory=lambda: _TranscriptionClient(AssertionError("must not call provider")),
+        client_factory=lambda: _TranscriptionClient(
+            _ProviderError(status_code=503, code="unavailable")
+        ),
     )
 
     for content_type in ("audio/flac", "audio/ogg"):
@@ -159,13 +161,10 @@ def test_openai_transcription_adapter_rejects_undocumented_file_types() -> None:
         )
 
         assert result.status == "unsupported"
-        assert (
-            result.safe_error_code
-            == "asset_extraction.transcription_unsupported_content_type"
-        )
+        assert result.safe_error_code == "asset_extraction.transcription.provider_unavailable"
 
-    assert ".flac" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
-    assert ".ogg" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".flac" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".ogg" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
 
 
 def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:

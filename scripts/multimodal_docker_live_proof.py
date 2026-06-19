@@ -487,7 +487,8 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
         transcription.get("endpoint") == "/v1/audio/transcriptions"
         and transcription_max_upload_bytes == 25 * 1024 * 1024
         and transcription_effective_max_upload_bytes is not None
-        and set(audio_suffixes) == {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
+        and set(audio_suffixes)
+        == {".flac", ".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"}
     )
     vision_ok = (
         vision.get("endpoint_family") == "responses"
@@ -500,7 +501,7 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
         and vision_effective_max_upload_bytes is not None
     )
     return {
-        "ok": audio_ok and vision_ok and not ({".flac", ".ogg"} & set(audio_suffixes)),
+        "ok": audio_ok and vision_ok,
         "transcription_endpoint": transcription.get("endpoint"),
         "transcription_max_provider_upload_bytes": transcription_max_upload_bytes,
         "transcription_effective_max_upload_bytes": transcription_effective_max_upload_bytes,

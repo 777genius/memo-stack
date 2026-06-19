@@ -51,6 +51,19 @@ def test_upload_policy_reports_declared_and_extension_mismatch() -> None:
     assert result.metadata["upload_extension_mismatch"] is True
 
 
+def test_upload_policy_maps_flac_extension_to_audio_content_type() -> None:
+    result = assess_asset_upload(
+        filename="voice-note.flac",
+        declared_content_type="application/octet-stream",
+        content=b"fLaC\x00\x00\x00\x22",
+    )
+
+    assert result.metadata["upload_extension_content_type"] == "audio/flac"
+    assert result.metadata["upload_magic_content_type"] == "audio/flac"
+    assert result.extension_content_type == "audio/flac"
+    assert result.magic_content_type == "audio/flac"
+
+
 @pytest.mark.parametrize(
     "content",
     [

@@ -55,6 +55,7 @@ _EXTENSION_CONTENT_TYPES = {
     ".gif": "image/gif",
     ".avif": "image/avif",
     ".bmp": "image/bmp",
+    ".flac": "audio/flac",
     ".heic": "image/heic",
     ".heif": "image/heif",
     ".html": "text/html",

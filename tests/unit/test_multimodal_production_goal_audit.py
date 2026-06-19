@@ -266,10 +266,10 @@ def test_multimodal_production_goal_audit_rejects_stale_provider_contract(
     assert result.checks["live_provider_vision_contract_docs_aligned"] is False
     assert result.checks["live_provider_vision_detail_contract_docs_aligned"] is False
     assert result.checks["live_provider_vision_binary_limit_present"] is False
-    assert result.checks["live_provider_contract_excludes_unsupported_legacy_suffixes"] is False
+    assert result.checks["live_provider_contract_includes_current_audio_suffixes"] is False
     assert any("transcription contract" in failure for failure in result.failures)
     assert any("vision contract" in failure for failure in result.failures)
-    assert any("must not advertise unsupported" in failure for failure in result.failures)
+    assert any("current OpenAI audio suffixes" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_bad_provider_failure_policy(
@@ -473,11 +473,13 @@ def _docker_report() -> dict[str, object]:
                     "transcription_max_provider_upload_bytes": 25 * 1024 * 1024,
                     "transcription_effective_max_upload_bytes": 25 * 1024 * 1024,
                     "transcription_supported_file_types": [
+                        ".flac",
                         ".m4a",
                         ".mp3",
                         ".mp4",
                         ".mpeg",
                         ".mpga",
+                        ".ogg",
                         ".wav",
                         ".webm",
                     ],
@@ -529,11 +531,13 @@ def _provider_report() -> dict[str, object]:
                 "max_upload_bytes": 25 * 1024 * 1024,
                 "model": "gpt-4o-mini-transcribe",
                 "supported_file_types": [
+                    ".flac",
                     ".m4a",
                     ".mp3",
                     ".mp4",
                     ".mpeg",
                     ".mpga",
+                    ".ogg",
                     ".wav",
                     ".webm",
                 ],

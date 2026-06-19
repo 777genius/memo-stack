@@ -63,11 +63,13 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "max_upload_bytes": 26214400,
         "model": "gpt-4o-mini-transcribe",
         "supported_file_types": [
+            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
+            ".ogg",
             ".wav",
             ".webm",
         ],
@@ -386,25 +388,30 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
     module = _load_canary_module()
     valid = tmp_path / "fixture.wav"
     valid.write_bytes(b"RIFF" + b"\0" * 32)
-    unsupported = tmp_path / "fixture.ogg"
-    unsupported.write_bytes(b"OggS")
+    valid_ogg = tmp_path / "fixture.ogg"
+    valid_ogg.write_bytes(b"OggS" + b"\0" * 32)
+    unsupported = tmp_path / "fixture.aac"
+    unsupported.write_bytes(b"ADTS")
     huge = tmp_path / "fixture.mp3"
     with huge.open("wb") as handle:
         handle.truncate(module.OPENAI_AUDIO_MAX_UPLOAD_BYTES + 1)
 
     assert module._audio_fixture_contract_check(valid) == {"status": "succeeded"}
+    assert module._audio_fixture_contract_check(valid_ogg) == {"status": "succeeded"}
     assert module._audio_fixture_contract_check(unsupported) == {
-        "filename_suffix": ".ogg",
+        "filename_suffix": ".aac",
         "message": "Audio fixture type is not supported by OpenAI transcription upload",
         "operator_action": "replace_audio_fixture",
         "reason": "audio_fixture_unsupported_type",
         "status": "degraded",
         "supported_file_types": [
+            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
+            ".ogg",
             ".wav",
             ".webm",
         ],

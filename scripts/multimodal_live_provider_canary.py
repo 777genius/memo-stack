@@ -57,11 +57,13 @@ SECRET_VALUE_PATTERNS = (
 )
 
 _CONTENT_TYPES_BY_SUFFIX = {
+    ".flac": "audio/flac",
     ".m4a": "audio/m4a",
     ".mp3": "audio/mpeg",
     ".mp4": "video/mp4",
     ".mpeg": "audio/mpeg",
     ".mpga": "audio/mpga",
+    ".ogg": "audio/ogg",
     ".wav": "audio/wav",
     ".webm": "audio/webm",
 }

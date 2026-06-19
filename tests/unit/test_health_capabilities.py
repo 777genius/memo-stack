@@ -332,14 +332,6 @@ def test_capabilities_return_noop_adapters() -> None:
             ),
         },
     }
-    assert (
-        ".ogg"
-        not in body["extraction"]["provider_contract"]["transcription"]["supported_file_types"]
-    )
-    assert (
-        ".flac"
-        not in body["extraction"]["provider_contract"]["transcription"]["supported_file_types"]
-    )
     assert body["extraction"]["manifest_contract"]["schema_version"] == (
         "infinity_context.multimodal_manifest_contract.v1"
     )
