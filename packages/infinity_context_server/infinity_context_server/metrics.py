@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
 
@@ -16,6 +17,10 @@ class RuntimeMetrics:
     _stale_hydration_drop_count: int = 0
     _context_latency_ms: list[float] = field(default_factory=list)
     _last_context_trace: dict[str, Any] | None = None
+    _storage_maintenance_run_count: int = 0
+    _storage_maintenance_degraded_count: int = 0
+    _last_storage_maintenance_trace: dict[str, Any] | None = None
+    _last_storage_maintenance_started_at: datetime | None = None
     _lock: Lock = field(default_factory=Lock)
 
     def record_context(
@@ -49,6 +54,45 @@ class RuntimeMetrics:
             if len(self._context_latency_ms) > _MAX_LATENCY_SAMPLES:
                 del self._context_latency_ms[: len(self._context_latency_ms) - _MAX_LATENCY_SAMPLES]
             self._last_context_trace = trace
+
+    def storage_maintenance_due(self, *, now: datetime, interval_seconds: int) -> bool:
+        interval = timedelta(seconds=max(60, int(interval_seconds)))
+        with self._lock:
+            last_started_at = self._last_storage_maintenance_started_at
+        if last_started_at is None:
+            return True
+        return now - _align_tz(last_started_at, now) >= interval
+
+    def record_storage_maintenance(
+        self,
+        *,
+        trace: dict[str, Any],
+        started_at: datetime,
+    ) -> None:
+        status = str(trace.get("status") or "unknown")
+        safe_trace = _storage_maintenance_trace(trace)
+        with self._lock:
+            self._storage_maintenance_run_count += 1
+            if status != "ok":
+                self._storage_maintenance_degraded_count += 1
+            self._last_storage_maintenance_started_at = started_at
+            self._last_storage_maintenance_trace = safe_trace
+
+    def storage_maintenance_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            run_count = self._storage_maintenance_run_count
+            degraded_count = self._storage_maintenance_degraded_count
+            last_trace = (
+                dict(self._last_storage_maintenance_trace)
+                if self._last_storage_maintenance_trace
+                else None
+            )
+        return {
+            "run_count": run_count,
+            "degraded_count": degraded_count,
+            "degraded_rate": _rate(degraded_count, run_count),
+            "last_trace": last_trace,
+        }
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -132,3 +176,53 @@ def _degraded_reason(diagnostics: dict[str, object]) -> str | None:
     if diagnostics.get("retrieval_disabled") is True:
         return "retrieval_disabled"
     return None
+
+
+def _align_tz(value: datetime, reference: datetime) -> datetime:
+    if value.tzinfo is None and reference.tzinfo is not None:
+        return value.replace(tzinfo=reference.tzinfo)
+    if value.tzinfo is not None and reference.tzinfo is None:
+        return value.replace(tzinfo=None)
+    return value
+
+
+def _storage_maintenance_trace(trace: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = {
+        "span",
+        "status",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "storage_backend",
+        "maintenance_enabled",
+        "cleanup_status",
+        "cleanup_dry_run",
+        "cleanup_scanned_count",
+        "cleanup_orphan_candidate_count",
+        "cleanup_deleted_count",
+        "cleanup_delete_error_count",
+        "integrity_status",
+        "integrity_scanned_count",
+        "integrity_missing_count",
+        "integrity_byte_size_mismatch_count",
+        "integrity_checksum_mismatch_count",
+        "integrity_checksum_skipped_count",
+        "integrity_read_error_count",
+        "integrity_stat_error_count",
+        "safe_error_code",
+    }
+    safe: dict[str, Any] = {}
+    for key, value in trace.items():
+        if key not in allowed_keys:
+            continue
+        safe[key] = _safe_metric_value(value)
+    safe["storage_keys_are_redacted"] = True
+    return safe
+
+
+def _safe_metric_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)[:120]

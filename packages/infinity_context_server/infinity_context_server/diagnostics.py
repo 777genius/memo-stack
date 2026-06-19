@@ -155,6 +155,7 @@ def storage_diagnostics(container: Container) -> dict[str, Any]:
             "configured": True,
             "ready": readiness["ready"],
             "readiness": readiness,
+            "maintenance": _storage_maintenance_config(settings),
         }
     if backend == "s3":
         configured = bool(settings.asset_storage_s3_bucket)
@@ -176,6 +177,7 @@ def storage_diagnostics(container: Container) -> dict[str, Any]:
                 "force_path_style": settings.asset_storage_s3_force_path_style,
                 "network_probe": "not_performed",
             },
+            "maintenance": _storage_maintenance_config(settings),
         }
     return {
         "asset_backend": backend,
@@ -183,6 +185,7 @@ def storage_diagnostics(container: Container) -> dict[str, Any]:
         "configured": False,
         "ready": False,
         "readiness": {"unsupported_backend": True},
+        "maintenance": _storage_maintenance_config(settings),
     }
 
 
@@ -219,6 +222,10 @@ async def operational_metrics(container: Container) -> dict[str, Any]:
     context_metrics = container.runtime_metrics.snapshot()
     circuit_snapshots = _circuit_snapshots(container)
     storage = storage_diagnostics(container)
+    storage["maintenance"] = {
+        **dict(storage.get("maintenance") or {}),
+        **container.runtime_metrics.storage_maintenance_snapshot(),
+    }
     return {
         "outbox": {
             "counts": outbox_counts,
@@ -454,6 +461,21 @@ def _operational_alerts(
                 playbook_command="python -m infinity_context_server.doctor",
             )
         )
+    maintenance = storage.get("maintenance")
+    if isinstance(maintenance, dict):
+        last_trace = maintenance.get("last_trace")
+        if isinstance(last_trace, dict) and last_trace.get("status") == "degraded":
+            alerts.append(
+                _alert(
+                    name="asset_storage_maintenance_degraded",
+                    severity="warning",
+                    value=1,
+                    threshold=0,
+                    playbook_command=(
+                        "python -m infinity_context_server.admin audit-asset-storage"
+                    ),
+                )
+            )
     return alerts
 
 
@@ -472,4 +494,17 @@ def _alert(
         "value": value,
         "threshold": threshold,
         "playbook_command": playbook_command,
+    }
+
+
+def _storage_maintenance_config(settings) -> dict[str, object]:
+    return {
+        "enabled": settings.asset_storage_maintenance_enabled,
+        "interval_seconds": settings.asset_storage_maintenance_interval_seconds,
+        "limit": settings.asset_storage_maintenance_limit,
+        "prefix_configured": bool(settings.asset_storage_maintenance_prefix.strip()),
+        "cleanup_apply_enabled": settings.asset_storage_cleanup_apply_enabled,
+        "cleanup_max_deletions": settings.asset_storage_cleanup_max_deletions,
+        "cleanup_grace_period_seconds": settings.asset_storage_cleanup_grace_period_seconds,
+        "integrity_max_blob_read_bytes": settings.asset_storage_integrity_max_blob_read_bytes,
     }

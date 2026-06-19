@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     asset_storage_s3_secret_access_key: str | None = None
     asset_storage_s3_session_token: str | None = None
     asset_storage_s3_force_path_style: bool = False
+    asset_storage_maintenance_enabled: bool = False
+    asset_storage_maintenance_interval_seconds: int = Field(default=3600, ge=60, le=7 * 86_400)
+    asset_storage_maintenance_prefix: str = ""
+    asset_storage_maintenance_limit: int = Field(default=100, ge=1, le=5_000)
+    asset_storage_cleanup_apply_enabled: bool = False
+    asset_storage_cleanup_max_deletions: int = Field(default=10, ge=0, le=1_000)
+    asset_storage_cleanup_grace_period_seconds: int = Field(default=86_400, ge=60, le=90 * 86_400)
+    asset_storage_integrity_max_blob_read_bytes: int = Field(
+        default=64 * 1024 * 1024,
+        ge=1,
+        le=512 * 1024 * 1024,
+    )
     max_asset_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=500 * 1024 * 1024)
     extraction_enabled: bool = True
     extraction_default_profile: str = "standard_local"

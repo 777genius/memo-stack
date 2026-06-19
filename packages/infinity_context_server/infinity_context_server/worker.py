@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from infinity_context_server.composition import Container, build_container
 from infinity_context_server.config import Settings
+from infinity_context_server.storage_maintenance import run_asset_storage_maintenance
 
 MAX_ATTEMPTS = 5
 RUNNING_LEASE_TIMEOUT = timedelta(minutes=5)
@@ -96,6 +97,8 @@ class OutboxWorker:
     async def run_once(self, *, limit: int = 25) -> int:
         if _should_run_suggestion_maintenance(self._filter):
             await self._container.expire_pending_suggestions.execute(limit=limit)
+        if self._should_run_storage_maintenance():
+            await run_asset_storage_maintenance(self._container)
         jobs = await self._claim_pending(limit=limit)
         for job in jobs:
             try:
@@ -105,6 +108,17 @@ class OutboxWorker:
             else:
                 await self._mark_done(job.id)
         return len(jobs)
+
+    def _should_run_storage_maintenance(self) -> bool:
+        settings = self._container.settings
+        if not settings.asset_storage_maintenance_enabled:
+            return False
+        if not _should_run_storage_maintenance(self._filter):
+            return False
+        return self._container.runtime_metrics.storage_maintenance_due(
+            now=self._container.clock.now(),
+            interval_seconds=settings.asset_storage_maintenance_interval_seconds,
+        )
 
     async def _handle_with_heartbeat(self, job: ClaimedOutboxJob) -> None:
         heartbeat = asyncio.create_task(self._heartbeat_running_job(job.id))
@@ -510,6 +524,14 @@ def _should_run_suggestion_maintenance(worker_filter: OutboxWorkerFilter) -> boo
     if not worker_filter.workload_classes:
         return True
     return any(value in {"projection", "auto_memory"} for value in worker_filter.workload_classes)
+
+
+def _should_run_storage_maintenance(worker_filter: OutboxWorkerFilter) -> bool:
+    if worker_filter.event_types:
+        return False
+    if not worker_filter.workload_classes:
+        return True
+    return "extraction" in worker_filter.workload_classes
 
 
 def _worker_filter_from_args(args: argparse.Namespace) -> OutboxWorkerFilter:
