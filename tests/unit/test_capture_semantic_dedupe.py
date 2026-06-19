@@ -238,6 +238,63 @@ def test_auto_apply_safe_active_conflict_creates_review_suggestion_not_fact(
     assert "auto_apply_active_conflict" in suggestion["review_payload"]["rejected_resolver_codes"]
 
 
+def test_auto_apply_safe_numeric_conflict_creates_review_suggestion_not_fact(
+    tmp_path: Path,
+) -> None:
+    app = _capture_app(
+        tmp_path,
+        "capture-semantic-numeric-conflict.db",
+        CaptureMode.AUTO_APPLY_SAFE,
+    )
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        existing = _create_fact(
+            client,
+            headers=headers,
+            text="Project Atlas keeps billing logs for 7 days.",
+            space_slug="capture-semantic-numeric-conflict",
+        )
+        capture = _create_capture(
+            client,
+            headers=headers,
+            text="Remember: Project Atlas keeps billing logs for 30 days.",
+            space_slug="capture-semantic-numeric-conflict",
+        )
+        result = _consolidate(
+            client,
+            capture_id=capture.json()["data"]["id"],
+            extractor=StaticExtractor(
+                (
+                    _candidate(
+                        "Project Atlas keeps billing logs for 30 days.",
+                        confidence=Confidence.HIGH,
+                        ttl_policy="durable",
+                    ),
+                )
+            ),
+            auto_apply_safe_enabled=True,
+        )
+        facts = _list_facts(client, headers=headers, space_slug="capture-semantic-numeric-conflict")
+        suggestions = _list_suggestions(
+            client,
+            headers=headers,
+            space_slug="capture-semantic-numeric-conflict",
+        )
+
+    assert existing.status_code == 201
+    assert result.auto_applied_facts == 0
+    assert result.created_suggestions == 1
+    assert [item["text"] for item in facts.json()["data"]] == [
+        "Project Atlas keeps billing logs for 7 days."
+    ]
+
+    suggestion = suggestions.json()["data"][0]
+    assert suggestion["candidate_text"] == "Project Atlas keeps billing logs for 30 days."
+    assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
+    assert suggestion["review_payload"]["conflicting_fact_version"] == 1
+    assert "auto_apply_active_conflict" in suggestion["review_payload"]["rejected_resolver_codes"]
+
+
 def _capture_app(tmp_path: Path, database_name: str, capture_mode: CaptureMode):
     return create_app(
         Settings(

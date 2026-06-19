@@ -69,6 +69,38 @@ def test_semantic_dedupe_rejects_similar_but_different_event_time() -> None:
     )
 
 
+def test_semantic_dedupe_rejects_numeric_value_mismatch_as_duplicate() -> None:
+    assert not looks_equivalent_fact(
+        "Project Atlas keeps billing logs for 7 days.",
+        "Project Atlas keeps billing logs for 30 days.",
+    )
+    assert looks_conflicting_fact(
+        "Project Atlas keeps billing logs for 7 days.",
+        "Project Atlas keeps billing logs for 30 days.",
+    )
+
+
+def test_semantic_dedupe_rejects_version_value_mismatch_as_duplicate() -> None:
+    assert not looks_equivalent_fact(
+        "Project Atlas API uses model v2 for routing.",
+        "Project Atlas API uses model v3 for routing.",
+    )
+    assert looks_conflicting_fact(
+        "Project Atlas API uses model v2 for routing.",
+        "Project Atlas API uses model v3 for routing.",
+    )
+
+
+def test_semantic_dedupe_keeps_exact_numeric_fact_duplicate() -> None:
+    match = describe_duplicate_fact_match(
+        "Project Atlas keeps 3 Qdrant replicas.",
+        "Project Atlas keeps 3 Qdrant replicas.",
+    )
+
+    assert match is not None
+    assert match.match_type == "exact_normalized_text"
+
+
 def test_semantic_dedupe_flags_engine_conflict_without_equivalence() -> None:
     assert looks_conflicting_fact(
         "Docs retrieval should use Qdrant vectors.",

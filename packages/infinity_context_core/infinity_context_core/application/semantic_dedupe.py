@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
 from infinity_context_core.application.anchor_extraction import extract_observed_anchors
 from infinity_context_core.domain.entities import MemoryAnchorKind
+
+_NUMERIC_VALUE_RE = re.compile(
+    r"\b(?P<prefix>v|version\s+)?(?P<number>\d+(?:[.,]\d+)?)"
+    r"(?:\s*(?P<unit>%|percent|percentage|milliseconds?|msecs?|ms|seconds?|secs?|sec|"
+    r"minutes?|mins?|min|hours?|hrs?|hr|days?|weeks?|months?|years?|pages?|tokens?|"
+    r"gb|mb|kb|replicas?|shards?))?\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +82,8 @@ def describe_duplicate_fact_match(
     if _has_named_anchor_mismatch(candidate_text, existing_text):
         return None
     if _has_event_identity_mismatch(candidate_text, existing_text):
+        return None
+    if _has_numeric_value_mismatch(candidate_text, existing_text):
         return None
     if _has_exclusive_anchor_mismatch(candidate_terms, existing_terms):
         return None
@@ -200,6 +211,8 @@ def looks_conflicting_fact(candidate_text: str, existing_text: str) -> bool:
         return False
     if _has_event_identity_mismatch(candidate_text, existing_text):
         return False
+    if _has_numeric_value_mismatch(candidate_text, existing_text):
+        return bool(overlap & decision_terms) or len(overlap) >= 3
     if _has_negation_mismatch(candidate_normalized, existing_normalized):
         return bool(overlap & decision_terms) or len(overlap) >= 3
     if _has_exclusive_anchor_mismatch(candidate_terms, existing_terms):
@@ -226,6 +239,92 @@ def _has_exclusive_anchor_mismatch(
     candidate_engines = candidate_terms & engines
     existing_engines = existing_terms & engines
     return bool(candidate_engines and existing_engines and not candidate_engines & existing_engines)
+
+
+def _has_numeric_value_mismatch(candidate_text: str, existing_text: str) -> bool:
+    candidate_values = _numeric_value_groups(candidate_text)
+    existing_values = _numeric_value_groups(existing_text)
+    for group in candidate_values.keys() & existing_values.keys():
+        if candidate_values[group] != existing_values[group]:
+            return True
+    return False
+
+
+def _numeric_value_groups(text: str) -> dict[str, set[str]]:
+    values: dict[str, set[str]] = {}
+    for match in _NUMERIC_VALUE_RE.finditer(normalize_memory_text(text)):
+        number = _normalize_numeric_value(match.group("number"))
+        if not number:
+            continue
+        group = _numeric_value_group(
+            prefix=match.group("prefix") or "",
+            unit=match.group("unit") or "",
+        )
+        values.setdefault(group, set()).add(number)
+    return values
+
+
+def _numeric_value_group(*, prefix: str, unit: str) -> str:
+    normalized_prefix = prefix.strip().casefold()
+    if normalized_prefix:
+        return "version"
+    normalized_unit = _normalize_numeric_unit(unit)
+    return normalized_unit or "number"
+
+
+def _normalize_numeric_value(raw_value: str) -> str:
+    value = raw_value.replace(",", ".")
+    integer, separator, fraction = value.partition(".")
+    integer = integer.lstrip("0") or "0"
+    if not separator:
+        return integer
+    fraction = fraction.rstrip("0")
+    return f"{integer}.{fraction}" if fraction else integer
+
+
+def _normalize_numeric_unit(raw_unit: str) -> str:
+    unit = raw_unit.strip().casefold()
+    aliases = {
+        "%": "percent",
+        "percent": "percent",
+        "percentage": "percent",
+        "millisecond": "ms",
+        "milliseconds": "ms",
+        "msec": "ms",
+        "msecs": "ms",
+        "second": "second",
+        "seconds": "second",
+        "sec": "second",
+        "secs": "second",
+        "minute": "minute",
+        "minutes": "minute",
+        "min": "minute",
+        "mins": "minute",
+        "hour": "hour",
+        "hours": "hour",
+        "hr": "hour",
+        "hrs": "hour",
+        "day": "day",
+        "days": "day",
+        "week": "week",
+        "weeks": "week",
+        "month": "month",
+        "months": "month",
+        "year": "year",
+        "years": "year",
+        "page": "page",
+        "pages": "page",
+        "token": "token",
+        "tokens": "token",
+        "gb": "gb",
+        "mb": "mb",
+        "kb": "kb",
+        "replica": "replica",
+        "replicas": "replica",
+        "shard": "shard",
+        "shards": "shard",
+    }
+    return aliases.get(unit, unit)
 
 
 def _has_named_anchor_mismatch(candidate_text: str, existing_text: str) -> bool:
