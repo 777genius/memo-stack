@@ -26,6 +26,14 @@ class FactDuplicateMatch:
     overlap_terms: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class FactConflictMatch:
+    match_type: str
+    score: float
+    reason_codes: tuple[str, ...]
+    overlap_terms: tuple[str, ...]
+
+
 def normalize_memory_text(text: str) -> str:
     normalized = unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
     return " ".join(normalized.strip().casefold().split())
@@ -174,14 +182,21 @@ def semantic_memory_terms(text: str) -> set[str]:
 
 
 def looks_conflicting_fact(candidate_text: str, existing_text: str) -> bool:
+    return describe_conflicting_fact_match(candidate_text, existing_text) is not None
+
+
+def describe_conflicting_fact_match(
+    candidate_text: str,
+    existing_text: str,
+) -> FactConflictMatch | None:
     candidate_normalized = normalize_memory_text(candidate_text)
     existing_normalized = normalize_memory_text(existing_text)
     if not candidate_normalized or not existing_normalized:
-        return False
+        return None
     if candidate_normalized == existing_normalized:
-        return False
+        return None
     if looks_equivalent_fact(candidate_normalized, existing_normalized):
-        return False
+        return None
     decision_terms = {
         "adapter",
         "backend",
@@ -206,18 +221,68 @@ def looks_conflicting_fact(candidate_text: str, existing_text: str) -> bool:
     existing_terms = semantic_memory_terms(existing_normalized)
     overlap = candidate_terms & existing_terms
     if len(overlap) < 2:
-        return False
+        return None
     if _has_named_anchor_mismatch(candidate_text, existing_text):
-        return False
+        return None
     if _has_event_identity_mismatch(candidate_text, existing_text):
-        return False
+        return None
     if _has_numeric_value_mismatch(candidate_text, existing_text):
-        return bool(overlap & decision_terms) or len(overlap) >= 3
+        if bool(overlap & decision_terms) or len(overlap) >= 3:
+            return _conflict_match(
+                match_type="numeric_value_mismatch",
+                reason_codes=("semantic_conflict", "numeric_value_mismatch"),
+                overlap=overlap,
+                candidate_terms=candidate_terms,
+                existing_terms=existing_terms,
+            )
+        return None
     if _has_negation_mismatch(candidate_normalized, existing_normalized):
-        return bool(overlap & decision_terms) or len(overlap) >= 3
+        if bool(overlap & decision_terms) or len(overlap) >= 3:
+            return _conflict_match(
+                match_type="negation_mismatch",
+                reason_codes=("semantic_conflict", "negation_mismatch"),
+                overlap=overlap,
+                candidate_terms=candidate_terms,
+                existing_terms=existing_terms,
+            )
+        return None
     if _has_exclusive_anchor_mismatch(candidate_terms, existing_terms):
-        return bool(overlap & decision_terms)
-    return bool(overlap & decision_terms) and len(overlap) >= 3
+        if overlap & decision_terms:
+            return _conflict_match(
+                match_type="exclusive_anchor_mismatch",
+                reason_codes=("semantic_conflict", "exclusive_anchor_mismatch"),
+                overlap=overlap,
+                candidate_terms=candidate_terms,
+                existing_terms=existing_terms,
+            )
+        return None
+    if bool(overlap & decision_terms) and len(overlap) >= 3:
+        return _conflict_match(
+            match_type="decision_term_overlap",
+            reason_codes=("semantic_conflict", "decision_term_overlap"),
+            overlap=overlap,
+            candidate_terms=candidate_terms,
+            existing_terms=existing_terms,
+        )
+    return None
+
+
+def _conflict_match(
+    *,
+    match_type: str,
+    reason_codes: tuple[str, ...],
+    overlap: set[str],
+    candidate_terms: set[str],
+    existing_terms: set[str],
+) -> FactConflictMatch:
+    union = candidate_terms | existing_terms
+    score = len(overlap) / len(union) if union else 0.0
+    return FactConflictMatch(
+        match_type=match_type,
+        score=round(score, 3),
+        reason_codes=reason_codes,
+        overlap_terms=tuple(sorted(overlap))[:12],
+    )
 
 
 def _has_negation_mismatch(candidate_text: str, existing_text: str) -> bool:

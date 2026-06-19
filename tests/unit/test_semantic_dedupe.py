@@ -1,4 +1,5 @@
 from infinity_context_core.application.semantic_dedupe import (
+    describe_conflicting_fact_match,
     describe_duplicate_fact_match,
     looks_conflicting_fact,
     looks_equivalent_fact,
@@ -78,6 +79,13 @@ def test_semantic_dedupe_rejects_numeric_value_mismatch_as_duplicate() -> None:
         "Project Atlas keeps billing logs for 7 days.",
         "Project Atlas keeps billing logs for 30 days.",
     )
+    match = describe_conflicting_fact_match(
+        "Project Atlas keeps billing logs for 7 days.",
+        "Project Atlas keeps billing logs for 30 days.",
+    )
+    assert match is not None
+    assert match.match_type == "numeric_value_mismatch"
+    assert "numeric_value_mismatch" in match.reason_codes
 
 
 def test_semantic_dedupe_rejects_version_value_mismatch_as_duplicate() -> None:

@@ -14,6 +14,7 @@ from infinity_context_core.application.extractor import (
     validate_extractor_candidates,
 )
 from infinity_context_core.application.semantic_dedupe import (
+    describe_conflicting_fact_match,
     describe_duplicate_fact_match,
     looks_conflicting_fact,
     looks_equivalent_fact,
@@ -325,6 +326,11 @@ class ConsolidateCaptureUseCase:
                         text=candidate.text,
                         kind=candidate.kind.value,
                     )
+                active_conflict_match = (
+                    describe_conflicting_fact_match(candidate.text, active_conflict.text)
+                    if active_conflict is not None
+                    else None
+                )
                 duplicate = await uow.suggestions.find_pending_duplicate(
                     space_id=str(current.space_id),
                     memory_scope_id=str(current.memory_scope_id),
@@ -415,6 +421,18 @@ class ConsolidateCaptureUseCase:
                         "conflicting_fact_version": active_conflict.version
                         if active_conflict is not None
                         else None,
+                        "conflict_match_type": active_conflict_match.match_type
+                        if active_conflict_match is not None
+                        else None,
+                        "conflict_score": active_conflict_match.score
+                        if active_conflict_match is not None
+                        else None,
+                        "conflict_reason_codes": list(active_conflict_match.reason_codes)
+                        if active_conflict_match is not None
+                        else [],
+                        "conflict_overlap_terms": list(active_conflict_match.overlap_terms)
+                        if active_conflict_match is not None
+                        else [],
                         "diff_preview": _diff_preview(target_fact, candidate.text),
                         "valid_from": candidate.valid_from.isoformat()
                         if candidate.valid_from

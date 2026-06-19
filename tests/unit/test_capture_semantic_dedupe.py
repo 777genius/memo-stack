@@ -235,6 +235,9 @@ def test_auto_apply_safe_active_conflict_creates_review_suggestion_not_fact(
     assert suggestion["candidate_text"] == "Docs retrieval should use Qdrant vectors."
     assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["conflicting_fact_version"] == 1
+    assert suggestion["review_payload"]["conflict_match_type"] == "exclusive_anchor_mismatch"
+    assert "exclusive_anchor_mismatch" in suggestion["review_payload"]["conflict_reason_codes"]
+    assert "document" in suggestion["review_payload"]["conflict_overlap_terms"]
     assert "auto_apply_active_conflict" in suggestion["review_payload"]["rejected_resolver_codes"]
 
 
@@ -292,6 +295,9 @@ def test_auto_apply_safe_numeric_conflict_creates_review_suggestion_not_fact(
     assert suggestion["candidate_text"] == "Project Atlas keeps billing logs for 30 days."
     assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["conflicting_fact_version"] == 1
+    assert suggestion["review_payload"]["conflict_match_type"] == "numeric_value_mismatch"
+    assert "numeric_value_mismatch" in suggestion["review_payload"]["conflict_reason_codes"]
+    assert "billing" in suggestion["review_payload"]["conflict_overlap_terms"]
     assert "auto_apply_active_conflict" in suggestion["review_payload"]["rejected_resolver_codes"]
 
 
