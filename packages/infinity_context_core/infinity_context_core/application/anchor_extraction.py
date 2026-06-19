@@ -11,7 +11,7 @@ _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _PERSON_PATTERN = re.compile(r"\b([A-Z][a-z][A-Za-z]{1,40})(?:\s+([A-Z][a-z][A-Za-z]{1,40}))?\b")
 _CYRILLIC_PERSON_PATTERN = re.compile(r"\b([А-ЯЁ][а-яё]{2,40})(?:\s+([А-ЯЁ][а-яё]{2,40}))?\b")
 _PROJECT_PATTERN = re.compile(
-    r"\b(?:project|проект|repo|repository|service|сервис)\s+"
+    r"\b(?:project|проект(?:у|е|а|ом)?|repo|repository|service|сервис)\s+"
     r"([A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}"
     r"(?:\s+[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}){0,3})",
     re.IGNORECASE,
@@ -38,8 +38,10 @@ _TEMPORAL_PHRASE = (
 )
 _EVENT_KEYWORDS = (
     r"call|meeting|review|sync|demo|chat|message|conversation|"
+    r"meet|met|"
     r"standup|planning|retro|retrospective|workshop|interview|presentation|release|launch|"
     r"звонок|созвон|встреча|ревью|демо|переписка|переписывался|"
+    r"встретился|встретилась|встречался|встречалась|встречались|"
     r"разговор(?:а|е|ом)?|чат|планерка|планёрка|стендап|ретро|"
     r"интервью|воркшоп|релиз|запуск"
 )
@@ -63,6 +65,7 @@ _TEMPORAL_PATTERN = re.compile(
 )
 _PERSON_STOP_WORDS = {
     "api",
+    "attach",
     "call",
     "e2e",
     "frontend",
@@ -119,6 +122,12 @@ _PERSON_STOP_WORDS = {
     "org",
     "team",
     "openai",
+    "open",
+    "please",
+    "save",
+    "today",
+    "tomorrow",
+    "yesterday",
     "anthropic",
     "github",
     "google",
@@ -152,6 +161,11 @@ _PERSON_STOP_WORDS = {
     "воркшоп",
     "релиз",
     "запуск",
+}
+_PERSON_TEMPORAL_PREFIX_WORDS = {
+    "today",
+    "tomorrow",
+    "yesterday",
 }
 _ORGANIZATION_SUFFIX_WORDS = {
     "ag",
@@ -604,6 +618,9 @@ def _person_labels(text: str) -> tuple[str, ...]:
             normalized_parts = tuple(normalize_anchor_key(part) for part in parts)
             if any(part in _ORGANIZATION_SUFFIX_WORDS for part in normalized_parts[1:]):
                 continue
+            if len(parts) > 1 and normalized_parts[0] in _PERSON_TEMPORAL_PREFIX_WORDS:
+                parts = (parts[1],)
+                normalized_parts = normalized_parts[1:]
             if len(parts) > 1 and normalized_parts[1] in _PERSON_STOP_WORDS:
                 parts = (parts[0],)
             label = " ".join(parts).strip()
@@ -653,7 +670,7 @@ def _nearby_temporal_before(text: str, end: int) -> str:
 
 def _is_project_qualified_person_match(text: str, start: int) -> bool:
     prefix = text[max(0, start - 24) : start].lower()
-    return bool(re.search(r"(?:project|проект)\s+$", prefix))
+    return bool(re.search(r"(?:project|проект(?:у|е|а|ом)?)\s+$", prefix))
 
 
 def _is_followed_by_organization_suffix(text: str, end: int) -> bool:

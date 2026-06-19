@@ -25,6 +25,44 @@ def test_anchor_extraction_keeps_real_people_projects_and_events() -> None:
     assert ("event", "meeting last week") in keys
 
 
+def test_anchor_extraction_ignores_temporal_leading_words_as_people() -> None:
+    anchors = extract_observed_anchors(
+        "Yesterday Alex met Dana about Project Atlas billing cutoff."
+    )
+
+    keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    event_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "event"}
+    assert ("person", "alex") in keys
+    assert ("person", "dana") in keys
+    assert ("project", "atlas") in keys
+    assert "yesterday alex" not in person_keys
+    assert "met with alex yesterday" in event_keys
+
+
+def test_anchor_extraction_handles_russian_project_case_inflections() -> None:
+    anchors = extract_observed_anchors(
+        "На прошлой неделе был созвон с Алексом по проекту Атлас."
+    )
+
+    keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    event_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "event"}
+    assert ("project", "атлас") in keys
+    assert ("person", "алексом") in keys
+    assert "атлас" not in person_keys
+    assert "созвон с алексом на прошлой неделе" in event_keys
+
+
+def test_anchor_extraction_ignores_command_verbs_as_people() -> None:
+    anchors = extract_observed_anchors(
+        "Open the Docker backend logs and screenshot progress bar."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    assert "open" not in person_keys
+
+
 def test_anchor_extraction_keeps_same_name_people_and_projects_separate() -> None:
     anchors = extract_observed_anchors("Alex wrote that Project Alex is a separate workspace.")
 
