@@ -347,6 +347,8 @@ def _quality_golden_cases(
                 ("source_refs_with_page_count", "gte", 1),
                 ("source_refs_with_time_range_count", "gte", 1),
                 ("source_refs_with_bbox_count", "gte", 1),
+                ("query_snippet_items_used", "gte", 1),
+                ("query_snippet_source_refs_enriched", "gte", 1),
             ),
         ),
         EvalCase(
