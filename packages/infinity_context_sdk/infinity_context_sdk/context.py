@@ -10,7 +10,7 @@ from infinity_context_sdk._redaction import redact_sensitive_text
 MAX_RETRIEVAL_SOURCES = 8
 MAX_SOURCE_REFS = 20
 MAX_MAPPING_ITEMS = 24
-MAX_BUNDLE_DIAGNOSTIC_ITEMS = 96
+MAX_BUNDLE_DIAGNOSTIC_ITEMS = 128
 MAX_LIST_ITEMS = 8
 MAX_KEY_CHARS = 80
 MAX_STRING_CHARS = 240
@@ -184,6 +184,7 @@ class ContextBundleDiagnostics:
     items_with_citations: int = 0
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
+    provenance_summary: Mapping[str, object] | None = None
     retrieval_trace: tuple[ContextRetrievalTraceEntry, ...] = ()
 
 
@@ -510,6 +511,7 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         sensitive_citation_quote_previews_skipped=_non_negative_int(
             raw.get("sensitive_citation_quote_previews_skipped")
         ),
+        provenance_summary=_bounded_mapping(raw.get("provenance_summary")),
         retrieval_trace=retrieval_trace,
     )
 

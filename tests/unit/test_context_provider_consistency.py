@@ -44,6 +44,7 @@ from infinity_context_core.ports.capabilities import (
     CapabilityStatus,
     MemoryCapability,
 )
+from infinity_context_sdk.context import context_bundle_from_response
 from infinity_context_server.config import DeployProfile, Settings
 from infinity_context_server.main import create_app
 from infinity_context_server.provider_budget import QueryEmbeddingBudgetAdapter
@@ -522,6 +523,25 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
     assert context.diagnostics["citations_returned"] == 3
     assert context.diagnostics["citations_truncated"] is False
     assert context.diagnostics["items_with_citations"] == 1
+    assert context.diagnostics["provenance_summary"] == {
+        "items_total": 1,
+        "items_with_citations": 1,
+        "uncited_items": 0,
+        "citation_coverage_ratio": 1.0,
+        "citation_density": 3.0,
+        "items_with_quote_previews": 1,
+        "quote_preview_coverage_ratio": 1.0,
+        "items_with_precise_locations": 1,
+        "precise_location_coverage_ratio": 1.0,
+        "source_refs_total": 3,
+        "source_refs_returned": 3,
+        "source_refs_with_quote_preview_count": 3,
+        "source_refs_with_precise_location_count": 3,
+        "review_only_items": 0,
+        "pending_review_items": 0,
+        "stale_items": 0,
+        "active_default_items": 1,
+    }
     assert context.diagnostics["retrieval_trace"] == [
         {
             "retrieval_source": "keyword_chunks",
@@ -550,6 +570,11 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
     assert api_data["diagnostics"]["citations_total"] == 3
     assert api_data["diagnostics"]["citations_returned"] == 3
     assert api_data["diagnostics"]["items_with_citations"] == 1
+    assert api_data["diagnostics"]["provenance_summary"]["citation_coverage_ratio"] == 1.0
+    assert api_data["diagnostics"]["provenance_summary"]["citation_density"] == 3.0
+    sdk_context = context_bundle_from_response({"data": api_data})
+    assert sdk_context.diagnostics.provenance_summary is not None
+    assert sdk_context.diagnostics.provenance_summary["items_with_precise_locations"] == 1
     assert api_data["diagnostics"]["retrieval_trace"][0]["retrieval_source"] == (
         "keyword_chunks"
     )

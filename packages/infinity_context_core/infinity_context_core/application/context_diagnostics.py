@@ -363,6 +363,7 @@ def normalize_context_bundle_diagnostics(
         items,
         retrieval_sources=retrieval_sources,
     )
+    normalized["provenance_summary"] = _provenance_summary(normalized, items)
     return normalized
 
 
@@ -600,6 +601,100 @@ def _source_ref_counts(items: tuple[ContextItem, ...]) -> dict[str, int | bool]:
         "citations_truncated": total > returned,
         "items_with_citations": sum(1 for item in items if item.source_refs),
     }
+
+
+def _provenance_summary(
+    diagnostics: dict[str, object],
+    items: tuple[ContextItem, ...],
+) -> dict[str, object]:
+    item_count = len(items)
+    refs = tuple(ref for item in items for ref in item.source_refs)
+    items_with_citations = _non_negative_int(
+        diagnostics.get("items_with_citations"),
+        default=0,
+    )
+    items_with_quote_previews = sum(
+        1
+        for item in items
+        if any(ref.quote_preview and ref.quote_preview.strip() for ref in item.source_refs)
+    )
+    items_with_precise_locations = sum(
+        1
+        for item in items
+        if any(_source_ref_has_precise_location(ref) for ref in item.source_refs)
+    )
+    review_only_items = sum(
+        1 for item in items if bool(_as_dict(item.diagnostics).get("review_only"))
+    )
+    pending_review_items = sum(
+        1
+        for item in items
+        if any(
+            source
+            in {
+                "pending_conflict_suggestion",
+                "pending_duplicate_merge_suggestion",
+            }
+            for source in diagnostic_retrieval_sources(item.diagnostics)
+        )
+    )
+    stale_items = sum(
+        1
+        for item in items
+        if _safe_optional_text(
+            _as_dict(item.diagnostics).get("stale_reason"),
+            limit=_MAX_DIAGNOSTIC_KEY_CHARS,
+        )
+    )
+    quote_preview_refs = sum(
+        1 for ref in refs if ref.quote_preview is not None and ref.quote_preview.strip()
+    )
+    precise_location_refs = sum(1 for ref in refs if _source_ref_has_precise_location(ref))
+    return {
+        "items_total": item_count,
+        "items_with_citations": items_with_citations,
+        "uncited_items": max(0, item_count - items_with_citations),
+        "citation_coverage_ratio": _ratio(items_with_citations, item_count),
+        "citation_density": _ratio(
+            _non_negative_int(diagnostics.get("citations_returned"), default=0),
+            item_count,
+        ),
+        "items_with_quote_previews": items_with_quote_previews,
+        "quote_preview_coverage_ratio": _ratio(items_with_quote_previews, item_count),
+        "items_with_precise_locations": items_with_precise_locations,
+        "precise_location_coverage_ratio": _ratio(items_with_precise_locations, item_count),
+        "source_refs_total": _non_negative_int(
+            diagnostics.get("source_refs_total"),
+            default=0,
+        ),
+        "source_refs_returned": _non_negative_int(
+            diagnostics.get("source_refs_returned"),
+            default=0,
+        ),
+        "source_refs_with_quote_preview_count": quote_preview_refs,
+        "source_refs_with_precise_location_count": precise_location_refs,
+        "review_only_items": review_only_items,
+        "pending_review_items": pending_review_items,
+        "stale_items": stale_items,
+        "active_default_items": max(0, item_count - review_only_items),
+    }
+
+
+def _source_ref_has_precise_location(ref: object) -> bool:
+    return (
+        getattr(ref, "char_start", None) is not None
+        or getattr(ref, "char_end", None) is not None
+        or getattr(ref, "page_number", None) is not None
+        or getattr(ref, "time_start_ms", None) is not None
+        or getattr(ref, "time_end_ms", None) is not None
+        or getattr(ref, "bbox", None) is not None
+    )
+
+
+def _ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator, 4)
 
 
 def _source_ref_quality_score(item: ContextItem) -> int:
