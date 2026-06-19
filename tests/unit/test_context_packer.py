@@ -193,6 +193,53 @@ def test_memory_items_redact_sensitive_item_text() -> None:
     assert result.bundle.diagnostics["sensitive_item_text_redacted"] == 1
 
 
+def test_context_packer_preserves_evidence_family_diversity_under_budget() -> None:
+    facts = tuple(
+        ContextItem(
+            item_id=f"fact_budget_{index}",
+            item_type="fact",
+            text=f"FACT_BUDGET_MARKER {index} " + ("fact detail " * 14),
+            score=0.99 - index * 0.01,
+            source_refs=(SourceRef(source_type="manual", source_id=f"fact-{index}"),),
+            diagnostics={"memory_scope_id": "memory_scope_default"},
+        )
+        for index in range(3)
+    )
+    chunk = ContextItem(
+        item_id="chunk_ocr_transcript",
+        item_type="chunk",
+        text="OCR_TRANSCRIPT_MARKER from screenshot and call transcript " + ("short " * 6),
+        score=0.4,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="extract-ocr-transcript",
+                chunk_id="chunk_ocr_transcript",
+                time_start_ms=1000,
+                time_end_ms=2400,
+            ),
+        ),
+        diagnostics={"memory_scope_id": "memory_scope_default"},
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_diversity_budget",
+        items=(*facts, chunk),
+        token_budget=130,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "FACT_BUDGET_MARKER 0" in rendered
+    assert "OCR_TRANSCRIPT_MARKER" in rendered
+    assert "FACT_BUDGET_MARKER 1" not in rendered
+    assert "time_ms=1000-2400" in rendered
+    assert result.bundle.diagnostics["diversity_families_considered"] == 2
+    assert result.bundle.diagnostics["diversity_families_used"] == 2
+    assert result.bundle.diagnostics["diversity_items_used"] == 2
+    assert result.bundle.diagnostics["item_type_counts"] == {"fact": 1, "chunk": 1}
+    assert result.bundle.diagnostics["dropped_by_budget"] == 2
+
+
 def test_memory_block_drops_instruction_marked_items() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_no_instruction_role",

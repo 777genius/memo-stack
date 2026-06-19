@@ -1526,6 +1526,69 @@ def test_context_redacts_sensitive_item_text_in_public_response(tmp_path: Path) 
     assert "[redacted]" in item["text"]
 
 
+def test_context_public_response_preserves_fact_and_chunk_diversity(
+    tmp_path: Path,
+) -> None:
+    marker = "CONTEXT_DIVERSITY_API_MARKER"
+    with make_client(tmp_path) as client:
+        facts = [
+            client.post(
+                "/v1/facts",
+                json={
+                    "space_id": "space_client_app",
+                    "memory_scope_id": "memory_scope_default",
+                    "text": f"{marker} fact {index}. " + ("fact detail " * 14),
+                    "kind": "note",
+                    "source_refs": [
+                        {"source_type": "manual", "source_id": f"diversity-fact-{index}"}
+                    ],
+                },
+                headers=auth_headers(),
+            )
+            for index in range(3)
+        ]
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "title": "Diversity OCR transcript",
+                "text": (
+                    f"{marker} chunk from screenshot OCR and call transcript. "
+                    + ("short " * 5)
+                ),
+                "source_type": "document",
+                "source_external_id": "diversity-doc",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": marker,
+                "token_budget": 190,
+            },
+            headers=auth_headers(),
+        )
+
+    assert all(fact.status_code == 201 for fact in facts)
+    assert document.status_code == 201, document.text
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    rendered = data["rendered_text"]
+    item_types = {item["item_type"] for item in data["items"]}
+    assert "fact 0" in rendered
+    assert "screenshot OCR and call transcript" in rendered
+    assert {"fact", "chunk"}.issubset(item_types)
+    assert data["diagnostics"]["diversity_families_considered"] >= 2
+    assert data["diagnostics"]["diversity_families_used"] >= 2
+    assert data["diagnostics"]["diversity_items_used"] >= 2
+    assert data["diagnostics"]["item_type_counts"]["fact"] >= 1
+    assert data["diagnostics"]["item_type_counts"]["chunk"] >= 1
+
+
 def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(
