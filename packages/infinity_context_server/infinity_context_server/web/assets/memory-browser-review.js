@@ -164,9 +164,13 @@
     }
     for (const suggestion of factReviews.slice(0, 160)) {
       const item = listItem({
-        title: `${suggestion.operation} / ${suggestion.status}`,
+        title: [
+          suggestion.operation,
+          suggestion.status,
+          suggestion.review_kind || "review",
+        ].join(" / "),
         text: suggestion.candidate_text,
-        meta: formatDate(suggestion.updated_at),
+        meta: factSuggestionMeta(suggestion, formatDate),
         onClick: () => selectNode(`suggestion:${suggestion.id}`),
       });
       if (suggestion.status === "pending") {
@@ -318,13 +322,19 @@
     section.append(
       heading,
       keyValueItem("Operation", suggestion.operation),
+      keyValueItem("Review kind", suggestion.review_kind || "candidate_review"),
       keyValueItem("Status", suggestion.status),
       keyValueItem("Kind", suggestion.kind),
       keyValueItem("Target fact", suggestion.target_fact_id || "new fact"),
+      keyValueItem("State", suggestion.review_state_reason || "pending_review"),
       keyValueItem("Candidate", suggestion.candidate_text),
       keyValueItem("Updated", formatDate(suggestion.updated_at)),
     );
     const content = [section];
+    const optionsSection = factSuggestionResolutionSection(suggestion);
+    if (optionsSection) {
+      content.push(optionsSection);
+    }
     const refs = arrayOf(suggestion.source_refs);
     if (refs.length) {
       content.push(sourceSection(refs));
@@ -340,6 +350,58 @@
       content.push(actions);
     }
     openReviewModal(`Fact suggestion ${shortId(suggestion.id)}`, content);
+  }
+
+  function factSuggestionMeta(suggestion, formatDate) {
+    const parts = [
+      suggestion.review_kind,
+      suggestion.review_state_reason,
+      formatDate(suggestion.updated_at),
+    ].filter(Boolean);
+    return parts.join(" / ");
+  }
+
+  function factSuggestionResolutionSection(suggestion) {
+    const { arrayOf, keyValueItem } = browser();
+    const options = arrayOf(suggestion.review_resolution_options);
+    if (!options.length) {
+      return null;
+    }
+    const section = document.createElement("section");
+    section.className = "source-list";
+    const heading = document.createElement("h3");
+    heading.className = "detail-title";
+    heading.textContent = "Resolution options";
+    section.append(
+      heading,
+      keyValueItem(
+        "Recommended",
+        suggestion.review_payload?.recommended_action || "manual_review",
+      ),
+      keyValueItem(
+        "Default",
+        suggestion.review_payload?.default_resolution || "review_before_write",
+      ),
+      keyValueItem(
+        "Available actions",
+        arrayOf(suggestion.available_review_actions).join(", ") || "none",
+      ),
+    );
+    for (const option of options) {
+      section.append(
+        keyValueItem(
+          optionLabel(option),
+          [option.effect, option.availability].filter(Boolean).join(" / "),
+        ),
+      );
+    }
+    return section;
+  }
+
+  function optionLabel(option) {
+    const id = option.id || "resolution";
+    const action = option.review_action || "review";
+    return `${id} (${action})`;
   }
 
   function contextEndpointPreviewSection(title, objectType, objectId, fallbackPreview = "") {
