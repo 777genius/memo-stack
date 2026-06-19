@@ -133,6 +133,8 @@ class ContextBundleDiagnostics:
     rag_status: str = "unknown"
     artifact_evidence_status: str = "unknown"
     facts_considered: int = 0
+    anchors_considered: int = 0
+    anchors_used: int = 0
     keyword_chunks_considered: int = 0
     vector_candidate_count: int = 0
     vector_hydrated_count: int = 0
@@ -168,22 +170,53 @@ class ContextBundleDiagnostics:
     temporal_contradictions_considered: int = 0
     pending_conflict_suggestions_considered: int = 0
     pending_duplicate_merge_suggestions_considered: int = 0
+    approved_context_links_considered: int = 0
+    approved_context_links_used: int = 0
+    approved_context_linked_chunks_used: int = 0
+    approved_context_linked_facts_used: int = 0
+    approved_context_linked_assets_used: int = 0
+    approved_context_linked_extraction_artifacts_used: int = 0
+    approved_context_linked_extraction_artifact_manifest_items_used: int = 0
+    approved_context_linked_extraction_artifact_blob_storage_disabled_count: int = 0
+    approved_context_linked_extraction_artifact_manifest_too_large_count: int = 0
+    approved_context_linked_extraction_artifact_read_error_count: int = 0
+    approved_context_linked_extraction_artifact_parse_error_count: int = 0
+    approved_context_linked_extraction_artifact_schema_skip_count: int = 0
+    stale_context_linked_chunk_drop_count: int = 0
+    stale_context_linked_fact_drop_count: int = 0
+    stale_context_linked_asset_drop_count: int = 0
+    stale_context_linked_extraction_artifact_drop_count: int = 0
+    diversity_families_considered: int = 0
+    diversity_families_used: int = 0
+    diversity_items_used: int = 0
+    chunk_sources_considered: int = 0
+    chunk_sources_used: int = 0
+    max_chunks_used_per_source: int = 0
+    source_capped_sources_considered: int = 0
+    source_capped_sources_used: int = 0
+    max_source_capped_items_used_per_source: int = 0
+    source_diversity_chunks_reordered: int = 0
     multimodal_source_ref_count: int = 0
     items_with_multimodal_source_refs: int = 0
     source_refs_with_page_count: int = 0
     source_refs_with_bbox_count: int = 0
     source_refs_with_time_range_count: int = 0
+    source_refs_with_char_range_count: int = 0
     query_snippet_items_used: int = 0
     query_snippet_source_refs_enriched: int = 0
     source_refs_total: int = 0
     source_refs_returned: int = 0
     source_refs_truncated: bool = False
+    citations_rendered: int = 0
     citations_total: int = 0
     citations_returned: int = 0
     citations_truncated: bool = False
     items_with_citations: int = 0
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
+    sensitive_item_text_redacted: int = 0
+    rendered_chars: int = 0
+    max_rendered_chars: int = 0
     provenance_summary: Mapping[str, object] | None = None
     retrieval_quality_summary: Mapping[str, object] | None = None
     retrieval_trace: tuple[ContextRetrievalTraceEntry, ...] = ()
@@ -307,9 +340,10 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
         raw.get("retrieval_sources_returned"),
         default=len(retrieval_sources),
     )
-    retrieval_sources_truncated = _safe_bool(
-        raw.get("retrieval_sources_truncated")
-    ) or retrieval_sources_total > retrieval_sources_returned
+    retrieval_sources_truncated = (
+        _safe_bool(raw.get("retrieval_sources_truncated"))
+        or retrieval_sources_total > retrieval_sources_returned
+    )
     safe_raw["retrieval_sources_total"] = retrieval_sources_total
     safe_raw["retrieval_sources_returned"] = retrieval_sources_returned
     safe_raw["retrieval_sources_truncated"] = retrieval_sources_truncated
@@ -357,9 +391,10 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         raw.get("retrieval_sources_returned"),
         default=len(retrieval_sources_used),
     )
-    retrieval_sources_truncated = _safe_bool(
-        raw.get("retrieval_sources_truncated")
-    ) or retrieval_sources_total > retrieval_sources_returned
+    retrieval_sources_truncated = (
+        _safe_bool(raw.get("retrieval_sources_truncated"))
+        or retrieval_sources_total > retrieval_sources_returned
+    )
     safe_raw["retrieval_sources_total"] = retrieval_sources_total
     safe_raw["retrieval_sources_returned"] = retrieval_sources_returned
     safe_raw["retrieval_sources_truncated"] = retrieval_sources_truncated
@@ -379,17 +414,13 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         retrieval_sources_returned=retrieval_sources_returned,
         retrieval_sources_truncated=retrieval_sources_truncated,
         hybrid_items_used=_non_negative_int(raw.get("hybrid_items_used")),
-        temporal_replacements_applied=_non_negative_int(
-            raw.get("temporal_replacements_applied")
-        ),
+        temporal_replacements_applied=_non_negative_int(raw.get("temporal_replacements_applied")),
         temporal_relations_skipped_by_validity=_non_negative_int(
             raw.get("temporal_relations_skipped_by_validity")
         ),
         items_considered=_non_negative_int(raw.get("items_considered")),
         items_used=_non_negative_int(raw.get("items_used")),
-        dropped_by_instruction_flag=_non_negative_int(
-            raw.get("dropped_by_instruction_flag")
-        ),
+        dropped_by_instruction_flag=_non_negative_int(raw.get("dropped_by_instruction_flag")),
         dropped_by_budget=_non_negative_int(raw.get("dropped_by_budget")),
         dropped_by_source_cap=_non_negative_int(raw.get("dropped_by_source_cap")),
         dropped_by_char_cap=_non_negative_int(raw.get("dropped_by_char_cap")),
@@ -403,6 +434,8 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
             default="unknown",
         ),
         facts_considered=_non_negative_int(raw.get("facts_considered")),
+        anchors_considered=_non_negative_int(raw.get("anchors_considered")),
+        anchors_used=_non_negative_int(raw.get("anchors_used")),
         keyword_chunks_considered=_non_negative_int(raw.get("keyword_chunks_considered")),
         vector_candidate_count=_non_negative_int(raw.get("vector_candidate_count")),
         vector_hydrated_count=_non_negative_int(raw.get("vector_hydrated_count")),
@@ -420,9 +453,7 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         artifact_evidence_items_considered=_non_negative_int(
             raw.get("artifact_evidence_items_considered")
         ),
-        artifact_evidence_items_used=_non_negative_int(
-            raw.get("artifact_evidence_items_used")
-        ),
+        artifact_evidence_items_used=_non_negative_int(raw.get("artifact_evidence_items_used")),
         artifact_evidence_ranked_candidate_count=_non_negative_int(
             raw.get("artifact_evidence_ranked_candidate_count")
         ),
@@ -470,13 +501,9 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         stale_rag_drop_count=_non_negative_int(raw.get("stale_rag_drop_count")),
         stale_facts_considered=_non_negative_int(raw.get("stale_facts_considered")),
         stale_facts_used=_non_negative_int(raw.get("stale_facts_used")),
-        superseded_facts_considered=_non_negative_int(
-            raw.get("superseded_facts_considered")
-        ),
+        superseded_facts_considered=_non_negative_int(raw.get("superseded_facts_considered")),
         superseded_facts_used=_non_negative_int(raw.get("superseded_facts_used")),
-        temporal_relations_considered=_non_negative_int(
-            raw.get("temporal_relations_considered")
-        ),
+        temporal_relations_considered=_non_negative_int(raw.get("temporal_relations_considered")),
         temporal_contradictions_considered=_non_negative_int(
             raw.get("temporal_contradictions_considered")
         ),
@@ -485,6 +512,68 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         ),
         pending_duplicate_merge_suggestions_considered=_non_negative_int(
             raw.get("pending_duplicate_merge_suggestions_considered")
+        ),
+        approved_context_links_considered=_non_negative_int(
+            raw.get("approved_context_links_considered")
+        ),
+        approved_context_links_used=_non_negative_int(raw.get("approved_context_links_used")),
+        approved_context_linked_chunks_used=_non_negative_int(
+            raw.get("approved_context_linked_chunks_used")
+        ),
+        approved_context_linked_facts_used=_non_negative_int(
+            raw.get("approved_context_linked_facts_used")
+        ),
+        approved_context_linked_assets_used=_non_negative_int(
+            raw.get("approved_context_linked_assets_used")
+        ),
+        approved_context_linked_extraction_artifacts_used=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifacts_used")
+        ),
+        approved_context_linked_extraction_artifact_manifest_items_used=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifact_manifest_items_used")
+        ),
+        approved_context_linked_extraction_artifact_blob_storage_disabled_count=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifact_blob_storage_disabled_count")
+        ),
+        approved_context_linked_extraction_artifact_manifest_too_large_count=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifact_manifest_too_large_count")
+        ),
+        approved_context_linked_extraction_artifact_read_error_count=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifact_read_error_count")
+        ),
+        approved_context_linked_extraction_artifact_parse_error_count=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifact_parse_error_count")
+        ),
+        approved_context_linked_extraction_artifact_schema_skip_count=_non_negative_int(
+            raw.get("approved_context_linked_extraction_artifact_schema_skip_count")
+        ),
+        stale_context_linked_chunk_drop_count=_non_negative_int(
+            raw.get("stale_context_linked_chunk_drop_count")
+        ),
+        stale_context_linked_fact_drop_count=_non_negative_int(
+            raw.get("stale_context_linked_fact_drop_count")
+        ),
+        stale_context_linked_asset_drop_count=_non_negative_int(
+            raw.get("stale_context_linked_asset_drop_count")
+        ),
+        stale_context_linked_extraction_artifact_drop_count=_non_negative_int(
+            raw.get("stale_context_linked_extraction_artifact_drop_count")
+        ),
+        diversity_families_considered=_non_negative_int(raw.get("diversity_families_considered")),
+        diversity_families_used=_non_negative_int(raw.get("diversity_families_used")),
+        diversity_items_used=_non_negative_int(raw.get("diversity_items_used")),
+        chunk_sources_considered=_non_negative_int(raw.get("chunk_sources_considered")),
+        chunk_sources_used=_non_negative_int(raw.get("chunk_sources_used")),
+        max_chunks_used_per_source=_non_negative_int(raw.get("max_chunks_used_per_source")),
+        source_capped_sources_considered=_non_negative_int(
+            raw.get("source_capped_sources_considered")
+        ),
+        source_capped_sources_used=_non_negative_int(raw.get("source_capped_sources_used")),
+        max_source_capped_items_used_per_source=_non_negative_int(
+            raw.get("max_source_capped_items_used_per_source")
+        ),
+        source_diversity_chunks_reordered=_non_negative_int(
+            raw.get("source_diversity_chunks_reordered")
         ),
         multimodal_source_ref_count=_non_negative_int(raw.get("multimodal_source_ref_count")),
         items_with_multimodal_source_refs=_non_negative_int(
@@ -495,6 +584,9 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         source_refs_with_time_range_count=_non_negative_int(
             raw.get("source_refs_with_time_range_count")
         ),
+        source_refs_with_char_range_count=_non_negative_int(
+            raw.get("source_refs_with_char_range_count")
+        ),
         query_snippet_items_used=_non_negative_int(raw.get("query_snippet_items_used")),
         query_snippet_source_refs_enriched=_non_negative_int(
             raw.get("query_snippet_source_refs_enriched")
@@ -502,6 +594,7 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         source_refs_total=_non_negative_int(raw.get("source_refs_total")),
         source_refs_returned=_non_negative_int(raw.get("source_refs_returned")),
         source_refs_truncated=_safe_bool(raw.get("source_refs_truncated")),
+        citations_rendered=_non_negative_int(raw.get("citations_rendered")),
         citations_total=_non_negative_int(raw.get("citations_total")),
         citations_returned=_non_negative_int(raw.get("citations_returned")),
         citations_truncated=_safe_bool(raw.get("citations_truncated")),
@@ -512,10 +605,11 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         sensitive_citation_quote_previews_skipped=_non_negative_int(
             raw.get("sensitive_citation_quote_previews_skipped")
         ),
+        sensitive_item_text_redacted=_non_negative_int(raw.get("sensitive_item_text_redacted")),
+        rendered_chars=_non_negative_int(raw.get("rendered_chars")),
+        max_rendered_chars=_non_negative_int(raw.get("max_rendered_chars")),
         provenance_summary=_bounded_mapping(raw.get("provenance_summary")),
-        retrieval_quality_summary=_bounded_mapping(
-            raw.get("retrieval_quality_summary")
-        ),
+        retrieval_quality_summary=_bounded_mapping(raw.get("retrieval_quality_summary")),
         retrieval_trace=retrieval_trace,
     )
 
@@ -532,9 +626,7 @@ def _retrieval_trace_entry_from_payload(
         item_count=_non_negative_int(payload.get("item_count")),
         item_types=_int_mapping(payload.get("item_types")),
         source_ref_count=_non_negative_int(payload.get("source_ref_count")),
-        multimodal_source_ref_count=_non_negative_int(
-            payload.get("multimodal_source_ref_count")
-        ),
+        multimodal_source_ref_count=_non_negative_int(payload.get("multimodal_source_ref_count")),
         evidence_kind_counts=_int_mapping(payload.get("evidence_kind_counts")),
         evidence_modality_counts=_int_mapping(payload.get("evidence_modality_counts")),
         max_score=_safe_float(payload.get("max_score")),

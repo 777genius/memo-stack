@@ -572,10 +572,7 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         ".wav",
         ".webm",
     ]
-    assert (
-        diagnostics.provider_contract["transcription"]["endpoint"]
-        == "/v1/audio/transcriptions"
-    )
+    assert diagnostics.provider_contract["transcription"]["endpoint"] == "/v1/audio/transcriptions"
     assert diagnostics.manifest_contract["schema_version"] == (
         "infinity_context.multimodal_manifest_contract.v1"
     )
@@ -888,6 +885,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "retrieval_sources_returned": 8,
                         "retrieval_sources_truncated": True,
                         "facts_considered": 5,
+                        "anchors_considered": 6,
+                        "anchors_used": 4,
                         "keyword_chunks_considered": 6,
                         "vector_candidate_count": 9,
                         "vector_hydrated_count": 8,
@@ -926,8 +925,37 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "temporal_relations_skipped_by_validity": 3,
                         "pending_conflict_suggestions_considered": 11,
                         "pending_duplicate_merge_suggestions_considered": 5,
+                        "approved_context_links_considered": 12,
+                        "approved_context_links_used": 10,
+                        "approved_context_linked_chunks_used": 4,
+                        "approved_context_linked_facts_used": 3,
+                        "approved_context_linked_assets_used": 2,
+                        "approved_context_linked_extraction_artifacts_used": 2,
+                        "approved_context_linked_extraction_artifact_manifest_items_used": 7,
+                        (
+                            "approved_context_linked_extraction_artifact_"
+                            "blob_storage_disabled_count"
+                        ): 1,
+                        ("approved_context_linked_extraction_artifact_manifest_too_large_count"): 2,
+                        "approved_context_linked_extraction_artifact_read_error_count": 3,
+                        "approved_context_linked_extraction_artifact_parse_error_count": 4,
+                        "approved_context_linked_extraction_artifact_schema_skip_count": 5,
+                        "stale_context_linked_chunk_drop_count": 1,
+                        "stale_context_linked_fact_drop_count": 2,
+                        "stale_context_linked_asset_drop_count": 3,
+                        "stale_context_linked_extraction_artifact_drop_count": 4,
                         "items_considered": 14,
                         "items_used": 7,
+                        "diversity_families_considered": 5,
+                        "diversity_families_used": 3,
+                        "diversity_items_used": 6,
+                        "chunk_sources_considered": 4,
+                        "chunk_sources_used": 2,
+                        "max_chunks_used_per_source": 3,
+                        "source_capped_sources_considered": 9,
+                        "source_capped_sources_used": 7,
+                        "max_source_capped_items_used_per_source": 2,
+                        "source_diversity_chunks_reordered": 1,
                         "dropped_by_instruction_flag": 1,
                         "dropped_by_budget": 2,
                         "dropped_by_source_cap": 3,
@@ -937,17 +965,22 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "source_refs_with_page_count": 3,
                         "source_refs_with_bbox_count": 1,
                         "source_refs_with_time_range_count": 2,
+                        "source_refs_with_char_range_count": 11,
                         "query_snippet_items_used": 4,
                         "query_snippet_source_refs_enriched": 6,
                         "source_refs_total": 25,
                         "source_refs_returned": 20,
                         "source_refs_truncated": True,
+                        "citations_rendered": 19,
                         "citations_total": 25,
                         "citations_returned": 20,
                         "citations_truncated": True,
                         "items_with_citations": 1,
                         "citation_quote_previews_rendered": 9,
                         "sensitive_citation_quote_previews_skipped": 1,
+                        "sensitive_item_text_redacted": 2,
+                        "rendered_chars": 1800,
+                        "max_rendered_chars": 4096,
                         "retrieval_trace": [
                             {
                                 "retrieval_source": "vector_chunks",
@@ -1098,6 +1131,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.retrieval_sources_returned == 8
     assert bundle.diagnostics.retrieval_sources_truncated is True
     assert bundle.diagnostics.facts_considered == 5
+    assert bundle.diagnostics.anchors_considered == 6
+    assert bundle.diagnostics.anchors_used == 4
     assert bundle.diagnostics.keyword_chunks_considered == 6
     assert bundle.diagnostics.vector_candidate_count == 9
     assert bundle.diagnostics.vector_hydrated_count == 8
@@ -1136,8 +1171,39 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.temporal_relations_skipped_by_validity == 3
     assert bundle.diagnostics.pending_conflict_suggestions_considered == 11
     assert bundle.diagnostics.pending_duplicate_merge_suggestions_considered == 5
+    assert bundle.diagnostics.approved_context_links_considered == 12
+    assert bundle.diagnostics.approved_context_links_used == 10
+    assert bundle.diagnostics.approved_context_linked_chunks_used == 4
+    assert bundle.diagnostics.approved_context_linked_facts_used == 3
+    assert bundle.diagnostics.approved_context_linked_assets_used == 2
+    assert bundle.diagnostics.approved_context_linked_extraction_artifacts_used == 2
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_manifest_items_used == 7
+    assert (
+        bundle.diagnostics.approved_context_linked_extraction_artifact_blob_storage_disabled_count
+        == 1
+    )
+    assert (
+        bundle.diagnostics.approved_context_linked_extraction_artifact_manifest_too_large_count == 2
+    )
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_read_error_count == 3
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_parse_error_count == 4
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_schema_skip_count == 5
+    assert bundle.diagnostics.stale_context_linked_chunk_drop_count == 1
+    assert bundle.diagnostics.stale_context_linked_fact_drop_count == 2
+    assert bundle.diagnostics.stale_context_linked_asset_drop_count == 3
+    assert bundle.diagnostics.stale_context_linked_extraction_artifact_drop_count == 4
     assert bundle.diagnostics.items_considered == 14
     assert bundle.diagnostics.items_used == 7
+    assert bundle.diagnostics.diversity_families_considered == 5
+    assert bundle.diagnostics.diversity_families_used == 3
+    assert bundle.diagnostics.diversity_items_used == 6
+    assert bundle.diagnostics.chunk_sources_considered == 4
+    assert bundle.diagnostics.chunk_sources_used == 2
+    assert bundle.diagnostics.max_chunks_used_per_source == 3
+    assert bundle.diagnostics.source_capped_sources_considered == 9
+    assert bundle.diagnostics.source_capped_sources_used == 7
+    assert bundle.diagnostics.max_source_capped_items_used_per_source == 2
+    assert bundle.diagnostics.source_diversity_chunks_reordered == 1
     assert bundle.diagnostics.dropped_by_instruction_flag == 1
     assert bundle.diagnostics.dropped_by_budget == 2
     assert bundle.diagnostics.dropped_by_source_cap == 3
@@ -1147,17 +1213,22 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.source_refs_with_page_count == 3
     assert bundle.diagnostics.source_refs_with_bbox_count == 1
     assert bundle.diagnostics.source_refs_with_time_range_count == 2
+    assert bundle.diagnostics.source_refs_with_char_range_count == 11
     assert bundle.diagnostics.query_snippet_items_used == 4
     assert bundle.diagnostics.query_snippet_source_refs_enriched == 6
     assert bundle.diagnostics.source_refs_total == 25
     assert bundle.diagnostics.source_refs_returned == 20
     assert bundle.diagnostics.source_refs_truncated is True
+    assert bundle.diagnostics.citations_rendered == 19
     assert bundle.diagnostics.citations_total == 25
     assert bundle.diagnostics.citations_returned == 20
     assert bundle.diagnostics.citations_truncated is True
     assert bundle.diagnostics.items_with_citations == 1
     assert bundle.diagnostics.citation_quote_previews_rendered == 9
     assert bundle.diagnostics.sensitive_citation_quote_previews_skipped == 1
+    assert bundle.diagnostics.sensitive_item_text_redacted == 2
+    assert bundle.diagnostics.rendered_chars == 1800
+    assert bundle.diagnostics.max_rendered_chars == 4096
     assert len(bundle.diagnostics.retrieval_trace) == 2
     trace = bundle.diagnostics.retrieval_trace[0]
     assert trace.retrieval_source == "vector_chunks"
@@ -1259,6 +1330,8 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     assert bundle.diagnostics.vector_hydrated_count == 0
     assert bundle.diagnostics.graph_candidate_count == 0
     assert bundle.diagnostics.graph_hydrated_count == 0
+    assert bundle.diagnostics.anchors_considered == 0
+    assert bundle.diagnostics.anchors_used == 0
     assert bundle.diagnostics.stale_vector_drop_count == 0
     assert bundle.diagnostics.stale_graph_drop_count == 0
     assert bundle.diagnostics.stale_rag_drop_count == 0
@@ -1268,8 +1341,40 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     assert bundle.diagnostics.temporal_contradictions_considered == 0
     assert bundle.diagnostics.temporal_relations_skipped_by_validity == 0
     assert bundle.diagnostics.pending_conflict_suggestions_considered == 0
+    assert bundle.diagnostics.pending_duplicate_merge_suggestions_considered == 0
+    assert bundle.diagnostics.approved_context_links_considered == 0
+    assert bundle.diagnostics.approved_context_links_used == 0
+    assert bundle.diagnostics.approved_context_linked_chunks_used == 0
+    assert bundle.diagnostics.approved_context_linked_facts_used == 0
+    assert bundle.diagnostics.approved_context_linked_assets_used == 0
+    assert bundle.diagnostics.approved_context_linked_extraction_artifacts_used == 0
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_manifest_items_used == 0
+    assert (
+        bundle.diagnostics.approved_context_linked_extraction_artifact_blob_storage_disabled_count
+        == 0
+    )
+    assert (
+        bundle.diagnostics.approved_context_linked_extraction_artifact_manifest_too_large_count == 0
+    )
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_read_error_count == 0
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_parse_error_count == 0
+    assert bundle.diagnostics.approved_context_linked_extraction_artifact_schema_skip_count == 0
+    assert bundle.diagnostics.stale_context_linked_chunk_drop_count == 0
+    assert bundle.diagnostics.stale_context_linked_fact_drop_count == 0
+    assert bundle.diagnostics.stale_context_linked_asset_drop_count == 0
+    assert bundle.diagnostics.stale_context_linked_extraction_artifact_drop_count == 0
     assert bundle.diagnostics.items_considered == 0
     assert bundle.diagnostics.items_used == 0
+    assert bundle.diagnostics.diversity_families_considered == 0
+    assert bundle.diagnostics.diversity_families_used == 0
+    assert bundle.diagnostics.diversity_items_used == 0
+    assert bundle.diagnostics.chunk_sources_considered == 0
+    assert bundle.diagnostics.chunk_sources_used == 0
+    assert bundle.diagnostics.max_chunks_used_per_source == 0
+    assert bundle.diagnostics.source_capped_sources_considered == 0
+    assert bundle.diagnostics.source_capped_sources_used == 0
+    assert bundle.diagnostics.max_source_capped_items_used_per_source == 0
+    assert bundle.diagnostics.source_diversity_chunks_reordered == 0
     assert bundle.diagnostics.dropped_by_instruction_flag == 0
     assert bundle.diagnostics.dropped_by_budget == 0
     assert bundle.diagnostics.dropped_by_source_cap == 0
@@ -1277,6 +1382,11 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     assert bundle.diagnostics.source_refs_total == 0
     assert bundle.diagnostics.source_refs_returned == 0
     assert bundle.diagnostics.source_refs_truncated is False
+    assert bundle.diagnostics.source_refs_with_char_range_count == 0
+    assert bundle.diagnostics.citations_rendered == 0
+    assert bundle.diagnostics.sensitive_item_text_redacted == 0
+    assert bundle.diagnostics.rendered_chars == 0
+    assert bundle.diagnostics.max_rendered_chars == 0
 
 
 def test_sdk_typed_context_defaults_legacy_item_diagnostics() -> None:
