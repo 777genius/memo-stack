@@ -213,6 +213,72 @@ def test_multimodal_live_provider_canary_maps_invalid_key_to_operator_action() -
     }
 
 
+def test_multimodal_live_provider_canary_redacts_configured_key_from_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    sentinel = "sk-live-secret-that-must-not-leak"
+    audio_fixture = tmp_path / "fixture.wav"
+    audio_fixture.write_bytes(b"RIFF" + b"\0" * 64)
+
+    class FailedVisionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def analyze(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="failed",
+                safe_error_code="asset_extraction.vision.invalid_api_key",
+                safe_error_message=f"provider echoed {sentinel} and Bearer {sentinel}",
+                provider_name="fake_vision",
+                provider_model="fake-vision-model",
+                provider_version="fake-version",
+                diagnostics={
+                    "api_key": sentinel,
+                    "message": f"Authorization failed for Bearer {sentinel}",
+                },
+            )
+
+    class FailedTranscriptionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def transcribe(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="failed",
+                safe_error_code="asset_extraction.transcription.rate_limited",
+                safe_error_message=f"provider echoed {sentinel}",
+                provider_name="fake_transcription",
+                provider_model="fake-transcription-model",
+                provider_version="fake-version",
+                diagnostics={
+                    "authorization": f"Bearer {sentinel}",
+                    "message": f"retry later for {sentinel}",
+                },
+            )
+
+    monkeypatch.setenv("MEMORY_OPENAI_API_KEY", sentinel)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(module, "OpenAIImageVisionAdapter", FailedVisionAdapter)
+    monkeypatch.setattr(module, "OpenAISpeechTranscriptionAdapter", FailedTranscriptionAdapter)
+
+    report = asyncio.run(
+        module.run_multimodal_live_provider_canary(
+            module._parse_args(["--audio-fixture", str(audio_fixture)])
+        )
+    )
+
+    rendered = json.dumps(report, sort_keys=True)
+    assert report["provider_key_present"] is True
+    assert report["secrets_redacted"] is True
+    assert report["proof_matrix"]["requirements"]["no_secret_leak_guard"]["ok"] is True
+    assert report["components"]["vision"]["operator_action"] == "replace_provider_credential"
+    assert report["components"]["transcription"]["operator_action"] == "retry_later"
+    assert sentinel not in rendered
+    assert "Bearer sk-" not in rendered
+
+
 def test_multimodal_live_provider_canary_failure_policy_contract_covers_provider_errors() -> None:
     module = _load_canary_module()
 

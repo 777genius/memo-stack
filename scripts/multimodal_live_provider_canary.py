@@ -117,7 +117,7 @@ async def run_multimodal_live_provider_canary(
             reason="provider_credential_missing",
         )
         report["ok"] = False
-        _update_proof_matrix(report)
+        _finalize_report(report)
         return report
 
     report["components"]["provider_key"] = _component("configured")
@@ -126,7 +126,7 @@ async def run_multimodal_live_provider_canary(
     report["components"]["vision"] = vision
     report["components"]["transcription"] = transcription
     report["ok"] = vision["status"] == "succeeded" and transcription["status"] == "succeeded"
-    _update_proof_matrix(report)
+    _finalize_report(report)
     return report
 
 
@@ -409,6 +409,11 @@ def _update_proof_matrix(report: dict[str, object]) -> None:
         provider_key_present=bool(report.get("provider_key_present")),
         secrets_redacted=report.get("secrets_redacted") is True,
     )
+
+
+def _finalize_report(report: dict[str, object]) -> None:
+    report["secrets_redacted"] = not _contains_secret_like_value(report)
+    _update_proof_matrix(report)
 
 
 def _proof_matrix(
@@ -958,6 +963,16 @@ def _redact_secret_fragments(value: str) -> str:
     for pattern in SECRET_VALUE_PATTERNS:
         redacted = pattern.sub("<redacted>", redacted)
     return redacted
+
+
+def _contains_secret_like_value(value: object) -> bool:
+    if isinstance(value, str):
+        return any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
+    if isinstance(value, dict):
+        return any(_contains_secret_like_value(item) for item in value.values())
+    if isinstance(value, list | tuple):
+        return any(_contains_secret_like_value(item) for item in value)
+    return False
 
 
 def _sample_png_bytes() -> bytes:
