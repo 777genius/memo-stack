@@ -71,6 +71,8 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "canonical_event_anchor_recall_by_identity",
     "person_event_project_precision",
     "multilingual_recent_person_project_recall",
+    "wrong_project_anchor_deflects_generic_match",
+    "identifier_like_query_deflects_partial_marker",
     "unrelated_query_returns_no_context_items",
     "cross_memory_scope_secret_hidden",
     "multi_memory_scope_explicit_recall",

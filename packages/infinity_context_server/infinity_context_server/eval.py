@@ -841,6 +841,18 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
             "internal",
             None,
         ),
+        (
+            "context_review_marker",
+            alpha_memory_scope_id,
+            (
+                "QUALITY_CONTEXT_REVIEW_MARKER: legacy project Alpha endpoint review "
+                "should not match the secret-marker identifier query."
+            ),
+            "quality-context-review-marker",
+            "quality-context-review-marker-v1",
+            "internal",
+            None,
+        ),
     )
     for (
         check_name,
