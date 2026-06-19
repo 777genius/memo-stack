@@ -293,6 +293,13 @@ def test_capabilities_return_noop_adapters() -> None:
         "provider_output_policy": "evidence_not_truth",
         "raw_provider_payloads_in_public_api": False,
         "external_ai_requires_explicit_profile": True,
+        "local_media_subprocess_policy": {
+            "parser_family": "ffmpeg_ffprobe",
+            "protocol_whitelist": ["file"],
+            "network_protocols_allowed": False,
+            "stdin_policy": "closed",
+            "timeout_field": "limits.subprocess_timeout_seconds",
+        },
         "vision": {
             "provider": "openai",
             "provider_name": "openai_vision",

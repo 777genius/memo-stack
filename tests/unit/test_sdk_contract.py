@@ -406,6 +406,13 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                     },
                     "provider_contract": {
                         "schema_version": "infinity_context.extraction_provider_contract.v1",
+                        "local_media_subprocess_policy": {
+                            "parser_family": "ffmpeg_ffprobe",
+                            "protocol_whitelist": ["file"],
+                            "network_protocols_allowed": False,
+                            "stdin_policy": "closed",
+                            "timeout_field": "limits.subprocess_timeout_seconds",
+                        },
                         "vision": {
                             "provider": "openai",
                             "provider_name": "openai_vision",
@@ -542,6 +549,13 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
     assert diagnostics.provider_contract["schema_version"] == (
         "infinity_context.extraction_provider_contract.v1"
     )
+    assert diagnostics.provider_contract["local_media_subprocess_policy"] == {
+        "parser_family": "ffmpeg_ffprobe",
+        "protocol_whitelist": ["file"],
+        "network_protocols_allowed": False,
+        "stdin_policy": "closed",
+        "timeout_field": "limits.subprocess_timeout_seconds",
+    }
     assert diagnostics.provider_contract["vision"]["supported_file_types"] == [
         ".gif",
         ".jpeg",

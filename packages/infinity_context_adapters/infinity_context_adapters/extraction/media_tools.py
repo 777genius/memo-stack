@@ -14,6 +14,9 @@ from infinity_context_core.ports.extraction import (
     ExtractionRequest,
 )
 
+_LOCAL_MEDIA_PROTOCOL_WHITELIST = "file"
+_MEDIA_STDIN_POLICY = "closed"
+
 
 @dataclass(frozen=True)
 class MediaStreamSummary:
@@ -76,17 +79,25 @@ class VideoKeyframe:
 def probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
-        return MediaProbeResult(status="unavailable", metadata={"probe_status": "unavailable"})
+        return MediaProbeResult(
+            status="unavailable",
+            metadata={
+                "probe_status": "unavailable",
+                **_media_subprocess_policy_metadata(request),
+            },
+        )
     suffix = _safe_suffix(request.filename)
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix) as media_file:
             media_file.write(request.content)
             media_file.flush()
-            completed = subprocess.run(
+            completed = _run_media_subprocess(
                 [
                     ffprobe,
                     "-v",
                     "error",
+                    "-protocol_whitelist",
+                    _LOCAL_MEDIA_PROTOCOL_WHITELIST,
                     "-show_entries",
                     "format=duration:stream=index,codec_type,codec_name,width,height,channels,"
                     "sample_rate,duration",
@@ -94,19 +105,38 @@ def probe_media_with_ffprobe(request: ExtractionRequest) -> MediaProbeResult:
                     "json",
                     media_file.name,
                 ],
-                check=False,
-                capture_output=True,
-                timeout=_subprocess_timeout_seconds(request),
+                request=request,
             )
     except (OSError, subprocess.TimeoutExpired):
-        return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
+        return MediaProbeResult(
+            status="failed",
+            metadata={
+                "probe_status": "failed",
+                **_media_subprocess_policy_metadata(request),
+            },
+        )
     if completed.returncode != 0:
-        return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
+        return MediaProbeResult(
+            status="failed",
+            metadata={
+                "probe_status": "failed",
+                **_media_subprocess_policy_metadata(request),
+            },
+        )
     try:
         payload = json.loads(completed.stdout.decode("utf-8"))
     except json.JSONDecodeError:
-        return MediaProbeResult(status="failed", metadata={"probe_status": "failed"})
-    return _media_probe_from_payload(payload)
+        return MediaProbeResult(
+            status="failed",
+            metadata={
+                "probe_status": "failed",
+                **_media_subprocess_policy_metadata(request),
+            },
+        )
+    return _media_probe_from_payload(
+        payload,
+        metadata=_media_subprocess_policy_metadata(request),
+    )
 
 
 def extract_first_video_keyframe(
@@ -205,12 +235,14 @@ def _extract_one_keyframe(
     if not ffmpeg:
         return None
     with tempfile.NamedTemporaryFile(suffix=".jpg") as output_file:
-        completed = subprocess.run(
+        completed = _run_media_subprocess(
             [
                 ffmpeg,
                 "-y",
                 "-v",
                 "error",
+                "-protocol_whitelist",
+                _LOCAL_MEDIA_PROTOCOL_WHITELIST,
                 "-ss",
                 _format_ffmpeg_seconds(timestamp_seconds),
                 "-i",
@@ -219,9 +251,7 @@ def _extract_one_keyframe(
                 "1",
                 output_file.name,
             ],
-            check=False,
-            capture_output=True,
-            timeout=_subprocess_timeout_seconds(request),
+            request=request,
         )
         if completed.returncode != 0:
             return None
@@ -243,16 +273,24 @@ def _extract_one_keyframe(
             "parser": "ffmpeg",
             "frame_index": index,
             "selection": "sampled_keyframe",
+            **_media_subprocess_policy_metadata(request),
         },
     )
 
 
-def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
+def _media_probe_from_payload(
+    payload: dict[str, Any],
+    *,
+    metadata: dict[str, object] | None = None,
+) -> MediaProbeResult:
     format_payload = payload.get("format") if isinstance(payload.get("format"), dict) else {}
     duration_seconds = _positive_float(format_payload.get("duration"))
     stream_summaries: list[str] = []
     streams: list[MediaStreamSummary] = []
-    metadata: dict[str, object] = {"probe_status": "succeeded"}
+    result_metadata: dict[str, object] = {
+        "probe_status": "succeeded",
+        **(metadata or {}),
+    }
     for stream in payload.get("streams") or []:
         if not isinstance(stream, dict):
             continue
@@ -278,17 +316,17 @@ def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
             summary = f"video/{codec_name}"
             if width and height:
                 summary = f"{summary} {width}x{height}"
-                metadata.setdefault("video_width", width)
-                metadata.setdefault("video_height", height)
+                result_metadata.setdefault("video_width", width)
+                result_metadata.setdefault("video_height", height)
             stream_summaries.append(summary)
         elif codec_type == "audio":
             summary = f"audio/{codec_name}"
             if sample_rate:
                 summary = f"{summary} {sample_rate}Hz"
-                metadata.setdefault("audio_sample_rate", sample_rate)
+                result_metadata.setdefault("audio_sample_rate", sample_rate)
             if channels:
                 summary = f"{summary} {channels}ch"
-                metadata.setdefault("audio_channels", channels)
+                result_metadata.setdefault("audio_channels", channels)
             stream_summaries.append(summary)
         else:
             stream_summaries.append(f"{codec_type}/{codec_name}")
@@ -297,7 +335,7 @@ def _media_probe_from_payload(payload: dict[str, Any]) -> MediaProbeResult:
         duration_seconds=duration_seconds,
         stream_summaries=tuple(stream_summaries),
         streams=tuple(streams),
-        metadata=metadata,
+        metadata=result_metadata,
     )
 
 
@@ -311,6 +349,28 @@ def _safe_suffix(filename: str) -> str:
 
 def _subprocess_timeout_seconds(request: ExtractionRequest) -> int:
     return max(1, int(request.limits.subprocess_timeout_seconds))
+
+
+def _run_media_subprocess(
+    args: list[str],
+    *,
+    request: ExtractionRequest,
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        args,
+        check=False,
+        capture_output=True,
+        timeout=_subprocess_timeout_seconds(request),
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def _media_subprocess_policy_metadata(request: ExtractionRequest) -> dict[str, object]:
+    return {
+        "protocol_whitelist": _LOCAL_MEDIA_PROTOCOL_WHITELIST,
+        "stdin_policy": _MEDIA_STDIN_POLICY,
+        "subprocess_timeout_seconds": _subprocess_timeout_seconds(request),
+    }
 
 
 def _selected_keyframe_seconds(

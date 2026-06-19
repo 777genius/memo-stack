@@ -1,10 +1,12 @@
 import asyncio
 import json
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 from infinity_context_adapters.extraction import content as content_module
+from infinity_context_adapters.extraction import media_tools
 from infinity_context_adapters.extraction import transcription_engine as transcription_engine_module
 from infinity_context_adapters.extraction.content import (
     MediaMetadataExtractionEngine,
@@ -15,11 +17,15 @@ from infinity_context_adapters.extraction.media_tools import (
     MediaStreamSummary,
     VideoKeyframe,
     _selected_keyframe_windows_ms,
+    extract_selected_video_keyframes,
+    probe_media_with_ffprobe,
 )
 from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OpenAISpeechTranscriptionAdapter,
 )
-from infinity_context_adapters.extraction.transcription_engine import SpeechTranscriptionExtractionEngine
+from infinity_context_adapters.extraction.transcription_engine import (
+    SpeechTranscriptionExtractionEngine,
+)
 from infinity_context_adapters.extraction.video_evidence import VideoFrameEvidence
 from infinity_context_core.ports.extraction import (
     ExtractedElement,
@@ -230,10 +236,79 @@ def test_video_frame_evidence_preserves_frame_time_range() -> None:
     assert evidence.elements[0].time_end_ms == 2500
 
 
+def test_ffprobe_runs_with_local_protocol_whitelist_and_closed_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    monkeypatch.setattr(media_tools.shutil, "which", lambda name: "/usr/bin/ffprobe")
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append((args, dict(kwargs)))
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=b'{"format":{"duration":"1.25"},"streams":[]}',
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(media_tools.subprocess, "run", fake_run)
+
+    result = probe_media_with_ffprobe(
+        _request(
+            parser_profile="standard_local",
+            subprocess_timeout_seconds=7,
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert result.duration_seconds == 1.25
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[args.index("-protocol_whitelist") + 1] == "file"
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["timeout"] == 7
+    assert result.metadata == {
+        "probe_status": "succeeded",
+        "protocol_whitelist": "file",
+        "stdin_policy": "closed",
+        "subprocess_timeout_seconds": 7,
+    }
+
+
+def test_ffmpeg_keyframe_extraction_uses_local_protocol_whitelist_and_closed_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    monkeypatch.setattr(media_tools.shutil, "which", lambda name: "/usr/bin/ffmpeg")
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append((args, dict(kwargs)))
+        with open(args[-1], "wb") as output:
+            output.write(b"fake jpeg bytes")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(media_tools.subprocess, "run", fake_run)
+    request = _request(parser_profile="standard_local")
+
+    frames = extract_selected_video_keyframes(request, duration_seconds=2.0, max_frames=1)
+
+    assert len(frames) == 1
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[args.index("-protocol_whitelist") + 1] == "file"
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["timeout"] == request.limits.subprocess_timeout_seconds
+    assert frames[0].metadata["protocol_whitelist"] == "file"
+    assert frames[0].metadata["stdin_policy"] == "closed"
+
+
 def _request(
     *,
     parser_profile: str,
     enable_external_ai: bool = False,
+    subprocess_timeout_seconds: int = 60,
 ) -> ExtractionRequest:
     content = b"\x00\x00\x00\x18ftypmp42fake video bytes"
     return ExtractionRequest(
@@ -249,6 +324,7 @@ def _request(
         limits=ExtractionLimits(
             max_bytes=10_000_000,
             enable_external_ai=enable_external_ai,
+            subprocess_timeout_seconds=subprocess_timeout_seconds,
         ),
     )
 
