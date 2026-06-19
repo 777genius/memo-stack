@@ -153,6 +153,29 @@ void main() {
     );
     expect(textField.controller!.text, isEmpty);
   });
+
+  test('attachment with dedupe suggestion refreshes review data', () async {
+    final repo = _RecordingChatRepository();
+    final store = ChatStore(repo, null);
+    addTearDown(store.dispose);
+    addTearDown(repo.close);
+
+    repo.emitMessage(ChatMessage(
+      id: 'msg-asset-dedupe',
+      role: 'user',
+      ts: DateTime.now(),
+      kind: 'attachment',
+      text: 'shared-note.txt',
+      meta: const {
+        'fileId': 'asset-duplicate',
+        'contextLinkSuggestionId': 'ctxlinksug-duplicate',
+      },
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(repo.operationsConsoleCalls, 1);
+    expect(repo.contextLinkSuggestionCalls, 1);
+  });
 }
 
 class _RecordingAttachmentFilePicker implements AttachmentFilePicker {
@@ -172,6 +195,8 @@ class _RecordingChatRepository implements ChatRepository {
   final sentTasks = <String>[];
   final uploadedNames = <String>[];
   final assetExtractions = <AssetExtractionJob>[];
+  int operationsConsoleCalls = 0;
+  int contextLinkSuggestionCalls = 0;
   final _messages = StreamController<ChatMessage>.broadcast();
   final _usage = StreamController<CostUsage>.broadcast();
   final _running = StreamController<bool>.broadcast();
@@ -188,6 +213,10 @@ class _RecordingChatRepository implements ChatRepository {
 
   @override
   Stream<ChatMessage> messages() => _messages.stream;
+
+  void emitMessage(ChatMessage message) {
+    _messages.add(message);
+  }
 
   @override
   Stream<CostUsage> usage() => _usage.stream;
@@ -350,6 +379,7 @@ class _RecordingChatRepository implements ChatRepository {
 
   @override
   Future<MemoryOperationsConsole> getOperationsConsole({int limit = 50}) async {
+    operationsConsoleCalls += 1;
     return MemoryOperationsConsole(
       generatedAt: DateTime.now(),
       scope: const <String, dynamic>{},
@@ -502,6 +532,7 @@ class _RecordingChatRepository implements ChatRepository {
     String status = 'pending',
     int limit = 50,
   }) async {
+    contextLinkSuggestionCalls += 1;
     return const <MemoryContextLinkSuggestion>[];
   }
 

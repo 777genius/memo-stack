@@ -91,9 +91,17 @@ abstract class ChatStoreBase with Store {
     _updateLastPreviewFor(cid, m.text);
     _ensureThinkingLast(cid);
     _persistMessage(cid, m);
-    if (m.kind == 'attachment' &&
-        (m.meta?['extractionId']?.toString().isNotEmpty ?? false)) {
-      unawaited(refreshOperationsConsole());
+    if (m.kind == 'attachment') {
+      final hasExtraction =
+          m.meta?['extractionId']?.toString().isNotEmpty ?? false;
+      final hasLinkSuggestion =
+          m.meta?['contextLinkSuggestionId']?.toString().isNotEmpty ?? false;
+      if (hasExtraction || hasLinkSuggestion) {
+        unawaited(refreshOperationsConsole(showLoading: false));
+      }
+      if (hasLinkSuggestion) {
+        unawaited(refreshContextLinkSuggestions(showLoading: false));
+      }
     }
   }
 

@@ -539,6 +539,12 @@ class ChatRepositoryImpl
         : const <String, dynamic>{};
     final extractionId = extractionMap['id']?.toString();
     final extractionStatus = extractionMap['status']?.toString();
+    final assetDeduplication = _nestedMap(uploadedAsset, 'deduplication');
+    final extractionDeduplication = _nestedMap(extractionMap, 'deduplication');
+    final deduplicationMeta = {
+      ..._deduplicationMeta(assetDeduplication, prefix: 'asset'),
+      ..._deduplicationMeta(extractionDeduplication, prefix: 'extraction'),
+    };
     // emit attachment message for UI
     _msgCtrl.add(ChatMessage(
       id: _nextId(),
@@ -554,6 +560,7 @@ class ChatRepositoryImpl
           'extractionId': extractionId,
         if (extractionStatus != null && extractionStatus.isNotEmpty)
           'extractionStatus': extractionStatus,
+        ...deduplicationMeta,
         if (previewBase64 != null) 'previewBase64': previewBase64,
         if (batchId != null) 'batchId': batchId,
         if (batchSize != null) 'batchSize': batchSize,
@@ -566,6 +573,7 @@ class ChatRepositoryImpl
       'mime': mime,
       'extractionId': extractionId,
       'extractionStatus': extractionStatus,
+      ...deduplicationMeta,
     });
 
     // Collect album items if batch is provided
@@ -994,4 +1002,33 @@ Map<String, dynamic> _nestedMap(Map<String, dynamic> root, String key) {
     return value.map((key, item) => MapEntry(key.toString(), item));
   }
   return const <String, dynamic>{};
+}
+
+Map<String, dynamic> _deduplicationMeta(
+  Map<String, dynamic> deduplication, {
+  required String prefix,
+}) {
+  if (deduplication.isEmpty) return const <String, dynamic>{};
+  final status = deduplication['status']?.toString();
+  final reasonCode = deduplication['reason_code']?.toString();
+  final suggestionId = deduplication['suggestion_id']?.toString();
+  final suggestionStatus = deduplication['suggestion_status']?.toString();
+  final duplicateOfAssetId = deduplication['duplicate_of_asset_id']?.toString();
+  final duplicateOfJobId = deduplication['duplicate_of_job_id']?.toString();
+  final duplicate = deduplication['duplicate'];
+  return {
+    if (duplicate is bool) '${prefix}Duplicate': duplicate,
+    if (status != null && status.isNotEmpty)
+      '${prefix}DeduplicationStatus': status,
+    if (reasonCode != null && reasonCode.isNotEmpty)
+      '${prefix}DeduplicationReasonCode': reasonCode,
+    if (duplicateOfAssetId != null && duplicateOfAssetId.isNotEmpty)
+      '${prefix}DuplicateOfAssetId': duplicateOfAssetId,
+    if (duplicateOfJobId != null && duplicateOfJobId.isNotEmpty)
+      '${prefix}DuplicateOfJobId': duplicateOfJobId,
+    if (suggestionId != null && suggestionId.isNotEmpty)
+      'contextLinkSuggestionId': suggestionId,
+    if (suggestionStatus != null && suggestionStatus.isNotEmpty)
+      'contextLinkSuggestionStatus': suggestionStatus,
+  };
 }
