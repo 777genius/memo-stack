@@ -260,6 +260,8 @@ _ORGANIZATION_HINTS = {
     "stripe": "Stripe",
     "figma": "Figma",
 }
+
+
 @dataclass(frozen=True)
 class ObservedAnchor:
     kind: MemoryAnchorKind
@@ -459,14 +461,12 @@ def _append_anchor(
 def _normalized_anchor_key_for_kind(kind: MemoryAnchorKind, label: str) -> str:
     if kind == MemoryAnchorKind.PERSON:
         parts = [
-            normalize_cyrillic_person_case(part)
-            for part in normalize_anchor_key(label).split()
+            normalize_cyrillic_person_case(part) for part in normalize_anchor_key(label).split()
         ]
         return " ".join(part for part in parts if part)
     if kind == MemoryAnchorKind.PROJECT:
         parts = [
-            normalize_cyrillic_project_case(part)
-            for part in normalize_anchor_key(label).split()
+            normalize_cyrillic_project_case(part) for part in normalize_anchor_key(label).split()
         ]
         return " ".join(part for part in parts if part)
     return normalize_anchor_key(label)
@@ -593,9 +593,7 @@ def _event_components(label: str) -> _EventComponents:
             project_tokens.append(token)
         project_label = _clean_project_label(" ".join(project_tokens)).casefold()
         break
-    temporal_hint_code, temporal_quantity, temporal_unit = _temporal_hint_payload(
-        temporal_phrase
-    )
+    temporal_hint_code, temporal_quantity, temporal_unit = _temporal_hint_payload(temporal_phrase)
     return _EventComponents(
         event_type=event_type,
         participant_label=participant_label,
@@ -703,11 +701,7 @@ def _implicit_project_context_labels(text: str) -> tuple[str, ...]:
     for match in _IMPLICIT_PROJECT_CONTEXT_PATTERN.finditer(text):
         label = _clean_project_label(match.group("label"))
         normalized = normalize_anchor_key(label)
-        if (
-            label
-            and normalized not in _PERSON_STOP_WORDS
-            and normalized not in _ORGANIZATION_HINTS
-        ):
+        if label and normalized not in _PERSON_STOP_WORDS and normalized not in _ORGANIZATION_HINTS:
             labels.append(label)
     return tuple(labels)
 
@@ -729,9 +723,7 @@ def _event_labels(text: str) -> tuple[str, ...]:
             or _nearby_temporal_after(text, match.end())
             or _nearby_temporal_before(text, match.start())
         ).strip()
-        label = " ".join(
-            part for part in (event, participant, project, temporal) if part
-        ).strip()
+        label = " ".join(part for part in (event, participant, project, temporal) if part).strip()
         labels.append(label)
         generic_participant_label = " ".join(
             part for part in (event, participant, temporal) if part
@@ -749,6 +741,8 @@ def _person_labels(text: str) -> tuple[str, ...]:
     for pattern in (_PERSON_PATTERN, _CYRILLIC_PERSON_PATTERN):
         for match in pattern.finditer(text):
             if _is_project_qualified_person_match(text, match.start()):
+                continue
+            if _is_project_preposition_person_false_positive(text, match.start()):
                 continue
             if _is_followed_by_organization_suffix(text, match.end()):
                 continue
@@ -826,6 +820,11 @@ def _nearby_temporal_before(text: str, end: int) -> str:
 def _is_project_qualified_person_match(text: str, start: int) -> bool:
     prefix = text[max(0, start - 24) : start].lower()
     return bool(re.search(r"(?:project|проект(?:у|е|а|ом)?)\s+$", prefix))
+
+
+def _is_project_preposition_person_false_positive(text: str, start: int) -> bool:
+    prefix = text[max(0, start - 16) : start].casefold()
+    return bool(re.search(r"\bв\s+$", prefix))
 
 
 def _is_followed_by_organization_suffix(text: str, end: int) -> bool:

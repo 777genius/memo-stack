@@ -103,6 +103,15 @@ def test_semantic_dedupe_recognizes_cross_language_call_summary_identity_overlap
     assert "retrieval" in match.overlap_terms
 
 
+def test_semantic_terms_do_not_promote_locative_project_as_person() -> None:
+    terms = semantic_memory_terms("Итоги созвона: Алекс отвечает за поиск документов в Атласе.")
+
+    assert "person:aleks" in terms
+    assert "project:atlas" in terms
+    assert "event_project:atlas" in terms
+    assert "person:atlas" not in terms
+
+
 def test_semantic_dedupe_recognizes_cross_language_video_keyframe_paraphrase() -> None:
     match = describe_duplicate_fact_match(
         "Видео фрагмент демо Project Atlas показывает billing dashboard.",
@@ -176,9 +185,7 @@ def test_semantic_dedupe_rejects_similar_but_different_event_time() -> None:
 
 
 def test_semantic_dedupe_exposes_structured_event_overlap_terms() -> None:
-    terms = semantic_memory_terms(
-        "Chat with Alex an hour ago covered Project Atlas pricing."
-    )
+    terms = semantic_memory_terms("Chat with Alex an hour ago covered Project Atlas pricing.")
     match = describe_duplicate_fact_match(
         "Chat with Alex an hour ago covered Project Atlas pricing.",
         "Chat with Alex hour ago covered Project Atlas pricing.",
@@ -194,9 +201,7 @@ def test_semantic_dedupe_exposes_structured_event_overlap_terms() -> None:
 
 
 def test_semantic_dedupe_exposes_structured_event_project_terms() -> None:
-    terms = semantic_memory_terms(
-        "Call with Alex about Atlas 2 hours ago covered billing."
-    )
+    terms = semantic_memory_terms("Call with Alex about Atlas 2 hours ago covered billing.")
     match = describe_duplicate_fact_match(
         "Call with Alex about Atlas 2 hours ago covered billing.",
         "Call with Alex about Atlas 2 hours ago covered billing.",

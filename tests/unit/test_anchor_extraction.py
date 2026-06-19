@@ -57,9 +57,7 @@ def test_anchor_extraction_ignores_temporal_leading_words_as_people() -> None:
 
 
 def test_anchor_extraction_handles_russian_project_case_inflections() -> None:
-    anchors = extract_observed_anchors(
-        "На прошлой неделе был созвон с Алексом по проекту Атлас."
-    )
+    anchors = extract_observed_anchors("На прошлой неделе был созвон с Алексом по проекту Атлас.")
 
     keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
     person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
@@ -71,9 +69,7 @@ def test_anchor_extraction_handles_russian_project_case_inflections() -> None:
 
 
 def test_anchor_extraction_ignores_command_verbs_as_people() -> None:
-    anchors = extract_observed_anchors(
-        "Open the Docker backend logs and screenshot progress bar."
-    )
+    anchors = extract_observed_anchors("Open the Docker backend logs and screenshot progress bar.")
 
     person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
     assert "open" not in person_keys
@@ -100,14 +96,9 @@ def test_anchor_extraction_keeps_multi_token_project_names_without_description()
 
 
 def test_anchor_extraction_promotes_capitalized_memory_subject_as_project_context() -> None:
-    anchors = extract_observed_anchors(
-        "Alex owns Atlas document retrieval notes from the call."
-    )
+    anchors = extract_observed_anchors("Alex owns Atlas document retrieval notes from the call.")
 
-    by_key = {
-        (anchor.kind.value, anchor.normalized_key): anchor
-        for anchor in anchors
-    }
+    by_key = {(anchor.kind.value, anchor.normalized_key): anchor for anchor in anchors}
 
     assert ("person", "alex") in by_key
     assert ("project", "atlas") in by_key
@@ -264,9 +255,7 @@ def test_anchor_extraction_structures_event_identity_metadata() -> None:
     )
 
     events = {
-        anchor.normalized_key: anchor.metadata
-        for anchor in anchors
-        if anchor.kind.value == "event"
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
     }
 
     call = events["call with alex 2 hours ago"]
@@ -296,14 +285,11 @@ def test_anchor_extraction_structures_event_identity_metadata() -> None:
 
 def test_anchor_extraction_structures_event_project_identity_metadata() -> None:
     anchors = extract_observed_anchors(
-        "Call with Alex about Project Atlas 2 hours ago. "
-        "Созвон с Марией вчера про backend."
+        "Call with Alex about Project Atlas 2 hours ago. Созвон с Марией вчера про backend."
     )
 
     events = {
-        anchor.normalized_key: anchor.metadata
-        for anchor in anchors
-        if anchor.kind.value == "event"
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
     }
 
     assert "call with alex about atlas 2 hours ago" in events
@@ -334,15 +320,11 @@ def test_anchor_extraction_structures_event_project_identity_metadata() -> None:
 
 
 def test_anchor_extraction_normalizes_russian_locative_event_project() -> None:
-    anchors = extract_observed_anchors(
-        "Созвон с Алексом в Атласе час назад про документы."
-    )
+    anchors = extract_observed_anchors("Созвон с Алексом в Атласе час назад про документы.")
 
     keys = {(anchor.kind.value, anchor.normalized_key) for anchor in anchors}
     events = {
-        anchor.normalized_key: anchor.metadata
-        for anchor in anchors
-        if anchor.kind.value == "event"
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
     }
 
     assert ("project", "атлас") in keys
@@ -350,9 +332,7 @@ def test_anchor_extraction_normalizes_russian_locative_event_project() -> None:
         "sozvon s aleks v atlas chas nazad"
     )
     assert events["созвон с алексом в атласе час назад"]["event_project_label"] == "атласе"
-    assert events["созвон с алексом в атласе час назад"]["event_project_canonical_key"] == (
-        "atlas"
-    )
+    assert events["созвон с алексом в атласе час назад"]["event_project_canonical_key"] == ("atlas")
     assert events["созвон с алексом в атласе час назад"]["event_identity_terms"] == [
         "sozvon",
         "aleks",
@@ -368,9 +348,7 @@ def test_anchor_extraction_does_not_promote_russian_summary_word_to_person() -> 
 
     person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
     events = {
-        anchor.normalized_key: anchor.metadata
-        for anchor in anchors
-        if anchor.kind.value == "event"
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
     }
     project_metadata = {
         anchor.normalized_key: anchor.metadata
@@ -380,20 +358,16 @@ def test_anchor_extraction_does_not_promote_russian_summary_word_to_person() -> 
 
     assert "итоги" not in person_keys
     assert "алекс" in person_keys
+    assert "атлас" not in person_keys
     assert project_metadata["атлас"]["project_canonical_key"] == "atlas"
     assert events["созвон в атласе"]["event_project_canonical_key"] == "atlas"
     assert "event_participant_canonical_key" not in events["созвон в атласе"]
 
 
 def test_anchor_extraction_structures_people_projects_and_organizations() -> None:
-    anchors = extract_observed_anchors(
-        "Alex discussed Project Atlas with OpenAI team."
-    )
+    anchors = extract_observed_anchors("Alex discussed Project Atlas with OpenAI team.")
 
-    by_key = {
-        (anchor.kind.value, anchor.normalized_key): anchor.metadata
-        for anchor in anchors
-    }
+    by_key = {(anchor.kind.value, anchor.normalized_key): anchor.metadata for anchor in anchors}
 
     assert by_key[("person", "alex")]["identity_scope"] == "person"
     assert by_key[("person", "alex")]["identity_key"] == "person:aleks"
