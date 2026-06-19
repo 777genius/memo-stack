@@ -46,6 +46,7 @@ DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
+SYNTHETIC_VISION_TEXT = "INFINITY CONTEXT 24"
 OPENAI_AUDIO_MAX_UPLOAD_BYTES = OPENAI_TRANSCRIPTION_MAX_UPLOAD_BYTES
 OPENAI_AUDIO_SUPPORTED_SUFFIXES = frozenset(OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES)
 OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset(OPENAI_VISION_SUPPORTED_FILE_SUFFIXES)
@@ -135,11 +136,19 @@ async def _run_vision(
     args: argparse.Namespace,
 ) -> dict[str, object]:
     image = _sample_png_bytes()
+    fixture = _bytes_fixture_summary(
+        role="image_vision",
+        source="generated_png_fixture",
+        filename="infinity-context-live-vision-canary.png",
+        content_type="image/png",
+        content=image,
+        expected_visible_text=SYNTHETIC_VISION_TEXT,
+    )
     request = ImageVisionRequest(
         job_id=f"live-canary-{uuid.uuid4()}",
         asset_id=f"asset-{uuid.uuid4()}",
-        filename="infinity-context-live-vision-canary.png",
-        content_type="image/png",
+        filename=str(fixture["filename"]),
+        content_type=str(fixture["content_type"]),
         byte_size=len(image),
         sha256_hex=hashlib.sha256(image).hexdigest(),
         content=image,
@@ -160,6 +169,7 @@ async def _run_vision(
             provider_name=result.provider_name,
             provider_model=result.provider_model,
             provider_version=result.provider_version,
+            fixture=fixture,
             diagnostics=_safe_diagnostics(result.diagnostics),
         )
 
@@ -179,6 +189,7 @@ async def _run_vision(
             provider_name=result.provider_name,
             provider_model=result.provider_model,
             provider_version=result.provider_version,
+            fixture=fixture,
             payload_status=result.payload_status,
             visible_text_count=visible_text_count,
             summary_chars=summary_chars,
@@ -189,6 +200,7 @@ async def _run_vision(
         provider_name=result.provider_name,
         provider_model=result.provider_model,
         provider_version=result.provider_version,
+        fixture=fixture,
         payload_status=result.payload_status,
         visible_text_count=visible_text_count,
         summary_chars=summary_chars,
@@ -202,6 +214,7 @@ async def _run_transcription(
     args: argparse.Namespace,
 ) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="infinity-context-live-asr-") as tmp:
+        generated_audio = args.audio_fixture is None
         audio_path = _audio_fixture_path(args.audio_fixture, Path(tmp))
         if audio_path is None:
             return _component(
@@ -217,6 +230,12 @@ async def _run_transcription(
             return audio_validation
         content = audio_path.read_bytes()
         content_type = _content_type_for_path(audio_path)
+        fixture = _audio_fixture_summary(
+            path=audio_path,
+            content_type=content_type,
+            content=content,
+            generated=generated_audio,
+        )
         request = SpeechTranscriptionRequest(
             job_id=f"live-canary-{uuid.uuid4()}",
             asset_id=f"asset-{uuid.uuid4()}",
@@ -243,6 +262,7 @@ async def _run_transcription(
             provider_name=result.provider_name,
             provider_model=result.provider_model,
             provider_version=result.provider_version,
+            fixture=fixture,
             diagnostics=_safe_diagnostics(result.diagnostics),
         )
 
@@ -255,6 +275,7 @@ async def _run_transcription(
             provider_name=result.provider_name,
             provider_model=result.provider_model,
             provider_version=result.provider_version,
+            fixture=fixture,
             transcript_chars=len(result.text),
             segment_count=len(result.segments),
             word_count=len(result.words),
@@ -268,6 +289,7 @@ async def _run_transcription(
         provider_name=result.provider_name,
         provider_model=result.provider_model,
         provider_version=result.provider_version,
+        fixture=fixture,
         transcript_chars=len(result.text),
         segment_count=len(result.segments),
         word_count=len(result.words),
@@ -409,6 +431,24 @@ def _proof_matrix(
             requires_provider_key=True,
             provider_key_present=provider_key_present,
         ),
+        "vision_fixture_contract": _fixture_component_requirement(
+            components,
+            "vision",
+            expected_role="image_vision",
+            expected_content_type="image/png",
+            supported_suffixes=OPENAI_VISION_SUPPORTED_SUFFIXES,
+            requires_provider_key=True,
+            provider_key_present=provider_key_present,
+        ),
+        "audio_fixture_contract": _fixture_component_requirement(
+            components,
+            "transcription",
+            expected_role="audio_transcription",
+            expected_content_type=None,
+            supported_suffixes=OPENAI_AUDIO_SUPPORTED_SUFFIXES,
+            requires_provider_key=True,
+            provider_key_present=provider_key_present,
+        ),
         "invalid_key_classification": _contract_requirement(
             failure_policy_contract,
             "invalid_api_key",
@@ -434,7 +474,12 @@ def _proof_matrix(
             "ok": secrets_redacted,
         },
     }
-    live_names = ("vision_real_provider", "audio_transcription_real_provider")
+    live_names = (
+        "vision_real_provider",
+        "audio_transcription_real_provider",
+        "vision_fixture_contract",
+        "audio_fixture_contract",
+    )
     contract_names = tuple(name for name in requirements if name not in live_names)
     return {
         "schema_version": PROOF_MATRIX_VERSION,
@@ -482,6 +527,68 @@ def _live_component_requirement(
     }
 
 
+def _fixture_component_requirement(
+    components: dict[object, object],
+    name: str,
+    *,
+    expected_role: str,
+    expected_content_type: str | None,
+    supported_suffixes: frozenset[str],
+    requires_provider_key: bool,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    component = components.get(name)
+    if not isinstance(component, dict):
+        status = "not_run" if provider_key_present else "skipped"
+        return {
+            "status": status,
+            "proof": "local_fixture_contract",
+            "requires_provider_key": requires_provider_key,
+            "ok": False,
+        }
+    if not provider_key_present and component.get("status") == "skipped":
+        return {
+            "status": "skipped",
+            "proof": "local_fixture_contract",
+            "requires_provider_key": requires_provider_key,
+            "ok": False,
+            **(
+                {"reason": component.get("reason")}
+                if isinstance(component.get("reason"), str)
+                else {}
+            ),
+        }
+    fixture = component.get("fixture")
+    if not isinstance(fixture, dict):
+        return {
+            "status": "missing",
+            "proof": "local_fixture_contract",
+            "requires_provider_key": requires_provider_key,
+            "ok": False,
+            "reason": "fixture_summary_missing",
+        }
+    suffix = str(fixture.get("suffix") or "")
+    content_type = str(fixture.get("content_type") or "")
+    sha256_hex = str(fixture.get("sha256_hex") or "")
+    byte_size = fixture.get("byte_size")
+    ok = (
+        fixture.get("role") == expected_role
+        and suffix in supported_suffixes
+        and (expected_content_type is None or content_type == expected_content_type)
+        and isinstance(byte_size, int)
+        and byte_size > 0
+        and bool(re.fullmatch(r"[a-f0-9]{64}", sha256_hex))
+    )
+    return {
+        "status": "contract_covered" if ok else "failed",
+        "proof": "local_fixture_contract",
+        "requires_provider_key": requires_provider_key,
+        "ok": ok,
+        "suffix": suffix,
+        "content_type": content_type,
+    }
+
+
 def _contract_requirement(
     contract: dict[object, object],
     name: str,
@@ -518,6 +625,45 @@ def _provider_api_key() -> str | None:
     if value and value.strip():
         return value.strip()
     return None
+
+
+def _bytes_fixture_summary(
+    *,
+    role: str,
+    source: str,
+    filename: str,
+    content_type: str,
+    content: bytes,
+    expected_visible_text: str | None = None,
+) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "role": role,
+        "source": source,
+        "filename": Path(filename).name,
+        "suffix": Path(filename).suffix.lower(),
+        "content_type": content_type,
+        "byte_size": len(content),
+        "sha256_hex": hashlib.sha256(content).hexdigest(),
+    }
+    if expected_visible_text:
+        summary["expected_visible_text"] = expected_visible_text
+    return summary
+
+
+def _audio_fixture_summary(
+    *,
+    path: Path,
+    content_type: str,
+    content: bytes,
+    generated: bool,
+) -> dict[str, object]:
+    return _bytes_fixture_summary(
+        role="audio_transcription",
+        source="generated_synthetic_speech" if generated else "configured_audio_fixture",
+        filename=path.name,
+        content_type=content_type,
+        content=content,
+    )
 
 
 def _component(status: str, **values: object) -> dict[str, object]:

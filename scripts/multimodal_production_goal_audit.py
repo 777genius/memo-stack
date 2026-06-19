@@ -585,6 +585,8 @@ def _audit_provider_proof_matrix(
     expected = {
         "vision_real_provider": "succeeded",
         "audio_transcription_real_provider": "succeeded",
+        "vision_fixture_contract": "contract_covered",
+        "audio_fixture_contract": "contract_covered",
         "invalid_key_classification": "contract_covered",
         "rate_limit_classification": "contract_covered",
         "timeout_classification": "contract_covered",

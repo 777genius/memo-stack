@@ -90,7 +90,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "contract_requirements_passed": 4,
         "contract_requirements_total": 4,
         "live_requirements_passed": 0,
-        "live_requirements_total": 2,
+        "live_requirements_total": 4,
     }
     requirements = proof["requirements"]
     assert requirements["vision_real_provider"] == {
@@ -103,6 +103,20 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert requirements["audio_transcription_real_provider"] == {
         "ok": False,
         "proof": "live_provider_call",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
+    assert requirements["vision_fixture_contract"] == {
+        "ok": False,
+        "proof": "local_fixture_contract",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
+    assert requirements["audio_fixture_contract"] == {
+        "ok": False,
+        "proof": "local_fixture_contract",
         "reason": "provider_credential_missing",
         "requires_provider_key": True,
         "status": "skipped",
@@ -293,6 +307,15 @@ def test_multimodal_live_provider_canary_rejects_empty_vision_evidence(
     monkeypatch,
 ) -> None:
     module = _load_canary_module()
+    image = module._sample_png_bytes()
+    fixture = module._bytes_fixture_summary(
+        role="image_vision",
+        source="generated_png_fixture",
+        filename="infinity-context-live-vision-canary.png",
+        content_type="image/png",
+        content=image,
+        expected_visible_text=module.SYNTHETIC_VISION_TEXT,
+    )
 
     class EmptyVisionAdapter:
         def __init__(self, **_: object) -> None:
@@ -320,6 +343,7 @@ def test_multimodal_live_provider_canary_rejects_empty_vision_evidence(
 
     assert result == {
         "diagnostics": {"request_timeout_seconds": 1},
+        "fixture": fixture,
         "message": "Provider returned no visible text or image summary",
         "operator_action": "inspect_provider_canary",
         "payload_status": "parsed",

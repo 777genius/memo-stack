@@ -572,6 +572,22 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "requires_provider_key": True,
                 "ok": True,
             },
+            "vision_fixture_contract": {
+                "status": "contract_covered",
+                "proof": "local_fixture_contract",
+                "requires_provider_key": True,
+                "ok": True,
+                "suffix": ".png",
+                "content_type": "image/png",
+            },
+            "audio_fixture_contract": {
+                "status": "contract_covered",
+                "proof": "local_fixture_contract",
+                "requires_provider_key": True,
+                "ok": True,
+                "suffix": ".wav",
+                "content_type": "audio/wav",
+            },
             "invalid_key_classification": {
                 "status": "contract_covered",
                 "proof": "adapter_contract_test",
@@ -607,8 +623,8 @@ def _provider_proof_matrix() -> dict[str, object]:
             },
         },
         "summary": {
-            "live_requirements_passed": 2,
-            "live_requirements_total": 2,
+            "live_requirements_passed": 4,
+            "live_requirements_total": 4,
             "contract_requirements_passed": 4,
             "contract_requirements_total": 4,
         },
