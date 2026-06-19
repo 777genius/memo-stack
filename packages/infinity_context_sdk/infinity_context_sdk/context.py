@@ -152,6 +152,8 @@ class ContextBundleDiagnostics:
     source_refs_with_page_count: int = 0
     source_refs_with_bbox_count: int = 0
     source_refs_with_time_range_count: int = 0
+    query_snippet_items_used: int = 0
+    query_snippet_source_refs_enriched: int = 0
     source_refs_total: int = 0
     source_refs_returned: int = 0
     source_refs_truncated: bool = False
@@ -445,6 +447,10 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         source_refs_with_bbox_count=_non_negative_int(raw.get("source_refs_with_bbox_count")),
         source_refs_with_time_range_count=_non_negative_int(
             raw.get("source_refs_with_time_range_count")
+        ),
+        query_snippet_items_used=_non_negative_int(raw.get("query_snippet_items_used")),
+        query_snippet_source_refs_enriched=_non_negative_int(
+            raw.get("query_snippet_source_refs_enriched")
         ),
         source_refs_total=_non_negative_int(raw.get("source_refs_total")),
         source_refs_returned=_non_negative_int(raw.get("source_refs_returned")),

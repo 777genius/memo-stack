@@ -10,6 +10,12 @@ from json import JSONDecodeError
 from math import isfinite
 
 from infinity_context_core.application.context_relevance import score_query_relevance
+from infinity_context_core.application.context_snippets import (
+    query_focused_snippet,
+    query_snippet_diagnostics,
+    query_snippet_score_signals,
+    source_refs_with_query_snippet,
+)
 from infinity_context_core.application.dto import BuildContextQuery, ContextItem
 from infinity_context_core.application.safe_payload import safe_metadata_text
 from infinity_context_core.application.sensitive_text import contains_sensitive_text
@@ -277,7 +283,19 @@ def _context_items_from_manifest(
             )
             continue
         artifact = candidate.artifact
-        source_ref = _source_ref(artifact=artifact, raw_item=raw_item, index=index, text=text)
+        snippet = query_focused_snippet(query=query.query, text=text)
+        source_refs = source_refs_with_query_snippet(
+            (
+                _source_ref(
+                    artifact=artifact,
+                    raw_item=raw_item,
+                    index=index,
+                    text=snippet.text if snippet else text,
+                ),
+            ),
+            snippet,
+        )
+        source_ref = source_refs[0]
         confidence = _confidence(raw_item.get("confidence"))
         kind = safe_metadata_text(str(raw_item.get("kind") or "unknown"))
         modality = safe_metadata_text(str(raw_item.get("modality") or "unknown"))
@@ -311,7 +329,7 @@ def _context_items_from_manifest(
                 item_type="extraction_artifact",
                 text=text,
                 score=score,
-                source_refs=(source_ref,),
+                source_refs=source_refs,
                 diagnostics={
                     "memory_scope_id": candidate.memory_scope_id,
                     "retrieval_source": "artifact_evidence",
@@ -331,6 +349,7 @@ def _context_items_from_manifest(
                         "capped_frequency_hits": relevance.capped_frequency_hits,
                         "hit_ratio": relevance.hit_ratio,
                         "query_relevance_boost": relevance.score_boost,
+                        **query_snippet_score_signals(snippet),
                     },
                     "provenance": {
                         "retrieval_sources": ["artifact_evidence"],
@@ -343,14 +362,16 @@ def _context_items_from_manifest(
                         "evidence_kind": kind,
                         "evidence_modality": modality,
                         "evidence_confidence": confidence,
-                        **source_ref_location_summary((source_ref,)),
+                        **source_ref_location_summary(source_refs),
+                        **query_snippet_diagnostics(snippet),
                     },
                     "artifact_id": str(artifact.id),
                     "asset_id": str(artifact.asset_id),
                     "evidence_kind": kind,
                     "evidence_modality": modality,
                     "evidence_confidence": confidence,
-                    **source_ref_location_summary((source_ref,)),
+                    **source_ref_location_summary(source_refs),
+                    **query_snippet_diagnostics(snippet),
                 },
             )
         )

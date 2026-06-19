@@ -35,6 +35,12 @@ from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     score_query_relevance,
 )
+from infinity_context_core.application.context_snippets import (
+    query_focused_snippet,
+    query_snippet_diagnostics,
+    query_snippet_score_signals,
+    source_refs_with_query_snippet,
+)
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import (
     BuildContextQuery,
@@ -181,7 +187,7 @@ class BuildContextUseCase:
         items: list[ContextItem] = []
         now = self._clock.now() if self._clock is not None else None
         for fact in canonical.facts:
-            items.append(_fact_context_item(fact, now=now))
+            items.append(_fact_context_item(fact, now=now, query_text=query.query))
         anchors_used = 0
         for anchor in canonical.anchors:
             if not is_context_anchor_visible(
@@ -226,6 +232,7 @@ class BuildContextUseCase:
                     base_score=0.75,
                     score=score,
                     relevance=relevance,
+                    query_text=query.query,
                 )
             )
         for chunk in vector_chunks:
@@ -241,6 +248,7 @@ class BuildContextUseCase:
                     base_score=0.82,
                     score=0.82,
                     relevance=None,
+                    query_text=query.query,
                 )
             )
         items.extend(graph_items)
@@ -386,6 +394,7 @@ class BuildContextUseCase:
                                     source,
                                     relation=relation,
                                     now=now,
+                                    query_text=query.query,
                                 )
                         elif str(relation.source_fact_id) == item.item_id:
                             by_fact_id[item.item_id] = _annotate_temporal_relation(
@@ -478,6 +487,7 @@ class BuildContextUseCase:
                             _stale_review_item(
                                 fact,
                                 relevance=relevance,
+                                query_text=query.query,
                             )
                         )
                         if status == "superseded":
@@ -649,29 +659,37 @@ def _fact_context_item(
     fact: MemoryFact,
     *,
     now: datetime | None,
+    query_text: str,
 ) -> ContextItem:
     fact_score, fact_signals = _fact_score_signals(fact, now=now)
+    snippet = query_focused_snippet(query=query_text, text=fact.text)
+    source_refs = source_refs_with_query_snippet(fact.source_refs, snippet)
     return ContextItem(
         item_id=str(fact.id),
         item_type="fact",
         text=fact.text,
         score=fact_score,
-        source_refs=fact.source_refs,
+        source_refs=source_refs,
         diagnostics={
             "memory_scope_id": str(fact.memory_scope_id),
             "retrieval_source": "postgres_facts",
             "retrieval_sources": ["postgres_facts"],
             "ranking_reason": "canonical active fact matched query and filters",
-            "score_signals": fact_signals,
+            "score_signals": {
+                **fact_signals,
+                **query_snippet_score_signals(snippet),
+            },
             "provenance": {
                 "retrieval_sources": ["postgres_facts"],
-                "source_ref_count": len(fact.source_refs),
+                "source_ref_count": len(source_refs),
                 "fact_status": fact.status.value,
                 "fact_version": fact.version,
+                **query_snippet_diagnostics(snippet),
             },
             "confidence": fact.confidence.value,
             "trust_level": fact.trust_level.value,
             "updated_at": fact.updated_at.isoformat(),
+            **query_snippet_diagnostics(snippet),
         },
     )
 
@@ -680,17 +698,20 @@ def _stale_review_item(
     fact: MemoryFact,
     *,
     relevance: QueryRelevance,
+    query_text: str,
 ) -> ContextItem:
     score = min(0.64, round(0.44 + relevance.score_boost, 4))
     status = fact.status.value
     retrieval_source = _stale_review_retrieval_source(status)
     stale_reason = f"fact_status_{status}"
+    snippet = query_focused_snippet(query=query_text, text=fact.text)
+    source_refs = source_refs_with_query_snippet(fact.source_refs, snippet)
     return ContextItem(
         item_id=str(fact.id),
         item_type="fact",
         text=fact.text,
         score=score,
-        source_refs=fact.source_refs,
+        source_refs=source_refs,
         diagnostics={
             "memory_scope_id": str(fact.memory_scope_id),
             "retrieval_source": retrieval_source,
@@ -708,17 +729,20 @@ def _stale_review_item(
                 "capped_frequency_hits": relevance.capped_frequency_hits,
                 "hit_ratio": relevance.hit_ratio,
                 "query_relevance_boost": relevance.score_boost,
+                **query_snippet_score_signals(snippet),
             },
             "provenance": {
                 "retrieval_sources": [retrieval_source],
-                "source_ref_count": len(fact.source_refs),
+                "source_ref_count": len(source_refs),
                 "fact_status": fact.status.value,
                 "fact_version": fact.version,
                 "visibility": "review_only",
+                **query_snippet_diagnostics(snippet),
             },
             "confidence": fact.confidence.value,
             "trust_level": fact.trust_level.value,
             "updated_at": fact.updated_at.isoformat(),
+            **query_snippet_diagnostics(snippet),
         },
     )
 
@@ -754,8 +778,9 @@ def _temporal_replacement_item(
     *,
     relation: MemoryFactRelation,
     now: datetime | None,
+    query_text: str,
 ) -> ContextItem:
-    item = _fact_context_item(fact, now=now)
+    item = _fact_context_item(fact, now=now, query_text=query_text)
     diagnostics = dict(item.diagnostics or {})
     diagnostics["retrieval_source"] = "temporal_supersedes_relation"
     diagnostics["retrieval_sources"] = [
@@ -833,14 +858,20 @@ def _chunk_context_item(
     base_score: float,
     score: float,
     relevance: QueryRelevance | None,
+    query_text: str,
 ) -> ContextItem:
-    source_refs = chunk_source_refs(chunk, text_preview=text[:200])
+    snippet = query_focused_snippet(query=query_text, text=text)
+    source_refs = source_refs_with_query_snippet(
+        chunk_source_refs(chunk, text_preview=(snippet.text if snippet else text[:200])),
+        snippet,
+    )
     score_signals = {
         "base_score": base_score,
         "final_score": score,
         "retrieval_channel": retrieval_source,
         "source_type": chunk.source_type,
         "source_ref_count": len(source_refs),
+        **query_snippet_score_signals(snippet),
     }
     if relevance is not None:
         score_signals.update(
@@ -874,6 +905,7 @@ def _chunk_context_item(
                 "char_start": chunk.char_start,
                 "char_end": chunk.char_end,
                 **source_ref_location_summary(source_refs),
+                **query_snippet_diagnostics(snippet),
             },
             "source_type": chunk.source_type,
             "source_id": chunk.source_external_id,
@@ -881,6 +913,7 @@ def _chunk_context_item(
             "char_start": chunk.char_start,
             "char_end": chunk.char_end,
             **source_ref_location_summary(source_refs),
+            **query_snippet_diagnostics(snippet),
         },
     )
 

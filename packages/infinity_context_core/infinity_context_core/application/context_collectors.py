@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from infinity_context_core.application.context_hydration import ContextHydrator
+from infinity_context_core.application.context_snippets import (
+    query_focused_snippet,
+    query_snippet_diagnostics,
+    query_snippet_score_signals,
+    source_refs_with_query_snippet,
+)
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import BuildContextQuery, ContextItem
 from infinity_context_core.application.source_refs import (
@@ -335,7 +341,7 @@ class RagContextCollector:
             if visible_chunk is None:
                 dropped += 1
                 continue
-            items.append(_rag_chunk_item(candidate, visible_chunk))
+            items.append(_rag_chunk_item(candidate, visible_chunk, query_text=query.query))
         diagnostics["stale_rag_drop_count"] = dropped
         return tuple(items)
 
@@ -352,9 +358,18 @@ def _candidate_chunk_ids(candidate: CapabilityRecallCandidate) -> tuple[str, ...
     return tuple(dict.fromkeys(chunk_id for chunk_id in chunk_ids if chunk_id.strip()))
 
 
-def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) -> ContextItem:
+def _rag_chunk_item(
+    candidate: CapabilityRecallCandidate,
+    chunk: MemoryChunk,
+    *,
+    query_text: str,
+) -> ContextItem:
     chunk_text = document_chunk_retrieval_text(text=chunk.text, metadata=chunk.metadata)
-    source_refs = chunk_source_refs(chunk, text_preview=chunk_text)
+    snippet = query_focused_snippet(query=query_text, text=chunk_text)
+    source_refs = source_refs_with_query_snippet(
+        chunk_source_refs(chunk, text_preview=(snippet.text if snippet else chunk_text)),
+        snippet,
+    )
     return ContextItem(
         item_id=str(chunk.id),
         item_type="chunk",
@@ -370,6 +385,7 @@ def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) ->
                 "base_score": candidate.score,
                 "retrieval_channel": "rag_recall",
                 "source_ref_count": len(source_refs),
+                **query_snippet_score_signals(snippet),
             },
             "provenance": {
                 "retrieval_sources": ["rag_recall"],
@@ -377,9 +393,11 @@ def _rag_chunk_item(candidate: CapabilityRecallCandidate, chunk: MemoryChunk) ->
                 "adapter_name": _safe_adapter_name(candidate.adapter_name),
                 "chunk_id": str(chunk.id),
                 **source_ref_location_summary(source_refs),
+                **query_snippet_diagnostics(snippet),
             },
             "adapter_name": _safe_adapter_name(candidate.adapter_name),
             **source_ref_location_summary(source_refs),
+            **query_snippet_diagnostics(snippet),
             **_safe_recall_metadata(candidate.metadata),
         },
     )

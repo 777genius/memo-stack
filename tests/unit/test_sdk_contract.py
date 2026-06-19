@@ -939,6 +939,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "source_refs_with_page_count": 3,
                         "source_refs_with_bbox_count": 1,
                         "source_refs_with_time_range_count": 2,
+                        "query_snippet_items_used": 4,
+                        "query_snippet_source_refs_enriched": 6,
                         "source_refs_total": 25,
                         "source_refs_returned": 20,
                         "source_refs_truncated": True,
@@ -1114,6 +1116,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.source_refs_with_page_count == 3
     assert bundle.diagnostics.source_refs_with_bbox_count == 1
     assert bundle.diagnostics.source_refs_with_time_range_count == 2
+    assert bundle.diagnostics.query_snippet_items_used == 4
+    assert bundle.diagnostics.query_snippet_source_refs_enriched == 6
     assert bundle.diagnostics.source_refs_total == 25
     assert bundle.diagnostics.source_refs_returned == 20
     assert bundle.diagnostics.source_refs_truncated is True

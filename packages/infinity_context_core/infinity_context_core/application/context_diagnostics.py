@@ -16,6 +16,13 @@ _MAX_DIAGNOSTIC_LIST_ITEMS = 8
 _MAX_DIAGNOSTIC_KEY_CHARS = 80
 _MAX_DIAGNOSTIC_STRING_CHARS = 240
 _MAX_RANKING_REASON_CHARS = 240
+_SAFE_RECALL_DIAGNOSTIC_KEYS = (
+    "provider",
+    "adapter_name",
+    "projection_version",
+    "collection",
+    "dataset_id",
+)
 _BUNDLE_COUNTER_KEYS = (
     "facts_considered",
     "anchors_considered",
@@ -86,6 +93,8 @@ _BUNDLE_COUNTER_KEYS = (
     "source_refs_with_page_count",
     "source_refs_with_bbox_count",
     "source_refs_with_time_range_count",
+    "query_snippet_items_used",
+    "query_snippet_source_refs_enriched",
     "rendered_chars",
     "max_rendered_chars",
 )
@@ -159,6 +168,8 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "source_refs_with_page_count": 0,
     "source_refs_with_bbox_count": 0,
     "source_refs_with_time_range_count": 0,
+    "query_snippet_items_used": 0,
+    "query_snippet_source_refs_enriched": 0,
     "rendered_chars": 0,
     "max_rendered_chars": 0,
 }
@@ -234,6 +245,8 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     )
     retrieval_sources = all_retrieval_sources[:_MAX_RETRIEVAL_SOURCES]
     normalized = safe_diagnostic_mapping(raw)
+    normalized.update(_safe_query_snippet_diagnostics(raw))
+    normalized.update(_safe_recall_diagnostics(raw))
     normalized["retrieval_sources"] = list(retrieval_sources)
     normalized["retrieval_sources_total"] = len(all_retrieval_sources)
     normalized["retrieval_sources_returned"] = len(retrieval_sources)
@@ -300,6 +313,7 @@ def normalize_context_bundle_diagnostics(
             )
     normalized.update(_source_ref_counts(items))
     normalized.update(_multimodal_source_ref_counts(items))
+    normalized.update(_query_snippet_counts(items))
     return normalized
 
 
@@ -342,6 +356,8 @@ def merge_context_diagnostics(
     primary_raw = _as_dict(primary)
     secondary_raw = _as_dict(secondary)
     merged = safe_diagnostic_mapping({**secondary_raw, **primary_raw})
+    merged.update(_safe_recall_diagnostics(secondary_raw))
+    merged.update(_safe_recall_diagnostics(primary_raw))
     prioritized_sources = _prioritized_retrieval_sources(retrieval_sources)
     selected_source = prioritized_sources[0] if prioritized_sources else None
     if selected_source:
@@ -384,6 +400,40 @@ def safe_diagnostic_mapping(value: object) -> dict[str, object]:
         safe_metadata(value, max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS),
         max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS,
     )
+
+
+def _safe_query_snippet_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
+    snippet = _safe_optional_text(
+        raw.get("query_snippet"),
+        limit=_MAX_DIAGNOSTIC_STRING_CHARS,
+    )
+    if not snippet:
+        return {}
+    diagnostics: dict[str, object] = {"query_snippet": snippet}
+    for key in ("query_snippet_char_start", "query_snippet_char_end"):
+        value = _optional_non_negative_int(raw.get(key))
+        if value is not None:
+            diagnostics[key] = value
+    unique_hits = _optional_non_negative_int(raw.get("query_snippet_unique_term_hits"))
+    if unique_hits is not None:
+        diagnostics["query_snippet_unique_term_hits"] = unique_hits
+    terms = raw.get("query_snippet_matched_terms")
+    if isinstance(terms, (list, tuple)):
+        diagnostics["query_snippet_matched_terms"] = [
+            term
+            for raw_term in terms[:_MAX_DIAGNOSTIC_LIST_ITEMS]
+            if (term := _safe_optional_text(raw_term, limit=_MAX_DIAGNOSTIC_KEY_CHARS))
+        ]
+    return diagnostics
+
+
+def _safe_recall_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
+    diagnostics: dict[str, object] = {}
+    for key in _SAFE_RECALL_DIAGNOSTIC_KEYS:
+        value = _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_STRING_CHARS)
+        if value:
+            diagnostics[key] = value
+    return diagnostics
 
 
 def ranking_reason_for(retrieval_sources: tuple[str, ...]) -> str:
@@ -522,6 +572,27 @@ def _multimodal_source_ref_counts(items: tuple[ContextItem, ...]) -> dict[str, i
         "source_refs_with_page_count": page_count,
         "source_refs_with_bbox_count": bbox_count,
         "source_refs_with_time_range_count": time_count,
+    }
+
+
+def _query_snippet_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
+    items_with_snippets = 0
+    enriched_refs = 0
+    for item in items:
+        diagnostics = _as_dict(item.diagnostics)
+        snippet = diagnostics.get("query_snippet")
+        if not isinstance(snippet, str) or not snippet.strip():
+            continue
+        items_with_snippets += 1
+        enriched_refs += sum(
+            1
+            for ref in item.source_refs
+            if ref.quote_preview
+            and (snippet in ref.quote_preview or ref.quote_preview in snippet)
+        )
+    return {
+        "query_snippet_items_used": items_with_snippets,
+        "query_snippet_source_refs_enriched": enriched_refs,
     }
 
 

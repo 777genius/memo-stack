@@ -7,6 +7,12 @@ from infinity_context_core.application.context_policy import (
     is_context_fact_visible,
     is_graph_fact_visible,
 )
+from infinity_context_core.application.context_snippets import (
+    query_focused_snippet,
+    query_snippet_diagnostics,
+    query_snippet_score_signals,
+    source_refs_with_query_snippet,
+)
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import BuildContextQuery, ContextItem
 from infinity_context_core.application.source_refs import chunk_source_refs
@@ -65,13 +71,17 @@ class ContextHydrator:
                     memory_scope_ids=memory_scope_ids,
                     now=now,
                 ):
+                    snippet = query_focused_snippet(query=query.query, text=fact.text)
                     hydrated.append(
                         ContextItem(
                             item_id=str(fact.id),
                             item_type="fact",
                             text=fact.text,
                             score=0.78,
-                            source_refs=fact.source_refs,
+                            source_refs=source_refs_with_query_snippet(
+                                fact.source_refs,
+                                snippet,
+                            ),
                             diagnostics={
                                 "memory_scope_id": str(fact.memory_scope_id),
                                 "retrieval_source": "graph_hydrated",
@@ -81,13 +91,16 @@ class ContextHydrator:
                                     "base_score": 0.78,
                                     "retrieval_channel": "graph_hydrated",
                                     "fact_status": fact.status.value,
+                                    **query_snippet_score_signals(snippet),
                                 },
                                 "provenance": {
                                     "retrieval_sources": ["graph_hydrated"],
                                     "source_ref_count": len(fact.source_refs),
                                     "fact_status": fact.status.value,
                                     "fact_version": fact.version,
+                                    **query_snippet_diagnostics(snippet),
                                 },
+                                **query_snippet_diagnostics(snippet),
                             },
                         )
                     )
@@ -152,13 +165,17 @@ class ContextHydrator:
                 fact = visible_facts.get(item.item_id)
                 if fact is None:
                     continue
+                snippet = query_focused_snippet(query=query.query, text=fact.text)
                 visible_items.append(
                     ContextItem(
                         item_id=str(fact.id),
                         item_type=item.item_type,
                         text=fact.text,
                         score=item.score,
-                        source_refs=fact.source_refs,
+                        source_refs=source_refs_with_query_snippet(
+                            fact.source_refs,
+                            snippet,
+                        ),
                         is_instruction=item.is_instruction,
                         diagnostics=item.diagnostics,
                     )
@@ -186,13 +203,20 @@ class ContextHydrator:
                     text=chunk.text,
                     metadata=chunk.metadata,
                 )
+                snippet = query_focused_snippet(query=query.query, text=chunk_text)
                 visible_items.append(
                     ContextItem(
                         item_id=str(chunk.id),
                         item_type=item.item_type,
                         text=chunk_text,
                         score=item.score,
-                        source_refs=chunk_source_refs(chunk, text_preview=chunk_text),
+                        source_refs=source_refs_with_query_snippet(
+                            chunk_source_refs(
+                                chunk,
+                                text_preview=snippet.text if snippet else chunk_text,
+                            ),
+                            snippet,
+                        ),
                         is_instruction=item.is_instruction,
                         diagnostics=item.diagnostics,
                     )
