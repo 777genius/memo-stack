@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from infinity_context_core.application.context_diagnostics import (
     context_rank_key,
@@ -10,6 +10,7 @@ from infinity_context_core.application.context_diagnostics import (
 )
 from infinity_context_core.application.dto import ContextBundle, ContextItem
 from infinity_context_core.application.normalize import estimate_tokens
+from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.domain.entities import SourceRef
 
 _MAX_CHUNKS_PER_SOURCE = 4
@@ -61,6 +62,7 @@ class ContextPacker:
         citations_rendered = 0
         citation_quote_previews_rendered = 0
         sensitive_citation_quote_previews_skipped = 0
+        sensitive_item_text_redacted = 0
         used_tokens = 0
         lines = list(_HEADER_LINES)
         current_memory_scope_id: str | None = None
@@ -68,6 +70,7 @@ class ContextPacker:
             if item.is_instruction:
                 dropped_by_instruction_flag += 1
                 continue
+            item, item_text_redacted = _redact_context_item_text(item)
             if item.item_type == "chunk":
                 source_key = _source_key(item)
                 source_count = selected_chunks_by_source.get(source_key, 0)
@@ -96,6 +99,8 @@ class ContextPacker:
                 continue
 
             selected.append(item)
+            if item_text_redacted:
+                sensitive_item_text_redacted += 1
             citations_rendered += len(_citation_labels(item))
             citation_quote_previews_rendered += _citation_quote_preview_count(item)
             sensitive_citation_quote_previews_skipped += (
@@ -129,6 +134,7 @@ class ContextPacker:
                     "sensitive_citation_quote_previews_skipped": (
                         sensitive_citation_quote_previews_skipped
                     ),
+                    "sensitive_item_text_redacted": sensitive_item_text_redacted,
                     "rendered_chars": len(rendered_text),
                     "max_rendered_chars": char_budget,
                 },
@@ -140,6 +146,13 @@ class ContextPacker:
 def _one_line(text: str) -> str:
     compact = " ".join(text.strip().split())
     return compact[:2000]
+
+
+def _redact_context_item_text(item: ContextItem) -> tuple[ContextItem, bool]:
+    redacted = redact_sensitive_text(item.text)
+    if redacted == item.text:
+        return item, False
+    return replace(item, text=redacted), True
 
 
 def _item_line(index: int, item: ContextItem) -> str:

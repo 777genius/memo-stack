@@ -1485,6 +1485,47 @@ def test_context_can_include_superseded_review_only_evidence(
     assert restricted_data["diagnostics"]["superseded_facts_used"] == 0
 
 
+def test_context_redacts_sensitive_item_text_in_public_response(tmp_path: Path) -> None:
+    secret = "sk-proj-contextsecret1234567890"
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": (
+                    "CONTEXT_SECRET_REDACTION_MARKER: Project Atlas deploy token "
+                    f"is {secret}. Owner is Alex."
+                ),
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "secret-redaction"}],
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "CONTEXT_SECRET_REDACTION_MARKER Project Atlas token",
+                "token_budget": 512,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
+
+    assert fact.status_code == 201, fact.text
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    serialized = context.text
+    assert secret not in serialized
+    assert "[redacted]" in data["rendered_text"]
+    assert data["diagnostics"]["sensitive_item_text_redacted"] == 1
+    item = next(item for item in data["items"] if item["item_id"] == fact.json()["data"]["id"])
+    assert secret not in item["text"]
+    assert "[redacted]" in item["text"]
+
+
 def test_v1_context_accepts_consistency_mode_without_changing_defaults(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         client.post(

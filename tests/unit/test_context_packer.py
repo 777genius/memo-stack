@@ -167,6 +167,32 @@ def test_memory_items_skip_sensitive_citation_quote_previews() -> None:
     assert result.bundle.diagnostics["sensitive_citation_quote_previews_skipped"] == 1
 
 
+def test_memory_items_redact_sensitive_item_text() -> None:
+    secret = "sk-proj-secretvalue1234567890"
+    result = ContextPacker().pack(
+        bundle_id="ctx_sensitive_item_text",
+        items=(
+            ContextItem(
+                item_id="fact_secret",
+                item_type="fact",
+                text=f"Project Atlas deploy token is {secret}. Owner is Alex.",
+                score=1.0,
+                source_refs=(SourceRef(source_type="manual", source_id="secret-fact"),),
+                diagnostics={"memory_scope_id": "memory_scope_default"},
+            ),
+        ),
+        token_budget=512,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert secret not in rendered
+    assert 'text="Project Atlas deploy token is [redacted]. Owner is Alex."' in rendered
+    assert result.bundle.items[0].text == (
+        "Project Atlas deploy token is [redacted]. Owner is Alex."
+    )
+    assert result.bundle.diagnostics["sensitive_item_text_redacted"] == 1
+
+
 def test_memory_block_drops_instruction_marked_items() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_no_instruction_role",
