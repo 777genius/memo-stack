@@ -838,6 +838,9 @@ def _extension_content_type(extension: str | None) -> str | None:
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
         "gif": "image/gif",
+        "avif": "image/avif",
+        "heic": "image/heic",
+        "heif": "image/heif",
         "webp": "image/webp",
         "bmp": "image/bmp",
         "tif": "image/tiff",
@@ -874,10 +877,16 @@ def _magic_content_type(content: bytes) -> str | None:
         return "image/webp"
     if content[:12].startswith(b"RIFF") and content[8:12] == b"WAVE":
         return "audio/wav"
+    if prefix.startswith(b"fLaC"):
+        return "audio/flac"
+    if prefix.startswith(b"OggS"):
+        return "audio/ogg"
     if prefix.startswith(b"ID3") or prefix[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"}:
         return "audio/mpeg"
     if len(content) >= 12 and content[4:8] == b"ftyp":
-        return "video/mp4"
+        return _ftyp_content_type(content)
+    if prefix.startswith(b"\x1a\x45\xdf\xa3"):
+        return "video/webm" if b"webm" in content[:256].lower() else "video/x-matroska"
     if prefix.startswith(b"PK\x03\x04"):
         return "application/zip"
     if _looks_like_utf8_text(content):
@@ -896,6 +905,34 @@ def _looks_like_utf8_text(content: bytes) -> bool:
         return False
     printable = sum(1 for ch in text if ch.isprintable() or ch.isspace())
     return printable / max(1, len(text)) > 0.92
+
+
+def _ftyp_content_type(content: bytes) -> str:
+    brands = _ftyp_brands(content)
+    if brands & {"avif", "avis"}:
+        return "image/avif"
+    if brands & {"heic", "heix", "hevc", "hevx"}:
+        return "image/heic"
+    if brands & {"mif1", "msf1"}:
+        return "image/heif"
+    if brands & {"qt"}:
+        return "video/quicktime"
+    if brands & {"m4a"}:
+        return "audio/mp4"
+    return "video/mp4"
+
+
+def _ftyp_brands(content: bytes) -> set[str]:
+    brands: set[str] = set()
+    brand_bytes = content[8:32]
+    for index in range(0, len(brand_bytes), 4):
+        raw = brand_bytes[index : index + 4]
+        if len(raw) < 4:
+            continue
+        brand = raw.decode("ascii", errors="ignore").strip().lower()
+        if brand:
+            brands.add(brand)
+    return brands
 
 
 def _decode_text(content: bytes) -> str:

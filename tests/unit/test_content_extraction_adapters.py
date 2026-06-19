@@ -112,6 +112,54 @@ def test_file_type_detector_keeps_textual_subtype_for_plain_text_magic() -> None
     assert result.diagnostics["mime_detector_reason"] == "extension_overrides_magic"
 
 
+def test_file_type_detector_recognizes_modern_multimodal_magic_types() -> None:
+    cases = [
+        ("image.webp", "application/octet-stream", b"RIFF\x10\x00\x00\x00WEBPVP8 ", "image/webp"),
+        ("voice.flac", "application/octet-stream", b"fLaC\x00\x00\x00\x22", "audio/flac"),
+        ("voice.ogg", "application/octet-stream", b"OggS\x00\x02audio", "audio/ogg"),
+        (
+            "voice.m4a",
+            "application/octet-stream",
+            b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00",
+            "audio/mp4",
+        ),
+        (
+            "clip.mov",
+            "application/octet-stream",
+            b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00",
+            "video/quicktime",
+        ),
+        (
+            "screen.avif",
+            "application/octet-stream",
+            b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00",
+            "image/avif",
+        ),
+        (
+            "screen.heic",
+            "application/octet-stream",
+            b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00",
+            "image/heic",
+        ),
+        ("clip.webm", "application/octet-stream", b"\x1a\x45\xdf\xa3\x00\x00webm", "video/webm"),
+    ]
+
+    for filename, declared_content_type, content, expected_content_type in cases:
+        result = asyncio.run(
+            SimpleFileTypeDetector().detect(
+                FileTypeDetectionRequest(
+                    filename=filename,
+                    declared_content_type=declared_content_type,
+                    content=content,
+                )
+            )
+        )
+
+        assert result.content_type == expected_content_type
+        assert result.confidence == "high"
+        assert result.diagnostics["mime_detector_reason"] == "magic"
+
+
 def test_tesseract_tsv_parser_groups_words_into_ocr_blocks() -> None:
     regions = parse_tesseract_tsv(
         "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"

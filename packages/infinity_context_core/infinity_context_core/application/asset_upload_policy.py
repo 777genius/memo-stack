@@ -47,20 +47,33 @@ _EXTENSION_CONTENT_TYPES = {
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".gif": "image/gif",
+    ".avif": "image/avif",
+    ".bmp": "image/bmp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
     ".html": "text/html",
     ".jpeg": "image/jpeg",
     ".jpg": "image/jpeg",
     ".json": "application/json",
     ".m4a": "audio/mp4",
+    ".m4v": "video/mp4",
     ".md": "text/markdown",
+    ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime",
     ".mp3": "audio/mpeg",
     ".mp4": "video/mp4",
     ".mpeg": "video/mpeg",
     ".mpga": "audio/mpeg",
+    ".oga": "audio/ogg",
+    ".ogg": "audio/ogg",
     ".pdf": "application/pdf",
     ".png": "image/png",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".srt": "application/x-subrip",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
     ".txt": "text/plain",
+    ".vtt": "text/vtt",
     ".wav": "audio/wav",
     ".webm": "video/webm",
     ".webp": "image/webp",
@@ -169,12 +182,20 @@ def detect_magic_content_type(content: bytes) -> str:
         return "image/jpeg"
     if head.startswith((b"GIF87a", b"GIF89a")):
         return "image/gif"
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return "image/webp"
     if head.startswith(b"RIFF") and head[8:12] == b"WAVE":
         return "audio/wav"
+    if head.startswith(b"fLaC"):
+        return "audio/flac"
+    if head.startswith(b"OggS"):
+        return "audio/ogg"
     if head.startswith(b"ID3") or _looks_like_mp3_frame(head):
         return "audio/mpeg"
     if len(head) >= 12 and head[4:8] == b"ftyp":
-        return "video/mp4"
+        return _ftyp_content_type(content) or "video/mp4"
+    if head.startswith(b"\x1a\x45\xdf\xa3"):
+        return "video/webm" if b"webm" in content[:256].lower() else "video/x-matroska"
     if head.startswith(b"PK\x03\x04"):
         return "application/zip"
     if head[:16].lstrip().startswith((b"{", b"[")):
@@ -320,6 +341,8 @@ def _content_types_compatible(expected: str, actual: str) -> bool:
     pairs = {
         ("audio/mp4", "video/mp4"),
         ("video/mp4", "audio/mp4"),
+        ("video/mp4", "video/quicktime"),
+        ("video/quicktime", "video/mp4"),
         ("application/json", "text/plain"),
         ("text/plain", "application/json"),
     }
@@ -336,6 +359,38 @@ def _is_structured_document_content_type(value: str | None) -> bool:
 
 def _looks_like_mp3_frame(head: bytes) -> bool:
     return len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0
+
+
+def _ftyp_content_type(content: bytes) -> str | None:
+    brands = _ftyp_brands(content)
+    if not brands:
+        return None
+    if brands & {"avif", "avis"}:
+        return "image/avif"
+    if brands & {"heic", "heix", "hevc", "hevx"}:
+        return "image/heic"
+    if brands & {"mif1", "msf1"}:
+        return "image/heif"
+    if brands & {"qt"}:
+        return "video/quicktime"
+    if brands & {"m4a"}:
+        return "audio/mp4"
+    return "video/mp4"
+
+
+def _ftyp_brands(content: bytes) -> set[str]:
+    if len(content) < 12 or content[4:8] != b"ftyp":
+        return set()
+    brands: set[str] = set()
+    brand_bytes = content[8:32]
+    for index in range(0, len(brand_bytes), 4):
+        raw = brand_bytes[index : index + 4]
+        if len(raw) < 4:
+            continue
+        brand = raw.decode("ascii", errors="ignore").strip().lower()
+        if brand:
+            brands.add(brand)
+    return brands
 
 
 def _looks_like_text(head: bytes) -> bool:

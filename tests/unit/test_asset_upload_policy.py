@@ -13,8 +13,22 @@ from infinity_context_core.domain.errors import MemoryIngressLimitError
 def test_upload_policy_detects_magic_content_types() -> None:
     assert detect_magic_content_type(b"%PDF-1.7\n") == "application/pdf"
     assert detect_magic_content_type(b"\x89PNG\r\n\x1a\npayload") == "image/png"
+    assert detect_magic_content_type(b"RIFF\x10\x00\x00\x00WEBPVP8 ") == "image/webp"
     assert detect_magic_content_type(b"RIFF\x24\x00\x00\x00WAVEfmt ") == "audio/wav"
+    assert detect_magic_content_type(b"fLaC\x00\x00\x00\x22") == "audio/flac"
+    assert detect_magic_content_type(b"OggS\x00\x02audio") == "audio/ogg"
     assert detect_magic_content_type(b"\x00\x00\x00\x18ftypmp42") == "video/mp4"
+    assert detect_magic_content_type(b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00") == "audio/mp4"
+    assert detect_magic_content_type(b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00") == (
+        "video/quicktime"
+    )
+    assert detect_magic_content_type(b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00") == (
+        "image/avif"
+    )
+    assert detect_magic_content_type(b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00") == (
+        "image/heic"
+    )
+    assert detect_magic_content_type(b"\x1a\x45\xdf\xa3\x00\x00webm") == "video/webm"
     assert detect_magic_content_type(b"plain text body") == "text/plain"
 
 
