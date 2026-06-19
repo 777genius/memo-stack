@@ -941,6 +941,12 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         space_id=space_id,
         memory_scope_id=alpha_memory_scope_id,
     )
+    checks["quality_pending_conflict_review"] = _seed_quality_pending_conflict_review(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=alpha_memory_scope_id,
+    )
     checks["quality_project_anchor"] = _seed_quality_project_anchor(
         client,
         headers,
@@ -1500,6 +1506,63 @@ def _seed_quality_duplicate_merge_review(
             },
         },
         headers=_with_idempotency(headers, "quality-duplicate-merge-suggestion-v1"),
+    )
+    return _status_ok(suggestion.status_code)
+
+
+def _seed_quality_pending_conflict_review(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    active = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text=(
+            "QUALITY_PENDING_CONFLICT_ACTIVE: Project Atlas billing logs are retained "
+            "for 7 days."
+        ),
+        source_id="quality-pending-conflict-active",
+        idempotency_key="quality-pending-conflict-active-v1",
+        classification="internal",
+    )
+    fact_id = _response_data_id(active)
+    if not _status_ok(active.status_code) or not fact_id:
+        return False
+    suggestion = client.post(
+        "/v1/suggestions",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "candidate_text": (
+                "QUALITY_PENDING_CONFLICT_CANDIDATE: Project Atlas billing logs "
+                "are retained for 30 days."
+            ),
+            "kind": "architecture_decision",
+            "operation": "add",
+            "source_refs": [
+                {
+                    "source_type": "manual",
+                    "source_id": "quality-pending-conflict-candidate",
+                }
+            ],
+            "confidence": "medium",
+            "trust_level": "medium",
+            "safe_reason": "quality_pending_conflict_requires_review",
+            "review_payload": {
+                "review_kind": "conflict_review",
+                "conflicting_fact_id": fact_id,
+                "conflicting_fact_version": 1,
+                "conflict_match_type": "numeric_value_mismatch",
+                "conflict_reason_codes": ["semantic_conflict", "numeric_value_mismatch"],
+                "conflict_overlap_terms": ["project:atlas", "billing", "logs"],
+            },
+        },
+        headers=_with_idempotency(headers, "quality-pending-conflict-suggestion-v1"),
     )
     return _status_ok(suggestion.status_code)
 

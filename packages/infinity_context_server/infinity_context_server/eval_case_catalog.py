@@ -179,6 +179,25 @@ def _quality_golden_cases(
             ),
         ),
         EvalCase(
+            case_id="pending_conflict_review_visible",
+            category="conflict_review",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="Project Atlas billing log retention conflict review",
+            must_include=(
+                "QUALITY_PENDING_CONFLICT_ACTIVE",
+                "QUALITY_PENDING_CONFLICT_CANDIDATE",
+                "Pending review add suggestion for active fact",
+            ),
+            must_not_include=("Pending duplicate merge",),
+            max_facts=1,
+            max_chunks=0,
+            required_diagnostics=(
+                ("pending_conflict_suggestions_considered", "eq", 1),
+                ("pending_duplicate_merge_suggestions_considered", "eq", 0),
+            ),
+        ),
+        EvalCase(
             case_id="deleted_fact_hidden",
             category="deleted",
             space_id=space_id,

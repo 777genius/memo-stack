@@ -63,6 +63,7 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "relative_time_current_fact_not_last_week_fact",
     "contradicted_fact_hidden_by_default",
     "contradicted_fact_visible_only_in_stale_review",
+    "pending_conflict_review_visible",
     "document_architecture_precision",
     "document_source_diversity_preserves_secondary_source",
     "hybrid_document_beats_single_source",

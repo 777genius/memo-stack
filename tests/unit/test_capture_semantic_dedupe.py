@@ -314,6 +314,7 @@ def test_auto_apply_safe_active_conflict_creates_review_suggestion_not_fact(
 
     suggestion = suggestions.json()["data"][0]
     assert suggestion["candidate_text"] == "Docs retrieval should use Qdrant vectors."
+    assert suggestion["review_payload"]["review_kind"] == "conflict_review"
     assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["conflicting_fact_version"] == 1
     assert suggestion["review_payload"]["conflict_match_type"] == "exclusive_anchor_mismatch"
@@ -374,6 +375,7 @@ def test_auto_apply_safe_numeric_conflict_creates_review_suggestion_not_fact(
 
     suggestion = suggestions.json()["data"][0]
     assert suggestion["candidate_text"] == "Project Atlas keeps billing logs for 30 days."
+    assert suggestion["review_payload"]["review_kind"] == "conflict_review"
     assert suggestion["review_payload"]["conflicting_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["conflicting_fact_version"] == 1
     assert suggestion["review_payload"]["conflict_match_type"] == "numeric_value_mismatch"

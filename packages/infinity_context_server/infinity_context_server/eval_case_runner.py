@@ -437,6 +437,9 @@ def _quality_golden_metrics(
     duplicate_merge_cases = tuple(
         result for result in case_results if result.case.category == "duplicate_merge"
     )
+    conflict_review_cases = tuple(
+        result for result in case_results if result.case.category == "conflict_review"
+    )
     anchor_context_cases = tuple(
         result for result in case_results if result.case.category == "anchor_context"
     )
@@ -509,6 +512,10 @@ def _quality_golden_metrics(
             sum(1 for result in duplicate_merge_cases if not result.failures),
             len(duplicate_merge_cases),
         ),
+        "conflict_review_rate": _ratio(
+            sum(1 for result in conflict_review_cases if not result.failures),
+            len(conflict_review_cases),
+        ),
         "anchor_context_recall_rate": _ratio(
             sum(1 for result in anchor_context_cases if not result.failures),
             len(anchor_context_cases),
@@ -544,6 +551,7 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "item_contract_support_rate": metrics["item_contract_support_rate"] == 1.0,
         "item_contract_failure_count": metrics["item_contract_failure_count"] == 0,
         "duplicate_merge_review_rate": metrics["duplicate_merge_review_rate"] == 1.0,
+        "conflict_review_rate": metrics["conflict_review_rate"] == 1.0,
         "anchor_context_recall_rate": metrics["anchor_context_recall_rate"] == 1.0,
         "multi_memory_scope_recall_at_5": metrics["multi_memory_scope_recall_at_5"] == 1.0,
         "thread_recall_at_5": metrics["thread_recall_at_5"] == 1.0,

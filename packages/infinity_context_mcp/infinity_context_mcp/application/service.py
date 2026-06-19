@@ -545,6 +545,7 @@ class MemoryToolService(
                     tags=safe_tags,
                     ttl_policy=ttl_policy,
                     review_payload={
+                        "review_kind": "conflict_review",
                         "conflicting_fact_id": duplicate_id,
                         "conflict_source": "mcp_preflight",
                         **duplicate_payload,

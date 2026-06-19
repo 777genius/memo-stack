@@ -305,12 +305,13 @@ def test_service_remember_fact_routes_negated_semantic_neighbor_to_review() -> N
             "create_suggestion",
         ]
         assert gateway.calls[-1][1]["review_payload"] == {
+            "review_kind": "conflict_review",
             "conflicting_fact_id": "fact_qdrant_negated",
             "conflict_source": "mcp_preflight",
             "conflict_match_type": "negation_mismatch",
-            "conflict_score": 0.75,
+            "conflict_score": 0.8,
             "conflict_reason_codes": ["semantic_conflict", "negation_mismatch"],
-            "conflict_overlap_terms": ["document", "qdrant", "vector"],
+            "conflict_overlap_terms": ["document", "project:qdrant", "qdrant", "vector"],
         }
 
     asyncio.run(run())
@@ -353,10 +354,11 @@ def test_service_remember_fact_does_not_dedupe_different_engine_neighbor() -> No
             "create_suggestion",
         ]
         assert gateway.calls[-1][1]["review_payload"] == {
+            "review_kind": "conflict_review",
             "conflicting_fact_id": "fact_qdrant_documents",
             "conflict_source": "mcp_preflight",
             "conflict_match_type": "exclusive_anchor_mismatch",
-            "conflict_score": 0.667,
+            "conflict_score": 0.571,
             "conflict_reason_codes": ["semantic_conflict", "exclusive_anchor_mismatch"],
             "conflict_overlap_terms": ["document", "owns", "retrieval", "vector"],
         }
@@ -399,6 +401,7 @@ def test_service_remember_fact_routes_numeric_neighbor_to_review() -> None:
             "infinity_context_mcp.conflict.requires_review"
         ]
         assert gateway.calls[-1][1]["review_payload"] == {
+            "review_kind": "conflict_review",
             "conflicting_fact_id": "fact_atlas_retention",
             "conflict_source": "mcp_preflight",
             "conflict_match_type": "numeric_value_mismatch",
@@ -411,6 +414,7 @@ def test_service_remember_fact_routes_numeric_neighbor_to_review() -> None:
                 "keeps",
                 "logs",
                 "project",
+                "project:atlas",
             ],
         }
 

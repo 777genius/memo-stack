@@ -406,6 +406,11 @@ class ConsolidateCaptureUseCase:
                     created_from_capture_id=str(current.id),
                     candidate_fingerprint=fingerprint,
                     review_payload={
+                        **(
+                            {"review_kind": "conflict_review"}
+                            if active_conflict is not None
+                            else {}
+                        ),
                         "operation": _suggestion_operation(candidate.operation_hint).value,
                         "category": taxonomy.category,
                         "tags": list(taxonomy.tags),
