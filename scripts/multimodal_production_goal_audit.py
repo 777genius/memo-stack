@@ -74,6 +74,30 @@ FORBIDDEN_CORE_IMPORT_MARKERS = (
     "infinity_context_adapters",
 )
 SECRET_MARKERS = ("sk-", "Bearer ")
+PROVIDER_REQUIREMENT_CHECKS = {
+    "vision_real_provider": "live_provider_proof_matrix_vision_real_provider",
+    "vision_response_evidence": "live_provider_proof_matrix_vision_response_evidence",
+    "audio_transcription_real_provider": (
+        "live_provider_proof_matrix_audio_transcription_real_provider"
+    ),
+    "transcription_response_artifact": (
+        "live_provider_proof_matrix_transcription_response_artifact"
+    ),
+    "audio_transcription_format_matrix": (
+        "live_provider_proof_matrix_audio_transcription_format_matrix"
+    ),
+    "invalid_key_live_probe": "live_provider_proof_matrix_invalid_key_live_probe",
+    "vision_fixture_contract": "live_provider_proof_matrix_vision_fixture_contract",
+    "audio_fixture_contract": "live_provider_proof_matrix_audio_fixture_contract",
+    "audio_fixture_format_coverage": "live_provider_proof_matrix_audio_fixture_format_coverage",
+    "transcription_request_contract": (
+        "live_provider_proof_matrix_transcription_request_contract"
+    ),
+    "invalid_key_classification": "live_provider_proof_matrix_invalid_key_classification",
+    "rate_limit_classification": "live_provider_proof_matrix_rate_limit_classification",
+    "timeout_classification": "live_provider_proof_matrix_timeout_classification",
+    "no_secret_leak_guard": "live_provider_proof_matrix_no_secret_leak_guard",
+}
 
 
 @dataclass(frozen=True)
@@ -598,12 +622,15 @@ def _audit_provider_proof_matrix(
     )
     expected = {
         "vision_real_provider": "succeeded",
+        "vision_response_evidence": "succeeded",
         "audio_transcription_real_provider": "succeeded",
+        "transcription_response_artifact": "succeeded",
         "audio_transcription_format_matrix": "succeeded",
         "invalid_key_live_probe": "succeeded",
         "vision_fixture_contract": "contract_covered",
         "audio_fixture_contract": "contract_covered",
         "audio_fixture_format_coverage": "contract_covered",
+        "transcription_request_contract": "contract_covered",
         "invalid_key_classification": "contract_covered",
         "rate_limit_classification": "contract_covered",
         "timeout_classification": "contract_covered",
@@ -791,9 +818,10 @@ def _blocked_requirements(
         preferred_component="provider_key",
     )
     if provider_blocker is not None:
-        provider_blocker["downstream_checks"] = [
-            "live_provider_components_succeeded",
-        ]
+        provider_blocker["blocking_requirements"] = list(
+            _provider_blocking_requirements(provider)
+        )
+        provider_blocker["downstream_checks"] = list(_provider_downstream_checks(provider))
         blocked.append(provider_blocker)
     return tuple(blocked)
 
@@ -841,6 +869,47 @@ def _not_evaluable_checks(
     return tuple(dict.fromkeys(checks))
 
 
+def _provider_downstream_checks(
+    report: Mapping[str, object] | None,
+) -> tuple[str, ...]:
+    checks = ["live_provider_components_succeeded"]
+    blocking_requirements = _provider_blocking_requirements(report)
+    if blocking_requirements:
+        for requirement in blocking_requirements:
+            mapped = PROVIDER_REQUIREMENT_CHECKS.get(requirement)
+            if mapped:
+                checks.append(mapped)
+    else:
+        checks.extend(PROVIDER_REQUIREMENT_CHECKS.values())
+    return tuple(dict.fromkeys(checks))
+
+
+def _provider_blocking_requirements(
+    report: Mapping[str, object] | None,
+) -> tuple[str, ...]:
+    if not isinstance(report, Mapping):
+        return ()
+    readiness = report.get("readiness")
+    if isinstance(readiness, Mapping):
+        configured = _string_list(readiness.get("blocking_requirements"))
+        if configured:
+            return tuple(configured)
+    proof_matrix = report.get("proof_matrix")
+    requirements = (
+        proof_matrix.get("requirements")
+        if isinstance(proof_matrix, Mapping)
+        and isinstance(proof_matrix.get("requirements"), Mapping)
+        else {}
+    )
+    return tuple(
+        str(name)
+        for name, requirement in requirements.items()
+        if isinstance(name, str)
+        and isinstance(requirement, Mapping)
+        and requirement.get("ok") is not True
+    )
+
+
 def _report_summary(report: Mapping[str, object] | None) -> dict[str, object]:
     if report is None:
         return {"present": False}
@@ -854,6 +923,15 @@ def _report_summary(report: Mapping[str, object] | None) -> dict[str, object]:
         summary["git"] = {
             "short_commit": _safe_text(git.get("short_commit")),
             "dirty": git.get("dirty") is True,
+        }
+    readiness = report.get("readiness")
+    if isinstance(readiness, dict):
+        summary["readiness"] = {
+            "status": _safe_text(readiness.get("status")),
+            "production_ready": readiness.get("production_ready") is True,
+            "blocking_requirements": list(
+                _string_list(readiness.get("blocking_requirements"))
+            ),
         }
     return summary
 

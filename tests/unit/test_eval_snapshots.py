@@ -64,7 +64,11 @@ def test_prompt_snapshot_payload_is_prompt_safe_and_contains_metadata(tmp_path: 
     sensitive_source_text = payload["cases"]["sensitive_source_identity_redacted"][
         "rendered_text"
     ]
-    assert "https://[redacted]@example.test/private" in sensitive_source_text
+    assert "document:https-redacted-example.test-private#chunk--redacted" in (
+        sensitive_source_text
+    )
+    assert "https://[redacted]@example.test/private" not in sensitive_source_text
+    assert "@example.test/private" not in sensitive_source_text
     assert "sk-proj-sourceidentitysecret" not in sensitive_source_text
     assert "user:password" not in sensitive_source_text
     assert (

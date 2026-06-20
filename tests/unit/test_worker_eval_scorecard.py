@@ -356,6 +356,7 @@ def _multimodal_live_provider_canary_report() -> dict[str, Any]:
             "status": "succeeded",
         },
         "transcription_response_artifact": {"ok": True, "status": "succeeded"},
+        "transcription_request_contract": {"ok": True, "status": "contract_covered"},
         "invalid_key_live_probe": {"ok": True, "status": "succeeded"},
         "no_secret_leak_guard": {"ok": True, "status": "contract_covered"},
     }
@@ -759,6 +760,9 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         "required_requirements"
     ]
     assert "audio_transcription_format_matrix" in policy["multimodal_live_provider"][
+        "required_requirements"
+    ]
+    assert "transcription_request_contract" in policy["multimodal_live_provider"][
         "required_requirements"
     ]
     assert (

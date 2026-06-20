@@ -86,6 +86,7 @@ def _minimal_multimodal_live_provider_report(
         "audio_transcription_real_provider",
         "audio_transcription_format_matrix",
         "transcription_response_artifact",
+        "transcription_request_contract",
         "invalid_key_live_probe",
         "no_secret_leak_guard",
     )

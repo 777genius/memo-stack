@@ -113,15 +113,91 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     assert blocked_by_area["docker_live_proof"]["reason"] == "docker_daemon_timeout"
     assert blocked_by_area["docker_live_proof"]["operator_action"] is None
     assert blocked_by_area["live_provider_proof"]["reason"] == "provider_credential_missing"
+    assert blocked_by_area["live_provider_proof"]["blocking_requirements"] == []
     assert "docker_live_extraction_cases_complete" in result.not_evaluable_checks
     assert "docker_live_capabilities_audio_upload_limit_present" in (result.not_evaluable_checks)
     assert "docker_live_capabilities_vision_payload_limits_present" in (result.not_evaluable_checks)
     assert "docker_live_capabilities_provider_contract_present" in (result.not_evaluable_checks)
     assert "live_provider_components_succeeded" in result.not_evaluable_checks
+    assert "live_provider_proof_matrix_vision_real_provider" in result.not_evaluable_checks
+    assert "live_provider_proof_matrix_vision_response_evidence" in (
+        result.not_evaluable_checks
+    )
+    assert "live_provider_proof_matrix_transcription_response_artifact" in (
+        result.not_evaluable_checks
+    )
+    assert (
+        "live_provider_proof_matrix_audio_transcription_format_matrix"
+        in result.not_evaluable_checks
+    )
+    assert "live_provider_proof_matrix_invalid_key_live_probe" in result.not_evaluable_checks
     assert any("Docker multimodal live proof" in failure for failure in result.failures)
     assert any("Live provider canary" in failure for failure in result.failures)
     assert any("docker_daemon_timeout" in failure for failure in result.failures)
     assert any("provider_credential_missing" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_carries_provider_readiness_blockers(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    provider["ok"] = False
+    provider["provider_key_present"] = False
+    provider["components"]["provider_key"] = {
+        "status": "degraded",
+        "reason": "provider_credential_missing",
+        "operator_action": "configure_provider_credential",
+    }
+    provider["readiness"] = {
+        "status": "blocked_by_provider_credential",
+        "production_ready": False,
+        "blocking_requirements": [
+            "vision_real_provider",
+            "audio_transcription_format_matrix",
+        ],
+    }
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    blocked_by_area = {item["area"]: item for item in result.blocked_requirements}
+    provider_summary = result.reports["provider"]
+
+    assert result.ok is False
+    assert blocked_by_area["live_provider_proof"]["blocking_requirements"] == [
+        "vision_real_provider",
+        "audio_transcription_format_matrix",
+    ]
+    assert "live_provider_proof_matrix_vision_real_provider" in result.not_evaluable_checks
+    assert (
+        "live_provider_proof_matrix_audio_transcription_format_matrix"
+        in result.not_evaluable_checks
+    )
+    assert "live_provider_proof_matrix_invalid_key_live_probe" not in (
+        result.not_evaluable_checks
+    )
+    assert provider_summary["readiness"] == {
+        "blocking_requirements": [
+            "vision_real_provider",
+            "audio_transcription_format_matrix",
+        ],
+        "production_ready": False,
+        "status": "blocked_by_provider_credential",
+    }
 
 
 def test_multimodal_production_goal_audit_rejects_frontend_runtime_log_failure(
@@ -671,6 +747,24 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "requires_provider_key": True,
                 "ok": True,
             },
+            "vision_response_evidence": {
+                "status": "succeeded",
+                "proof": "live_provider_evidence_shape",
+                "requires_provider_key": True,
+                "ok": True,
+                "visible_text_count": 1,
+                "summary_chars": 40,
+            },
+            "transcription_response_artifact": {
+                "status": "succeeded",
+                "proof": "live_provider_artifact_shape",
+                "requires_provider_key": True,
+                "ok": True,
+                "response_format": "json",
+                "transcript_chars": 80,
+                "segment_count": 0,
+                "word_count": 0,
+            },
             "audio_transcription_format_matrix": {
                 "status": "succeeded",
                 "proof": "live_provider_format_matrix",
@@ -717,6 +811,16 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "ok": True,
                 "required_suffixes": [".mp3", ".wav"],
                 "covered_suffixes": [".mp3", ".wav"],
+            },
+            "transcription_request_contract": {
+                "status": "contract_covered",
+                "proof": "adapter_request_contract",
+                "requires_provider_key": False,
+                "ok": True,
+                "response_format": "json",
+                "supports_prompt": True,
+                "supports_segment_timestamps": False,
+                "requires_chunking_strategy": False,
             },
             "invalid_key_classification": {
                 "status": "contract_covered",

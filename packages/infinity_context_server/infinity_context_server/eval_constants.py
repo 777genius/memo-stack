@@ -129,6 +129,7 @@ _MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS = (
     "audio_transcription_real_provider",
     "audio_transcription_format_matrix",
     "transcription_response_artifact",
+    "transcription_request_contract",
     "invalid_key_live_probe",
     "no_secret_leak_guard",
 )
