@@ -144,6 +144,7 @@ def _cleanup_trace(payload: dict[str, object]) -> dict[str, object]:
         "cleanup_status": result.status,
         "cleanup_dry_run": result.dry_run,
         "cleanup_scanned_count": result.scanned_count,
+        "cleanup_unsafe_storage_key_count": result.unsafe_storage_key_count,
         "cleanup_orphan_candidate_count": result.orphan_candidate_count,
         "cleanup_deleted_count": result.deleted_count,
         "cleanup_delete_error_count": result.delete_error_count,
@@ -166,6 +167,7 @@ def _integrity_trace(payload: dict[str, object]) -> dict[str, object]:
         "integrity_checksum_skipped_count": result.checksum_skipped_count,
         "integrity_read_error_count": result.read_error_count,
         "integrity_stat_error_count": result.stat_error_count,
+        "integrity_unsafe_storage_key_count": result.unsafe_storage_key_count,
     }
 
 

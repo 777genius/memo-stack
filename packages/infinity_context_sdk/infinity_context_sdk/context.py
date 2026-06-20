@@ -263,6 +263,8 @@ class ContextBundleDiagnostics:
     answer_support_warnings: tuple[str, ...] = ()
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
+    sensitive_source_identity_parts_redacted: int = 0
+    unsafe_source_identity_parts_sanitized: int = 0
     sensitive_item_text_redacted: int = 0
     rendered_chars: int = 0
     max_rendered_chars: int = 0
@@ -919,6 +921,12 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         ),
         sensitive_citation_quote_previews_skipped=_non_negative_int(
             raw.get("sensitive_citation_quote_previews_skipped")
+        ),
+        sensitive_source_identity_parts_redacted=_non_negative_int(
+            raw.get("sensitive_source_identity_parts_redacted")
+        ),
+        unsafe_source_identity_parts_sanitized=_non_negative_int(
+            raw.get("unsafe_source_identity_parts_sanitized")
         ),
         sensitive_item_text_redacted=_non_negative_int(raw.get("sensitive_item_text_redacted")),
         rendered_chars=_non_negative_int(raw.get("rendered_chars")),

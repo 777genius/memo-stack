@@ -490,6 +490,7 @@ async def cleanup_asset_storage(
             "referenced_count": result.referenced_count,
             "recent_count": result.recent_count,
             "unknown_updated_at_count": result.unknown_updated_at_count,
+            "unsafe_storage_key_count": result.unsafe_storage_key_count,
             "orphan_candidate_count": result.orphan_candidate_count,
             "delete_attempt_count": result.delete_attempt_count,
             "deleted_count": result.deleted_count,
@@ -545,6 +546,7 @@ async def audit_asset_storage(
             "checksum_skipped_count": result.checksum_skipped_count,
             "read_error_count": result.read_error_count,
             "stat_error_count": result.stat_error_count,
+            "unsafe_storage_key_count": result.unsafe_storage_key_count,
             "issues": [_json_safe_dataclass_payload(item) for item in result.issues],
             "diagnostics": result.diagnostics,
         }

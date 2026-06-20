@@ -1047,6 +1047,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         ],
                         "citation_quote_previews_rendered": 9,
                         "sensitive_citation_quote_previews_skipped": 1,
+                        "sensitive_source_identity_parts_redacted": 2,
+                        "unsafe_source_identity_parts_sanitized": 3,
                         "sensitive_item_text_redacted": 2,
                         "rendered_chars": 1800,
                         "max_rendered_chars": 4096,
@@ -1366,6 +1368,8 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     )
     assert bundle.diagnostics.citation_quote_previews_rendered == 9
     assert bundle.diagnostics.sensitive_citation_quote_previews_skipped == 1
+    assert bundle.diagnostics.sensitive_source_identity_parts_redacted == 2
+    assert bundle.diagnostics.unsafe_source_identity_parts_sanitized == 3
     assert bundle.diagnostics.sensitive_item_text_redacted == 2
     assert bundle.diagnostics.rendered_chars == 1800
     assert bundle.diagnostics.max_rendered_chars == 4096

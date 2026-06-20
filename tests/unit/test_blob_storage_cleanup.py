@@ -180,6 +180,47 @@ def test_blob_storage_cleanup_apply_deletes_only_old_orphans() -> None:
     asyncio.run(run())
 
 
+def test_blob_storage_cleanup_skips_unsafe_returned_keys_before_delete() -> None:
+    async def run() -> None:
+        storage = _BlobStorage(
+            (
+                _object("space/scope/old-orphan.txt", age_hours=48),
+                _object("../outside.txt", age_hours=48),
+                _object("/absolute.txt", age_hours=48),
+                _object("space//empty-part.txt", age_hours=48),
+                _object("space/./dot-part.txt", age_hours=48),
+                _object("space\\scope\\backslash.txt", age_hours=48),
+                _object("space/scope/control-\x01.txt", age_hours=48),
+                _object(" space/scope/trimmed.txt", age_hours=48),
+            )
+        )
+
+        result = await _use_case(
+            storage=storage,
+            assets=_Assets(set()),
+            asset_extractions=_AssetExtractions(set()),
+        ).execute(
+            BlobStorageCleanupCommand(
+                storage_backend="local",
+                prefix="",
+                dry_run=False,
+                grace_period_seconds=86_400,
+            )
+        )
+
+        assert result.status == "degraded"
+        assert result.scanned_count == 8
+        assert result.unsafe_storage_key_count == 7
+        assert result.orphan_candidate_count == 1
+        assert result.deleted_count == 1
+        assert storage.deleted == ["space/scope/old-orphan.txt"]
+        assert result.diagnostics["unsafe_storage_keys_skipped"] == 7
+        assert result.diagnostics["degraded_reasons"] == ("unsafe_storage_key",)
+        assert [decision.reason for decision in result.decisions].count("unsafe_storage_key") == 7
+
+    asyncio.run(run())
+
+
 def test_blob_storage_cleanup_reports_delete_errors_without_stopping_batch() -> None:
     async def run() -> None:
         storage = _BlobStorage(

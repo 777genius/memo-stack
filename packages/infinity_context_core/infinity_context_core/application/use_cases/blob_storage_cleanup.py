@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import sha256
 
+from infinity_context_core.application.storage_key_safety import is_safe_blob_storage_key
 from infinity_context_core.domain.errors import MemoryValidationError
 from infinity_context_core.ports.assets import BlobStorageMaintenancePort, StoredBlobObject
 from infinity_context_core.ports.clock import ClockPort
@@ -46,6 +47,7 @@ class BlobStorageCleanupResult:
     referenced_count: int
     recent_count: int
     unknown_updated_at_count: int
+    unsafe_storage_key_count: int
     orphan_candidate_count: int
     delete_attempt_count: int
     deleted_count: int
@@ -81,14 +83,27 @@ class RunBlobStorageCleanupUseCase:
             cursor=command.cursor,
         )
         cutoff = self._clock.now() - timedelta(seconds=grace_period_seconds)
-        objects = tuple(
+        listed_objects = tuple(
             item for item in page.objects if _is_under_prefix(item.storage_key, prefix=prefix)
         )
+        safe_objects: list[StoredBlobObject] = []
+        unsafe_storage_key_count = 0
+        decisions: list[BlobStorageCleanupDecision] = []
+        for item in listed_objects:
+            if not is_safe_blob_storage_key(item.storage_key):
+                unsafe_storage_key_count += 1
+                _append_decision(
+                    decisions,
+                    item=item,
+                    action="skip",
+                    reason="unsafe_storage_key",
+                )
+                continue
+            safe_objects.append(item)
         old_objects: list[StoredBlobObject] = []
         recent_count = 0
         unknown_updated_at_count = 0
-        decisions: list[BlobStorageCleanupDecision] = []
-        for item in objects:
+        for item in safe_objects:
             if item.updated_at is None:
                 unknown_updated_at_count += 1
                 _append_decision(
@@ -177,15 +192,24 @@ class RunBlobStorageCleanupUseCase:
                 reason="orphan_blob",
             )
 
+        degraded_reasons = tuple(
+            reason
+            for condition, reason in (
+                (unsafe_storage_key_count > 0, "unsafe_storage_key"),
+                (delete_error_count > 0, "storage_delete_error"),
+            )
+            if condition
+        )
         return BlobStorageCleanupResult(
-            status="ok" if delete_error_count == 0 else "degraded",
+            status="degraded" if degraded_reasons else "ok",
             dry_run=command.dry_run,
             storage_backend=storage_backend,
             prefix=prefix,
-            scanned_count=len(objects),
+            scanned_count=len(listed_objects),
             referenced_count=len(referenced_keys),
             recent_count=recent_count,
             unknown_updated_at_count=unknown_updated_at_count,
+            unsafe_storage_key_count=unsafe_storage_key_count,
             orphan_candidate_count=orphan_candidate_count,
             delete_attempt_count=delete_attempt_count,
             deleted_count=deleted_count,
@@ -194,10 +218,12 @@ class RunBlobStorageCleanupUseCase:
             next_cursor=page.next_cursor,
             decisions=tuple(decisions),
             diagnostics={
-                "cleanup_policy_version": "blob-storage-cleanup-v1",
+                "cleanup_policy_version": "blob-storage-cleanup-v2",
                 "grace_period_seconds": grace_period_seconds,
                 "max_objects": max_objects,
                 "max_deletions": max_deletions,
+                "unsafe_storage_keys_skipped": unsafe_storage_key_count,
+                "degraded_reasons": degraded_reasons,
                 "report_items_truncated": len(decisions) >= _MAX_REPORT_ITEMS,
                 "storage_keys_are_redacted": True,
             },

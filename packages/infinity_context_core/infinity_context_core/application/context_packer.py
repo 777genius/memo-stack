@@ -20,6 +20,7 @@ from infinity_context_core.domain.entities import SourceRef
 _MAX_ITEMS_PER_SOURCE = 4
 _SOURCE_CAPPED_ITEM_TYPES = frozenset({"chunk", "extraction_artifact"})
 _MAX_CITATION_QUOTE_CHARS = 160
+_MAX_SOURCE_IDENTITY_PART_CHARS = 96
 _MAX_RENDERED_REASON_CHARS = 180
 _DEFAULT_MAX_RENDERED_CHARS = 18000
 _DIVERSITY_FAMILY_PRIORITY = (
@@ -179,6 +180,9 @@ class ContextPacker:
                     ),
                     "sensitive_source_identity_parts_redacted": (
                         sum(_sensitive_source_identity_part_count(item) for item in selected)
+                    ),
+                    "unsafe_source_identity_parts_sanitized": (
+                        sum(_unsafe_source_identity_part_count(item) for item in selected)
                     ),
                     "sensitive_item_text_redacted": len(selected_keys & redacted_item_keys),
                     "rendered_chars": len(rendered_text),
@@ -572,11 +576,30 @@ def _source_ref_identity(ref: SourceRef) -> str:
 def _safe_source_identity_part(value: str | None) -> str:
     text = _one_line(str(value or "unknown"))
     redacted = redact_sensitive_text(text)
-    return redacted[:240] or "unknown"
+    return _source_identity_token(redacted) or "unknown"
+
+
+def _source_identity_token(value: str) -> str:
+    parts: list[str] = []
+    previous_dash = False
+    for char in value[: _MAX_SOURCE_IDENTITY_PART_CHARS * 2]:
+        if char.isalnum() or char in {"_", ".", "-"}:
+            parts.append(char)
+            previous_dash = False
+        elif not previous_dash:
+            parts.append("-")
+            previous_dash = True
+        if len(parts) >= _MAX_SOURCE_IDENTITY_PART_CHARS:
+            break
+    return "".join(parts).strip("-_.")[:_MAX_SOURCE_IDENTITY_PART_CHARS]
 
 
 def _sensitive_source_identity_part_count(item: ContextItem) -> int:
     return sum(_source_ref_sensitive_part_count(ref) for ref in item.source_refs[:3])
+
+
+def _unsafe_source_identity_part_count(item: ContextItem) -> int:
+    return sum(_source_ref_unsafe_part_count(ref) for ref in item.source_refs[:3])
 
 
 def _source_ref_sensitive_part_count(ref: SourceRef) -> int:
@@ -585,6 +608,22 @@ def _source_ref_sensitive_part_count(ref: SourceRef) -> int:
         for value in (ref.source_type, ref.source_id, ref.chunk_id)
         if contains_sensitive_text(value)
     )
+
+
+def _source_ref_unsafe_part_count(ref: SourceRef) -> int:
+    return sum(
+        1
+        for value in (ref.source_type, ref.source_id, ref.chunk_id)
+        if _source_identity_part_needs_sanitizing(value)
+    )
+
+
+def _source_identity_part_needs_sanitizing(value: str | None) -> bool:
+    if contains_sensitive_text(value):
+        return False
+    text = _one_line(str(value or "unknown"))
+    token = _source_identity_token(redact_sensitive_text(text))
+    return len(text) > _MAX_SOURCE_IDENTITY_PART_CHARS or token != text
 
 
 def _source_ref_location(ref: SourceRef) -> str:

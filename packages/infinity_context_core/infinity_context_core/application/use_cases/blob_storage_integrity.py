@@ -6,6 +6,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
+from infinity_context_core.application.storage_key_safety import is_safe_blob_storage_key
 from infinity_context_core.domain.errors import MemoryNotFoundError, MemoryValidationError
 from infinity_context_core.ports.assets import (
     BlobStorageMaintenancePort,
@@ -58,6 +59,7 @@ class BlobStorageIntegrityAuditResult:
     checksum_skipped_count: int
     read_error_count: int
     stat_error_count: int
+    unsafe_storage_key_count: int
     issues: tuple[BlobStorageIntegrityIssue, ...]
     diagnostics: dict[str, object]
 
@@ -97,9 +99,17 @@ class RunBlobStorageIntegrityAuditUseCase:
         checksum_skipped_count = 0
         read_error_count = 0
         stat_error_count = 0
+        unsafe_storage_key_count = 0
         issues: list[BlobStorageIntegrityIssue] = []
         checked_at = self._clock.now()
         for ref in refs:
+            if not is_safe_blob_storage_key(ref.storage_key):
+                unsafe_storage_key_count += 1
+                _append_issue(
+                    issues,
+                    _issue(ref, reason="unsafe_storage_key", checked_at=checked_at),
+                )
+                continue
             result = await self._audit_reference(
                 ref,
                 verify_checksum=command.verify_checksum,
@@ -129,6 +139,19 @@ class RunBlobStorageIntegrityAuditUseCase:
             + checksum_mismatch_count
             + read_error_count
             + stat_error_count
+            + unsafe_storage_key_count
+        )
+        degraded_reasons = tuple(
+            reason
+            for condition, reason in (
+                (unsafe_storage_key_count > 0, "unsafe_storage_key"),
+                (missing_count > 0, "missing_blob"),
+                (byte_size_mismatch_count > 0, "byte_size_mismatch"),
+                (checksum_mismatch_count > 0, "checksum_mismatch"),
+                (read_error_count > 0, "read_error"),
+                (stat_error_count > 0, "stat_error"),
+            )
+            if condition
         )
         return BlobStorageIntegrityAuditResult(
             status="ok" if issue_count == 0 else "degraded",
@@ -142,14 +165,17 @@ class RunBlobStorageIntegrityAuditUseCase:
             checksum_skipped_count=checksum_skipped_count,
             read_error_count=read_error_count,
             stat_error_count=stat_error_count,
+            unsafe_storage_key_count=unsafe_storage_key_count,
             issues=tuple(issues),
             diagnostics={
-                "audit_policy_version": "blob-storage-integrity-audit-v1",
+                "audit_policy_version": "blob-storage-integrity-audit-v2",
                 "include_assets": command.include_assets,
                 "include_artifacts": command.include_artifacts,
                 "verify_checksum": command.verify_checksum,
                 "max_references": max_references,
                 "max_blob_read_bytes": max_blob_read_bytes,
+                "unsafe_storage_keys_skipped": unsafe_storage_key_count,
+                "degraded_reasons": degraded_reasons,
                 "issues_truncated": len(issues) >= _MAX_REPORT_ITEMS,
                 "storage_keys_are_redacted": True,
             },

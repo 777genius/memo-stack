@@ -19,6 +19,7 @@ class _BlobStorage:
         self.stat_sizes: dict[str, int] = {}
         self.stat_errors: set[str] = set()
         self.read_errors: set[str] = set()
+        self.stats: list[str] = []
         self.reads: list[str] = []
 
     async def write_bytes(self, *, storage_key: str, content: bytes) -> StoredBlob:
@@ -37,6 +38,7 @@ class _BlobStorage:
         raise AssertionError("not used")
 
     async def stat_object(self, *, storage_key: str) -> StoredBlobObject:
+        self.stats.append(storage_key)
         if storage_key in self.stat_errors:
             raise RuntimeError("stat outage")
         content = self.blobs.get(storage_key)
@@ -168,6 +170,35 @@ def test_blob_storage_integrity_audit_detects_missing_and_corrupt_blobs() -> Non
         assert all(not hasattr(issue, "storage_key") for issue in result.issues)
         assert {issue.checked_at for issue in result.issues} == {NOW}
         assert result.diagnostics["storage_keys_are_redacted"] is True
+
+    asyncio.run(run())
+
+
+def test_blob_storage_integrity_audit_skips_unsafe_canonical_refs_before_adapter() -> None:
+    async def run() -> None:
+        storage = _BlobStorage({"space/scope/ok.txt": b"ok"})
+        refs = (
+            _ref("asset", "asset_ok", "space/scope/ok.txt", b"ok"),
+            _ref("asset", "asset_unsafe", "../outside.txt", b"unsafe"),
+        )
+
+        result = await _use_case(storage=storage, asset_refs=refs).execute(
+            BlobStorageIntegrityAuditCommand(
+                storage_backend="local",
+                prefix="",
+            )
+        )
+
+        assert result.status == "degraded"
+        assert result.scanned_count == 2
+        assert result.ok_count == 1
+        assert result.unsafe_storage_key_count == 1
+        assert result.diagnostics["unsafe_storage_keys_skipped"] == 1
+        assert result.diagnostics["degraded_reasons"] == ("unsafe_storage_key",)
+        assert [issue.reason for issue in result.issues] == ["unsafe_storage_key"]
+        assert storage.stats == ["space/scope/ok.txt"]
+        assert storage.reads == ["space/scope/ok.txt"]
+        assert all(not hasattr(issue, "storage_key") for issue in result.issues)
 
     asyncio.run(run())
 

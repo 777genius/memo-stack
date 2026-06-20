@@ -206,6 +206,7 @@ def _storage_maintenance_trace(trace: dict[str, Any]) -> dict[str, Any]:
         "cleanup_status",
         "cleanup_dry_run",
         "cleanup_scanned_count",
+        "cleanup_unsafe_storage_key_count",
         "cleanup_orphan_candidate_count",
         "cleanup_deleted_count",
         "cleanup_delete_error_count",
@@ -217,6 +218,7 @@ def _storage_maintenance_trace(trace: dict[str, Any]) -> dict[str, Any]:
         "integrity_checksum_skipped_count",
         "integrity_read_error_count",
         "integrity_stat_error_count",
+        "integrity_unsafe_storage_key_count",
         "safe_error_code",
     }
     safe: dict[str, Any] = {}
