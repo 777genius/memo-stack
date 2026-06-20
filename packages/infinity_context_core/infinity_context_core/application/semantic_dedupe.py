@@ -388,9 +388,10 @@ def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
     terms: list[str] = []
     anchors = tuple(extract_observed_anchors(text))
     project_keys = {
-        str(anchor.metadata.get("canonical_key") or anchor.normalized_key).strip().casefold()
+        key
         for anchor in anchors
         if anchor.kind == MemoryAnchorKind.PROJECT
+        for key in _anchor_identity_keys(anchor)
     }
     project_keys.discard("")
     has_event = any(anchor.kind == MemoryAnchorKind.EVENT for anchor in anchors)
@@ -410,24 +411,39 @@ def _semantic_anchor_terms(text: str) -> tuple[str, ...]:
             MemoryAnchorKind.ORGANIZATION,
         }:
             continue
-        canonical_key = str(anchor.metadata.get("canonical_key") or anchor.normalized_key).strip()
-        if not canonical_key:
+        identity_keys = _anchor_identity_keys(anchor)
+        if not identity_keys:
             continue
-        if anchor.kind == MemoryAnchorKind.PERSON and _is_false_person_anchor_key(
-            canonical_key
-        ):
+        canonical_key = identity_keys[0]
+        if anchor.kind == MemoryAnchorKind.PERSON and _is_false_person_anchor_key(canonical_key):
             continue
         if anchor.kind == MemoryAnchorKind.PERSON and canonical_key.casefold() in project_keys:
             continue
-        normalized_key = canonical_key.casefold()
-        terms.append(f"{anchor.kind.value}:{normalized_key}")
-        if (
-            anchor.kind == MemoryAnchorKind.PERSON
-            and has_event
-            and not explicit_event_participants
-        ):
-            terms.append(f"event_participant:{normalized_key}")
+        for identity_key in identity_keys:
+            terms.append(f"{anchor.kind.value}:{identity_key}")
+        if anchor.kind == MemoryAnchorKind.PERSON and has_event and not explicit_event_participants:
+            terms.append(f"event_participant:{canonical_key}")
     return tuple(terms)
+
+
+def _anchor_identity_keys(anchor: ObservedAnchor) -> tuple[str, ...]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    raw_values: list[object] = [
+        anchor.metadata.get("canonical_key") or anchor.normalized_key,
+    ]
+    alias_terms = anchor.metadata.get("alias_identity_terms")
+    if isinstance(alias_terms, (list, tuple)):
+        raw_values.extend(alias_terms)
+    for raw_value in raw_values:
+        key = str(raw_value or "").strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+        if len(keys) >= 8:
+            break
+    return tuple(keys)
 
 
 def _is_false_person_anchor_key(canonical_key: str) -> bool:
@@ -626,9 +642,7 @@ def _has_negation_mismatch(candidate_text: str, existing_text: str) -> bool:
     candidate_has_negation = bool(
         set(normalize_memory_text(candidate_text).split()) & negation_terms
     )
-    existing_has_negation = bool(
-        set(normalize_memory_text(existing_text).split()) & negation_terms
-    )
+    existing_has_negation = bool(set(normalize_memory_text(existing_text).split()) & negation_terms)
     return candidate_has_negation != existing_has_negation
 
 
@@ -820,17 +834,18 @@ def _named_anchor_keys(
 ) -> set[str]:
     anchors = tuple(extract_observed_anchors(text))
     project_keys = {
-        _canonical_named_anchor_key(anchor)
+        key
         for anchor in anchors
         if anchor.kind == MemoryAnchorKind.PROJECT
+        for key in _anchor_identity_keys(anchor)
     }
     project_keys.discard("")
     return {
         key
         for anchor in anchors
-        if (key := _canonical_named_anchor_key(anchor))
         if anchor.kind == kind and (reasons is None or anchor.reason in reasons)
-        and not (kind == MemoryAnchorKind.PERSON and _is_false_person_anchor_key(key))
+        for key in _anchor_identity_keys(anchor)
+        if not (kind == MemoryAnchorKind.PERSON and _is_false_person_anchor_key(key))
         and not (kind == MemoryAnchorKind.PERSON and key in project_keys)
     }
 

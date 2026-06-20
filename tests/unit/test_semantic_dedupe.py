@@ -58,6 +58,24 @@ def test_semantic_dedupe_recognizes_cross_script_project_identity() -> None:
     assert "project:atlas" in match.overlap_terms
 
 
+def test_semantic_dedupe_uses_explicit_anchor_alias_identity_terms() -> None:
+    terms = semantic_memory_terms(
+        "Alex aka Alexander Cooper owns Project Atlas aka Atlas Mobile retrieval."
+    )
+    match = describe_duplicate_fact_match(
+        "Alex aka Alexander Cooper owns Project Atlas aka Atlas Mobile retrieval.",
+        "Alexander Cooper owns Project Atlas Mobile retrieval notes.",
+    )
+
+    assert "person:aleks" in terms
+    assert "person:aleksander cooper" in terms
+    assert "project:atlas" in terms
+    assert "project:atlas mobile" in terms
+    assert match is not None
+    assert "person:aleksander cooper" in match.overlap_terms
+    assert "project:atlas mobile" in match.overlap_terms
+
+
 def test_semantic_dedupe_recognizes_cross_language_screenshot_paraphrase() -> None:
     match = describe_duplicate_fact_match(
         "Скриншот инвойса Project Atlas показывает владельца Alex.",
