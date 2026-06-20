@@ -10,6 +10,7 @@ from infinity_context_core.application.dto import (
     MemoryDigestSection,
 )
 from infinity_context_core.application.normalize import estimate_tokens
+from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.domain.entities import SourceRef
 
 _EMPTY_VALUE = "none"
@@ -33,7 +34,7 @@ class MemoryDigestRenderer:
             diagnostics.get("generated_at") or datetime.now(UTC).isoformat()
         )
         header = [
-            f"# Memory Digest: {_one_line(topic, limit=300)}",
+            f"# Memory Digest: {_safe_one_line(topic, limit=300)}",
             "",
             f"Generated: {generated_at}",
             "Evidence only: true",
@@ -45,7 +46,7 @@ class MemoryDigestRenderer:
         dropped_by_char_cap = 0
 
         for section in sections:
-            section_lines = ["", f"## {section.title}", ""]
+            section_lines = ["", f"## {_safe_one_line(section.title, limit=160)}", ""]
             selected_items: list[ContextItem] = []
             section_truncated = section.truncated
             if not section.items:
@@ -132,16 +133,16 @@ def _item_lines(item: ContextItem) -> list[str]:
     status = diagnostics.get("status")
     memory_scope_id = diagnostics.get("memory_scope_id")
     labels = [
-        f"{item.item_type}:{item.item_id}",
+        f"{_safe_label(str(item.item_type), limit=80)}:{_safe_label(str(item.item_id), limit=160)}",
         f"score={item.score:.2f}",
     ]
     if memory_scope_id:
-        labels.append(f"memory_scope={memory_scope_id}")
+        labels.append(f"memory_scope={_safe_label(str(memory_scope_id), limit=160)}")
     if status:
-        labels.append(f"status={status}")
+        labels.append(f"status={_safe_label(str(status), limit=80)}")
     if canonical is False:
         labels.append("not_canonical")
-    text = _quote_text(_one_line(item.text, limit=1200))
+    text = _quote_text(_safe_one_line(item.text, limit=1200))
     source_label = _source_label(item.source_refs)
     return [
         f"- [{', '.join(labels)}] text=\"{text}\"",
@@ -178,9 +179,12 @@ def _source_label(source_refs: tuple[SourceRef, ...]) -> str:
         return "unknown:unknown"
     labels: list[str] = []
     for ref in source_refs[:4]:
-        label = f"{ref.source_type}:{ref.source_id}"
+        label = (
+            f"{_safe_label(ref.source_type, limit=80)}:"
+            f"{_safe_label(ref.source_id, limit=160)}"
+        )
         if ref.chunk_id:
-            label = f"{label}#{ref.chunk_id}"
+            label = f"{label}#{_safe_label(ref.chunk_id, limit=160)}"
         labels.append(label)
     if len(source_refs) > 4:
         labels.append("truncated")
@@ -189,6 +193,14 @@ def _source_label(source_refs: tuple[SourceRef, ...]) -> str:
 
 def _one_line(text: str, *, limit: int) -> str:
     return " ".join(text.strip().split())[:limit]
+
+
+def _safe_one_line(text: str, *, limit: int) -> str:
+    return _one_line(redact_sensitive_text(text), limit=limit)
+
+
+def _safe_label(text: str, *, limit: int) -> str:
+    return _safe_one_line(text, limit=limit) or "unknown"
 
 
 def _quote_text(text: str) -> str:
@@ -200,4 +212,4 @@ def _diagnostic_value(value: object) -> str:
         return "true" if value else "false"
     if value is None:
         return "null"
-    return _one_line(str(value), limit=300)
+    return _safe_one_line(str(value), limit=300)

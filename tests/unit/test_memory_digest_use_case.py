@@ -4,7 +4,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from infinity_context_core.application import BuildMemoryDigestQuery, ConsistencyMode
-from infinity_context_core.application.dto import ContextBundle, ContextItem
+from infinity_context_core.application.dto import ContextBundle, ContextItem, MemoryDigestSection
+from infinity_context_core.application.memory_digest_renderer import MemoryDigestRenderer
 from infinity_context_core.application.use_cases.build_memory_digest import BuildMemoryDigestUseCase
 from infinity_context_core.domain.entities import (
     Confidence,
@@ -213,3 +214,49 @@ def test_memory_digest_marks_superseded_items_as_review_only_evidence() -> None:
         assert review_digest.diagnostics["superseded_facts_considered"] == 1
 
     asyncio.run(run())
+
+
+def test_memory_digest_renderer_redacts_sensitive_markdown_channels() -> None:
+    secret = "sk-proj-digestsecretvalue1234567890"
+    digest = MemoryDigestRenderer().render(
+        digest_id="dig_secret",
+        topic=f"Digest topic {secret}",
+        sections=(
+            MemoryDigestSection(
+                title=f"Section Bearer {secret}",
+                items=(
+                    ContextItem(
+                        item_id=f"chunk-{secret}",
+                        item_type="chunk",
+                        text=f"Digest evidence mentions Bearer {secret}.",
+                        score=0.9,
+                        source_refs=(
+                            SourceRef(
+                                source_type="document",
+                                source_id="https://user:password@example.com/private",
+                                chunk_id=f"chunk-{secret}",
+                            ),
+                        ),
+                        diagnostics={
+                            "memory_scope_id": f"scope-{secret}",
+                            "status": f"status-{secret}",
+                        },
+                    ),
+                ),
+            ),
+        ),
+        diagnostics={
+            "evidence_only": True,
+            "vector_status": f"checked with Bearer {secret}",
+        },
+        source_refs=(),
+        max_rendered_chars=4000,
+    )
+
+    rendered = digest.rendered_markdown
+    assert "Digest evidence mentions [redacted]." in rendered
+    assert "https://[redacted]@example.com/private" in rendered
+    assert secret not in rendered
+    assert "Bearer" not in rendered
+    assert "user:password" not in rendered
+    assert "sk-proj-digestsecretvalue" not in rendered
