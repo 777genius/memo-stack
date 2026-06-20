@@ -228,6 +228,14 @@ def test_context_api_expands_approved_asset_link_to_media_manifest_evidence(
     assert linked_items[0]["citations"][0]["ranking_reason"] == (
         "hybrid match via artifact_evidence, approved_context_linked_asset_manifest_evidence"
     )
+    assert data["top_evidence"]
+    top = data["top_evidence"][0]
+    assert top["item_id"] == linked_items[0]["item_id"]
+    assert top["citation"]["page_number"] == 1
+    assert "page_citation" in top["reasons"]
+    assert "quote_preview" in top["reasons"]
+    assert data["diagnostics"]["top_evidence_returned"] >= 1
+    assert data["diagnostics"]["top_evidence_cited_count"] >= 1
     assert data["diagnostics"]["approved_context_linked_assets_used"] == 1
     assert data["diagnostics"]["approved_context_linked_asset_manifest_jobs_considered"] == 1
     assert data["diagnostics"]["approved_context_linked_asset_manifest_artifacts_considered"] >= 1

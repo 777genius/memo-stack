@@ -137,6 +137,7 @@ class BuildContextUseCase:
             "consistency_mode": query.consistency_mode.value,
             "facts_considered": len(canonical.facts),
             "keyword_chunks_considered": len(canonical.keyword_chunks),
+            "keyword_chunks_dropped_by_relevance": 0,
             "anchors_considered": len(canonical.anchors),
             "anchors_used": 0,
             "anchor_relation_candidates_considered": 0,
@@ -250,6 +251,11 @@ class BuildContextUseCase:
                 metadata=chunk.metadata,
             )
             relevance = score_query_relevance(query=query.query, text=chunk_text)
+            if not is_query_relevance_sufficient(relevance):
+                diagnostics["keyword_chunks_dropped_by_relevance"] = (
+                    int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
+                )
+                continue
             score = min(0.87, round(0.75 + relevance.score_boost, 4))
             items.append(
                 _chunk_context_item(

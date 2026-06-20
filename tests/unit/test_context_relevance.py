@@ -62,6 +62,26 @@ def test_query_relevance_avoids_unrelated_project_match() -> None:
     assert is_query_relevance_sufficient(relevance) is False
 
 
+def test_query_relevance_ignores_generic_retrieval_plumbing_terms() -> None:
+    relevance = score_query_relevance(
+        query="SHARDED_INDEX tenant scoped retrieval citations chunk recall",
+        text=(
+            "Billing dashboard copy should mention invoices and seats. "
+            "Retrieval hints: title: irrelevant; node kind: section_chunk"
+        ),
+    )
+    target = score_query_relevance(
+        query="SHARDED_INDEX tenant scoped retrieval citations chunk recall",
+        text="SHARDED_INDEX memory design requires tenant scoped retrieval and citations.",
+    )
+
+    assert relevance.unique_term_hits > 0
+    assert relevance.distinctive_term_hits == 0
+    assert is_query_relevance_sufficient(relevance) is False
+    assert target.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(target) is True
+
+
 def test_query_relevance_policy_keeps_entity_partial_match() -> None:
     relevance = score_query_relevance(
         query="Alex meeting",

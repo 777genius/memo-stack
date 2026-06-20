@@ -26,6 +26,7 @@ from infinity_context_server.composition import Container
 router = APIRouter(tags=["context"], dependencies=[Depends(require_service_token)])
 
 _MAX_PUBLIC_CONTEXT_SOURCE_REFS = 20
+_MAX_PUBLIC_TOP_EVIDENCE = 5
 
 
 class ContextRequest(BaseModel):
@@ -202,8 +203,10 @@ def _context_diagnostics_to_response(
     diagnostics: dict[str, Any],
     *,
     items: list[dict[str, Any]],
+    top_evidence: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     response = dict(diagnostics)
+    top_evidence_items = top_evidence or []
     item_diagnostics = [
         item.get("diagnostics")
         for item in items
@@ -228,9 +231,140 @@ def _context_diagnostics_to_response(
             "citations_returned": citations_returned,
             "citations_truncated": citations_total > citations_returned,
             "items_with_citations": sum(1 for item in items if item.get("citations")),
+            "top_evidence_returned": len(top_evidence_items),
+            "top_evidence_cited_count": sum(
+                1 for item in top_evidence_items if item.get("citation") is not None
+            ),
         }
     )
     return response
+
+
+def _top_evidence_to_response(
+    items: list[dict[str, Any]],
+    *,
+    limit: int = _MAX_PUBLIC_TOP_EVIDENCE,
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for item in items:
+        citations = item.get("citations")
+        if isinstance(citations, list) and citations:
+            for citation in citations:
+                if isinstance(citation, dict):
+                    candidates.append(_top_evidence_candidate(item, citation=citation))
+    candidates.sort(
+        key=lambda candidate: (
+            -_safe_float(candidate.get("score")),
+            str(candidate.get("item_type") or ""),
+            str(candidate.get("item_id") or ""),
+            str((candidate.get("citation") or {}).get("citation_id") or ""),
+        )
+    )
+    return candidates[:limit]
+
+
+def _top_evidence_candidate(
+    item: dict[str, Any],
+    *,
+    citation: dict[str, Any] | None,
+) -> dict[str, Any]:
+    diagnostics = item.get("diagnostics") if isinstance(item.get("diagnostics"), dict) else {}
+    return {
+        "item_id": item.get("item_id"),
+        "item_type": item.get("item_type"),
+        "memory_scope_id": item.get("memory_scope_id"),
+        "text": item.get("text"),
+        "score": _top_evidence_score(
+            item=item,
+            citation=citation,
+            diagnostics=diagnostics,
+        ),
+        "reasons": _top_evidence_reasons(
+            item=item,
+            citation=citation,
+            diagnostics=diagnostics,
+        ),
+        "citation": citation,
+    }
+
+
+def _top_evidence_score(
+    *,
+    item: dict[str, Any],
+    citation: dict[str, Any] | None,
+    diagnostics: dict[str, Any],
+) -> float:
+    score = _safe_float(item.get("score"))
+    if citation is not None:
+        score += _citation_quality_boost(citation)
+    retrieval_sources = diagnostics.get("retrieval_sources")
+    if isinstance(retrieval_sources, list) and len(retrieval_sources) > 1:
+        score += 0.035
+    if diagnostics.get("review_only") is True:
+        score -= 0.08
+    if diagnostics.get("stale_reason"):
+        score -= 0.12
+    return round(max(0.0, min(1.0, score)), 4)
+
+
+def _citation_quality_boost(citation: dict[str, Any]) -> float:
+    boost = 0.0
+    if citation.get("time_range_ms") is not None:
+        boost += 0.035
+    if citation.get("bbox") is not None:
+        boost += 0.035
+    if citation.get("page_number") is not None:
+        boost += 0.02
+    if citation.get("quote_preview"):
+        boost += 0.015
+    confidence = _safe_float(citation.get("evidence_confidence"))
+    if confidence > 0:
+        boost += min(0.04, confidence * 0.04)
+    return boost
+
+
+def _top_evidence_reasons(
+    *,
+    item: dict[str, Any],
+    citation: dict[str, Any] | None,
+    diagnostics: dict[str, Any],
+) -> list[str]:
+    reasons: list[str] = []
+    if _safe_float(item.get("score")) >= 0.85:
+        reasons.append("high_context_score")
+    retrieval_source = diagnostics.get("retrieval_source")
+    if isinstance(retrieval_source, str) and retrieval_source:
+        reasons.append(f"retrieved_by:{safe_public_text(retrieval_source, limit=80)}")
+    retrieval_sources = diagnostics.get("retrieval_sources")
+    if isinstance(retrieval_sources, list) and len(retrieval_sources) > 1:
+        reasons.append("hybrid_retrieval")
+    if citation is not None:
+        if citation.get("quote_preview"):
+            reasons.append("quote_preview")
+        if citation.get("page_number") is not None:
+            reasons.append("page_citation")
+        if citation.get("time_range_ms") is not None:
+            reasons.append("time_range_citation")
+        if citation.get("bbox") is not None:
+            reasons.append("bbox_citation")
+        if citation.get("evidence_kind"):
+            reasons.append(f"kind:{safe_public_text(str(citation['evidence_kind']), limit=80)}")
+        if citation.get("evidence_modality"):
+            reasons.append(
+                f"modality:{safe_public_text(str(citation['evidence_modality']), limit=80)}"
+            )
+    return reasons[:10]
+
+
+def _safe_float(value: object) -> float:
+    if value is None or isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _non_negative_int(value: object) -> int:
@@ -309,9 +443,11 @@ async def build_context(
         )
     )
     response_items = [context_item_to_response(item) for item in bundle.items]
+    top_evidence = _top_evidence_to_response(response_items)
     response_diagnostics = _context_diagnostics_to_response(
         bundle.diagnostics,
         items=response_items,
+        top_evidence=top_evidence,
     )
     response = {
         "meta": {"request_id": request_id},
@@ -319,6 +455,7 @@ async def build_context(
             "bundle_id": bundle.bundle_id,
             "rendered_text": bundle.rendered_text,
             "items": response_items,
+            "top_evidence": top_evidence,
             "diagnostics": response_diagnostics,
         },
     }
@@ -344,6 +481,7 @@ async def search_memory(
             "meta": {"request_id": request_id},
             "data": {
                 "items": [],
+                "top_evidence": [],
                 "next_cursor": None,
                 "diagnostics": _empty_context_diagnostics(
                     policy_mode=container.settings.policy_mode.value,
@@ -405,14 +543,17 @@ async def search_memory(
         )
     )
     response_items = [context_item_to_response(item) for item in bundle.items]
+    top_evidence = _top_evidence_to_response(response_items)
     response_diagnostics = _context_diagnostics_to_response(
         bundle.diagnostics,
         items=response_items,
+        top_evidence=top_evidence,
     )
     response = {
         "meta": {"request_id": request_id},
         "data": {
             "items": response_items,
+            "top_evidence": top_evidence,
             "next_cursor": None,
             "diagnostics": response_diagnostics,
         },
@@ -440,6 +581,7 @@ def _empty_context_response(
             "bundle_id": "ctx_disabled",
             "rendered_text": "",
             "items": [],
+            "top_evidence": [],
             "diagnostics": _empty_context_diagnostics(
                 policy_mode=policy_mode,
                 consistency_mode=consistency_mode,
@@ -461,6 +603,7 @@ def _empty_search_response(
         "meta": {"request_id": request_id},
         "data": {
             "items": [],
+            "top_evidence": [],
             "next_cursor": None,
             "diagnostics": _empty_context_diagnostics(
                 policy_mode=policy_mode,
