@@ -517,7 +517,7 @@ def _append_anchor(
     if not normalized_key or key in seen:
         return
     seen.add(key)
-    safe_label = label.strip()[:120]
+    safe_label = _display_anchor_label(kind, label)
     safe_aliases = _safe_aliases(safe_label, aliases or (safe_label,))
     anchors.append(
         ObservedAnchor(
@@ -534,6 +534,13 @@ def _append_anchor(
             },
         )
     )
+
+
+def _display_anchor_label(kind: MemoryAnchorKind, label: str) -> str:
+    safe_label = label.strip()[:120]
+    if kind == MemoryAnchorKind.PERSON:
+        return _display_person_label(safe_label)[:120]
+    return safe_label
 
 
 def _mark_alias_keys_seen(

@@ -75,8 +75,24 @@ from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort, UnitOfWorkPort
 
 _ANCHOR_RESOLVER_VERSION = "anchor-lifecycle-v2"
+_ANCHOR_IDENTITY_MERGE_POLICY_VERSION = "anchor-identity-merge-v2"
 _LABEL_SIMILARITY_MERGE_THRESHOLD = 0.86
 _ANCHOR_RELATION_SCHEMA_VERSION = "anchor-relations-v1"
+_PROJECT_QUALIFIER_TERMS = frozenset(
+    {
+        "project",
+        "repo",
+        "repository",
+        "service",
+        "проект",
+        "проекту",
+        "проекте",
+        "проекта",
+        "проектом",
+        "репозиторий",
+        "сервис",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -904,13 +920,18 @@ def _merge_score(
 ) -> tuple[float, list[str], dict[str, object]]:
     if anchor.kind == MemoryAnchorKind.EVENT:
         return _event_merge_score(anchor, other)
+    metadata: dict[str, object] = _identity_merge_metadata(anchor=anchor, other=other)
     anchor_keys = _canonical_anchor_keys(anchor)
     other_keys = _canonical_anchor_keys(other)
     shared = sorted(anchor_keys & other_keys)
     reasons: list[str] = []
     if shared:
         reasons.append("canonical key overlap")
-        return 96.0, reasons, {"shared_keys": shared}
+        return 96.0, reasons, {
+            **metadata,
+            "merge_gate": "canonical_key_overlap",
+            "shared_keys": shared,
+        }
     alias_overlap = sorted(
         {
             normalize_anchor_key(value)
@@ -925,15 +946,121 @@ def _merge_score(
     )
     if alias_overlap:
         reasons.append("alias overlap")
-        return 92.0, reasons, {"shared_aliases": alias_overlap}
+        return 92.0, reasons, {
+            **metadata,
+            "merge_gate": "alias_overlap",
+            "shared_aliases": alias_overlap,
+        }
     anchor_key = canonical_anchor_key(anchor.label)
     other_key = canonical_anchor_key(other.label)
+    deterministic_match = _deterministic_label_identity_match(
+        kind=anchor.kind,
+        anchor_key=anchor_key,
+        other_key=other_key,
+    )
+    if deterministic_match is not None:
+        reason, score, extra_metadata = deterministic_match
+        reasons.append(reason)
+        return score, reasons, {
+            **metadata,
+            "merge_gate": reason.replace(" ", "_"),
+            "keys": [anchor_key, other_key],
+            **extra_metadata,
+        }
     ratio = SequenceMatcher(a=anchor_key, b=other_key).ratio()
+    label_similarity_metadata = {
+        **metadata,
+        "merge_gate": "label_similarity",
+        "label_similarity": ratio,
+        "keys": [anchor_key, other_key],
+    }
+    if anchor.kind in {
+        MemoryAnchorKind.PERSON,
+        MemoryAnchorKind.PROJECT,
+        MemoryAnchorKind.ORGANIZATION,
+    }:
+        return 0.0, reasons, {
+            **label_similarity_metadata,
+            "identity_conflict": "label_similarity_without_identity_evidence",
+        }
     if ratio < _LABEL_SIMILARITY_MERGE_THRESHOLD:
-        return 0.0, reasons, {"label_similarity": ratio, "keys": [anchor_key, other_key]}
+        return 0.0, reasons, label_similarity_metadata
     reasons.append("label similarity")
     score = round(ratio * 100, 2)
-    return score, reasons, {"label_similarity": ratio, "keys": [anchor_key, other_key]}
+    return score, reasons, label_similarity_metadata
+
+
+def _identity_merge_metadata(
+    *,
+    anchor: MemoryAnchor,
+    other: MemoryAnchor,
+) -> dict[str, object]:
+    return {
+        "identity_merge_policy_version": _ANCHOR_IDENTITY_MERGE_POLICY_VERSION,
+        "anchor_kind": anchor.kind.value,
+        "identity": {
+            "source": {
+                "label": anchor.label,
+                "normalized_key": anchor.normalized_key,
+                "canonical_keys": sorted(_canonical_anchor_keys(anchor))[:8],
+            },
+            "target": {
+                "label": other.label,
+                "normalized_key": other.normalized_key,
+                "canonical_keys": sorted(_canonical_anchor_keys(other))[:8],
+            },
+        },
+    }
+
+
+def _deterministic_label_identity_match(
+    *,
+    kind: MemoryAnchorKind,
+    anchor_key: str,
+    other_key: str,
+) -> tuple[str, float, dict[str, object]] | None:
+    if kind == MemoryAnchorKind.PROJECT and _project_qualifier_variant(
+        anchor_key,
+        other_key,
+    ):
+        return (
+            "project qualifier variant",
+            94.0,
+            {"identity_match": "project_qualifier_variant"},
+        )
+    if kind == MemoryAnchorKind.ORGANIZATION and _compact_identity_key(
+        anchor_key,
+    ) == _compact_identity_key(other_key):
+        compact = _compact_identity_key(anchor_key)
+        if len(compact) >= 4:
+            return (
+                "compact identity overlap",
+                94.0,
+                {"identity_match": "compact_identity_overlap", "compact_key": compact},
+            )
+    return None
+
+
+def _project_qualifier_variant(left: str, right: str) -> bool:
+    left_parts = tuple(part for part in left.split() if part)
+    right_parts = tuple(part for part in right.split() if part)
+    if not left_parts or not right_parts:
+        return False
+    stripped_left = _strip_project_qualifier(left_parts)
+    stripped_right = _strip_project_qualifier(right_parts)
+    if stripped_left == left_parts and stripped_right == right_parts:
+        return False
+    return stripped_left == stripped_right and bool(stripped_left)
+
+
+def _strip_project_qualifier(parts: tuple[str, ...]) -> tuple[str, ...]:
+    if parts and parts[0] in _PROJECT_QUALIFIER_TERMS:
+        return parts[1:]
+    return parts
+
+
+def _compact_identity_key(value: str) -> str:
+    return "".join(char for char in value.casefold() if char.isalnum())
 
 
 def _event_merge_score(
