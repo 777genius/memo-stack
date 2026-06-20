@@ -1933,6 +1933,106 @@ def test_context_replaces_superseded_fact_with_active_temporal_relation(
     )
 
 
+def test_context_replaces_linked_superseded_fact_after_approved_link_expansion(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        old_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "LINKED_TEMPORAL_OLD_FACT: Atlas launch owner was Alex.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "linked-old-owner"}],
+            },
+            headers=auth_headers(),
+        )
+        new_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "LINKED_TEMPORAL_NEW_FACT: Atlas launch owner is Dana.",
+                "kind": "architecture_decision",
+                "source_refs": [{"source_type": "manual", "source_id": "linked-new-owner"}],
+            },
+            headers=auth_headers(),
+        )
+        anchor = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "project",
+                "label": "Project Atlas",
+                "aliases": ["Atlas"],
+                "description": "Canonical project anchor for launch ownership.",
+                "confidence": "high",
+            },
+            headers=auth_headers(),
+        )
+        link = client.post(
+            "/v1/context-links",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "source_type": "anchor",
+                "source_id": anchor.json()["data"]["id"],
+                "target_type": "fact",
+                "target_id": old_fact.json()["data"]["id"],
+                "relation_type": "references",
+                "confidence": "high",
+                "reason": "Project anchor was linked before the owner fact was replaced.",
+            },
+            headers=auth_headers(),
+        )
+        relation = client.post(
+            f"/v1/facts/{new_fact.json()['data']['id']}/relations",
+            json={
+                "target_fact_id": old_fact.json()["data"]["id"],
+                "relation_type": "supersedes",
+                "reason": "New launch owner replaces the old linked owner fact.",
+                "valid_from": "2026-01-01T00:00:00+00:00",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "Project Atlas",
+                "token_budget": 768,
+                "max_facts": 6,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
+
+    assert old_fact.status_code == 201, old_fact.text
+    assert new_fact.status_code == 201, new_fact.text
+    assert anchor.status_code == 200, anchor.text
+    assert link.status_code == 200, link.text
+    assert relation.status_code == 201, relation.text
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    assert "project: Project Atlas" in data["rendered_text"]
+    assert "LINKED_TEMPORAL_NEW_FACT" in data["rendered_text"]
+    assert "LINKED_TEMPORAL_OLD_FACT" not in data["rendered_text"]
+    assert data["diagnostics"]["approved_context_linked_facts_used"] == 1
+    assert data["diagnostics"]["linked_temporal_replacements_applied"] == 1
+    assert "temporal_supersedes_relation" in data["diagnostics"]["retrieval_sources_used"]
+    replacement = next(
+        item for item in data["items"] if item["item_id"] == new_fact.json()["data"]["id"]
+    )
+    assert replacement["diagnostics"]["retrieval_source"] == "temporal_supersedes_relation"
+    assert (
+        replacement["diagnostics"]["temporal_replacement_for_fact_id"]
+        == old_fact.json()["data"]["id"]
+    )
+
+
 def test_context_resolves_relative_time_query_to_current_fact(
     tmp_path: Path,
 ) -> None:

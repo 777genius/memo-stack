@@ -300,13 +300,20 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        linked_temporal_items, linked_temporal_diagnostics = (
+            await self._apply_temporal_relation_signals(
+                items=linked_context.items,
+                query=query,
+                memory_scope_ids=memory_scope_ids,
+            )
+        )
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
             items=dedupe_rank_items(
                 (
                     *temporal_items,
                     *artifact_evidence_items,
-                    *linked_context.items,
+                    *linked_temporal_items,
                     *stale_review_items,
                     *pending_review_items,
                 )
@@ -317,6 +324,12 @@ class BuildContextUseCase:
         diagnostics.update(temporal_diagnostics)
         diagnostics.update(stale_diagnostics)
         diagnostics.update(linked_context.diagnostics)
+        diagnostics.update(
+            {
+                f"linked_{key}": value
+                for key, value in linked_temporal_diagnostics.items()
+            }
+        )
         diagnostics.update(result.bundle.diagnostics)
         diagnostics["pending_conflict_suggestions_considered"] = sum(
             1
