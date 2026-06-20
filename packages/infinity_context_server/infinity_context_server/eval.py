@@ -930,6 +930,12 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         space_id=space_id,
         memory_scope_id=alpha_memory_scope_id,
     )
+    checks["linked_temporal_supersedes_relation"] = _seed_quality_linked_temporal_supersedes(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=alpha_memory_scope_id,
+    )
     checks["contradicted_fact_disputed"] = _seed_quality_contradiction_dispute(
         client,
         headers,
@@ -1400,6 +1406,95 @@ def _seed_quality_temporal_supersedes(
         and _status_ok(relative_old_fact.status_code)
         and _status_ok(relative_current_fact.status_code)
         and _status_ok(relative_relation.status_code)
+    )
+
+
+def _seed_quality_linked_temporal_supersedes(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    old_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text="QUALITY_LINKED_TEMPORAL_OLD: launch owner was Alex.",
+        source_id="quality-linked-temporal-old",
+        idempotency_key="quality-linked-temporal-old-v1",
+        classification="internal",
+    )
+    new_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text="QUALITY_LINKED_TEMPORAL_CURRENT: launch owner is Dana.",
+        source_id="quality-linked-temporal-current",
+        idempotency_key="quality-linked-temporal-current-v1",
+        classification="internal",
+    )
+    old_id = _response_data_id(old_fact)
+    new_id = _response_data_id(new_fact)
+    if not old_id or not new_id:
+        return False
+
+    anchor = client.post(
+        "/v1/anchors",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "kind": "project",
+            "label": "Project Phoenix",
+            "aliases": ["Phoenix linked owner"],
+            "description": "Quality eval anchor for linked temporal owner replacement.",
+            "confidence": "high",
+            "metadata": {
+                "anchor_family": "project",
+                "canonical_key": "phoenix",
+                "project_canonical_key": "phoenix",
+            },
+        },
+        headers=_with_idempotency(headers, "quality-linked-temporal-anchor-v1"),
+    )
+    anchor_id = _response_data_id(anchor)
+    if not anchor_id:
+        return False
+
+    link = client.post(
+        "/v1/context-links",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "source_type": "anchor",
+            "source_id": anchor_id,
+            "target_type": "fact",
+            "target_id": old_id,
+            "relation_type": "references",
+            "confidence": "high",
+            "reason": "Quality eval project anchor points to the original owner fact.",
+        },
+        headers=_with_idempotency(headers, "quality-linked-temporal-link-v1"),
+    )
+    relation = client.post(
+        f"/v1/facts/{new_id}/relations",
+        json={
+            "target_fact_id": old_id,
+            "relation_type": "supersedes",
+            "reason": "Quality eval current linked owner replaces old linked owner.",
+            "observed_at": "2026-01-04T12:00:00+00:00",
+            "valid_from": "2026-01-04T00:00:00+00:00",
+        },
+        headers=headers,
+    )
+    return (
+        _status_ok(old_fact.status_code)
+        and _status_ok(new_fact.status_code)
+        and _status_ok(anchor.status_code)
+        and _status_ok(link.status_code)
+        and _status_ok(relation.status_code)
     )
 
 

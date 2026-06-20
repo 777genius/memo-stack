@@ -61,6 +61,7 @@ _MEMORY_QUALITY_SCORECARD_MIN_CASE_COUNTS = {
 QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "updated_provider_current_only",
     "temporal_supersedes_current_only",
+    "linked_temporal_supersedes_current_only",
     "relative_time_current_fact_not_last_week_fact",
     "contradicted_fact_hidden_by_default",
     "contradicted_fact_visible_only_in_stale_review",

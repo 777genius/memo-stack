@@ -141,6 +141,22 @@ def _quality_golden_cases(
             required_diagnostics=(("temporal_replacements_applied", "gte", 1),),
         ),
         EvalCase(
+            case_id="linked_temporal_supersedes_current_only",
+            category="stale_update",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="Project Phoenix linked owner anchor",
+            must_include=("QUALITY_LINKED_TEMPORAL_CURRENT",),
+            must_not_include=("QUALITY_LINKED_TEMPORAL_OLD",),
+            max_facts=6,
+            max_chunks=0,
+            required_diagnostics=(
+                ("approved_context_linked_facts_used", "gte", 1),
+                ("linked_temporal_replacements_applied", "gte", 1),
+                ("retrieval_sources_used", "contains", "temporal_supersedes_relation"),
+            ),
+        ),
+        EvalCase(
             case_id="relative_time_current_fact_not_last_week_fact",
             category="stale_update",
             space_id=space_id,
