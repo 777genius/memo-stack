@@ -519,8 +519,7 @@ def _quality_golden_cases(
             space_id=space_id,
             memory_scope_ids=(alpha_memory_scope_id,),
             query=(
-                "Alex Relation Project Atlas Relation relation-ledger call last week "
-                "linked facts"
+                "Alex Relation Project Atlas Relation relation-ledger call last week linked facts"
             ),
             must_include=(
                 "event: Quality relation ledger call",
@@ -731,6 +730,52 @@ def _quality_golden_cases(
                     ("bbox", "eq", [12.0, 32.0, 300.0, 88.0]),
                     ("quote_preview", "contains", "Project Atlas screenshot"),
                     ("label", "contains", "bbox"),
+                ),
+            ),
+        ),
+        EvalCase(
+            case_id="media_timestamp_query_selects_matching_evidence",
+            category="documents",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="Project Atlas screenshot invoice owner Alex transcript at 00:01",
+            must_include=("QUALITY_MM_CONTEXT",),
+            must_not_include=("Calendar footer without the requested owner.",),
+            max_facts=0,
+            max_chunks=0,
+            max_evidence_items=1,
+            required_diagnostics=(
+                ("artifact_evidence_time_query_count", "gte", 1),
+                ("artifact_evidence_time_query_match_count", "gte", 1),
+                ("artifact_evidence_time_query_drop_count", "gte", 1),
+                ("media_time_query_items_used", "gte", 1),
+                ("media_time_query_matched_items_used", "gte", 1),
+                ("source_refs_with_time_range_count", "gte", 1),
+            ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "extraction_artifact"),
+                    ("diagnostics.retrieval_source", "eq", "artifact_evidence"),
+                    ("diagnostics.media_time_query_count", "eq", 1),
+                    ("diagnostics.score_signals.media_time_matched_window_count", "gte", 1),
+                ),
+            ),
+            required_source_ref_matches=(
+                (
+                    ("source_type", "eq", "extraction_artifact"),
+                    ("chunk_id", "eq", "quality-mm-manifest-ocr-owner"),
+                    ("time_start_ms", "eq", 1200),
+                    ("time_end_ms", "eq", 5400),
+                    ("quote_preview", "contains", "Project Atlas screenshot"),
+                ),
+            ),
+            required_citation_matches=(
+                (
+                    ("source_type", "eq", "extraction_artifact"),
+                    ("chunk_id", "eq", "quality-mm-manifest-ocr-owner"),
+                    ("time_range_ms.start", "eq", 1200),
+                    ("time_range_ms.end", "eq", 5400),
+                    ("quote_preview", "contains", "Project Atlas screenshot"),
                 ),
             ),
         ),

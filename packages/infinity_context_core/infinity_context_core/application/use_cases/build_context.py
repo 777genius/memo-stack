@@ -28,6 +28,7 @@ from infinity_context_core.application.context_diagnostics import (
 )
 from infinity_context_core.application.context_hydration import ContextHydrator
 from infinity_context_core.application.context_link_expansion import ApprovedContextLinkExpander
+from infinity_context_core.application.context_media_time import enrich_context_item_with_media_time
 from infinity_context_core.application.context_packer import ContextPacker
 from infinity_context_core.application.context_policy import (
     is_context_anchor_visible,
@@ -363,12 +364,13 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
-        linked_temporal_items, linked_temporal_diagnostics = (
-            await self._apply_temporal_relation_signals(
-                items=linked_context.items,
-                query=query,
-                memory_scope_ids=memory_scope_ids,
-            )
+        (
+            linked_temporal_items,
+            linked_temporal_diagnostics,
+        ) = await self._apply_temporal_relation_signals(
+            items=linked_context.items,
+            query=query,
+            memory_scope_ids=memory_scope_ids,
         )
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
@@ -388,10 +390,7 @@ class BuildContextUseCase:
         diagnostics.update(stale_diagnostics)
         diagnostics.update(linked_context.diagnostics)
         diagnostics.update(
-            {
-                f"linked_{key}": value
-                for key, value in linked_temporal_diagnostics.items()
-            }
+            {f"linked_{key}": value for key, value in linked_temporal_diagnostics.items()}
         )
         diagnostics.update(result.bundle.diagnostics)
         diagnostics["pending_conflict_suggestions_considered"] = sum(
@@ -853,33 +852,36 @@ def _fact_context_item(
     )
     snippet = query_focused_snippet(query=query_text, text=fact.text)
     source_refs = source_refs_with_query_snippet(fact.source_refs, snippet)
-    return ContextItem(
-        item_id=str(fact.id),
-        item_type="fact",
-        text=fact.text,
-        score=fact_score,
-        source_refs=source_refs,
-        diagnostics={
-            "memory_scope_id": str(fact.memory_scope_id),
-            "retrieval_source": "postgres_facts",
-            "retrieval_sources": ["postgres_facts"],
-            "ranking_reason": "canonical active fact matched query and filters",
-            "score_signals": {
-                **fact_signals,
-                **query_snippet_score_signals(snippet),
-            },
-            "provenance": {
+    return enrich_context_item_with_media_time(
+        ContextItem(
+            item_id=str(fact.id),
+            item_type="fact",
+            text=fact.text,
+            score=fact_score,
+            source_refs=source_refs,
+            diagnostics={
+                "memory_scope_id": str(fact.memory_scope_id),
+                "retrieval_source": "postgres_facts",
                 "retrieval_sources": ["postgres_facts"],
-                "source_ref_count": len(source_refs),
-                "fact_status": fact.status.value,
-                "fact_version": fact.version,
+                "ranking_reason": "canonical active fact matched query and filters",
+                "score_signals": {
+                    **fact_signals,
+                    **query_snippet_score_signals(snippet),
+                },
+                "provenance": {
+                    "retrieval_sources": ["postgres_facts"],
+                    "source_ref_count": len(source_refs),
+                    "fact_status": fact.status.value,
+                    "fact_version": fact.version,
+                    **query_snippet_diagnostics(snippet),
+                },
+                "confidence": fact.confidence.value,
+                "trust_level": fact.trust_level.value,
+                "updated_at": fact.updated_at.isoformat(),
                 **query_snippet_diagnostics(snippet),
             },
-            "confidence": fact.confidence.value,
-            "trust_level": fact.trust_level.value,
-            "updated_at": fact.updated_at.isoformat(),
-            **query_snippet_diagnostics(snippet),
-        },
+        ),
+        query_text=query_text,
     )
 
 
@@ -895,40 +897,43 @@ def _stale_review_item(
     stale_reason = f"fact_status_{status}"
     snippet = query_focused_snippet(query=query_text, text=fact.text)
     source_refs = source_refs_with_query_snippet(fact.source_refs, snippet)
-    return ContextItem(
-        item_id=str(fact.id),
-        item_type="fact",
-        text=fact.text,
-        score=score,
-        source_refs=source_refs,
-        diagnostics={
-            "memory_scope_id": str(fact.memory_scope_id),
-            "retrieval_source": retrieval_source,
-            "retrieval_sources": [retrieval_source],
-            "ranking_reason": _stale_review_ranking_reason(status),
-            "review_only": True,
-            "stale_reason": stale_reason,
-            "score_signals": {
-                "base_score": 0.44,
-                "final_score": score,
-                "retrieval_channel": retrieval_source,
-                "fact_status": fact.status.value,
-                **query_relevance_score_signals(relevance),
-                **query_snippet_score_signals(snippet),
-            },
-            "provenance": {
+    return enrich_context_item_with_media_time(
+        ContextItem(
+            item_id=str(fact.id),
+            item_type="fact",
+            text=fact.text,
+            score=score,
+            source_refs=source_refs,
+            diagnostics={
+                "memory_scope_id": str(fact.memory_scope_id),
+                "retrieval_source": retrieval_source,
                 "retrieval_sources": [retrieval_source],
-                "source_ref_count": len(source_refs),
-                "fact_status": fact.status.value,
-                "fact_version": fact.version,
-                "visibility": "review_only",
+                "ranking_reason": _stale_review_ranking_reason(status),
+                "review_only": True,
+                "stale_reason": stale_reason,
+                "score_signals": {
+                    "base_score": 0.44,
+                    "final_score": score,
+                    "retrieval_channel": retrieval_source,
+                    "fact_status": fact.status.value,
+                    **query_relevance_score_signals(relevance),
+                    **query_snippet_score_signals(snippet),
+                },
+                "provenance": {
+                    "retrieval_sources": [retrieval_source],
+                    "source_ref_count": len(source_refs),
+                    "fact_status": fact.status.value,
+                    "fact_version": fact.version,
+                    "visibility": "review_only",
+                    **query_snippet_diagnostics(snippet),
+                },
+                "confidence": fact.confidence.value,
+                "trust_level": fact.trust_level.value,
+                "updated_at": fact.updated_at.isoformat(),
                 **query_snippet_diagnostics(snippet),
             },
-            "confidence": fact.confidence.value,
-            "trust_level": fact.trust_level.value,
-            "updated_at": fact.updated_at.isoformat(),
-            **query_snippet_diagnostics(snippet),
-        },
+        ),
+        query_text=query_text,
     )
 
 
@@ -1061,38 +1066,41 @@ def _chunk_context_item(
     }
     if relevance is not None:
         score_signals.update(query_relevance_score_signals(relevance))
-    return ContextItem(
-        item_id=str(chunk.id),
-        item_type="chunk",
-        text=text,
-        score=score,
-        source_refs=source_refs,
-        diagnostics={
-            "memory_scope_id": str(chunk.memory_scope_id),
-            "retrieval_source": retrieval_source,
-            "retrieval_sources": [retrieval_source],
-            "ranking_reason": f"matched via {retrieval_source}",
-            "score_signals": score_signals,
-            "provenance": {
+    return enrich_context_item_with_media_time(
+        ContextItem(
+            item_id=str(chunk.id),
+            item_type="chunk",
+            text=text,
+            score=score,
+            source_refs=source_refs,
+            diagnostics={
+                "memory_scope_id": str(chunk.memory_scope_id),
+                "retrieval_source": retrieval_source,
                 "retrieval_sources": [retrieval_source],
-                "source_ref_count": len(source_refs),
+                "ranking_reason": f"matched via {retrieval_source}",
+                "score_signals": score_signals,
+                "provenance": {
+                    "retrieval_sources": [retrieval_source],
+                    "source_ref_count": len(source_refs),
+                    "source_type": chunk.source_type,
+                    "source_id": chunk.source_external_id,
+                    "chunk_id": str(chunk.id),
+                    "sequence": chunk.sequence,
+                    "char_start": chunk.char_start,
+                    "char_end": chunk.char_end,
+                    **source_ref_location_summary(source_refs),
+                    **query_snippet_diagnostics(snippet),
+                },
                 "source_type": chunk.source_type,
                 "source_id": chunk.source_external_id,
-                "chunk_id": str(chunk.id),
-                "sequence": chunk.sequence,
+                "chunk_sequence": chunk.sequence,
                 "char_start": chunk.char_start,
                 "char_end": chunk.char_end,
                 **source_ref_location_summary(source_refs),
                 **query_snippet_diagnostics(snippet),
             },
-            "source_type": chunk.source_type,
-            "source_id": chunk.source_external_id,
-            "chunk_sequence": chunk.sequence,
-            "char_start": chunk.char_start,
-            "char_end": chunk.char_end,
-            **source_ref_location_summary(source_refs),
-            **query_snippet_diagnostics(snippet),
-        },
+        ),
+        query_text=query_text,
     )
 
 

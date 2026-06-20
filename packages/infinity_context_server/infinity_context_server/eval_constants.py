@@ -73,6 +73,7 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "multimodal_source_refs_recall_with_citations",
     "multilingual_multimodal_source_refs_recall",
     "multimodal_evidence_metadata_contract",
+    "media_timestamp_query_selects_matching_evidence",
     "pending_duplicate_merge_review_visible",
     "canonical_project_anchor_recall_with_citation",
     "canonical_event_anchor_recall_by_identity",

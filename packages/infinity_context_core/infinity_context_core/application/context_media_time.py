@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 
+from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import SourceRef
 
 _MAX_QUERY_WINDOWS = 8
@@ -118,6 +119,50 @@ def media_time_match_for_source_ref(
     )
 
 
+def media_time_match_for_source_refs(
+    source_refs: tuple[SourceRef, ...],
+    windows: tuple[MediaTimeWindow, ...],
+) -> MediaTimeMatch | None:
+    best: MediaTimeMatch | None = None
+    for ref in source_refs:
+        match = media_time_match_for_source_ref(ref, windows)
+        if match is None:
+            continue
+        if best is None or _media_time_match_rank(match) > _media_time_match_rank(best):
+            best = match
+    return best
+
+
+def enrich_context_item_with_media_time(
+    item: ContextItem,
+    *,
+    query_text: str,
+    windows: tuple[MediaTimeWindow, ...] | None = None,
+) -> ContextItem:
+    effective_windows = media_time_windows_from_query(query_text) if windows is None else windows
+    match = media_time_match_for_source_refs(item.source_refs, effective_windows)
+    if match is None:
+        return item
+
+    new_score = min(0.99, round(item.score + match.boost, 4))
+    time_diagnostics = media_time_query_diagnostics(effective_windows)
+    score_signals = _mapping_dict(item.diagnostics.get("score_signals"))
+    score_signals.update(media_time_match_score_signals(match))
+    if "final_score" in score_signals:
+        score_signals["final_score"] = new_score
+
+    provenance = _mapping_dict(item.diagnostics.get("provenance"))
+    provenance.update(time_diagnostics)
+    diagnostics = {
+        **item.diagnostics,
+        **time_diagnostics,
+        "ranking_reason": _append_media_time_reason(item.diagnostics.get("ranking_reason")),
+        "score_signals": score_signals,
+        "provenance": provenance,
+    }
+    return replace(item, score=new_score, diagnostics=diagnostics)
+
+
 def media_time_query_diagnostics(windows: tuple[MediaTimeWindow, ...]) -> dict[str, object]:
     if not windows:
         return {}
@@ -160,7 +205,13 @@ def _colon_match_to_ms(
         return _valid_time_ms(((first * 60 + second) * 60 + int(third)) * 1000), "second"
     if second > 59:
         return None
-    if first >= 3 and not has_media_cue and not _near_media_cue(query, match.start(), match.end()):
+    if not _colon_timestamp_has_media_context(
+        first,
+        has_media_cue=has_media_cue,
+        query=query,
+        start=match.start(),
+        end=match.end(),
+    ):
         return None
     return _valid_time_ms((first * 60 + second) * 1000, "second")
 
@@ -213,6 +264,23 @@ def _source_ref_time_range(ref: SourceRef) -> tuple[int | None, int | None]:
     if start is None or end is None or end < start:
         return None, None
     return start, end
+
+
+def _media_time_match_rank(match: MediaTimeMatch) -> tuple[float, int, int]:
+    distance = match.best_distance_ms if match.best_distance_ms is not None else 10**12
+    return (match.boost, match.best_overlap_ms, -distance)
+
+
+def _mapping_dict(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _append_media_time_reason(value: object) -> str:
+    reason = str(value) if isinstance(value, str) and value.strip() else "matched query"
+    marker = "matched requested media timestamp"
+    if marker in reason:
+        return reason
+    return f"{reason}; {marker}"
 
 
 def _overlap_ms(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
@@ -269,10 +337,22 @@ def _near_media_cue(query: str, start: int, end: int) -> bool:
     return bool(_MEDIA_CUE_RE.search(query[left:right]))
 
 
+def _colon_timestamp_has_media_context(
+    first: int,
+    *,
+    has_media_cue: bool,
+    query: str,
+    start: int,
+    end: int,
+) -> bool:
+    if has_media_cue or _near_media_cue(query, start, end):
+        return True
+    return first == 0
+
+
 def _overlaps_occupied(start: int, end: int, occupied: list[tuple[int, int]]) -> bool:
     return any(
-        start < occupied_end and end > occupied_start
-        for occupied_start, occupied_end in occupied
+        start < occupied_end and end > occupied_start for occupied_start, occupied_end in occupied
     )
 
 

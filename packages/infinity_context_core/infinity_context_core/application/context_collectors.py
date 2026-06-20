@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from infinity_context_core.application.context_hydration import ContextHydrator
+from infinity_context_core.application.context_media_time import enrich_context_item_with_media_time
 from infinity_context_core.application.context_relevance import (
     has_project_identity_mismatch,
     score_query_relevance,
@@ -524,36 +525,39 @@ def _rag_chunk_item(
         snippet,
         include_char_range=True,
     )
-    return ContextItem(
-        item_id=str(chunk.id),
-        item_type="chunk",
-        text=chunk_text,
-        score=candidate.score,
-        source_refs=source_refs,
-        diagnostics={
-            "memory_scope_id": str(chunk.memory_scope_id),
-            "retrieval_source": "rag_recall",
-            "retrieval_sources": ["rag_recall"],
-            "ranking_reason": "matched via external RAG recall and canonical hydration",
-            "score_signals": {
-                "base_score": candidate.score,
-                "retrieval_channel": "rag_recall",
-                "source_ref_count": len(source_refs),
-                **query_snippet_score_signals(snippet),
-            },
-            "provenance": {
+    return enrich_context_item_with_media_time(
+        ContextItem(
+            item_id=str(chunk.id),
+            item_type="chunk",
+            text=chunk_text,
+            score=candidate.score,
+            source_refs=source_refs,
+            diagnostics={
+                "memory_scope_id": str(chunk.memory_scope_id),
+                "retrieval_source": "rag_recall",
                 "retrieval_sources": ["rag_recall"],
-                "source_ref_count": len(source_refs),
+                "ranking_reason": "matched via external RAG recall and canonical hydration",
+                "score_signals": {
+                    "base_score": candidate.score,
+                    "retrieval_channel": "rag_recall",
+                    "source_ref_count": len(source_refs),
+                    **query_snippet_score_signals(snippet),
+                },
+                "provenance": {
+                    "retrieval_sources": ["rag_recall"],
+                    "source_ref_count": len(source_refs),
+                    "adapter_name": _safe_adapter_name(candidate.adapter_name),
+                    "chunk_id": str(chunk.id),
+                    **source_ref_location_summary(source_refs),
+                    **query_snippet_diagnostics(snippet),
+                },
                 "adapter_name": _safe_adapter_name(candidate.adapter_name),
-                "chunk_id": str(chunk.id),
                 **source_ref_location_summary(source_refs),
                 **query_snippet_diagnostics(snippet),
+                **_safe_recall_metadata(candidate.metadata),
             },
-            "adapter_name": _safe_adapter_name(candidate.adapter_name),
-            **source_ref_location_summary(source_refs),
-            **query_snippet_diagnostics(snippet),
-            **_safe_recall_metadata(candidate.metadata),
-        },
+        ),
+        query_text=query_text,
     )
 
 

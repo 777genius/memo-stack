@@ -254,6 +254,54 @@ def test_linked_fact_context_item_uses_query_focused_source_quote() -> None:
     assert diagnostics["score_signals"]["query_snippet_unique_term_hits"] == 4
 
 
+def test_linked_fact_context_item_enriches_media_time_match() -> None:
+    now = datetime(2026, 6, 19, tzinfo=UTC)
+    fact = MemoryFact.create(
+        fact_id=MemoryFactId("fact_linked_transcript_segment"),
+        space_id=SpaceId("space_client_app"),
+        memory_scope_id=MemoryScopeId("memory_scope_default"),
+        text="Alex confirmed the Atlas billing cutoff in the video transcript.",
+        kind=MemoryKind.NOTE,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="video_job_1",
+                chunk_id="segment_42",
+                quote_preview="Alex confirmed the Atlas billing cutoff.",
+                time_start_ms=40_000,
+                time_end_ms=45_000,
+            ),
+        ),
+        now=now,
+    )
+    link = MemoryContextLink.create(
+        link_id=MemoryContextLinkId("context_link_anchor_time_fact"),
+        space_id=SpaceId("space_client_app"),
+        memory_scope_id=MemoryScopeId("memory_scope_default"),
+        source_type="anchor",
+        source_id="anchor_event_alex",
+        target_type="fact",
+        target_id=str(fact.id),
+        relation_type="references",
+        confidence="high",
+        reason="event anchor references exact transcript segment",
+        now=now,
+    )
+
+    item = _linked_fact_context_item(
+        fact,
+        link=link,
+        query_text="what did Alex confirm in the video at 00:42",
+    )
+
+    assert item.score > 0.83
+    assert item.diagnostics["media_time_query_count"] == 1
+    assert item.diagnostics["provenance"]["media_time_query_count"] == 1
+    assert item.diagnostics["score_signals"]["media_time_matched_window_count"] == 1
+    assert item.diagnostics["score_signals"]["final_score"] == item.score
+    assert item.diagnostics["ranking_reason"].endswith("matched requested media timestamp")
+
+
 def test_visible_manifest_evidence_expands_reverse_link_to_anchor() -> None:
     now = datetime(2026, 6, 19, tzinfo=UTC)
     anchor = _anchor(now=now)

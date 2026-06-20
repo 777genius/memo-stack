@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from infinity_context_core.application.context_media_time import enrich_context_item_with_media_time
 from infinity_context_core.application.context_policy import (
     is_context_anchor_visible,
     is_context_fact_visible,
@@ -73,35 +74,40 @@ class ContextHydrator:
                 ):
                     snippet = query_focused_snippet(query=query.query, text=fact.text)
                     hydrated.append(
-                        ContextItem(
-                            item_id=str(fact.id),
-                            item_type="fact",
-                            text=fact.text,
-                            score=0.78,
-                            source_refs=source_refs_with_query_snippet(
-                                fact.source_refs,
-                                snippet,
-                            ),
-                            diagnostics={
-                                "memory_scope_id": str(fact.memory_scope_id),
-                                "retrieval_source": "graph_hydrated",
-                                "retrieval_sources": ["graph_hydrated"],
-                                "ranking_reason": "graph candidate resolved to visible active fact",
-                                "score_signals": {
-                                    "base_score": 0.78,
-                                    "retrieval_channel": "graph_hydrated",
-                                    "fact_status": fact.status.value,
-                                    **query_snippet_score_signals(snippet),
-                                },
-                                "provenance": {
+                        enrich_context_item_with_media_time(
+                            ContextItem(
+                                item_id=str(fact.id),
+                                item_type="fact",
+                                text=fact.text,
+                                score=0.78,
+                                source_refs=source_refs_with_query_snippet(
+                                    fact.source_refs,
+                                    snippet,
+                                ),
+                                diagnostics={
+                                    "memory_scope_id": str(fact.memory_scope_id),
+                                    "retrieval_source": "graph_hydrated",
                                     "retrieval_sources": ["graph_hydrated"],
-                                    "source_ref_count": len(fact.source_refs),
-                                    "fact_status": fact.status.value,
-                                    "fact_version": fact.version,
+                                    "ranking_reason": (
+                                        "graph candidate resolved to visible active fact"
+                                    ),
+                                    "score_signals": {
+                                        "base_score": 0.78,
+                                        "retrieval_channel": "graph_hydrated",
+                                        "fact_status": fact.status.value,
+                                        **query_snippet_score_signals(snippet),
+                                    },
+                                    "provenance": {
+                                        "retrieval_sources": ["graph_hydrated"],
+                                        "source_ref_count": len(fact.source_refs),
+                                        "fact_status": fact.status.value,
+                                        "fact_version": fact.version,
+                                        **query_snippet_diagnostics(snippet),
+                                    },
                                     **query_snippet_diagnostics(snippet),
                                 },
-                                **query_snippet_diagnostics(snippet),
-                            },
+                            ),
+                            query_text=query.query,
                         )
                     )
                 else:
@@ -167,17 +173,20 @@ class ContextHydrator:
                     continue
                 snippet = query_focused_snippet(query=query.query, text=fact.text)
                 visible_items.append(
-                    ContextItem(
-                        item_id=str(fact.id),
-                        item_type=item.item_type,
-                        text=fact.text,
-                        score=item.score,
-                        source_refs=source_refs_with_query_snippet(
-                            fact.source_refs,
-                            snippet,
+                    enrich_context_item_with_media_time(
+                        ContextItem(
+                            item_id=str(fact.id),
+                            item_type=item.item_type,
+                            text=fact.text,
+                            score=item.score,
+                            source_refs=source_refs_with_query_snippet(
+                                fact.source_refs,
+                                snippet,
+                            ),
+                            is_instruction=item.is_instruction,
+                            diagnostics=item.diagnostics,
                         ),
-                        is_instruction=item.is_instruction,
-                        diagnostics=item.diagnostics,
+                        query_text=query.query,
                     )
                 )
             elif item.item_type == "anchor":
@@ -205,21 +214,24 @@ class ContextHydrator:
                 )
                 snippet = query_focused_snippet(query=query.query, text=chunk_text)
                 visible_items.append(
-                    ContextItem(
-                        item_id=str(chunk.id),
-                        item_type=item.item_type,
-                        text=chunk_text,
-                        score=item.score,
-                        source_refs=source_refs_with_query_snippet(
-                            chunk_source_refs(
-                                chunk,
-                                text_preview=snippet.text if snippet else chunk_text,
+                    enrich_context_item_with_media_time(
+                        ContextItem(
+                            item_id=str(chunk.id),
+                            item_type=item.item_type,
+                            text=chunk_text,
+                            score=item.score,
+                            source_refs=source_refs_with_query_snippet(
+                                chunk_source_refs(
+                                    chunk,
+                                    text_preview=snippet.text if snippet else chunk_text,
+                                ),
+                                snippet,
+                                include_char_range=True,
                             ),
-                            snippet,
-                            include_char_range=True,
+                            is_instruction=item.is_instruction,
+                            diagnostics=item.diagnostics,
                         ),
-                        is_instruction=item.is_instruction,
-                        diagnostics=item.diagnostics,
+                        query_text=query.query,
                     )
                 )
         return tuple(visible_items)

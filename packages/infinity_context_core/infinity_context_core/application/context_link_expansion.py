@@ -15,6 +15,7 @@ from infinity_context_core.application.context_artifact_evidence import (
     read_media_manifest_payload,
 )
 from infinity_context_core.application.context_hydration import ContextHydrator
+from infinity_context_core.application.context_media_time import enrich_context_item_with_media_time
 from infinity_context_core.application.context_policy import (
     is_context_anchor_visible,
     is_context_fact_visible,
@@ -711,8 +712,7 @@ def _linked_anchor_context_item(
             score=score,
             source_ref_count=len(base_item.source_refs),
             ranking_reason=(
-                "approved context link connected visible evidence or memory "
-                "to canonical anchor"
+                "approved context link connected visible evidence or memory to canonical anchor"
             ),
             score_signals_extra={
                 "anchor_query_score": base_item.score,
@@ -760,39 +760,42 @@ def _linked_chunk_context_item(
         snippet,
         include_char_range=True,
     )
-    return ContextItem(
-        item_id=str(chunk.id),
-        item_type="chunk",
-        text=text,
-        score=score,
-        source_refs=source_refs,
-        diagnostics=_linked_item_diagnostics(
-            link=link,
-            retrieval_source="approved_context_linked_chunks",
-            memory_scope_id=str(chunk.memory_scope_id),
+    return enrich_context_item_with_media_time(
+        ContextItem(
+            item_id=str(chunk.id),
+            item_type="chunk",
+            text=text,
             score=score,
-            source_ref_count=len(source_refs),
-            score_signals_extra=query_snippet_score_signals(snippet),
-            extra_provenance={
-                "source_type": chunk.source_type,
-                "source_id": chunk.source_external_id,
-                "chunk_id": str(chunk.id),
-                "sequence": chunk.sequence,
-                "char_start": chunk.char_start,
-                "char_end": chunk.char_end,
-                **source_ref_location_summary(source_refs),
-                **query_snippet_diagnostics(snippet),
-            },
-            extra_diagnostics={
-                "source_type": chunk.source_type,
-                "source_id": chunk.source_external_id,
-                "chunk_sequence": chunk.sequence,
-                "char_start": chunk.char_start,
-                "char_end": chunk.char_end,
-                **source_ref_location_summary(source_refs),
-                **query_snippet_diagnostics(snippet),
-            },
+            source_refs=source_refs,
+            diagnostics=_linked_item_diagnostics(
+                link=link,
+                retrieval_source="approved_context_linked_chunks",
+                memory_scope_id=str(chunk.memory_scope_id),
+                score=score,
+                source_ref_count=len(source_refs),
+                score_signals_extra=query_snippet_score_signals(snippet),
+                extra_provenance={
+                    "source_type": chunk.source_type,
+                    "source_id": chunk.source_external_id,
+                    "chunk_id": str(chunk.id),
+                    "sequence": chunk.sequence,
+                    "char_start": chunk.char_start,
+                    "char_end": chunk.char_end,
+                    **source_ref_location_summary(source_refs),
+                    **query_snippet_diagnostics(snippet),
+                },
+                extra_diagnostics={
+                    "source_type": chunk.source_type,
+                    "source_id": chunk.source_external_id,
+                    "chunk_sequence": chunk.sequence,
+                    "char_start": chunk.char_start,
+                    "char_end": chunk.char_end,
+                    **source_ref_location_summary(source_refs),
+                    **query_snippet_diagnostics(snippet),
+                },
+            ),
         ),
+        query_text=query_text,
     )
 
 
@@ -805,31 +808,34 @@ def _linked_fact_context_item(
     score = min(0.93, round(_linked_item_score(link) + 0.015, 4))
     snippet = query_focused_snippet(query=query_text, text=fact.text)
     source_refs = source_refs_with_query_snippet(fact.source_refs, snippet)
-    return ContextItem(
-        item_id=str(fact.id),
-        item_type="fact",
-        text=fact.text,
-        score=score,
-        source_refs=source_refs,
-        diagnostics=_linked_item_diagnostics(
-            link=link,
-            retrieval_source="approved_context_linked_facts",
-            memory_scope_id=str(fact.memory_scope_id),
+    return enrich_context_item_with_media_time(
+        ContextItem(
+            item_id=str(fact.id),
+            item_type="fact",
+            text=fact.text,
             score=score,
-            source_ref_count=len(source_refs),
-            score_signals_extra=query_snippet_score_signals(snippet),
-            extra_provenance={
-                "fact_status": fact.status.value,
-                "fact_version": fact.version,
-                **query_snippet_diagnostics(snippet),
-            },
-            extra_diagnostics={
-                "confidence": fact.confidence.value,
-                "trust_level": fact.trust_level.value,
-                "updated_at": fact.updated_at.isoformat(),
-                **query_snippet_diagnostics(snippet),
-            },
+            source_refs=source_refs,
+            diagnostics=_linked_item_diagnostics(
+                link=link,
+                retrieval_source="approved_context_linked_facts",
+                memory_scope_id=str(fact.memory_scope_id),
+                score=score,
+                source_ref_count=len(source_refs),
+                score_signals_extra=query_snippet_score_signals(snippet),
+                extra_provenance={
+                    "fact_status": fact.status.value,
+                    "fact_version": fact.version,
+                    **query_snippet_diagnostics(snippet),
+                },
+                extra_diagnostics={
+                    "confidence": fact.confidence.value,
+                    "trust_level": fact.trust_level.value,
+                    "updated_at": fact.updated_at.isoformat(),
+                    **query_snippet_diagnostics(snippet),
+                },
+            ),
         ),
+        query_text=query_text,
     )
 
 
