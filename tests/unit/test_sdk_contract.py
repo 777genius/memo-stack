@@ -469,6 +469,22 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
                             "mime_content_type_mismatch",
                         ],
                     },
+                    "resource_policy": {
+                        "schema_version": "infinity_context.extraction_resource_policy.v1",
+                        "policy_version": "asset-extraction-resource-policy-v1",
+                        "limits_normalized_before_provider": True,
+                        "rejects_oversized_asset_before_blob_read": True,
+                        "revalidates_upload_policy_after_blob_read": True,
+                        "inspects_zip_central_directory_before_provider": True,
+                        "diagnostic_fields": [
+                            "extraction_archive_resource_checked",
+                            "extraction_archive_uncompressed_bytes",
+                        ],
+                        "hard_caps": {
+                            "max_bytes": 524288000,
+                            "max_archive_entries": 100000,
+                        },
+                    },
                     "modality_actions": {
                         "audio": {
                             "transcription_api": {
@@ -611,6 +627,20 @@ def test_sdk_exposes_typed_extraction_capability_diagnostics() -> None:
         "detected_content_type",
         "mime_content_type_mismatch",
     ]
+    assert diagnostics.resource_policy["schema_version"] == (
+        "infinity_context.extraction_resource_policy.v1"
+    )
+    assert diagnostics.resource_policy["limits_normalized_before_provider"] is True
+    assert diagnostics.resource_policy["rejects_oversized_asset_before_blob_read"] is True
+    assert diagnostics.resource_policy["revalidates_upload_policy_after_blob_read"] is True
+    assert diagnostics.resource_policy["inspects_zip_central_directory_before_provider"] is True
+    assert diagnostics.resource_hard_cap("max_bytes") == 524288000
+    assert diagnostics.resource_hard_cap("max_archive_entries") == 100000
+    assert diagnostics.resource_hard_cap("missing") is None
+    assert diagnostics.resource_diagnostic_field_present(
+        "extraction_archive_resource_checked"
+    )
+    assert not diagnostics.resource_diagnostic_field_present("missing")
     assert diagnostics.modality_action("audio", "transcription_api") == {
         "profile": "media_api",
         "enabled": True,
@@ -743,7 +773,12 @@ def test_sdk_defaults_legacy_extraction_capability_contract_fields() -> None:
     assert diagnostics.provider_contract == {}
     assert diagnostics.manifest_contract == {}
     assert diagnostics.file_type_detection == {}
+    assert diagnostics.resource_policy == {}
     assert diagnostics.degraded_components == ()
+    assert diagnostics.resource_hard_cap("max_bytes") is None
+    assert not diagnostics.resource_diagnostic_field_present(
+        "extraction_archive_resource_checked"
+    )
     assert standard_local is not None
     assert standard_local.input_modalities == ()
     assert standard_local.evidence_coordinates == ()

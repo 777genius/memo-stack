@@ -73,6 +73,7 @@ class ExtractionCapabilityDiagnostics:
     provider_contract: dict[str, Any]
     manifest_contract: dict[str, Any]
     file_type_detection: dict[str, Any]
+    resource_policy: dict[str, Any]
     limits: dict[str, Any]
     raw: dict[str, Any]
 
@@ -103,6 +104,7 @@ class ExtractionCapabilityDiagnostics:
             provider_contract=dict(payload.get("provider_contract") or {}),
             manifest_contract=dict(payload.get("manifest_contract") or {}),
             file_type_detection=dict(payload.get("file_type_detection") or {}),
+            resource_policy=dict(payload.get("resource_policy") or {}),
             limits=dict(payload.get("limits") or {}),
             raw=dict(payload),
         )
@@ -142,6 +144,19 @@ class ExtractionCapabilityDiagnostics:
         if actions is None:
             return None
         return actions.get(action)
+
+    def resource_hard_cap(self, name: str) -> int | float | None:
+        hard_caps = self.resource_policy.get("hard_caps")
+        if not isinstance(hard_caps, dict):
+            return None
+        value = hard_caps.get(name)
+        if isinstance(value, bool):
+            return None
+        return value if isinstance(value, int | float) else None
+
+    def resource_diagnostic_field_present(self, name: str) -> bool:
+        fields = self.resource_policy.get("diagnostic_fields")
+        return isinstance(fields, list) and name in fields
 
 
 def _dict_items(value: object) -> tuple[dict[str, Any], ...]:
