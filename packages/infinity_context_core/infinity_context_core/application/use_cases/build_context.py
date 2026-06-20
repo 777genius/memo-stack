@@ -53,6 +53,7 @@ from infinity_context_core.application.dto import (
     ContextBundle,
     ContextItem,
 )
+from infinity_context_core.application.review_payloads import review_payload_with_default_contract
 from infinity_context_core.application.source_refs import (
     chunk_source_refs,
     source_ref_location_summary,
@@ -652,13 +653,13 @@ def _pending_review_suggestion_item(
 
 
 def _suggestion_review_kind(suggestion) -> str:
-    payload = suggestion.review_payload or {}
+    payload = review_payload_with_default_contract(suggestion.review_payload or {})
     value = payload.get("review_kind")
     return str(value).strip() if value else "conflict_review"
 
 
 def _suggestion_review_resolution_diagnostics(suggestion) -> dict[str, object]:
-    payload = suggestion.review_payload or {}
+    payload = review_payload_with_default_contract(suggestion.review_payload or {})
     diagnostics: dict[str, object] = {}
     recommended_action = _bounded_metadata_text(payload.get("recommended_action"), limit=80)
     default_resolution = _bounded_metadata_text(payload.get("default_resolution"), limit=80)
@@ -691,7 +692,7 @@ def _suggestion_review_resolution_diagnostics(suggestion) -> dict[str, object]:
 
 
 def _suggestion_review_match_diagnostics(suggestion) -> dict[str, object]:
-    payload = suggestion.review_payload or {}
+    payload = review_payload_with_default_contract(suggestion.review_payload or {})
     diagnostics: dict[str, object] = {}
     for key in (
         "dedupe_match_type",

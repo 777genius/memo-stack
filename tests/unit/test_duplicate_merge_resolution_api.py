@@ -186,6 +186,57 @@ def test_duplicate_merge_resolution_rejects_stale_target_fact_version(
     assert still_pending.json()["data"][0]["status"] == "pending"
 
 
+def test_duplicate_merge_review_response_adds_default_options_for_legacy_payload(
+    tmp_path: Path,
+) -> None:
+    app = _capture_app(tmp_path, "duplicate-legacy-options.db")
+    headers = {"Authorization": "Bearer test-token"}
+    with TestClient(app) as client:
+        existing = _create_fact(
+            client,
+            headers=headers,
+            text="Qdrant owns document vector retrieval.",
+            space_slug="duplicate-legacy-options",
+            source_id="duplicate-legacy-existing",
+        )
+        response = client.post(
+            "/v1/suggestions",
+            json={
+                "space_slug": "duplicate-legacy-options",
+                "memory_scope_external_ref": "default",
+                "candidate_text": "Docs retrieval should use Qdrant vectors.",
+                "kind": "note",
+                "operation": "review",
+                "target_fact_id": existing.json()["data"]["id"],
+                "target_fact_version": 1,
+                "source_refs": [{"source_type": "manual", "source_id": "duplicate-legacy"}],
+                "confidence": "medium",
+                "trust_level": "medium",
+                "safe_reason": "legacy duplicate merge payload",
+                "review_payload": {
+                    "review_kind": "duplicate_fact_merge",
+                    "dedupe_match_type": "semantic_token_overlap",
+                },
+            },
+            headers=headers,
+        )
+
+    assert existing.status_code == 201
+    assert response.status_code == 201, response.text
+    suggestion = response.json()["data"]
+    assert suggestion["available_review_actions"] == [
+        "approve",
+        "reject",
+        "expire",
+        "resolve_duplicate",
+    ]
+    assert suggestion["review_resolution_options"][0]["id"] == "merge_source_refs"
+    assert suggestion["review_resolution_options"][1]["id"] == "keep_separate_fact"
+    assert suggestion["review_payload"]["recommended_action"] == (
+        "merge_source_refs_into_existing_fact"
+    )
+
+
 def _capture_app(tmp_path: Path, database_name: str):
     return create_app(
         Settings(

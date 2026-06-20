@@ -2676,6 +2676,11 @@ def test_context_surfaces_pending_duplicate_merge_suggestions_for_visible_facts(
     diagnostics = suggestion_items[0]["diagnostics"]
     assert diagnostics["retrieval_source"] == "pending_duplicate_merge_suggestion"
     assert diagnostics["review_kind"] == "duplicate_fact_merge"
+    assert diagnostics["review_recommended_action"] == "merge_source_refs_into_existing_fact"
+    assert diagnostics["review_default_resolution"] == "merge_or_keep_separate_after_review"
+    assert diagnostics["review_resolution_options"][0]["id"] == "merge_source_refs"
+    assert diagnostics["review_resolution_options"][0]["review_action"] == "resolve_duplicate"
+    assert diagnostics["review_resolution_options"][1]["id"] == "keep_separate_fact"
     assert diagnostics["dedupe_match_type"] == "semantic_token_overlap"
     assert diagnostics["review_match_score"] == 0.82
     assert diagnostics["review_reason_codes"] == ["semantic_duplicate", "token_overlap"]

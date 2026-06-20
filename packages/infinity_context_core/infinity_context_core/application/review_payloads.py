@@ -89,3 +89,9 @@ def duplicate_fact_merge_review_contract() -> dict[str, Any]:
             },
         ],
     }
+
+
+def review_payload_with_default_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("review_kind") == DUPLICATE_FACT_MERGE_REVIEW_KIND:
+        return {**duplicate_fact_merge_review_contract(), **payload}
+    return dict(payload)

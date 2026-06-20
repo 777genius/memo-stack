@@ -18,6 +18,7 @@ from infinity_context_core.application import (
     ReviewSuggestionBatchItemCommand,
     ReviewSuggestionsBatchCommand,
 )
+from infinity_context_core.application.review_payloads import review_payload_with_default_contract
 from infinity_context_core.domain.entities import (
     Confidence,
     MemorySuggestion,
@@ -172,7 +173,10 @@ class ReviewSuggestionsBatchRequest(BaseModel):
 
 def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
     review_actionable = suggestion.status == SuggestionStatus.PENDING
-    review_payload = safe_public_metadata(suggestion.review_payload or {}, max_items=40)
+    review_payload = safe_public_metadata(
+        review_payload_with_default_contract(suggestion.review_payload or {}),
+        max_items=40,
+    )
     review_kind = _suggestion_review_kind(review_payload)
     return {
         "id": str(suggestion.id),
