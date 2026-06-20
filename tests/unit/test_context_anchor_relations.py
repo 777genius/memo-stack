@@ -100,6 +100,76 @@ def test_context_expands_event_anchor_to_related_person_and_project(
             },
             headers=_auth_headers(),
         )
+        project_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": (
+                    "ANCHOR_RELATION_PROJECT_EVIDENCE says renewal cutoff owner "
+                    "is Mira."
+                ),
+                "kind": "note",
+                "source_refs": [
+                    {
+                        "source_type": "manual",
+                        "source_id": "project-atlas-linked-evidence",
+                        "quote_preview": "Renewal cutoff owner is Mira.",
+                    }
+                ],
+            },
+            headers=_auth_headers(),
+        )
+        person_fact = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": (
+                    "ANCHOR_RELATION_PERSON_EVIDENCE says the follow-up owner "
+                    "prefers async notes."
+                ),
+                "kind": "note",
+                "source_refs": [
+                    {
+                        "source_type": "manual",
+                        "source_id": "person-alex-linked-evidence",
+                        "quote_preview": "Follow-up owner prefers async notes.",
+                    }
+                ],
+            },
+            headers=_auth_headers(),
+        )
+        project_link = client.post(
+            "/v1/context-links",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "source_type": "anchor",
+                "source_id": project.json()["data"]["id"],
+                "target_type": "fact",
+                "target_id": project_fact.json()["data"]["id"],
+                "relation_type": "evidence_of",
+                "confidence": "high",
+                "reason": "approved project anchor evidence should follow event relation",
+            },
+            headers=_auth_headers(),
+        )
+        person_link = client.post(
+            "/v1/context-links",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "source_type": "anchor",
+                "source_id": person.json()["data"]["id"],
+                "target_type": "fact",
+                "target_id": person_fact.json()["data"]["id"],
+                "relation_type": "evidence_of",
+                "confidence": "high",
+                "reason": "approved person anchor evidence should follow event relation",
+            },
+            headers=_auth_headers(),
+        )
         relations = client.get(
             "/v1/anchors/relations",
             params={
@@ -108,11 +178,17 @@ def test_context_expands_event_anchor_to_related_person_and_project(
             },
             headers=_auth_headers(),
         )
-        context = asyncio.run(_build_context(client, query="last week meeting"))
+        context = asyncio.run(
+            _build_context(client, query="last week meeting", token_budget=1600)
+        )
 
     assert person.status_code == 200, person.text
     assert project.status_code == 200, project.text
     assert event.status_code == 200, event.text
+    assert project_fact.status_code == 201, project_fact.text
+    assert person_fact.status_code == 201, person_fact.text
+    assert project_link.status_code == 200, project_link.text
+    assert person_link.status_code == 200, person_link.text
     assert relations.status_code == 200, relations.text
     relation_payload = relations.json()["data"]
     assert relation_payload["diagnostics"]["schema_version"] == "anchor-relations-v1"
@@ -144,6 +220,25 @@ def test_context_expands_event_anchor_to_related_person_and_project(
     assert context.diagnostics["anchor_relation_candidates_considered"] == 2
     assert context.diagnostics["anchor_relation_items_used"] == 2
     assert "canonical_anchor_relations" in context.diagnostics["retrieval_sources_used"]
+    assert "ANCHOR_RELATION_PROJECT_EVIDENCE" in context.rendered_text
+    assert "ANCHOR_RELATION_PERSON_EVIDENCE" in context.rendered_text
+    assert context.diagnostics["approved_context_links_considered"] == 2
+    assert context.diagnostics["approved_context_links_used"] == 2
+    assert context.diagnostics["approved_context_linked_facts_used"] == 2
+    linked_facts = [
+        item
+        for item in context.items
+        if (item.diagnostics or {}).get("retrieval_source")
+        == "approved_context_linked_facts"
+    ]
+    assert {item.item_id for item in linked_facts} == {
+        project_fact.json()["data"]["id"],
+        person_fact.json()["data"]["id"],
+    }
+    assert {
+        item.diagnostics["provenance"]["context_link_source_type"]
+        for item in linked_facts
+    } == {"anchor"}
     sdk_context = context_bundle_from_response(
         {
             "data": {
@@ -158,7 +253,7 @@ def test_context_expands_event_anchor_to_related_person_and_project(
     assert sdk_context.diagnostics.anchor_relation_items_used == 2
 
 
-async def _build_context(client: TestClient, *, query: str):
+async def _build_context(client: TestClient, *, query: str, token_budget: int = 900):
     container = client.app.state.container
     use_case = BuildContextUseCase(
         uow_factory=container.uow_factory,
@@ -172,7 +267,7 @@ async def _build_context(client: TestClient, *, query: str):
             space_id=SpaceId("space_client_app"),
             memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
             query=query,
-            token_budget=900,
+            token_budget=token_budget,
         )
     )
 
