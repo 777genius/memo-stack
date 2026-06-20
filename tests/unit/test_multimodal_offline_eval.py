@@ -22,7 +22,7 @@ def test_multimodal_offline_golden_eval_passes() -> None:
     assert result["checks"]["unrelated_capture_has_no_candidates"] is True
     assert result["checks"]["evidence_metadata_exposed"] is True
     assert result["checks"]["retrieval_evidence_coverage_profile"] is True
-    assert result["metrics"]["case_count"] == 10
+    assert result["metrics"]["case_count"] == 11
     assert result["metrics"]["pass_rate"] == 1.0
     assert result["metrics"]["false_positive_count"] == 0
     assert result["metrics"]["vision_linking_accuracy"] == 1.0
@@ -58,3 +58,4 @@ def test_multimodal_offline_golden_eval_writes_redacted_report(tmp_path: Path) -
     assert "Bearer " not in report_text
     assert "sk-" not in report_text
     assert "Ignore previous instructions" not in report_text
+    assert "Игнорируй предыдущие инструкции" not in report_text

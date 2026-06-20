@@ -152,8 +152,8 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "retrieval_evidence_coverage_profile": True,
             },
             "metrics": {
-                "case_count": 10,
-                "passed_case_count": 10,
+                "case_count": 11,
+                "passed_case_count": 11,
                 "pass_rate": 1.0,
                 "false_positive_count": 0,
                 "vision_linking_accuracy": 1.0,
@@ -197,6 +197,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                     "similar_wrong_project_keeps_atlas_over_aurora",
                     "empty_audio_without_speech_has_no_candidates",
                     "prompt_injection_screenshot_stays_review_evidence",
+                    "russian_prompt_injection_screenshot_stays_review_evidence",
                     "unrelated_multimodal_capture_has_no_candidates",
                 )
             ),
@@ -735,7 +736,7 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         SEMANTIC_LINKING_REQUIRED_CASE_IDS
     )
     assert MULTIMODAL_OFFLINE_GOLDEN_SUITE in policy["required_suites"]
-    assert policy["min_case_counts"][MULTIMODAL_OFFLINE_GOLDEN_SUITE] == 10
+    assert policy["min_case_counts"][MULTIMODAL_OFFLINE_GOLDEN_SUITE] == 11
     assert policy["multimodal_offline"]["requires_evidence_metadata"] is True
     assert policy["multimodal_offline"]["requires_prompt_injection_guard"] is True
     assert (

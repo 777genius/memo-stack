@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from infinity_context_core.application.context_link_candidate_policy import (
+    prompt_injection_signal_codes,
+)
 from infinity_context_core.domain.entities import (
     Confidence,
     MemoryKind,
@@ -68,15 +71,6 @@ _PREFIXES: tuple[tuple[re.Pattern[str], MemoryKind, str, str | None, str | None]
         "current_task",
         "task",
     ),
-)
-_PROMPT_INJECTION_PATTERNS = (
-    re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior)\s+instructions\b", re.I),
-    re.compile(r"\b(system|developer)\s+prompt\b", re.I),
-    re.compile(r"\breveal\s+(?:the\s+)?(?:system|developer)\s+(?:prompt|message)\b", re.I),
-    re.compile(r"\bforget\s+(?:all\s+)?(?:rules|instructions)\b", re.I),
-    re.compile(r"\bскрой\s+инструкц", re.I),
-    re.compile(r"\bраскр(?:ой|ыть)\s+системн", re.I),
-    re.compile(r"\bигнорируй\s+(?:все\s+)?(?:предыдущие|прошлые)\s+инструкц", re.I),
 )
 _UPDATE_PREFIXES = (
     "update memory",
@@ -492,7 +486,7 @@ def _clean_candidate_text(text: str) -> str:
 
 
 def _looks_like_prompt_injection(text: str) -> bool:
-    return any(pattern.search(text) for pattern in _PROMPT_INJECTION_PATTERNS)
+    return bool(prompt_injection_signal_codes(text))
 
 
 def _looks_like_question(text: str) -> bool:

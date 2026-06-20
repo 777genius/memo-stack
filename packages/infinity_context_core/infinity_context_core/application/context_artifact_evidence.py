@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from json import JSONDecodeError
 from math import isfinite
 
+from infinity_context_core.application.context_link_candidate_policy import (
+    prompt_injection_signal_codes,
+)
 from infinity_context_core.application.context_relevance import (
     is_query_relevance_sufficient,
     query_relevance_score_signals,
@@ -49,11 +51,6 @@ _EVIDENCE_MODALITY_BOOSTS = {
     "image": 0.01,
     "document": 0.008,
 }
-_INJECTION_PATTERNS = (
-    re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+instructions\b", re.I),
-    re.compile(r"\b(system|developer|hidden)\s+(prompt|message|instructions?)\b", re.I),
-    re.compile(r"\b(reveal|print|exfiltrate|leak)\s+.*\b(prompt|secret|token|key)\b", re.I),
-)
 _SECRET_MARKERS = (
     "authorization:",
     "bearer ",
@@ -564,7 +561,7 @@ def _artifact_evidence_rank_key(item: ContextItem) -> tuple[float, float, str, s
 
 
 def _looks_like_prompt_injection(text: str) -> bool:
-    return any(pattern.search(text) for pattern in _INJECTION_PATTERNS)
+    return bool(prompt_injection_signal_codes(text))
 
 
 def _looks_sensitive(text: str) -> bool:
