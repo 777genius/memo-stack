@@ -554,6 +554,77 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             )
         )
 
+    wrong_project_capture = _capture(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_event_id="wrong-project-identity-capture",
+        text=(
+            "Project Apollo onboarding pricing invoice threshold approval is "
+            "a separate workspace and must not link to Atlas or Aurora."
+        ),
+        thread_external_ref="quality-review",
+    )
+    wrong_project_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_id=str(wrong_project_capture.get("id", "")),
+        text="Project Apollo onboarding pricing invoice threshold approval",
+        thread_external_ref="quality-review",
+        limit=16,
+    )
+    wrong_project_candidates = wrong_project_suggestions.get("candidates", [])
+    wrong_project_target_ids = {
+        str(item.get("target_id"))
+        for item in wrong_project_candidates
+        if item.get("target_type") in {"fact", "anchor"}
+    }
+    wrong_project_project_keys = {
+        str(item.get("metadata", {}).get("canonical_key") or "")
+        for item in wrong_project_candidates
+        if item.get("target_type") == "anchor"
+        and item.get("metadata", {}).get("anchor_kind") == "project"
+    }
+    wrong_project_denied_reasons = wrong_project_suggestions.get(
+        "diagnostics",
+        {},
+    ).get("link_policy_denied_reason_counts", {})
+    forbidden_wrong_project_ids = {
+        str(target_fact.get("id", "")),
+        str(distractor_fact.get("id", "")),
+        str(alias_target_fact.get("id", "")),
+        str(alias_distractor_fact.get("id", "")),
+    }
+    checks["wrong_project_identity_mismatch_denied"] = (
+        bool(wrong_project_capture)
+        and forbidden_wrong_project_ids.isdisjoint(wrong_project_target_ids)
+        and "atlas" not in wrong_project_project_keys
+        and "aurora" not in wrong_project_project_keys
+        and int(wrong_project_denied_reasons.get("exclusive_anchor_mismatch", 0)) >= 1
+    )
+    cases.append(
+        {
+            "case_id": "wrong_project_identity_mismatch_denied",
+            "ok": checks["wrong_project_identity_mismatch_denied"],
+            "candidate_count": len(wrong_project_candidates),
+            "project_anchor_keys": sorted(key for key in wrong_project_project_keys if key),
+            "exclusive_anchor_mismatch_denied": wrong_project_denied_reasons.get(
+                "exclusive_anchor_mismatch",
+                0,
+            ),
+        }
+    )
+    if not checks["wrong_project_identity_mismatch_denied"]:
+        failures.append(
+            _failure(
+                "wrong_project_identity_mismatch_denied",
+                "precision",
+                "wrong_project_identity_candidate_not_denied",
+                item_ids=sorted(forbidden_wrong_project_ids),
+            )
+        )
+
     policy_case = _high_impact_relation_policy_case()
     checks["high_impact_relation_requires_explicit_signal"] = bool(policy_case["ok"])
     cases.append(policy_case)

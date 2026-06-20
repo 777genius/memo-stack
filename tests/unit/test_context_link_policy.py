@@ -126,6 +126,26 @@ def test_policy_treats_multimodal_evidence_signals_as_reviewable() -> None:
     assert result.candidates[0].metadata["policy_decision"] == "needs_review"
 
 
+def test_policy_denies_explicit_anchor_identity_mismatch() -> None:
+    candidate = _candidate(
+        target_id="atlas",
+        score=86.0,
+        target_type="fact",
+        reason_codes=["text_match", "exclusive_anchor_mismatch"],
+    )
+
+    decision = decide_context_link_candidate(candidate)
+    result = apply_context_link_policy((candidate,), limit=10, persist=True)
+
+    assert decision.outcome == "deny"
+    assert decision.auto_approve_eligible is False
+    assert "exclusive_anchor_mismatch" in decision.reason_codes
+    assert result.candidates == ()
+    assert result.diagnostics["link_policy_denied_reason_counts"] == {
+        "exclusive_anchor_mismatch": 1
+    }
+
+
 def test_policy_keeps_single_signal_high_score_candidate_review_only() -> None:
     decision = decide_context_link_candidate(_candidate(target_id="strong", score=94))
 

@@ -320,6 +320,8 @@ def _deny_reason_codes(
         and not _STRONG_REVIEW_SIGNAL_CODES.intersection(reason_codes)
     ):
         codes.append("weak_signal_below_review_threshold")
+    if "exclusive_anchor_mismatch" in reason_codes:
+        codes.append("exclusive_anchor_mismatch")
     if relation_type in _HIGH_IMPACT_RELATION_TYPES and not _has_high_impact_signal(
         relation_type,
         reason_codes,

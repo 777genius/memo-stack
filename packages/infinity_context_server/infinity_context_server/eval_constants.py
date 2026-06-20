@@ -95,6 +95,7 @@ SEMANTIC_LINKING_REQUIRED_CASE_IDS = (
     "implicit_project_context_anchor_suggested",
     "russian_locative_event_project_anchor_canonicalized",
     "explicit_alias_anchor_identity_terms_rank_correct_target",
+    "wrong_project_identity_mismatch_denied",
     "high_impact_relation_requires_explicit_signal",
     "weak_overlap_below_review_threshold_denied",
     "evidence_relation_requires_source_signal",

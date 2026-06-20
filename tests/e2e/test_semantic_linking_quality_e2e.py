@@ -107,6 +107,49 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
         assert ("person", "alex") in same_name_anchor_labels
         assert ("project", "alex") in same_name_anchor_labels
 
+        wrong_project_capture = _capture(
+            client,
+            source_event_id="wrong-project-identity-capture",
+            text=(
+                "Project Apollo onboarding pricing invoice threshold approval is "
+                "separate from Atlas and Aurora."
+            ),
+            thread_external_ref="quality-review",
+        )
+        wrong_project_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quality-review",
+                "source_type": "capture",
+                "source_id": wrong_project_capture["id"],
+                "text": "Project Apollo onboarding pricing invoice threshold approval",
+                "persist": True,
+                "limit": 12,
+            },
+        )
+        assert wrong_project_suggestions.status_code == 200, wrong_project_suggestions.text
+        wrong_project_data = wrong_project_suggestions.json()["data"]
+        wrong_project_candidates = wrong_project_data["candidates"]
+        assert all(
+            item["target_id"] not in {target_fact["id"], distractor_fact["id"]}
+            for item in wrong_project_candidates
+            if item["target_type"] == "fact"
+        )
+        assert all(
+            item["metadata"].get("canonical_key") not in {"atlas", "aurora"}
+            for item in wrong_project_candidates
+            if item["target_type"] == "anchor"
+            and item["metadata"].get("anchor_kind") == "project"
+        )
+        assert (
+            wrong_project_data["diagnostics"]["link_policy_denied_reason_counts"][
+                "exclusive_anchor_mismatch"
+            ]
+            >= 1
+        )
+
         approved = client.post(
             f"/v1/context-link-suggestions/{fact_candidates[0]['suggestion_id']}/review",
             json={"action": "approve", "reason": "quality golden accepted top target"},
@@ -478,5 +521,7 @@ def _ingest_document(
 
 
 def _candidate_score(candidates: list[dict[str, object]], target_id: str) -> float:
-    candidate = next(item for item in candidates if item["target_id"] == target_id)
-    return float(candidate["score"])
+    for candidate in candidates:
+        if candidate["target_id"] == target_id:
+            return float(candidate["score"])
+    return 0.0

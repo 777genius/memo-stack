@@ -287,16 +287,7 @@ class SuggestContextLinksUseCase:
             if key in seen or _is_same_source(key, command):
                 continue
             seen.add(key)
-            target_text = " ".join(
-                part
-                for part in (
-                    anchor.kind.value,
-                    anchor.label,
-                    " ".join(anchor.aliases),
-                    anchor.description or "",
-                )
-                if part
-            )
+            target_text = _anchor_scoring_text(anchor)
             score, reasons, matched_terms = _score_text_candidate(
                 query_terms=terms,
                 temporal_hints=temporal_hints,
@@ -879,6 +870,26 @@ def _observed_anchor_for_candidate(
         if observed := observed_by_canonical_key.get((anchor.kind.value, key)):
             return observed
     return None
+
+
+def _anchor_scoring_text(anchor: MemoryAnchor) -> str:
+    parts = [_anchor_identity_text(anchor.kind, anchor.label)]
+    label_key = normalize_memory_text(anchor.label)
+    for alias in anchor.aliases:
+        if normalize_memory_text(alias) == label_key:
+            continue
+        parts.append(_anchor_identity_text(anchor.kind, alias))
+    return " ".join(part for part in parts if part)
+
+
+def _anchor_identity_text(kind: MemoryAnchorKind, value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    lowered = text.casefold()
+    if kind == MemoryAnchorKind.PROJECT and not lowered.startswith(("project ", "проект ")):
+        return f"Project {text}"
+    return text
 
 
 def _duplicate_fact_candidate_metadata(match: FactDuplicateMatch | None) -> dict[str, object]:

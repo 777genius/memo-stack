@@ -912,6 +912,8 @@ def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
             codes.append("equivalent_text")
         elif reason == "semantic duplicate":
             codes.append("semantic_duplicate")
+        elif reason == "different anchor identity":
+            codes.append("exclusive_anchor_mismatch")
         elif reason == "excluded query term":
             codes.append("excluded_term_penalty")
         elif reason == "recent context":
