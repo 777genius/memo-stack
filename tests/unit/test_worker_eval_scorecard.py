@@ -91,7 +91,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
             "ok": True,
             "status": "ok",
             "metrics": {
-                "case_count": 15,
+                "case_count": 18,
                 "required_case_coverage_rate": 1.0,
                 "missing_required_case_count": 0,
                 "ranking_accuracy": 1.0,
@@ -119,6 +119,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "anchor_evidence_confidence_and_observed_at_exposed": True,
                 "person_and_project_anchors_suggested": True,
                 "same_name_person_project_anchors_separate": True,
+                "explicit_alias_anchor_identity_terms_rank_correct_target": True,
                 "high_impact_relation_requires_explicit_signal": True,
                 "evidence_relation_requires_source_signal": True,
                 "mentions_relation_requires_entity_signal": True,
@@ -1810,7 +1811,11 @@ def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> No
     )
     suite_results["semantic-linking-golden"]["metrics"].update(
         {
-            "required_case_coverage_rate": 0.9,
+            "required_case_coverage_rate": round(
+                (len(SEMANTIC_LINKING_REQUIRED_CASE_IDS) - 1)
+                / len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
+                4,
+            ),
             "missing_required_case_count": 1,
         }
     )
@@ -1827,7 +1832,10 @@ def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> No
     ]
     assert result["metrics"]["quality_required_case_coverage_rate"] == 0.8889
     assert result["metrics"]["quality_missing_required_case_count"] == 1
-    assert result["metrics"]["semantic_linking_required_case_coverage_rate"] == 0.9
+    assert result["metrics"]["semantic_linking_required_case_coverage_rate"] == round(
+        (len(SEMANTIC_LINKING_REQUIRED_CASE_IDS) - 1) / len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
+        4,
+    )
     assert result["metrics"]["semantic_linking_missing_required_case_count"] == 1
 
 

@@ -463,6 +463,97 @@ def _execute_semantic_linking_golden(client: Any, headers: dict[str, str]) -> di
             )
         )
 
+    alias_target_fact = _remember_fact(
+        client,
+        headers,
+        space_slug=space_slug,
+        text=(
+            "Alex aka Alexander Cooper owns Project Atlas aka Atlas Mobile retrieval launch notes."
+        ),
+        source_id="atlas-alias-retrieval-owner",
+    )
+    alias_distractor_fact = _remember_fact(
+        client,
+        headers,
+        space_slug=space_slug,
+        text=(
+            "Alexander Cooper owns Project Aurora Mobile retrieval launch notes "
+            "for a different workspace."
+        ),
+        source_id="aurora-alias-distractor",
+    )
+    alias_capture = _capture(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_event_id="explicit-alias-anchor-capture",
+        text=(
+            "Alex aka Alexander Cooper owns Project Atlas aka Atlas Mobile retrieval launch notes."
+        ),
+        thread_external_ref="quality-review",
+    )
+    alias_suggestions = _suggest(
+        client,
+        headers,
+        space_slug=space_slug,
+        source_id=str(alias_capture.get("id", "")),
+        text="Alexander Cooper Project Atlas Mobile retrieval launch notes",
+        thread_external_ref="quality-review",
+        limit=16,
+    )
+    alias_fact_candidates = [
+        item
+        for item in alias_suggestions.get("candidates", [])
+        if item.get("target_type") == "fact"
+    ]
+    alias_top_fact = alias_fact_candidates[0] if alias_fact_candidates else {}
+    alias_distractor_score = _candidate_score(
+        alias_fact_candidates,
+        str(alias_distractor_fact.get("id", "")),
+    )
+    alias_anchors = _list_anchors(client, headers, space_slug=space_slug)
+    alias_person_anchor = _anchor_by_identity(alias_anchors, "person", "aleksander cooper")
+    alias_project_anchor = _anchor_by_identity(alias_anchors, "project", "atlas mobile")
+    checks["explicit_alias_anchor_identity_terms_rank_correct_target"] = (
+        bool(alias_target_fact)
+        and bool(alias_distractor_fact)
+        and bool(alias_capture)
+        and alias_top_fact.get("target_id") == alias_target_fact.get("id")
+        and float(alias_top_fact.get("score", 0.0)) > alias_distractor_score
+        and _anchor_has_alias_identity(alias_person_anchor, "aleksander cooper")
+        and _anchor_has_alias_identity(alias_project_anchor, "atlas mobile")
+    )
+    cases.append(
+        {
+            "case_id": "explicit_alias_anchor_identity_terms_rank_correct_target",
+            "ok": checks["explicit_alias_anchor_identity_terms_rank_correct_target"],
+            "target_type": alias_top_fact.get("target_type"),
+            "target_id": alias_top_fact.get("target_id"),
+            "score": alias_top_fact.get("score"),
+            "distractor_score": alias_distractor_score,
+            "person_aliases": (
+                alias_person_anchor.get("aliases") if isinstance(alias_person_anchor, dict) else []
+            ),
+            "project_aliases": (
+                alias_project_anchor.get("aliases")
+                if isinstance(alias_project_anchor, dict)
+                else []
+            ),
+        }
+    )
+    if not checks["explicit_alias_anchor_identity_terms_rank_correct_target"]:
+        failures.append(
+            _failure(
+                "explicit_alias_anchor_identity_terms_rank_correct_target",
+                "anchor_disambiguation",
+                "explicit_alias_identity_terms_did_not_rank_or_persist",
+                item_ids=[
+                    str(alias_target_fact.get("id", "")),
+                    str(alias_distractor_fact.get("id", "")),
+                ],
+            )
+        )
+
     policy_case = _high_impact_relation_policy_case()
     checks["high_impact_relation_requires_explicit_signal"] = bool(policy_case["ok"])
     cases.append(policy_case)
@@ -927,6 +1018,49 @@ def _list_anchors(client: Any, headers: dict[str, str], *, space_slug: str) -> l
     return data if isinstance(data, list) else []
 
 
+def _anchor_by_identity(
+    anchors: list[dict[str, Any]],
+    kind: str,
+    alias_identity_key: str,
+) -> dict[str, Any]:
+    for anchor in anchors:
+        metadata = anchor.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        alias_terms = metadata.get("alias_identity_terms")
+        if (
+            anchor.get("kind") == kind
+            and isinstance(alias_terms, list)
+            and alias_identity_key
+            in {_normalize_public_alias_identity(item) for item in alias_terms}
+        ):
+            return anchor
+    return {}
+
+
+def _anchor_has_alias_identity(anchor: object, identity_term: str) -> bool:
+    if not isinstance(anchor, dict):
+        return False
+    metadata = anchor.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    aliases = anchor.get("aliases")
+    alias_terms = metadata.get("alias_identity_terms")
+    return (
+        isinstance(aliases, list)
+        and len(aliases) >= 1
+        and isinstance(alias_terms, list)
+        and identity_term in {_normalize_public_alias_identity(item) for item in alias_terms}
+    )
+
+
+def _normalize_public_alias_identity(value: object) -> str:
+    text = str(value).strip().lower()
+    if ":" in text:
+        return text.split(":", 1)[1].strip()
+    return text
+
+
 def _anchor_has_review_evidence(anchor: object) -> bool:
     if not isinstance(anchor, dict):
         return False
@@ -1205,9 +1339,17 @@ def _report(
         "document_chunk_linking_accuracy": (
             1.0 if checks.get("document_chunk_evidence_suggested") else 0.0
         ),
-        "anchor_recall_rate": 1.0 if checks.get("person_and_project_anchors_suggested") else 0.0,
+        "anchor_recall_rate": (
+            1.0
+            if checks.get("person_and_project_anchors_suggested")
+            and checks.get("explicit_alias_anchor_identity_terms_rank_correct_target")
+            else 0.0
+        ),
         "anchor_disambiguation_rate": (
-            1.0 if checks.get("same_name_person_project_anchors_separate") else 0.0
+            1.0
+            if checks.get("same_name_person_project_anchors_separate")
+            and checks.get("explicit_alias_anchor_identity_terms_rank_correct_target")
+            else 0.0
         ),
         "mixed_script_event_anchor_rate": (
             1.0

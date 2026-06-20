@@ -1337,6 +1337,7 @@ def test_semantic_linking_golden_eval_passes(tmp_path: Path) -> None:
     assert result["checks"]["temporal_intent_links_recent_fact_without_text_match"] is True
     assert result["checks"]["person_and_project_anchors_suggested"] is True
     assert result["checks"]["same_name_person_project_anchors_separate"] is True
+    assert result["checks"]["explicit_alias_anchor_identity_terms_rank_correct_target"] is True
     assert result["checks"]["mixed_script_event_anchor_preserves_person_project_time"] is True
     assert result["checks"]["high_impact_relation_requires_explicit_signal"] is True
     assert result["checks"]["weak_overlap_below_review_threshold_denied"] is True

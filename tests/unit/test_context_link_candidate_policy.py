@@ -201,6 +201,40 @@ def test_multilingual_scoring_preserves_precise_lexical_ranking() -> None:
     assert target_score > old_related_score
 
 
+def test_scoring_penalizes_specific_project_identity_mismatch() -> None:
+    query = "Alexander Cooper Project Atlas Mobile retrieval launch notes"
+    now = datetime(2026, 6, 19, 12, tzinfo=UTC)
+
+    target_score, target_reasons, target_hits = score_text_candidate(
+        query_terms=terms(query),
+        temporal_hints=temporal_hints(query),
+        target_text=(
+            "Alex aka Alexander Cooper owns Project Atlas aka Atlas Mobile "
+            "retrieval launch notes."
+        ),
+        updated_at=now,
+        now=now,
+        base=52,
+    )
+    wrong_project_score, wrong_reasons, wrong_hits = score_text_candidate(
+        query_terms=terms(query),
+        temporal_hints=temporal_hints(query),
+        target_text=(
+            "Alexander Cooper owns Project Aurora Mobile retrieval launch notes "
+            "for a different workspace."
+        ),
+        updated_at=now,
+        now=now,
+        base=52,
+    )
+
+    assert "project:atlas mobile" in target_hits
+    assert "project:atlas mobile" not in wrong_hits
+    assert "different anchor identity" not in target_reasons
+    assert "different anchor identity" in wrong_reasons
+    assert target_score > wrong_project_score
+
+
 def test_evidence_summary_is_bounded_and_multimodal_without_quotes() -> None:
     refs = tuple(
         SourceRef(

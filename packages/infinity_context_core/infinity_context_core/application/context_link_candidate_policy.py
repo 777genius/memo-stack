@@ -26,6 +26,7 @@ _MAX_QUERY_TERMS = 64
 _MAX_QUERY_TERM_CHARS = 80
 _MAX_PROMPT_INJECTION_SIGNAL_CODES = 8
 _MAX_TEXT_MATCH_SCORE = 125.0
+_EXCLUSIVE_ANCHOR_MISMATCH_PENALTY = 32.0
 _LINK_STOP_TERMS = {
     "about",
     "after",
@@ -295,9 +296,7 @@ def score_text_candidate(
         if _is_raw_link_term(term) and (term in target_terms or _term_matches_text(term, lowered))
     )
     semantic_hits = tuple(
-        term
-        for term in query_terms
-        if _is_semantic_link_term(term) and term in target_terms
+        term for term in query_terms if _is_semantic_link_term(term) and term in target_terms
     )
     hits = (*raw_hits, *semantic_hits)
     if hits:
@@ -305,6 +304,9 @@ def score_text_candidate(
         if semantic_hits and not raw_hits:
             score += min(14.0, 3.5 * len(semantic_hits))
         reasons.append("matching text")
+    if _exclusive_anchor_mismatch(query_terms=query_terms, target_terms=target_terms):
+        score -= _EXCLUSIVE_ANCHOR_MISMATCH_PENALTY
+        reasons.append("different anchor identity")
     relative_age_hours = _relative_age_hours(updated_at, now)
     if _matches_temporal_hint(temporal_hints, relative_age_hours):
         score += 6 if hits else 22
@@ -321,7 +323,7 @@ def score_text_candidate(
         reasons.append("near in time")
     if not reasons:
         reasons.append("recent context")
-    return min(score, _MAX_TEXT_MATCH_SCORE), reasons, hits
+    return max(0.0, min(score, _MAX_TEXT_MATCH_SCORE)), reasons, hits
 
 
 def _add_term(seen: dict[str, None], value: str) -> None:
@@ -340,6 +342,66 @@ def _is_raw_link_term(term: str) -> bool:
 
 def _is_semantic_link_term(term: str) -> bool:
     return ":" in term
+
+
+def _exclusive_anchor_mismatch(
+    *,
+    query_terms: tuple[str, ...],
+    target_terms: set[str],
+) -> bool:
+    query_set = set(query_terms)
+    for prefix in ("project:",):
+        query_identities = _specific_anchor_identity_terms(query_set, prefix)
+        target_identities = _specific_anchor_identity_terms(target_terms, prefix)
+        if (
+            query_identities
+            and target_identities
+            and not _anchor_identity_sets_overlap(query_identities, target_identities, prefix)
+        ):
+            return True
+    return False
+
+
+def _specific_anchor_identity_terms(values: set[str], prefix: str) -> set[str]:
+    identities = {value for value in values if value.startswith(prefix)}
+    multiword = {value for value in identities if " " in value.removeprefix(prefix).strip()}
+    return multiword or identities
+
+
+def _anchor_identity_sets_overlap(
+    query_identities: set[str],
+    target_identities: set[str],
+    prefix: str,
+) -> bool:
+    if query_identities & target_identities:
+        return True
+    query_values = {value.removeprefix(prefix).strip() for value in query_identities}
+    target_values = {value.removeprefix(prefix).strip() for value in target_identities}
+    return any(
+        _anchor_identity_value_contains(query_value, target_value)
+        for query_value in query_values
+        for target_value in target_values
+    )
+
+
+def _anchor_identity_value_contains(left: str, right: str) -> bool:
+    left_terms = tuple(term for term in left.split() if term)
+    right_terms = tuple(term for term in right.split() if term)
+    if not left_terms or not right_terms:
+        return False
+    return _ordered_subsequence(left_terms, right_terms) or _ordered_subsequence(
+        right_terms,
+        left_terms,
+    )
+
+
+def _ordered_subsequence(needle: tuple[str, ...], haystack: tuple[str, ...]) -> bool:
+    if len(needle) > len(haystack):
+        return False
+    for start in range(0, len(haystack) - len(needle) + 1):
+        if haystack[start : start + len(needle)] == needle:
+            return True
+    return False
 
 
 def has_link_signal(*, matched_terms: tuple[str, ...], reasons: list[str]) -> bool:

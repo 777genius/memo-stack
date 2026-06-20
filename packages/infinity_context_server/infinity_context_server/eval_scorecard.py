@@ -73,6 +73,7 @@ _SEMANTIC_LINKING_REQUIRED_CHECKS = (
     "person_project_and_org_anchors_suggested",
     "anchor_evidence_confidence_and_observed_at_exposed",
     "same_name_person_project_anchors_separate",
+    "explicit_alias_anchor_identity_terms_rank_correct_target",
     "high_impact_relation_requires_explicit_signal",
     "evidence_relation_requires_source_signal",
     "mentions_relation_requires_entity_signal",
