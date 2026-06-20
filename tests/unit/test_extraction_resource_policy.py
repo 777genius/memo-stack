@@ -205,6 +205,28 @@ def test_extraction_archive_resource_policy_blocks_path_traversal() -> None:
     assert "secrets.txt" not in str(decision.metadata)
 
 
+def test_extraction_archive_resource_policy_blocks_malformed_zip() -> None:
+    decision = assess_extraction_archive_resource_limits(
+        filename="broken.docx",
+        declared_content_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        detected_content_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        magic_content_type="application/zip",
+        content=b"PK\x03\x04not a readable central directory",
+        limits=ExtractionLimits(max_bytes=1_000_000),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "asset_extraction.archive_parse_failed"
+    assert decision.message == "Archive metadata could not be inspected safely"
+    assert decision.metadata["extraction_archive_resource_checked"] is True
+    assert decision.metadata["extraction_resource_limit_exceeded"] == "archive_parse"
+    assert "readable central directory" not in str(decision.metadata)
+
+
 def test_extraction_archive_resource_policy_blocks_zip_bomb_shape() -> None:
     content = _zip_bytes({"payload.txt": b"A" * 2_000})
 
