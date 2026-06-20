@@ -37,6 +37,7 @@ from infinity_context_core.application.context_policy import (
 from infinity_context_core.application.context_ranking import dedupe_rank_items
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
+    has_project_identity_mismatch,
     is_query_relevance_sufficient,
     query_relevance_score_signals,
     score_query_relevance,
@@ -215,6 +216,11 @@ class BuildContextUseCase:
                 now=now,
             ):
                 continue
+            if has_project_identity_mismatch(
+                query=query.query,
+                text=anchor_retrieval_text(anchor),
+            ):
+                continue
             relevance = score_query_relevance(
                 query=query.query,
                 text=anchor_retrieval_text(anchor),
@@ -250,6 +256,11 @@ class BuildContextUseCase:
                 text=chunk.text,
                 metadata=chunk.metadata,
             )
+            if has_project_identity_mismatch(query=query.query, text=chunk_text):
+                diagnostics["keyword_chunks_dropped_by_relevance"] = (
+                    int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
+                )
+                continue
             relevance = score_query_relevance(query=query.query, text=chunk_text)
             if not is_query_relevance_sufficient(relevance):
                 diagnostics["keyword_chunks_dropped_by_relevance"] = (

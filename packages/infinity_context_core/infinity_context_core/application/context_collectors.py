@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from infinity_context_core.application.context_hydration import ContextHydrator
-from infinity_context_core.application.context_relevance import score_query_relevance
+from infinity_context_core.application.context_relevance import (
+    has_project_identity_mismatch,
+    score_query_relevance,
+)
 from infinity_context_core.application.context_snippets import (
     query_focused_snippet,
     query_snippet_diagnostics,
@@ -147,6 +150,8 @@ def _rank_facts_for_query(
         return ()
     ranked = []
     for index, fact in enumerate(facts):
+        if has_project_identity_mismatch(query=query_text, text=fact.text):
+            continue
         relevance = score_query_relevance(query=query_text, text=fact.text)
         ranked.append((relevance, index, fact))
     ranked.sort(

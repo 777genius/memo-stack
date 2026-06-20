@@ -1,4 +1,5 @@
 from infinity_context_core.application.context_relevance import (
+    has_project_identity_mismatch,
     is_query_relevance_sufficient,
     score_query_relevance,
 )
@@ -60,6 +61,25 @@ def test_query_relevance_avoids_unrelated_project_match() -> None:
     assert relevance.distinctive_term_count == 1
     assert relevance.distinctive_term_hits == 0
     assert is_query_relevance_sufficient(relevance) is False
+
+
+def test_project_identity_mismatch_detects_shared_generic_terms() -> None:
+    assert has_project_identity_mismatch(
+        query="Alex Project Apollo billing one hour ago",
+        text="Alex discussed Project Atlas billing one hour ago.",
+    )
+    assert has_project_identity_mismatch(
+        query="Алексом проект Аполло billing час назад",
+        text="Алекс обсуждал проект Атлас billing час назад.",
+    )
+    assert not has_project_identity_mismatch(
+        query="Alex Project Atlas billing one hour ago",
+        text="Alex discussed Project Atlas billing one hour ago.",
+    )
+    assert not has_project_identity_mismatch(
+        query="Alex billing one hour ago",
+        text="Alex discussed Project Atlas billing one hour ago.",
+    )
 
 
 def test_query_relevance_ignores_generic_retrieval_plumbing_terms() -> None:

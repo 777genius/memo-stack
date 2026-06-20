@@ -143,6 +143,18 @@ def is_query_relevance_sufficient(relevance: QueryRelevance) -> bool:
     return relevance.distinctive_term_count <= 0 or relevance.distinctive_term_hits > 0
 
 
+def has_project_identity_mismatch(*, query: str, text: str) -> bool:
+    query_projects = _project_identity_variant_sets(query)
+    text_projects = _project_identity_variant_sets(text)
+    if not query_projects or not text_projects:
+        return False
+    return not any(
+        set(query_project).intersection(text_project)
+        for query_project in query_projects
+        for text_project in text_projects
+    )
+
+
 def query_relevance_score_signals(relevance: QueryRelevance) -> dict[str, int | float]:
     return {
         "query_term_count": relevance.query_term_count,
@@ -160,6 +172,31 @@ def query_relevance_score_signals(relevance: QueryRelevance) -> dict[str, int | 
 
 def _is_distinctive_term(term: LexicalQueryTerm) -> bool:
     return not any(variant in _GENERIC_MEMORY_QUERY_TERMS for variant in term.variants)
+
+
+def _project_identity_variant_sets(text: str) -> tuple[tuple[str, ...], ...]:
+    token_variants = text_variant_sequence(text)
+    identities: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+    for index, variants in enumerate(token_variants):
+        if not _is_project_marker_variants(variants):
+            continue
+        for candidate in token_variants[index + 1 : index + 4]:
+            if _is_distinctive_variants(candidate):
+                key = tuple(candidate)
+                if key not in seen:
+                    identities.append(key)
+                    seen.add(key)
+                break
+    return tuple(identities)
+
+
+def _is_project_marker_variants(variants: tuple[str, ...]) -> bool:
+    return bool({"project", "проект"}.intersection(variants))
+
+
+def _is_distinctive_variants(variants: tuple[str, ...]) -> bool:
+    return not any(variant in _GENERIC_MEMORY_QUERY_TERMS for variant in variants)
 
 
 def _phrase_bigram_hits(

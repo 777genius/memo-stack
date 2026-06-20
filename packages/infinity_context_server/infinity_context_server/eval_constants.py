@@ -79,6 +79,7 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "event_anchor_relation_expands_linked_person_project_facts",
     "person_event_project_precision",
     "multilingual_recent_person_project_recall",
+    "same_person_time_wrong_project_does_not_pull_atlas",
     "wrong_project_anchor_deflects_generic_match",
     "identifier_like_query_deflects_partial_marker",
     "unrelated_query_returns_no_context_items",
