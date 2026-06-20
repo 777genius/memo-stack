@@ -966,6 +966,14 @@ def _seed_quality_golden(client: TestClient, headers: dict[str, str]) -> Quality
         space_id=space_id,
         memory_scope_id=alpha_memory_scope_id,
     )
+    checks["quality_event_anchor_relation_context"] = (
+        _seed_quality_event_anchor_relation_context(
+            client,
+            headers,
+            space_id=space_id,
+            memory_scope_id=alpha_memory_scope_id,
+        )
+    )
     checks["deleted_fact"] = _seed_quality_deleted_fact(
         client,
         headers,
@@ -1754,6 +1762,193 @@ def _seed_quality_event_anchor(
         headers=_with_idempotency(headers, "quality-event-anchor-v1"),
     )
     return _status_ok(response.status_code)
+
+
+def _seed_quality_event_anchor_relation_context(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    space_id: str,
+    memory_scope_id: str,
+) -> bool:
+    person = client.post(
+        "/v1/anchors",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "kind": "person",
+            "label": "Alex Relation",
+            "aliases": ["A. Relation"],
+            "description": "Quality eval person anchor linked from an event anchor.",
+            "confidence": "high",
+            "evidence_refs": [
+                {
+                    "source_type": "manual",
+                    "source_id": "quality-anchor-rel-person",
+                    "quote_preview": "Alex Relation owns the follow-up notes.",
+                }
+            ],
+            "metadata": {
+                "anchor_family": "person",
+                "canonical_key": "alex_relation",
+                "person_canonical_key": "alex_relation",
+            },
+        },
+        headers=_with_idempotency(headers, "quality-anchor-rel-person-v1"),
+    )
+    project = client.post(
+        "/v1/anchors",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "kind": "project",
+            "label": "Project Atlas Relation",
+            "aliases": ["Atlas Relation"],
+            "description": (
+                "Quality eval project anchor linked from an event anchor for "
+                "relation-ledger work."
+            ),
+            "confidence": "high",
+            "evidence_refs": [
+                {
+                    "source_type": "manual",
+                    "source_id": "quality-anchor-rel-project",
+                    "quote_preview": (
+                        "Project Atlas Relation owns the relation-ledger follow-up."
+                    ),
+                }
+            ],
+            "metadata": {
+                "anchor_family": "project",
+                "canonical_key": "atlas_relation",
+                "project_canonical_key": "atlas_relation",
+            },
+        },
+        headers=_with_idempotency(headers, "quality-anchor-rel-project-v1"),
+    )
+    event = client.post(
+        "/v1/anchors",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "kind": "event",
+            "label": "Quality relation ledger call",
+            "aliases": ["Alex Relation Atlas Relation call"],
+            "description": (
+                "Quality eval event anchor that must expand to related person and project."
+            ),
+            "confidence": "high",
+            "evidence_refs": [
+                {
+                    "source_type": "capture",
+                    "source_id": "quality-anchor-rel-event",
+                    "quote_preview": (
+                        "Alex Relation discussed Project Atlas Relation relation-ledger "
+                        "last week."
+                    ),
+                }
+            ],
+            "metadata": {
+                "anchor_family": "event",
+                "event_type": "call",
+                "event_type_canonical": "call",
+                "event_participant_label": "Alex Relation",
+                "event_participant_relation": "with",
+                "event_participant_canonical_key": "alex_relation",
+                "event_project_label": "Project Atlas Relation",
+                "event_project_relation": "about",
+                "event_project_canonical_key": "atlas_relation",
+                "project_canonical_key": "atlas_relation",
+                "event_temporal_phrase": "last week",
+                "event_temporal_hint_code": "last_week",
+                "event_temporal_quantity": 1,
+                "event_temporal_unit": "week",
+                "event_identity_terms": [
+                    "call",
+                    "alex_relation",
+                    "atlas_relation",
+                    "last_week:1:week",
+                    "relation-ledger",
+                ],
+            },
+        },
+        headers=_with_idempotency(headers, "quality-anchor-rel-event-v1"),
+    )
+    person_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text=(
+            "QUALITY_ANCHOR_REL_PERSON_FACT: The connected person owns the follow-up "
+            "checklist."
+        ),
+        source_id="quality-anchor-rel-person-fact",
+        idempotency_key="quality-anchor-rel-person-fact-v1",
+        classification="internal",
+    )
+    project_fact = _remember_eval_fact_response(
+        client,
+        headers,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        text=(
+            "QUALITY_ANCHOR_REL_PROJECT_FACT: The connected project stores the "
+            "evidence package."
+        ),
+        source_id="quality-anchor-rel-project-fact",
+        idempotency_key="quality-anchor-rel-project-fact-v1",
+        classification="internal",
+    )
+    person_id = _response_data_id(person)
+    project_id = _response_data_id(project)
+    person_fact_id = _response_data_id(person_fact)
+    project_fact_id = _response_data_id(project_fact)
+    if not all((person_id, project_id, _response_data_id(event), person_fact_id, project_fact_id)):
+        return False
+
+    person_link = client.post(
+        "/v1/context-links",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "source_type": "anchor",
+            "source_id": person_id,
+            "target_type": "fact",
+            "target_id": person_fact_id,
+            "relation_type": "evidence_of",
+            "confidence": "high",
+            "reason": "Quality eval related person anchor should bring linked fact evidence.",
+        },
+        headers=_with_idempotency(headers, "quality-anchor-rel-person-link-v1"),
+    )
+    project_link = client.post(
+        "/v1/context-links",
+        json={
+            "space_id": space_id,
+            "memory_scope_id": memory_scope_id,
+            "source_type": "anchor",
+            "source_id": project_id,
+            "target_type": "fact",
+            "target_id": project_fact_id,
+            "relation_type": "evidence_of",
+            "confidence": "high",
+            "reason": "Quality eval related project anchor should bring linked fact evidence.",
+        },
+        headers=_with_idempotency(headers, "quality-anchor-rel-project-link-v1"),
+    )
+    return all(
+        _status_ok(response.status_code)
+        for response in (
+            person,
+            project,
+            event,
+            person_fact,
+            project_fact,
+            person_link,
+            project_link,
+        )
+    )
 
 
 def _seed_long_memory_golden(

@@ -76,6 +76,7 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "pending_duplicate_merge_review_visible",
     "canonical_project_anchor_recall_with_citation",
     "canonical_event_anchor_recall_by_identity",
+    "event_anchor_relation_expands_linked_person_project_facts",
     "person_event_project_precision",
     "multilingual_recent_person_project_recall",
     "wrong_project_anchor_deflects_generic_match",

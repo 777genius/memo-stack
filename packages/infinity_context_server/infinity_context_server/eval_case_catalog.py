@@ -186,8 +186,10 @@ def _quality_golden_cases(
             memory_scope_ids=(alpha_memory_scope_id,),
             query="legacy billing owner Alex",
             must_include=("QUALITY_FACT_CONTRADICTION_OLD",),
-            max_facts=5,
+            token_budget=2500,
+            max_facts=10,
             max_chunks=0,
+            max_evidence_items=0,
             include_stale=True,
             required_diagnostics=(
                 ("stale_facts_used", "gte", 1),
@@ -452,6 +454,67 @@ def _quality_golden_cases(
                     ("source_type", "eq", "capture"),
                     ("source_id", "eq", "quality-event-anchor-capture"),
                     ("quote_preview", "contains", "Alex Project Atlas billing call"),
+                ),
+            ),
+        ),
+        EvalCase(
+            case_id="event_anchor_relation_expands_linked_person_project_facts",
+            category="anchor_context",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query=(
+                "Alex Relation Project Atlas Relation relation-ledger call last week "
+                "linked facts"
+            ),
+            must_include=(
+                "event: Quality relation ledger call",
+                "person: Alex Relation",
+                "project: Project Atlas Relation",
+                "QUALITY_ANCHOR_REL_PERSON_FACT",
+                "QUALITY_ANCHOR_REL_PROJECT_FACT",
+            ),
+            token_budget=2500,
+            max_facts=2,
+            max_chunks=0,
+            max_evidence_items=0,
+            required_diagnostics=(
+                ("anchors_used", "gte", 1),
+                ("anchor_relation_items_used", "gte", 2),
+                ("approved_context_links_used", "gte", 2),
+                ("approved_context_linked_facts_used", "gte", 2),
+                ("retrieval_sources_used", "contains", "canonical_anchor_relations"),
+                ("retrieval_sources_used", "contains", "approved_context_linked_facts"),
+            ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "anchor"),
+                    (
+                        "diagnostics.retrieval_sources",
+                        "contains",
+                        "canonical_anchor_relations",
+                    ),
+                    ("diagnostics.anchor_kind", "eq", "person"),
+                    ("text", "contains", "person: Alex Relation"),
+                ),
+                (
+                    ("item_type", "eq", "anchor"),
+                    (
+                        "diagnostics.retrieval_sources",
+                        "contains",
+                        "canonical_anchor_relations",
+                    ),
+                    ("diagnostics.anchor_kind", "eq", "project"),
+                    ("text", "contains", "project: Project Atlas Relation"),
+                ),
+                (
+                    ("item_type", "eq", "fact"),
+                    ("diagnostics.retrieval_source", "eq", "approved_context_linked_facts"),
+                    ("text", "contains", "QUALITY_ANCHOR_REL_PERSON_FACT"),
+                ),
+                (
+                    ("item_type", "eq", "fact"),
+                    ("diagnostics.retrieval_source", "eq", "approved_context_linked_facts"),
+                    ("text", "contains", "QUALITY_ANCHOR_REL_PROJECT_FACT"),
                 ),
             ),
         ),
