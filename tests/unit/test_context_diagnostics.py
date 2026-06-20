@@ -47,6 +47,55 @@ def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:
     assert "SECRET_VALUE_SHOULD_NOT_LEAK" not in str(diagnostics)
 
 
+def test_context_bundle_diagnostics_preserve_requirement_coverage() -> None:
+    item = ContextItem(
+        item_id="chunk_contract",
+        item_type="chunk",
+        text="Contract diagnostics item.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="document", source_id="doc", page_number=2),),
+        diagnostics={},
+    )
+    secret = "sk-proj-contextcoverage-secret1234567890"
+    raw_diagnostics = {
+        **{f"extra_{index}": "x" * 500 for index in range(90)},
+        "context_requirement_coverage": {
+            "status": "partial",
+            "requested_total": 2,
+            "covered_total": 1,
+            "missing_total": 1,
+            "requested_modalities": ["document", secret],
+            "covered_modalities": ["document"],
+            "missing_modalities": [secret],
+        },
+    }
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        raw_diagnostics,
+        items=(item,),
+    )
+
+    assert diagnostics["context_requirement_coverage"] == {
+        "schema_version": "context-requirement-coverage-v1",
+        "status": "partial",
+        "requested_total": 2,
+        "covered_total": 1,
+        "missing_total": 1,
+        "coverage_ratio": 0.5,
+        "requested_anchor_kinds": [],
+        "covered_anchor_kinds": [],
+        "missing_anchor_kinds": [],
+        "requested_modalities": ["document"],
+        "covered_modalities": ["document"],
+        "missing_modalities": [],
+        "requested_evidence_features": [],
+        "covered_evidence_features": [],
+        "missing_evidence_features": [],
+        "item_count": 0,
+    }
+    assert secret not in str(diagnostics)
+
+
 def test_context_rank_key_uses_phrase_signal_when_scores_tie() -> None:
     target = ContextItem(
         item_id="target",

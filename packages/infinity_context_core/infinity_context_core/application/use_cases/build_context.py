@@ -48,6 +48,9 @@ from infinity_context_core.application.context_relevance import (
     query_relevance_score_signals,
     score_query_relevance,
 )
+from infinity_context_core.application.context_requirement_coverage import (
+    context_requirement_coverage,
+)
 from infinity_context_core.application.context_snippets import (
     query_focused_snippet,
     query_snippet_diagnostics,
@@ -408,6 +411,11 @@ class BuildContextUseCase:
             1
             for item in result.bundle.items
             if len((item.diagnostics or {}).get("retrieval_sources") or ()) > 1
+        )
+        diagnostics["context_requirement_coverage"] = context_requirement_coverage(
+            query=query.query,
+            query_anchor_intent=query_anchor_intent,
+            items=result.bundle.items,
         )
         bundle_diagnostics = normalize_context_bundle_diagnostics(
             diagnostics,

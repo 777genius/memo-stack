@@ -249,6 +249,8 @@ Owns:
 - dedupe;
 - ranking;
 - freshness/currency handling;
+- explicit query requirement coverage diagnostics for anchors, modalities,
+  citations and time/page/bbox evidence;
 - token budget packing;
 - safe prompt rendering.
 

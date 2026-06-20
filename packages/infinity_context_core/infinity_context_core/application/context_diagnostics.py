@@ -6,6 +6,9 @@ from dataclasses import replace
 from typing import Any
 
 from infinity_context_core.application.context_quality import retrieval_quality_summary
+from infinity_context_core.application.context_requirement_coverage import (
+    sanitize_context_requirement_coverage,
+)
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.application.safe_payload import safe_metadata, safe_metadata_text
 
@@ -410,6 +413,9 @@ def normalize_context_bundle_diagnostics(
     normalized.update(_multimodal_source_ref_counts(items))
     normalized.update(_evidence_kind_modality_counts(items))
     normalized["evidence_coverage_profile"] = _evidence_coverage_profile(items)
+    normalized["context_requirement_coverage"] = sanitize_context_requirement_coverage(
+        raw.get("context_requirement_coverage")
+    )
     normalized.update(_query_snippet_counts(items))
     normalized.update(_media_time_query_counts(items))
     normalized["retrieval_trace"] = _retrieval_trace(
