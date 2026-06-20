@@ -6,6 +6,7 @@ import pytest
 from infinity_context_core.application.context_diagnostics import _BUNDLE_COUNTER_KEYS
 from infinity_context_sdk import (
     ContextBundle,
+    ContextEvidenceSelection,
     InfinityContextClient,
     InfinityContextError,
     MemoryScope,
@@ -1423,6 +1424,99 @@ def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     assert bundle.diagnostics.sensitive_item_text_redacted == 0
     assert bundle.diagnostics.rendered_chars == 0
     assert bundle.diagnostics.max_rendered_chars == 0
+
+
+def test_sdk_context_bundle_top_evidence_prefers_cited_precise_current_items() -> None:
+    bundle = context_bundle_from_response(
+        {
+            "data": {
+                "bundle_id": "ctx_top_evidence",
+                "rendered_text": "Top evidence.",
+                "diagnostics": {},
+                "items": [
+                    {
+                        "item_id": "fact_review",
+                        "item_type": "fact",
+                        "text": "Review-only high score should stay out by default.",
+                        "score": 0.99,
+                        "citations": [
+                            {
+                                "citation_id": "review-citation",
+                                "label": "manual review",
+                                "source_type": "manual",
+                                "source_id": "review-source",
+                                "quote_preview": "review-only",
+                            }
+                        ],
+                        "diagnostics": {
+                            "retrieval_source": "superseded_review",
+                            "review_only": True,
+                        },
+                    },
+                    {
+                        "item_id": "chunk_precise",
+                        "item_type": "chunk",
+                        "text": "Current transcript evidence with precise citation.",
+                        "score": 0.78,
+                        "citations": [
+                            {
+                                "citation_id": "precise-citation",
+                                "label": "audio transcript time range",
+                                "source_type": "extraction_artifact",
+                                "source_id": "artifact_1",
+                                "chunk_id": "segment_1",
+                                "quote_preview": "Alex confirmed Atlas renewal.",
+                                "time_range_ms": {"start": 1200, "end": 5400},
+                                "evidence_kind": "transcript_segment",
+                                "evidence_modality": "audio",
+                                "evidence_confidence": 0.92,
+                                "retrieval_source": "artifact_evidence",
+                            }
+                        ],
+                        "diagnostics": {
+                            "retrieval_sources": ["artifact_evidence", "keyword_chunks"],
+                        },
+                    },
+                    {
+                        "item_id": "fact_uncited",
+                        "item_type": "fact",
+                        "text": "Current uncited note with higher raw score.",
+                        "score": 0.83,
+                        "diagnostics": {"retrieval_source": "postgres_facts"},
+                    },
+                ],
+            }
+        }
+    )
+
+    top = bundle.top_evidence(limit=2)
+
+    assert all(isinstance(selection, ContextEvidenceSelection) for selection in top)
+    assert [selection.item.item_id for selection in top] == ["chunk_precise"]
+    assert top[0].citation is not None
+    assert top[0].citation.time_start_ms == 1200
+    assert top[0].citation.time_end_ms == 5400
+    assert top[0].score > bundle.items[1].score
+    assert top[0].reasons == (
+        "cited_evidence",
+        "quote_preview",
+        "precise_location",
+        "kind:transcript_segment",
+        "modality:audio",
+        "hybrid_retrieval",
+    )
+
+    with_uncited = bundle.top_evidence(limit=3, include_uncited=True)
+    assert [selection.item.item_id for selection in with_uncited] == [
+        "chunk_precise",
+        "fact_uncited",
+    ]
+
+    with_review = bundle.top_evidence(limit=3, include_review_only=True)
+    assert [selection.item.item_id for selection in with_review] == [
+        "fact_review",
+        "chunk_precise",
+    ]
 
 
 def test_sdk_typed_context_defaults_legacy_item_diagnostics() -> None:

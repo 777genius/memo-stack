@@ -12,7 +12,11 @@ from infinity_context_sdk._redaction import redact_sensitive_text
 from infinity_context_sdk.anchors import InfinityContextAnchorsMixin
 from infinity_context_sdk.assets import InfinityContextAssetsMixin
 from infinity_context_sdk.capabilities import ExtractionCapabilityDiagnostics
-from infinity_context_sdk.context import ContextBundle, context_bundle_from_response
+from infinity_context_sdk.context import (
+    ContextBundle,
+    ContextEvidenceSelection,
+    context_bundle_from_response,
+)
 from infinity_context_sdk.export import InfinityContextExportMixin
 from infinity_context_sdk.scopes import MemoryScope, ReadScope
 from infinity_context_sdk.thread_memory import InfinityContextThreadMemoryMixin
@@ -1036,4 +1040,12 @@ def _safe_error_message(value: str) -> str:
     return redact_sensitive_text(value.strip() or "Infinity Context request failed")[:500]
 
 
-__all__ = ["InfinityContextClient", "InfinityContextError", "MemoryScope", "ReadScope"]
+__all__ = [
+    "ContextBundle",
+    "ContextEvidenceSelection",
+    "InfinityContextClient",
+    "InfinityContextError",
+    "MemoryScope",
+    "ReadScope",
+    "context_bundle_from_response",
+]

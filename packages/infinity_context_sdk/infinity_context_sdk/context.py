@@ -110,6 +110,14 @@ class ContextItem:
 
 
 @dataclass(frozen=True)
+class ContextEvidenceSelection:
+    item: ContextItem
+    citation: ContextCitation | None
+    score: float
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ContextBundleDiagnostics:
     context_assembly_version: str
     consistency_mode: str
@@ -236,6 +244,33 @@ class ContextBundle:
     diagnostics: ContextBundleDiagnostics
     meta: Mapping[str, object]
 
+    def top_evidence(
+        self,
+        *,
+        limit: int = 5,
+        include_uncited: bool = False,
+        include_review_only: bool = False,
+        include_stale: bool = False,
+    ) -> tuple[ContextEvidenceSelection, ...]:
+        """Return frontend-ready evidence selections without reimplementing ranking."""
+
+        if limit <= 0:
+            return ()
+        candidates: list[ContextEvidenceSelection] = []
+        for item in self.items:
+            if not include_review_only and item.diagnostics.review_only:
+                continue
+            if not include_stale and item.diagnostics.stale_reason:
+                continue
+            if item.citations:
+                candidates.extend(
+                    _evidence_selection(item=item, citation=citation)
+                    for citation in item.citations
+                )
+            elif include_uncited:
+                candidates.append(_evidence_selection(item=item, citation=None))
+        return tuple(sorted(candidates, key=_evidence_selection_rank_key)[:limit])
+
 
 def context_bundle_from_response(payload: Mapping[str, object]) -> ContextBundle:
     meta = _bounded_mapping(payload.get("meta"))
@@ -251,6 +286,113 @@ def context_bundle_from_response(payload: Mapping[str, object]) -> ContextBundle
         items=items,
         diagnostics=_bundle_diagnostics_from_payload(data.get("diagnostics")),
         meta=meta,
+    )
+
+
+def _evidence_selection(
+    *,
+    item: ContextItem,
+    citation: ContextCitation | None,
+) -> ContextEvidenceSelection:
+    reasons = _evidence_selection_reasons(item=item, citation=citation)
+    return ContextEvidenceSelection(
+        item=item,
+        citation=citation,
+        score=_evidence_selection_score(item=item, citation=citation),
+        reasons=reasons,
+    )
+
+
+def _evidence_selection_score(
+    *,
+    item: ContextItem,
+    citation: ContextCitation | None,
+) -> float:
+    citation_boost = _citation_quality_score(citation)
+    retrieval_boost = 0.035 if len(item.diagnostics.retrieval_sources) > 1 else 0.0
+    review_penalty = 0.08 if item.diagnostics.review_only else 0.0
+    stale_penalty = 0.12 if item.diagnostics.stale_reason else 0.0
+    raw_score = item.score + citation_boost + retrieval_boost - review_penalty - stale_penalty
+    return round(
+        max(0.0, min(1.0, raw_score)),
+        4,
+    )
+
+
+def _citation_quality_score(citation: ContextCitation | None) -> float:
+    if citation is None:
+        return 0.0
+    score = 0.04
+    if citation.quote_preview:
+        score += 0.08
+    if citation.char_start is not None or citation.char_end is not None:
+        score += 0.045
+    if citation.page_number is not None:
+        score += 0.045
+    if citation.time_start_ms is not None or citation.time_end_ms is not None:
+        score += 0.055
+    if citation.bbox is not None:
+        score += 0.06
+    if citation.evidence_kind:
+        score += 0.025
+    if citation.evidence_modality:
+        score += 0.025
+    if citation.evidence_confidence is not None:
+        score += min(0.045, max(0.0, citation.evidence_confidence) * 0.045)
+    return min(0.24, round(score, 4))
+
+
+def _evidence_selection_reasons(
+    *,
+    item: ContextItem,
+    citation: ContextCitation | None,
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if citation is None:
+        reasons.append("uncited_item")
+    else:
+        reasons.append("cited_evidence")
+        if citation.quote_preview:
+            reasons.append("quote_preview")
+        if _citation_has_precise_location(citation):
+            reasons.append("precise_location")
+        if citation.evidence_kind:
+            reasons.append(f"kind:{citation.evidence_kind}")
+        if citation.evidence_modality:
+            reasons.append(f"modality:{citation.evidence_modality}")
+    if len(item.diagnostics.retrieval_sources) > 1:
+        reasons.append("hybrid_retrieval")
+    if item.diagnostics.review_only:
+        reasons.append("review_only")
+    if item.diagnostics.stale_reason:
+        reasons.append("stale")
+    return tuple(reasons)
+
+
+def _citation_has_precise_location(citation: ContextCitation) -> bool:
+    return (
+        citation.char_start is not None
+        or citation.char_end is not None
+        or citation.page_number is not None
+        or citation.time_start_ms is not None
+        or citation.time_end_ms is not None
+        or citation.bbox is not None
+    )
+
+
+def _evidence_selection_rank_key(
+    selection: ContextEvidenceSelection,
+) -> tuple[float, float, str, str, str, str]:
+    citation = selection.citation
+    citation_id = citation.citation_id if citation is not None else ""
+    source_id = citation.source_id if citation is not None else ""
+    return (
+        -selection.score,
+        -selection.item.score,
+        selection.item.item_type,
+        selection.item.item_id,
+        source_id,
+        citation_id,
     )
 
 
