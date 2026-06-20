@@ -146,6 +146,7 @@ class ContextBundleDiagnostics:
     anchor_relation_candidates_considered: int = 0
     anchor_relation_items_used: int = 0
     keyword_chunks_considered: int = 0
+    keyword_chunks_dropped_by_relevance: int = 0
     vector_candidate_count: int = 0
     vector_hydrated_count: int = 0
     graph_candidate_count: int = 0
@@ -190,6 +191,14 @@ class ContextBundleDiagnostics:
     approved_context_linked_facts_used: int = 0
     approved_context_linked_anchors_used: int = 0
     approved_context_linked_assets_used: int = 0
+    approved_context_linked_asset_manifest_jobs_considered: int = 0
+    approved_context_linked_asset_manifest_artifacts_considered: int = 0
+    approved_context_linked_asset_manifest_items_used: int = 0
+    approved_context_linked_asset_manifest_blob_storage_disabled_count: int = 0
+    approved_context_linked_asset_manifest_too_large_count: int = 0
+    approved_context_linked_asset_manifest_read_error_count: int = 0
+    approved_context_linked_asset_manifest_parse_error_count: int = 0
+    approved_context_linked_asset_manifest_schema_skip_count: int = 0
     approved_context_linked_extraction_artifacts_used: int = 0
     approved_context_linked_extraction_artifact_manifest_items_used: int = 0
     approved_context_linked_extraction_artifact_blob_storage_disabled_count: int = 0
@@ -591,6 +600,9 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         ),
         anchor_relation_items_used=_non_negative_int(raw.get("anchor_relation_items_used")),
         keyword_chunks_considered=_non_negative_int(raw.get("keyword_chunks_considered")),
+        keyword_chunks_dropped_by_relevance=_non_negative_int(
+            raw.get("keyword_chunks_dropped_by_relevance")
+        ),
         vector_candidate_count=_non_negative_int(raw.get("vector_candidate_count")),
         vector_hydrated_count=_non_negative_int(raw.get("vector_hydrated_count")),
         graph_candidate_count=_non_negative_int(raw.get("graph_candidate_count")),
@@ -694,6 +706,30 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         ),
         approved_context_linked_assets_used=_non_negative_int(
             raw.get("approved_context_linked_assets_used")
+        ),
+        approved_context_linked_asset_manifest_jobs_considered=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_jobs_considered")
+        ),
+        approved_context_linked_asset_manifest_artifacts_considered=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_artifacts_considered")
+        ),
+        approved_context_linked_asset_manifest_items_used=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_items_used")
+        ),
+        approved_context_linked_asset_manifest_blob_storage_disabled_count=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_blob_storage_disabled_count")
+        ),
+        approved_context_linked_asset_manifest_too_large_count=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_too_large_count")
+        ),
+        approved_context_linked_asset_manifest_read_error_count=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_read_error_count")
+        ),
+        approved_context_linked_asset_manifest_parse_error_count=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_parse_error_count")
+        ),
+        approved_context_linked_asset_manifest_schema_skip_count=_non_negative_int(
+            raw.get("approved_context_linked_asset_manifest_schema_skip_count")
         ),
         approved_context_linked_extraction_artifacts_used=_non_negative_int(
             raw.get("approved_context_linked_extraction_artifacts_used")

@@ -86,13 +86,11 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             "timestamp_granularities": [],
         },
         "supported_file_types": [
-            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
-            ".ogg",
             ".wav",
             ".webm",
         ],
@@ -752,10 +750,6 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
     module = _load_canary_module()
     valid = tmp_path / "fixture.wav"
     valid.write_bytes(_valid_wav_bytes())
-    valid_ogg = tmp_path / "fixture.ogg"
-    valid_ogg.write_bytes(_valid_ogg_bytes())
-    valid_flac = tmp_path / "fixture.flac"
-    valid_flac.write_bytes(_valid_flac_bytes())
     unsupported = tmp_path / "fixture.aac"
     unsupported.write_bytes(b"ADTS")
     mismatch = tmp_path / "mismatch.wav"
@@ -765,8 +759,6 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
         handle.truncate(module.OPENAI_AUDIO_MAX_UPLOAD_BYTES + 1)
 
     assert module._audio_fixture_contract_check(valid) == {"status": "succeeded"}
-    assert module._audio_fixture_contract_check(valid_ogg) == {"status": "succeeded"}
-    assert module._audio_fixture_contract_check(valid_flac) == {"status": "succeeded"}
     assert module._audio_fixture_contract_check(mismatch) == {
         "content_type": "audio/wav",
         "filename_suffix": ".wav",
@@ -783,13 +775,11 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
         "reason": "audio_fixture_unsupported_type",
         "status": "degraded",
         "supported_file_types": [
-            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
-            ".ogg",
             ".wav",
             ".webm",
         ],
@@ -989,11 +979,3 @@ def _valid_wav_bytes() -> bytes:
 
 def _valid_mp3_bytes() -> bytes:
     return b"ID3\x04\x00\x00\x00\x00\x00\x15TIT2\x00\x00\x00\x0b\x00\x00canary mp3"
-
-
-def _valid_ogg_bytes() -> bytes:
-    return b"OggS\x00\x02audio"
-
-
-def _valid_flac_bytes() -> bytes:
-    return b"fLaC\x00\x00\x00\x22"
