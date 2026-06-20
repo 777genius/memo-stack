@@ -13,7 +13,11 @@ from infinity_context_core.domain.extraction import (
     AssetExtractionJobId,
     AssetExtractionStatus,
 )
-from infinity_context_core.ports.extraction import ExtractionLimits
+from infinity_context_core.ports.extraction import (
+    ExtractionLimits,
+    ExtractionResult,
+    FileTypeDetectionResult,
+)
 
 
 class _Clock:
@@ -33,10 +37,18 @@ class _BlobStorage:
     def __init__(self, content: bytes = b"oversized content should not be read") -> None:
         self.content = content
         self.reads: list[str] = []
+        self.writes: list[tuple[str, bytes]] = []
+        self.deletes: list[str] = []
 
     async def read_bytes(self, *, storage_key: str) -> bytes:
         self.reads.append(storage_key)
         return self.content
+
+    async def write_bytes(self, *, storage_key: str, content: bytes) -> None:
+        self.writes.append((storage_key, content))
+
+    async def delete(self, *, storage_key: str) -> None:
+        self.deletes.append(storage_key)
 
 
 class _Detector:
@@ -57,6 +69,50 @@ class _Extractor:
         raise AssertionError("extractor must not be called for oversized assets")
 
 
+class _SuccessfulDetector:
+    def __init__(self, content_type: str) -> None:
+        self.content_type = content_type
+        self.called = False
+
+    async def detect(self, request: object) -> FileTypeDetectionResult:
+        self.called = True
+        return FileTypeDetectionResult(
+            content_type=self.content_type,
+            extension=".wav",
+            confidence="high",
+            diagnostics={"detector": "test"},
+        )
+
+
+class _SuccessfulExtractor:
+    def __init__(self, result: ExtractionResult) -> None:
+        self.result = result
+        self.called = False
+
+    async def extract(self, request: object) -> ExtractionResult:
+        self.called = True
+        return self.result
+
+
+class _IngestDocument:
+    def __init__(self) -> None:
+        self.called = False
+
+    async def execute(self, command: object) -> object:
+        self.called = True
+        raise AssertionError("ingest must not run after resource policy rejection")
+
+
+class _RecordingIngestDocument:
+    def __init__(self) -> None:
+        self.commands: list[object] = []
+
+    async def execute(self, command: object) -> object:
+        self.commands.append(command)
+        document = type("Document", (), {"id": "doc_1"})()
+        return type("Result", (), {"document": document})()
+
+
 class _Assets:
     def __init__(self, asset: MemoryAsset) -> None:
         self.asset = asset
@@ -70,6 +126,7 @@ class _AssetExtractions:
     def __init__(self, job: AssetExtractionJob) -> None:
         self.job = job
         self.saved: list[AssetExtractionJob] = []
+        self.artifacts: list[object] = []
 
     async def get_by_id(self, job_id: str) -> AssetExtractionJob | None:
         assert job_id == str(self.job.id)
@@ -79,6 +136,10 @@ class _AssetExtractions:
         self.job = job
         self.saved.append(job)
         return job
+
+    async def create_artifact(self, artifact: object) -> object:
+        self.artifacts.append(artifact)
+        return artifact
 
 
 class _Uow:
@@ -185,6 +246,109 @@ def test_run_asset_extraction_revalidates_upload_policy_before_detector() -> Non
     assert blob_storage.reads == ["assets/asset_1.bin"]
     assert detector.called is False
     assert extractor.called is False
+
+
+def test_run_asset_extraction_blocks_success_result_over_media_limit_before_ingest() -> None:
+    content = b"RIFF$\x00\x00\x00WAVEfmt " + (b"\x00" * 32)
+    asset = _asset(byte_size=len(content), content=content)
+    job = _job(asset=asset)
+    uow_factory = _UowFactory(asset=asset, job=job)
+    blob_storage = _BlobStorage(content=content)
+    detector = _SuccessfulDetector("audio/wav")
+    extractor = _SuccessfulExtractor(
+        ExtractionResult(
+            status="succeeded",
+            normalized_content_type="audio/wav",
+            title="large-recording.wav",
+            markdown="meeting transcript",
+            technical_metadata={
+                "duration_seconds": 61.2,
+                "output_chars": 18,
+            },
+            parser_name="test_media_provider",
+            parser_version="v1",
+        )
+    )
+    ingest_document = _IngestDocument()
+    use_case = RunAssetExtractionUseCase(
+        uow_factory=uow_factory,
+        blob_storage=blob_storage,
+        detector=detector,
+        extractor=extractor,
+        ingest_document=ingest_document,
+        clock=_Clock(),
+        ids=_Ids(),
+        limits=ExtractionLimits(max_bytes=1_000_000, max_media_seconds=60),
+    )
+
+    result = asyncio.run(use_case.execute(RunAssetExtractionCommand(job_id=str(job.id))))
+
+    assert result.job.status == AssetExtractionStatus.UNSUPPORTED
+    assert result.indexing_status == "unsupported"
+    assert result.job.safe_error_code == "asset_extraction.media_too_long"
+    assert result.job.safe_error_message == "Media duration exceeds extraction resource limit"
+    assert result.job.parser_name == "resource_policy"
+    assert result.job.metadata["extraction_result_resource_checked"] is True
+    assert result.job.metadata["extraction_result_media_seconds"] == 61.2
+    assert result.job.metadata["extraction_max_media_seconds"] == 60
+    assert result.job.metadata["extraction_resource_limit_exceeded"] == "max_media_seconds"
+    assert result.job.metadata["parser_name"] == "test_media_provider"
+    assert blob_storage.reads == ["assets/asset_1.bin"]
+    assert detector.called is True
+    assert extractor.called is True
+    assert ingest_document.called is False
+
+
+def test_run_asset_extraction_truncates_unbounded_result_text_before_ingest() -> None:
+    content = b"Remember that Alex owns Project Atlas followups."
+    asset = _asset(
+        byte_size=len(content),
+        content=content,
+        filename="notes.txt",
+        content_type="text/plain",
+    )
+    job = _job(asset=asset)
+    uow_factory = _UowFactory(asset=asset, job=job)
+    blob_storage = _BlobStorage(content=content)
+    detector = _SuccessfulDetector("text/plain")
+    long_text = "A" * 200
+    extractor = _SuccessfulExtractor(
+        ExtractionResult(
+            status="succeeded",
+            normalized_content_type="text/plain",
+            title="notes.txt",
+            markdown=long_text,
+            technical_metadata={"output_chars": len(long_text)},
+            parser_name="test_text_provider",
+            parser_version="v1",
+        )
+    )
+    ingest_document = _RecordingIngestDocument()
+    use_case = RunAssetExtractionUseCase(
+        uow_factory=uow_factory,
+        blob_storage=blob_storage,
+        detector=detector,
+        extractor=extractor,
+        ingest_document=ingest_document,
+        clock=_Clock(),
+        ids=_Ids(),
+        limits=ExtractionLimits(max_bytes=1_000_000, max_output_chars=90),
+    )
+
+    result = asyncio.run(use_case.execute(RunAssetExtractionCommand(job_id=str(job.id))))
+
+    assert result.job.status == AssetExtractionStatus.SUCCEEDED
+    assert result.indexing_status == "indexed_or_pending"
+    assert len(ingest_document.commands) == 1
+    ingested_text = ingest_document.commands[0].text
+    assert len(ingested_text) <= 90
+    assert "truncated by resource policy" in ingested_text
+    assert result.job.metadata["extraction_output_truncated"] is True
+    assert result.job.metadata["extraction_output_chars_original"] == 200
+    assert result.job.metadata["extraction_output_chars_stored"] == len(ingested_text)
+    assert result.job.metadata["extraction_resource_limits_applied"] == ["max_output_chars"]
+    assert blob_storage.writes
+    assert uow_factory.asset_extractions.artifacts
 
 
 def _asset(

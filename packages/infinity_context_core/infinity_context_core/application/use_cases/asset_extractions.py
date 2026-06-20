@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
+from dataclasses import replace
 from datetime import datetime, timedelta
 from hashlib import sha256
 
@@ -39,6 +40,7 @@ from infinity_context_core.application.dto import (
 )
 from infinity_context_core.application.extraction_resource_policy import (
     assess_extraction_resource_limits,
+    assess_extraction_result_resource_limits,
     extraction_limits_metadata,
     normalize_extraction_limits,
 )
@@ -616,7 +618,38 @@ class RunAssetExtractionUseCase:
                     return AssetExtractionResult(job=failed, indexing_status="failed")
                 raise MemoryInfrastructureError("Asset extraction returned invalid status")
 
+            result_resource_decision = assess_extraction_result_resource_limits(
+                result_metadata=result.technical_metadata,
+                limits=self._limits,
+            )
+            if not result_resource_decision.allowed:
+                resource_result = _resource_limit_result(
+                    asset=asset,
+                    code=result_resource_decision.code,
+                    message=result_resource_decision.message,
+                    metadata={
+                        **result_resource_decision.metadata,
+                        "parser_name": result.parser_name,
+                        "normalized_content_type": result.normalized_content_type,
+                    },
+                )
+                job = await self._reconcile_media_usage(job, result=resource_result)
+                unsupported = await self._mark_unsupported(job, result=resource_result)
+                return AssetExtractionResult(job=unsupported, indexing_status="unsupported")
+            result = replace(
+                result,
+                technical_metadata={
+                    **dict(result.technical_metadata),
+                    **result_resource_decision.metadata,
+                },
+            )
+
             extracted_text_value = extracted_text(result)
+            result, extracted_text_value = _apply_extracted_text_limit(
+                result=result,
+                extracted_text_value=extracted_text_value,
+                limits=self._limits,
+            )
             if not extracted_text_value.strip():
                 job = await self._reconcile_media_usage(job, result=result)
                 unsupported = await self._mark_unsupported(
@@ -1119,9 +1152,7 @@ class RunAssetExtractionUseCase:
                 now=self._clock.now(),
                 code=result.safe_error_code or "asset_extraction.unsupported",
                 message=safe_error_text(result.safe_error_message or "Asset type is unsupported"),
-                parser_name=safe_metadata_text(result.parser_name)
-                if result.parser_name
-                else None,
+                parser_name=safe_metadata_text(result.parser_name) if result.parser_name else None,
                 parser_version=safe_metadata_text(result.parser_version)
                 if result.parser_version
                 else None,
@@ -1260,6 +1291,44 @@ def _resource_limit_result(
         safe_error_message=message or "Asset exceeds extraction resource policy",
         technical_metadata=metadata,
     )
+
+
+def _apply_extracted_text_limit(
+    *,
+    result: ExtractionResult,
+    extracted_text_value: str,
+    limits: ExtractionLimits,
+) -> tuple[ExtractionResult, str]:
+    max_chars = max(1, int(limits.max_output_chars))
+    if len(extracted_text_value) <= max_chars:
+        return result, extracted_text_value
+
+    notice = "\n\n[Extraction output truncated by resource policy]"
+    if max_chars > len(notice) + 32:
+        text = extracted_text_value[: max_chars - len(notice)].rstrip() + notice
+    else:
+        text = extracted_text_value[:max_chars]
+    metadata = {
+        **dict(result.technical_metadata),
+        "extraction_output_truncated": True,
+        "extraction_output_chars_original": len(extracted_text_value),
+        "extraction_output_chars_stored": len(text),
+        "extraction_max_output_chars": max_chars,
+        "extraction_resource_limits_applied": _append_limit_applied(
+            result.technical_metadata.get("extraction_resource_limits_applied"),
+            "max_output_chars",
+        ),
+    }
+    return replace(result, markdown=text, technical_metadata=metadata), text
+
+
+def _append_limit_applied(value: object, item: str) -> list[str]:
+    existing: list[str] = []
+    if isinstance(value, list | tuple):
+        existing = [str(raw)[:80] for raw in value if str(raw).strip()]
+    if item not in existing:
+        existing.append(item)
+    return existing
 
 
 def _upload_policy_revalidation_metadata(metadata: dict[str, object]) -> dict[str, object]:
