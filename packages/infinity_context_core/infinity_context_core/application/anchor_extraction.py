@@ -15,6 +15,12 @@ from infinity_context_core.domain.entities import MemoryAnchorKind
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _PERSON_PATTERN = re.compile(r"\b([A-Z][a-z][A-Za-z]{1,40})(?:\s+([A-Z][a-z][A-Za-z]{1,40}))?\b")
 _CYRILLIC_PERSON_PATTERN = re.compile(r"\b([А-ЯЁ][а-яё]{2,40})(?:\s+([А-ЯЁ][а-яё]{2,40}))?\b")
+_HANDLE_PERSON_TOKEN = r"@[A-Za-z][A-Za-z0-9._-]{2,39}"
+_HANDLE_PATTERN = re.compile(rf"(?<![\w.])(?P<label>{_HANDLE_PERSON_TOKEN})\b")
+_EMAIL_PATTERN = re.compile(
+    r"\b(?P<local>[A-Za-z][A-Za-z0-9._+-]{2,63})@"
+    r"(?P<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b"
+)
 _PROJECT_PATTERN = re.compile(
     r"\b(?:project|проект(?:у|е|а|ом)?|repo|repository|service|сервис)\s+"
     r"([A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}"
@@ -66,10 +72,10 @@ _EVENT_PATTERN = re.compile(
 )
 _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
-    r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
+    rf"(?P<label>{_HANDLE_PERSON_TOKEN}|[A-Z][a-z][A-Za-z]{{1,40}}|[А-ЯЁ][а-яё]{{2,40}})\b"
 )
 _EVENT_DIRECT_PARTICIPANT_PATTERN = re.compile(
-    r"^\s+(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
+    rf"^\s+(?P<label>{_HANDLE_PERSON_TOKEN}|[A-Z][a-z][A-Za-z]{{1,40}}|[А-ЯЁ][а-яё]{{2,40}})\b"
 )
 _EVENT_PROJECT_PATTERN = re.compile(
     r"\b(?P<prep>about|for|in|по|про|для|в)\s+"
@@ -79,7 +85,7 @@ _EVENT_PROJECT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _EVENT_PREFIX_PARTICIPANT_PATTERN = re.compile(
-    r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\s*$"
+    rf"(?P<label>{_HANDLE_PERSON_TOKEN}|[A-Z][a-z][A-Za-z]{{1,40}}|[А-ЯЁ][а-яё]{{2,40}})\s*$"
 )
 _EVENT_KEYWORD_PATTERN = re.compile(rf"\b({_EVENT_KEYWORDS})\b", re.IGNORECASE)
 _TEMPORAL_PATTERN = re.compile(
@@ -199,6 +205,28 @@ _PERSON_TEMPORAL_PREFIX_WORDS = {
     "today",
     "tomorrow",
     "yesterday",
+}
+_PERSON_HANDLE_STOP_WORDS = {
+    "admin",
+    "alert",
+    "alerts",
+    "billing",
+    "bot",
+    "contact",
+    "hello",
+    "info",
+    "noreply",
+    "no reply",
+    "notification",
+    "notifications",
+    "ops",
+    "project",
+    "repo",
+    "sales",
+    "security",
+    "service",
+    "support",
+    "team",
 }
 _ORGANIZATION_SUFFIX_WORDS = {
     "ag",
@@ -751,6 +779,7 @@ def _event_labels(text: str) -> tuple[str, ...]:
 
 def _person_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
+    labels.extend(_person_handle_labels(text))
     for pattern in (_PERSON_PATTERN, _CYRILLIC_PERSON_PATTERN):
         for match in pattern.finditer(text):
             parts = tuple(part for part in match.groups() if part)
@@ -779,25 +808,43 @@ def _person_labels(text: str) -> tuple[str, ...]:
     return tuple(labels)
 
 
+def _person_handle_labels(text: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for match in _HANDLE_PATTERN.finditer(text):
+        label = _display_person_label(match.group("label"))
+        normalized = normalize_anchor_key(label)
+        if normalized and normalized not in seen and _is_probable_person_label(label):
+            seen.add(normalized)
+            labels.append(label)
+    for match in _EMAIL_PATTERN.finditer(text):
+        label = _display_person_label(match.group("local"))
+        normalized = normalize_anchor_key(label)
+        if normalized and normalized not in seen and _is_probable_person_label(label):
+            seen.add(normalized)
+            labels.append(label)
+    return tuple(labels)
+
+
 def _nearby_temporal_after(text: str, start: int) -> str:
-    tail = re.split(r"[.!?\n]", text[start : start + 80], maxsplit=1)[0]
+    tail = _nearby_clause(text[start : start + 80])
     match = _TEMPORAL_PATTERN.search(tail)
     return match.group(1) if match else ""
 
 
 def _nearby_event_participant(text: str, start: int) -> str:
-    tail = re.split(r"[.!?\n]", text[start : start + 80], maxsplit=1)[0]
+    tail = _nearby_clause(text[start : start + 80])
     if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
         tail = tail[: next_event.start()]
     match = _EVENT_PARTICIPANT_PATTERN.search(tail)
     if match:
-        label = match.group("label")
+        label = _display_person_label(match.group("label"))
         prep = match.group("prep")
     else:
         direct_match = _EVENT_DIRECT_PARTICIPANT_PATTERN.search(tail)
         if not direct_match:
             return ""
-        label = direct_match.group("label")
+        label = _display_person_label(direct_match.group("label"))
         prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
     if not _is_probable_person_label(label):
         return ""
@@ -805,7 +852,7 @@ def _nearby_event_participant(text: str, start: int) -> str:
 
 
 def _nearby_event_project(text: str, start: int) -> str:
-    tail = re.split(r"[.!?\n]", text[start : start + 100], maxsplit=1)[0]
+    tail = _nearby_clause(text[start : start + 100])
     if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
         tail = tail[: next_event.start()]
     return _event_project_in_phrase(tail)
@@ -822,13 +869,13 @@ def _event_project_in_phrase(text: str) -> str:
 
 
 def _nearby_event_participant_before(text: str, end: int) -> str:
-    prefix = re.split(r"[.!?\n]", text[max(0, end - 80) : end])[-1]
+    prefix = _nearby_clause_before(text[max(0, end - 80) : end])
     if re.search(r"(?:project|проект)\s+[A-Za-zА-Яа-яЁё0-9][\w.-]*\s*$", prefix, re.IGNORECASE):
         return ""
     match = _EVENT_PREFIX_PARTICIPANT_PATTERN.search(prefix)
     if not match:
         return ""
-    label = match.group("label")
+    label = _display_person_label(match.group("label"))
     if not _is_probable_person_label(label):
         return ""
     prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
@@ -836,9 +883,17 @@ def _nearby_event_participant_before(text: str, end: int) -> str:
 
 
 def _nearby_temporal_before(text: str, end: int) -> str:
-    prefix = re.split(r"[.!?\n]", text[max(0, end - 80) : end])[-1]
+    prefix = _nearby_clause_before(text[max(0, end - 80) : end])
     matches = list(_TEMPORAL_PATTERN.finditer(prefix))
     return matches[-1].group(1) if matches else ""
+
+
+def _nearby_clause(value: str) -> str:
+    return re.split(r"(?:[!?]\s*|\n|\.\s+)", value, maxsplit=1)[0]
+
+
+def _nearby_clause_before(value: str) -> str:
+    return re.split(r"(?:[!?]\s*|\n|\.\s+)", value)[-1]
 
 
 def _is_project_qualified_person_match(text: str, start: int) -> bool:
@@ -869,10 +924,33 @@ def _is_probable_person_label(label: str) -> bool:
     if len(label) < 3 or len(label) > 80:
         return False
     normalized = normalize_anchor_key(label)
+    if not normalized:
+        return False
     if normalized in _PERSON_STOP_WORDS:
         return False
+    if normalized in _PERSON_HANDLE_STOP_WORDS:
+        return False
+    if normalized in _PROJECT_HINTS or normalized in _ORGANIZATION_HINTS:
+        return False
     first = normalized.split()[0]
-    return first not in _PERSON_STOP_WORDS
+    if first in _PERSON_STOP_WORDS or first in _PERSON_HANDLE_STOP_WORDS:
+        return False
+    if first in {"project", "repo", "service", "team"}:
+        return False
+    return any(char.isalpha() for char in normalized)
+
+
+def _display_person_label(raw: str) -> str:
+    value = raw.strip().lstrip("@")
+    value = value.split("+", 1)[0]
+    tokens = [
+        token
+        for token in re.split(r"[._-]+", value)
+        if token and any(char.isalpha() for char in token)
+    ]
+    if not tokens:
+        return raw.strip()
+    return " ".join(token[:1].upper() + token[1:] for token in tokens[:3])
 
 
 def _is_probable_organization_label(label: str) -> bool:

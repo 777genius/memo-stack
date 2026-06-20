@@ -249,12 +249,11 @@ def test_anchor_extraction_handles_phone_call_dative_person_and_project() -> Non
     assert ("позвонил алексу", "pozvonil aleksu") not in person_keys
     assert ("атласу", "atlasu") not in person_keys
     assert "позвонил с алексу по атласу час назад" in events
-    assert events["позвонил с алексу по атласу час назад"]["event_type_canonical"] == (
-        "pozvonil"
+    assert events["позвонил с алексу по атласу час назад"]["event_type_canonical"] == ("pozvonil")
+    assert (
+        events["позвонил с алексу по атласу час назад"]["event_participant_canonical_key"]
+        == "aleks"
     )
-    assert events["позвонил с алексу по атласу час назад"][
-        "event_participant_canonical_key"
-    ] == "aleks"
     assert events["позвонил с алексу по атласу час назад"]["event_project_canonical_key"] == (
         "atlas"
     )
@@ -279,8 +278,38 @@ def test_anchor_extraction_handles_dm_event_shorthand() -> None:
         "aleks"
     )
     assert events["dm with alex about atlas yesterday"]["event_project_canonical_key"] == "atlas"
-    assert events["dm with alex about atlas yesterday"]["event_temporal_hint_code"] == (
-        "yesterday"
+    assert events["dm with alex about atlas yesterday"]["event_temporal_hint_code"] == ("yesterday")
+
+
+def test_anchor_extraction_handles_chat_handles_and_email_people() -> None:
+    anchors = extract_observed_anchors(
+        "DM @alex.cooper yesterday about Atlas invoice. "
+        "alex.smith@example.com shared the notes. "
+        "@project-atlas and noreply@github.com should not become people."
+    )
+
+    person_keys = {
+        (anchor.normalized_key, anchor.metadata.get("person_canonical_key"))
+        for anchor in anchors
+        if anchor.kind.value == "person"
+    }
+    project_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "project"}
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert ("alex cooper", "aleks cooper") in person_keys
+    assert ("alex smith", "aleks smith") in person_keys
+    assert ("project atlas", "project atlas") not in person_keys
+    assert ("noreply", "noreply") not in person_keys
+    assert "atlas" in project_keys
+    assert "dm with alex cooper about atlas yesterday" in events
+    assert (
+        events["dm with alex cooper about atlas yesterday"]["event_participant_canonical_key"]
+        == "aleks cooper"
+    )
+    assert events["dm with alex cooper about atlas yesterday"]["event_project_canonical_key"] == (
+        "atlas"
     )
 
 
