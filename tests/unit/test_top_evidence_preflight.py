@@ -9,23 +9,25 @@ from infinity_context_server.top_evidence_preflight import run_top_evidence_pref
 def _top_evidence_env(
     tmp_path: Path,
     *,
-    case_count: int = 600,
+    locomo_case_count: int = 600,
+    longmemeval_case_count: int = 500,
     **overrides: str,
 ) -> dict[str, str]:
     locomo = tmp_path / "locomo.json"
     longmemeval = tmp_path / "longmemeval.json"
     locomo.write_text(
-        json.dumps(_benchmark_cases("locomo", count=case_count)),
+        json.dumps(_benchmark_cases("locomo", count=locomo_case_count)),
         encoding="utf-8",
     )
     longmemeval.write_text(
-        json.dumps(_benchmark_cases("longmemeval", count=case_count)),
+        json.dumps(_benchmark_cases("longmemeval", count=longmemeval_case_count)),
         encoding="utf-8",
     )
     env = {
         "MEMORY_OPENAI_API_KEY": "sk-test-secret-value",
         "MEMORY_AGENT_BENCH_MODEL": "gpt-test",
         "MEMORY_MULTIMODAL_PROVIDER_PROBE_INVALID_KEY": "1",
+        "MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR": "true",
         "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET": str(locomo),
         "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET": str(longmemeval),
     }
@@ -74,7 +76,9 @@ def test_top_evidence_preflight_accepts_clean_publishable_config(tmp_path: Path)
     assert payload["sanitized_config"]["multimodal_invalid_key_probe_enabled"] is True
     assert payload["sanitized_config"]["multimodal_skip_invalid_key_probe"] is False
     assert payload["sanitized_config"]["locomo_case_count"] == 600
-    assert payload["sanitized_config"]["longmemeval_case_count"] == 600
+    assert payload["sanitized_config"]["longmemeval_case_count"] == 500
+    assert payload["sanitized_config"]["public_benchmark_competitive_floor_mode"] is True
+    assert payload["sanitized_config"]["public_benchmark_min_accuracy"] == 0.947
     assert "sk-test-secret-value" not in json.dumps(payload)
 
 
@@ -120,6 +124,21 @@ def test_top_evidence_preflight_rejects_tiny_public_benchmark_config(
     assert result.ok is False
     assert result.checks["public_benchmark_case_count_representative"] is False
     assert any("MAX_CASES >= 600" in failure for failure in result.failures)
+
+
+def test_top_evidence_preflight_requires_public_benchmark_competitive_mode(
+    tmp_path: Path,
+) -> None:
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(tmp_path, MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR="false"),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["public_benchmark_competitive_floor_mode"] is False
+    assert any("COMPETITIVE_FLOOR=true" in failure for failure in result.failures)
 
 
 def test_top_evidence_preflight_rejects_partial_agent_scenario_set(
@@ -236,9 +255,9 @@ def test_top_evidence_preflight_ignores_lower_publishable_floor_overrides(
 
     assert result.ok is True
     assert result.sanitized_config["top_evidence_min_public_cases"] == 600
-    assert result.sanitized_config["top_evidence_min_public_accuracy"] == 0.902
+    assert result.sanitized_config["top_evidence_min_public_accuracy"] == 0.947
     assert result.sanitized_config["public_benchmark_max_cases"] == 600
-    assert result.sanitized_config["public_benchmark_min_accuracy"] == 0.902
+    assert result.sanitized_config["public_benchmark_min_accuracy"] == 0.947
 
 
 def test_top_evidence_preflight_allows_only_stricter_case_floor_overrides(
@@ -292,11 +311,15 @@ def test_top_evidence_preflight_rejects_empty_dataset_file(tmp_path: Path) -> No
     assert any("valid locomo cases" in failure for failure in result.failures)
 
 
-def test_top_evidence_preflight_rejects_dataset_case_count_below_config(
+def test_top_evidence_preflight_rejects_dataset_case_count_below_floor(
     tmp_path: Path,
 ) -> None:
     result = run_top_evidence_preflight(
-        env=_top_evidence_env(tmp_path, case_count=599),
+        env=_top_evidence_env(
+            tmp_path,
+            locomo_case_count=599,
+            longmemeval_case_count=499,
+        ),
         cwd=tmp_path,
         docker_path="/usr/bin/docker",
         git={"commit": "abc123", "dirty": False},
@@ -306,7 +329,7 @@ def test_top_evidence_preflight_rejects_dataset_case_count_below_config(
     assert result.checks["locomo_dataset_case_count_representative"] is False
     assert result.checks["longmemeval_dataset_case_count_representative"] is False
     assert result.sanitized_config["locomo_case_count"] == 599
-    assert result.sanitized_config["longmemeval_case_count"] == 599
+    assert result.sanitized_config["longmemeval_case_count"] == 499
 
 
 def test_top_evidence_preflight_rejects_dataset_with_wrong_benchmark_cases(

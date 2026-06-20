@@ -252,12 +252,24 @@ def main() -> int:
             _wait_for_http(f"{base_url}/v1/health", token=token, env=server_env)
 
         def restart_providers_for_canary() -> None:
-            _compose(project_name, compose_env, "restart", "infinity_context_qdrant", "infinity_context_neo4j")
+            _compose(
+                project_name,
+                compose_env,
+                "restart",
+                "infinity_context_qdrant",
+                "infinity_context_neo4j",
+            )
             _wait_for_http(f"http://127.0.0.1:{ports['qdrant']}/", env=server_env)
             _wait_for_neo4j(ports["neo4j_bolt"], env=server_env)
 
         def stop_providers_for_canary() -> None:
-            _compose(project_name, compose_env, "stop", "infinity_context_qdrant", "infinity_context_neo4j")
+            _compose(
+                project_name,
+                compose_env,
+                "stop",
+                "infinity_context_qdrant",
+                "infinity_context_neo4j",
+            )
 
         result = _run_lifecycle(base_url=base_url, token=token, env=server_env, run_id=run_id)
         if skip_mcp:
@@ -369,6 +381,7 @@ def _run_public_benchmark_canary(*, base_url: str, token: str) -> dict[str, obje
         benchmark=benchmark,
         max_cases=_positive_int_env("MEMORY_PUBLIC_BENCHMARK_MAX_CASES", 1),
         min_accuracy=_float_env("MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY", 0.5),
+        competitive_floor=_bool(os.getenv("MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR", "false")),
         api_url=base_url,
         auth_token=token,
         locomo_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET"),
@@ -713,7 +726,11 @@ async def _run_mcp_lifecycle(
 
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
         await _await_mcp(session.initialize(), "infinity_context_mcp.initialize", env=mcp_env)
-        tools = await _await_mcp(session.list_tools(), "infinity_context_mcp.list_tools", env=mcp_env)
+        tools = await _await_mcp(
+            session.list_tools(),
+            "infinity_context_mcp.list_tools",
+            env=mcp_env,
+        )
         tool_names = {tool.name for tool in tools.tools}
         required_tools = {
             "memory_status",

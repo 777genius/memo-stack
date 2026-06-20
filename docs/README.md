@@ -157,7 +157,10 @@ The preflight fails before Docker/OpenAI work if the worktree is dirty, Docker
 is unavailable, the key/model is missing, representative public datasets are
 missing, `MEMORY_AGENT_BENCH_SCENARIO_SET` is not `all`,
 `MEMORY_PUBLIC_BENCHMARK_NAME` is not `all`, or the public benchmark is configured
-below 600 cases / 0.902 minimum accuracy. The top-evidence bundle defaults the
+without `MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR=true`. In competitive mode the
+official benchmark runner uses the scorecard floors per dataset: LoCoMo requires
+at least 600 cases and 0.947 accuracy, while LongMemEval requires at least 500
+cases and 0.902 accuracy. The top-evidence bundle defaults the
 agent benchmark to `all`, which runs core, realistic, live-session and transcript
 corpus scenarios and the scorecard requires at least 41 total agent cases, 11
 live-session cases, 5 transcript-corpus cases and 9 adversarial cases. This keeps

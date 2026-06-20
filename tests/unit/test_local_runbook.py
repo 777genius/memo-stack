@@ -389,7 +389,11 @@ def test_makefile_has_memory_quality_scorecard_target() -> None:
         in top_evidence_recipe
     )
     assert (
-        'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"'
+        'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.947}"'
+        in top_evidence_recipe
+    )
+    assert (
+        'MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR="$${MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR:-true}"'
         in top_evidence_recipe
     )
     assert 'MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT="$$multimodal_report"' in (
@@ -560,9 +564,10 @@ def test_makefile_has_agent_install_and_full_canary_targets() -> None:
         in public_suite_recipe
     )
     assert (
-        'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"'
+        'MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.947}"'
         in public_suite_recipe
     )
+    assert "MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR" in public_suite_recipe
     assert "$(MAKE) infinity-context-full-provider-public-benchmark-canary" in public_suite_recipe
     assert "run_official_public_benchmark_canary" in clean_full_smoke
     assert 'locomo_dataset=_optional_path_env("MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET")' in (
@@ -773,6 +778,7 @@ def test_makefile_has_official_public_benchmark_canary() -> None:
     assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_API_URL" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN" in recipe
+    assert "--competitive-floor" in recipe
     assert "infinity_context_server.official_public_benchmark import main" in script
     assert "snap-research/locomo" in module
     assert "longmemeval_s_cleaned.json" in module

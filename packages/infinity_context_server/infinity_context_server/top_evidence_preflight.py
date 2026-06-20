@@ -12,13 +12,24 @@ from pathlib import Path
 
 from infinity_context_core.reporting import git_metadata
 
+from infinity_context_server.eval_constants import (
+    _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS,
+    LOCOMO_BENCHMARK_SUITE,
+    LONGMEMEVAL_BENCHMARK_SUITE,
+)
 from infinity_context_server.public_benchmark import (
     BenchmarkValidationError,
     load_public_benchmark_case_count,
 )
 
-DEFAULT_MIN_PUBLIC_CASES = 600
-DEFAULT_MIN_PUBLIC_ACCURACY = 0.902
+DEFAULT_MIN_PUBLIC_CASES = max(
+    int(floor["min_case_count"])
+    for floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.values()
+)
+DEFAULT_MIN_PUBLIC_ACCURACY = max(
+    float(floor["min_accuracy"])
+    for floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.values()
+)
 DEFAULT_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS = 60.0
 MAX_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS = 120.0
 MIN_MULTIMODAL_PROVIDER_TIMEOUT_SECONDS = 5.0
@@ -61,13 +72,15 @@ def run_top_evidence_preflight(
     docker_path = docker_path if docker_path is not None else shutil.which("docker")
     git = git if git is not None else git_metadata(cwd=cwd)
     allow_dirty = _bool_env(env, "MEMORY_QUALITY_EVIDENCE_ALLOW_DIRTY_TOP")
+    requested_public_case_floor = _positive_int_env(
+        env,
+        "MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES",
+        DEFAULT_MIN_PUBLIC_CASES,
+    )
+    public_case_floor_overridden = requested_public_case_floor > DEFAULT_MIN_PUBLIC_CASES
     min_public_cases = max(
         DEFAULT_MIN_PUBLIC_CASES,
-        _positive_int_env(
-            env,
-            "MEMORY_TOP_EVIDENCE_MIN_PUBLIC_CASES",
-            DEFAULT_MIN_PUBLIC_CASES,
-        ),
+        requested_public_case_floor,
     )
     min_public_accuracy = max(
         DEFAULT_MIN_PUBLIC_ACCURACY,
@@ -136,6 +149,7 @@ def run_top_evidence_preflight(
         "MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY",
         min_public_accuracy,
     )
+    competitive_floor_mode = _bool_env(env, "MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR")
 
     checks["docker_available"] = bool(docker_path)
     _append_failure(checks, failures, "docker_available", "Docker executable is required")
@@ -248,6 +262,13 @@ def run_top_evidence_preflight(
         "public_benchmark_all",
         "Top evidence requires MEMORY_PUBLIC_BENCHMARK_NAME=all",
     )
+    checks["public_benchmark_competitive_floor_mode"] = competitive_floor_mode
+    _append_failure(
+        checks,
+        failures,
+        "public_benchmark_competitive_floor_mode",
+        "Top evidence requires MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR=true",
+    )
 
     checks["public_benchmark_case_count_representative"] = configured_cases >= min_public_cases
     _append_failure(
@@ -286,11 +307,21 @@ def run_top_evidence_preflight(
     checks["longmemeval_dataset_valid"] = (
         longmemeval_case_count is not None and longmemeval_case_count > 0
     )
+    locomo_min_cases = _public_benchmark_required_case_count(
+        LOCOMO_BENCHMARK_SUITE,
+        min_public_cases=min_public_cases,
+        floor_overridden=public_case_floor_overridden,
+    )
+    longmemeval_min_cases = _public_benchmark_required_case_count(
+        LONGMEMEVAL_BENCHMARK_SUITE,
+        min_public_cases=min_public_cases,
+        floor_overridden=public_case_floor_overridden,
+    )
     checks["locomo_dataset_case_count_representative"] = (
-        locomo_case_count is not None and locomo_case_count >= configured_cases
+        locomo_case_count is not None and locomo_case_count >= locomo_min_cases
     )
     checks["longmemeval_dataset_case_count_representative"] = (
-        longmemeval_case_count is not None and longmemeval_case_count >= configured_cases
+        longmemeval_case_count is not None and longmemeval_case_count >= longmemeval_min_cases
     )
     _append_failure(
         checks,
@@ -322,7 +353,7 @@ def run_top_evidence_preflight(
         "locomo_dataset_case_count_representative",
         (
             "MEMORY_PUBLIC_BENCHMARK_LOCOMO_DATASET must contain at least "
-            f"{configured_cases} locomo cases"
+            f"{locomo_min_cases} locomo cases"
         ),
     )
     _append_failure(
@@ -331,7 +362,7 @@ def run_top_evidence_preflight(
         "longmemeval_dataset_case_count_representative",
         (
             "MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET must contain at least "
-            f"{configured_cases} longmemeval cases"
+            f"{longmemeval_min_cases} longmemeval cases"
         ),
     )
 
@@ -385,6 +416,11 @@ def run_top_evidence_preflight(
             "multimodal_skip_invalid_key_probe": multimodal_skip_invalid_key_probe,
             "multimodal_timeout_seconds": multimodal_timeout_seconds,
             "openai_key_present": openai_key_present,
+            "public_benchmark_competitive_floor_mode": competitive_floor_mode,
+            "public_benchmark_competitive_floors": {
+                name: dict(floor)
+                for name, floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.items()
+            },
             "public_benchmark_max_cases": configured_cases,
             "public_benchmark_min_accuracy": configured_accuracy,
             "public_benchmark_name": benchmark_name,
@@ -448,6 +484,17 @@ def _dataset_case_count(path: Path | None, *, benchmark: str) -> int | None:
         )
     except (BenchmarkValidationError, json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
+
+
+def _public_benchmark_required_case_count(
+    benchmark: str,
+    *,
+    min_public_cases: int,
+    floor_overridden: bool,
+) -> int:
+    floor = _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS[benchmark]
+    min_case_count = int(floor["min_case_count"])
+    return max(min_case_count, min_public_cases) if floor_overridden else min_case_count
 
 
 def _positive_int_env(env: Mapping[str, str], name: str, default: int) -> int:

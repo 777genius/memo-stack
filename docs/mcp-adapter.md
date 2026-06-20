@@ -295,6 +295,9 @@ before paid provider/model work, so missing key/model/datasets/auth fails before
 starting the full stack. The top-evidence path also requires
 `MEMORY_AGENT_BENCH_SCENARIO_SET=all` so the agent behavior report covers core,
 realistic, live-session and transcript-corpus scenarios in one publishable run.
+It also enables `MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR=true`, so LoCoMo and
+LongMemEval use the same per-benchmark case-count and accuracy floors enforced by
+the scorecard instead of the small smoke defaults.
 The strict scorecard rejects under-sized agent reports below 41 total cases, 11
 live-session cases, 5 transcript-corpus cases and 9 adversarial cases, and it
 requires the scenario list tag counts to match the published metrics. Scenario

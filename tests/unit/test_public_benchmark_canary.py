@@ -73,6 +73,7 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
         longmemeval_dataset=longmemeval,
         max_cases=1,
         min_accuracy=1.0,
+        competitive_floor=True,
         report_out=report,
     )
 
@@ -82,6 +83,16 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["metrics"]["benchmark_count"] == 2
     assert result["metrics"]["case_count"] == 2
     assert result["metrics"]["accuracy"] == 1.0
+    assert result["competitive_floor_mode"] is True
+    assert result["publishable_public_benchmark_candidate"] is True
+    assert result["requested_max_cases"] == 1
+    assert result["requested_min_accuracy"] == 1.0
+    assert result["effective_case_limits"] == {"locomo": 600, "longmemeval": 500}
+    assert result["effective_accuracy_floors"] == {"locomo": 1.0, "longmemeval": 1.0}
+    assert result["competitive_floor_requirements"]["locomo"] == {
+        "min_accuracy": 0.947,
+        "min_case_count": 600,
+    }
     assert {item["name"] for item in result["benchmarks"]} == {"locomo", "longmemeval"}
     assert set(result["dataset_hashes"]) == {"locomo", "longmemeval"}
     assert all(len(value) == 64 for value in result["dataset_hashes"].values())
@@ -153,6 +164,8 @@ def test_official_public_benchmark_canary_can_run_single_dataset(tmp_path: Path)
         "locomo"
     ]
     assert result["source_urls"] == {"locomo": canary.LOCOMO_URL}
+    assert result["competitive_floor_mode"] is False
+    assert result["publishable_public_benchmark_candidate"] is False
 
 
 def test_official_public_benchmark_script_is_thin_wrapper() -> None:

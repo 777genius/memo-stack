@@ -19,6 +19,10 @@ from pathlib import Path
 
 from infinity_context_core.reporting import with_report_provenance
 
+from infinity_context_server.eval_constants import (
+    _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS,
+    _PUBLIC_MEMORY_BENCHMARK_REQUIRED,
+)
 from infinity_context_server.public_benchmark import run_public_memory_benchmark
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -76,6 +80,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--competitive-floor",
+        action="store_true",
+        default=_bool_env(os.getenv("MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR")),
+        help=(
+            "Run each public benchmark with the scorecard's publishable "
+            "case-count and accuracy floors."
+        ),
+    )
+    parser.add_argument(
         "--api-url",
         default=os.getenv("MEMORY_PUBLIC_BENCHMARK_API_URL") or None,
     )
@@ -113,6 +126,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         benchmark=args.benchmark,
         max_cases=args.max_cases,
         min_accuracy=args.min_accuracy,
+        competitive_floor=args.competitive_floor,
         api_url=args.api_url,
         auth_token=args.auth_token,
         locomo_dataset=args.locomo_dataset,
@@ -129,6 +143,7 @@ def run_official_public_benchmark_canary(
     benchmark: str = "all",
     max_cases: int = DEFAULT_MAX_CASES,
     min_accuracy: float = DEFAULT_MIN_ACCURACY,
+    competitive_floor: bool = False,
     api_url: str | None = None,
     auth_token: str | None = None,
     locomo_dataset: Path | None = None,
@@ -145,7 +160,15 @@ def run_official_public_benchmark_canary(
         tmp_path = Path(tmp_dir)
         reports: list[dict[str, object]] = []
         dataset_sources: dict[str, dict[str, object]] = {}
+        run_policies: dict[str, dict[str, object]] = {}
         for name in selected:
+            policy = _run_policy(
+                name=name,
+                requested_max_cases=max_cases,
+                requested_min_accuracy=min_accuracy,
+                competitive_floor=competitive_floor,
+            )
+            run_policies[name] = policy
             selection = _dataset_selection(
                 name=name,
                 tmp_dir=tmp_path,
@@ -158,8 +181,8 @@ def run_official_public_benchmark_canary(
                 api_url=api_url,
                 auth_token=auth_token,
                 benchmark=name,
-                max_cases=max_cases,
-                min_accuracy=min_accuracy,
+                max_cases=int(policy["max_cases"]),
+                min_accuracy=float(policy["min_accuracy"]),
             )
             reports.append(report)
             dataset_sources[name] = _dataset_source_metadata(
@@ -174,6 +197,8 @@ def run_official_public_benchmark_canary(
         benchmark=benchmark,
         max_cases=max_cases,
         min_accuracy=min_accuracy,
+        competitive_floor=competitive_floor,
+        run_policies=run_policies,
         api_url=api_url,
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
     )
@@ -194,6 +219,28 @@ def _selected_benchmarks(value: str) -> tuple[str, ...]:
     if normalized in OFFICIAL_DATASETS:
         return (normalized,)
     raise ValueError(f"Unsupported benchmark: {value}")
+
+
+def _run_policy(
+    *,
+    name: str,
+    requested_max_cases: int,
+    requested_min_accuracy: float,
+    competitive_floor: bool,
+) -> dict[str, object]:
+    floor = _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.get(name, {})
+    min_case_count = int(floor.get("min_case_count", requested_max_cases))
+    min_accuracy = float(floor.get("min_accuracy", requested_min_accuracy))
+    return {
+        "max_cases": max(requested_max_cases, min_case_count)
+        if competitive_floor
+        else requested_max_cases,
+        "min_accuracy": max(requested_min_accuracy, min_accuracy)
+        if competitive_floor
+        else requested_min_accuracy,
+        "competitive_min_case_count": min_case_count,
+        "competitive_min_accuracy": min_accuracy,
+    }
 
 
 def _dataset_selection(
@@ -227,6 +274,8 @@ def _merge_reports(
     benchmark: str,
     max_cases: int,
     min_accuracy: float,
+    competitive_floor: bool,
+    run_policies: Mapping[str, Mapping[str, object]],
     api_url: str | None,
     elapsed_ms: float,
 ) -> dict[str, object]:
@@ -297,6 +346,21 @@ def _merge_reports(
         "source_urls": {
             name: OFFICIAL_DATASETS[name].url for name in _selected_benchmarks(benchmark)
         },
+        "competitive_floor_mode": competitive_floor,
+        "publishable_public_benchmark_candidate": competitive_floor
+        and set(_selected_benchmarks(benchmark)) == set(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
+        "competitive_floor_requirements": {
+            name: dict(floor)
+            for name, floor in _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS.items()
+        },
+        "requested_max_cases": max_cases,
+        "requested_min_accuracy": min_accuracy,
+        "effective_case_limits": {
+            name: int(policy["max_cases"]) for name, policy in run_policies.items()
+        },
+        "effective_accuracy_floors": {
+            name: float(policy["min_accuracy"]) for name, policy in run_policies.items()
+        },
         "dataset_hashes": dataset_hashes,
         "dataset_sources": {name: dict(source) for name, source in dataset_sources.items()},
         "api_url": api_url,
@@ -340,3 +404,7 @@ def _write_report(result: dict[str, object], report_out: Path | None) -> None:
         return
     report_out.parent.mkdir(parents=True, exist_ok=True)
     report_out.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _bool_env(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}

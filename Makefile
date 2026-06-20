@@ -197,7 +197,8 @@ infinity-context-top-evidence-bundle:
 	export MEMORY_AGENT_BENCH_OPENAI_API_KEY="$${MEMORY_AGENT_BENCH_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY}}}"; \
 	export MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}"; \
 	export MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-600}"; \
-	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}"; \
+	export MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.947}"; \
+	export MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR="$${MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR:-true}"; \
 	export MEMORY_OPENAI_API_KEY="$${MEMORY_OPENAI_API_KEY:-$${OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	export OPENAI_API_KEY="$${OPENAI_API_KEY:-$${MEMORY_OPENAI_API_KEY:-$${MEMORY_AGENT_BENCH_OPENAI_API_KEY}}}"; \
 	export MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT="$$multimodal_report"; \
@@ -247,6 +248,7 @@ infinity-context-official-public-benchmark-canary:
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_API_URL:-}" ]; then set -- "$$@" --api-url "$${MEMORY_PUBLIC_BENCHMARK_API_URL}"; fi; \
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN:-}" ]; then set -- "$$@" --auth-token "$${MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN}"; fi; \
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT:-}" ]; then set -- "$$@" --report-out "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT}"; fi; \
+	case "$${MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR:-}" in 1|true|yes|on) set -- "$$@" --competitive-floor;; esac; \
 	$(PYTHON) scripts/official_public_benchmark_canary.py "$$@"
 
 .PHONY: infinity-context-test-quality
@@ -616,7 +618,8 @@ infinity-context-full-provider-public-benchmark-suite:
 	@test -n "$${MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET:-}" || (echo "Set MEMORY_PUBLIC_BENCHMARK_LONGMEMEVAL_DATASET to a representative LongMemEval dataset before running public benchmark suite."; exit 1)
 	MEMORY_PUBLIC_BENCHMARK_NAME="$${MEMORY_PUBLIC_BENCHMARK_NAME:-all}" \
 	MEMORY_PUBLIC_BENCHMARK_MAX_CASES="$${MEMORY_PUBLIC_BENCHMARK_MAX_CASES:-600}" \
-	MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.902}" \
+	MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY="$${MEMORY_PUBLIC_BENCHMARK_MIN_ACCURACY:-0.947}" \
+	MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR="$${MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR:-true}" \
 	$(MAKE) infinity-context-full-provider-public-benchmark-canary
 
 .PHONY: infinity-context-full-provider-canary-interactive
