@@ -84,6 +84,9 @@ def test_multimodal_manifest_normalizes_document_image_audio_and_video_evidence(
     assert payload["contract"]["provider_output_policy"] == "evidence_not_truth"
     assert payload["contract"]["raw_provider_payloads_in_public_api"] is False
     assert payload["contract"]["coordinate_fields"] == ["page_number", "bbox", "time_range"]
+    assert "reversed time_range ends are dropped" in payload["contract"][
+        "coordinate_validation_policy"
+    ]
     assert payload["modalities"] == ["text", "document", "image", "audio", "video"]
     assert payload["features"] == {
         "modalities": ["text", "document", "image", "audio", "video"],
@@ -110,7 +113,7 @@ def test_multimodal_manifest_normalizes_document_image_audio_and_video_evidence(
     assert items[1]["confidence"] == 0.87
     assert items[2]["time_range"] == {"start_ms": 1200, "end_ms": 3400}
     assert items[2]["metadata"] == {"speaker": "Alex"}
-    assert items[3]["time_range"] == {"start_ms": 4000, "end_ms": 4000}
+    assert items[3]["time_range"] == {"start_ms": 4000}
     assert payload["artifacts"][0]["artifact_type"] == "keyframe"
     assert payload["artifacts"][0]["byte_size"] == len(b"frame-bytes")
     extraction = payload["extraction"]
@@ -122,6 +125,54 @@ def test_multimodal_manifest_normalizes_document_image_audio_and_video_evidence(
     serialized = json.dumps(payload, allow_nan=False)
     assert "frame-bytes" not in serialized
     assert "must-not-leak" not in serialized
+
+
+def test_multimodal_manifest_drops_invalid_coordinate_values() -> None:
+    asset = _asset(content_type="video/mp4", filename="bad-coordinates.mp4")
+    job = _job(asset=asset)
+    result = ExtractionResult(
+        status="succeeded",
+        normalized_content_type="video/mp4",
+        title="Bad coordinates",
+        elements=(
+            ExtractedElement(
+                kind="ocr_region",
+                text="Negative bbox should not be published.",
+                page_number=0,
+                bbox=(-1.0, 4.0, 120.0, 44.0),
+            ),
+            ExtractedElement(
+                kind="ocr_region",
+                text="Degenerate bbox should not be published.",
+                bbox=(10.0, 10.0, 8.0, 20.0),
+            ),
+            ExtractedElement(
+                kind="transcript_segment",
+                text="Negative time should not be published.",
+                time_start_ms=-10,
+                time_end_ms=-1,
+            ),
+            ExtractedElement(
+                kind="keyframe",
+                text="Reversed end should be dropped but valid start remains.",
+                time_start_ms=5000,
+                time_end_ms=4000,
+            ),
+        ),
+        parser_name="test-parser",
+    )
+
+    payload = multimodal_manifest_payload(asset=asset, job=job, result=result)
+
+    items = payload["evidence_items"]
+    assert "page_number" not in items[0]
+    assert "bbox" not in items[0]
+    assert "bbox" not in items[1]
+    assert "time_range" not in items[2]
+    assert items[3]["time_range"] == {"start_ms": 5000}
+    assert payload["features"]["coordinate_fields_present"] == ["time_range"]
+    assert payload["features"]["has_bbox_refs"] is False
+    assert payload["features"]["has_time_ranges"] is True
 
 
 def test_multimodal_manifest_bounds_evidence_and_text_previews() -> None:

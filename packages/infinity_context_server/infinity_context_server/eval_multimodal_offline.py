@@ -13,6 +13,11 @@ from infinity_context_core.application.context_diagnostics import (
 )
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import ContextItem, SuggestContextLinksCommand
+from infinity_context_core.application.extraction_coordinates import (
+    safe_bbox,
+    safe_page_number,
+    safe_time_range_ms,
+)
 from infinity_context_core.application.normalize import normalize_text
 from infinity_context_core.application.source_refs import chunk_source_refs
 from infinity_context_core.application.use_cases.context_link_suggestions import (
@@ -230,6 +235,7 @@ async def _execute_multimodal_offline_golden() -> dict[str, object]:
         "retrieval_evidence_coverage_profile": checks[
             "retrieval_evidence_coverage_profile"
         ],
+        "invalid_coordinate_sanitizer": checks["invalid_coordinate_sanitizer"],
     }
     return {
         "suite": MULTIMODAL_OFFLINE_GOLDEN_SUITE,
@@ -369,7 +375,23 @@ def _checks(
             and evidence_profile.get("video_time_range_coverage_ratio") == 1.0
             and evidence_profile.get("evidence_location_gap_count") == 0
         ),
+        "invalid_coordinate_sanitizer": _invalid_coordinate_sanitizer_ok(),
     }
+
+
+def _invalid_coordinate_sanitizer_ok() -> bool:
+    start, end = safe_time_range_ms(start_ms=5000, end_ms=4000)
+    negative_start, negative_end = safe_time_range_ms(start_ms=-10, end_ms=-1)
+    return bool(
+        safe_bbox((-1.0, 4.0, 120.0, 44.0)) is None
+        and safe_bbox((10.0, 10.0, 8.0, 20.0)) is None
+        and safe_bbox((0.0, 1.0, 120.0, 40.0)) == [0.0, 1.0, 120.0, 40.0]
+        and safe_page_number(0) is None
+        and safe_page_number(-1) is None
+        and safe_page_number(3) == 3
+        and (start, end) == (5000, None)
+        and (negative_start, negative_end) == (None, None)
+    )
 
 
 def _case_rate(cases: list[dict[str, object]], case_ids: tuple[str, ...]) -> float:

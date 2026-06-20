@@ -7,6 +7,11 @@ import math
 from collections.abc import Iterable
 from hashlib import sha256
 
+from infinity_context_core.application.extraction_coordinates import (
+    safe_bbox,
+    safe_page_number,
+    safe_time_range_ms,
+)
 from infinity_context_core.application.safe_payload import safe_metadata_text
 from infinity_context_core.domain.assets import MemoryAsset
 from infinity_context_core.domain.extraction import AssetExtractionJob
@@ -168,6 +173,10 @@ def multimodal_manifest_contract_payload() -> dict[str, object]:
         "coordinate_fields": list(_COORDINATE_FIELDS),
         "feature_fields": list(_FEATURE_FIELDS),
         "coordinates_are_optional_per_item": True,
+        "coordinate_validation_policy": (
+            "only finite non_negative bbox/time coordinates are published; "
+            "reversed time_range ends are dropped instead of fabricated"
+        ),
         "provider_output_policy": "evidence_not_truth",
         "metadata_policy": (
             "bounded_scalar_metadata_without_sensitive_keys_or_raw_provider_payloads"
@@ -206,8 +215,9 @@ def _evidence_items(
             "text_preview": text_preview,
             "metadata": _safe_manifest_metadata(element.metadata),
         }
-        if element.page_number is not None:
-            item["page_number"] = max(1, int(element.page_number))
+        page_number = safe_page_number(element.page_number)
+        if page_number is not None:
+            item["page_number"] = page_number
         bbox = _normalized_bbox(element.bbox)
         if bbox is not None:
             item["bbox"] = bbox
@@ -339,30 +349,22 @@ def _content_type_modality(content_type: str) -> str | None:
 
 
 def _time_range(element: ExtractedElement) -> dict[str, int] | None:
-    start = element.time_start_ms
-    end = element.time_end_ms
+    start, end = safe_time_range_ms(
+        start_ms=element.time_start_ms,
+        end_ms=element.time_end_ms,
+    )
     if start is None and end is None:
         return None
     result: dict[str, int] = {}
     if start is not None:
-        result["start_ms"] = max(0, int(start))
+        result["start_ms"] = start
     if end is not None:
-        result["end_ms"] = max(0, int(end))
-    if "start_ms" in result and "end_ms" in result and result["end_ms"] < result["start_ms"]:
-        result["end_ms"] = result["start_ms"]
+        result["end_ms"] = end
     return result
 
 
 def _normalized_bbox(value: tuple[float, float, float, float] | None) -> list[float] | None:
-    if value is None or len(value) != 4:
-        return None
-    bbox: list[float] = []
-    for raw in value:
-        number = float(raw)
-        if not math.isfinite(number):
-            return None
-        bbox.append(round(number, 4))
-    return bbox
+    return safe_bbox(value)
 
 
 def _normalized_confidence(value: float | None) -> float | None:

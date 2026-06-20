@@ -134,6 +134,45 @@ def test_extraction_result_json_bounds_elements_and_text() -> None:
     assert all(len(item["text"]) == 4_000 for item in payload["elements"])
 
 
+def test_extraction_result_json_sanitizes_invalid_coordinates() -> None:
+    rendered = result_json(
+        ExtractionResult(
+            status="succeeded",
+            normalized_content_type="video/mp4",
+            title="Bad coordinates",
+            parser_name="test_parser",
+            elements=(
+                ExtractedElement(
+                    kind="ocr_region",
+                    text="Invalid negative bbox.",
+                    page_number=0,
+                    bbox=(-1.0, 4.0, 120.0, 44.0),
+                ),
+                ExtractedElement(
+                    kind="transcript_segment",
+                    text="Invalid negative time.",
+                    time_start_ms=-10,
+                    time_end_ms=-1,
+                ),
+                ExtractedElement(
+                    kind="keyframe",
+                    text="Valid keyframe start with bad end.",
+                    time_start_ms=5000,
+                    time_end_ms=4000,
+                ),
+            ),
+        )
+    )
+
+    elements = json.loads(rendered)["elements"]
+    assert elements[0]["page_number"] is None
+    assert elements[0]["bbox"] is None
+    assert elements[1]["time_start_ms"] is None
+    assert elements[1]["time_end_ms"] is None
+    assert elements[2]["time_start_ms"] == 5000
+    assert elements[2]["time_end_ms"] is None
+
+
 def test_asset_extraction_chunk_metadata_redacts_provider_source() -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     now = datetime(2026, 6, 14, 10, tzinfo=UTC)
@@ -195,6 +234,59 @@ def test_asset_extraction_chunk_metadata_marks_prompt_injection_evidence() -> No
     }
     assert "raw_provider_payload" not in json.dumps(metadata, sort_keys=True)
     assert "Ignore previous instructions" in metadata["source_refs"][0]["quote_preview"]
+
+
+def test_asset_extraction_chunk_metadata_drops_invalid_coordinates() -> None:
+    now = datetime(2026, 6, 14, 10, tzinfo=UTC)
+    metadata = asset_extraction_chunk_metadata(
+        asset=_asset(now),
+        job=_job(now),
+        result=ExtractionResult(
+            status="succeeded",
+            normalized_content_type="video/mp4",
+            title="Bad coordinates",
+            elements=(
+                ExtractedElement(
+                    kind="ocr_region",
+                    text="Invalid negative bbox.",
+                    page_number=0,
+                    bbox=(-1.0, 4.0, 120.0, 44.0),
+                ),
+                ExtractedElement(
+                    kind="ocr_region",
+                    text="Invalid degenerate bbox.",
+                    bbox=(10.0, 10.0, 8.0, 20.0),
+                ),
+                ExtractedElement(
+                    kind="transcript_segment",
+                    text="Invalid negative time.",
+                    time_start_ms=-10,
+                    time_end_ms=-1,
+                ),
+                ExtractedElement(
+                    kind="keyframe",
+                    text="Valid keyframe start with bad end.",
+                    time_start_ms=5000,
+                    time_end_ms=4000,
+                ),
+            ),
+            parser_name="test_parser",
+        ),
+        extracted_text_value=(
+            "Invalid negative bbox.\n"
+            "Invalid degenerate bbox.\n"
+            "Invalid negative time.\n"
+            "Valid keyframe start with bad end."
+        ),
+    )
+
+    refs = metadata["source_refs"]
+    assert "page_number" not in refs[0]
+    assert all("bbox" not in ref for ref in refs[:3])
+    assert "time_start_ms" not in refs[2]
+    assert "time_end_ms" not in refs[2]
+    assert refs[3]["time_start_ms"] == 5000
+    assert "time_end_ms" not in refs[3]
 
 
 def test_extraction_job_metadata_preserves_bounded_primitive_lists() -> None:

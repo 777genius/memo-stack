@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import json
 
-from infinity_context_core.application.context_link_candidate_policy import source_text_risk_metadata
+from infinity_context_core.application.context_link_candidate_policy import (
+    source_text_risk_metadata,
+)
+from infinity_context_core.application.extraction_coordinates import (
+    safe_bbox,
+    safe_page_number,
+    safe_time_range_ms,
+)
 from infinity_context_core.application.safe_payload import safe_metadata, safe_metadata_text
 from infinity_context_core.domain.assets import MemoryAsset
 from infinity_context_core.domain.extraction import AssetExtractionJob
@@ -105,14 +112,15 @@ def _result_json_elements(result: ExtractionResult) -> tuple[list[dict[str, obje
         )
         if len(element.text) > len(safe_text):
             text_truncated_count += 1
+        time_start_ms, time_end_ms = _valid_time_range_ms(element)
         items.append(
             {
                 "kind": safe_metadata_text(element.kind, limit=120),
                 "text": safe_text,
-                "page_number": element.page_number,
-                "time_start_ms": element.time_start_ms,
-                "time_end_ms": element.time_end_ms,
-                "bbox": element.bbox,
+                "page_number": safe_page_number(element.page_number),
+                "time_start_ms": time_start_ms,
+                "time_end_ms": time_end_ms,
+                "bbox": _valid_bbox(element.bbox),
                 "confidence": element.confidence,
                 "metadata": safe_metadata(element.metadata),
             }
@@ -185,20 +193,34 @@ def _element_source_ref(
     if span is not None:
         ref["char_start"] = span[0]
         ref["char_end"] = span[1]
-    if element.page_number is not None:
-        ref["page_number"] = element.page_number
-    if element.time_start_ms is not None:
-        ref["time_start_ms"] = element.time_start_ms
-    if element.time_end_ms is not None:
-        ref["time_end_ms"] = element.time_end_ms
-    if element.bbox is not None:
-        ref["bbox"] = [float(value) for value in element.bbox]
+    page_number = safe_page_number(element.page_number)
+    if page_number is not None:
+        ref["page_number"] = page_number
+    time_start_ms, time_end_ms = _valid_time_range_ms(element)
+    if time_start_ms is not None:
+        ref["time_start_ms"] = time_start_ms
+    if time_end_ms is not None:
+        ref["time_end_ms"] = time_end_ms
+    bbox = _valid_bbox(element.bbox)
+    if bbox is not None:
+        ref["bbox"] = bbox
     if element.confidence is not None:
         ref["confidence"] = element.confidence
     provider_source = element.metadata.get("source")
     if isinstance(provider_source, str) and provider_source.strip():
         ref["provider_source"] = safe_metadata_text(provider_source.strip(), limit=120)
     return ref
+
+
+def _valid_time_range_ms(element: ExtractedElement) -> tuple[int | None, int | None]:
+    return safe_time_range_ms(
+        start_ms=element.time_start_ms,
+        end_ms=element.time_end_ms,
+    )
+
+
+def _valid_bbox(value: tuple[float, float, float, float] | None) -> list[float] | None:
+    return safe_bbox(value)
 
 
 def _find_element_span(
