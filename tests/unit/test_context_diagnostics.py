@@ -266,6 +266,7 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
         "schema_version": "retrieval-quality-v1",
         "evidence_strength": "empty",
         "retrieval_mode": "empty",
+        "freshness_status": "empty",
         "items_total": 0,
         "retrieval_source_count": 0,
         "hybrid_item_ratio": 0.0,
@@ -275,6 +276,10 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
         "multimodal_item_ratio": 0.0,
         "review_pressure_ratio": 0.0,
         "stale_item_ratio": 0.0,
+        "stale_filtered_count": 0,
+        "temporal_replacement_count": 0,
+        "superseded_review_ratio": 0.0,
+        "default_context_excludes_stale": True,
         "high_confidence_items": 0,
         "medium_confidence_items": 0,
         "low_confidence_items": 0,
@@ -339,6 +344,7 @@ def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() ->
         "schema_version": "retrieval-quality-v1",
         "evidence_strength": "strong",
         "retrieval_mode": "hybrid_multimodal",
+        "freshness_status": "fresh",
         "items_total": 2,
         "retrieval_source_count": 4,
         "hybrid_item_ratio": 1.0,
@@ -348,6 +354,10 @@ def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() ->
         "multimodal_item_ratio": 0.5,
         "review_pressure_ratio": 0.0,
         "stale_item_ratio": 0.0,
+        "stale_filtered_count": 0,
+        "temporal_replacement_count": 0,
+        "superseded_review_ratio": 0.0,
+        "default_context_excludes_stale": True,
         "high_confidence_items": 2,
         "medium_confidence_items": 0,
         "low_confidence_items": 0,
@@ -392,9 +402,11 @@ def test_context_bundle_diagnostics_report_weak_retrieval_quality_gaps() -> None
     summary = diagnostics["retrieval_quality_summary"]
     assert summary["evidence_strength"] == "weak"
     assert summary["retrieval_mode"] == "hybrid"
+    assert summary["freshness_status"] == "stale_present"
     assert summary["citation_coverage_ratio"] == 0.0
     assert summary["review_pressure_ratio"] == 1.0
     assert summary["stale_item_ratio"] == 0.5
+    assert summary["default_context_excludes_stale"] is False
     assert summary["low_confidence_items"] == 2
     assert summary["actionable_gaps"] == [
         "low_citation_coverage",
@@ -406,6 +418,41 @@ def test_context_bundle_diagnostics_report_weak_retrieval_quality_gaps() -> None
         "source_cap_drops_present",
         "sensitive_text_redacted",
     ]
+
+
+def test_context_bundle_diagnostics_report_freshness_filtering_summary() -> None:
+    item = ContextItem(
+        item_id="fact_current",
+        item_type="fact",
+        text="Current Atlas renewal terms.",
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="fact",
+                source_id="fact_current",
+                quote_preview="Current Atlas renewal terms.",
+            ),
+        ),
+        diagnostics={"retrieval_source": "postgres_facts"},
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "stale_vector_drop_count": 2,
+            "stale_context_linked_fact_drop_count": 1,
+            "temporal_replacements_applied": 1,
+            "linked_temporal_replacements_applied": 1,
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["freshness_status"] == "fresh_with_temporal_replacements"
+    assert summary["stale_filtered_count"] == 3
+    assert summary["temporal_replacement_count"] == 2
+    assert summary["stale_item_ratio"] == 0.0
+    assert summary["default_context_excludes_stale"] is True
 
 
 def test_context_bundle_retrieval_sources_use_stable_priority_order() -> None:

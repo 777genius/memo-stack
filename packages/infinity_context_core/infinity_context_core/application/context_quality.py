@@ -16,9 +16,7 @@ def retrieval_quality_summary(
     item_count = len(items)
     provenance = _as_dict(diagnostics.get("provenance_summary"))
     citation_coverage = _ratio_float(provenance.get("citation_coverage_ratio"))
-    precise_location_coverage = _ratio_float(
-        provenance.get("precise_location_coverage_ratio")
-    )
+    precise_location_coverage = _ratio_float(provenance.get("precise_location_coverage_ratio"))
     retrieval_source_count = _non_negative_int(
         diagnostics.get("retrieval_sources_total"),
         default=0,
@@ -38,6 +36,18 @@ def retrieval_quality_summary(
         default=0,
     )
     stale_items = _non_negative_int(provenance.get("stale_items"), default=0)
+    stale_filtered_count = _stale_filtered_count(diagnostics)
+    temporal_replacement_count = _non_negative_int(
+        diagnostics.get("temporal_replacements_applied"),
+        default=0,
+    ) + _non_negative_int(
+        diagnostics.get("linked_temporal_replacements_applied"),
+        default=0,
+    )
+    superseded_review_items = _non_negative_int(
+        diagnostics.get("superseded_facts_used"),
+        default=0,
+    )
     scores = tuple(_safe_item_score(item) for item in items)
     high_confidence_items = sum(1 for score in scores if score >= 0.82)
     medium_confidence_items = sum(1 for score in scores if 0.65 <= score < 0.82)
@@ -58,6 +68,12 @@ def retrieval_quality_summary(
             retrieval_source_count=retrieval_source_count,
             multimodal_items=multimodal_items,
         ),
+        "freshness_status": _freshness_status(
+            item_count=item_count,
+            stale_items=stale_items,
+            stale_filtered_count=stale_filtered_count,
+            temporal_replacement_count=temporal_replacement_count,
+        ),
         "items_total": item_count,
         "retrieval_source_count": retrieval_source_count,
         "hybrid_item_ratio": _ratio(hybrid_items, item_count),
@@ -70,13 +86,17 @@ def retrieval_quality_summary(
             item_count,
         ),
         "stale_item_ratio": _ratio(stale_items, item_count),
+        "stale_filtered_count": stale_filtered_count,
+        "temporal_replacement_count": temporal_replacement_count,
+        "superseded_review_ratio": _ratio(superseded_review_items, item_count),
+        "default_context_excludes_stale": stale_items == 0
+        and not bool(diagnostics.get("include_stale"))
+        and not bool(diagnostics.get("include_superseded")),
         "high_confidence_items": high_confidence_items,
         "medium_confidence_items": medium_confidence_items,
         "low_confidence_items": low_confidence_items,
         "evidence_kind_count": len(_as_dict(diagnostics.get("evidence_kind_counts"))),
-        "evidence_modality_count": len(
-            _as_dict(diagnostics.get("evidence_modality_counts"))
-        ),
+        "evidence_modality_count": len(_as_dict(diagnostics.get("evidence_modality_counts"))),
         "actionable_gaps": _retrieval_quality_gaps(
             diagnostics=diagnostics,
             item_count=item_count,
@@ -140,6 +160,24 @@ def _retrieval_mode(
     return "single_source"
 
 
+def _freshness_status(
+    *,
+    item_count: int,
+    stale_items: int,
+    stale_filtered_count: int,
+    temporal_replacement_count: int,
+) -> str:
+    if item_count <= 0:
+        return "empty"
+    if stale_items > 0:
+        return "stale_present"
+    if temporal_replacement_count > 0:
+        return "fresh_with_temporal_replacements"
+    if stale_filtered_count > 0:
+        return "fresh_with_stale_filtered"
+    return "fresh"
+
+
 def _retrieval_quality_gaps(
     *,
     diagnostics: dict[str, object],
@@ -176,10 +214,13 @@ def _retrieval_quality_gaps(
         gaps.append("budget_drops_present")
     if _non_negative_int(diagnostics.get("dropped_by_source_cap"), default=0) > 0:
         gaps.append("source_cap_drops_present")
-    if _non_negative_int(
-        diagnostics.get("sensitive_item_text_redacted"),
-        default=0,
-    ) > 0:
+    if (
+        _non_negative_int(
+            diagnostics.get("sensitive_item_text_redacted"),
+            default=0,
+        )
+        > 0
+    ):
         gaps.append("sensitive_text_redacted")
     return gaps[:_MAX_ACTIONABLE_GAPS]
 
@@ -194,6 +235,21 @@ def _safe_item_score(item: ContextItem) -> float:
     if score > 1:
         return 1.0
     return round(score, 4)
+
+
+def _stale_filtered_count(diagnostics: dict[str, object]) -> int:
+    keys = (
+        "stale_vector_drop_count",
+        "stale_graph_drop_count",
+        "stale_rag_drop_count",
+        "artifact_evidence_stale_asset_drop_count",
+        "stale_context_linked_chunk_drop_count",
+        "stale_context_linked_fact_drop_count",
+        "stale_context_linked_anchor_drop_count",
+        "stale_context_linked_asset_drop_count",
+        "stale_context_linked_extraction_artifact_drop_count",
+    )
+    return sum(_non_negative_int(diagnostics.get(key), default=0) for key in keys)
 
 
 def _ratio(numerator: int, denominator: int) -> float:
