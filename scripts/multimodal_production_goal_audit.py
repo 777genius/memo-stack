@@ -28,6 +28,13 @@ REQUIRED_FRONTEND_FLOWS = frozenset(
         "anchor_lifecycle_cleanup",
     }
 )
+REQUIRED_FRONTEND_ATTACHMENT_MODALITIES = frozenset({"text", "image", "audio", "video"})
+REQUIRED_FRONTEND_CONTEXT_REVIEW_ACTIONS = frozenset(
+    {"approve", "reject", "manual_link"}
+)
+REQUIRED_FRONTEND_ANCHOR_LIFECYCLE_CHECKS = frozenset(
+    {"create", "update", "split_alias", "merge_duplicate", "cleanup"}
+)
 REQUIRED_DOCKER_COMPONENTS = frozenset(
     {
         "docker_daemon",
@@ -258,6 +265,10 @@ def _audit_frontend_report(
         return
     flow = report.get("flow_coverage") if isinstance(report.get("flow_coverage"), dict) else {}
     completed = set(_string_list(flow.get("completed_flows")))
+    attachment_modalities = _frontend_attachment_modalities(flow)
+    attachment_parser_modalities = _frontend_attachment_parser_modalities(flow)
+    review_actions = _frontend_review_actions(flow)
+    anchor_checks = set(_string_list(flow.get("anchor_lifecycle_checks")))
     git = report.get("git") if isinstance(report.get("git"), dict) else {}
     components = report.get("components") if isinstance(report.get("components"), dict) else {}
     _check(
@@ -292,6 +303,36 @@ def _audit_frontend_report(
     _check(
         checks,
         failures,
+        "frontend_marionette_attachment_modalities_complete",
+        REQUIRED_FRONTEND_ATTACHMENT_MODALITIES.issubset(attachment_modalities),
+        "Frontend Marionette proof did not verify text/image/audio/video attachment extraction",
+    )
+    _check(
+        checks,
+        failures,
+        "frontend_marionette_attachment_artifacts_verified",
+        REQUIRED_FRONTEND_ATTACHMENT_MODALITIES.issubset(attachment_parser_modalities),
+        "Frontend Marionette proof did not verify parser, document, and artifacts "
+        "for every attachment modality",
+    )
+    _check(
+        checks,
+        failures,
+        "frontend_marionette_context_review_actions_complete",
+        REQUIRED_FRONTEND_CONTEXT_REVIEW_ACTIONS.issubset(review_actions),
+        "Frontend Marionette proof did not verify approve/reject/manual-link review actions",
+    )
+    _check(
+        checks,
+        failures,
+        "frontend_marionette_anchor_lifecycle_complete",
+        REQUIRED_FRONTEND_ANCHOR_LIFECYCLE_CHECKS.issubset(anchor_checks),
+        "Frontend Marionette proof did not verify create/update/split/merge/cleanup "
+        "anchor lifecycle",
+    )
+    _check(
+        checks,
+        failures,
         "frontend_marionette_components_succeeded",
         _components_succeeded(
             components,
@@ -299,6 +340,56 @@ def _audit_frontend_report(
         ),
         "Frontend Marionette server, worker, Flutter, or runtime log component failed",
     )
+
+
+def _frontend_attachment_modalities(flow: Mapping[str, object]) -> set[str]:
+    attachments = flow.get("attachment_modalities")
+    if not isinstance(attachments, list):
+        return set()
+    modalities: set[str] = set()
+    for item in attachments:
+        if not isinstance(item, dict):
+            continue
+        modality = item.get("modality")
+        if isinstance(modality, str) and modality:
+            modalities.add(modality)
+    return modalities
+
+
+def _frontend_attachment_parser_modalities(flow: Mapping[str, object]) -> set[str]:
+    attachments = flow.get("attachment_modalities")
+    if not isinstance(attachments, list):
+        return set()
+    modalities: set[str] = set()
+    for item in attachments:
+        if not isinstance(item, dict):
+            continue
+        modality = item.get("modality")
+        parser_name = item.get("parser_name")
+        artifact_types = item.get("artifact_types")
+        document_created = item.get("document_created")
+        if (
+            isinstance(modality, str)
+            and modality
+            and isinstance(parser_name, str)
+            and bool(parser_name)
+            and isinstance(artifact_types, list)
+            and bool(artifact_types)
+            and document_created is True
+        ):
+            modalities.add(modality)
+    return modalities
+
+
+def _frontend_review_actions(flow: Mapping[str, object]) -> set[str]:
+    raw_actions = flow.get("context_link_review_actions")
+    if not isinstance(raw_actions, dict):
+        return set()
+    actions: set[str] = set()
+    for raw_action, raw_count in raw_actions.items():
+        if isinstance(raw_action, str) and isinstance(raw_count, int) and raw_count > 0:
+            actions.add(raw_action)
+    return actions
 
 
 def _audit_docker_report(

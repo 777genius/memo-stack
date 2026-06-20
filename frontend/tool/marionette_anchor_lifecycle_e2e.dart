@@ -200,6 +200,10 @@ class MarionetteFlowRecorder {
   final String? path;
   final String runMarker;
   final List<String> completedFlows = <String>[];
+  final Map<String, Map<String, Object?>> attachmentModalities =
+      <String, Map<String, Object?>>{};
+  final Map<String, int> contextLinkReviewActions = <String, int>{};
+  final List<String> anchorLifecycleChecks = <String>[];
 
   MarionetteFlowRecorder({
     required this.path,
@@ -211,6 +215,35 @@ class MarionetteFlowRecorder {
       completedFlows.add(flow);
     }
     await write(status: 'running');
+  }
+
+  void recordAttachment({
+    required String modality,
+    required String filename,
+    required String mime,
+    required String parserName,
+    required Set<String> artifactTypes,
+    required bool documentCreated,
+  }) {
+    attachmentModalities[modality] = <String, Object?>{
+      'modality': modality,
+      'filename': filename,
+      'mime': mime,
+      'parser_name': parserName,
+      'artifact_types': artifactTypes.toList()..sort(),
+      'document_created': documentCreated,
+    };
+  }
+
+  void recordContextLinkReviewAction(String action) {
+    contextLinkReviewActions[action] =
+        (contextLinkReviewActions[action] ?? 0) + 1;
+  }
+
+  void recordAnchorLifecycleCheck(String check) {
+    if (!anchorLifecycleChecks.contains(check)) {
+      anchorLifecycleChecks.add(check);
+    }
   }
 
   Future<void> write({required String status}) async {
@@ -225,6 +258,9 @@ class MarionetteFlowRecorder {
             'run_marker': runMarker,
             'completed_flow_count': completedFlows.length,
             'completed_flows': completedFlows,
+            'attachment_modalities': attachmentModalities.values.toList(),
+            'context_link_review_actions': contextLinkReviewActions,
+            'anchor_lifecycle_checks': anchorLifecycleChecks,
           })}\n',
     );
   }
@@ -293,13 +329,21 @@ class MarionetteAnchorLifecycleRunner {
 
       await _runMemoryScopeManagementFlow(infinityContext, runMarker);
       await flowRecorder.markCompleted('memory_scope_management');
-      await _runCaptureLinkingFlow(infinityContext, runMarker);
+      await _runCaptureLinkingFlow(infinityContext, runMarker, flowRecorder);
       await flowRecorder.markCompleted('capture_link_approve');
-      await _runRejectedContextLinkFlow(infinityContext, runMarker);
+      await _runRejectedContextLinkFlow(
+        infinityContext,
+        runMarker,
+        flowRecorder,
+      );
       await flowRecorder.markCompleted('context_link_reject');
-      await _runAttachmentCaptureFlow(infinityContext, runMarker);
+      await _runAttachmentCaptureFlow(infinityContext, runMarker, flowRecorder);
       await flowRecorder.markCompleted('attachment_capture_extraction');
-      await _runManualContextLinkFlow(infinityContext, runMarker);
+      await _runManualContextLinkFlow(
+        infinityContext,
+        runMarker,
+        flowRecorder,
+      );
       await flowRecorder.markCompleted('manual_context_link_override');
       final anchorBaselineState =
           await infinityContext.call('infinityContext.e2eState', {});
@@ -320,6 +364,7 @@ class MarionetteAnchorLifecycleRunner {
         _int(created['memoryBrowserAnchorCount']) == anchorBaseline + 1,
         'create anchor did not add exactly one browser anchor',
       );
+      flowRecorder.recordAnchorLifecycleCheck('create');
       _log('created anchor $targetAnchorId');
 
       final updated = await infinityContext.call(
@@ -335,6 +380,7 @@ class MarionetteAnchorLifecycleRunner {
         _field(_map(updated['anchor']), 'label').endsWith('Updated'),
         'update anchor did not return updated label',
       );
+      flowRecorder.recordAnchorLifecycleCheck('update');
 
       final split = await infinityContext.call(
         'infinityContext.splitMemoryAnchorAlias',
@@ -350,6 +396,7 @@ class MarionetteAnchorLifecycleRunner {
         _int(split['memoryBrowserAnchorCount']) == anchorBaseline + 2,
         'split alias did not produce the expected second anchor',
       );
+      flowRecorder.recordAnchorLifecycleCheck('split_alias');
       _log('split alias into anchor $splitAnchorId');
 
       final duplicate = await infinityContext.call(
@@ -408,6 +455,7 @@ class MarionetteAnchorLifecycleRunner {
             .any((anchor) => _field(anchor, 'id') == mergedTargetAnchorId),
         'merged target anchor is not visible in memory browser',
       );
+      flowRecorder.recordAnchorLifecycleCheck('merge_duplicate');
       _log(
         'merged $mergedSourceAnchorId into $mergedTargetAnchorId '
         'with ${merged['pendingAnchorMergeSuggestionCount']} suggestions left',
@@ -421,6 +469,7 @@ class MarionetteAnchorLifecycleRunner {
         remaining.isEmpty,
         'cleanup left ${remaining.length} test anchors in memory browser',
       );
+      flowRecorder.recordAnchorLifecycleCheck('cleanup');
       await flowRecorder.markCompleted('anchor_lifecycle_cleanup');
       flowStatus = 'succeeded';
 
@@ -487,6 +536,7 @@ class MarionetteAnchorLifecycleRunner {
   Future<void> _runCaptureLinkingFlow(
     InfinityContextExtensionClient infinityContext,
     String runMarker,
+    MarionetteFlowRecorder flowRecorder,
   ) async {
     final target = await infinityContext.call(
       'infinityContext.createMemoryAnchor',
@@ -542,6 +592,10 @@ class MarionetteAnchorLifecycleRunner {
     _expect(
         reviewed['reviewed'] == true, 'no context-link suggestion reviewed');
     _expect(
+      reviewed['reviewAction'] == 'approve',
+      'context-link suggestion was not approved',
+    );
+    _expect(
       reviewed['reviewedTargetId'] == targetAnchorId,
       'reviewed suggestion target did not match the capture target anchor',
     );
@@ -550,6 +604,7 @@ class MarionetteAnchorLifecycleRunner {
       _int(linked['memoryBrowserContextLinkCount']) > 0,
       'approved context-link suggestion did not create a visible link',
     );
+    flowRecorder.recordContextLinkReviewAction('approve');
     _log(
       'approved context-link suggestion ${reviewed['reviewedSuggestionId']} '
       'for capture flow',
@@ -559,6 +614,7 @@ class MarionetteAnchorLifecycleRunner {
   Future<void> _runAttachmentCaptureFlow(
     InfinityContextExtensionClient infinityContext,
     String runMarker,
+    MarionetteFlowRecorder flowRecorder,
   ) async {
     for (final attachment in _attachmentCases(runMarker)) {
       final params = <String, String>{
@@ -614,6 +670,14 @@ class MarionetteAnchorLifecycleRunner {
           '${attachment.label} attachment missing artifact $artifactType',
         );
       }
+      flowRecorder.recordAttachment(
+        modality: attachment.label,
+        filename: attachment.filename,
+        mime: attachment.mime,
+        parserName: parserName,
+        artifactTypes: artifactTypes,
+        documentCreated: _list(extraction['resultDocumentIds']).isNotEmpty,
+      );
       _log(
         'attachment ${attachment.label} linked asset $assetId '
         'with parser $parserName',
@@ -624,6 +688,7 @@ class MarionetteAnchorLifecycleRunner {
   Future<void> _runRejectedContextLinkFlow(
     InfinityContextExtensionClient infinityContext,
     String runMarker,
+    MarionetteFlowRecorder flowRecorder,
   ) async {
     final baseline = await infinityContext.call('infinityContext.e2eState', {});
     final baselineLinkCount = _int(baseline['memoryBrowserContextLinkCount']);
@@ -686,12 +751,14 @@ class MarionetteAnchorLifecycleRunner {
       _int(rejectedState['memoryBrowserContextLinkCount']) == baselineLinkCount,
       'rejected context-link suggestion created a visible link',
     );
+    flowRecorder.recordContextLinkReviewAction('reject');
     _log('rejected context-link suggestion for $targetAnchorId');
   }
 
   Future<void> _runManualContextLinkFlow(
     InfinityContextExtensionClient infinityContext,
     String runMarker,
+    MarionetteFlowRecorder flowRecorder,
   ) async {
     final baseline = await infinityContext.call('infinityContext.e2eState', {});
     final baselineLinkCount = _int(baseline['memoryBrowserContextLinkCount']);
@@ -746,6 +813,7 @@ class MarionetteAnchorLifecycleRunner {
       infinityContext,
       minimumCount: baselineLinkCount + 1,
     );
+    flowRecorder.recordContextLinkReviewAction('manual_link');
     _log('created manual context link for $targetAnchorId');
   }
 

@@ -274,6 +274,7 @@ def _mark_frontend_runtime_unavailable(
     report: dict[str, object],
     exc: FrontendRuntimeUnavailable,
 ) -> None:
+    command = _public_command_label(exc.command)
     failure = {
         "type": exc.__class__.__name__,
         "component": exc.component,
@@ -282,7 +283,7 @@ def _mark_frontend_runtime_unavailable(
         "degraded": True,
         "operator_action": exc.operator_action,
         "user_retryable": False,
-        "command": exc.command,
+        "command": command,
     }
     report["ok"] = False
     report["failure"] = failure
@@ -296,6 +297,10 @@ def _mark_frontend_runtime_unavailable(
             "downstream_checks": [
                 "frontend_marionette_passed",
                 "frontend_marionette_flows_complete",
+                "frontend_marionette_attachment_modalities_complete",
+                "frontend_marionette_attachment_artifacts_verified",
+                "frontend_marionette_context_review_actions_complete",
+                "frontend_marionette_anchor_lifecycle_complete",
                 "frontend_marionette_components_succeeded",
             ],
         }
@@ -309,7 +314,7 @@ def _mark_frontend_runtime_unavailable(
         "degraded",
         reason=exc.reason,
         operator_action=exc.operator_action,
-        command=exc.command,
+        command=command,
         degraded=True,
         user_retryable=False,
     )
@@ -354,13 +359,38 @@ def _attach_flow_report(report: dict[str, object], flow_report_path: Path) -> No
         "run_marker",
         "completed_flow_count",
         "completed_flows",
+        "attachment_modalities",
+        "context_link_review_actions",
+        "anchor_lifecycle_checks",
     ):
         value = payload.get(key)
-        if isinstance(value, (str, int, bool)) or value is None:
-            safe_payload[key] = value
-        elif isinstance(value, list):
-            safe_payload[key] = [str(item)[:120] for item in value[:50]]
+        safe_payload[key] = _safe_flow_report_value(value)
     report["flow_coverage"] = safe_payload
+
+
+def _safe_flow_report_value(value: object, *, depth: int = 0) -> object:
+    if isinstance(value, str):
+        return value[:160]
+    if isinstance(value, (int, bool)) or value is None:
+        return value
+    if depth >= 4:
+        return str(value)[:160]
+    if isinstance(value, list):
+        return [_safe_flow_report_value(item, depth=depth + 1) for item in value[:50]]
+    if isinstance(value, dict):
+        safe: dict[str, object] = {}
+        for raw_key, raw_value in list(value.items())[:50]:
+            key = str(raw_key)[:80]
+            safe[key] = _safe_flow_report_value(raw_value, depth=depth + 1)
+        return safe
+    return str(value)[:160]
+
+
+def _public_command_label(raw: str) -> str:
+    if os.path.sep not in raw:
+        return raw[:120]
+    name = Path(raw).name
+    return (name or "runtime-executable")[:120]
 
 
 def _mark_unknown_components_failed(report: dict[str, object], exc: Exception) -> None:
@@ -561,10 +591,11 @@ def _require_executable(
         path = Path(resolved)
         if path.exists() and os.access(path, os.X_OK):
             return path.resolve()
+    public_command = _public_command_label(raw)
     raise FrontendRuntimeUnavailable(
         component=component,
         reason=reason,
-        message=f"Required frontend runtime executable is unavailable: {raw}",
+        message=f"Required frontend runtime executable is unavailable: {public_command}",
         operator_action=operator_action,
         command=raw,
     )

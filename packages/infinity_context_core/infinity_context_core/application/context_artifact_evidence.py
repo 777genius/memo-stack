@@ -326,12 +326,13 @@ def _context_items_from_manifest(
             continue
         artifact = candidate.artifact
         snippet = query_focused_snippet(query=query.query, text=text)
+        evidence_id = _safe_evidence_id(raw_item, index=index, diagnostics=diagnostics)
         source_refs = source_refs_with_query_snippet(
             (
                 _source_ref(
                     artifact=artifact,
                     raw_item=raw_item,
-                    index=index,
+                    evidence_id=evidence_id,
                     text=snippet.text if snippet else text,
                     diagnostics=diagnostics,
                 ),
@@ -369,7 +370,7 @@ def _context_items_from_manifest(
         )
         items.append(
             ContextItem(
-                item_id=f"{artifact.id}:{_safe_evidence_id(raw_item, index=index)}",
+                item_id=f"{artifact.id}:{evidence_id}",
                 item_type="extraction_artifact",
                 text=text,
                 score=score,
@@ -424,7 +425,7 @@ def _source_ref(
     *,
     artifact: ExtractionArtifact,
     raw_item: Mapping[str, object],
-    index: int,
+    evidence_id: str,
     text: str,
     diagnostics: dict[str, object],
 ) -> SourceRef:
@@ -432,7 +433,7 @@ def _source_ref(
     return SourceRef(
         source_type="extraction_artifact",
         source_id=str(artifact.id),
-        chunk_id=_safe_evidence_id(raw_item, index=index),
+        chunk_id=evidence_id,
         quote_preview=safe_metadata_text(text, limit=_MAX_QUOTE_PREVIEW_CHARS),
         page_number=_positive_int(raw_item.get("page_number")),
         time_start_ms=time_start_ms,
@@ -441,9 +442,43 @@ def _source_ref(
     )
 
 
-def _safe_evidence_id(raw_item: Mapping[str, object], *, index: int) -> str:
-    raw_id = safe_metadata_text(str(raw_item.get("id") or ""), limit=80).strip()
-    return raw_id or f"element:{index}"
+def _safe_evidence_id(
+    raw_item: Mapping[str, object],
+    *,
+    index: int,
+    diagnostics: dict[str, object],
+) -> str:
+    fallback = f"element:{index}"
+    raw_value = raw_item.get("id")
+    raw_id = str(raw_value or "").strip()
+    if not raw_id:
+        return fallback
+    if contains_sensitive_text(raw_id):
+        _increment_diagnostic(diagnostics, "artifact_evidence_unsafe_evidence_id_count")
+        return fallback
+    redacted = safe_metadata_text(raw_id, limit=160).strip()
+    token = _safe_evidence_id_token(redacted)
+    if not token:
+        _increment_diagnostic(diagnostics, "artifact_evidence_unsafe_evidence_id_count")
+        return fallback
+    if token != raw_id or len(raw_id) > 160:
+        _increment_diagnostic(diagnostics, "artifact_evidence_unsafe_evidence_id_count")
+    return token[:80]
+
+
+def _safe_evidence_id_token(value: str) -> str:
+    chars: list[str] = []
+    previous_dash = False
+    for char in value[:160]:
+        if char.isalnum() or char in {":", "_", ".", "-"}:
+            chars.append(char)
+            previous_dash = False
+        elif not previous_dash:
+            chars.append("-")
+            previous_dash = True
+        if len(chars) >= 80:
+            break
+    return "".join(chars).strip("-_.:")
 
 
 def _time_range_ms(
@@ -588,6 +623,7 @@ def _init_diagnostics(diagnostics: dict[str, object]) -> None:
         "artifact_evidence_query_drop_count",
         "artifact_evidence_sensitive_drop_count",
         "artifact_evidence_prompt_injection_drop_count",
+        "artifact_evidence_unsafe_evidence_id_count",
         "artifact_evidence_manifest_too_large_count",
         "artifact_evidence_read_error_count",
         "artifact_evidence_parse_error_count",

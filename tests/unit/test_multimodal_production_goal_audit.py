@@ -50,6 +50,46 @@ def test_multimodal_production_goal_audit_accepts_complete_proof(tmp_path: Path)
     assert payload["secrets_redacted"] is True
 
 
+def test_multimodal_production_goal_audit_rejects_incomplete_frontend_proof(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    frontend = _frontend_report()
+    flow = frontend["flow_coverage"]
+    assert isinstance(flow, dict)
+    flow["attachment_modalities"] = [
+        item
+        for item in flow["attachment_modalities"]
+        if isinstance(item, dict) and item.get("modality") != "video"
+    ]
+    flow["context_link_review_actions"] = {"approve": 1}
+    flow["anchor_lifecycle_checks"] = ["create", "cleanup"]
+    frontend_report.write_text(json.dumps(frontend), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(_provider_report()), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["frontend_marionette_attachment_modalities_complete"] is False
+    assert result.checks["frontend_marionette_attachment_artifacts_verified"] is False
+    assert result.checks["frontend_marionette_context_review_actions_complete"] is False
+    assert result.checks["frontend_marionette_anchor_lifecycle_complete"] is False
+    assert any("text/image/audio/video" in failure for failure in result.failures)
+    assert any("approve/reject/manual-link" in failure for failure in result.failures)
+
+
 def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     tmp_path: Path,
 ) -> None:
@@ -615,6 +655,49 @@ def _frontend_report() -> dict[str, object]:
                 "attachment_capture_extraction",
                 "manual_context_link_override",
                 "anchor_lifecycle_cleanup",
+            ],
+            "attachment_modalities": [
+                {
+                    "modality": "text",
+                    "parser_name": "simple_text",
+                    "artifact_types": ["markdown"],
+                    "document_created": True,
+                },
+                {
+                    "modality": "image",
+                    "parser_name": "image_metadata",
+                    "artifact_types": ["image_regions", "markdown"],
+                    "document_created": True,
+                },
+                {
+                    "modality": "audio",
+                    "parser_name": "media_metadata",
+                    "artifact_types": ["markdown", "media_manifest"],
+                    "document_created": True,
+                },
+                {
+                    "modality": "video",
+                    "parser_name": "media_metadata",
+                    "artifact_types": [
+                        "keyframe",
+                        "markdown",
+                        "media_manifest",
+                        "video_frame_timeline",
+                    ],
+                    "document_created": True,
+                },
+            ],
+            "context_link_review_actions": {
+                "approve": 1,
+                "reject": 1,
+                "manual_link": 1,
+            },
+            "anchor_lifecycle_checks": [
+                "create",
+                "update",
+                "split_alias",
+                "merge_duplicate",
+                "cleanup",
             ],
         },
     }

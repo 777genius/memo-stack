@@ -120,6 +120,18 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
                     "memory_scope_management",
                     "context_link_reject",
                 ],
+                "attachment_modalities": [
+                    {
+                        "modality": "text",
+                        "filename": "proof.txt",
+                        "mime": "text/plain",
+                        "parser_name": "simple_text",
+                        "artifact_types": ["markdown"],
+                        "document_created": True,
+                    }
+                ],
+                "context_link_review_actions": {"approve": 1, "reject": 1},
+                "anchor_lifecycle_checks": ["create", "cleanup"],
             }
         ),
         encoding="utf-8",
@@ -156,6 +168,18 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
             "memory_scope_management",
             "context_link_reject",
         ],
+        "attachment_modalities": [
+            {
+                "modality": "text",
+                "filename": "proof.txt",
+                "mime": "text/plain",
+                "parser_name": "simple_text",
+                "artifact_types": ["markdown"],
+                "document_created": True,
+            }
+        ],
+        "context_link_review_actions": {"approve": 1, "reject": 1},
+        "anchor_lifecycle_checks": ["create", "cleanup"],
     }
     assert set(persisted["git"]) == {"commit", "short_commit", "dirty"}
     assert str(ROOT) not in rendered
@@ -208,10 +232,12 @@ def test_frontend_marionette_local_e2e_reports_missing_flutter_runtime(
     assert persisted["ok"] is False
     assert persisted["exit_code"] == module.DEGRADED_EXIT_CODE
     assert persisted["failure"] == {
-        "command": str(missing_flutter),
+        "command": missing_flutter.name,
         "component": "flutter_pub_get",
         "degraded": True,
-        "message": f"Required frontend runtime executable is unavailable: {missing_flutter}",
+        "message": (
+            f"Required frontend runtime executable is unavailable: {missing_flutter.name}"
+        ),
         "operator_action": "install_flutter_sdk_or_set_FLUTTER",
         "reason": "flutter_runtime_missing",
         "type": "FrontendRuntimeUnavailable",
