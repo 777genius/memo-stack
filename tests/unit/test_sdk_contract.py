@@ -166,6 +166,7 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
                     "api_version": 1,
                     "answer_support_supported": True,
                     "answer_support_evidence_breakdown_supported": True,
+                    "retrieval_answerability_supported": True,
                     "retrieval_trace_location_counts_supported": True,
                 },
                 "extraction": {
@@ -244,6 +245,7 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
             "api_version": 1,
             "answer_support_supported": True,
             "answer_support_evidence_breakdown_supported": True,
+            "retrieval_answerability_supported": True,
             "retrieval_trace_location_counts_supported": True,
         },
         "extraction": {
@@ -1493,6 +1495,7 @@ def test_sdk_typed_context_preserves_late_summary_diagnostics() -> None:
         },
         "retrieval_quality_summary": {
             "evidence_strength": "strong",
+            "answerability_status": "grounded",
             "retrieval_mode": "multimodal_single_source",
         },
     }
@@ -1514,6 +1517,7 @@ def test_sdk_typed_context_preserves_late_summary_diagnostics() -> None:
     }
     assert bundle.diagnostics.retrieval_quality_summary == {
         "evidence_strength": "strong",
+        "answerability_status": "grounded",
         "retrieval_mode": "multimodal_single_source",
     }
     assert bundle.diagnostics.raw["provenance_summary"] == (

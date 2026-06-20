@@ -1274,6 +1274,8 @@ def test_quality_golden_eval_passes() -> None:
     assert result["gates"]["retrieval_trace_support_rate"] is True
     assert result["metrics"]["retrieval_trace_location_contract_rate"] == 1.0
     assert result["gates"]["retrieval_trace_location_contract_rate"] is True
+    assert result["metrics"]["retrieval_answerability_contract_rate"] == 1.0
+    assert result["gates"]["retrieval_answerability_contract_rate"] is True
     assert result["metrics"]["item_contract_support_rate"] == 1.0
     assert result["metrics"]["item_contract_failure_count"] == 0
     assert result["gates"]["item_contract_support_rate"] is True
@@ -1320,6 +1322,7 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["metrics"]["hybrid_retrieval_rate"] == 1.0
     assert payload["metrics"]["retrieval_trace_support_rate"] == 1.0
     assert payload["metrics"]["retrieval_trace_location_contract_rate"] == 1.0
+    assert payload["metrics"]["retrieval_answerability_contract_rate"] == 1.0
     assert payload["metrics"]["answer_support_breakdown_rate"] == 1.0
     assert payload["failures"] == []
     assert "QUALITY_FACT_MODEL_CURRENT" not in report_text

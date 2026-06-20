@@ -64,28 +64,55 @@ def retrieval_quality_summary(
     high_confidence_items = sum(1 for score in scores if score >= 0.82)
     medium_confidence_items = sum(1 for score in scores if 0.65 <= score < 0.82)
     low_confidence_items = sum(1 for score in scores if score < 0.65)
+    evidence_strength = _evidence_strength(
+        item_count=item_count,
+        citation_coverage=citation_coverage,
+        retrieval_source_count=retrieval_source_count,
+        review_only_items=review_only_items,
+        pending_review_items=pending_review_items,
+        stale_items=stale_items,
+        low_confidence_items=low_confidence_items,
+    )
+    freshness_status = _freshness_status(
+        item_count=item_count,
+        stale_items=stale_items,
+        stale_filtered_count=stale_filtered_count,
+        temporal_replacement_count=temporal_replacement_count,
+    )
+    actionable_gaps = _retrieval_quality_gaps(
+        diagnostics=diagnostics,
+        item_count=item_count,
+        citation_coverage=citation_coverage,
+        precise_location_coverage=precise_location_coverage,
+        retrieval_source_count=retrieval_source_count,
+        multimodal_items=multimodal_items,
+        query_snippet_items=query_snippet_items,
+        evidence_items_total=evidence_items_total,
+        evidence_location_coverage=evidence_location_coverage,
+        evidence_location_gap_count=evidence_location_gap_count,
+        review_only_items=review_only_items,
+        pending_review_items=pending_review_items,
+        stale_items=stale_items,
+        low_confidence_items=low_confidence_items,
+    )
+    answerability_status = _answerability_status(
+        item_count=item_count,
+        evidence_strength=evidence_strength,
+        review_only_items=review_only_items,
+        pending_review_items=pending_review_items,
+        stale_items=stale_items,
+    )
     return {
         "schema_version": "retrieval-quality-v1",
-        "evidence_strength": _evidence_strength(
-            item_count=item_count,
-            citation_coverage=citation_coverage,
-            retrieval_source_count=retrieval_source_count,
-            review_only_items=review_only_items,
-            pending_review_items=pending_review_items,
-            stale_items=stale_items,
-            low_confidence_items=low_confidence_items,
-        ),
+        "evidence_strength": evidence_strength,
+        "answerability_status": answerability_status,
+        "recommended_response_policy": _recommended_response_policy(answerability_status),
         "retrieval_mode": _retrieval_mode(
             item_count=item_count,
             retrieval_source_count=retrieval_source_count,
             multimodal_items=multimodal_items,
         ),
-        "freshness_status": _freshness_status(
-            item_count=item_count,
-            stale_items=stale_items,
-            stale_filtered_count=stale_filtered_count,
-            temporal_replacement_count=temporal_replacement_count,
-        ),
+        "freshness_status": freshness_status,
         "items_total": item_count,
         "retrieval_source_count": retrieval_source_count,
         "hybrid_item_ratio": _ratio(hybrid_items, item_count),
@@ -111,21 +138,10 @@ def retrieval_quality_summary(
         "low_confidence_items": low_confidence_items,
         "evidence_kind_count": len(_as_dict(diagnostics.get("evidence_kind_counts"))),
         "evidence_modality_count": len(_as_dict(diagnostics.get("evidence_modality_counts"))),
-        "actionable_gaps": _retrieval_quality_gaps(
-            diagnostics=diagnostics,
-            item_count=item_count,
-            citation_coverage=citation_coverage,
-            precise_location_coverage=precise_location_coverage,
-            retrieval_source_count=retrieval_source_count,
-            multimodal_items=multimodal_items,
-            query_snippet_items=query_snippet_items,
-            evidence_items_total=evidence_items_total,
-            evidence_location_coverage=evidence_location_coverage,
-            evidence_location_gap_count=evidence_location_gap_count,
-            review_only_items=review_only_items,
-            pending_review_items=pending_review_items,
-            stale_items=stale_items,
-            low_confidence_items=low_confidence_items,
+        "actionable_gaps": actionable_gaps,
+        "answerability_reasons": _answerability_reasons(
+            answerability_status=answerability_status,
+            actionable_gaps=actionable_gaps,
         ),
     }
 
@@ -193,6 +209,58 @@ def _freshness_status(
     if stale_filtered_count > 0:
         return "fresh_with_stale_filtered"
     return "fresh"
+
+
+def _answerability_status(
+    *,
+    item_count: int,
+    evidence_strength: str,
+    review_only_items: int,
+    pending_review_items: int,
+    stale_items: int,
+) -> str:
+    if item_count <= 0:
+        return "insufficient_context"
+    if review_only_items + pending_review_items >= item_count or stale_items >= item_count:
+        return "needs_review"
+    if evidence_strength == "strong":
+        return "grounded"
+    if evidence_strength == "weak":
+        return "insufficient_evidence"
+    return "usable_with_caveats"
+
+
+def _recommended_response_policy(answerability_status: str) -> str:
+    if answerability_status == "grounded":
+        return "answer_with_citations"
+    if answerability_status == "usable_with_caveats":
+        return "answer_with_caveat_and_citations"
+    if answerability_status == "needs_review":
+        return "review_before_answering"
+    return "ask_for_more_context"
+
+
+def _answerability_reasons(
+    *,
+    answerability_status: str,
+    actionable_gaps: list[str],
+) -> list[str]:
+    if answerability_status == "grounded":
+        return []
+    if answerability_status == "usable_with_caveats":
+        return actionable_gaps[:4] or ["limited_context_evidence"]
+    if answerability_status == "needs_review":
+        review_gaps = [
+            gap
+            for gap in actionable_gaps
+            if gap in {"review_items_present", "stale_items_present"}
+        ]
+        return (review_gaps or actionable_gaps or ["review_required"])[
+            :_MAX_ACTIONABLE_GAPS
+        ]
+    return (actionable_gaps or ["insufficient_context"])[
+        :_MAX_ACTIONABLE_GAPS
+    ]
 
 
 def _retrieval_quality_gaps(

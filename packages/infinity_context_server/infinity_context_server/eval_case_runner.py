@@ -519,6 +519,14 @@ def _quality_golden_metrics(
             ),
             len(retrieval_trace_cases),
         ),
+        "retrieval_answerability_contract_rate": _ratio(
+            sum(
+                1
+                for result in case_results
+                if _has_retrieval_answerability_contract(result)
+            ),
+            len(case_results),
+        ),
         "item_contract_support_rate": _ratio(
             sum(1 for result in item_contract_cases if not result.failures),
             len(item_contract_cases),
@@ -567,6 +575,9 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "retrieval_trace_support_rate": metrics["retrieval_trace_support_rate"] == 1.0,
         "retrieval_trace_location_contract_rate": (
             metrics["retrieval_trace_location_contract_rate"] == 1.0
+        ),
+        "retrieval_answerability_contract_rate": (
+            metrics["retrieval_answerability_contract_rate"] == 1.0
         ),
         "item_contract_support_rate": metrics["item_contract_support_rate"] == 1.0,
         "item_contract_failure_count": metrics["item_contract_failure_count"] == 0,
@@ -767,6 +778,37 @@ def _has_retrieval_trace_location_contract(result: EvalCaseResult) -> bool:
         ):
             return False
     return non_empty_entries > 0
+
+
+def _has_retrieval_answerability_contract(result: EvalCaseResult) -> bool:
+    summary = result.diagnostics.get("retrieval_quality_summary")
+    if not isinstance(summary, dict):
+        return False
+    status = summary.get("answerability_status")
+    policy = summary.get("recommended_response_policy")
+    reasons = summary.get("answerability_reasons")
+    valid_statuses = {
+        "grounded",
+        "usable_with_caveats",
+        "needs_review",
+        "insufficient_context",
+        "insufficient_evidence",
+    }
+    valid_policies = {
+        "answer_with_citations",
+        "answer_with_caveat_and_citations",
+        "review_before_answering",
+        "ask_for_more_context",
+    }
+    return (
+        isinstance(status, str)
+        and status in valid_statuses
+        and isinstance(policy, str)
+        and policy in valid_policies
+        and isinstance(reasons, list)
+        and len(reasons) <= 8
+        and all(isinstance(reason, str) and reason for reason in reasons)
+    )
 
 
 def _count_category_failures(

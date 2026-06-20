@@ -379,6 +379,8 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     assert diagnostics["retrieval_quality_summary"] == {
         "schema_version": "retrieval-quality-v1",
         "evidence_strength": "empty",
+        "answerability_status": "insufficient_context",
+        "recommended_response_policy": "ask_for_more_context",
         "retrieval_mode": "empty",
         "freshness_status": "empty",
         "items_total": 0,
@@ -402,6 +404,7 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
         "evidence_kind_count": 0,
         "evidence_modality_count": 0,
         "actionable_gaps": ["no_context_items"],
+        "answerability_reasons": ["no_context_items"],
     }
 
 
@@ -459,6 +462,8 @@ def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() ->
     assert diagnostics["retrieval_quality_summary"] == {
         "schema_version": "retrieval-quality-v1",
         "evidence_strength": "strong",
+        "answerability_status": "grounded",
+        "recommended_response_policy": "answer_with_citations",
         "retrieval_mode": "hybrid_multimodal",
         "freshness_status": "fresh",
         "items_total": 2,
@@ -482,6 +487,7 @@ def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() ->
         "evidence_kind_count": 1,
         "evidence_modality_count": 1,
         "actionable_gaps": [],
+        "answerability_reasons": [],
     }
 
 
@@ -519,6 +525,8 @@ def test_context_bundle_diagnostics_report_weak_retrieval_quality_gaps() -> None
 
     summary = diagnostics["retrieval_quality_summary"]
     assert summary["evidence_strength"] == "weak"
+    assert summary["answerability_status"] == "needs_review"
+    assert summary["recommended_response_policy"] == "review_before_answering"
     assert summary["retrieval_mode"] == "hybrid"
     assert summary["freshness_status"] == "stale_present"
     assert summary["citation_coverage_ratio"] == 0.0
@@ -535,6 +543,10 @@ def test_context_bundle_diagnostics_report_weak_retrieval_quality_gaps() -> None
         "budget_drops_present",
         "source_cap_drops_present",
         "sensitive_text_redacted",
+    ]
+    assert summary["answerability_reasons"] == [
+        "stale_items_present",
+        "review_items_present",
     ]
 
 

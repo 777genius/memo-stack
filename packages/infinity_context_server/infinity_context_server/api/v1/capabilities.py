@@ -70,6 +70,7 @@ async def capabilities(
             "answer_support_supported": True,
             "answer_support_evidence_breakdown_supported": True,
             "retrieval_quality_summary_supported": True,
+            "retrieval_answerability_supported": True,
             "retrieval_trace_supported": True,
             "retrieval_trace_location_counts_supported": True,
             "stale_filtering_supported": True,

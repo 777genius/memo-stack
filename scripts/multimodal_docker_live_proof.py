@@ -317,12 +317,102 @@ def _start_stack(
             degraded=True,
         ) from exc
     if result.returncode != 0:
+        compose_logs = _collect_compose_logs(
+            args,
+            project_name,
+            run_cmd=run_cmd,
+            env=env,
+        )
+        detected_errors = _detect_compose_error_codes(
+            _safe_completed(result, env=env),
+            compose_logs,
+        )
+        reason = _compose_up_failure_reason(detected_errors)
         raise DockerProofFailure(
             "compose_stack",
-            "compose_up_failed",
-            _safe_completed(result, env=env),
+            reason,
+            _compose_up_failure_message(result, compose_logs=compose_logs, env=env),
+            diagnostics={
+                "detected_error_codes": detected_errors,
+                "compose_logs": compose_logs,
+            },
         )
     _mark_component(report, "compose_stack", "succeeded", state="running", services=services)
+
+
+def _collect_compose_logs(
+    args: argparse.Namespace,
+    project_name: str,
+    *,
+    run_cmd: RunCommand,
+    env: dict[str, str],
+) -> dict[str, Any]:
+    command = [
+        *_compose_base(args, project_name),
+        "logs",
+        "--no-color",
+        "--tail",
+        "120",
+    ]
+    try:
+        result = run_cmd(command)
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "status": "timeout",
+            "message": _safe_timeout(exc, env=env),
+        }
+    if result.returncode != 0:
+        return {
+            "status": "failed",
+            "message": _safe_completed(result, env=env),
+        }
+    return {
+        "status": "succeeded",
+        "stdout_tail": _safe_text(result.stdout[-4000:], env=env),
+        "stderr_tail": _safe_text(result.stderr[-4000:], env=env),
+    }
+
+
+def _compose_up_failure_message(
+    result: subprocess.CompletedProcess[str],
+    *,
+    compose_logs: dict[str, Any],
+    env: dict[str, str],
+) -> str:
+    parts = [_safe_completed(result, env=env)]
+    stdout_tail = compose_logs.get("stdout_tail")
+    stderr_tail = compose_logs.get("stderr_tail")
+    message = compose_logs.get("message")
+    if isinstance(stdout_tail, str) and stdout_tail:
+        parts.append(f"compose_logs_stdout_tail:\n{stdout_tail}")
+    if isinstance(stderr_tail, str) and stderr_tail:
+        parts.append(f"compose_logs_stderr_tail:\n{stderr_tail}")
+    if isinstance(message, str) and message:
+        parts.append(f"compose_logs_message:\n{message}")
+    return _safe_text("\n".join(parts), env=env)
+
+
+def _detect_compose_error_codes(message: str, compose_logs: dict[str, Any]) -> list[str]:
+    values = [message]
+    for key in ("stdout_tail", "stderr_tail", "message"):
+        value = compose_logs.get(key)
+        if isinstance(value, str):
+            values.append(value)
+    lowered = "\n".join(values).lower()
+    detected: list[str] = []
+    if "no space left on device" in lowered:
+        detected.append("no_space_left_on_device")
+    if "address already in use" in lowered or "port is already allocated" in lowered:
+        detected.append("port_conflict")
+    return detected
+
+
+def _compose_up_failure_reason(detected_errors: list[str]) -> str:
+    if "no_space_left_on_device" in detected_errors:
+        return "compose_up_no_space_left_on_device"
+    if "port_conflict" in detected_errors:
+        return "compose_up_port_conflict"
+    return "compose_up_failed"
 
 
 def _prove_container_dependencies(
@@ -486,12 +576,12 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
     vision_max_payload_bytes = _positive_int(vision.get("max_provider_payload_bytes"))
     vision_max_images_per_request = _positive_int(vision.get("max_images_per_request"))
     vision_effective_max_upload_bytes = _positive_int(vision.get("effective_max_upload_bytes"))
+    required_audio_suffixes = {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
     audio_ok = (
         transcription.get("endpoint") == "/v1/audio/transcriptions"
         and transcription_max_upload_bytes == 25 * 1024 * 1024
         and transcription_effective_max_upload_bytes is not None
-        and set(audio_suffixes)
-        == {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
+        and required_audio_suffixes.issubset(set(audio_suffixes))
     )
     vision_ok = (
         vision.get("endpoint_family") == "responses"
@@ -1284,6 +1374,16 @@ def _recovery_policy(*, status: str, reason: str | None) -> dict[str, Any]:
         return {
             "user_retryable": False,
             "operator_action": "install_docker_cli",
+        }
+    if "no_space_left_on_device" in normalized:
+        return {
+            "user_retryable": True,
+            "operator_action": "free_docker_disk_space",
+        }
+    if "port_conflict" in normalized:
+        return {
+            "user_retryable": True,
+            "operator_action": "free_or_change_docker_ports",
         }
     if "compose" in normalized:
         return {

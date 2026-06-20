@@ -442,6 +442,91 @@ def test_docker_live_proof_degrades_on_compose_up_timeout_and_cleans_project(
     assert any("down" in command for command in commands)
 
 
+def test_docker_live_proof_reports_compose_up_no_space_with_logs_and_cleanup(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(proof, "_docker_context_show", lambda _command: "desktop-linux")
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--service-token",
+            "secret-proof-token",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    commands: list[list[str]] = []
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if "config" in command:
+            return _completed(command)
+        if command[:2] == ["docker", "info"]:
+            return _completed(command, stdout="29.0.0\n")
+        if "up" in command:
+            return _completed(
+                command,
+                stderr="dependency failed to start: container postgres exited (1)\n",
+                returncode=1,
+            )
+        if "logs" in command:
+            return _completed(
+                command,
+                stdout=(
+                    "postgres-1 | initdb: error: could not create directory "
+                    '"/var/lib/postgresql/data/pg_wal": No space left on device\n'
+                    "postgres-1 | token=secret-proof-token\n"
+                ),
+            )
+        if "down" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-a"]:
+            return _completed(command)
+        if command[:3] == ["docker", "network", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "volume", "ls"] and "--format" in command:
+            return _completed(command)
+        if command[:3] == ["docker", "ps", "-aq"]:
+            return _completed(command)
+        if command[:4] == ["docker", "volume", "ls", "-q"]:
+            return _completed(command)
+        if command[:4] == ["docker", "network", "ls", "-q"]:
+            return _completed(command)
+        raise AssertionError(f"Unexpected command: {command}")
+
+    report = proof.run_multimodal_docker_live_proof(
+        args,
+        run_cmd=run_cmd,
+        request_json=lambda *_args, **_kwargs: {},
+        sleep=lambda _: None,
+    )
+
+    assert report["ok"] is False
+    assert report["failure"]["component"] == "compose_stack"
+    assert report["failure"]["reason"] == "compose_up_no_space_left_on_device"
+    assert report["failure"]["user_retryable"] is True
+    assert report["failure"]["operator_action"] == "free_docker_disk_space"
+    assert report["failure"]["diagnostics"]["detected_error_codes"] == [
+        "no_space_left_on_device"
+    ]
+    assert report["failure"]["diagnostics"]["compose_logs"]["status"] == "succeeded"
+    assert "No space left on device" in report["failure"]["message"]
+    assert "secret-proof-token" not in json.dumps(report)
+    assert report["components"]["compose_stack"]["operator_action"] == "free_docker_disk_space"
+    assert report["components"]["cleanup"]["status"] == "succeeded"
+    assert any("logs" in command for command in commands)
+    assert any("down" in command for command in commands)
+
+
 def test_cleanup_removes_labeled_compose_resource_tails() -> None:
     args = proof._parse_args(
         [
