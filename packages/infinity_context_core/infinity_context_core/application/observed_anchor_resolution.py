@@ -101,6 +101,27 @@ def should_promote_observed_key(anchor: MemoryAnchor, observed: ObservedAnchor) 
     )
 
 
+def observed_anchor_matches_anchor(anchor: MemoryAnchor, observed: ObservedAnchor) -> bool:
+    observed_key = observed_canonical_key(observed)
+    if not observed_key or anchor.kind != observed.kind:
+        return False
+    if observed.normalized_key == anchor.normalized_key:
+        return True
+    if observed_key in canonical_anchor_keys(anchor):
+        return _safe_canonical_identity_match(
+            anchor=anchor,
+            observed=observed,
+            observed_key=observed_key,
+        )
+    if observed.kind == MemoryAnchorKind.PERSON:
+        return _person_initial_matches_anchor(
+            anchor=anchor,
+            observed=observed,
+            observed_key=observed_key,
+        )
+    return False
+
+
 def _single_person_initial_match(
     *,
     anchors: list[MemoryAnchor],

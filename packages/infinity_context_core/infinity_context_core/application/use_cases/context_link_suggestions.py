@@ -81,6 +81,7 @@ from infinity_context_core.application.dto import (
 from infinity_context_core.application.observed_anchor_resolution import (
     canonical_anchor_keys,
     find_active_by_observed_canonical_key,
+    observed_anchor_matches_anchor,
     observed_canonical_key,
     preferred_observed_label,
     should_promote_observed_key,
@@ -865,6 +866,9 @@ def _observed_anchor_for_candidate(
     if observed is not None:
         return observed
     if anchor.kind not in {MemoryAnchorKind.ORGANIZATION, MemoryAnchorKind.PROJECT}:
+        for observed in observed_by_canonical_key.values():
+            if observed_anchor_matches_anchor(anchor, observed):
+                return observed
         return None
     for key in canonical_anchor_keys(anchor):
         if observed := observed_by_canonical_key.get((anchor.kind.value, key)):

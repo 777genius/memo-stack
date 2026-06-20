@@ -405,6 +405,64 @@ def test_semantic_linking_quality_golden_cases_e2e(tmp_path: Path) -> None:
             >= 1
         )
 
+        manual_person = client.post(
+            "/v1/anchors",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "kind": "person",
+                "label": "Alex Cooper",
+                "aliases": ["@alex.cooper"],
+                "confidence": "high",
+            },
+        )
+        assert manual_person.status_code == 200, manual_person.text
+        manual_person_id = manual_person.json()["data"]["id"]
+        initial_capture = _capture(
+            client,
+            source_event_id="alex-cooper-initial-capture",
+            text="Alex C. sent Project Atlas invoice threshold notes after the call.",
+            thread_external_ref="quality-review",
+        )
+        initial_suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "quality-review",
+                "source_type": "capture",
+                "source_id": initial_capture["id"],
+                "text": "Alex C. Project Atlas invoice threshold notes",
+                "persist": True,
+                "limit": 30,
+            },
+        )
+        assert initial_suggestions.status_code == 200, initial_suggestions.text
+        initial_data = initial_suggestions.json()["data"]
+        initial_anchor_candidates = [
+            item for item in initial_data["candidates"] if item["target_type"] == "anchor"
+        ]
+        assert all(
+            item["metadata"].get("normalized_key") != "alex c"
+            for item in initial_anchor_candidates
+            if item["metadata"].get("anchor_kind") == "person"
+        )
+
+        listed_people = client.get(
+            "/v1/anchors",
+            params={
+                "space_slug": "semantic-linking-quality",
+                "memory_scope_external_ref": "default",
+                "kind": "person",
+                "limit": 100,
+            },
+        )
+        assert listed_people.status_code == 200, listed_people.text
+        people_by_id = {item["id"]: item for item in listed_people.json()["data"]}
+        assert people_by_id[manual_person_id]["normalized_key"] == "alex cooper"
+        assert "Alex C" in people_by_id[manual_person_id]["aliases"]
+        assert all(item["normalized_key"] != "alex c" for item in people_by_id.values())
+
         cross_scope_fact = _remember_fact(
             client,
             space_slug="semantic-linking-quality-private",
