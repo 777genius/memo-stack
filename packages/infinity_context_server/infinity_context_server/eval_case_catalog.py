@@ -477,6 +477,43 @@ def _quality_golden_cases(
             ),
         ),
         EvalCase(
+            case_id="mixed_script_event_anchor_recall_by_query_intent",
+            category="anchor_context",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="созвон с алексом в атласе",
+            must_include=(
+                "event: Atlas billing call",
+                "with: Alex",
+            ),
+            max_facts=0,
+            max_chunks=0,
+            required_diagnostics=(
+                ("query_anchor_person_hint_count", "gte", 1),
+                ("query_anchor_project_hint_count", "gte", 1),
+                ("anchors_used_by_query_intent", "gte", 1),
+                ("retrieval_sources_used", "contains", "canonical_anchors"),
+            ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "anchor"),
+                    ("text", "contains", "event: Atlas billing call"),
+                    (
+                        "diagnostics.query_anchor_match_reasons",
+                        "contains",
+                        "query_event_participant_match",
+                    ),
+                    (
+                        "diagnostics.query_anchor_match_reasons",
+                        "contains",
+                        "query_event_project_match",
+                    ),
+                    ("diagnostics.query_anchor_match_keys", "contains", "aleks"),
+                    ("diagnostics.query_anchor_match_keys", "contains", "atlas"),
+                ),
+            ),
+        ),
+        EvalCase(
             case_id="event_anchor_relation_expands_linked_person_project_facts",
             category="anchor_context",
             space_id=space_id,

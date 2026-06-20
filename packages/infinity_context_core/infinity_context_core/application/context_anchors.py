@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from infinity_context_core.application.context_query_intent import QueryAnchorMatch
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     query_relevance_score_signals,
@@ -69,18 +70,23 @@ def anchor_context_item(
     relevance: QueryRelevance,
     identity_relevance: QueryRelevance,
     now: datetime | None,
+    query_anchor_match: QueryAnchorMatch | None = None,
 ) -> ContextItem:
     score = _anchor_score(
         anchor,
         relevance=relevance,
         identity_relevance=identity_relevance,
         now=now,
+        query_anchor_match=query_anchor_match,
     )
     metadata = _anchor_identity_metadata(anchor)
     ranking_reason = (
         "canonical semantic anchor matched query via structured identity metadata"
-        if identity_relevance.unique_term_hits > 0
+        if identity_relevance.unique_term_hits > 0 or query_anchor_match is not None
         else "canonical semantic anchor matched query"
+    )
+    match_diagnostics = (
+        query_anchor_match.diagnostics() if query_anchor_match is not None else {}
     )
     return ContextItem(
         item_id=str(anchor.id),
@@ -103,6 +109,9 @@ def anchor_context_item(
                 "identity_unique_term_hits": identity_relevance.unique_term_hits,
                 "identity_hit_ratio": identity_relevance.hit_ratio,
                 "identity_relevance_boost": identity_relevance.score_boost,
+                "query_anchor_intent_boost": (
+                    query_anchor_match.score_boost if query_anchor_match is not None else 0.0
+                ),
             },
             "provenance": {
                 "retrieval_sources": ["canonical_anchors"],
@@ -114,6 +123,7 @@ def anchor_context_item(
                 "valid_from": anchor.valid_from.isoformat() if anchor.valid_from else None,
                 "valid_to": anchor.valid_to.isoformat() if anchor.valid_to else None,
                 "identity_metadata": metadata,
+                **match_diagnostics,
             },
             "anchor_kind": anchor.kind.value,
             "normalized_key": anchor.normalized_key,
@@ -121,6 +131,7 @@ def anchor_context_item(
             "observed_at": anchor.observed_at.isoformat(),
             "updated_at": anchor.updated_at.isoformat(),
             "identity_metadata": metadata,
+            **match_diagnostics,
             **metadata,
         },
     )
@@ -258,16 +269,21 @@ def _anchor_score(
     relevance: QueryRelevance,
     identity_relevance: QueryRelevance,
     now: datetime | None,
+    query_anchor_match: QueryAnchorMatch | None,
 ) -> float:
     confidence_boost = _level_boost(anchor.confidence.value, low=0.01, medium=0.025, high=0.045)
     freshness_boost = _freshness_boost(anchor.updated_at, now=now)
     identity_boost = min(0.035, identity_relevance.score_boost * 0.5)
+    query_intent_boost = (
+        min(0.09, query_anchor_match.score_boost) if query_anchor_match is not None else 0.0
+    )
     return min(
         0.94,
         round(
             0.72
             + relevance.score_boost
             + identity_boost
+            + query_intent_boost
             + confidence_boost
             + freshness_boost,
             4,

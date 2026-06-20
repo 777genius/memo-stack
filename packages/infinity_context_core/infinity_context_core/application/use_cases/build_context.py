@@ -34,6 +34,11 @@ from infinity_context_core.application.context_policy import (
     is_context_fact_visible,
     is_context_review_fact_visible,
 )
+from infinity_context_core.application.context_query_intent import (
+    build_query_anchor_intent,
+    match_query_anchor_intent,
+    query_anchor_intent_conflicts,
+)
 from infinity_context_core.application.context_ranking import dedupe_rank_items
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
@@ -141,6 +146,8 @@ class BuildContextUseCase:
             "keyword_chunks_dropped_by_relevance": 0,
             "anchors_considered": len(canonical.anchors),
             "anchors_used": 0,
+            "anchors_used_by_query_intent": 0,
+            "anchors_dropped_by_query_intent_conflict": 0,
             "anchor_relation_candidates_considered": 0,
             "anchor_relation_items_used": 0,
             "vector_status": "disabled",
@@ -204,9 +211,13 @@ class BuildContextUseCase:
 
         items: list[ContextItem] = []
         now = self._clock.now() if self._clock is not None else None
+        query_anchor_intent = build_query_anchor_intent(query.query)
+        diagnostics.update(query_anchor_intent.diagnostics())
         for fact in canonical.facts:
             items.append(_fact_context_item(fact, now=now, query_text=query.query))
         anchors_used = 0
+        anchors_used_by_query_intent = 0
+        anchors_dropped_by_query_intent_conflict = 0
         selected_anchor_items: list[tuple[MemoryAnchor, ContextItem]] = []
         for anchor in canonical.anchors:
             if not is_context_anchor_visible(
@@ -221,11 +232,15 @@ class BuildContextUseCase:
                 text=anchor_retrieval_text(anchor),
             ):
                 continue
+            if query_anchor_intent_conflicts(query_anchor_intent, anchor):
+                anchors_dropped_by_query_intent_conflict += 1
+                continue
+            query_anchor_match = match_query_anchor_intent(query_anchor_intent, anchor)
             relevance = score_query_relevance(
                 query=query.query,
                 text=anchor_retrieval_text(anchor),
             )
-            if not is_query_relevance_sufficient(relevance):
+            if query_anchor_match is None and not is_query_relevance_sufficient(relevance):
                 continue
             identity_relevance = score_query_relevance(
                 query=query.query,
@@ -236,11 +251,18 @@ class BuildContextUseCase:
                 relevance=relevance,
                 identity_relevance=identity_relevance,
                 now=now,
+                query_anchor_match=query_anchor_match,
             )
             items.append(anchor_item)
             selected_anchor_items.append((anchor, anchor_item))
             anchors_used += 1
+            if query_anchor_match is not None:
+                anchors_used_by_query_intent += 1
         diagnostics["anchors_used"] = anchors_used
+        diagnostics["anchors_used_by_query_intent"] = anchors_used_by_query_intent
+        diagnostics["anchors_dropped_by_query_intent_conflict"] = (
+            anchors_dropped_by_query_intent_conflict
+        )
         related_anchor_items, related_anchor_candidates = related_anchor_context_items(
             anchors=canonical.anchors,
             selected_anchor_items=tuple(selected_anchor_items),
