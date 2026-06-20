@@ -43,10 +43,12 @@ _CYRILLIC_TO_LATIN = str.maketrans(
 )
 _CYRILLIC_PERSON_CASE_OVERRIDES = {
     "алекса": "алекс",
+    "алексу": "алекс",
     "атласе": "атлас",
 }
 _CYRILLIC_PROJECT_CASE_OVERRIDES = {
     "атласе": "атлас",
+    "атласу": "атлас",
 }
 
 

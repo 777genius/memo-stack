@@ -227,6 +227,63 @@ def test_anchor_extraction_handles_russian_temporal_person_cases() -> None:
     assert "созвон с марией вчера" in event_keys
 
 
+def test_anchor_extraction_handles_phone_call_dative_person_and_project() -> None:
+    anchors = extract_observed_anchors("Позвонил Алексу по Атласу час назад.")
+
+    person_keys = {
+        (anchor.normalized_key, anchor.metadata.get("person_canonical_key"))
+        for anchor in anchors
+        if anchor.kind.value == "person"
+    }
+    project_keys = {
+        (anchor.normalized_key, anchor.metadata.get("project_canonical_key"))
+        for anchor in anchors
+        if anchor.kind.value == "project"
+    }
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert ("алекс", "aleks") in person_keys
+    assert ("атлас", "atlas") in project_keys
+    assert ("позвонил алексу", "pozvonil aleksu") not in person_keys
+    assert ("атласу", "atlasu") not in person_keys
+    assert "позвонил с алексу по атласу час назад" in events
+    assert events["позвонил с алексу по атласу час назад"]["event_type_canonical"] == (
+        "pozvonil"
+    )
+    assert events["позвонил с алексу по атласу час назад"][
+        "event_participant_canonical_key"
+    ] == "aleks"
+    assert events["позвонил с алексу по атласу час назад"]["event_project_canonical_key"] == (
+        "atlas"
+    )
+    assert events["позвонил с алексу по атласу час назад"]["event_temporal_hint_code"] == (
+        "hours_ago"
+    )
+
+
+def test_anchor_extraction_handles_dm_event_shorthand() -> None:
+    anchors = extract_observed_anchors("Alex DM yesterday about Atlas invoice.")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    project_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "project"}
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "alex" in person_keys
+    assert "atlas" in project_keys
+    assert "dm with alex about atlas yesterday" in events
+    assert events["dm with alex about atlas yesterday"]["event_participant_canonical_key"] == (
+        "aleks"
+    )
+    assert events["dm with alex about atlas yesterday"]["event_project_canonical_key"] == "atlas"
+    assert events["dm with alex about atlas yesterday"]["event_temporal_hint_code"] == (
+        "yesterday"
+    )
+
+
 def test_anchor_extraction_merges_common_russian_person_case_variants() -> None:
     anchors = extract_observed_anchors(
         "Мария подтвердила Project Atlas. От Марии пришел follow-up. "

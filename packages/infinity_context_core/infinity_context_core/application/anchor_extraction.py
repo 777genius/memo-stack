@@ -48,10 +48,12 @@ _TEMPORAL_PHRASE = (
     r"\d{1,2}\s+недел[юи]\s+назад"
 )
 _EVENT_KEYWORDS = (
-    r"call|meeting|review|sync|demo|chat|message|conversation|"
+    r"call|meeting|review|sync|demo|chat|dm|direct message|message|conversation|"
     r"meet|met|"
     r"standup|planning|retro|retrospective|workshop|interview|presentation|release|launch|"
-    r"звонок|созвон|встреча|ревью|демо|переписка|переписывался|"
+    r"звонок|созвон|позвонил|позвонила|звонил|звонила|"
+    r"встреча|ревью|демо|переписка|переписывался|"
+    r"написал|написала|"
     r"встретился|встретилась|встречался|встречалась|встречались|"
     r"разговор(?:а|е|ом)?|чат|планерка|планёрка|стендап|ретро|"
     r"интервью|воркшоп|релиз|запуск"
@@ -65,6 +67,9 @@ _EVENT_PATTERN = re.compile(
 _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
     r"(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
+)
+_EVENT_DIRECT_PARTICIPANT_PATTERN = re.compile(
+    r"^\s+(?P<label>[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40})\b"
 )
 _EVENT_PROJECT_PATTERN = re.compile(
     r"\b(?P<prep>about|for|in|по|про|для|в)\s+"
@@ -109,6 +114,14 @@ _PERSON_STOP_WORDS = {
     "presentation",
     "release",
     "launch",
+    "dm",
+    "direct",
+    "позвонил",
+    "позвонила",
+    "звонил",
+    "звонила",
+    "написал",
+    "написала",
     "quick",
     "capture",
     "content",
@@ -710,10 +723,10 @@ def _event_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for match in _EVENT_PATTERN.finditer(text):
         event = match.group(1).strip()
-        participant = _nearby_event_participant(
+        participant = _nearby_event_participant_before(
             text,
-            match.end(),
-        ) or _nearby_event_participant_before(text, match.start())
+            match.start(),
+        ) or _nearby_event_participant(text, match.end())
         project = _event_project_in_phrase(match.group(0)) or _nearby_event_project(
             text,
             match.end(),
@@ -740,17 +753,22 @@ def _person_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for pattern in (_PERSON_PATTERN, _CYRILLIC_PERSON_PATTERN):
         for match in pattern.finditer(text):
+            parts = tuple(part for part in match.groups() if part)
+            normalized_parts = tuple(normalize_anchor_key(part) for part in parts)
+            if normalized_parts and _is_project_qualifier(normalized_parts[0]):
+                continue
             if _is_project_qualified_person_match(text, match.start()):
                 continue
             if _is_project_preposition_person_false_positive(text, match.start()):
                 continue
             if _is_followed_by_organization_suffix(text, match.end()):
                 continue
-            parts = tuple(part for part in match.groups() if part)
-            normalized_parts = tuple(normalize_anchor_key(part) for part in parts)
             if any(part in _ORGANIZATION_SUFFIX_WORDS for part in normalized_parts[1:]):
                 continue
             if len(parts) > 1 and normalized_parts[0] in _PERSON_TEMPORAL_PREFIX_WORDS:
+                parts = (parts[1],)
+                normalized_parts = normalized_parts[1:]
+            if len(parts) > 1 and normalized_parts[0] in _PERSON_STOP_WORDS:
                 parts = (parts[1],)
                 normalized_parts = normalized_parts[1:]
             if len(parts) > 1 and normalized_parts[1] in _PERSON_STOP_WORDS:
@@ -772,12 +790,18 @@ def _nearby_event_participant(text: str, start: int) -> str:
     if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
         tail = tail[: next_event.start()]
     match = _EVENT_PARTICIPANT_PATTERN.search(tail)
-    if not match:
-        return ""
-    label = match.group("label")
+    if match:
+        label = match.group("label")
+        prep = match.group("prep")
+    else:
+        direct_match = _EVENT_DIRECT_PARTICIPANT_PATTERN.search(tail)
+        if not direct_match:
+            return ""
+        label = direct_match.group("label")
+        prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
     if not _is_probable_person_label(label):
         return ""
-    return f"{match.group('prep')} {label}"
+    return f"{prep} {label}"
 
 
 def _nearby_event_project(text: str, start: int) -> str:
@@ -822,9 +846,13 @@ def _is_project_qualified_person_match(text: str, start: int) -> bool:
     return bool(re.search(r"(?:project|проект(?:у|е|а|ом)?)\s+$", prefix))
 
 
+def _is_project_qualifier(value: str) -> bool:
+    return value in {"project", "проект", "проекту", "проекте", "проекта", "проектом"}
+
+
 def _is_project_preposition_person_false_positive(text: str, start: int) -> bool:
     prefix = text[max(0, start - 16) : start].casefold()
-    return bool(re.search(r"\bв\s+$", prefix))
+    return bool(re.search(r"\b(?:about|for|in|по|про|для|в)\s+$", prefix))
 
 
 def _is_followed_by_organization_suffix(text: str, end: int) -> bool:

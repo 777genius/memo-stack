@@ -215,6 +215,22 @@ def test_semantic_dedupe_exposes_structured_event_project_terms() -> None:
     assert "event_project:atlas" in match.overlap_terms
 
 
+def test_semantic_dedupe_matches_cross_language_phone_call_event_identity() -> None:
+    match = describe_duplicate_fact_match(
+        "Позвонил Алексу по Атласу час назад про billing cutoff.",
+        "Call with Alex about Atlas an hour ago covered billing cutoff.",
+    )
+
+    assert match is not None
+    assert match.match_type == "semantic_identity_overlap"
+    assert "event_type:call" in match.overlap_terms
+    assert "event_participant:aleks" in match.overlap_terms
+    assert "event_project:atlas" in match.overlap_terms
+    assert "event_temporal:hours_ago:1:hour" in match.overlap_terms
+    assert "billing" in match.overlap_terms
+    assert "cutoff" in match.overlap_terms
+
+
 def test_semantic_dedupe_rejects_similar_event_with_different_project() -> None:
     assert not looks_equivalent_fact(
         "Call with Alex about Atlas 2 hours ago covered billing.",

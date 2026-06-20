@@ -13,6 +13,10 @@ from infinity_context_core.application.anchor_extraction import (
     normalize_anchor_key,
     structured_anchor_metadata_for_label,
 )
+from infinity_context_core.application.anchor_identity_normalization import (
+    normalize_cyrillic_person_case,
+    normalize_cyrillic_project_case,
+)
 from infinity_context_core.application.anchor_temporal_window import (
     temporal_window_for_observed_anchor,
     temporal_window_metadata,
@@ -739,12 +743,25 @@ async def _find_active_anchor_by_alias_key(
 
 
 def _anchor_alias_keys(*, kind: str, label: str, aliases: tuple[str, ...]) -> tuple[str, ...]:
-    keys = {
-        normalized for value in (label, *aliases) if (normalized := normalize_anchor_key(value))
-    }
+    keys: set[str] = set()
+    for value in (label, *aliases):
+        normalized = normalize_anchor_key(value)
+        if normalized:
+            keys.add(normalized)
+            kind_normalized = _kind_normalized_alias_key(kind=kind, normalized=normalized)
+            if kind_normalized:
+                keys.add(kind_normalized)
     if kind in {MemoryAnchorKind.ORGANIZATION.value, MemoryAnchorKind.PROJECT.value}:
         keys.update(_compact_anchor_key(key) for key in tuple(keys))
     return tuple(sorted(keys))
+
+
+def _kind_normalized_alias_key(*, kind: str, normalized: str) -> str:
+    if kind == MemoryAnchorKind.PERSON.value:
+        return " ".join(normalize_cyrillic_person_case(part) for part in normalized.split())
+    if kind == MemoryAnchorKind.PROJECT.value:
+        return " ".join(normalize_cyrillic_project_case(part) for part in normalized.split())
+    return normalized
 
 
 def _compact_anchor_key(value: str) -> str:

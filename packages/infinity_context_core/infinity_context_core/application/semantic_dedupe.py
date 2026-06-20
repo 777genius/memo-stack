@@ -21,9 +21,17 @@ _NUMERIC_VALUE_RE = re.compile(
     re.IGNORECASE,
 )
 _EVENT_TYPE_ALIASES = {
+    "direct message": "message",
+    "dm": "message",
     "perepiska": "chat",
     "soobshchenie": "message",
     "sozvon": "call",
+    "pozvonil": "call",
+    "pozvonila": "call",
+    "zvonil": "call",
+    "zvonila": "call",
+    "napisal": "message",
+    "napisala": "message",
     "vstrecha": "meeting",
     "zvonok": "call",
 }
@@ -40,6 +48,7 @@ _DUPLICATE_CONTENT_SIGNAL_TERMS = {
     "audio",
     "billing",
     "call",
+    "cutoff",
     "dashboard",
     "document",
     "image",
