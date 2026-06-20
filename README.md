@@ -83,7 +83,8 @@ Implemented API surface:
 - `/v1/facts` remember/list/get/versions/update/forget;
 - `/v1/documents` ingest/get/chunks/process/delete;
 - `/v1/episodes` transcript/event ingest for app or agent sessions;
-- `/v1/search`, `/v1/context`;
+- `/v1/search`, `/v1/context` with cited `top_evidence` and `answer_support`
+  diagnostics for source-grounded chat answers;
 - `/v1/digest` for source-bound Memory Digest reports;
 - `/v1/thread-memory/status`, `/v1/thread-memory` delete for thread-scoped cleanup;
 - `/v1/suggestions` create/list/approve/reject/expire for review-gated memory;
@@ -472,6 +473,15 @@ context = client.build_context(
     query="event processing preference",
     token_budget=512,
 )
+
+typed_context = client.build_typed_context(
+    space_slug="project-alpha",
+    memory_scope_external_ref="default",
+    thread_external_ref="session-123",
+    query="event processing preference",
+    token_budget=512,
+)
+assert typed_context.answer_support.status in {"strong", "partial", "missing"}
 
 suggestion = client.create_suggestion(
     space_id="space_project_alpha",

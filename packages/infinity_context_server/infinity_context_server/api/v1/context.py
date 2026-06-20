@@ -28,6 +28,7 @@ router = APIRouter(tags=["context"], dependencies=[Depends(require_service_token
 _MAX_PUBLIC_CONTEXT_SOURCE_REFS = 20
 _MAX_PUBLIC_TOP_EVIDENCE = 5
 _MAX_PUBLIC_CONTEXT_DIAGNOSTICS = 260
+_MAX_PUBLIC_ANSWER_SUPPORT_WARNINGS = 8
 
 
 class ContextRequest(BaseModel):
@@ -205,12 +206,17 @@ def _context_diagnostics_to_response(
     *,
     items: list[dict[str, Any]],
     top_evidence: list[dict[str, Any]] | None = None,
+    answer_support: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     response = safe_public_metadata(
         diagnostics,
         max_items=_MAX_PUBLIC_CONTEXT_DIAGNOSTICS,
     )
     top_evidence_items = top_evidence or []
+    support = answer_support or {}
+    support_coverage = (
+        support.get("coverage") if isinstance(support.get("coverage"), dict) else {}
+    )
     item_diagnostics = [
         item.get("diagnostics")
         for item in items
@@ -239,6 +245,28 @@ def _context_diagnostics_to_response(
             "top_evidence_cited_count": sum(
                 1 for item in top_evidence_items if item.get("citation") is not None
             ),
+            "answer_support_status": _optional_safe_text(support.get("status")) or "missing",
+            "answer_support_items_returned": _non_negative_int(support.get("items_returned")),
+            "answer_support_cited_count": _non_negative_int(
+                support_coverage.get("cited_support_count")
+            ),
+            "answer_support_precise_location_count": _non_negative_int(
+                support_coverage.get("precise_location_support_count")
+            ),
+            "answer_support_multimodal_count": _non_negative_int(
+                support_coverage.get("multimodal_support_count")
+            ),
+            "answer_support_coverage_ratio": _safe_float(
+                support_coverage.get("supported_item_ratio")
+            ),
+            "answer_support_warnings": [
+                warning
+                for raw_warning in (support.get("warnings") or [])[
+                    :_MAX_PUBLIC_ANSWER_SUPPORT_WARNINGS
+                ]
+                if isinstance(raw_warning, str)
+                if (warning := safe_public_text(raw_warning, limit=120))
+            ],
         }
     )
     return response
@@ -248,11 +276,18 @@ def _top_evidence_to_response(
     items: list[dict[str, Any]],
     *,
     limit: int = _MAX_PUBLIC_TOP_EVIDENCE,
+    include_review_only: bool = False,
+    include_stale: bool = False,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
     candidates: list[dict[str, Any]] = []
     for item in items:
+        diagnostics = item.get("diagnostics") if isinstance(item.get("diagnostics"), dict) else {}
+        if not include_review_only and diagnostics.get("review_only") is True:
+            continue
+        if not include_stale and diagnostics.get("stale_reason"):
+            continue
         citations = item.get("citations")
         if isinstance(citations, list) and citations:
             for citation in citations:
@@ -267,6 +302,135 @@ def _top_evidence_to_response(
         )
     )
     return candidates[:limit]
+
+
+def _answer_support_to_response(
+    *,
+    items: list[dict[str, Any]],
+    top_evidence: list[dict[str, Any]],
+    limit: int = _MAX_PUBLIC_TOP_EVIDENCE,
+) -> dict[str, Any]:
+    evidence_items = top_evidence[: max(0, limit)]
+    coverage = _answer_support_coverage(items=items, top_evidence=evidence_items)
+    warnings = _answer_support_warnings(items=items, coverage=coverage)
+    return {
+        "status": _answer_support_status(coverage=coverage, warnings=warnings),
+        "items": evidence_items,
+        "items_returned": len(evidence_items),
+        "coverage": coverage,
+        "policy": {
+            "requires_citations": True,
+            "excludes_review_only_by_default": True,
+            "excludes_stale_by_default": True,
+            "max_items": limit,
+        },
+        "warnings": warnings,
+    }
+
+
+def _answer_support_coverage(
+    *,
+    items: list[dict[str, Any]],
+    top_evidence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    item_count = len(items)
+    supported_item_ids = {
+        str(item.get("item_id"))
+        for item in top_evidence
+        if item.get("item_id") is not None
+    }
+    cited_support = [item for item in top_evidence if item.get("citation") is not None]
+    precise_support = [
+        item
+        for item in cited_support
+        if _citation_has_precise_location(item.get("citation"))
+    ]
+    quote_support = [
+        item for item in cited_support if _citation_has_quote_preview(item.get("citation"))
+    ]
+    multimodal_support = [
+        item for item in cited_support if _citation_has_multimodal_evidence(item.get("citation"))
+    ]
+    return {
+        "context_item_count": item_count,
+        "supported_item_count": len(supported_item_ids),
+        "supported_item_ratio": _ratio(len(supported_item_ids), item_count),
+        "cited_support_count": len(cited_support),
+        "precise_location_support_count": len(precise_support),
+        "quote_preview_support_count": len(quote_support),
+        "multimodal_support_count": len(multimodal_support),
+        "uncited_context_item_count": max(0, item_count - len(supported_item_ids)),
+    }
+
+
+def _answer_support_warnings(
+    *,
+    items: list[dict[str, Any]],
+    coverage: dict[str, Any],
+) -> list[str]:
+    warnings: list[str] = []
+    if not items:
+        warnings.append("no_context_items")
+    if _non_negative_int(coverage.get("cited_support_count")) <= 0:
+        warnings.append("no_cited_support")
+    if _safe_float(coverage.get("supported_item_ratio")) < 0.5 and items:
+        warnings.append("low_supported_item_ratio")
+    if _non_negative_int(coverage.get("quote_preview_support_count")) <= 0 and items:
+        warnings.append("missing_quote_preview")
+    if _non_negative_int(coverage.get("precise_location_support_count")) <= 0 and items:
+        warnings.append("missing_precise_location")
+    excluded_review = sum(
+        1
+        for item in items
+        if isinstance(item.get("diagnostics"), dict)
+        and item["diagnostics"].get("review_only") is True
+    )
+    excluded_stale = sum(
+        1
+        for item in items
+        if isinstance(item.get("diagnostics"), dict)
+        and item["diagnostics"].get("stale_reason")
+    )
+    if excluded_review:
+        warnings.append("review_only_items_excluded")
+    if excluded_stale:
+        warnings.append("stale_items_excluded")
+    return warnings[:_MAX_PUBLIC_ANSWER_SUPPORT_WARNINGS]
+
+
+def _answer_support_status(
+    *,
+    coverage: dict[str, Any],
+    warnings: list[str],
+) -> str:
+    if "no_context_items" in warnings or "no_cited_support" in warnings:
+        return "missing"
+    if "missing_quote_preview" in warnings or "missing_precise_location" in warnings:
+        return "partial"
+    if _safe_float(coverage.get("supported_item_ratio")) >= 0.5:
+        return "strong"
+    return "partial"
+
+
+def _citation_has_precise_location(citation: object) -> bool:
+    if not isinstance(citation, dict):
+        return False
+    return any(
+        citation.get(key) is not None
+        for key in ("char_range", "page_number", "time_range_ms", "bbox")
+    )
+
+
+def _citation_has_quote_preview(citation: object) -> bool:
+    return isinstance(citation, dict) and bool(citation.get("quote_preview"))
+
+
+def _citation_has_multimodal_evidence(citation: object) -> bool:
+    if not isinstance(citation, dict):
+        return False
+    modality = citation.get("evidence_modality")
+    kind = citation.get("evidence_kind")
+    return bool(modality) or kind in {"ocr_region", "transcript_segment", "keyframe"}
 
 
 def _top_evidence_candidate(
@@ -371,6 +535,12 @@ def _safe_float(value: object) -> float:
         return 0.0
 
 
+def _ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator, 4)
+
+
 def _non_negative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
@@ -448,10 +618,15 @@ async def build_context(
     )
     response_items = [context_item_to_response(item) for item in bundle.items]
     top_evidence = _top_evidence_to_response(response_items)
+    answer_support = _answer_support_to_response(
+        items=response_items,
+        top_evidence=top_evidence,
+    )
     response_diagnostics = _context_diagnostics_to_response(
         bundle.diagnostics,
         items=response_items,
         top_evidence=top_evidence,
+        answer_support=answer_support,
     )
     response = {
         "meta": {"request_id": request_id},
@@ -460,6 +635,7 @@ async def build_context(
             "rendered_text": bundle.rendered_text,
             "items": response_items,
             "top_evidence": top_evidence,
+            "answer_support": answer_support,
             "diagnostics": response_diagnostics,
         },
     }
@@ -548,16 +724,22 @@ async def search_memory(
     )
     response_items = [context_item_to_response(item) for item in bundle.items]
     top_evidence = _top_evidence_to_response(response_items)
+    answer_support = _answer_support_to_response(
+        items=response_items,
+        top_evidence=top_evidence,
+    )
     response_diagnostics = _context_diagnostics_to_response(
         bundle.diagnostics,
         items=response_items,
         top_evidence=top_evidence,
+        answer_support=answer_support,
     )
     response = {
         "meta": {"request_id": request_id},
         "data": {
             "items": response_items,
             "top_evidence": top_evidence,
+            "answer_support": answer_support,
             "next_cursor": None,
             "diagnostics": response_diagnostics,
         },
@@ -586,6 +768,7 @@ def _empty_context_response(
             "rendered_text": "",
             "items": [],
             "top_evidence": [],
+            "answer_support": _answer_support_to_response(items=[], top_evidence=[]),
             "diagnostics": _empty_context_diagnostics(
                 policy_mode=policy_mode,
                 consistency_mode=consistency_mode,
@@ -608,6 +791,7 @@ def _empty_search_response(
         "data": {
             "items": [],
             "top_evidence": [],
+            "answer_support": _answer_support_to_response(items=[], top_evidence=[]),
             "next_cursor": None,
             "diagnostics": _empty_context_diagnostics(
                 policy_mode=policy_mode,

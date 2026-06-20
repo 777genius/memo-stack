@@ -5,6 +5,7 @@ import httpx
 import pytest
 from infinity_context_core.application.context_diagnostics import _BUNDLE_COUNTER_KEYS
 from infinity_context_sdk import (
+    ContextAnswerSupport,
     ContextBundle,
     ContextEvidenceSelection,
     InfinityContextClient,
@@ -1017,6 +1018,16 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "citations_returned": 20,
                         "citations_truncated": True,
                         "items_with_citations": 1,
+                        "answer_support_status": "partial",
+                        "answer_support_items_returned": 1,
+                        "answer_support_cited_count": 1,
+                        "answer_support_precise_location_count": 1,
+                        "answer_support_multimodal_count": 1,
+                        "answer_support_coverage_ratio": 0.5,
+                        "answer_support_warnings": [
+                            "review_only_items_excluded",
+                            "stale_items_excluded",
+                        ],
                         "citation_quote_previews_rendered": 9,
                         "sensitive_citation_quote_previews_skipped": 1,
                         "sensitive_item_text_redacted": 2,
@@ -1047,6 +1058,31 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                 "evidence_modality_counts": {"secret": 99},
                                 "max_score": 99.0,
                             },
+                        ],
+                        "api_key": raw_secret,
+                    },
+                    "answer_support": {
+                        "status": "partial",
+                        "items_returned": 1,
+                        "coverage": {
+                            "context_item_count": 2,
+                            "supported_item_count": 1,
+                            "supported_item_ratio": 0.5,
+                            "cited_support_count": 1,
+                            "precise_location_support_count": 1,
+                            "quote_preview_support_count": 1,
+                            "multimodal_support_count": 1,
+                            "uncited_context_item_count": 1,
+                        },
+                        "policy": {
+                            "requires_citations": True,
+                            "excludes_review_only_by_default": True,
+                            "excludes_stale_by_default": True,
+                            "max_items": 5,
+                        },
+                        "warnings": [
+                            "review_only_items_excluded",
+                            "stale_items_excluded",
                         ],
                         "api_key": raw_secret,
                     },
@@ -1267,6 +1303,16 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.citations_returned == 20
     assert bundle.diagnostics.citations_truncated is True
     assert bundle.diagnostics.items_with_citations == 1
+    assert bundle.diagnostics.answer_support_status == "partial"
+    assert bundle.diagnostics.answer_support_items_returned == 1
+    assert bundle.diagnostics.answer_support_cited_count == 1
+    assert bundle.diagnostics.answer_support_precise_location_count == 1
+    assert bundle.diagnostics.answer_support_multimodal_count == 1
+    assert bundle.diagnostics.answer_support_coverage_ratio == 0.5
+    assert bundle.diagnostics.answer_support_warnings == (
+        "review_only_items_excluded",
+        "stale_items_excluded",
+    )
     assert bundle.diagnostics.citation_quote_previews_rendered == 9
     assert bundle.diagnostics.sensitive_citation_quote_previews_skipped == 1
     assert bundle.diagnostics.sensitive_item_text_redacted == 2
@@ -1326,6 +1372,17 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert item.diagnostics.score_signals["provider_note"] == "[redacted]"
     assert "nested" not in item.diagnostics.score_signals
     assert "token" not in item.diagnostics.provenance
+    assert isinstance(bundle.answer_support, ContextAnswerSupport)
+    assert bundle.answer_support.status == "partial"
+    assert bundle.answer_support.items_returned == 1
+    assert bundle.answer_support.coverage["supported_item_ratio"] == 0.5
+    assert bundle.answer_support.coverage["multimodal_support_count"] == 1
+    assert bundle.answer_support.policy["requires_citations"] is True
+    assert bundle.answer_support.warnings == (
+        "review_only_items_excluded",
+        "stale_items_excluded",
+    )
+    assert "api_key" not in bundle.answer_support.raw
     active_item = bundle.items[1]
     assert active_item.diagnostics.review_only is False
     assert active_item.diagnostics.stale_reason is None

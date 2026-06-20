@@ -13,6 +13,7 @@ from infinity_context_sdk.anchors import InfinityContextAnchorsMixin
 from infinity_context_sdk.assets import InfinityContextAssetsMixin
 from infinity_context_sdk.capabilities import ExtractionCapabilityDiagnostics
 from infinity_context_sdk.context import (
+    ContextAnswerSupport,
     ContextBundle,
     ContextEvidenceSelection,
     context_bundle_from_response,
@@ -1041,6 +1042,7 @@ def _safe_error_message(value: str) -> str:
 
 
 __all__ = [
+    "ContextAnswerSupport",
     "ContextBundle",
     "ContextEvidenceSelection",
     "InfinityContextClient",

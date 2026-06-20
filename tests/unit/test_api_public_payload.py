@@ -8,7 +8,9 @@ from infinity_context_core.domain.entities import SourceRef
 from infinity_context_server.api.public_payload import safe_public_metadata
 from infinity_context_server.api.v1.anchors import anchor_to_response
 from infinity_context_server.api.v1.context import (
+    _answer_support_to_response,
     _context_diagnostics_to_response,
+    _top_evidence_to_response,
     context_item_to_response,
 )
 from infinity_context_server.api.v1.context_links import (
@@ -338,6 +340,77 @@ def test_context_diagnostics_preserve_public_evidence_contract_counters() -> Non
     assert "api_key" not in response
     assert raw_secret not in rendered
     assert "[redacted]" in rendered
+
+
+def test_answer_support_excludes_review_only_and_stale_items() -> None:
+    citation = {
+        "citation_id": "chunk:active:citation:1",
+        "source_type": "document",
+        "source_id": "doc_1",
+        "chunk_id": "chunk_1",
+        "quote_preview": "Atlas decision evidence",
+        "char_range": {"start": 0, "end": 24},
+    }
+    items = [
+        {
+            "item_id": "active",
+            "item_type": "chunk",
+            "score": 0.91,
+            "citations": [citation],
+            "diagnostics": {
+                "retrieval_source": "keyword_chunks",
+                "retrieval_sources": ["keyword_chunks"],
+            },
+        },
+        {
+            "item_id": "review",
+            "item_type": "fact",
+            "score": 0.99,
+            "citations": [{**citation, "citation_id": "fact:review:citation:1"}],
+            "diagnostics": {
+                "retrieval_source": "pending_conflict_suggestion",
+                "retrieval_sources": ["pending_conflict_suggestion"],
+                "review_only": True,
+            },
+        },
+        {
+            "item_id": "stale",
+            "item_type": "fact",
+            "score": 0.98,
+            "citations": [{**citation, "citation_id": "fact:stale:citation:1"}],
+            "diagnostics": {
+                "retrieval_source": "superseded_review",
+                "retrieval_sources": ["superseded_review"],
+                "stale_reason": "fact_status_superseded",
+            },
+        },
+    ]
+
+    top_evidence = _top_evidence_to_response(items)
+    answer_support = _answer_support_to_response(
+        items=items,
+        top_evidence=top_evidence,
+    )
+    diagnostics = _context_diagnostics_to_response(
+        {},
+        items=items,
+        top_evidence=top_evidence,
+        answer_support=answer_support,
+    )
+
+    assert [item["item_id"] for item in top_evidence] == ["active"]
+    assert answer_support["status"] == "partial"
+    assert answer_support["coverage"]["supported_item_ratio"] == 0.3333
+    assert answer_support["warnings"] == [
+        "low_supported_item_ratio",
+        "review_only_items_excluded",
+        "stale_items_excluded",
+    ]
+    assert diagnostics["answer_support_status"] == "partial"
+    assert diagnostics["answer_support_items_returned"] == 1
+    assert diagnostics["answer_support_cited_count"] == 1
+    assert diagnostics["answer_support_precise_location_count"] == 1
+    assert diagnostics["answer_support_warnings"] == answer_support["warnings"]
 
 
 def test_memory_suggestion_review_audit_is_bounded_and_redacted() -> None:

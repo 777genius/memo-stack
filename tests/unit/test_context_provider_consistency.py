@@ -580,7 +580,28 @@ def test_context_preserves_multimodal_chunk_source_ref_citations(tmp_path: Path)
         "multimodal_single_source"
     )
     assert api_data["diagnostics"]["retrieval_quality_summary"]["multimodal_item_ratio"] == 1.0
+    assert api_data["answer_support"]["status"] == "strong"
+    assert api_data["answer_support"]["items"] == api_data["top_evidence"]
+    assert api_data["answer_support"]["coverage"]["context_item_count"] == 1
+    assert api_data["answer_support"]["coverage"]["supported_item_count"] == 1
+    assert api_data["answer_support"]["coverage"]["supported_item_ratio"] == 1.0
+    assert api_data["answer_support"]["coverage"]["cited_support_count"] >= 1
+    assert api_data["answer_support"]["coverage"]["precise_location_support_count"] >= 1
+    assert api_data["answer_support"]["coverage"]["quote_preview_support_count"] >= 1
+    assert api_data["answer_support"]["policy"]["requires_citations"] is True
+    assert api_data["answer_support"]["policy"]["excludes_stale_by_default"] is True
+    assert api_data["answer_support"]["warnings"] == []
+    assert api_data["diagnostics"]["answer_support_status"] == "strong"
+    assert api_data["diagnostics"]["answer_support_items_returned"] >= 1
+    assert api_data["diagnostics"]["answer_support_cited_count"] >= 1
+    assert api_data["diagnostics"]["answer_support_precise_location_count"] >= 1
+    assert api_data["diagnostics"]["answer_support_coverage_ratio"] == 1.0
     sdk_context = context_bundle_from_response({"data": api_data})
+    assert sdk_context.answer_support.status == "strong"
+    assert sdk_context.answer_support.coverage["supported_item_ratio"] == 1.0
+    assert sdk_context.answer_support.policy["requires_citations"] is True
+    assert sdk_context.diagnostics.answer_support_status == "strong"
+    assert sdk_context.diagnostics.answer_support_coverage_ratio == 1.0
     assert sdk_context.diagnostics.provenance_summary is not None
     assert sdk_context.diagnostics.provenance_summary["items_with_precise_locations"] == 1
     assert sdk_context.diagnostics.retrieval_quality_summary is not None

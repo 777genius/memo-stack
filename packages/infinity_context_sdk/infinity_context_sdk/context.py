@@ -118,6 +118,16 @@ class ContextEvidenceSelection:
 
 
 @dataclass(frozen=True)
+class ContextAnswerSupport:
+    status: str
+    items_returned: int
+    coverage: Mapping[str, object]
+    policy: Mapping[str, object]
+    warnings: tuple[str, ...]
+    raw: Mapping[str, object]
+
+
+@dataclass(frozen=True)
 class ContextBundleDiagnostics:
     context_assembly_version: str
     consistency_mode: str
@@ -237,6 +247,13 @@ class ContextBundleDiagnostics:
     citations_returned: int = 0
     citations_truncated: bool = False
     items_with_citations: int = 0
+    answer_support_status: str = "missing"
+    answer_support_items_returned: int = 0
+    answer_support_cited_count: int = 0
+    answer_support_precise_location_count: int = 0
+    answer_support_multimodal_count: int = 0
+    answer_support_coverage_ratio: float = 0.0
+    answer_support_warnings: tuple[str, ...] = ()
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
     sensitive_item_text_redacted: int = 0
@@ -254,6 +271,7 @@ class ContextBundle:
     items: tuple[ContextItem, ...]
     diagnostics: ContextBundleDiagnostics
     meta: Mapping[str, object]
+    answer_support: ContextAnswerSupport
 
     def top_evidence(
         self,
@@ -297,6 +315,7 @@ def context_bundle_from_response(payload: Mapping[str, object]) -> ContextBundle
         items=items,
         diagnostics=_bundle_diagnostics_from_payload(data.get("diagnostics")),
         meta=meta,
+        answer_support=_answer_support_from_payload(data.get("answer_support")),
     )
 
 
@@ -404,6 +423,23 @@ def _evidence_selection_rank_key(
         selection.item.item_id,
         source_id,
         citation_id,
+    )
+
+
+def _answer_support_from_payload(payload: object) -> ContextAnswerSupport:
+    raw = _bounded_mapping(payload, max_items=MAX_BUNDLE_DIAGNOSTIC_ITEMS)
+    warnings = tuple(
+        warning
+        for raw_warning in _as_list(raw.get("warnings"))[:MAX_LIST_ITEMS]
+        if (warning := _safe_text(raw_warning, default="", limit=MAX_STRING_CHARS))
+    )
+    return ContextAnswerSupport(
+        status=_safe_text(raw.get("status"), default="missing", limit=MAX_KEY_CHARS),
+        items_returned=_non_negative_int(raw.get("items_returned")),
+        coverage=_bounded_mapping(raw.get("coverage"), max_items=MAX_MAPPING_ITEMS),
+        policy=_bounded_mapping(raw.get("policy"), max_items=MAX_MAPPING_ITEMS),
+        warnings=warnings,
+        raw=raw,
     )
 
 
@@ -577,6 +613,36 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
     safe_raw["retrieval_trace"] = [
         _retrieval_trace_entry_to_raw(entry) for entry in retrieval_trace
     ]
+    answer_support_status = _safe_text(
+        payload.get("answer_support_status"),
+        default="missing",
+        limit=MAX_KEY_CHARS,
+    )
+    answer_support_items_returned = _non_negative_int(
+        payload.get("answer_support_items_returned")
+    )
+    answer_support_cited_count = _non_negative_int(payload.get("answer_support_cited_count"))
+    answer_support_precise_location_count = _non_negative_int(
+        payload.get("answer_support_precise_location_count")
+    )
+    answer_support_multimodal_count = _non_negative_int(
+        payload.get("answer_support_multimodal_count")
+    )
+    answer_support_coverage_ratio = _safe_float(
+        payload.get("answer_support_coverage_ratio")
+    )
+    answer_support_warnings = tuple(
+        warning
+        for raw_warning in _as_list(payload.get("answer_support_warnings"))[:MAX_LIST_ITEMS]
+        if (warning := _safe_text(raw_warning, default="", limit=MAX_STRING_CHARS))
+    )
+    safe_raw["answer_support_status"] = answer_support_status
+    safe_raw["answer_support_items_returned"] = answer_support_items_returned
+    safe_raw["answer_support_cited_count"] = answer_support_cited_count
+    safe_raw["answer_support_precise_location_count"] = answer_support_precise_location_count
+    safe_raw["answer_support_multimodal_count"] = answer_support_multimodal_count
+    safe_raw["answer_support_coverage_ratio"] = answer_support_coverage_ratio
+    safe_raw["answer_support_warnings"] = list(answer_support_warnings)
     return ContextBundleDiagnostics(
         context_assembly_version=_safe_text(raw.get("context_assembly_version"), default="unknown"),
         consistency_mode=_safe_text(raw.get("consistency_mode"), default="unknown"),
@@ -819,6 +885,13 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         citations_returned=_non_negative_int(raw.get("citations_returned")),
         citations_truncated=_safe_bool(raw.get("citations_truncated")),
         items_with_citations=_non_negative_int(raw.get("items_with_citations")),
+        answer_support_status=answer_support_status,
+        answer_support_items_returned=answer_support_items_returned,
+        answer_support_cited_count=answer_support_cited_count,
+        answer_support_precise_location_count=answer_support_precise_location_count,
+        answer_support_multimodal_count=answer_support_multimodal_count,
+        answer_support_coverage_ratio=answer_support_coverage_ratio,
+        answer_support_warnings=answer_support_warnings,
         citation_quote_previews_rendered=_non_negative_int(
             raw.get("citation_quote_previews_rendered")
         ),
