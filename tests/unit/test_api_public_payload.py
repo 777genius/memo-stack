@@ -494,3 +494,46 @@ def test_context_item_response_redacts_sensitive_source_ref_identities() -> None
     assert raw_secret not in rendered
     assert "user:password" not in rendered
     assert "sk-proj-sourceidentitysecret" not in rendered
+
+
+def test_context_item_response_sanitizes_invalid_source_ref_coordinates() -> None:
+    response = context_item_to_response(
+        SimpleNamespace(
+            item_id="chunk_invalid_coordinates",
+            item_type="chunk",
+            diagnostics={"retrieval_source": "keyword_chunks"},
+            text="safe chunk text",
+            score=1.0,
+            source_refs=[
+                SimpleNamespace(
+                    source_type="document",
+                    source_id="doc_1",
+                    chunk_id="chunk_1",
+                    char_start=50,
+                    char_end=10,
+                    page_number=0,
+                    time_start_ms=5000,
+                    time_end_ms=1000,
+                    bbox=(-1.0, 2.0, 3.0, 4.0),
+                    quote_preview="safe quote",
+                )
+            ],
+            is_instruction=False,
+        )
+    )
+
+    source_ref = response["source_refs"][0]
+    citation = response["citations"][0]
+    assert source_ref["char_start"] is None
+    assert source_ref["char_end"] is None
+    assert source_ref["page_number"] is None
+    assert source_ref["time_start_ms"] is None
+    assert source_ref["time_end_ms"] is None
+    assert source_ref["bbox"] is None
+    assert citation["char_range"] is None
+    assert citation["page_number"] is None
+    assert citation["time_range_ms"] is None
+    assert citation["bbox"] is None
+    assert "bbox" not in citation["label"]
+    assert "5000" not in citation["label"]
+    assert "p.0" not in citation["label"]

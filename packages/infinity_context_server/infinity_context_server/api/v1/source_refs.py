@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any
 
 from infinity_context_core.domain.entities import SourceRef
@@ -42,16 +43,24 @@ def map_source_ref(request: SourceRefRequest) -> SourceRef:
 
 def source_ref_to_response(ref: object) -> dict[str, Any]:
     quote_preview = getattr(ref, "quote_preview", None)
+    char_start, char_end = _range_pair(
+        getattr(ref, "char_start", None),
+        getattr(ref, "char_end", None),
+    )
+    time_start_ms, time_end_ms = _range_pair(
+        getattr(ref, "time_start_ms", None),
+        getattr(ref, "time_end_ms", None),
+    )
     return {
         "source_type": safe_public_text(str(getattr(ref, "source_type", "")), limit=80),
         "source_id": safe_public_text(str(getattr(ref, "source_id", "")), limit=160),
         "chunk_id": _optional_public_text(getattr(ref, "chunk_id", None), limit=160),
-        "char_start": getattr(ref, "char_start", None),
-        "char_end": getattr(ref, "char_end", None),
+        "char_start": char_start,
+        "char_end": char_end,
         "quote_preview": safe_public_text(quote_preview) if quote_preview else None,
-        "page_number": getattr(ref, "page_number", None),
-        "time_start_ms": getattr(ref, "time_start_ms", None),
-        "time_end_ms": getattr(ref, "time_end_ms", None),
+        "page_number": _positive_int(getattr(ref, "page_number", None)),
+        "time_start_ms": time_start_ms,
+        "time_end_ms": time_end_ms,
         "bbox": _bbox_to_response(getattr(ref, "bbox", None)),
     }
 
@@ -63,10 +72,40 @@ def _optional_public_text(value: object, *, limit: int) -> str | None:
     return text or None
 
 
+def _range_pair(start: object, end: object) -> tuple[int | None, int | None]:
+    parsed_start = _non_negative_int(start)
+    parsed_end = _non_negative_int(end)
+    if (start is not None and parsed_start is None) or (end is not None and parsed_end is None):
+        return None, None
+    if parsed_start is not None and parsed_end is not None and parsed_end < parsed_start:
+        return None, None
+    return parsed_start, parsed_end
+
+
+def _positive_int(value: object) -> int | None:
+    parsed = _non_negative_int(value)
+    return parsed if parsed is not None and parsed >= 1 else None
+
+
+def _non_negative_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
 def _bbox_to_response(value: object) -> list[float] | None:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:
-        return [float(item) for item in value]
+        bbox = [float(item) for item in value]
     except (TypeError, ValueError):
         return None
+    if not all(isfinite(item) for item in bbox):
+        return None
+    if any(item < 0 for item in bbox) or bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+        return None
+    return bbox
