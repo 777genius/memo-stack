@@ -9,6 +9,7 @@ from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import should_capture
 from infinity_context_server.composition import Container
+from infinity_context_server.diagnostics import storage_diagnostics
 from infinity_context_server.extraction_capabilities import build_extraction_capability_payload
 
 router = APIRouter(tags=["capabilities"], dependencies=[Depends(require_service_token)])
@@ -93,6 +94,7 @@ def _capability_payload(capability: Any) -> dict[str, Any]:
 def _storage_payload(container: Container) -> dict[str, Any]:
     settings = container.settings
     backend = settings.asset_storage_backend
+    diagnostics = storage_diagnostics(container)
     return {
         "asset_backend": backend,
         "asset_backend_configured": backend == "local" or bool(settings.asset_storage_s3_bucket),
@@ -104,4 +106,46 @@ def _storage_payload(container: Container) -> dict[str, Any]:
             "region_configured": bool(settings.asset_storage_s3_region),
             "force_path_style": settings.asset_storage_s3_force_path_style,
         },
+        "deployment_readiness": _storage_deployment_readiness(
+            container,
+            diagnostics=diagnostics,
+        ),
+    }
+
+
+def _storage_deployment_readiness(
+    container: Container,
+    *,
+    diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    settings = container.settings
+    backend = settings.asset_storage_backend
+    configured = diagnostics.get("configured") is True
+    ready = diagnostics.get("ready") is True
+    degraded_reasons: list[str] = []
+    warnings: list[str] = []
+    if not configured:
+        degraded_reasons.append("asset_storage_not_configured")
+    if not ready:
+        degraded_reasons.append("asset_storage_not_ready")
+    if backend == "local":
+        warnings.append("hosted_team_deployments_should_use_s3_compatible_storage")
+    if backend == "s3" and not settings.asset_storage_s3_region:
+        warnings.append("s3_region_not_configured")
+    maintenance = diagnostics.get("maintenance")
+    maintenance_payload = maintenance if isinstance(maintenance, dict) else {}
+    return {
+        "schema_version": "asset-storage-deployment-readiness-v1",
+        "status": "ok" if ready and configured else "misconfigured",
+        "self_host_ready": ready and configured,
+        "hosted_team_ready": backend == "s3" and ready and configured,
+        "recommended_hosted_backend": "s3",
+        "blob_identity": "sha256",
+        "duplicate_detection": "exact_sha256",
+        "storage_cleanup_supported": True,
+        "maintenance_enabled": maintenance_payload.get("enabled") is True,
+        "cleanup_apply_enabled": maintenance_payload.get("cleanup_apply_enabled") is True,
+        "safe_diagnostics": True,
+        "degraded_reasons": degraded_reasons,
+        "warnings": warnings,
     }

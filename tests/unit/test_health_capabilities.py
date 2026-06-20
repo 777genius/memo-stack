@@ -38,6 +38,7 @@ from infinity_context_core.ports import (
     TemporalFactGraphPort,
     VectorRecallPort,
 )
+from infinity_context_server.api.v1.capabilities import _storage_payload
 from infinity_context_server.config import CaptureMode, DeployProfile, MemoryPolicyMode, Settings
 from infinity_context_server.diagnostics import storage_diagnostics
 from infinity_context_server.extraction_capabilities import (
@@ -129,6 +130,21 @@ def test_capabilities_return_noop_adapters() -> None:
             "endpoint_configured": False,
             "region_configured": False,
             "force_path_style": False,
+        },
+        "deployment_readiness": {
+            "schema_version": "asset-storage-deployment-readiness-v1",
+            "status": "ok",
+            "self_host_ready": True,
+            "hosted_team_ready": False,
+            "recommended_hosted_backend": "s3",
+            "blob_identity": "sha256",
+            "duplicate_detection": "exact_sha256",
+            "storage_cleanup_supported": True,
+            "maintenance_enabled": False,
+            "cleanup_apply_enabled": False,
+            "safe_diagnostics": True,
+            "degraded_reasons": [],
+            "warnings": ["hosted_team_deployments_should_use_s3_compatible_storage"],
         },
     }
     assert body["plans"]["current"] == "free"
@@ -684,6 +700,65 @@ def test_s3_asset_storage_requires_bucket() -> None:
 
     with pytest.raises(RuntimeError, match="MEMORY_ASSET_STORAGE_S3_BUCKET"):
         settings.validate_for_startup()
+
+
+def test_capabilities_storage_readiness_redacts_s3_values(tmp_path: Path) -> None:
+    payload = _storage_payload(
+        SimpleNamespace(
+            settings=Settings(
+                deploy_profile=DeployProfile.TEST,
+                database_url=f"sqlite+aiosqlite:///{tmp_path / 'capabilities-s3.db'}",
+                auto_create_schema=True,
+                qdrant_enabled=False,
+                graphiti_enabled=False,
+                embeddings_enabled=False,
+                asset_storage_backend="s3",
+                asset_storage_s3_bucket="private-memory-bucket",
+                asset_storage_s3_prefix="tenant-a/private",
+                asset_storage_s3_endpoint_url="https://minio.internal.example",
+                asset_storage_s3_region="eu-secret-1",
+                asset_storage_s3_access_key_id="AKIA-CAPABILITY-SECRET",
+                asset_storage_s3_secret_access_key="capability-secret",
+                asset_storage_s3_session_token="capability-session-secret",
+                asset_storage_s3_force_path_style=True,
+                asset_storage_maintenance_enabled=True,
+                asset_storage_cleanup_apply_enabled=True,
+            )
+        )
+    )
+
+    assert payload["asset_backend"] == "s3"
+    assert payload["asset_backend_configured"] is True
+    assert payload["asset_external"] is True
+    assert payload["s3"] == {
+        "bucket_configured": True,
+        "prefix_configured": True,
+        "endpoint_configured": True,
+        "region_configured": True,
+        "force_path_style": True,
+    }
+    assert payload["deployment_readiness"] == {
+        "schema_version": "asset-storage-deployment-readiness-v1",
+        "status": "ok",
+        "self_host_ready": True,
+        "hosted_team_ready": True,
+        "recommended_hosted_backend": "s3",
+        "blob_identity": "sha256",
+        "duplicate_detection": "exact_sha256",
+        "storage_cleanup_supported": True,
+        "maintenance_enabled": True,
+        "cleanup_apply_enabled": True,
+        "safe_diagnostics": True,
+        "degraded_reasons": [],
+        "warnings": [],
+    }
+    serialized = repr(payload)
+    assert "private-memory-bucket" not in serialized
+    assert "tenant-a/private" not in serialized
+    assert "minio.internal.example" not in serialized
+    assert "eu-secret-1" not in serialized
+    assert "AKIA-CAPABILITY-SECRET" not in serialized
+    assert "capability-secret" not in serialized
 
 
 def test_capabilities_expose_configured_diarization_transcription_model(
