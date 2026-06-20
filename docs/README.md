@@ -98,8 +98,8 @@ default.
 semantic-linking, multimodal offline, long-memory, auto-memory, graph and prompt
 contract suites into `.e2e-artifacts/memory-quality-scorecard.json`. The
 multimodal production goal audit now treats that scorecard as a required input,
-so frontend/provider/Docker proof cannot pass while retrieval, linking,
-dedup/merge/conflict or safety quality gates are failing.
+so frontend/provider/Docker proof cannot pass while retrieval/context assembly,
+linking, dedup/merge/conflict or safety quality gates are failing.
 `infinity-context-test-quality` is the deterministic backend quality gate. It runs
 lint, the full pytest suite, memory evals, prompt snapshots and the repository
 secret scan without requiring Docker or paid provider keys.

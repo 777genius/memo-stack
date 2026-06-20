@@ -59,6 +59,9 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "answer_support_rate": 1.0,
                 "answer_support_breakdown_rate": 1.0,
                 "document_recall_at_5": 1.0,
+                "hybrid_retrieval_rate": 1.0,
+                "citation_support_rate": 1.0,
+                "source_citation_failure_count": 0,
                 "retrieval_trace_support_rate": 1.0,
                 "retrieval_trace_location_contract_rate": 1.0,
                 "retrieval_answerability_contract_rate": 1.0,
@@ -75,6 +78,7 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                 "prompt_injection_promoted_count": 0,
                 "harmful_context_rate": 0.0,
                 "context_token_overflow_count": 0,
+                "critical_failure_count": 0,
             },
             "cases": _case_reports(
                 (
@@ -627,6 +631,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["gates"]["required_suites_present"] is True
     assert result["capabilities"]["coverage_floors"]["ok"] is True
     assert result["capabilities"]["canonical_recall_precision"]["ok"] is True
+    assert result["capabilities"]["retrieval_context_memory_layer"]["ok"] is True
     assert result["capabilities"]["longitudinal_memory"]["ok"] is True
     assert result["capabilities"]["auto_memory_admission"]["ok"] is True
     assert result["capabilities"]["semantic_linking"]["ok"] is True
@@ -648,6 +653,13 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert result["metrics"]["multimodal_offline_pass_rate"] == 1.0
     assert result["metrics"]["multimodal_offline_false_positive_count"] == 0
     assert result["metrics"]["multimodal_offline_prompt_injection_guard_rate"] == 1.0
+    assert result["metrics"]["quality_hybrid_retrieval_rate"] == 1.0
+    assert result["metrics"]["quality_citation_support_rate"] == 1.0
+    assert result["metrics"]["quality_stale_memory_rate"] == 0.0
+    assert (
+        result["metrics"]["multimodal_offline_retrieval_evidence_location_coverage_rate"]
+        == 1.0
+    )
     assert result["metrics"]["auto_duplicate_suggestion_count"] == 0
     assert result["metrics"]["auto_replay_duplicate_suggestion_count"] == 0
     assert result["failures"] == []
@@ -771,6 +783,18 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     assert (
         "retrieval_evidence_coverage_profile"
         in policy["multimodal_offline"]["required_checks"]
+    )
+    assert policy["retrieval_context_memory_layer"]["requires_hybrid_retrieval"] is True
+    assert policy["retrieval_context_memory_layer"]["requires_citations"] is True
+    assert policy["retrieval_context_memory_layer"]["requires_answer_support"] is True
+    assert policy["retrieval_context_memory_layer"]["requires_stale_filtering"] is True
+    assert (
+        policy["retrieval_context_memory_layer"]["requires_multimodal_evidence_locations"]
+        is True
+    )
+    assert (
+        policy["retrieval_context_memory_layer"]["source_text_policy"]
+        == "untrusted_evidence"
     )
     assert policy["dedup_merge_conflict_resolution"]["required_quality_case_ids"] == [
         "pending_conflict_review_visible",
@@ -1911,6 +1935,54 @@ def test_memory_quality_scorecard_fails_on_missing_semantic_linking_safety_check
         in result["capabilities"]["semantic_linking"]["failed_checks"]
     )
     assert result["metrics"]["semantic_linking_false_positive_count"] == 0
+
+
+def test_memory_quality_scorecard_fails_on_retrieval_context_regression() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["quality-golden"]["metrics"].update(
+        {
+            "hybrid_retrieval_rate": 0.0,
+            "citation_support_rate": 0.0,
+            "source_citation_failure_count": 1,
+            "answer_support_rate": 0.0,
+            "retrieval_trace_location_contract_rate": 0.0,
+            "stale_memory_rate": 0.5,
+            "cross_thread_leak_count": 1,
+            "context_token_overflow_count": 1,
+        }
+    )
+    suite_results[MULTIMODAL_OFFLINE_GOLDEN_SUITE]["metrics"].update(
+        {
+            "retrieval_evidence_location_coverage_rate": 0.5,
+            "retrieval_evidence_location_gap_count": 2,
+        }
+    )
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    capability = result["capabilities"]["retrieval_context_memory_layer"]
+    assert capability["ok"] is False
+    assert capability["failed_checks"] == [
+        "answer_support_rate",
+        "citation_support_rate",
+        "context_token_overflow_count",
+        "cross_thread_leak_count",
+        "hybrid_retrieval_rate",
+        "multimodal_retrieval_evidence_location_coverage_rate",
+        "multimodal_retrieval_evidence_location_gap_count",
+        "retrieval_trace_location_contract_rate",
+        "source_citation_failure_count",
+        "stale_memory_rate",
+    ]
+    assert result["metrics"]["quality_hybrid_retrieval_rate"] == 0.0
+    assert result["metrics"]["quality_source_citation_failure_count"] == 1
+    assert result["metrics"]["quality_stale_memory_rate"] == 0.5
+    assert (
+        result["metrics"]["multimodal_offline_retrieval_evidence_location_gap_count"]
+        == 2
+    )
+    assert result["gates"]["all_capabilities_ok"] is False
 
 
 def test_memory_quality_scorecard_fails_on_dedup_merge_conflict_regression() -> None:

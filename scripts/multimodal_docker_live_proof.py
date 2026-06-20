@@ -591,14 +591,61 @@ def _prove_capabilities(
             "Incomplete extraction provider capability contract",
             diagnostics=provider_contract_summary,
         )
+    file_type_detection = extraction.get("file_type_detection")
+    if not isinstance(file_type_detection, dict):
+        raise DockerProofFailure(
+            "capabilities",
+            "file_type_detection_contract_missing",
+            "Missing extraction file type detection capability contract",
+        )
+    file_type_detection_summary = _file_type_detection_summary(file_type_detection)
+    resource_policy = extraction.get("resource_policy")
+    if not isinstance(resource_policy, dict):
+        raise DockerProofFailure(
+            "capabilities",
+            "resource_policy_contract_missing",
+            "Missing extraction resource policy capability contract",
+        )
+    resource_policy_summary = _resource_policy_summary(resource_policy)
+    limits = extraction.get("limits")
+    if not isinstance(limits, dict):
+        raise DockerProofFailure(
+            "capabilities",
+            "resource_limits_missing",
+            "Missing extraction resource limits capability contract",
+        )
+    limits_summary = _limits_summary(limits)
+    policy = extraction.get("policy")
+    if not isinstance(policy, dict):
+        raise DockerProofFailure(
+            "capabilities",
+            "extraction_policy_missing",
+            "Missing extraction policy capability contract",
+        )
+    policy_summary = _extraction_policy_summary(policy)
+    security_summary = {
+        "file_type_detection": file_type_detection_summary,
+        "resource_policy": resource_policy_summary,
+        "limits": limits_summary,
+        "policy": policy_summary,
+    }
+    if not all(item["ok"] for item in security_summary.values()):
+        raise DockerProofFailure(
+            "capabilities",
+            "security_contract_incomplete",
+            "Incomplete extraction upload/resource security capability contract",
+            diagnostics=security_summary,
+        )
     contract_names = sorted(
         key
         for key in (
             "evidence_contract",
             "feature_contract",
+            "policy",
             "provider_contract",
             "manifest_contract",
             "file_type_detection",
+            "resource_policy",
         )
         if isinstance(extraction.get(key), dict)
     )
@@ -610,6 +657,12 @@ def _prove_capabilities(
         provider_names=sorted(str(key) for key in providers)[:20],
         contract_names=contract_names,
         provider_contract=provider_contract_summary,
+        file_type_detection=file_type_detection_summary,
+        resource_policy=resource_policy_summary,
+        limits=limits_summary,
+        policy=policy_summary,
+        manifest_contract_present=isinstance(extraction.get("manifest_contract"), dict),
+        evidence_contract_present=isinstance(extraction.get("evidence_contract"), dict),
     )
 
 
@@ -663,8 +716,210 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _file_type_detection_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    archive_policy = contract.get("archive_policy")
+    image_policy = contract.get("image_policy")
+    archive_policy = archive_policy if isinstance(archive_policy, dict) else {}
+    image_policy = image_policy if isinstance(image_policy, dict) else {}
+    diagnostic_fields = set(_string_list(contract.get("diagnostic_fields")))
+    required_archive_flags = {
+        "inspect_zip_metadata",
+        "reject_unsafe_paths",
+        "reject_entry_count_limit",
+        "reject_uncompressed_size_limit",
+        "reject_single_entry_size_limit",
+        "reject_compression_ratio_limit",
+        "reject_symlink_entries",
+        "reject_special_file_entries",
+    }
+    required_image_flags = {
+        "inspect_dimensions_from_headers",
+        "reject_corrupted_supported_image_headers",
+        "reject_pixel_count_limit",
+    }
+    required_diagnostics = {
+        "mime_detected_content_type",
+        "mime_content_type_mismatch",
+        "mime_magic_mismatch",
+        "upload_archive_inspection_status",
+        "upload_archive_entry_count",
+        "upload_archive_uncompressed_bytes",
+        "upload_archive_max_compression_ratio",
+        "upload_image_detected",
+        "upload_image_pixels",
+        "upload_image_max_pixels",
+        "extraction_upload_policy_revalidated",
+        "extraction_upload_policy_status",
+        "asset_empty_content",
+    }
+    archive_policy_complete = all(
+        archive_policy.get(flag) is True for flag in required_archive_flags
+    )
+    image_policy_complete = all(image_policy.get(flag) is True for flag in required_image_flags)
+    diagnostics_complete = required_diagnostics.issubset(diagnostic_fields)
+    return {
+        "ok": (
+            contract.get("declared_content_type_trusted") is False
+            and contract.get("filename_extension_trusted") is False
+            and contract.get("empty_upload_policy") == "reject_at_upload"
+            and contract.get("upload_body_stream_limited") is True
+            and archive_policy_complete
+            and image_policy_complete
+            and diagnostics_complete
+        ),
+        "schema_version": contract.get("schema_version"),
+        "declared_content_type_trusted": contract.get("declared_content_type_trusted"),
+        "filename_extension_trusted": contract.get("filename_extension_trusted"),
+        "empty_upload_policy": contract.get("empty_upload_policy"),
+        "upload_body_stream_limited": contract.get("upload_body_stream_limited"),
+        "archive_policy_complete": archive_policy_complete,
+        "image_policy_complete": image_policy_complete,
+        "diagnostics_complete": diagnostics_complete,
+        "diagnostic_field_count": len(diagnostic_fields),
+    }
+
+
+def _resource_policy_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    archive_policy = contract.get("archive_rejection_policy")
+    archive_policy = archive_policy if isinstance(archive_policy, dict) else {}
+    diagnostic_fields = set(_string_list(contract.get("diagnostic_fields")))
+    hard_caps = contract.get("hard_caps") if isinstance(contract.get("hard_caps"), dict) else {}
+    required_archive_flags = {
+        "reject_unsafe_paths",
+        "reject_symlink_entries",
+        "reject_special_file_entries",
+        "reject_duplicate_paths",
+        "reject_nested_archives",
+        "reject_encrypted_entries",
+        "reject_entry_count_limit",
+        "reject_uncompressed_size_limit",
+        "reject_compression_ratio_limit",
+    }
+    required_diagnostics = {
+        "extraction_resource_policy_version",
+        "extraction_limits_normalized",
+        "extraction_asset_byte_size",
+        "extraction_resource_limit_exceeded",
+        "extraction_upload_policy_revalidated",
+        "extraction_archive_resource_policy_version",
+        "extraction_archive_uncompressed_bytes",
+        "extraction_archive_compression_ratio",
+        "extraction_max_archive_entries",
+        "extraction_max_archive_uncompressed_bytes",
+        "extraction_max_archive_compression_ratio",
+    }
+    archive_policy_complete = all(
+        archive_policy.get(flag) is True for flag in required_archive_flags
+    )
+    diagnostics_complete = required_diagnostics.issubset(diagnostic_fields)
+    hard_caps_present = bool(hard_caps)
+    return {
+        "ok": (
+            contract.get("limits_normalized_before_provider") is True
+            and contract.get("rejects_oversized_asset_before_blob_read") is True
+            and contract.get("revalidates_upload_policy_after_blob_read") is True
+            and contract.get("inspects_zip_central_directory_before_provider") is True
+            and archive_policy_complete
+            and diagnostics_complete
+            and hard_caps_present
+            and contract.get("public_api_policy")
+            == "bounded_metadata_without_raw_bytes_or_provider_payloads"
+        ),
+        "schema_version": contract.get("schema_version"),
+        "policy_version": contract.get("policy_version"),
+        "archive_policy_version": contract.get("archive_policy_version"),
+        "limits_normalized_before_provider": contract.get("limits_normalized_before_provider"),
+        "rejects_oversized_asset_before_blob_read": contract.get(
+            "rejects_oversized_asset_before_blob_read"
+        ),
+        "revalidates_upload_policy_after_blob_read": contract.get(
+            "revalidates_upload_policy_after_blob_read"
+        ),
+        "inspects_zip_central_directory_before_provider": contract.get(
+            "inspects_zip_central_directory_before_provider"
+        ),
+        "archive_rejection_policy_complete": archive_policy_complete,
+        "diagnostics_complete": diagnostics_complete,
+        "hard_caps_present": hard_caps_present,
+        "hard_cap_names": sorted(str(key) for key in hard_caps)[:30],
+    }
+
+
+def _limits_summary(limits: dict[str, Any]) -> dict[str, Any]:
+    required_positive_limits = {
+        "max_bytes",
+        "max_pages",
+        "max_media_seconds",
+        "max_output_chars",
+        "max_tables",
+        "max_image_pixels",
+        "max_archive_entries",
+        "max_archive_uncompressed_bytes",
+        "parser_timeout_seconds",
+        "subprocess_timeout_seconds",
+        "provider_timeout_seconds",
+        "execution_lease_seconds",
+        "cancellation_poll_seconds",
+        "heartbeat_seconds",
+    }
+    positive_limit_names = {
+        key for key in required_positive_limits if _positive_number(limits.get(key)) is not None
+    }
+    return {
+        "ok": (
+            required_positive_limits.issubset(positive_limit_names)
+            and _positive_number(limits.get("max_archive_compression_ratio")) is not None
+        ),
+        "positive_limit_names": sorted(positive_limit_names),
+        "max_bytes": _positive_int(limits.get("max_bytes")),
+        "max_media_seconds": _positive_number(limits.get("max_media_seconds")),
+        "max_image_pixels": _positive_int(limits.get("max_image_pixels")),
+        "max_archive_entries": _positive_int(limits.get("max_archive_entries")),
+        "max_archive_uncompressed_bytes": _positive_int(
+            limits.get("max_archive_uncompressed_bytes")
+        ),
+        "max_archive_compression_ratio": _positive_number(
+            limits.get("max_archive_compression_ratio")
+        ),
+        "parser_timeout_seconds": _positive_number(limits.get("parser_timeout_seconds")),
+        "subprocess_timeout_seconds": _positive_number(limits.get("subprocess_timeout_seconds")),
+        "provider_timeout_seconds": _positive_number(limits.get("provider_timeout_seconds")),
+    }
+
+
+def _extraction_policy_summary(policy: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": (
+            policy.get("external_ai_requires_explicit_profile") is True
+            and policy.get("memory_promotion") == "review_required"
+            and policy.get("source_text_policy") == "untrusted_evidence"
+            and policy.get("provider_payloads_bounded") is True
+            and policy.get("sensitive_data_in_diagnostics") is False
+            and policy.get("canonical_store") == "postgres"
+        ),
+        "schema_version": policy.get("schema_version"),
+        "external_ai_allowed": policy.get("external_ai_allowed"),
+        "external_ai_requires_explicit_profile": policy.get(
+            "external_ai_requires_explicit_profile"
+        ),
+        "memory_promotion": policy.get("memory_promotion"),
+        "source_text_policy": policy.get("source_text_policy"),
+        "provider_payloads_bounded": policy.get("provider_payloads_bounded"),
+        "sensitive_data_in_diagnostics": policy.get("sensitive_data_in_diagnostics"),
+        "canonical_store": policy.get("canonical_store"),
+    }
+
+
 def _positive_int(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def _positive_number(value: object) -> int | float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float) and value > 0:
         return value
     return None
 

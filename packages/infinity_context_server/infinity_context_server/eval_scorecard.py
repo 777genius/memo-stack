@@ -137,6 +137,18 @@ def memory_quality_scorecard_policy_snapshot(
             "requires_evidence_metadata": True,
             "requires_retrieval_evidence_coverage_profile": True,
         },
+        "retrieval_context_memory_layer": {
+            "requires_hybrid_retrieval": True,
+            "requires_document_recall": True,
+            "requires_citations": True,
+            "requires_answer_support": True,
+            "requires_retrieval_trace": True,
+            "requires_precise_locations": True,
+            "requires_stale_filtering": True,
+            "requires_multimodal_evidence_locations": True,
+            "requires_no_scope_thread_or_restricted_leaks": True,
+            "source_text_policy": "untrusted_evidence",
+        },
         "dedup_merge_conflict_resolution": {
             "required_quality_case_ids": list(_DEDUP_MERGE_QUALITY_CASE_IDS),
             "required_auto_memory_case_ids": list(_DEDUP_MERGE_AUTO_CASE_IDS),
@@ -257,6 +269,9 @@ def build_memory_quality_scorecard(
     capabilities = {
         "coverage_floors": _scorecard_coverage_floors(suite_results, suites),
         "canonical_recall_precision": _scorecard_canonical_recall_precision(suite_results),
+        "retrieval_context_memory_layer": (
+            _scorecard_retrieval_context_memory_layer(suite_results)
+        ),
         "longitudinal_memory": _scorecard_longitudinal_memory(suite_results),
         "auto_memory_admission": _scorecard_auto_memory_admission(suite_results),
         "semantic_linking": _scorecard_semantic_linking(suite_results),
@@ -463,6 +478,75 @@ def _scorecard_canonical_recall_precision(
         "item_contract_failure_count": quality.get("item_contract_failure_count") == 0,
     }
     return _scorecard_capability("canonical_recall_precision", checks)
+
+
+def _scorecard_retrieval_context_memory_layer(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    quality = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
+    multimodal = _scorecard_result_metrics(
+        suite_results.get(MULTIMODAL_OFFLINE_GOLDEN_SUITE)
+    )
+    checks = {
+        "quality_recall_at_5": (
+            float(quality.get("recall_at_5", 0.0)) >= _QUALITY_GOLDEN_RECALL_GATE
+        ),
+        "quality_precision_at_5": (
+            float(quality.get("precision_at_5", 0.0)) >= _QUALITY_GOLDEN_PRECISION_GATE
+        ),
+        "document_recall_at_5": float(quality.get("document_recall_at_5", 0.0)) >= 0.95,
+        "hybrid_retrieval_rate": quality.get("hybrid_retrieval_rate") == 1.0,
+        "citation_support_rate": quality.get("citation_support_rate") == 1.0,
+        "source_citation_failure_count": quality.get("source_citation_failure_count") == 0,
+        "answer_support_rate": quality.get("answer_support_rate") == 1.0,
+        "answer_support_breakdown_rate": (
+            quality.get("answer_support_breakdown_rate") == 1.0
+        ),
+        "retrieval_trace_support_rate": (
+            quality.get("retrieval_trace_support_rate") == 1.0
+        ),
+        "retrieval_trace_location_contract_rate": (
+            quality.get("retrieval_trace_location_contract_rate") == 1.0
+        ),
+        "retrieval_answerability_contract_rate": (
+            quality.get("retrieval_answerability_contract_rate") == 1.0
+        ),
+        "precise_citation_contract_rate": (
+            quality.get("precise_citation_contract_rate") == 1.0
+        ),
+        "item_contract_support_rate": quality.get("item_contract_support_rate") == 1.0,
+        "item_contract_failure_count": quality.get("item_contract_failure_count") == 0,
+        "multi_memory_scope_recall_at_5": (
+            quality.get("multi_memory_scope_recall_at_5") == 1.0
+        ),
+        "thread_recall_at_5": quality.get("thread_recall_at_5") == 1.0,
+        "stale_memory_rate": quality.get("stale_memory_rate") == 0.0,
+        "deleted_memory_leak_count": quality.get("deleted_memory_leak_count") == 0,
+        "cross_memory_scope_leak_count": (
+            quality.get("cross_memory_scope_leak_count") == 0
+        ),
+        "cross_thread_leak_count": quality.get("cross_thread_leak_count") == 0,
+        "restricted_memory_leak_count": (
+            quality.get("restricted_memory_leak_count") == 0
+        ),
+        "prompt_injection_promoted_count": (
+            quality.get("prompt_injection_promoted_count") == 0
+        ),
+        "context_token_overflow_count": quality.get("context_token_overflow_count") == 0,
+        "critical_failure_count": quality.get("critical_failure_count") == 0,
+        "harmful_context_rate": quality.get("harmful_context_rate") == 0.0,
+        "multimodal_retrieval_evidence_location_coverage_rate": (
+            multimodal.get("retrieval_evidence_location_coverage_rate") == 1.0
+        ),
+        "multimodal_retrieval_evidence_location_gap_count": (
+            multimodal.get("retrieval_evidence_location_gap_count") == 0
+        ),
+        "multimodal_false_positive_count": multimodal.get("false_positive_count") == 0,
+        "multimodal_prompt_injection_guard_rate": (
+            multimodal.get("prompt_injection_guard_rate") == 1.0
+        ),
+    }
+    return _scorecard_capability("retrieval_context_memory_layer", checks)
 
 
 def _scorecard_longitudinal_memory(
@@ -1772,6 +1856,13 @@ def _scorecard_metrics(
     return {
         "quality_recall_at_5": quality.get("recall_at_5", 0.0),
         "quality_precision_at_5": quality.get("precision_at_5", 0.0),
+        "quality_document_recall_at_5": quality.get("document_recall_at_5", 0.0),
+        "quality_hybrid_retrieval_rate": quality.get("hybrid_retrieval_rate", 0.0),
+        "quality_citation_support_rate": quality.get("citation_support_rate", 0.0),
+        "quality_source_citation_failure_count": quality.get(
+            "source_citation_failure_count",
+            0,
+        ),
         "quality_item_contract_support_rate": quality.get("item_contract_support_rate", 0.0),
         "quality_item_contract_failure_count": quality.get("item_contract_failure_count", 0),
         "quality_answer_support_breakdown_rate": quality.get(
@@ -1796,6 +1887,28 @@ def _scorecard_metrics(
         ),
         "quality_required_case_coverage_rate": quality.get("required_case_coverage_rate", 0.0),
         "quality_missing_required_case_count": quality.get("missing_required_case_count", 0),
+        "quality_multi_memory_scope_recall_at_5": quality.get(
+            "multi_memory_scope_recall_at_5",
+            0.0,
+        ),
+        "quality_thread_recall_at_5": quality.get("thread_recall_at_5", 0.0),
+        "quality_stale_memory_rate": quality.get("stale_memory_rate", 0.0),
+        "quality_deleted_memory_leak_count": quality.get("deleted_memory_leak_count", 0),
+        "quality_cross_memory_scope_leak_count": quality.get(
+            "cross_memory_scope_leak_count",
+            0,
+        ),
+        "quality_cross_thread_leak_count": quality.get("cross_thread_leak_count", 0),
+        "quality_restricted_memory_leak_count": quality.get(
+            "restricted_memory_leak_count",
+            0,
+        ),
+        "quality_context_token_overflow_count": quality.get(
+            "context_token_overflow_count",
+            0,
+        ),
+        "quality_critical_failure_count": quality.get("critical_failure_count", 0),
+        "quality_harmful_context_rate": quality.get("harmful_context_rate", 0.0),
         "long_multi_session_recall_at_5": long.get("multi_session_recall_at_5", 0.0),
         "long_temporal_update_accuracy": long.get("temporal_update_accuracy", 0.0),
         "auto_extraction_positive_recall_rate": auto.get(
@@ -1885,6 +1998,14 @@ def _scorecard_metrics(
         "multimodal_offline_prompt_injection_guard_rate": multimodal.get(
             "prompt_injection_guard_rate",
             0.0,
+        ),
+        "multimodal_offline_retrieval_evidence_location_coverage_rate": multimodal.get(
+            "retrieval_evidence_location_coverage_rate",
+            0.0,
+        ),
+        "multimodal_offline_retrieval_evidence_location_gap_count": multimodal.get(
+            "retrieval_evidence_location_gap_count",
+            0,
         ),
         "graph_recall_rate": graph.get("graph_recall_rate", 0.0),
         "graph_hydration_rate": graph.get("graph_hydration_rate", 0.0),

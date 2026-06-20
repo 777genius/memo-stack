@@ -94,6 +94,14 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
                     "providers": {"local": {}, "docling": {}},
                     "evidence_contract": {},
                     "feature_contract": {},
+                    "policy": {
+                        "external_ai_requires_explicit_profile": True,
+                        "memory_promotion": "review_required",
+                        "source_text_policy": "untrusted_evidence",
+                        "provider_payloads_bounded": True,
+                        "sensitive_data_in_diagnostics": False,
+                        "canonical_store": "postgres",
+                    },
                     "provider_contract": {
                         "transcription": {
                             "endpoint": "/v1/audio/transcriptions",
@@ -129,7 +137,93 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
                         },
                     },
                     "manifest_contract": {},
-                    "file_type_detection": {},
+                    "file_type_detection": {
+                        "declared_content_type_trusted": False,
+                        "filename_extension_trusted": False,
+                        "empty_upload_policy": "reject_at_upload",
+                        "upload_body_stream_limited": True,
+                        "archive_policy": {
+                            "inspect_zip_metadata": True,
+                            "reject_unsafe_paths": True,
+                            "reject_entry_count_limit": True,
+                            "reject_uncompressed_size_limit": True,
+                            "reject_single_entry_size_limit": True,
+                            "reject_compression_ratio_limit": True,
+                            "reject_symlink_entries": True,
+                            "reject_special_file_entries": True,
+                        },
+                        "image_policy": {
+                            "inspect_dimensions_from_headers": True,
+                            "reject_corrupted_supported_image_headers": True,
+                            "reject_pixel_count_limit": True,
+                        },
+                        "diagnostic_fields": [
+                            "mime_detected_content_type",
+                            "mime_content_type_mismatch",
+                            "mime_magic_mismatch",
+                            "upload_archive_inspection_status",
+                            "upload_archive_entry_count",
+                            "upload_archive_uncompressed_bytes",
+                            "upload_archive_max_compression_ratio",
+                            "upload_image_detected",
+                            "upload_image_pixels",
+                            "upload_image_max_pixels",
+                            "extraction_upload_policy_revalidated",
+                            "extraction_upload_policy_status",
+                            "asset_empty_content",
+                        ],
+                    },
+                    "resource_policy": {
+                        "limits_normalized_before_provider": True,
+                        "rejects_oversized_asset_before_blob_read": True,
+                        "revalidates_upload_policy_after_blob_read": True,
+                        "inspects_zip_central_directory_before_provider": True,
+                        "archive_rejection_policy": {
+                            "reject_unsafe_paths": True,
+                            "reject_symlink_entries": True,
+                            "reject_special_file_entries": True,
+                            "reject_duplicate_paths": True,
+                            "reject_nested_archives": True,
+                            "reject_encrypted_entries": True,
+                            "reject_entry_count_limit": True,
+                            "reject_uncompressed_size_limit": True,
+                            "reject_compression_ratio_limit": True,
+                        },
+                        "diagnostic_fields": [
+                            "extraction_resource_policy_version",
+                            "extraction_limits_normalized",
+                            "extraction_asset_byte_size",
+                            "extraction_resource_limit_exceeded",
+                            "extraction_upload_policy_revalidated",
+                            "extraction_archive_resource_policy_version",
+                            "extraction_archive_uncompressed_bytes",
+                            "extraction_archive_compression_ratio",
+                            "extraction_max_archive_entries",
+                            "extraction_max_archive_uncompressed_bytes",
+                            "extraction_max_archive_compression_ratio",
+                        ],
+                        "hard_caps": {"max_bytes": 536870912},
+                        "public_api_policy": (
+                            "bounded_metadata_without_raw_bytes_or_provider_payloads"
+                        ),
+                    },
+                    "limits": {
+                        "max_bytes": 26214400,
+                        "max_pages": 100,
+                        "max_media_seconds": 600,
+                        "max_output_chars": 200000,
+                        "max_tables": 50,
+                        "max_image_pixels": 20000000,
+                        "max_archive_entries": 1000,
+                        "max_archive_uncompressed_bytes": 104857600,
+                        "max_archive_compression_ratio": 100.0,
+                        "parser_timeout_seconds": 120,
+                        "subprocess_timeout_seconds": 60,
+                        "provider_timeout_seconds": 60,
+                        "execution_lease_seconds": 300,
+                        "cancellation_poll_seconds": 1,
+                        "heartbeat_seconds": 5,
+                    },
                 }
             }
         if method == "POST" and parsed.path == "/v1/assets":
@@ -244,6 +338,13 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
         == 1500
     )
     assert "provider_contract" in report["components"]["capabilities"]["contract_names"]
+    assert "resource_policy" in report["components"]["capabilities"]["contract_names"]
+    assert report["components"]["capabilities"]["file_type_detection"]["ok"] is True
+    assert report["components"]["capabilities"]["resource_policy"]["ok"] is True
+    assert report["components"]["capabilities"]["limits"]["ok"] is True
+    assert report["components"]["capabilities"]["policy"]["ok"] is True
+    assert report["components"]["capabilities"]["manifest_contract_present"] is True
+    assert report["components"]["capabilities"]["evidence_contract_present"] is True
     cases = report["components"]["extraction_flow"]["cases"]
     assert len(cases) == 5
     filenames = {case["filename"] for case in cases}

@@ -654,7 +654,65 @@ def test_multimodal_production_goal_audit_rejects_docker_without_provider_contra
     assert result.checks["docker_live_capabilities_vision_detail_contract_docs_aligned"] is False
     assert result.checks["docker_live_capabilities_vision_binary_limit_present"] is False
     assert result.checks["docker_live_capabilities_vision_payload_limits_present"] is False
+    assert result.checks["docker_live_capabilities_file_type_detection_present"] is False
+    assert result.checks["docker_live_capabilities_resource_policy_present"] is False
+    assert result.checks["docker_live_capabilities_upload_security_fields_present"] is False
+    assert result.checks["docker_live_capabilities_archive_limits_present"] is False
+    assert result.checks["docker_live_capabilities_image_pixel_limit_present"] is False
+    assert result.checks["docker_live_capabilities_media_duration_limit_present"] is False
+    assert result.checks["docker_live_capabilities_parser_timeout_present"] is False
+    assert result.checks[
+        "docker_live_capabilities_manifest_evidence_contracts_present"
+    ] is False
     assert any("provider capability contract" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_rejects_docker_without_resource_security(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    docker = _docker_report()
+    docker_capabilities = docker["components"]["capabilities"]
+    assert isinstance(docker_capabilities, dict)
+    docker_capabilities["contract_names"] = [
+        "evidence_contract",
+        "feature_contract",
+        "manifest_contract",
+        "provider_contract",
+    ]
+    docker_capabilities.pop("file_type_detection", None)
+    docker_capabilities["resource_policy"] = {"ok": False}
+    docker_capabilities["limits"] = {"max_media_seconds": None}
+    docker_capabilities["manifest_contract_present"] = False
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(docker), encoding="utf-8")
+    provider_report.write_text(json.dumps(_provider_report()), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["docker_live_capabilities_provider_contract_present"] is True
+    assert result.checks["docker_live_capabilities_file_type_detection_present"] is False
+    assert result.checks["docker_live_capabilities_resource_policy_present"] is False
+    assert result.checks["docker_live_capabilities_archive_limits_present"] is False
+    assert result.checks["docker_live_capabilities_image_pixel_limit_present"] is False
+    assert result.checks["docker_live_capabilities_media_duration_limit_present"] is False
+    assert result.checks["docker_live_capabilities_parser_timeout_present"] is False
+    assert result.checks[
+        "docker_live_capabilities_manifest_evidence_contracts_present"
+    ] is False
+    assert any("resource policy" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
@@ -717,6 +775,7 @@ def _write_core(root: Path) -> None:
 def _quality_scorecard_report() -> dict[str, object]:
     capabilities = {
         "canonical_recall_precision": {"ok": True, "failed_checks": []},
+        "retrieval_context_memory_layer": {"ok": True, "failed_checks": []},
         "longitudinal_memory": {"ok": True, "failed_checks": []},
         "auto_memory_admission": {"ok": True, "failed_checks": []},
         "semantic_linking": {"ok": True, "failed_checks": []},
@@ -731,8 +790,8 @@ def _quality_scorecard_report() -> dict[str, object]:
         "status": "ok",
         "ok": True,
         "score": {
-            "passed_checks": 18,
-            "total_checks": 18,
+            "passed_checks": 19,
+            "total_checks": 19,
             "score_percent": 1.0,
             "maturity_score_10": 10.0,
             "minimum_maturity_score_10": 9.0,
@@ -842,7 +901,9 @@ def _docker_report() -> dict[str, object]:
                     "feature_contract",
                     "file_type_detection",
                     "manifest_contract",
+                    "policy",
                     "provider_contract",
+                    "resource_policy",
                 ],
                 "provider_contract": {
                     "ok": True,
@@ -873,6 +934,46 @@ def _docker_report() -> dict[str, object]:
                         ".webp",
                     ],
                 },
+                "file_type_detection": {
+                    "ok": True,
+                    "declared_content_type_trusted": False,
+                    "filename_extension_trusted": False,
+                    "empty_upload_policy": "reject_at_upload",
+                    "upload_body_stream_limited": True,
+                    "archive_policy_complete": True,
+                    "image_policy_complete": True,
+                    "diagnostics_complete": True,
+                },
+                "resource_policy": {
+                    "ok": True,
+                    "limits_normalized_before_provider": True,
+                    "rejects_oversized_asset_before_blob_read": True,
+                    "revalidates_upload_policy_after_blob_read": True,
+                    "inspects_zip_central_directory_before_provider": True,
+                    "archive_rejection_policy_complete": True,
+                    "diagnostics_complete": True,
+                    "hard_caps_present": True,
+                },
+                "limits": {
+                    "ok": True,
+                    "max_bytes": 25 * 1024 * 1024,
+                    "max_media_seconds": 600,
+                    "max_image_pixels": 20_000_000,
+                    "max_archive_entries": 1000,
+                    "max_archive_uncompressed_bytes": 100 * 1024 * 1024,
+                    "max_archive_compression_ratio": 100.0,
+                    "parser_timeout_seconds": 120,
+                    "subprocess_timeout_seconds": 60,
+                    "provider_timeout_seconds": 60,
+                },
+                "policy": {
+                    "ok": True,
+                    "source_text_policy": "untrusted_evidence",
+                    "provider_payloads_bounded": True,
+                    "sensitive_data_in_diagnostics": False,
+                },
+                "manifest_contract_present": True,
+                "evidence_contract_present": True,
             },
             "cleanup": {"status": "succeeded"},
             "extraction_flow": {

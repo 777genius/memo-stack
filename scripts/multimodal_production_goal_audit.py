@@ -109,6 +109,7 @@ PROVIDER_REQUIREMENT_CHECKS = {
 REQUIRED_MEMORY_QUALITY_CAPABILITIES = frozenset(
     {
         "canonical_recall_precision",
+        "retrieval_context_memory_layer",
         "longitudinal_memory",
         "auto_memory_admission",
         "semantic_linking",
@@ -447,6 +448,22 @@ def _audit_docker_report(
         if isinstance(capabilities.get("provider_contract"), dict)
         else {}
     )
+    file_type_detection = (
+        capabilities.get("file_type_detection")
+        if isinstance(capabilities.get("file_type_detection"), dict)
+        else {}
+    )
+    resource_policy = (
+        capabilities.get("resource_policy")
+        if isinstance(capabilities.get("resource_policy"), dict)
+        else {}
+    )
+    resource_limits = (
+        capabilities.get("limits") if isinstance(capabilities.get("limits"), dict) else {}
+    )
+    extraction_policy = (
+        capabilities.get("policy") if isinstance(capabilities.get("policy"), dict) else {}
+    )
     contract_names = set(_string_list(capabilities.get("contract_names")))
     _check(
         checks,
@@ -529,6 +546,78 @@ def _audit_docker_report(
         and _positive_int(provider_contract.get("vision_max_images_per_request")) is not None
         and _positive_int(provider_contract.get("vision_effective_max_upload_bytes")) is not None,
         "Docker live proof provider contract is missing OpenAI vision payload limits",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_file_type_detection_present",
+        "file_type_detection" in contract_names and file_type_detection.get("ok") is True,
+        "Docker live proof did not prove the file type detection contract",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_resource_policy_present",
+        "resource_policy" in contract_names and resource_policy.get("ok") is True,
+        "Docker live proof did not prove the extraction resource policy contract",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_upload_security_fields_present",
+        extraction_policy.get("source_text_policy") == "untrusted_evidence"
+        and extraction_policy.get("provider_payloads_bounded") is True
+        and extraction_policy.get("sensitive_data_in_diagnostics") is False
+        and file_type_detection.get("declared_content_type_trusted") is False
+        and file_type_detection.get("filename_extension_trusted") is False
+        and file_type_detection.get("empty_upload_policy") == "reject_at_upload"
+        and file_type_detection.get("upload_body_stream_limited") is True
+        and resource_policy.get("revalidates_upload_policy_after_blob_read") is True,
+        "Docker live proof is missing upload security/trust-boundary fields",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_archive_limits_present",
+        file_type_detection.get("archive_policy_complete") is True
+        and resource_policy.get("archive_rejection_policy_complete") is True
+        and resource_policy.get("hard_caps_present") is True
+        and _positive_int(resource_limits.get("max_archive_entries")) is not None
+        and _positive_int(resource_limits.get("max_archive_uncompressed_bytes")) is not None
+        and _positive_float(resource_limits.get("max_archive_compression_ratio")) is not None,
+        "Docker live proof is missing archive bomb/resource limits",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_image_pixel_limit_present",
+        file_type_detection.get("image_policy_complete") is True
+        and _positive_int(resource_limits.get("max_image_pixels")) is not None,
+        "Docker live proof is missing image pixel bomb limits",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_media_duration_limit_present",
+        _positive_float(resource_limits.get("max_media_seconds")) is not None,
+        "Docker live proof is missing media duration limits",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_parser_timeout_present",
+        _positive_float(resource_limits.get("parser_timeout_seconds")) is not None
+        and _positive_float(resource_limits.get("subprocess_timeout_seconds")) is not None
+        and _positive_float(resource_limits.get("provider_timeout_seconds")) is not None,
+        "Docker live proof is missing parser/subprocess/provider timeout limits",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_manifest_evidence_contracts_present",
+        capabilities.get("manifest_contract_present") is True
+        and capabilities.get("evidence_contract_present") is True,
+        "Docker live proof is missing manifest/evidence capability contracts",
     )
     _check(
         checks,
@@ -1018,6 +1107,14 @@ def _blocked_requirements(
             "docker_live_capabilities_vision_detail_contract_docs_aligned",
             "docker_live_capabilities_vision_binary_limit_present",
             "docker_live_capabilities_vision_payload_limits_present",
+            "docker_live_capabilities_file_type_detection_present",
+            "docker_live_capabilities_resource_policy_present",
+            "docker_live_capabilities_upload_security_fields_present",
+            "docker_live_capabilities_archive_limits_present",
+            "docker_live_capabilities_image_pixel_limit_present",
+            "docker_live_capabilities_media_duration_limit_present",
+            "docker_live_capabilities_parser_timeout_present",
+            "docker_live_capabilities_manifest_evidence_contracts_present",
             "docker_live_extraction_cases_complete",
         ]
         blocked.append(docker_blocker)
