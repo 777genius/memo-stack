@@ -1,5 +1,6 @@
 """Application layer public exports."""
 
+from infinity_context_core.application.context_collectors import ContextRetrievalDeadlines
 from infinity_context_core.application.dto import (
     AnchorBackfillSourceSummary,
     AnchorMergeCandidate,
@@ -313,6 +314,7 @@ __all__ = [
     "ContextLinkResult",
     "ContextLinkSuggestionResult",
     "ContextLinkSuggestionsResult",
+    "ContextRetrievalDeadlines",
     "CaptureResult",
     "ConsolidateCaptureCommand",
     "ConsolidateCaptureUseCase",

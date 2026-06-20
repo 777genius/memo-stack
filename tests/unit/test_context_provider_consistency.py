@@ -16,6 +16,7 @@ from infinity_context_core.application import (
     BuildContextUseCase,
     ConsistencyMode,
     ContextItem,
+    ContextRetrievalDeadlines,
     EnsureScopeCommand,
     ForgetFactCommand,
     IngestDocumentCommand,
@@ -2836,6 +2837,62 @@ def test_context_drops_rag_recall_without_canonical_chunk_source(tmp_path: Path)
     assert context.diagnostics["stale_rag_drop_count"] == 1
 
 
+def test_rag_recall_deadline_degrades_to_keyword_context(tmp_path: Path) -> None:
+    class SlowRagRecall:
+        cancelled = False
+
+        async def recall(self, _query: CapabilityRecallQuery) -> CapabilityRecallResult:
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            raise AssertionError("slow RAG recall should be cancelled by context deadline")
+
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "title": "RAG deadline fallback",
+                "text": "RAG_DEADLINE_KEYWORD_MARKER still renders from keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "rag-deadline-doc",
+            },
+            headers=auth_headers(),
+        )
+        rag = SlowRagRecall()
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+            rag_recall=rag,
+            retrieval_deadlines=ContextRetrievalDeadlines(rag_recall_seconds=0.001),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="RAG_DEADLINE_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert document.status_code == 201
+    assert rag.cancelled is True
+    assert "RAG_DEADLINE_KEYWORD_MARKER" in context.rendered_text
+    assert context.diagnostics["rag_status"] == "degraded"
+    assert context.diagnostics["rag_degraded_reason"] == "rag.timeout"
+    assert context.diagnostics["rag_degraded_step"] == "recall"
+    assert context.diagnostics["rag_deadline_seconds"] == 0.001
+
+
 def test_context_does_not_embed_when_vector_adapter_is_disabled(tmp_path: Path) -> None:
     class FailingEmbeddingAdapter:
         calls = 0
@@ -3030,6 +3087,72 @@ def test_qdrant_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
     assert context.diagnostics["vector_status"] == "degraded"
     assert context.diagnostics["vector_degraded_reason"] == "vector.timeout"
     assert "RAW_VECTOR_TIMEOUT_SECRET" not in str(context.diagnostics)
+
+
+def test_vector_search_deadline_degrades_to_keyword_context(tmp_path: Path) -> None:
+    class SlowVectorAdapter:
+        cancelled = False
+
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="qdrant",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+            )
+
+        async def search_chunks(self, **_kwargs: object) -> VectorSearchResult:
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            raise AssertionError("slow vector search should be cancelled by context deadline")
+
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "title": "Vector deadline fallback",
+                "text": "VECTOR_DEADLINE_KEYWORD_MARKER still renders from keyword chunks.",
+                "source_type": "document",
+                "source_external_id": "vector-deadline-doc",
+            },
+            headers=auth_headers(),
+        )
+        vector = SlowVectorAdapter()
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=vector,
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=FakeEmbeddingAdapter(),
+            retrieval_deadlines=ContextRetrievalDeadlines(vector_search_seconds=0.001),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="VECTOR_DEADLINE_KEYWORD_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert document.status_code == 201
+    assert vector.cancelled is True
+    assert "VECTOR_DEADLINE_KEYWORD_MARKER" in context.rendered_text
+    assert context.diagnostics["vector_status"] == "degraded"
+    assert context.diagnostics["vector_degraded_reason"] == "vector.timeout"
+    assert context.diagnostics["vector_degraded_step"] == "search"
+    assert context.diagnostics["vector_deadline_seconds"] == 0.001
 
 
 def test_qdrant_circuit_opens_after_repeated_timeout(tmp_path: Path) -> None:
@@ -3471,6 +3594,72 @@ def test_graphiti_timeout_degrades_to_postgres_facts(tmp_path: Path) -> None:
     assert context.diagnostics["graph_status"] == "degraded"
     assert context.diagnostics["graph_degraded_reason"] == "graph.timeout"
     assert "RAW_GRAPH_TIMEOUT_SECRET" not in str(context.diagnostics)
+
+
+def test_graph_search_deadline_degrades_to_postgres_facts(tmp_path: Path) -> None:
+    class SlowGraphAdapter:
+        cancelled = False
+
+        async def capabilities(self) -> AdapterCapabilities:
+            return AdapterCapabilities(
+                name="graphiti",
+                enabled=True,
+                healthy=True,
+                supports_upsert=True,
+                supports_delete=True,
+                supports_search=True,
+                supports_filters=True,
+                supports_temporal_queries=True,
+            )
+
+        async def search(self, **_kwargs: object) -> GraphSearchResult:
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            raise AssertionError("slow graph search should be cancelled by context deadline")
+
+    with make_client(tmp_path) as client:
+        created = client.post(
+            "/v1/facts",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "text": "GRAPH_DEADLINE_CANONICAL_MARKER still renders from Postgres.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "graph-deadline"}],
+            },
+            headers=auth_headers(),
+        )
+        graph = SlowGraphAdapter()
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=graph,
+            embedder=NoopEmbeddingAdapter(),
+            retrieval_deadlines=ContextRetrievalDeadlines(graph_search_seconds=0.001),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="GRAPH_DEADLINE_CANONICAL_MARKER",
+                    token_budget=512,
+                )
+            )
+        )
+
+    assert created.status_code == 201
+    assert graph.cancelled is True
+    assert "GRAPH_DEADLINE_CANONICAL_MARKER" in context.rendered_text
+    assert context.diagnostics["graph_status"] == "degraded"
+    assert context.diagnostics["graph_degraded_reason"] == "graph.timeout"
+    assert context.diagnostics["graph_degraded_step"] == "search"
+    assert context.diagnostics["graph_deadline_seconds"] == 0.001
 
 
 def test_open_graph_circuit_returns_degraded_context_fast(tmp_path: Path) -> None:

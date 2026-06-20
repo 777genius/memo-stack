@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable
 from dataclasses import dataclass
+from typing import TypeVar
 
 from infinity_context_core.application.context_hydration import ContextHydrator
 from infinity_context_core.application.context_relevance import score_query_relevance
@@ -52,13 +55,27 @@ _SENSITIVE_VALUE_MARKERS = (
     "token",
     "private_",
 )
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class ContextRetrievalDeadlines:
+    vector_capabilities_seconds: float | None = 2.0
+    vector_embedding_seconds: float | None = 8.0
+    vector_search_seconds: float | None = 5.0
+    vector_hydration_seconds: float | None = 5.0
+    graph_capabilities_seconds: float | None = 2.0
+    graph_search_seconds: float | None = 5.0
+    graph_hydration_seconds: float | None = 5.0
+    rag_recall_seconds: float | None = 5.0
+    rag_hydration_seconds: float | None = 5.0
 
 
 @dataclass(frozen=True)
 class CanonicalCollectionResult:
     facts: tuple[MemoryFact, ...]
     keyword_chunks: tuple[MemoryChunk, ...]
-    anchors: tuple[MemoryAnchor, ...]
+    anchors: tuple[MemoryAnchor, ...] = ()
 
 
 class CanonicalContextCollector:
@@ -153,10 +170,12 @@ class VectorContextCollector:
         vector_index: VectorMemoryPort,
         embedder: EmbeddingPort,
         hydrator: ContextHydrator,
+        deadlines: ContextRetrievalDeadlines | None = None,
     ) -> None:
         self._vector_index = vector_index
         self._embedder = embedder
         self._hydrator = hydrator
+        self._deadlines = deadlines or ContextRetrievalDeadlines()
 
     async def collect(
         self,
@@ -169,10 +188,18 @@ class VectorContextCollector:
             diagnostics["vector_status"] = "skipped"
             return ()
         try:
-            capabilities = await self._vector_index.capabilities()
+            capabilities = await _await_with_deadline(
+                self._vector_index.capabilities(),
+                timeout_seconds=self._deadlines.vector_capabilities_seconds,
+            )
         except Exception as exc:
-            diagnostics["vector_status"] = "degraded"
-            diagnostics["vector_degraded_reason"] = _exception_code("vector", exc)
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="vector",
+                reason=_exception_code("vector", exc),
+                step="capabilities",
+                deadline_seconds=self._deadlines.vector_capabilities_seconds,
+            )
             return ()
         if not capabilities.enabled:
             diagnostics["vector_status"] = (
@@ -188,10 +215,18 @@ class VectorContextCollector:
             return ()
 
         try:
-            embedding = await self._embedder.embed_texts((query.query,))
+            embedding = await _await_with_deadline(
+                self._embedder.embed_texts((query.query,)),
+                timeout_seconds=self._deadlines.vector_embedding_seconds,
+            )
         except Exception as exc:
-            diagnostics["vector_status"] = "degraded"
-            diagnostics["vector_degraded_reason"] = _exception_code("embeddings", exc)
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="vector",
+                reason=_exception_code("embeddings", exc),
+                step="embedding",
+                deadline_seconds=self._deadlines.vector_embedding_seconds,
+            )
             return ()
         if embedding.status != PortStatus.OK or not embedding.vectors:
             diagnostics["vector_status"] = embedding.status.value
@@ -199,16 +234,24 @@ class VectorContextCollector:
                 diagnostics["vector_degraded_reason"] = embedding.diagnostics[0].code
             return ()
         try:
-            result = await self._vector_index.search_chunks(
-                space_id=str(query.space_id),
-                memory_scope_ids=memory_scope_ids,
-                thread_id=str(query.thread_id) if query.thread_id else None,
-                query_vector=embedding.vectors[0],
-                limit=query.max_chunks,
+            result = await _await_with_deadline(
+                self._vector_index.search_chunks(
+                    space_id=str(query.space_id),
+                    memory_scope_ids=memory_scope_ids,
+                    thread_id=str(query.thread_id) if query.thread_id else None,
+                    query_vector=embedding.vectors[0],
+                    limit=query.max_chunks,
+                ),
+                timeout_seconds=self._deadlines.vector_search_seconds,
             )
         except Exception as exc:
-            diagnostics["vector_status"] = "degraded"
-            diagnostics["vector_degraded_reason"] = _exception_code("vector", exc)
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="vector",
+                reason=_exception_code("vector", exc),
+                step="search",
+                deadline_seconds=self._deadlines.vector_search_seconds,
+            )
             return ()
         diagnostics["vector_status"] = result.status.value
         if result.diagnostics:
@@ -217,11 +260,24 @@ class VectorContextCollector:
         if result.status != PortStatus.OK or not result.items:
             return ()
         chunk_ids = tuple(candidate.chunk_id for candidate in result.items)
-        chunks = await self._hydrator.hydrate_visible_chunks(
-            chunk_ids=chunk_ids,
-            query=query,
-            memory_scope_ids=memory_scope_ids,
-        )
+        try:
+            chunks = await _await_with_deadline(
+                self._hydrator.hydrate_visible_chunks(
+                    chunk_ids=chunk_ids,
+                    query=query,
+                    memory_scope_ids=memory_scope_ids,
+                ),
+                timeout_seconds=self._deadlines.vector_hydration_seconds,
+            )
+        except Exception as exc:
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="vector",
+                reason=_exception_code("vector", exc),
+                step="hydration",
+                deadline_seconds=self._deadlines.vector_hydration_seconds,
+            )
+            return ()
         hydrated_ids = {str(chunk.id) for chunk in chunks}
         diagnostics["vector_hydrated_count"] = len(chunks)
         diagnostics["stale_vector_drop_count"] = sum(
@@ -236,9 +292,11 @@ class GraphContextCollector:
         *,
         graph_index: GraphMemoryPort,
         hydrator: ContextHydrator,
+        deadlines: ContextRetrievalDeadlines | None = None,
     ) -> None:
         self._graph_index = graph_index
         self._hydrator = hydrator
+        self._deadlines = deadlines or ContextRetrievalDeadlines()
 
     async def collect(
         self,
@@ -251,10 +309,18 @@ class GraphContextCollector:
             diagnostics["graph_status"] = "skipped"
             return ()
         try:
-            capabilities = await self._graph_index.capabilities()
+            capabilities = await _await_with_deadline(
+                self._graph_index.capabilities(),
+                timeout_seconds=self._deadlines.graph_capabilities_seconds,
+            )
         except Exception as exc:
-            diagnostics["graph_status"] = "degraded"
-            diagnostics["graph_degraded_reason"] = _exception_code("graph", exc)
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="graph",
+                reason=_exception_code("graph", exc),
+                step="capabilities",
+                deadline_seconds=self._deadlines.graph_capabilities_seconds,
+            )
             return ()
         if not capabilities.enabled:
             diagnostics["graph_status"] = (
@@ -269,16 +335,24 @@ class GraphContextCollector:
                 diagnostics["graph_degraded_reason"] = capabilities.degraded_reason
             return ()
         try:
-            result = await self._graph_index.search(
-                space_id=str(query.space_id),
-                memory_scope_ids=memory_scope_ids,
-                thread_id=str(query.thread_id) if query.thread_id else None,
-                query=query.query,
-                limit=query.max_facts,
+            result = await _await_with_deadline(
+                self._graph_index.search(
+                    space_id=str(query.space_id),
+                    memory_scope_ids=memory_scope_ids,
+                    thread_id=str(query.thread_id) if query.thread_id else None,
+                    query=query.query,
+                    limit=query.max_facts,
+                ),
+                timeout_seconds=self._deadlines.graph_search_seconds,
             )
         except Exception as exc:
-            diagnostics["graph_status"] = "degraded"
-            diagnostics["graph_degraded_reason"] = _exception_code("graph", exc)
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="graph",
+                reason=_exception_code("graph", exc),
+                step="search",
+                deadline_seconds=self._deadlines.graph_search_seconds,
+            )
             return ()
         diagnostics["graph_status"] = result.status.value
         if result.diagnostics:
@@ -300,11 +374,24 @@ class GraphContextCollector:
         if not fact_ids:
             diagnostics["stale_graph_drop_count"] = orphan_candidate_count
             return ()
-        items, stale_count = await self._hydrator.hydrate_graph_facts(
-            fact_ids=fact_ids,
-            query=query,
-            memory_scope_ids=memory_scope_ids,
-        )
+        try:
+            items, stale_count = await _await_with_deadline(
+                self._hydrator.hydrate_graph_facts(
+                    fact_ids=fact_ids,
+                    query=query,
+                    memory_scope_ids=memory_scope_ids,
+                ),
+                timeout_seconds=self._deadlines.graph_hydration_seconds,
+            )
+        except Exception as exc:
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="graph",
+                reason=_exception_code("graph", exc),
+                step="hydration",
+                deadline_seconds=self._deadlines.graph_hydration_seconds,
+            )
+            return ()
         diagnostics["graph_hydrated_count"] = len(items)
         diagnostics["stale_graph_drop_count"] = stale_count + orphan_candidate_count
         return items[: query.max_facts]
@@ -316,9 +403,11 @@ class RagContextCollector:
         *,
         rag_recall: RagRecallPort | None,
         hydrator: ContextHydrator,
+        deadlines: ContextRetrievalDeadlines | None = None,
     ) -> None:
         self._rag_recall = rag_recall
         self._hydrator = hydrator
+        self._deadlines = deadlines or ContextRetrievalDeadlines()
 
     async def collect(
         self,
@@ -331,20 +420,28 @@ class RagContextCollector:
             diagnostics["rag_status"] = "skipped"
             return ()
         try:
-            result = await self._rag_recall.recall(
-                CapabilityRecallQuery(
-                    scope=MemoryScopeFilter(
-                        space_id=str(query.space_id),
-                        memory_scope_ids=memory_scope_ids,
-                        thread_id=str(query.thread_id) if query.thread_id else None,
-                    ),
-                    query=query.query,
-                    limit=query.max_chunks,
-                )
+            result = await _await_with_deadline(
+                self._rag_recall.recall(
+                    CapabilityRecallQuery(
+                        scope=MemoryScopeFilter(
+                            space_id=str(query.space_id),
+                            memory_scope_ids=memory_scope_ids,
+                            thread_id=str(query.thread_id) if query.thread_id else None,
+                        ),
+                        query=query.query,
+                        limit=query.max_chunks,
+                    )
+                ),
+                timeout_seconds=self._deadlines.rag_recall_seconds,
             )
         except Exception as exc:
-            diagnostics["rag_status"] = "degraded"
-            diagnostics["rag_degraded_reason"] = _exception_code("rag", exc)
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="rag",
+                reason=_exception_code("rag", exc),
+                step="recall",
+                deadline_seconds=self._deadlines.rag_recall_seconds,
+            )
             return ()
         diagnostics["rag_status"] = result.status.value
         if result.diagnostics:
@@ -359,11 +456,24 @@ class RagContextCollector:
                 for chunk_id in _candidate_chunk_ids(candidate)
             )
         )
-        chunks = await self._hydrator.hydrate_visible_chunks(
-            chunk_ids=chunk_ids,
-            query=query,
-            memory_scope_ids=memory_scope_ids,
-        )
+        try:
+            chunks = await _await_with_deadline(
+                self._hydrator.hydrate_visible_chunks(
+                    chunk_ids=chunk_ids,
+                    query=query,
+                    memory_scope_ids=memory_scope_ids,
+                ),
+                timeout_seconds=self._deadlines.rag_hydration_seconds,
+            )
+        except Exception as exc:
+            _mark_derived_retrieval_degraded(
+                diagnostics,
+                component="rag",
+                reason=_exception_code("rag", exc),
+                step="hydration",
+                deadline_seconds=self._deadlines.rag_hydration_seconds,
+            )
+            return ()
         chunks_by_id = {str(chunk.id): chunk for chunk in chunks}
         items: list[ContextItem] = []
         dropped = 0
@@ -468,6 +578,31 @@ def _safe_metadata_value(value: object) -> str:
 def _looks_sensitive(value: str) -> bool:
     lowered = value.lower()
     return any(marker in lowered for marker in _SENSITIVE_VALUE_MARKERS)
+
+
+async def _await_with_deadline(
+    awaitable: Awaitable[_T],
+    *,
+    timeout_seconds: float | None,
+) -> _T:
+    if timeout_seconds is None:
+        return await awaitable
+    return await asyncio.wait_for(awaitable, timeout=timeout_seconds)
+
+
+def _mark_derived_retrieval_degraded(
+    diagnostics: dict[str, object],
+    *,
+    component: str,
+    reason: str,
+    step: str,
+    deadline_seconds: float | None,
+) -> None:
+    diagnostics[f"{component}_status"] = "degraded"
+    diagnostics[f"{component}_degraded_reason"] = reason
+    diagnostics[f"{component}_degraded_step"] = step
+    if deadline_seconds is not None:
+        diagnostics[f"{component}_deadline_seconds"] = round(float(deadline_seconds), 4)
 
 
 def _exception_code(adapter: str, exc: Exception) -> str:

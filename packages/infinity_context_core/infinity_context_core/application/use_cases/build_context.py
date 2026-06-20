@@ -18,6 +18,7 @@ from infinity_context_core.application.context_artifact_evidence import (
 )
 from infinity_context_core.application.context_collectors import (
     CanonicalContextCollector,
+    ContextRetrievalDeadlines,
     GraphContextCollector,
     RagContextCollector,
     VectorContextCollector,
@@ -86,6 +87,7 @@ class BuildContextUseCase:
         rag_recall: RagRecallPort | None = None,
         packer: ContextPacker | None = None,
         blob_storage: BlobStoragePort | None = None,
+        retrieval_deadlines: ContextRetrievalDeadlines | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._ids = ids
@@ -95,19 +97,23 @@ class BuildContextUseCase:
         self._clock = clock
         self._packer = packer or ContextPacker()
         self._hydrator = ContextHydrator(uow_factory=uow_factory, clock=clock)
+        self._retrieval_deadlines = retrieval_deadlines or ContextRetrievalDeadlines()
         self._canonical_collector = CanonicalContextCollector(uow_factory=uow_factory)
         self._vector_collector = VectorContextCollector(
             vector_index=vector_index,
             embedder=embedder,
             hydrator=self._hydrator,
+            deadlines=self._retrieval_deadlines,
         )
         self._graph_collector = GraphContextCollector(
             graph_index=graph_index,
             hydrator=self._hydrator,
+            deadlines=self._retrieval_deadlines,
         )
         self._rag_collector = RagContextCollector(
             rag_recall=rag_recall,
             hydrator=self._hydrator,
+            deadlines=self._retrieval_deadlines,
         )
         self._context_link_expander = ApprovedContextLinkExpander(
             uow_factory=uow_factory,
