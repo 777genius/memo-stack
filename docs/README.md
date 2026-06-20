@@ -108,6 +108,7 @@ Fresh full-provider canary with isolated Docker volumes:
 make infinity-context-clean-full-smoke
 make infinity-context-clean-full-mcp-smoke
 make infinity-context-full-provider-canary-interactive
+make infinity-context-multimodal-provider-contract-canary
 make infinity-context-multimodal-live-provider-canary
 ```
 
@@ -128,6 +129,11 @@ with `MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT`. For audio it uses
 macOS `say` command to synthesize a short speech fixture. Missing keys or missing
 speech fixture are reported as degraded diagnostics, not fake success, and the
 report never includes API key values.
+`infinity-context-multimodal-provider-contract-canary` is the no-key contract gate:
+it exits 0 for degraded missing-key diagnostics so CI/local checks can verify
+fixtures, request contracts, readiness and redaction. It is not live provider
+proof; the JSON report still has `ok=false` and `production_ready=false` until
+the real-key canary succeeds.
 
 `infinity-context-clean-full-smoke` now runs the real stdio MCP canary by default. To
 run only the historical HTTP/API full-provider smoke, set:

@@ -62,6 +62,10 @@ infinity-context-multimodal-production-e2e:
 infinity-context-multimodal-live-provider-canary:
 	$(PYTHON) scripts/multimodal_live_provider_canary.py
 
+.PHONY: infinity-context-multimodal-provider-contract-canary
+infinity-context-multimodal-provider-contract-canary:
+	$(PYTHON) scripts/multimodal_live_provider_canary.py --allow-missing-key --skip-invalid-key-probe
+
 .PHONY: infinity-context-multimodal-docker-live-proof
 infinity-context-multimodal-docker-live-proof:
 	$(PYTHON) scripts/multimodal_docker_live_proof.py

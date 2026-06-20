@@ -263,6 +263,44 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert "MEMORY_AGENT_BENCH_OPENAI_API_KEY" not in combined_output
 
 
+def test_multimodal_live_provider_canary_allow_missing_key_is_contract_only(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "provider-contract-canary.json"
+    audio_fixture = tmp_path / "fixture.wav"
+    audio_fixture.write_bytes(_valid_wav_bytes())
+    env = _test_env_without_openai_keys()
+    env["MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE"] = str(audio_fixture)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--report-out",
+            str(report_path),
+            "--allow-missing-key",
+            "--skip-invalid-key-probe",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    assert report["components"]["provider_key"]["status"] == "degraded"
+    assert report["proof_matrix"]["requirements"]["invalid_key_live_probe"]["status"] == (
+        "skipped"
+    )
+    assert report["readiness"]["production_ready"] is False
+    assert report["readiness"]["status"] == "blocked_by_provider_credential"
+    assert report["secrets_redacted"] is True
+
+
 def test_multimodal_live_provider_canary_has_local_fixtures_and_redaction() -> None:
     module = _load_canary_module()
 
@@ -691,6 +729,7 @@ def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
     args = module._parse_args([])
 
     assert args.report_out == ".e2e-artifacts/multimodal-live-provider-canary.json"
+    assert args.allow_missing_key is False
 
 
 def test_multimodal_live_provider_canary_reports_model_specific_vision_details() -> None:

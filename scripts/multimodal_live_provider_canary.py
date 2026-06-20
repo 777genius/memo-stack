@@ -100,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
     if report["ok"] is True:
         return 0
     if report["components"]["provider_key"]["status"] == "degraded":
+        if args.allow_missing_key:
+            return 0
         return 2
     return 1
 
@@ -538,6 +540,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=(
             "Skip the automatic synthetic invalid-key probe in no-key degraded mode. "
             "Explicit --probe-invalid-key still runs the probe."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing-key",
+        action="store_true",
+        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_ALLOW_MISSING_KEY") == "1",
+        help=(
+            "Return exit code 0 for no-key degraded reports. This is only for "
+            "contract/degraded diagnostics gates and does not mark live provider "
+            "proof as production-ready."
         ),
     )
     return parser.parse_args(argv)
