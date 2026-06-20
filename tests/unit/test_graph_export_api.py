@@ -208,3 +208,81 @@ def test_export_graph_excludes_restricted_memory_by_default(tmp_path: Path) -> N
     assert restricted.status_code == 201
     assert default_graph.json()["data"]["counts"]["facts"] == 0
     assert unrestricted_graph.json()["data"]["counts"]["facts"] == 1
+
+
+def test_export_graph_includes_anchor_relation_projection(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        person = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "person",
+                "label": "Alex",
+                "metadata": {"canonical_key": "alex", "person_canonical_key": "alex"},
+            },
+            headers=auth_headers(),
+        )
+        project = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "project",
+                "label": "Project Atlas",
+                "aliases": ["Atlas"],
+                "metadata": {"canonical_key": "atlas", "project_canonical_key": "atlas"},
+            },
+            headers=auth_headers(),
+        )
+        event = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "event",
+                "label": "Launch review",
+                "metadata": {
+                    "event_participant_canonical_key": "alex",
+                    "event_project_canonical_key": "atlas",
+                    "event_temporal_phrase": "last week",
+                },
+            },
+            headers=auth_headers(),
+        )
+        graph = client.get(
+            "/v1/export/graph.json",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+            },
+            headers=auth_headers(),
+        )
+
+    assert person.status_code == 200, person.text
+    assert project.status_code == 200, project.text
+    assert event.status_code == 200, event.text
+    assert graph.status_code == 200, graph.text
+    data = graph.json()["data"]
+    node_ids = {node["id"] for node in data["nodes"]}
+    edge_types = {edge["type"] for edge in data["edges"]}
+    assert data["counts"]["anchors"] == 3
+    assert data["counts"]["anchor_relations"] == 2
+    assert f"anchor:{person.json()['data']['id']}" in node_ids
+    assert f"anchor:{project.json()['data']['id']}" in node_ids
+    assert f"anchor:{event.json()['data']['id']}" in node_ids
+    assert {"contains_anchor", "event_participant", "event_project"}.issubset(edge_types)
+    relation_edges = [
+        edge
+        for edge in data["edges"]
+        if edge["type"] in {"event_participant", "event_project"}
+    ]
+    assert {edge["source"] for edge in relation_edges} == {
+        f"anchor:{event.json()['data']['id']}"
+    }
+    assert {
+        edge["target"] for edge in relation_edges
+    } == {
+        f"anchor:{person.json()['data']['id']}",
+        f"anchor:{project.json()['data']['id']}",
+    }

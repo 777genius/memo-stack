@@ -9,9 +9,11 @@ from fastapi import APIRouter, Depends, Query
 from infinity_context_core.application import (
     AnchorMergeCandidate,
     AnchorMergeSuggestionsQuery,
+    AnchorRelationItem,
     BackfillAnchorsCommand,
     CreateAnchorCommand,
     DeleteAnchorCommand,
+    ListAnchorRelationsQuery,
     ListAnchorsQuery,
     MergeAnchorsCommand,
     SplitAnchorCommand,
@@ -143,6 +145,53 @@ async def list_anchors(
         )
     )
     return {"data": [anchor_to_response(anchor) for anchor in result.anchors]}
+
+
+@router.get("/anchors/relations")
+async def list_anchor_relations(
+    container: Annotated[Container, Depends(get_container)],
+    space_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    memory_scope_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    space_slug: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    memory_scope_external_ref: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    status_filter: Annotated[str | None, Query(alias="status", max_length=40)] = "active",
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    anchor_limit: Annotated[int, Query(ge=1, le=1_000)] = 500,
+) -> dict[str, Any]:
+    scope = await resolve_existing_single_scope(
+        container,
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        thread_id=None,
+        space_slug=space_slug,
+        memory_scope_external_ref=memory_scope_external_ref,
+        thread_external_ref=None,
+        thread_required=False,
+    )
+    if scope is None:
+        return {
+            "data": {
+                "relations": [],
+                "diagnostics": {"scope_not_found": True},
+            }
+        }
+    result = await container.list_anchor_relations.execute(
+        ListAnchorRelationsQuery(
+            space_id=scope.space_id,
+            memory_scope_id=scope.memory_scope_id,
+            status=status_filter,
+            limit=limit,
+            anchor_limit=anchor_limit,
+        )
+    )
+    return {
+        "data": {
+            "relations": [
+                anchor_relation_to_response(relation) for relation in result.relations
+            ],
+            "diagnostics": result.diagnostics,
+        }
+    }
 
 
 @router.post("/anchors")
@@ -344,6 +393,21 @@ def merge_candidate_to_response(candidate: AnchorMergeCandidate) -> dict[str, An
         "score": candidate.score,
         "reasons": list(candidate.reasons),
         "metadata": safe_public_metadata(candidate.metadata),
+    }
+
+
+def anchor_relation_to_response(relation: AnchorRelationItem) -> dict[str, Any]:
+    return {
+        "id": relation.id,
+        "relation_type": relation.relation_type,
+        "relation_key": relation.relation_key,
+        "confidence": relation.confidence,
+        "reason": relation.reason,
+        "source_anchor_id": str(relation.source_anchor.id),
+        "target_anchor_id": str(relation.target_anchor.id),
+        "source_anchor": anchor_to_response(relation.source_anchor),
+        "target_anchor": anchor_to_response(relation.target_anchor),
+        "metadata": safe_public_metadata(relation.metadata),
     }
 
 

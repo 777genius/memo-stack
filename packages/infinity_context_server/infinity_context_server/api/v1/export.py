@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
-from infinity_context_core.application import EnsureScopeCommand, ExportGraphQuery, GraphExportResult
+from infinity_context_core.application import (
+    EnsureScopeCommand,
+    ExportGraphQuery,
+    GraphExportResult,
+)
 from infinity_context_core.domain.errors import MemoryValidationError
 from infinity_context_core.memory_scope_snapshots import (
     build_snapshot_manifest,
@@ -69,6 +73,7 @@ async def export_graph_json(
     max_documents: Annotated[int, Query(ge=0, le=500)] = 100,
     max_episodes: Annotated[int, Query(ge=0, le=500)] = 100,
     max_chunks: Annotated[int, Query(ge=0, le=2_000)] = 500,
+    max_anchors: Annotated[int, Query(ge=0, le=500)] = 100,
 ) -> dict[str, Any]:
     scope = await resolve_existing_single_scope(
         container,
@@ -92,8 +97,11 @@ async def export_graph_json(
                     "documents": 0,
                     "episodes": 0,
                     "chunks": 0,
+                    "anchors": 0,
                     "nodes": 0,
                     "edges": 0,
+                    "relations": 0,
+                    "anchor_relations": 0,
                 },
                 "truncated": False,
                 "warnings": ["scope_not_found"],
@@ -110,6 +118,7 @@ async def export_graph_json(
             max_documents=max_documents,
             max_episodes=max_episodes,
             max_chunks=max_chunks,
+            max_anchors=max_anchors,
         )
     )
     return {"data": graph_export_to_response(graph)}

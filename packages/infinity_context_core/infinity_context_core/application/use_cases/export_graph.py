@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TypeVar
 
+from infinity_context_core.application.anchor_relation_projection import (
+    ProjectedAnchorRelation,
+    project_event_anchor_relations,
+)
 from infinity_context_core.application.dto import (
     ExportGraphQuery,
     GraphExportEdge,
@@ -15,6 +19,7 @@ from infinity_context_core.domain.entities import (
     DataClassification,
     FactStatus,
     LifecycleStatus,
+    MemoryAnchor,
     MemoryChunk,
     MemoryDocument,
     MemoryEpisode,
@@ -59,6 +64,13 @@ class ExportGraphUseCase:
                 status=lifecycle_status,
                 limit=query.max_episodes + 1,
             )
+            anchors = await _load_scope_anchors(
+                space_id=str(query.space_id),
+                memory_scope_id=str(query.memory_scope_id),
+                status=lifecycle_status,
+                max_anchors=query.max_anchors,
+                list_anchors=uow.anchors.list_for_scope,
+            )
             facts, facts_truncated = _bounded(
                 _visible_facts(facts, include_restricted=query.include_restricted),
                 query.max_facts,
@@ -68,6 +80,7 @@ class ExportGraphUseCase:
                 query.max_documents,
             )
             episodes, episodes_truncated = _bounded(episodes, query.max_episodes)
+            anchors, anchors_truncated = _bounded(anchors, query.max_anchors)
             chunks, chunks_truncated = await _load_parent_chunks(
                 documents=documents,
                 episodes=episodes,
@@ -81,6 +94,12 @@ class ExportGraphUseCase:
                 status=lifecycle_status,
                 list_relations=uow.fact_relations.list_for_fact,
             )
+            anchor_relations = list(
+                project_event_anchor_relations(
+                    tuple(anchors),
+                    limit=max(query.max_anchors, query.max_anchors * 2),
+                )
+            )
 
         if facts_truncated:
             warnings.append("facts_truncated")
@@ -90,6 +109,8 @@ class ExportGraphUseCase:
             warnings.append("episodes_truncated")
         if chunks_truncated:
             warnings.append("chunks_truncated")
+        if anchors_truncated:
+            warnings.append("anchors_truncated")
 
         nodes = _build_nodes(
             space_id=str(query.space_id),
@@ -99,13 +120,17 @@ class ExportGraphUseCase:
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            anchors=anchors,
         )
         edges = _build_edges(
+            memory_scope_id=str(query.memory_scope_id),
             facts=facts,
             documents=documents,
             episodes=episodes,
             chunks=chunks,
+            anchors=anchors,
             relations=relations,
+            anchor_relations=anchor_relations,
         )
         return GraphExportResult(
             schema_version=_SCHEMA_VERSION,
@@ -121,12 +146,18 @@ class ExportGraphUseCase:
                 "documents": len(documents),
                 "episodes": len(episodes),
                 "chunks": len(chunks),
+                "anchors": len(anchors),
                 "relations": len(relations),
+                "anchor_relations": len(anchor_relations),
                 "nodes": len(nodes),
                 "edges": len(edges),
             },
             truncated=bool(
-                facts_truncated or documents_truncated or episodes_truncated or chunks_truncated
+                facts_truncated
+                or documents_truncated
+                or episodes_truncated
+                or chunks_truncated
+                or anchors_truncated
             ),
             warnings=tuple(warnings),
         )
@@ -190,6 +221,25 @@ async def _load_parent_chunks(
     return chunks, truncated
 
 
+async def _load_scope_anchors(
+    *,
+    space_id: str,
+    memory_scope_id: str,
+    status: str | None,
+    max_anchors: int,
+    list_anchors: Callable[..., Awaitable[list[MemoryAnchor]]],
+) -> list[MemoryAnchor]:
+    if max_anchors <= 0:
+        return []
+    return await list_anchors(
+        space_id=space_id,
+        memory_scope_id=memory_scope_id,
+        kind=None,
+        status=status,
+        limit=max_anchors + 1,
+    )
+
+
 async def _load_visible_parent_chunks(
     *,
     parent_id: str,
@@ -242,6 +292,7 @@ def _build_nodes(
     documents: list[MemoryDocument],
     episodes: list[MemoryEpisode],
     chunks: list[MemoryChunk],
+    anchors: list[MemoryAnchor],
 ) -> list[GraphExportNode]:
     nodes = [
         GraphExportNode(
@@ -255,6 +306,7 @@ def _build_nodes(
     nodes.extend(_document_node(document) for document in documents)
     nodes.extend(_episode_node(episode) for episode in episodes)
     nodes.extend(_chunk_node(chunk) for chunk in chunks)
+    nodes.extend(_anchor_node(anchor) for anchor in anchors)
     return nodes
 
 
@@ -337,21 +389,41 @@ def _chunk_node(chunk: MemoryChunk) -> GraphExportNode:
     )
 
 
+def _anchor_node(anchor: MemoryAnchor) -> GraphExportNode:
+    return GraphExportNode(
+        id=f"anchor:{anchor.id}",
+        type="anchor",
+        label=anchor.label,
+        data={
+            "id": str(anchor.id),
+            "kind": anchor.kind.value,
+            "normalized_key": anchor.normalized_key,
+            "aliases": list(anchor.aliases),
+            "description": anchor.description,
+            "status": anchor.status.value,
+            "confidence": anchor.confidence.value,
+            "observed_at": anchor.observed_at.isoformat(),
+            "valid_from": anchor.valid_from.isoformat() if anchor.valid_from else None,
+            "valid_to": anchor.valid_to.isoformat() if anchor.valid_to else None,
+            "metadata": _safe_graph_metadata(anchor.metadata),
+            "created_at": anchor.created_at.isoformat(),
+            "updated_at": anchor.updated_at.isoformat(),
+        },
+    )
+
+
 def _build_edges(
     *,
+    memory_scope_id: str,
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
     episodes: list[MemoryEpisode],
     chunks: list[MemoryChunk],
+    anchors: list[MemoryAnchor],
     relations: list[MemoryFactRelation],
+    anchor_relations: list[ProjectedAnchorRelation],
 ) -> list[GraphExportEdge]:
     edges: list[GraphExportEdge] = []
-    memory_scope_id = _memory_scope_id_for_edges(
-        facts=facts,
-        documents=documents,
-        episodes=episodes,
-        chunks=chunks,
-    )
     if memory_scope_id:
         edges.extend(
             _scope_edges(
@@ -359,6 +431,7 @@ def _build_edges(
                 facts=facts,
                 documents=documents,
                 episodes=episodes,
+                anchors=anchors,
             )
         )
     edges.extend(_parent_chunk_edges(chunks))
@@ -366,25 +439,8 @@ def _build_edges(
         _fact_evidence_edges(facts=facts, documents=documents, episodes=episodes, chunks=chunks)
     )
     edges.extend(_fact_relation_edges(relations))
+    edges.extend(_anchor_relation_edges(anchor_relations))
     return edges
-
-
-def _memory_scope_id_for_edges(
-    *,
-    facts: list[MemoryFact],
-    documents: list[MemoryDocument],
-    episodes: list[MemoryEpisode],
-    chunks: list[MemoryChunk],
-) -> str | None:
-    if facts:
-        return str(facts[0].memory_scope_id)
-    if documents:
-        return str(documents[0].memory_scope_id)
-    if episodes:
-        return str(episodes[0].memory_scope_id)
-    if chunks:
-        return str(chunks[0].memory_scope_id)
-    return None
 
 
 def _fact_relation_edges(relations: list[MemoryFactRelation]) -> list[GraphExportEdge]:
@@ -413,6 +469,7 @@ def _scope_edges(
     facts: list[MemoryFact],
     documents: list[MemoryDocument],
     episodes: list[MemoryEpisode],
+    anchors: list[MemoryAnchor],
 ) -> list[GraphExportEdge]:
     edges = [
         _edge(
@@ -444,7 +501,40 @@ def _scope_edges(
         )
         for episode in episodes
     )
+    edges.extend(
+        _edge(
+            edge_id=f"memory_scope:{memory_scope_id}->anchor:{anchor.id}",
+            edge_type="contains_anchor",
+            source=f"memory_scope:{memory_scope_id}",
+            target=f"anchor:{anchor.id}",
+            label="contains anchor",
+        )
+        for anchor in anchors
+    )
     return edges
+
+
+def _anchor_relation_edges(
+    relations: list[ProjectedAnchorRelation],
+) -> list[GraphExportEdge]:
+    return [
+        GraphExportEdge(
+            id=relation.id,
+            type=relation.relation_type,
+            source=f"anchor:{relation.source_anchor.id}",
+            target=f"anchor:{relation.target_anchor.id}",
+            label=relation.relation_type.replace("_", " "),
+            data={
+                "id": relation.id,
+                "relation_type": relation.relation_type,
+                "relation_key": relation.relation_key,
+                "confidence": relation.confidence,
+                "reason": relation.reason,
+                "metadata": _safe_graph_metadata(relation.metadata),
+            },
+        )
+        for relation in relations
+    ]
 
 
 def _parent_chunk_edges(chunks: list[MemoryChunk]) -> list[GraphExportEdge]:
@@ -564,6 +654,27 @@ def _source_ref_data(ref: SourceRef) -> dict[str, object]:
         "time_end_ms": ref.time_end_ms,
         "bbox": list(ref.bbox) if ref.bbox is not None else None,
     }
+
+
+def _safe_graph_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
+    safe: dict[str, object] = {}
+    for key, value in metadata.items():
+        lowered = key.lower()
+        if any(marker in lowered for marker in ("secret", "token", "api_key", "password")):
+            continue
+        if isinstance(value, str):
+            safe[key] = value[:500]
+        elif isinstance(value, int | float | bool):
+            safe[key] = value
+        elif value is None:
+            safe[key] = None
+        elif isinstance(value, list | tuple):
+            safe[key] = [
+                item[:240] if isinstance(item, str) else item
+                for item in value[:20]
+                if isinstance(item, str | int | float | bool)
+            ]
+    return safe
 
 
 def _preview(value: str) -> str:

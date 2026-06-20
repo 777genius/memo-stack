@@ -100,11 +100,33 @@ def test_context_expands_event_anchor_to_related_person_and_project(
             },
             headers=_auth_headers(),
         )
+        relations = client.get(
+            "/v1/anchors/relations",
+            params={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+            },
+            headers=_auth_headers(),
+        )
         context = asyncio.run(_build_context(client, query="last week meeting"))
 
     assert person.status_code == 200, person.text
     assert project.status_code == 200, project.text
     assert event.status_code == 200, event.text
+    assert relations.status_code == 200, relations.text
+    relation_payload = relations.json()["data"]
+    assert relation_payload["diagnostics"]["schema_version"] == "anchor-relations-v1"
+    assert relation_payload["diagnostics"]["relations_returned"] == 2
+    assert {item["relation_type"] for item in relation_payload["relations"]} == {
+        "event_participant",
+        "event_project",
+    }
+    assert {
+        item["source_anchor_id"] for item in relation_payload["relations"]
+    } == {event.json()["data"]["id"]}
+    assert {
+        item["target_anchor"]["label"] for item in relation_payload["relations"]
+    } == {"Alex", "Project Atlas"}
     anchor_texts = tuple(item.text for item in context.items if item.item_type == "anchor")
     assert any("event: Launch review" in text for text in anchor_texts)
     assert any("person: Alex" in text for text in anchor_texts)

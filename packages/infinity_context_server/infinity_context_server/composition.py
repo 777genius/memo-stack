@@ -62,6 +62,7 @@ from infinity_context_core.application import (
     IngestDocumentUseCase,
     IngestEpisodeUseCase,
     LinkFactsUseCase,
+    ListAnchorRelationsUseCase,
     ListAnchorsUseCase,
     ListAssetExtractionsUseCase,
     ListAssetsUseCase,
@@ -194,6 +195,7 @@ class Container:
     update_anchor: UpdateAnchorUseCase
     delete_anchor: DeleteAnchorUseCase
     list_anchors: ListAnchorsUseCase
+    list_anchor_relations: ListAnchorRelationsUseCase
     suggest_anchor_merges: SuggestAnchorMergesUseCase
     merge_anchors: MergeAnchorsUseCase
     split_anchor: SplitAnchorUseCase
@@ -459,6 +461,7 @@ def build_container(settings: Settings | None = None) -> Container:
     update_anchor = UpdateAnchorUseCase(uow_factory=uow_factory, clock=clock)
     delete_anchor = DeleteAnchorUseCase(uow_factory=uow_factory, clock=clock)
     list_anchors = ListAnchorsUseCase(uow_factory=uow_factory)
+    list_anchor_relations = ListAnchorRelationsUseCase(uow_factory=uow_factory)
     suggest_anchor_merges = SuggestAnchorMergesUseCase(uow_factory=uow_factory)
     merge_anchors = MergeAnchorsUseCase(uow_factory=uow_factory, clock=clock)
     split_anchor = SplitAnchorUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
@@ -617,6 +620,7 @@ def build_container(settings: Settings | None = None) -> Container:
         update_anchor=update_anchor,
         delete_anchor=delete_anchor,
         list_anchors=list_anchors,
+        list_anchor_relations=list_anchor_relations,
         suggest_anchor_merges=suggest_anchor_merges,
         merge_anchors=merge_anchors,
         split_anchor=split_anchor,

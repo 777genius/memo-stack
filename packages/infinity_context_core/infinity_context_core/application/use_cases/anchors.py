@@ -17,6 +17,9 @@ from infinity_context_core.application.anchor_identity_normalization import (
     normalize_cyrillic_person_case,
     normalize_cyrillic_project_case,
 )
+from infinity_context_core.application.anchor_relation_projection import (
+    project_event_anchor_relations,
+)
 from infinity_context_core.application.anchor_temporal_window import (
     temporal_window_for_observed_anchor,
     temporal_window_metadata,
@@ -26,12 +29,15 @@ from infinity_context_core.application.dto import (
     AnchorMergeCandidate,
     AnchorMergeSuggestionsQuery,
     AnchorMergeSuggestionsResult,
+    AnchorRelationItem,
+    AnchorRelationsResult,
     AnchorResult,
     AnchorsResult,
     BackfillAnchorsCommand,
     BackfillAnchorsResult,
     CreateAnchorCommand,
     DeleteAnchorCommand,
+    ListAnchorRelationsQuery,
     ListAnchorsQuery,
     MergeAnchorsCommand,
     SplitAnchorCommand,
@@ -70,6 +76,7 @@ from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort, Unit
 
 _ANCHOR_RESOLVER_VERSION = "anchor-lifecycle-v2"
 _LABEL_SIMILARITY_MERGE_THRESHOLD = 0.86
+_ANCHOR_RELATION_SCHEMA_VERSION = "anchor-relations-v1"
 
 
 @dataclass(frozen=True)
@@ -77,6 +84,21 @@ class _ObservedAnchorUpsertResult:
     anchor: MemoryAnchor | None
     created: bool = False
     skipped_reason: str | None = None
+
+
+def _anchor_relation_diagnostics(
+    *,
+    anchors_considered: int,
+    anchors_truncated: bool,
+    relations_returned: int,
+) -> dict[str, object]:
+    return {
+        "schema_version": _ANCHOR_RELATION_SCHEMA_VERSION,
+        "relation_projection": "event_metadata_identity",
+        "anchors_considered": anchors_considered,
+        "anchors_truncated": anchors_truncated,
+        "relations_returned": relations_returned,
+    }
 
 
 class ListAnchorsUseCase:
@@ -93,6 +115,57 @@ class ListAnchorsUseCase:
                 limit=query.limit,
             )
         return AnchorsResult(anchors=tuple(anchors))
+
+
+class ListAnchorRelationsUseCase:
+    def __init__(self, *, uow_factory: UnitOfWorkFactoryPort) -> None:
+        self._uow_factory = uow_factory
+
+    async def execute(self, query: ListAnchorRelationsQuery) -> AnchorRelationsResult:
+        anchor_limit = max(1, min(query.anchor_limit, 1_000))
+        relation_limit = max(0, min(query.limit, 500))
+        if relation_limit == 0:
+            return AnchorRelationsResult(
+                relations=(),
+                diagnostics=_anchor_relation_diagnostics(
+                    anchors_considered=0,
+                    anchors_truncated=False,
+                    relations_returned=0,
+                ),
+            )
+        async with self._uow_factory() as uow:
+            anchors = await uow.anchors.list_for_scope(
+                space_id=str(query.space_id),
+                memory_scope_id=str(query.memory_scope_id),
+                kind=None,
+                status=query.status,
+                limit=anchor_limit + 1,
+            )
+        bounded_anchors = tuple(anchors[:anchor_limit])
+        projected = project_event_anchor_relations(
+            bounded_anchors,
+            limit=relation_limit,
+        )
+        return AnchorRelationsResult(
+            relations=tuple(
+                AnchorRelationItem(
+                    id=relation.id,
+                    source_anchor=relation.source_anchor,
+                    target_anchor=relation.target_anchor,
+                    relation_type=relation.relation_type,
+                    relation_key=relation.relation_key,
+                    confidence=relation.confidence,
+                    reason=relation.reason,
+                    metadata=relation.metadata,
+                )
+                for relation in projected
+            ),
+            diagnostics=_anchor_relation_diagnostics(
+                anchors_considered=len(bounded_anchors),
+                anchors_truncated=len(anchors) > anchor_limit,
+                relations_returned=len(projected),
+            ),
+        )
 
 
 class CreateAnchorUseCase:

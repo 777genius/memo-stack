@@ -421,6 +421,33 @@ class AnchorsResult:
 
 
 @dataclass(frozen=True)
+class AnchorRelationItem:
+    id: str
+    source_anchor: MemoryAnchor
+    target_anchor: MemoryAnchor
+    relation_type: str
+    relation_key: str
+    confidence: str
+    reason: str
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ListAnchorRelationsQuery:
+    space_id: SpaceId
+    memory_scope_id: MemoryScopeId
+    status: str | None = "active"
+    limit: int = 100
+    anchor_limit: int = 500
+
+
+@dataclass(frozen=True)
+class AnchorRelationsResult:
+    relations: tuple[AnchorRelationItem, ...]
+    diagnostics: dict[str, object]
+
+
+@dataclass(frozen=True)
 class AnchorMergeCandidate:
     source_anchor: MemoryAnchor
     target_anchor: MemoryAnchor
@@ -881,6 +908,7 @@ class ExportGraphQuery:
     max_documents: int
     max_episodes: int
     max_chunks: int
+    max_anchors: int = 100
 
 
 @dataclass(frozen=True)
