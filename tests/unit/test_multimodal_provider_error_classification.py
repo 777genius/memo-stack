@@ -31,21 +31,23 @@ class _ProviderError(Exception):
 
 
 class _Transcriptions:
-    def __init__(self, exc: Exception) -> None:
-        self._exc = exc
+    def __init__(self, response_or_exc: object) -> None:
+        self._response_or_exc = response_or_exc
 
     async def create(self, **_kwargs: Any) -> object:
-        raise self._exc
+        if isinstance(self._response_or_exc, Exception):
+            raise self._response_or_exc
+        return self._response_or_exc
 
 
 class _Audio:
-    def __init__(self, exc: Exception) -> None:
-        self.transcriptions = _Transcriptions(exc)
+    def __init__(self, response_or_exc: object) -> None:
+        self.transcriptions = _Transcriptions(response_or_exc)
 
 
 class _TranscriptionClient:
-    def __init__(self, exc: Exception) -> None:
-        self.audio = _Audio(exc)
+    def __init__(self, response_or_exc: object) -> None:
+        self.audio = _Audio(response_or_exc)
 
     async def aclose(self) -> None:
         return None
@@ -146,28 +148,28 @@ def test_openai_transcription_adapter_classifies_provider_quota_as_permanent() -
     assert raw_secret not in json.dumps(result.diagnostics)
 
 
-def test_openai_transcription_adapter_rejects_unsupported_flac_and_ogg_types() -> None:
+def test_openai_transcription_adapter_accepts_current_flac_and_ogg_types() -> None:
     adapter = OpenAISpeechTranscriptionAdapter(
         api_key="test-key",
         model="gpt-4o-mini-transcribe",
-        client_factory=lambda: _TranscriptionClient(
-            _ProviderError(status_code=503, code="unavailable")
-        ),
+        client_factory=lambda: _TranscriptionClient({"text": "hello audio"}),
     )
 
-    for content_type in ("audio/flac", "audio/ogg"):
+    for content_type, filename in (
+        ("audio/flac", "voice.flac"),
+        ("audio/ogg", "voice.ogg"),
+    ):
         result = asyncio.run(
-            adapter.transcribe(replace(_speech_request(), content_type=content_type))
+            adapter.transcribe(
+                replace(_speech_request(), content_type=content_type, filename=filename)
+            )
         )
 
-        assert result.status == "unsupported"
-        assert (
-            result.safe_error_code
-            == "asset_extraction.transcription_unsupported_content_type"
-        )
+        assert result.status == "succeeded"
+        assert result.text == "hello audio"
 
-    assert ".flac" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
-    assert ".ogg" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".flac" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".ogg" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
 
 
 def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:

@@ -86,11 +86,13 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             "timestamp_granularities": [],
         },
         "supported_file_types": [
+            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
+            ".ogg",
             ".wav",
             ".webm",
         ],
@@ -405,6 +407,14 @@ def test_multimodal_live_provider_canary_can_skip_auto_invalid_key_probe() -> No
     )
 
 
+def test_multimodal_live_provider_canary_requires_invalid_key_probe_by_default() -> None:
+    module = _load_canary_module()
+    args = module._parse_args([])
+
+    assert module._invalid_key_probe_mode(args, has_provider_key=False) == "auto_no_key"
+    assert module._invalid_key_probe_mode(args, has_provider_key=True) == "auto_with_key"
+
+
 def test_multimodal_live_provider_canary_explicit_invalid_key_probe_overrides_skip() -> None:
     module = _load_canary_module()
     args = module._parse_args(["--probe-invalid-key", "--skip-invalid-key-probe"])
@@ -683,8 +693,10 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
     module = _load_canary_module()
     valid = tmp_path / "fixture.wav"
     valid.write_bytes(_valid_wav_bytes())
-    unsupported_ogg = tmp_path / "fixture.ogg"
-    unsupported_ogg.write_bytes(b"OggS" + b"\0" * 32)
+    valid_ogg = tmp_path / "fixture.ogg"
+    valid_ogg.write_bytes(_valid_ogg_bytes())
+    valid_flac = tmp_path / "fixture.flac"
+    valid_flac.write_bytes(_valid_flac_bytes())
     unsupported = tmp_path / "fixture.aac"
     unsupported.write_bytes(b"ADTS")
     mismatch = tmp_path / "mismatch.wav"
@@ -694,23 +706,8 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
         handle.truncate(module.OPENAI_AUDIO_MAX_UPLOAD_BYTES + 1)
 
     assert module._audio_fixture_contract_check(valid) == {"status": "succeeded"}
-    assert module._audio_fixture_contract_check(unsupported_ogg) == {
-        "filename_suffix": ".ogg",
-        "message": "Audio fixture type is not supported by OpenAI transcription upload",
-        "operator_action": "replace_audio_fixture",
-        "reason": "audio_fixture_unsupported_type",
-        "status": "degraded",
-        "supported_file_types": [
-            ".m4a",
-            ".mp3",
-            ".mp4",
-            ".mpeg",
-            ".mpga",
-            ".wav",
-            ".webm",
-        ],
-        "user_retryable": False,
-    }
+    assert module._audio_fixture_contract_check(valid_ogg) == {"status": "succeeded"}
+    assert module._audio_fixture_contract_check(valid_flac) == {"status": "succeeded"}
     assert module._audio_fixture_contract_check(mismatch) == {
         "content_type": "audio/wav",
         "filename_suffix": ".wav",
@@ -727,11 +724,13 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
         "reason": "audio_fixture_unsupported_type",
         "status": "degraded",
         "supported_file_types": [
+            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
+            ".ogg",
             ".wav",
             ".webm",
         ],
@@ -931,3 +930,11 @@ def _valid_wav_bytes() -> bytes:
 
 def _valid_mp3_bytes() -> bytes:
     return b"ID3\x04\x00\x00\x00\x00\x00\x15TIT2\x00\x00\x00\x0b\x00\x00canary mp3"
+
+
+def _valid_ogg_bytes() -> bytes:
+    return b"OggS\x00\x02audio"
+
+
+def _valid_flac_bytes() -> bytes:
+    return b"fLaC\x00\x00\x00\x22"

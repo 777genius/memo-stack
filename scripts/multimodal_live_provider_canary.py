@@ -61,11 +61,13 @@ SECRET_VALUE_PATTERNS = (
 )
 
 _CONTENT_TYPES_BY_SUFFIX = {
+    ".flac": "audio/flac",
     ".m4a": "audio/m4a",
     ".mp3": "audio/mpeg",
     ".mp4": "video/mp4",
     ".mpeg": "audio/mpeg",
     ".mpga": "audio/mpga",
+    ".ogg": "audio/ogg",
     ".wav": "audio/wav",
     ".webm": "audio/webm",
 }
@@ -147,7 +149,11 @@ async def run_multimodal_live_provider_canary(
     transcription = await _run_transcription(api_key=api_key, args=args)
     report["components"]["vision"] = vision
     report["components"]["transcription"] = transcription
-    report["ok"] = vision["status"] == "succeeded" and transcription["status"] == "succeeded"
+    report["ok"] = (
+        vision["status"] == "succeeded"
+        and transcription["status"] == "succeeded"
+        and report["components"]["invalid_key_probe"]["status"] == "succeeded"
+    )
     _finalize_report(report)
     return report
 
@@ -440,8 +446,11 @@ def _invalid_key_probe_mode(
 ) -> str | None:
     if args.probe_invalid_key:
         return "explicit"
-    if not has_provider_key and not args.skip_invalid_key_probe:
-        return "auto_no_key"
+    if args.skip_invalid_key_probe:
+        return None
+    if has_provider_key:
+        return "auto_with_key"
+    return "auto_no_key"
     return None
 
 
@@ -1585,6 +1594,10 @@ def _audio_fixture_magic_check(*, path: Path, content_type: str) -> dict[str, ob
 
 
 def _audio_magic_matches(*, content_type: str, head: bytes) -> bool:
+    if content_type == "audio/flac":
+        return head.startswith(b"fLaC")
+    if content_type == "audio/ogg":
+        return head.startswith(b"OggS")
     if content_type == "audio/wav":
         return len(head) >= 12 and head.startswith(b"RIFF") and head[8:12] == b"WAVE"
     if content_type in {"audio/mpeg", "audio/mpga"}:

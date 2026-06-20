@@ -168,6 +168,10 @@ class ContextBundleDiagnostics:
     superseded_facts_used: int = 0
     temporal_relations_considered: int = 0
     temporal_contradictions_considered: int = 0
+    linked_temporal_relations_considered: int = 0
+    linked_temporal_replacements_applied: int = 0
+    linked_temporal_contradictions_considered: int = 0
+    linked_temporal_relations_skipped_by_validity: int = 0
     pending_conflict_suggestions_considered: int = 0
     pending_duplicate_merge_suggestions_considered: int = 0
     approved_context_links_considered: int = 0
@@ -508,6 +512,18 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         temporal_relations_considered=_non_negative_int(raw.get("temporal_relations_considered")),
         temporal_contradictions_considered=_non_negative_int(
             raw.get("temporal_contradictions_considered")
+        ),
+        linked_temporal_relations_considered=_non_negative_int(
+            raw.get("linked_temporal_relations_considered")
+        ),
+        linked_temporal_replacements_applied=_non_negative_int(
+            raw.get("linked_temporal_replacements_applied")
+        ),
+        linked_temporal_contradictions_considered=_non_negative_int(
+            raw.get("linked_temporal_contradictions_considered")
+        ),
+        linked_temporal_relations_skipped_by_validity=_non_negative_int(
+            raw.get("linked_temporal_relations_skipped_by_validity")
         ),
         pending_conflict_suggestions_considered=_non_negative_int(
             raw.get("pending_conflict_suggestions_considered")
