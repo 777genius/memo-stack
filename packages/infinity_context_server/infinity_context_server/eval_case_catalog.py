@@ -407,6 +407,30 @@ def _quality_golden_cases(
                 ("pending_conflict_suggestions_considered", "eq", 0),
                 ("pending_duplicate_merge_suggestions_considered", "eq", 1),
             ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "suggestion"),
+                    (
+                        "diagnostics.retrieval_source",
+                        "eq",
+                        "pending_duplicate_merge_suggestion",
+                    ),
+                    ("diagnostics.review_risk", "eq", "medium"),
+                    ("diagnostics.review_recommendation_confidence", "eq", "medium"),
+                    (
+                        "diagnostics.review_recommended_resolution_action",
+                        "eq",
+                        "merge_source_refs",
+                    ),
+                    ("diagnostics.review_requires_review", "eq", True),
+                    ("diagnostics.review_auto_merge_eligible", "eq", False),
+                    (
+                        "diagnostics.review_recommendation_reason_codes",
+                        "contains",
+                        "human_review_required",
+                    ),
+                ),
+            ),
         ),
         EvalCase(
             case_id="canonical_project_anchor_recall_with_citation",
