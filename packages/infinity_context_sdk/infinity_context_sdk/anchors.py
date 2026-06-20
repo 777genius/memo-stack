@@ -84,6 +84,37 @@ class InfinityContextAnchorsMixin:
             ),
         )
 
+    def list_anchor_relations(
+        self,
+        *,
+        space_id: str | None = None,
+        memory_scope_id: str | None = None,
+        space_slug: str | None = None,
+        memory_scope_external_ref: str | None = None,
+        status: str | None = "active",
+        limit: int = 100,
+        anchor_limit: int = 500,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/v1/anchors/relations",
+            params=_payloads.without_none(
+                {
+                    **_payloads.single_scope_body(
+                        space_id=space_id,
+                        memory_scope_id=memory_scope_id,
+                        thread_id=None,
+                        space_slug=space_slug,
+                        memory_scope_external_ref=memory_scope_external_ref,
+                        thread_external_ref=None,
+                    ),
+                    "status": status,
+                    "limit": limit,
+                    "anchor_limit": anchor_limit,
+                }
+            ),
+        )
+
     def update_anchor(
         self,
         anchor_id: str,

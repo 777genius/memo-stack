@@ -2626,6 +2626,13 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
         status="active",
         limit=25,
     )
+    client.list_anchor_relations(
+        space_slug="client-app",
+        memory_scope_external_ref="default",
+        status="active",
+        limit=15,
+        anchor_limit=120,
+    )
     client.update_anchor(
         "anchor_target",
         label="Alexander",
@@ -2650,6 +2657,7 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
     assert [f"{method} {path}" for method, path, _params, _body in seen] == [
         "POST /v1/anchors",
         "GET /v1/anchors",
+        "GET /v1/anchors/relations",
         "PATCH /v1/anchors/anchor_target",
         "DELETE /v1/anchors/anchor_obsolete",
         "POST /v1/anchors/backfill",
@@ -2675,31 +2683,38 @@ def test_sdk_supports_anchor_lifecycle_contract() -> None:
         "status": "active",
         "limit": "25",
     }
-    assert seen[2][3] == {
+    assert seen[2][2] == {
+        "space_slug": "client-app",
+        "memory_scope_external_ref": "default",
+        "status": "active",
+        "limit": "15",
+        "anchor_limit": "120",
+    }
+    assert seen[3][3] == {
         "label": "Alexander",
         "aliases": ["Alex"],
         "description": "Edited person anchor.",
         "metadata": {},
     }
     for optional_key in ("confidence", "evidence_refs", "observed_at", "valid_from", "valid_to"):
-        assert optional_key not in seen[2][3]
-    assert seen[3][3] == {"reason": "obsolete anchor"}
-    assert seen[4][3] == {
+        assert optional_key not in seen[3][3]
+    assert seen[4][3] == {"reason": "obsolete anchor"}
+    assert seen[5][3] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
         "limit_per_source": 20,
     }
-    assert seen[5][2] == {
+    assert seen[6][2] == {
         "space_slug": "client-app",
         "memory_scope_external_ref": "default",
         "kind": "person",
         "limit": "10",
     }
-    assert seen[6][3] == {
+    assert seen[7][3] == {
         "target_anchor_id": "anchor_target",
         "reason": "same person",
     }
-    assert seen[7][3] == {
+    assert seen[8][3] == {
         "alias": "Alex",
         "new_label": "Alexander",
         "reason": "split alias",
