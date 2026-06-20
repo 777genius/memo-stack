@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SUITE = "infinity-context-frontend-marionette-local-e2e"
+DEFAULT_REPORT_OUT = ".e2e-artifacts/frontend-marionette-local-e2e.json"
 MAX_RUNTIME_LOG_MARKERS = 12
 MAX_RUNTIME_LOG_SNIPPET_CHARS = 240
 DEGRADED_EXIT_CODE = 2
@@ -211,7 +212,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--keep-temp", action="store_true")
     parser.add_argument(
         "--report-out",
-        default=os.environ.get("MEMORY_FRONTEND_MARIONETTE_REPORT_OUT"),
+        default=os.environ.get("MEMORY_FRONTEND_MARIONETTE_REPORT_OUT", DEFAULT_REPORT_OUT),
         help="Optional path for the JSON local Marionette proof report.",
     )
     return parser.parse_args()

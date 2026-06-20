@@ -163,6 +163,20 @@ def test_frontend_marionette_local_e2e_report_contract(tmp_path: Path) -> None:
     assert "OPENAI_API_KEY" not in rendered
 
 
+def test_frontend_marionette_local_e2e_default_report_matches_goal_audit(
+    monkeypatch,
+) -> None:
+    module = _load_frontend_marionette_local_e2e(
+        ROOT / "scripts" / "frontend_marionette_local_e2e.py"
+    )
+    monkeypatch.delenv("MEMORY_FRONTEND_MARIONETTE_REPORT_OUT", raising=False)
+    monkeypatch.setattr(sys, "argv", ["frontend_marionette_local_e2e.py"])
+
+    args = module._parse_args()
+
+    assert args.report_out == ".e2e-artifacts/frontend-marionette-local-e2e.json"
+
+
 def test_frontend_marionette_local_e2e_reports_missing_flutter_runtime(
     tmp_path: Path,
     monkeypatch,
