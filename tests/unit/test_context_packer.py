@@ -633,6 +633,40 @@ def test_context_packer_renders_bounded_retrieval_metadata_without_secret_leaks(
     assert "Bearer" not in rendered
 
 
+def test_context_packer_redacts_sensitive_source_ref_identities() -> None:
+    secret = "sk-proj-sourceidentitysecret1234567890"
+    result = ContextPacker().pack(
+        bundle_id="ctx_sensitive_source_identity",
+        items=(
+            ContextItem(
+                item_id="chunk_sensitive_source",
+                item_type="chunk",
+                text="Safe memory text should keep rendering.",
+                score=1.0,
+                source_refs=(
+                    SourceRef(
+                        source_type="document",
+                        source_id="https://user:password@example.com/private",
+                        chunk_id=f"chunk-{secret}",
+                        quote_preview="Safe quoted evidence.",
+                    ),
+                ),
+                diagnostics={"memory_scope_id": "memory_scope_default"},
+            ),
+        ),
+        token_budget=512,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "Safe memory text should keep rendering." in rendered
+    assert "Safe quoted evidence." in rendered
+    assert "https://[redacted]@example.com/private" in rendered
+    assert secret not in rendered
+    assert "user:password" not in rendered
+    assert "sk-proj-sourceidentitysecret" not in rendered
+    assert result.bundle.diagnostics["sensitive_source_identity_parts_redacted"] == 2
+
+
 def test_context_packer_bounds_non_finite_scores_in_rendered_metadata() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_non_finite_score",

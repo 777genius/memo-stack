@@ -11,7 +11,10 @@ from infinity_context_core.application.context_diagnostics import (
 )
 from infinity_context_core.application.dto import ContextBundle, ContextItem
 from infinity_context_core.application.normalize import estimate_tokens
-from infinity_context_core.application.sensitive_text import redact_sensitive_text
+from infinity_context_core.application.sensitive_text import (
+    contains_sensitive_text,
+    redact_sensitive_text,
+)
 from infinity_context_core.domain.entities import SourceRef
 
 _MAX_ITEMS_PER_SOURCE = 4
@@ -173,6 +176,9 @@ class ContextPacker:
                     ),
                     "sensitive_citation_quote_previews_skipped": (
                         sum(_sensitive_citation_quote_skip_count(item) for item in selected)
+                    ),
+                    "sensitive_source_identity_parts_redacted": (
+                        sum(_sensitive_source_identity_part_count(item) for item in selected)
                     ),
                     "sensitive_item_text_redacted": len(selected_keys & redacted_item_keys),
                     "rendered_chars": len(rendered_text),
@@ -444,8 +450,15 @@ def _source_label(item: ContextItem) -> str:
         return "unknown:unknown"
     ref = item.source_refs[0]
     if ref.chunk_id:
-        return f"{ref.source_type}:{ref.source_id}#{ref.chunk_id}"
-    return f"{ref.source_type}:{ref.source_id}"
+        return (
+            f"{_safe_source_identity_part(ref.source_type)}:"
+            f"{_safe_source_identity_part(ref.source_id)}"
+            f"#{_safe_source_identity_part(ref.chunk_id)}"
+        )
+    return (
+        f"{_safe_source_identity_part(ref.source_type)}:"
+        f"{_safe_source_identity_part(ref.source_id)}"
+    )
 
 
 def _rendered_metadata_part(item: ContextItem) -> str:
@@ -545,8 +558,33 @@ def _sensitive_citation_quote_skip_count(item: ContextItem) -> int:
 
 def _source_ref_identity(ref: SourceRef) -> str:
     if ref.chunk_id:
-        return f"{ref.source_type}:{ref.source_id}#{ref.chunk_id}"
-    return f"{ref.source_type}:{ref.source_id}"
+        return (
+            f"{_safe_source_identity_part(ref.source_type)}:"
+            f"{_safe_source_identity_part(ref.source_id)}"
+            f"#{_safe_source_identity_part(ref.chunk_id)}"
+        )
+    return (
+        f"{_safe_source_identity_part(ref.source_type)}:"
+        f"{_safe_source_identity_part(ref.source_id)}"
+    )
+
+
+def _safe_source_identity_part(value: str | None) -> str:
+    text = _one_line(str(value or "unknown"))
+    redacted = redact_sensitive_text(text)
+    return redacted[:240] or "unknown"
+
+
+def _sensitive_source_identity_part_count(item: ContextItem) -> int:
+    return sum(_source_ref_sensitive_part_count(ref) for ref in item.source_refs[:3])
+
+
+def _source_ref_sensitive_part_count(ref: SourceRef) -> int:
+    return sum(
+        1
+        for value in (ref.source_type, ref.source_id, ref.chunk_id)
+        if contains_sensitive_text(value)
+    )
 
 
 def _source_ref_location(ref: SourceRef) -> str:

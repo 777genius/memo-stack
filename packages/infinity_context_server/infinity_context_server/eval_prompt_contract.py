@@ -8,6 +8,7 @@ from pathlib import Path
 
 from infinity_context_core.application.context_packer import ContextPacker
 from infinity_context_core.application.dto import ContextItem
+from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.domain.entities import SourceRef
 
 from infinity_context_server.eval_common import (
@@ -196,6 +197,30 @@ def _prompt_snapshot_cases() -> tuple[PromptSnapshotCase, ...]:
             diagnostics={"prompt_injection_promoted_count": 0},
         ),
         PromptSnapshotCase(
+            case_id="sensitive_source_identity_redacted",
+            items=(
+                ContextItem(
+                    item_id="chunk_sensitive_source_identity",
+                    item_type="chunk",
+                    text="Source identity secrets must not leak into rendered memory.",
+                    score=0.91,
+                    source_refs=(
+                        SourceRef(
+                            source_type="document",
+                            source_id="https://user:password@example.test/private",
+                            chunk_id="chunk-sk-proj-sourceidentitysecret1234567890",
+                            quote_preview="Source identity redaction evidence.",
+                        ),
+                    ),
+                    diagnostics={
+                        "memory_scope_id": "memory_scope_alpha",
+                        "retrieval_source": "snapshot_chunk",
+                    },
+                ),
+            ),
+            diagnostics={"source_identity_contract": "redact_sensitive_parts"},
+        ),
+        PromptSnapshotCase(
             case_id="instruction_flag_dropped",
             items=(
                 _fact(
@@ -337,13 +362,23 @@ def _snapshot_item(item: ContextItem) -> dict[str, object]:
         "retrieval_source": str(diagnostics.get("retrieval_source") or "unknown"),
         "source_refs": [
             {
-                "source_type": ref.source_type,
-                "source_id": ref.source_id,
-                "chunk_id": ref.chunk_id,
+                "source_type": _snapshot_safe_text(ref.source_type),
+                "source_id": _snapshot_safe_text(ref.source_id),
+                "chunk_id": _snapshot_safe_optional_text(ref.chunk_id),
             }
             for ref in item.source_refs
         ],
     }
+
+
+def _snapshot_safe_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _snapshot_safe_text(value)
+
+
+def _snapshot_safe_text(value: str) -> str:
+    return redact_sensitive_text(value)[:240]
 
 
 def _snapshot_path(snapshot_dir: Path | None) -> Path:
