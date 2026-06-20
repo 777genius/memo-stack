@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from infinity_context_core.application.safe_payload import safe_metadata, safe_metadata_text
@@ -21,4 +22,6 @@ def safe_public_reason(value: str, *, limit: int = 500) -> str:
 
 
 def safe_public_metadata(metadata: Any, *, max_items: int = _MAX_DICT_ITEMS) -> dict[str, Any]:
+    if isinstance(metadata, Mapping):
+        metadata = dict(metadata)
     return safe_metadata(metadata, max_items=max_items)

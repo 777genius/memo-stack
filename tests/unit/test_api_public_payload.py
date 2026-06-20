@@ -7,11 +7,15 @@ from types import SimpleNamespace
 from infinity_context_core.domain.entities import SourceRef
 from infinity_context_server.api.public_payload import safe_public_metadata
 from infinity_context_server.api.v1.anchors import anchor_to_response
-from infinity_context_server.api.v1.context import context_item_to_response
+from infinity_context_server.api.v1.context import (
+    _context_diagnostics_to_response,
+    context_item_to_response,
+)
 from infinity_context_server.api.v1.context_links import (
     context_link_suggestion_to_response,
     context_link_to_response,
 )
+from infinity_context_server.api.v1.digest import digest_to_response
 from infinity_context_server.api.v1.documents import chunk_to_response
 from infinity_context_server.api.v1.facts import fact_relation_to_response, fact_to_response
 from infinity_context_server.api.v1.suggestions import suggestion_to_response
@@ -137,7 +141,12 @@ def test_browser_serializers_redact_metadata_and_quote_previews() -> None:
         SimpleNamespace(
             item_id="chunk_1",
             item_type="chunk",
-            diagnostics={},
+            diagnostics={
+                "retrieval_source": "vector_chunks",
+                "api_key": raw_secret,
+                "debug": f"Authorization: Bearer {raw_secret}",
+                "provenance": {"token": raw_secret, "provider": "local-test"},
+            },
             text="safe chunk text",
             score=1.0,
             source_refs=[
@@ -170,6 +179,8 @@ def test_browser_serializers_redact_metadata_and_quote_previews() -> None:
     assert "[redacted]" in anchor["evidence_refs"][0]["quote_preview"]
     assert "[redacted]" in chunk["source_refs"][0]["quote_preview"]
     assert "[redacted]" in context_item["source_refs"][0]["quote_preview"]
+    assert "api_key" not in context_item["diagnostics"]
+    assert "token" not in context_item["diagnostics"]["provenance"]
 
 
 def test_context_link_suggestion_review_audit_is_bounded_and_redacted() -> None:
@@ -238,6 +249,93 @@ def test_context_link_suggestion_review_audit_is_bounded_and_redacted() -> None:
     assert response["review_audit"]["events"][0]["approved_link_reason"] == "[redacted]"
     assert "authorization" not in response["review_audit"]["events"][0]
     assert "api_key" not in response["metadata"]
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
+
+
+def test_digest_serializer_redacts_public_topic_markdown_and_diagnostics() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    enum = SimpleNamespace
+
+    response = digest_to_response(
+        SimpleNamespace(
+            digest_id="dig_1",
+            topic=f"Review Bearer {raw_secret}",
+            rendered_markdown=f"# Active facts\n\nLeak Authorization: Bearer {raw_secret}",
+            sections=[
+                SimpleNamespace(
+                    title=f"token {raw_secret}",
+                    items=[
+                        SimpleNamespace(
+                            item_id="fact_1",
+                            item_type="fact",
+                            diagnostics={
+                                "retrieval_source": "postgres_facts",
+                                "authorization": f"Bearer {raw_secret}",
+                            },
+                            text="safe fact",
+                            score=0.9,
+                            source_refs=[
+                                SimpleNamespace(
+                                    source_type="manual",
+                                    source_id="src_1",
+                                    chunk_id=None,
+                                    char_start=None,
+                                    char_end=None,
+                                    quote_preview=f"Bearer {raw_secret}",
+                                )
+                            ],
+                            is_instruction=False,
+                        )
+                    ],
+                    truncated=False,
+                )
+            ],
+            source_refs=[
+                enum(
+                    source_type="manual",
+                    source_id="src_1",
+                    chunk_id=None,
+                    char_start=None,
+                    char_end=None,
+                    quote_preview=f"Bearer {raw_secret}",
+                )
+            ],
+            token_estimate=64,
+            diagnostics={
+                "evidence_only": True,
+                "api_key": raw_secret,
+                "provider_response": f"Bearer {raw_secret}",
+            },
+        )
+    )
+
+    rendered = json.dumps(response, sort_keys=True)
+
+    assert raw_secret not in rendered
+    assert "[redacted]" in rendered
+    assert "api_key" not in response["diagnostics"]
+    assert response["sections"][0]["items"][0]["diagnostics"]["retrieval_source"] == (
+        "postgres_facts"
+    )
+
+
+def test_context_diagnostics_preserve_public_evidence_contract_counters() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    diagnostics = {
+        **{f"safe_counter_{index}": index for index in range(150)},
+        "items_with_evidence_kind": 2,
+        "items_with_evidence_modality": 1,
+        "api_key": raw_secret,
+        "debug": f"Bearer {raw_secret}",
+    }
+
+    response = _context_diagnostics_to_response(diagnostics, items=[], top_evidence=[])
+    rendered = json.dumps(response, sort_keys=True)
+
+    assert response["items_with_evidence_kind"] == 2
+    assert response["items_with_evidence_modality"] == 1
+    assert "api_key" not in response
     assert raw_secret not in rendered
     assert "[redacted]" in rendered
 

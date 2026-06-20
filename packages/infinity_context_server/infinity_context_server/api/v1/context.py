@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import should_retrieve
-from infinity_context_server.api.public_payload import safe_public_text
+from infinity_context_server.api.public_payload import safe_public_metadata, safe_public_text
 from infinity_context_server.api.v1.scope_resolution import (
     resolve_existing_context_scope,
 )
@@ -27,6 +27,7 @@ router = APIRouter(tags=["context"], dependencies=[Depends(require_service_token
 
 _MAX_PUBLIC_CONTEXT_SOURCE_REFS = 20
 _MAX_PUBLIC_TOP_EVIDENCE = 5
+_MAX_PUBLIC_CONTEXT_DIAGNOSTICS = 260
 
 
 class ContextRequest(BaseModel):
@@ -55,7 +56,7 @@ class ContextRequest(BaseModel):
 
 
 def context_item_to_response(item) -> dict[str, Any]:
-    diagnostics = dict(item.diagnostics or {})
+    diagnostics = safe_public_metadata(item.diagnostics)
     source_refs = tuple(item.source_refs)
     public_source_refs = source_refs[:_MAX_PUBLIC_CONTEXT_SOURCE_REFS]
     citations = [
@@ -205,7 +206,10 @@ def _context_diagnostics_to_response(
     items: list[dict[str, Any]],
     top_evidence: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    response = dict(diagnostics)
+    response = safe_public_metadata(
+        diagnostics,
+        max_items=_MAX_PUBLIC_CONTEXT_DIAGNOSTICS,
+    )
     top_evidence_items = top_evidence or []
     item_diagnostics = [
         item.get("diagnostics")

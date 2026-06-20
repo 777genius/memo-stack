@@ -12,12 +12,27 @@ from pydantic import BaseModel, ConfigDict, Field
 from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import should_retrieve
+from infinity_context_server.api.public_payload import safe_public_metadata, safe_public_text
 from infinity_context_server.api.v1.context import context_item_to_response
 from infinity_context_server.api.v1.scope_resolution import resolve_existing_context_scope
 from infinity_context_server.api.v1.source_refs import source_ref_to_response
 from infinity_context_server.composition import Container
 
 router = APIRouter(tags=["digest"], dependencies=[Depends(require_service_token)])
+
+_DIGEST_CONTRACT_DIAGNOSTIC_KEYS = (
+    "evidence_only",
+    "retrieval_disabled",
+    "scope_not_found",
+    "context_items_used",
+    "pending_suggestions_considered",
+    "superseded_facts_considered",
+    "include_pending_suggestions",
+    "include_superseded",
+    "include_related",
+    "dropped_by_char_cap",
+    "truncated",
+)
 
 
 class DigestRequest(BaseModel):
@@ -128,11 +143,11 @@ async def build_digest(
 def digest_to_response(digest: MemoryDigest) -> dict[str, Any]:
     return {
         "digest_id": digest.digest_id,
-        "topic": digest.topic,
-        "rendered_markdown": digest.rendered_markdown,
+        "topic": safe_public_text(digest.topic, limit=500),
+        "rendered_markdown": safe_public_text(digest.rendered_markdown, limit=50000),
         "sections": [
             {
-                "title": section.title,
+                "title": safe_public_text(section.title, limit=240),
                 "items": [context_item_to_response(item) for item in section.items],
                 "truncated": section.truncated,
             }
@@ -140,7 +155,7 @@ def digest_to_response(digest: MemoryDigest) -> dict[str, Any]:
         ],
         "source_refs": [source_ref_to_response(ref) for ref in digest.source_refs],
         "token_estimate": digest.token_estimate,
-        "diagnostics": digest.diagnostics,
+        "diagnostics": _digest_diagnostics_to_response(digest.diagnostics),
     }
 
 
@@ -167,14 +182,27 @@ def _empty_digest_response(
         "meta": {"request_id": request_id},
         "data": {
             "digest_id": "dig_disabled" if not scope_not_found else "dig_scope_not_found",
-            "topic": topic,
+            "topic": safe_public_text(topic, limit=500),
             "rendered_markdown": "",
             "sections": [],
             "source_refs": [],
             "token_estimate": 0,
-            "diagnostics": diagnostics,
+            "diagnostics": _digest_diagnostics_to_response(diagnostics),
         },
     }
+
+
+def _digest_diagnostics_to_response(diagnostics: object) -> dict[str, Any]:
+    response = safe_public_metadata(diagnostics)
+    if not isinstance(diagnostics, dict):
+        return response
+    for key in _DIGEST_CONTRACT_DIAGNOSTIC_KEYS:
+        if key not in diagnostics:
+            continue
+        safe_value = safe_public_metadata({key: diagnostics[key]}, max_items=1)
+        if key in safe_value:
+            response[key] = safe_value[key]
+    return response
 
 
 def _elapsed_ms(started: float) -> float:
