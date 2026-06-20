@@ -557,6 +557,47 @@ class BackendRestClient {
     return suggestions;
   }
 
+  Future<List<Map<String, dynamic>>> listSuggestions({
+    required String spaceSlug,
+    required String memoryScopeExternalRef,
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    final resp = await _dio.get<Map<String, dynamic>>(
+      '/v1/suggestions',
+      queryParameters: {
+        'space_slug': spaceSlug,
+        'memory_scope_external_ref': memoryScopeExternalRef,
+        'status': status,
+        'limit': limit,
+      },
+    );
+    return _listData(resp.data);
+  }
+
+  Future<Map<String, dynamic>> resolveDuplicateSuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+    bool force = false,
+  }) async {
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/v1/suggestions/$suggestionId/resolve-duplicate',
+      data: {
+        'action': action,
+        'force': force,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+    final data = _data(resp.data);
+    final suggestion = data['suggestion'];
+    if (suggestion is Map<String, dynamic>) return suggestion;
+    if (suggestion is Map) {
+      return suggestion.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const <String, dynamic>{};
+  }
+
   Future<List<Map<String, dynamic>>> listContextLinks({
     required String spaceSlug,
     required String memoryScopeExternalRef,

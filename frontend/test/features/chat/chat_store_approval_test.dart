@@ -13,6 +13,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_suggestion.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 
@@ -246,6 +247,39 @@ void main() {
           ['ctxlinksug-2']);
     });
 
+    test('refreshes pending memory suggestions from repository', () async {
+      final store = ChatStore(repo, null);
+      repo.memorySuggestions = [_memorySuggestion('sug-duplicate')];
+
+      await store.refreshMemorySuggestions();
+
+      expect(repo.listMemorySuggestionCalls, 1);
+      expect(store.memorySuggestions.single.id, 'sug-duplicate');
+      expect(store.memorySuggestions.single.canResolveDuplicate, true);
+    });
+
+    test('resolves duplicate memory suggestion through repository', () async {
+      final store = ChatStore(repo, null);
+      repo.memorySuggestions = [_memorySuggestion('sug-duplicate')];
+
+      await store.refreshMemorySuggestions();
+      final ok = await store.resolveDuplicateMemorySuggestion(
+        store.memorySuggestions.single,
+        action: 'keep_separate_fact',
+      );
+
+      expect(ok, true);
+      expect(repo.reviewedMemorySuggestions, [
+        'sug-duplicate:keep_separate_fact',
+      ]);
+      expect(
+        repo.reviewedMemorySuggestionReasons['sug-duplicate'],
+        'resolved duplicate memory from review queue',
+      );
+      expect(store.memorySuggestions, isEmpty);
+      expect(store.memorySuggestionError.value, isNull);
+    });
+
     test('approves pending suggestion with target override', () async {
       final store = ChatStore(repo, null);
       repo.contextLinkSuggestions = [_suggestion('ctxlinksug-1')];
@@ -351,15 +385,21 @@ class _FakeChatRepository implements ChatRepository {
   String activeMemoryScopeExternalRef = 'default';
   bool failCreateContextLink = false;
   bool failReviewContextLink = false;
+  bool failResolveMemorySuggestion = false;
   final Map<String, MemoryScope> scopesByRef = {
     'default': _scope('scope-default', 'default', 'Default'),
     'sales-crm': _scope('scope-sales-crm', 'sales-crm', 'Sales CRM'),
   };
   List<MemoryContextLinkSuggestion> contextLinkSuggestions = const [];
   List<MemoryContextLinkSuggestion>? postReviewContextLinkSuggestions;
+  List<MemorySuggestion> memorySuggestions = const [];
+  List<MemorySuggestion>? postReviewMemorySuggestions;
   int listContextLinkSuggestionCalls = 0;
+  int listMemorySuggestionCalls = 0;
   final reviewedSuggestions = <String>[];
+  final reviewedMemorySuggestions = <String>[];
   final reviewedSuggestionReasons = <String, String?>{};
+  final reviewedMemorySuggestionReasons = <String, String?>{};
   final reviewedSuggestionOverrides = <String, Map<String, String>>{};
   final createdContextLinks = <Map<String, String>>[];
   final assetExtractions = <AssetExtractionJob>[];
@@ -796,6 +836,69 @@ class _FakeChatRepository implements ChatRepository {
     }
     return reviewed;
   }
+
+  @override
+  Future<List<MemorySuggestion>> listMemorySuggestions({
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    listMemorySuggestionCalls += 1;
+    return memorySuggestions;
+  }
+
+  @override
+  Future<MemorySuggestion> resolveDuplicateMemorySuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+    bool force = false,
+  }) async {
+    if (failResolveMemorySuggestion) {
+      throw StateError('simulated memory review failure');
+    }
+    reviewedMemorySuggestions.add('$suggestionId:$action');
+    reviewedMemorySuggestionReasons[suggestionId] = reason;
+    final suggestion = memorySuggestions.firstWhere(
+      (item) => item.id == suggestionId,
+    );
+    memorySuggestions = postReviewMemorySuggestions ??
+        memorySuggestions
+            .where((item) => item.id != suggestionId)
+            .toList(growable: false);
+    postReviewMemorySuggestions = null;
+    return MemorySuggestion.fromMap({
+      'id': suggestion.id,
+      'space_id': suggestion.spaceId,
+      'memory_scope_id': suggestion.memoryScopeId,
+      'candidate_text': suggestion.candidateText,
+      'kind': suggestion.kind,
+      'operation': suggestion.operation,
+      'status': 'approved',
+      'confidence': suggestion.confidence,
+      'trust_level': suggestion.trustLevel,
+      'safe_reason': suggestion.safeReason,
+      'target_fact_id': suggestion.targetFactId,
+      'target_fact_version': suggestion.targetFactVersion,
+      'review_kind': suggestion.reviewKind,
+      'review_actionable': false,
+      'available_review_actions': suggestion.availableReviewActions,
+      'review_resolution_options': [
+        for (final option in suggestion.reviewResolutionOptions)
+          {
+            'id': option.id,
+            'review_action': option.reviewAction,
+            'effect': option.effect,
+            'availability': option.availability,
+            'resolution_action': option.resolutionAction,
+          },
+      ],
+      'review_payload': suggestion.reviewPayload,
+      'created_at': suggestion.createdAt.toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+      'reviewed_at': DateTime.now().toIso8601String(),
+      'review_reason': reason,
+    });
+  }
 }
 
 class _FakeExtractionCapabilityProvider
@@ -914,4 +1017,53 @@ MemoryContextLinkSuggestion _suggestion(String id) {
     createdAt: now,
     updatedAt: now,
   );
+}
+
+MemorySuggestion _memorySuggestion(String id) {
+  final now = DateTime.now();
+  return MemorySuggestion.fromMap({
+    'id': id,
+    'space_id': 'space-1',
+    'memory_scope_id': 'scope-default',
+    'candidate_text': 'Docs retrieval should use Qdrant vectors.',
+    'kind': 'note',
+    'operation': 'review',
+    'status': 'pending',
+    'confidence': 'medium',
+    'trust_level': 'medium',
+    'safe_reason': 'candidate matches an active fact',
+    'target_fact_id': 'fact-1',
+    'target_fact_version': 1,
+    'review_kind': 'duplicate_fact_merge',
+    'review_actionable': true,
+    'available_review_actions': [
+      'approve',
+      'reject',
+      'expire',
+      'resolve_duplicate',
+    ],
+    'review_resolution_options': [
+      {
+        'id': 'merge_source_refs',
+        'review_action': 'resolve_duplicate',
+        'effect': 'merge_source_refs_into_existing_fact',
+        'availability': 'available',
+        'resolution_action': 'merge_source_refs',
+      },
+      {
+        'id': 'keep_separate_fact',
+        'review_action': 'resolve_duplicate',
+        'effect': 'create_new_fact_keep_existing_fact',
+        'availability': 'available',
+        'resolution_action': 'keep_separate_fact',
+      },
+    ],
+    'review_payload': {
+      'review_kind': 'duplicate_fact_merge',
+      'recommended_action': 'merge_source_refs_into_existing_fact',
+      'default_resolution': 'merge_or_keep_separate_after_review',
+    },
+    'created_at': now.toIso8601String(),
+    'updated_at': now.toIso8601String(),
+  });
 }

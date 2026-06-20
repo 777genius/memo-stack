@@ -8,6 +8,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_context_link.d
 import 'package:frontend/src/features/chat/domain/entities/memory_browser.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_suggestion.dart';
 
 abstract class ChatRepository {
   Stream<ChatMessage> messages();
@@ -125,6 +126,16 @@ abstract class ChatRepository {
     required List<String> suggestionIds,
     required String action,
     String? reason,
+  });
+  Future<List<MemorySuggestion>> listMemorySuggestions({
+    String status = 'pending',
+    int limit = 50,
+  });
+  Future<MemorySuggestion> resolveDuplicateMemorySuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+    bool force = false,
   });
 }
 

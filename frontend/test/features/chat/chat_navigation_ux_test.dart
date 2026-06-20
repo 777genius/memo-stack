@@ -15,6 +15,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_suggestion.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/presentation/screen/chat_list_overlay_screen.dart';
 import 'package:frontend/src/features/chat/presentation/widgets/chat_list_sidebar.dart';
@@ -1618,6 +1619,24 @@ class _UxFakeChatRepository implements ChatRepository {
       );
     }
     return reviewed;
+  }
+
+  @override
+  Future<List<MemorySuggestion>> listMemorySuggestions({
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    return const <MemorySuggestion>[];
+  }
+
+  @override
+  Future<MemorySuggestion> resolveDuplicateMemorySuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+    bool force = false,
+  }) async {
+    throw UnimplementedError();
   }
 }
 

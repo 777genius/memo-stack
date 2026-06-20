@@ -14,6 +14,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_suggestion.dart';
 import 'package:frontend/src/features/chat/domain/repositories/attachment_upload_limits.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
@@ -428,6 +429,36 @@ class ChatRepositoryImpl
     return rows
         .map(MemoryContextLinkSuggestion.fromMap)
         .toList(growable: false);
+  }
+
+  @override
+  Future<List<MemorySuggestion>> listMemorySuggestions({
+    String status = 'pending',
+    int limit = 50,
+  }) async {
+    final rows = await _rest.listSuggestions(
+      spaceSlug: _spaceSlugGetter(),
+      memoryScopeExternalRef: _currentMemoryScopeExternalRef(),
+      status: status,
+      limit: limit,
+    );
+    return rows.map(MemorySuggestion.fromMap).toList(growable: false);
+  }
+
+  @override
+  Future<MemorySuggestion> resolveDuplicateMemorySuggestion({
+    required String suggestionId,
+    required String action,
+    String? reason,
+    bool force = false,
+  }) async {
+    final row = await _rest.resolveDuplicateSuggestion(
+      suggestionId: suggestionId,
+      action: action,
+      reason: reason,
+      force: force,
+    );
+    return MemorySuggestion.fromMap(row);
   }
 
   @override

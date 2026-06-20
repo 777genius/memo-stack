@@ -12,6 +12,7 @@ import 'package:frontend/src/features/chat/domain/entities/memory_capture.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_context_link.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_operations_console.dart';
 import 'package:frontend/src/features/chat/domain/entities/memory_scope.dart';
+import 'package:frontend/src/features/chat/domain/entities/memory_suggestion.dart';
 import 'package:frontend/src/features/chat/domain/repositories/extraction_capability_provider.dart';
 import 'package:frontend/src/features/chat/domain/repositories/chat_repository.dart';
 // injectable не используем для ChatStore, создаётся через Provider
@@ -26,6 +27,8 @@ const _approvedContextLinkReviewReason = 'approved by user from review queue';
 const _rejectedContextLinkReviewReason = 'rejected by user from review queue';
 const _targetOverrideContextLinkReviewReason =
     'approved by user with target override';
+const _duplicateMergeReviewReason =
+    'resolved duplicate memory from review queue';
 
 abstract class ChatStoreBase with Store {
   final ChatRepository repo;
@@ -205,6 +208,16 @@ abstract class ChatStoreBase with Store {
   final Observable<String?> contextLinkSuggestionError = Observable(null);
 
   final ObservableMap<String, bool> contextLinkSuggestionReviewing =
+      ObservableMap.of({});
+
+  final ObservableList<MemorySuggestion> memorySuggestions =
+      ObservableList.of([]);
+
+  final Observable<bool> memorySuggestionsLoading = Observable(false);
+
+  final Observable<String?> memorySuggestionError = Observable(null);
+
+  final ObservableMap<String, bool> memorySuggestionReviewing =
       ObservableMap.of({});
 
   final Observable<MemoryOperationsConsole?> operationsConsole =
@@ -538,6 +551,32 @@ abstract class ChatStoreBase with Store {
     } finally {
       if (showLoading && !_disposed) {
         runInAction(() => contextLinkSuggestionsLoading.value = false);
+      }
+    }
+  }
+
+  Future<void> refreshMemorySuggestions({bool showLoading = true}) async {
+    if (_disposed) return;
+    if (showLoading) {
+      runInAction(() => memorySuggestionsLoading.value = true);
+    }
+    runInAction(() => memorySuggestionError.value = null);
+    try {
+      final suggestions = await repo.listMemorySuggestions(limit: 30);
+      if (_disposed) return;
+      runInAction(() {
+        memorySuggestions
+          ..clear()
+          ..addAll(suggestions.where((item) => item.isPending));
+      });
+    } catch (e) {
+      if (_disposed) return;
+      runInAction(() {
+        memorySuggestionError.value = 'Memory suggestions unavailable: $e';
+      });
+    } finally {
+      if (showLoading && !_disposed) {
+        runInAction(() => memorySuggestionsLoading.value = false);
       }
     }
   }
@@ -915,6 +954,35 @@ abstract class ChatStoreBase with Store {
     }
   }
 
+  Future<bool> resolveDuplicateMemorySuggestion(
+    MemorySuggestion suggestion, {
+    required String action,
+  }) async {
+    if (!suggestion.canResolveDuplicate) return false;
+    runInAction(() {
+      memorySuggestionReviewing[suggestion.id] = true;
+      memorySuggestionError.value = null;
+    });
+    try {
+      await repo.resolveDuplicateMemorySuggestion(
+        suggestionId: suggestion.id,
+        action: action,
+        reason: _duplicateMergeReviewReason,
+      );
+      await _refreshMemoryReviewSurfaces();
+      return true;
+    } catch (e) {
+      runInAction(() {
+        memorySuggestionError.value = 'Memory review failed: $e';
+      });
+      return false;
+    } finally {
+      runInAction(() {
+        memorySuggestionReviewing.remove(suggestion.id);
+      });
+    }
+  }
+
   Future<bool> approveContextLinkSuggestionWithOverride(
     MemoryContextLinkSuggestion suggestion, {
     required String targetType,
@@ -965,6 +1033,13 @@ abstract class ChatStoreBase with Store {
     await refreshOperationsConsole(showLoading: false);
     await refreshMemoryBrowser(showLoading: false);
     await refreshContextLinkSuggestions(showLoading: false);
+  }
+
+  Future<void> _refreshMemoryReviewSurfaces() async {
+    await refreshMemoryCaptures(showLoading: false);
+    await refreshOperationsConsole(showLoading: false);
+    await refreshMemoryBrowser(showLoading: false);
+    await refreshMemorySuggestions(showLoading: false);
   }
 
   Future<bool> createManualContextLinkFromSuggestion(
@@ -1491,6 +1566,10 @@ abstract class ChatStoreBase with Store {
     contextLinkSuggestionError.value = null;
     contextLinkSuggestionsLoading.value = false;
     contextLinkSuggestionReviewing.clear();
+    memorySuggestions.clear();
+    memorySuggestionError.value = null;
+    memorySuggestionsLoading.value = false;
+    memorySuggestionReviewing.clear();
     anchorMergeSuggestions.clear();
     anchorMergeSuggestionReviewing.clear();
     memoryBrowser.value = null;
