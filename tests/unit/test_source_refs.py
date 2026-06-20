@@ -45,6 +45,14 @@ def test_source_ref_accepts_multimodal_coordinates() -> None:
             "time_end_ms must be >= time_start_ms",
         ),
         ({"bbox": (0.0, 1.0, float("nan"), 2.0)}, "bbox must contain four finite numbers"),
+        (
+            {"bbox": (-1.0, 1.0, 120.0, 80.0)},
+            "bbox must be non-negative x1,y1,x2,y2",
+        ),
+        (
+            {"bbox": (10.0, 20.0, 9.0, 80.0)},
+            "bbox must be non-negative x1,y1,x2,y2",
+        ),
     ),
 )
 def test_source_ref_rejects_invalid_multimodal_coordinates(
@@ -86,6 +94,76 @@ def test_chunk_source_refs_hydrate_structured_metadata_refs() -> None:
             char_end=60,
             quote_preview="Atlas screenshot text",
             page_number=3,
+            time_start_ms=1200,
+            time_end_ms=3400,
+            bbox=(1.0, 2.0, 3.0, 4.0),
+        ),
+    )
+
+
+def test_chunk_source_refs_sanitize_invalid_structured_metadata_coordinates() -> None:
+    chunk = _chunk(
+        metadata={
+            "source_refs": [
+                {
+                    "source_type": "asset_extraction",
+                    "source_id": "extract-1",
+                    "char_start": 90,
+                    "char_end": 20,
+                    "quote_preview": "Atlas screenshot text",
+                    "page_number": 0,
+                    "time_start_ms": 3400,
+                    "time_end_ms": 1200,
+                    "bbox": [-1, 2, 3, 4],
+                }
+            ]
+        }
+    )
+
+    refs = chunk_source_refs(chunk, text_preview=chunk.text)
+
+    assert refs == (
+        SourceRef(
+            source_type="asset_extraction",
+            source_id="extract-1",
+            chunk_id="chunk-1",
+            quote_preview="Atlas screenshot text",
+        ),
+    )
+
+
+def test_chunk_source_refs_skip_invalid_structured_metadata_ref() -> None:
+    chunk = _chunk(
+        metadata={
+            "source_refs": [
+                {
+                    "source_type": "asset_extraction",
+                    "source_id": "extract-1",
+                    "char_start": 20,
+                    "char_end": 60,
+                    "time_start_ms": 1200,
+                    "time_end_ms": 3400,
+                    "bbox": [1, 2, 3, 4],
+                },
+                {
+                    "source_type": "",
+                    "source_id": "missing-source-type",
+                    "quote_preview": "bad provider payload",
+                },
+            ]
+        }
+    )
+
+    refs = chunk_source_refs(chunk, text_preview=chunk.text)
+
+    assert refs == (
+        SourceRef(
+            source_type="asset_extraction",
+            source_id="extract-1",
+            chunk_id="chunk-1",
+            char_start=20,
+            char_end=60,
+            quote_preview=chunk.text[:200],
             time_start_ms=1200,
             time_end_ms=3400,
             bbox=(1.0, 2.0, 3.0, 4.0),

@@ -7,6 +7,7 @@ from math import isfinite
 
 from infinity_context_core.application.safe_payload import safe_metadata_text
 from infinity_context_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, MemoryChunk, SourceRef
+from infinity_context_core.domain.errors import MemoryValidationError
 
 
 def chunk_source_refs(chunk: MemoryChunk, *, text_preview: str) -> tuple[SourceRef, ...]:
@@ -56,18 +57,23 @@ def _source_ref_from_metadata_item(
     source_id = safe_metadata_text(str(item.get("source_id") or ""), limit=160).strip()
     if not source_type or not source_id:
         return None
-    return SourceRef(
-        source_type=source_type,
-        source_id=source_id,
-        chunk_id=str(chunk.id),
-        char_start=_optional_int(item.get("char_start"), default=chunk.char_start),
-        char_end=_optional_int(item.get("char_end"), default=chunk.char_end),
-        quote_preview=_quote_preview(item, text_preview=text_preview),
-        page_number=_optional_positive_int(item.get("page_number")),
-        time_start_ms=_optional_int(item.get("time_start_ms")),
-        time_end_ms=_optional_int(item.get("time_end_ms")),
-        bbox=_optional_bbox(item.get("bbox")),
-    )
+    char_start, char_end = _metadata_char_range(item, chunk=chunk)
+    time_start_ms, time_end_ms = _metadata_time_range(item)
+    try:
+        return SourceRef(
+            source_type=source_type,
+            source_id=source_id,
+            chunk_id=str(chunk.id),
+            char_start=char_start,
+            char_end=char_end,
+            quote_preview=_quote_preview(item, text_preview=text_preview),
+            page_number=_optional_positive_int(item.get("page_number")),
+            time_start_ms=time_start_ms,
+            time_end_ms=time_end_ms,
+            bbox=_optional_bbox(item.get("bbox")),
+        )
+    except MemoryValidationError:
+        return None
 
 
 def _fallback_chunk_source_ref(chunk: MemoryChunk, *, text_preview: str) -> SourceRef:
@@ -88,16 +94,44 @@ def _quote_preview(item: Mapping[str, object], *, text_preview: str) -> str:
     return safe_metadata_text(text_preview[:200], limit=240)
 
 
-def _optional_int(value: object, *, default: int | None = None) -> int | None:
+def _metadata_char_range(
+    item: Mapping[str, object],
+    *,
+    chunk: MemoryChunk,
+) -> tuple[int | None, int | None]:
+    start_present = "char_start" in item
+    end_present = "char_end" in item
+    start = _optional_int(item.get("char_start") if start_present else chunk.char_start)
+    end = _optional_int(item.get("char_end") if end_present else chunk.char_end)
+    if (start_present and start is None) or (end_present and end is None):
+        return None, None
+    if start is not None and end is not None and end < start:
+        return None, None
+    return start, end
+
+
+def _metadata_time_range(item: Mapping[str, object]) -> tuple[int | None, int | None]:
+    start_present = "time_start_ms" in item
+    end_present = "time_end_ms" in item
+    start = _optional_int(item.get("time_start_ms"))
+    end = _optional_int(item.get("time_end_ms"))
+    if (start_present and start is None) or (end_present and end is None):
+        return None, None
+    if start is not None and end is not None and end < start:
+        return None, None
+    return start, end
+
+
+def _optional_int(value: object) -> int | None:
     if value is None:
-        return default
+        return None
     if isinstance(value, bool):
-        return default
+        return None
     try:
         parsed = int(value)
     except (TypeError, ValueError):
-        return default
-    return parsed if parsed >= 0 else default
+        return None
+    return parsed if parsed >= 0 else None
 
 
 def _optional_positive_int(value: object) -> int | None:
@@ -106,6 +140,8 @@ def _optional_positive_int(value: object) -> int | None:
 
 
 def _optional_bbox(value: object) -> tuple[float, float, float, float] | None:
+    if value is None:
+        return None
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     items: list[float] = []
@@ -117,4 +153,6 @@ def _optional_bbox(value: object) -> tuple[float, float, float, float] | None:
         if not isfinite(number):
             return None
         items.append(number)
+    if any(number < 0 for number in items) or items[2] <= items[0] or items[3] <= items[1]:
+        return None
     return (items[0], items[1], items[2], items[3])

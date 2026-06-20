@@ -421,10 +421,15 @@ class SourceRef:
             and self.time_end_ms < self.time_start_ms
         ):
             raise MemoryValidationError("SourceRef.time_end_ms must be >= time_start_ms")
-        if self.bbox is not None and (
-            len(self.bbox) != 4 or not all(isfinite(float(value)) for value in self.bbox)
-        ):
-            raise MemoryValidationError("SourceRef.bbox must contain four finite numbers")
+        if self.bbox is not None:
+            if len(self.bbox) != 4 or not all(isfinite(float(value)) for value in self.bbox):
+                raise MemoryValidationError("SourceRef.bbox must contain four finite numbers")
+            if (
+                any(float(value) < 0 for value in self.bbox)
+                or float(self.bbox[2]) <= float(self.bbox[0])
+                or float(self.bbox[3]) <= float(self.bbox[1])
+            ):
+                raise MemoryValidationError("SourceRef.bbox must be non-negative x1,y1,x2,y2")
 
 
 @dataclass(frozen=True)
