@@ -110,6 +110,7 @@ from infinity_context_core.application.dto import (
     RelatedFactsResult,
     RememberFactCommand,
     RequestAssetExtractionCommand,
+    ResolveDuplicateMergeCommand,
     ResolveSuggestionConflictCommand,
     RetryAssetExtractionCommand,
     ReviewContextLinkSuggestionBatchItemCommand,
@@ -181,8 +182,12 @@ from infinity_context_core.application.use_cases.blob_storage_integrity import (
 )
 from infinity_context_core.application.use_cases.build_context import BuildContextUseCase
 from infinity_context_core.application.use_cases.build_memory_digest import BuildMemoryDigestUseCase
-from infinity_context_core.application.use_cases.build_memory_insights import BuildMemoryInsightsUseCase
-from infinity_context_core.application.use_cases.consolidate_capture import ConsolidateCaptureUseCase
+from infinity_context_core.application.use_cases.build_memory_insights import (
+    BuildMemoryInsightsUseCase,
+)
+from infinity_context_core.application.use_cases.consolidate_capture import (
+    ConsolidateCaptureUseCase,
+)
 from infinity_context_core.application.use_cases.context_links import (
     CreateContextLinkUseCase,
     DeleteContextLinkUseCase,
@@ -194,7 +199,12 @@ from infinity_context_core.application.use_cases.context_links import (
     UpdateContextLinkUseCase,
 )
 from infinity_context_core.application.use_cases.delete_document import DeleteDocumentUseCase
-from infinity_context_core.application.use_cases.delete_thread_memory import DeleteThreadMemoryUseCase
+from infinity_context_core.application.use_cases.delete_thread_memory import (
+    DeleteThreadMemoryUseCase,
+)
+from infinity_context_core.application.use_cases.duplicate_merge_resolution import (
+    ResolveDuplicateMergeUseCase,
+)
 from infinity_context_core.application.use_cases.ensure_scope import EnsureScopeUseCase
 from infinity_context_core.application.use_cases.expire_suggestions import (
     ExpirePendingSuggestionsResult,
@@ -277,6 +287,12 @@ __all__ = [
     "BackfillAnchorsCommand",
     "BackfillAnchorsResult",
     "BackfillAnchorsUseCase",
+    "BlobStorageCleanupCommand",
+    "BlobStorageCleanupDecision",
+    "BlobStorageCleanupResult",
+    "BlobStorageIntegrityAuditCommand",
+    "BlobStorageIntegrityAuditResult",
+    "BlobStorageIntegrityIssue",
     "BuildContextQuery",
     "BuildContextUseCase",
     "BuildMemoryDigestQuery",
@@ -433,6 +449,8 @@ __all__ = [
     "RememberFactUseCase",
     "RequestAssetExtractionCommand",
     "RequestAssetExtractionUseCase",
+    "ResolveDuplicateMergeCommand",
+    "ResolveDuplicateMergeUseCase",
     "ResolveSuggestionConflictCommand",
     "ResolveSuggestionConflictUseCase",
     "ContextLinkSuggestionVisibleFilter",
@@ -450,6 +468,8 @@ __all__ = [
     "ReviewContextLinkSuggestionUseCase",
     "RetryAssetExtractionCommand",
     "RetryAssetExtractionUseCase",
+    "RunBlobStorageCleanupUseCase",
+    "RunBlobStorageIntegrityAuditUseCase",
     "RunAssetExtractionCommand",
     "RunAssetExtractionUseCase",
     "RelatedFactItem",

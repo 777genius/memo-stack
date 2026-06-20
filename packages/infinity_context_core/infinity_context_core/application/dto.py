@@ -1207,6 +1207,14 @@ class ResolveSuggestionConflictCommand:
 
 
 @dataclass(frozen=True)
+class ResolveDuplicateMergeCommand:
+    suggestion_id: str
+    action: str
+    reason: str | None = None
+    force: bool = False
+
+
+@dataclass(frozen=True)
 class ReviewSuggestionBatchItemCommand:
     suggestion_id: str
     action: str

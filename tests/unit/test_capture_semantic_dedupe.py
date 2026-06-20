@@ -87,6 +87,18 @@ def test_capture_semantic_active_duplicate_creates_merge_review_suggestion(
     assert suggestion["operation"] == "review"
     assert suggestion["target_fact_id"] == existing.json()["data"]["id"]
     assert suggestion["review_payload"]["review_kind"] == "duplicate_fact_merge"
+    assert suggestion["available_review_actions"] == [
+        "approve",
+        "reject",
+        "expire",
+        "resolve_duplicate",
+    ]
+    assert suggestion["review_resolution_options"][0]["id"] == "merge_source_refs"
+    assert suggestion["review_resolution_options"][0]["review_action"] == "resolve_duplicate"
+    assert suggestion["review_resolution_options"][1]["id"] == "keep_separate_fact"
+    assert suggestion["review_payload"]["default_resolution"] == (
+        "merge_or_keep_separate_after_review"
+    )
     assert suggestion["review_payload"]["dedupe_match_type"] == "semantic_token_overlap"
     assert "semantic_duplicate" in suggestion["review_payload"]["dedupe_reason_codes"]
     assert approved.status_code == 200, approved.text

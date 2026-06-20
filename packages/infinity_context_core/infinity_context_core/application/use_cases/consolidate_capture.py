@@ -13,7 +13,10 @@ from infinity_context_core.application.extractor import (
     RuleBasedMemoryExtractor,
     validate_extractor_candidates,
 )
-from infinity_context_core.application.review_payloads import conflict_review_contract
+from infinity_context_core.application.review_payloads import (
+    conflict_review_contract,
+    duplicate_fact_merge_review_contract,
+)
 from infinity_context_core.application.semantic_dedupe import (
     describe_conflicting_fact_match,
     describe_duplicate_fact_match,
@@ -293,8 +296,8 @@ class ConsolidateCaptureUseCase:
                         created_from_capture_id=str(current.id),
                         candidate_fingerprint=duplicate_fingerprint,
                         review_payload={
+                            **duplicate_fact_merge_review_contract(),
                             "operation": SuggestionOperation.REVIEW.value,
-                            "review_kind": "duplicate_fact_merge",
                             "category": duplicate_taxonomy.category,
                             "tags": list(duplicate_taxonomy.tags),
                             "ttl_policy": duplicate_taxonomy.ttl_policy.name,
@@ -307,7 +310,6 @@ class ConsolidateCaptureUseCase:
                             "dedupe_score": duplicate_match.score,
                             "dedupe_reason_codes": list(duplicate_match.reason_codes),
                             "dedupe_overlap_terms": list(duplicate_match.overlap_terms),
-                            "recommended_action": "merge_source_refs_into_existing_fact",
                             "rejected_extractor_codes": list(validation.rejected_codes),
                             "rejected_resolver_codes": list(resolver_rejected_codes),
                             "unknown_taxonomy_labels": list(duplicate_taxonomy.unknown_labels),

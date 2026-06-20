@@ -51,3 +51,41 @@ def conflict_review_contract(*, approve_effect: str) -> dict[str, Any]:
             },
         ],
     }
+
+
+def duplicate_fact_merge_review_contract() -> dict[str, Any]:
+    return {
+        "review_kind": DUPLICATE_FACT_MERGE_REVIEW_KIND,
+        "recommended_action": "merge_source_refs_into_existing_fact",
+        "default_resolution": "merge_or_keep_separate_after_review",
+        "resolution_options": [
+            {
+                "id": "merge_source_refs",
+                "review_action": "resolve_duplicate",
+                "effect": "merge_source_refs_into_existing_fact",
+                "availability": "available",
+                "resolution_action": "merge_source_refs",
+            },
+            {
+                "id": "keep_separate_fact",
+                "review_action": "resolve_duplicate",
+                "effect": "create_new_fact_keep_existing_fact",
+                "availability": "available",
+                "resolution_action": "keep_separate_fact",
+            },
+            {
+                "id": "reject_duplicate_candidate",
+                "review_action": "reject",
+                "effect": "keep_existing_fact_without_candidate_source_refs",
+                "availability": "available",
+                "resolution_action": "reject_candidate",
+            },
+            {
+                "id": "expire_duplicate_candidate",
+                "review_action": "expire",
+                "effect": "hide_pending_duplicate_merge_review",
+                "availability": "available",
+                "resolution_action": "expire_candidate",
+            },
+        ],
+    }

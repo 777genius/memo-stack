@@ -13,6 +13,7 @@ from infinity_context_core.application import (
     ExpireSuggestionCommand,
     ListSuggestionsQuery,
     RejectSuggestionCommand,
+    ResolveDuplicateMergeCommand,
     ResolveSuggestionConflictCommand,
     ReviewSuggestionBatchItemCommand,
     ReviewSuggestionsBatchCommand,
@@ -145,6 +146,14 @@ class ResolveSuggestionConflictRequest(BaseModel):
     force: bool = False
 
 
+class ResolveDuplicateMergeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1, max_length=40)
+    reason: str | None = Field(default=None, max_length=320)
+    force: bool = False
+
+
 class ReviewSuggestionBatchItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -226,6 +235,8 @@ def _available_review_actions(review_actionable: bool, *, review_kind: str) -> l
     actions = ["approve", "reject", "expire"]
     if review_kind == "conflict_review":
         actions.append("resolve_conflict")
+    if review_kind == "duplicate_fact_merge":
+        actions.append("resolve_duplicate")
     return actions
 
 
@@ -416,6 +427,27 @@ async def resolve_suggestion_conflict(
     ensure_server_writes_enabled(container)
     result = await container.resolve_suggestion_conflict.execute(
         ResolveSuggestionConflictCommand(
+            suggestion_id=suggestion_id,
+            action=request.action,
+            reason=request.reason,
+            force=request.force,
+        )
+    )
+    body = {"suggestion": suggestion_to_response(result.suggestion)}
+    if result.fact:
+        body["fact"] = fact_to_response(result.fact, result.indexing_status)
+    return {"data": body}
+
+
+@router.post("/{suggestion_id}/resolve-duplicate")
+async def resolve_duplicate_merge(
+    suggestion_id: str,
+    request: ResolveDuplicateMergeRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_server_writes_enabled(container)
+    result = await container.resolve_duplicate_merge.execute(
+        ResolveDuplicateMergeCommand(
             suggestion_id=suggestion_id,
             action=request.action,
             reason=request.reason,

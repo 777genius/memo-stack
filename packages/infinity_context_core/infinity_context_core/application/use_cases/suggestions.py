@@ -24,7 +24,10 @@ from infinity_context_core.application.dto import (
     ReviewSuggestionsBatchResult,
     SuggestionResult,
 )
-from infinity_context_core.application.review_payloads import CONFLICT_REVIEW_KIND
+from infinity_context_core.application.review_payloads import (
+    CONFLICT_REVIEW_KIND,
+    DUPLICATE_FACT_MERGE_REVIEW_KIND,
+)
 from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.domain.entities import (
     Confidence,
@@ -59,8 +62,6 @@ _CONFLICT_REVIEW_ACTION_ALIASES = {
     "mark_existing_disputed": "mark_existing_disputed",
     "mark_disputed": "mark_existing_disputed",
 }
-
-
 class CreateSuggestionUseCase:
     def __init__(
         self,
@@ -668,7 +669,8 @@ def _is_duplicate_fact_merge_review(suggestion: MemorySuggestion) -> bool:
     return (
         suggestion.operation == SuggestionOperation.REVIEW
         and suggestion.target_fact_id is not None
-        and (suggestion.review_payload or {}).get("review_kind") == "duplicate_fact_merge"
+        and (suggestion.review_payload or {}).get("review_kind")
+        == DUPLICATE_FACT_MERGE_REVIEW_KIND
     )
 
 

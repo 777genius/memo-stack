@@ -87,6 +87,7 @@ from infinity_context_core.application import (
     RelatedFactsUseCase,
     RememberFactUseCase,
     RequestAssetExtractionUseCase,
+    ResolveDuplicateMergeUseCase,
     ResolveSuggestionConflictUseCase,
     RetryAssetExtractionUseCase,
     ReviewContextLinkSuggestionsBatchUseCase,
@@ -229,6 +230,7 @@ class Container:
     approve_suggestion: ApproveSuggestionUseCase
     reject_suggestion: RejectSuggestionUseCase
     expire_suggestion: ExpireSuggestionUseCase
+    resolve_duplicate_merge: ResolveDuplicateMergeUseCase
     resolve_suggestion_conflict: ResolveSuggestionConflictUseCase
     review_suggestions_batch: ReviewSuggestionsBatchUseCase
     receive_capture: ReceiveCaptureUseCase
@@ -508,6 +510,11 @@ def build_container(settings: Settings | None = None) -> Container:
     approve_suggestion = ApproveSuggestionUseCase(uow_factory=uow_factory, clock=clock, ids=ids)
     reject_suggestion = RejectSuggestionUseCase(uow_factory=uow_factory, clock=clock)
     expire_suggestion = ExpireSuggestionUseCase(uow_factory=uow_factory, clock=clock)
+    resolve_duplicate_merge = ResolveDuplicateMergeUseCase(
+        uow_factory=uow_factory,
+        clock=clock,
+        ids=ids,
+    )
     resolve_suggestion_conflict = ResolveSuggestionConflictUseCase(
         uow_factory=uow_factory,
         clock=clock,
@@ -646,6 +653,7 @@ def build_container(settings: Settings | None = None) -> Container:
         approve_suggestion=approve_suggestion,
         reject_suggestion=reject_suggestion,
         expire_suggestion=expire_suggestion,
+        resolve_duplicate_merge=resolve_duplicate_merge,
         resolve_suggestion_conflict=resolve_suggestion_conflict,
         review_suggestions_batch=review_suggestions_batch,
         receive_capture=receive_capture,
