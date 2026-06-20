@@ -135,7 +135,7 @@ def text_variant_counts(text: str, *, min_chars: int = 2) -> Counter[str]:
     for token in _tokens(text, split_underscores=True):
         if len(token) < min_chars:
             continue
-        for variant in lexical_variants(token):
+        for variant in _text_token_variants(token):
             counts[variant] += 1
     return counts
 
@@ -207,11 +207,24 @@ def _text_token_variants(token: str) -> tuple[str, ...]:
     for part in token.split("_"):
         if part and part != token:
             variants.extend(lexical_variants(part))
+    variants.extend(_underscore_prefix_variants(token))
     return _dedupe(variants)
 
 
 def _normalize_token(token: str) -> str:
     return token.casefold().replace("ё", "е").strip("_")
+
+
+def _underscore_prefix_variants(token: str) -> tuple[str, ...]:
+    parts = tuple(part for part in token.split("_") if len(part) >= 2)
+    if len(parts) < 2:
+        return ()
+    prefixes: list[str] = []
+    for index in range(2, len(parts)):
+        prefix = "_".join(parts[:index])
+        if len(prefix) >= 3:
+            prefixes.extend(lexical_variants(prefix))
+    return tuple(prefixes)
 
 
 def _russian_variants(token: str) -> tuple[str, ...]:

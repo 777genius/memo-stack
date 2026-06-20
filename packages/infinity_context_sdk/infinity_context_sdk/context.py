@@ -536,12 +536,24 @@ def _item_diagnostics_from_payload(value: object) -> ContextItemDiagnostics:
 def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
     payload = _as_mapping(value)
     raw = _bounded_mapping(value, max_items=MAX_BUNDLE_DIAGNOSTIC_ITEMS)
+    provenance_summary = _bounded_mapping(
+        payload.get("provenance_summary"),
+        max_items=MAX_BUNDLE_DIAGNOSTIC_ITEMS,
+    )
+    retrieval_quality_summary = _bounded_mapping(
+        payload.get("retrieval_quality_summary"),
+        max_items=MAX_BUNDLE_DIAGNOSTIC_ITEMS,
+    )
     retrieval_sources_used = _safe_text_tuple(
         raw.get("retrieval_sources_used"),
         limit=MAX_RETRIEVAL_SOURCES,
     )
     safe_raw = dict(raw)
     safe_raw["retrieval_sources_used"] = list(retrieval_sources_used)
+    if provenance_summary:
+        safe_raw["provenance_summary"] = provenance_summary
+    if retrieval_quality_summary:
+        safe_raw["retrieval_quality_summary"] = retrieval_quality_summary
     retrieval_sources_total = _non_negative_int(
         raw.get("retrieval_sources_total"),
         default=len(retrieval_sources_used),
@@ -816,8 +828,8 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         sensitive_item_text_redacted=_non_negative_int(raw.get("sensitive_item_text_redacted")),
         rendered_chars=_non_negative_int(raw.get("rendered_chars")),
         max_rendered_chars=_non_negative_int(raw.get("max_rendered_chars")),
-        provenance_summary=_bounded_mapping(raw.get("provenance_summary")),
-        retrieval_quality_summary=_bounded_mapping(raw.get("retrieval_quality_summary")),
+        provenance_summary=provenance_summary,
+        retrieval_quality_summary=retrieval_quality_summary,
         retrieval_trace=retrieval_trace,
     )
 

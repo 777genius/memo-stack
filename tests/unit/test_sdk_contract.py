@@ -1320,6 +1320,46 @@ def test_sdk_typed_context_covers_core_bundle_counter_contract() -> None:
         assert getattr(bundle.diagnostics, key) == value
 
 
+def test_sdk_typed_context_preserves_late_summary_diagnostics() -> None:
+    diagnostics = {
+        "context_assembly_version": "context-v2-hybrid-explainable",
+        "consistency_mode": "canonical_only",
+        **{f"filler_{index}": index for index in range(160)},
+        "provenance_summary": {
+            "items_total": 1,
+            "items_with_precise_locations": 1,
+            "source_refs_with_precise_location_count": 3,
+        },
+        "retrieval_quality_summary": {
+            "evidence_strength": "strong",
+            "retrieval_mode": "multimodal_single_source",
+        },
+    }
+    bundle = context_bundle_from_response(
+        {
+            "data": {
+                "bundle_id": "ctx_late_summary",
+                "rendered_text": "",
+                "diagnostics": diagnostics,
+                "items": [],
+            }
+        }
+    )
+
+    assert bundle.diagnostics.provenance_summary == {
+        "items_total": 1,
+        "items_with_precise_locations": 1,
+        "source_refs_with_precise_location_count": 3,
+    }
+    assert bundle.diagnostics.retrieval_quality_summary == {
+        "evidence_strength": "strong",
+        "retrieval_mode": "multimodal_single_source",
+    }
+    assert bundle.diagnostics.raw["provenance_summary"] == (
+        bundle.diagnostics.provenance_summary
+    )
+
+
 def test_sdk_typed_context_defaults_missing_diagnostic_counters() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

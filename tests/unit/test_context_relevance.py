@@ -49,6 +49,18 @@ def test_query_relevance_requires_exact_identifier_token_for_underscore_query() 
     assert relevance.hit_ratio == 0.0
 
 
+def test_query_relevance_matches_safe_underscore_identifier_prefix() -> None:
+    relevance = score_query_relevance(
+        query="CANONICAL_ONLY",
+        text="CANONICAL_ONLY_CHUNK_MARKER comes only from keyword chunks.",
+    )
+
+    assert relevance.query_term_count == 1
+    assert relevance.unique_term_hits == 1
+    assert relevance.hit_ratio == 1.0
+    assert is_query_relevance_sufficient(relevance) is True
+
+
 def test_query_relevance_avoids_unrelated_project_match() -> None:
     relevance = score_query_relevance(
         query="project atlas",
@@ -79,6 +91,16 @@ def test_project_identity_mismatch_detects_shared_generic_terms() -> None:
     assert not has_project_identity_mismatch(
         query="Alex billing one hour ago",
         text="Alex discussed Project Atlas billing one hour ago.",
+    )
+
+
+def test_project_identity_mismatch_ignores_descriptive_project_memory_phrases() -> None:
+    assert not has_project_identity_mismatch(
+        query="shared project memory coding agents dev teams Codex Claude Cursor Slack",
+        text=(
+            "Long memory benchmark project notes LONGMEM_DOC_PROJECT_SCOPE: "
+            "Infinity Context is shared project memory for coding agents and dev teams."
+        ),
     )
 
 

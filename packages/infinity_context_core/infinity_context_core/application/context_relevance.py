@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from infinity_context_core.application.context_lexical import (
     LexicalQueryTerm,
+    lexical_variants,
     query_term_frequency,
     query_terms,
     text_variant_counts,
@@ -83,6 +85,7 @@ _GENERIC_MEMORY_QUERY_TERMS = frozenset(
         "человек",
     }
 )
+_IDENTITY_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
 
 def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> QueryRelevance:
@@ -175,20 +178,32 @@ def _is_distinctive_term(term: LexicalQueryTerm) -> bool:
 
 
 def _project_identity_variant_sets(text: str) -> tuple[tuple[str, ...], ...]:
-    token_variants = text_variant_sequence(text)
+    token_variants = _standalone_token_variant_sequence(text)
     identities: list[tuple[str, ...]] = []
     seen: set[tuple[str, ...]] = set()
     for index, variants in enumerate(token_variants):
         if not _is_project_marker_variants(variants):
             continue
-        for candidate in token_variants[index + 1 : index + 4]:
-            if _is_distinctive_variants(candidate):
-                key = tuple(candidate)
-                if key not in seen:
-                    identities.append(key)
-                    seen.add(key)
-                break
+        if index + 1 >= len(token_variants):
+            continue
+        candidate = token_variants[index + 1]
+        if not _is_distinctive_variants(candidate):
+            continue
+        key = tuple(candidate)
+        if key not in seen:
+            identities.append(key)
+            seen.add(key)
     return tuple(identities)
+
+
+def _standalone_token_variant_sequence(text: str) -> tuple[tuple[str, ...], ...]:
+    return tuple(
+        variants
+        for match in _IDENTITY_TOKEN_RE.finditer(text)
+        if "_" not in match.group(0)
+        for variants in (lexical_variants(match.group(0)),)
+        if variants
+    )
 
 
 def _is_project_marker_variants(variants: tuple[str, ...]) -> bool:
