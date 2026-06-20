@@ -1027,6 +1027,7 @@ def _chunk_context_item(
     source_refs = source_refs_with_query_snippet(
         chunk_source_refs(chunk, text_preview=(snippet.text if snippet else text[:200])),
         snippet,
+        include_char_range=True,
     )
     score_signals = {
         "base_score": base_score,

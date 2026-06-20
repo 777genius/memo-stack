@@ -24,6 +24,26 @@ from infinity_context_server.eval_types import (
 
 _MAX_DIAGNOSTIC_MISMATCH_FAILURES = 8
 _MAX_DIAGNOSTIC_FAILURE_TEXT_CHARS = 160
+_PRECISE_SOURCE_REF_REQUIREMENT_KEYS = frozenset(
+    {
+        "char_start",
+        "char_end",
+        "page_number",
+        "time_start_ms",
+        "time_end_ms",
+        "bbox",
+    }
+)
+_PRECISE_CITATION_REQUIREMENT_KEYS = frozenset(
+    {
+        "char_range.start",
+        "char_range.end",
+        "page_number",
+        "time_range_ms.start",
+        "time_range_ms.end",
+        "bbox",
+    }
+)
 
 
 def _run_eval_case(
@@ -430,6 +450,9 @@ def _quality_golden_metrics(
         for result in case_results
         if result.case.required_source_ref_matches or result.case.required_citation_matches
     )
+    precise_citation_cases = tuple(
+        result for result in case_results if _requires_precise_citation_contract(result.case)
+    )
     retrieval_trace_cases = tuple(result for result in case_results if result.item_ids)
     item_contract_cases = tuple(
         result for result in case_results if result.case.required_item_matches
@@ -506,6 +529,10 @@ def _quality_golden_metrics(
             sum(1 for result in citation_cases if not result.failures),
             len(citation_cases),
         ),
+        "precise_citation_contract_rate": _ratio(
+            sum(1 for result in precise_citation_cases if not result.failures),
+            len(precise_citation_cases),
+        ),
         "source_citation_failure_count": source_citation_failures,
         "retrieval_trace_support_rate": _ratio(
             sum(1 for result in retrieval_trace_cases if _has_retrieval_trace(result)),
@@ -571,6 +598,7 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "document_recall_at_5": float(metrics["document_recall_at_5"]) >= 0.95,
         "hybrid_retrieval_rate": metrics["hybrid_retrieval_rate"] == 1.0,
         "citation_support_rate": metrics["citation_support_rate"] == 1.0,
+        "precise_citation_contract_rate": metrics["precise_citation_contract_rate"] == 1.0,
         "source_citation_failure_count": metrics["source_citation_failure_count"] == 0,
         "retrieval_trace_support_rate": metrics["retrieval_trace_support_rate"] == 1.0,
         "retrieval_trace_location_contract_rate": (
@@ -597,6 +625,24 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "critical_failure_count": metrics["critical_failure_count"] == 0,
         "harmful_context_rate": metrics["harmful_context_rate"] == 0.0,
     }
+
+
+def _requires_precise_citation_contract(case: EvalCase) -> bool:
+    return _mapping_groups_reference_precise_keys(
+        case.required_source_ref_matches,
+        keys=_PRECISE_SOURCE_REF_REQUIREMENT_KEYS,
+    ) or _mapping_groups_reference_precise_keys(
+        case.required_citation_matches,
+        keys=_PRECISE_CITATION_REQUIREMENT_KEYS,
+    )
+
+
+def _mapping_groups_reference_precise_keys(
+    groups: tuple[MappingRequirement, ...],
+    *,
+    keys: frozenset[str],
+) -> bool:
+    return any(requirement[0] in keys for group in groups for requirement in group)
 
 
 def _required_case_metrics(

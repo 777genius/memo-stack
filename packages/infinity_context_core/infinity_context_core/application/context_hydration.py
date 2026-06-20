@@ -216,6 +216,7 @@ class ContextHydrator:
                                 text_preview=snippet.text if snippet else chunk_text,
                             ),
                             snippet,
+                            include_char_range=True,
                         ),
                         is_instruction=item.is_instruction,
                         diagnostics=item.diagnostics,

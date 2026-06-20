@@ -673,7 +673,17 @@ def test_context_enriches_chunk_citations_with_query_focused_snippet(
     assert "query snippet marker Atlas renewal decision" in snippet
     assert diagnostics["query_snippet_unique_term_hits"] >= 4
     assert snippet in item["citations"][0]["quote_preview"]
+    assert item["citations"][0]["char_range"] == {
+        "start": diagnostics["query_snippet_char_start"],
+        "end": diagnostics["query_snippet_char_end"],
+    }
     assert data["diagnostics"]["citation_quote_previews_rendered"] == 1
+    assert (
+        data["diagnostics"]["provenance_summary"][
+            "source_refs_with_precise_location_count"
+        ]
+        >= 1
+    )
     assert "query snippet marker Atlas renewal decision" in data["rendered_text"]
     assert len(snippet) < len(item["text"])
 
