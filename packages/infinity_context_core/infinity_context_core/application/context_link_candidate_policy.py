@@ -844,6 +844,12 @@ def _reason_codes(reasons: tuple[str, ...]) -> list[str]:
             codes.append("video_evidence_match")
         elif reason == "audio evidence match":
             codes.append("audio_evidence_match")
+        elif reason == "exact duplicate":
+            codes.append("exact_duplicate")
+        elif reason == "equivalent text":
+            codes.append("equivalent_text")
+        elif reason == "semantic duplicate":
+            codes.append("semantic_duplicate")
         elif reason == "excluded query term":
             codes.append("excluded_term_penalty")
         elif reason == "recent context":

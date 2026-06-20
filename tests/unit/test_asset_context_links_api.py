@@ -2191,6 +2191,137 @@ def test_context_linking_quality_golden_links_numeric_hours_intent_without_text_
         assert thread_candidate["suggestion_id"]
 
 
+def test_context_link_suggestions_flag_exact_duplicate_fact_for_review(
+    tmp_path: Path,
+) -> None:
+    text = "Project Atlas uses Qdrant vectors for document retrieval."
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "duplicate-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-notes",
+                "text": text,
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "fact-atlas-qdrant"}],
+            },
+            headers=auth_headers(),
+        )
+        assert fact.status_code == 201, fact.text
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "duplicate-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-notes",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-duplicate-atlas-qdrant",
+                "text": text,
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "duplicate-linking-quality",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-notes",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": text,
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert suggestions.status_code == 200, suggestions.text
+    payload = suggestions.json()["data"]
+    duplicate_candidate = next(
+        item
+        for item in payload["candidates"]
+        if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
+    )
+    metadata = duplicate_candidate["metadata"]
+    assert metadata["policy_relation_type"] == "duplicates"
+    assert metadata["policy_decision_canonical"] == "pending_review"
+    assert metadata["auto_approve_eligible"] is False
+    assert metadata["dedupe_match_type"] == "exact_normalized_text"
+    assert "exact_duplicate" in metadata["reason_codes"]
+    assert duplicate_candidate["suggestion_id"]
+
+
+def test_context_link_suggestions_do_not_mark_numeric_mismatch_as_duplicate(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        fact = client.post(
+            "/v1/facts",
+            json={
+                "space_slug": "duplicate-linking-quality-mismatch",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-budget",
+                "text": "Project Atlas budget is 1000 dollars for document retrieval.",
+                "kind": "note",
+                "source_refs": [{"source_type": "manual", "source_id": "fact-budget-1000"}],
+            },
+            headers=auth_headers(),
+        )
+        assert fact.status_code == 201, fact.text
+        capture = client.post(
+            "/v1/captures",
+            json={
+                "space_slug": "duplicate-linking-quality-mismatch",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-budget",
+                "source_agent": "memo-frontend",
+                "source_kind": "manual",
+                "event_type": "QuickCapture",
+                "actor_role": "user",
+                "source_event_id": "capture-budget-2000",
+                "text": "Project Atlas budget is 2000 dollars for document retrieval.",
+                "source_authority": "user_statement",
+            },
+            headers=auth_headers(),
+        )
+        assert capture.status_code == 201, capture.text
+
+        suggestions = client.post(
+            "/v1/link-suggestions",
+            json={
+                "space_slug": "duplicate-linking-quality-mismatch",
+                "memory_scope_external_ref": "default",
+                "thread_external_ref": "atlas-budget",
+                "source_type": "capture",
+                "source_id": capture.json()["data"]["id"],
+                "text": "Project Atlas budget is 2000 dollars for document retrieval.",
+                "persist": True,
+                "limit": 10,
+            },
+            headers=auth_headers(),
+        )
+
+    assert suggestions.status_code == 200, suggestions.text
+    payload = suggestions.json()["data"]
+    fact_candidates = [
+        item
+        for item in payload["candidates"]
+        if item["target_type"] == "fact" and item["target_id"] == fact.json()["data"]["id"]
+    ]
+    assert fact_candidates
+    assert all(
+        item["metadata"].get("policy_relation_type") != "duplicates" for item in fact_candidates
+    )
+    assert all("dedupe_match_type" not in item["metadata"] for item in fact_candidates)
+
+
 def test_context_link_suggestions_redact_public_diagnostics(tmp_path: Path) -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     with make_client(tmp_path) as client:

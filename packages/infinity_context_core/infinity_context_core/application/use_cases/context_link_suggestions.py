@@ -85,6 +85,11 @@ from infinity_context_core.application.observed_anchor_resolution import (
     preferred_observed_label,
     should_promote_observed_key,
 )
+from infinity_context_core.application.semantic_dedupe import (
+    FactDuplicateMatch,
+    describe_duplicate_fact_match,
+    normalize_memory_text,
+)
 from infinity_context_core.application.source_refs import chunk_source_refs as _chunk_source_refs
 from infinity_context_core.application.use_cases.context_link_visibility import (
     assert_context_link_endpoint_visible,
@@ -346,7 +351,15 @@ class SuggestContextLinksUseCase:
                 reasons.append("same thread")
             if fact.category:
                 reasons.append(f"category:{fact.category}")
-            if not _has_link_signal(matched_terms=matched_terms, reasons=reasons):
+            duplicate_match = describe_duplicate_fact_match(query_text, fact.text)
+            duplicate_metadata = _duplicate_fact_candidate_metadata(duplicate_match)
+            if duplicate_match is not None:
+                score = _duplicate_fact_candidate_score(score, duplicate_match)
+                reasons.extend(_duplicate_fact_candidate_reasons(duplicate_match))
+            if duplicate_match is None and not _has_link_signal(
+                matched_terms=matched_terms,
+                reasons=reasons,
+            ):
                 continue
             candidates.append(
                 _candidate(
@@ -360,6 +373,7 @@ class SuggestContextLinksUseCase:
                         "version": fact.version,
                         "tags": list(fact.tags),
                         "matched_terms": list(matched_terms),
+                        **duplicate_metadata,
                         **_evidence_summary(fact.source_refs),
                     },
                 )
@@ -867,6 +881,33 @@ def _observed_anchor_for_candidate(
     return None
 
 
+def _duplicate_fact_candidate_metadata(match: FactDuplicateMatch | None) -> dict[str, object]:
+    if match is None:
+        return {}
+    return {
+        "relation_type": "duplicates",
+        "dedupe_match_type": match.match_type,
+        "dedupe_match_score": match.score,
+        "dedupe_overlap_terms": list(match.overlap_terms[:12]),
+        "dedupe_reason_codes": list(match.reason_codes),
+    }
+
+
+def _duplicate_fact_candidate_score(score: float, match: FactDuplicateMatch) -> float:
+    if match.match_type == "exact_normalized_text":
+        return max(score, 98.0)
+    return max(score, min(96.0, 72.0 + match.score * 26.0))
+
+
+def _duplicate_fact_candidate_reasons(match: FactDuplicateMatch) -> list[str]:
+    if match.match_type == "exact_normalized_text":
+        return ["exact duplicate"]
+    reasons = ["semantic duplicate"]
+    if "equivalent_text" in match.reason_codes:
+        reasons.append("equivalent text")
+    return reasons
+
+
 def _suggestion_confidence(candidate: ContextLinkCandidate) -> str:
     return policy_confidence_for_candidate(candidate) or _confidence_for_candidate(candidate)
 
@@ -882,7 +923,19 @@ def _same_scope(entity: object, command: SuggestContextLinksCommand) -> bool:
 
 
 def _join_text(left: str, right: str) -> str:
-    return ". ".join(part for part in (left.strip(" ."), right.strip(" .")) if part)
+    left_clean = left.strip()
+    right_clean = right.strip()
+    if not left_clean:
+        return right_clean
+    if not right_clean:
+        return left_clean
+    left_normalized = normalize_memory_text(left_clean)
+    right_normalized = normalize_memory_text(right_clean)
+    if left_normalized == right_normalized or left_normalized in right_normalized:
+        return right_clean
+    if right_normalized in left_normalized:
+        return left_clean
+    return ". ".join(part for part in (left_clean.strip(" ."), right_clean.strip(" .")) if part)
 
 
 def _bounded_suggestion_limit(limit: int) -> int:
