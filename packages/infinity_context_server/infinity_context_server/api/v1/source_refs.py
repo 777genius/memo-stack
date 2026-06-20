@@ -43,9 +43,9 @@ def map_source_ref(request: SourceRefRequest) -> SourceRef:
 def source_ref_to_response(ref: object) -> dict[str, Any]:
     quote_preview = getattr(ref, "quote_preview", None)
     return {
-        "source_type": getattr(ref, "source_type", ""),
-        "source_id": getattr(ref, "source_id", ""),
-        "chunk_id": getattr(ref, "chunk_id", None),
+        "source_type": safe_public_text(str(getattr(ref, "source_type", "")), limit=80),
+        "source_id": safe_public_text(str(getattr(ref, "source_id", "")), limit=160),
+        "chunk_id": _optional_public_text(getattr(ref, "chunk_id", None), limit=160),
         "char_start": getattr(ref, "char_start", None),
         "char_end": getattr(ref, "char_end", None),
         "quote_preview": safe_public_text(quote_preview) if quote_preview else None,
@@ -54,6 +54,13 @@ def source_ref_to_response(ref: object) -> dict[str, Any]:
         "time_end_ms": getattr(ref, "time_end_ms", None),
         "bbox": _bbox_to_response(getattr(ref, "bbox", None)),
     }
+
+
+def _optional_public_text(value: object, *, limit: int) -> str | None:
+    if value is None:
+        return None
+    text = safe_public_text(str(value), limit=limit).strip()
+    return text or None
 
 
 def _bbox_to_response(value: object) -> list[float] | None:

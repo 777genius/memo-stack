@@ -28,12 +28,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import ensure_server_writes_enabled, should_capture
-from infinity_context_server.api.public_payload import safe_public_metadata, safe_public_text
+from infinity_context_server.api.public_payload import safe_public_metadata
 from infinity_context_server.api.v1.scope_resolution import (
     resolve_existing_single_scope,
     resolve_single_scope,
 )
-from infinity_context_server.api.v1.source_refs import SourceRefRequest, map_source_ref
+from infinity_context_server.api.v1.source_refs import (
+    SourceRefRequest,
+    map_source_ref,
+    source_ref_to_response,
+)
 from infinity_context_server.composition import Container
 from infinity_context_server.config import CaptureMode
 
@@ -287,19 +291,7 @@ def capture_to_response(capture: CanonicalCapture) -> dict[str, Any]:
         "source_authority": capture.source_authority.value,
         "sensitivity": capture.sensitivity.value,
         "data_classification": capture.data_classification.value,
-        "evidence_refs": [
-            {
-                "source_type": ref.source_type,
-                "source_id": ref.source_id,
-                "chunk_id": ref.chunk_id,
-                "char_start": ref.char_start,
-                "char_end": ref.char_end,
-                "quote_preview": safe_public_text(ref.quote_preview)
-                if ref.quote_preview
-                else None,
-            }
-            for ref in capture.evidence_refs
-        ],
+        "evidence_refs": [source_ref_to_response(ref) for ref in capture.evidence_refs],
         "metadata": _safe_metadata(capture.metadata),
         "created_at": capture.created_at.isoformat(),
         "updated_at": capture.updated_at.isoformat(),

@@ -44,7 +44,11 @@ from infinity_context_server.api.v1.scope_resolution import (
     resolve_existing_single_scope,
     resolve_single_scope,
 )
-from infinity_context_server.api.v1.source_refs import SourceRefRequest, map_source_ref
+from infinity_context_server.api.v1.source_refs import (
+    SourceRefRequest,
+    map_source_ref,
+    source_ref_to_response,
+)
 from infinity_context_server.composition import Container
 
 router = APIRouter(
@@ -186,19 +190,7 @@ def suggestion_to_response(suggestion: MemorySuggestion) -> dict[str, Any]:
         "kind": suggestion.kind.value,
         "operation": suggestion.operation.value,
         "status": suggestion.status.value,
-        "source_refs": [
-            {
-                "source_type": ref.source_type,
-                "source_id": ref.source_id,
-                "chunk_id": ref.chunk_id,
-                "char_start": ref.char_start,
-                "char_end": ref.char_end,
-                "quote_preview": safe_public_text(ref.quote_preview)
-                if ref.quote_preview
-                else None,
-            }
-            for ref in suggestion.source_refs
-        ],
+        "source_refs": [source_ref_to_response(ref) for ref in suggestion.source_refs],
         "confidence": suggestion.confidence.value,
         "trust_level": suggestion.trust_level.value,
         "safe_reason": safe_public_reason(suggestion.safe_reason, limit=320),

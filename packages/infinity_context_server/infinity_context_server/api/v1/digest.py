@@ -12,9 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from infinity_context_server.api.auth import require_service_token
 from infinity_context_server.api.dependencies import get_container
 from infinity_context_server.api.policy import should_retrieve
-from infinity_context_server.api.public_payload import safe_public_text
 from infinity_context_server.api.v1.context import context_item_to_response
 from infinity_context_server.api.v1.scope_resolution import resolve_existing_context_scope
+from infinity_context_server.api.v1.source_refs import source_ref_to_response
 from infinity_context_server.composition import Container
 
 router = APIRouter(tags=["digest"], dependencies=[Depends(require_service_token)])
@@ -138,19 +138,7 @@ def digest_to_response(digest: MemoryDigest) -> dict[str, Any]:
             }
             for section in digest.sections
         ],
-        "source_refs": [
-            {
-                "source_type": ref.source_type,
-                "source_id": ref.source_id,
-                "chunk_id": ref.chunk_id,
-                "char_start": ref.char_start,
-                "char_end": ref.char_end,
-                "quote_preview": safe_public_text(ref.quote_preview)
-                if ref.quote_preview
-                else None,
-            }
-            for ref in digest.source_refs
-        ],
+        "source_refs": [source_ref_to_response(ref) for ref in digest.source_refs],
         "token_estimate": digest.token_estimate,
         "diagnostics": digest.diagnostics,
     }
