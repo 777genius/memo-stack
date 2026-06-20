@@ -1032,6 +1032,10 @@ def _empty_retrieval_trace_entry(source: str) -> dict[str, object]:
         "item_types": {},
         "source_ref_count": 0,
         "multimodal_source_ref_count": 0,
+        "source_refs_with_char_range_count": 0,
+        "source_refs_with_page_count": 0,
+        "source_refs_with_bbox_count": 0,
+        "source_refs_with_time_range_count": 0,
         "evidence_kind_counts": {},
         "evidence_modality_counts": {},
         "max_score": 0.0,
@@ -1048,6 +1052,26 @@ def _add_item_to_retrieval_trace_entry(
     entry["source_ref_count"] = int(entry["source_ref_count"]) + len(item.source_refs)
     entry["multimodal_source_ref_count"] = int(entry["multimodal_source_ref_count"]) + sum(
         1 for ref in item.source_refs if _is_multimodal_source_ref(ref)
+    )
+    entry["source_refs_with_char_range_count"] = int(
+        entry["source_refs_with_char_range_count"]
+    ) + sum(
+        1
+        for ref in item.source_refs
+        if ref.char_start is not None or ref.char_end is not None
+    )
+    entry["source_refs_with_page_count"] = int(entry["source_refs_with_page_count"]) + sum(
+        1 for ref in item.source_refs if ref.page_number is not None
+    )
+    entry["source_refs_with_bbox_count"] = int(entry["source_refs_with_bbox_count"]) + sum(
+        1 for ref in item.source_refs if ref.bbox is not None
+    )
+    entry["source_refs_with_time_range_count"] = int(
+        entry["source_refs_with_time_range_count"]
+    ) + sum(
+        1
+        for ref in item.source_refs
+        if ref.time_start_ms is not None or ref.time_end_ms is not None
     )
     entry["max_score"] = max(float(entry["max_score"]), round(float(item.score), 4))
     diagnostics = _as_dict(item.diagnostics)

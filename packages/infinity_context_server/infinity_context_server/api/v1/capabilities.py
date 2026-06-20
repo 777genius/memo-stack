@@ -62,6 +62,22 @@ async def capabilities(
                 container.settings.max_pending_suggestions_per_memory_scope
             ),
         },
+        "context": {
+            "api_version": 1,
+            "bundle_diagnostics_schema": "context-v2-hybrid-explainable",
+            "top_evidence_supported": True,
+            "citations_supported": True,
+            "answer_support_supported": True,
+            "answer_support_evidence_breakdown_supported": True,
+            "retrieval_quality_summary_supported": True,
+            "retrieval_trace_supported": True,
+            "retrieval_trace_location_counts_supported": True,
+            "stale_filtering_supported": True,
+            "review_only_excluded_by_default": True,
+            "source_text_policy": "untrusted_evidence",
+            "max_top_evidence_items": 5,
+            "max_answer_support_warnings": 8,
+        },
         "storage": _storage_payload(container),
         "extraction": build_extraction_capability_payload(container.settings),
         "plans": {

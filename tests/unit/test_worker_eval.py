@@ -1261,6 +1261,8 @@ def test_quality_golden_eval_passes() -> None:
     assert result["metrics"]["recall_at_5"] >= 0.95
     assert result["metrics"]["precision_at_5"] >= 0.90
     assert result["metrics"]["answer_support_rate"] == 1.0
+    assert result["metrics"]["answer_support_breakdown_rate"] == 1.0
+    assert result["gates"]["answer_support_breakdown_rate"] is True
     assert result["metrics"]["document_recall_at_5"] >= 0.95
     assert result["metrics"]["hybrid_retrieval_rate"] == 1.0
     assert result["gates"]["hybrid_retrieval_rate"] is True
@@ -1270,6 +1272,8 @@ def test_quality_golden_eval_passes() -> None:
     assert result["gates"]["source_citation_failure_count"] is True
     assert result["metrics"]["retrieval_trace_support_rate"] == 1.0
     assert result["gates"]["retrieval_trace_support_rate"] is True
+    assert result["metrics"]["retrieval_trace_location_contract_rate"] == 1.0
+    assert result["gates"]["retrieval_trace_location_contract_rate"] is True
     assert result["metrics"]["item_contract_support_rate"] == 1.0
     assert result["metrics"]["item_contract_failure_count"] == 0
     assert result["gates"]["item_contract_support_rate"] is True
@@ -1315,6 +1319,8 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["metrics"]["harmful_context_rate"] == 0.0
     assert payload["metrics"]["hybrid_retrieval_rate"] == 1.0
     assert payload["metrics"]["retrieval_trace_support_rate"] == 1.0
+    assert payload["metrics"]["retrieval_trace_location_contract_rate"] == 1.0
+    assert payload["metrics"]["answer_support_breakdown_rate"] == 1.0
     assert payload["failures"] == []
     assert "QUALITY_FACT_MODEL_CURRENT" not in report_text
     assert "QUALITY_HYBRID_DUAL_SOURCE" not in report_text

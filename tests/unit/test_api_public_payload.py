@@ -413,6 +413,108 @@ def test_answer_support_excludes_review_only_and_stale_items() -> None:
     assert diagnostics["answer_support_warnings"] == answer_support["warnings"]
 
 
+def test_answer_support_reports_evidence_breakdown_for_frontend_review() -> None:
+    items = [
+        {
+            "item_id": "audio_segment",
+            "item_type": "extraction_artifact",
+            "score": 0.92,
+            "citations": [
+                {
+                    "citation_id": "artifact:audio:citation:1",
+                    "source_type": "extraction_artifact",
+                    "source_id": "artifact_audio",
+                    "chunk_id": "segment_1",
+                    "quote_preview": "Alex confirmed Atlas renewal.",
+                    "time_range_ms": {"start": 1200, "end": 5400},
+                    "evidence_kind": "transcript_segment",
+                    "evidence_modality": "audio",
+                }
+            ],
+            "diagnostics": {
+                "retrieval_source": "artifact_evidence",
+                "retrieval_sources": ["artifact_evidence", "keyword_chunks"],
+            },
+        },
+        {
+            "item_id": "image_region",
+            "item_type": "extraction_artifact",
+            "score": 0.88,
+            "citations": [
+                {
+                    "citation_id": "artifact:image:citation:1",
+                    "source_type": "extraction_artifact",
+                    "source_id": "artifact_image",
+                    "quote_preview": "OCR text says Atlas threshold.",
+                    "bbox": [0.0, 0.0, 120.0, 40.0],
+                    "evidence_kind": "ocr_region",
+                    "evidence_modality": "image",
+                }
+            ],
+            "diagnostics": {"retrieval_source": "artifact_evidence"},
+        },
+        {
+            "item_id": "document_page",
+            "item_type": "chunk",
+            "score": 0.84,
+            "citations": [
+                {
+                    "citation_id": "chunk:doc:citation:1",
+                    "source_type": "document",
+                    "source_id": "doc_1",
+                    "quote_preview": "Document says Atlas renewal.",
+                    "page_number": 2,
+                    "evidence_kind": "document_page",
+                    "evidence_modality": "document",
+                }
+            ],
+            "diagnostics": {"retrieval_source": "keyword_chunks"},
+        },
+    ]
+
+    top_evidence = _top_evidence_to_response(items, limit=3)
+    answer_support = _answer_support_to_response(
+        items=items,
+        top_evidence=top_evidence,
+        limit=3,
+    )
+    diagnostics = _context_diagnostics_to_response(
+        {},
+        items=items,
+        top_evidence=top_evidence,
+        answer_support=answer_support,
+    )
+
+    coverage = answer_support["coverage"]
+    assert coverage["supported_item_types"] == {"chunk": 1, "extraction_artifact": 2}
+    assert coverage["support_source_types"] == {
+        "document": 1,
+        "extraction_artifact": 2,
+    }
+    assert coverage["support_evidence_kinds"] == {
+        "document_page": 1,
+        "ocr_region": 1,
+        "transcript_segment": 1,
+    }
+    assert coverage["support_evidence_modalities"] == {
+        "audio": 1,
+        "document": 1,
+        "image": 1,
+    }
+    assert coverage["location_support_counts"] == {
+        "bbox": 1,
+        "char_range": 0,
+        "page_number": 1,
+        "time_range_ms": 1,
+    }
+    assert coverage["source_type_count"] == 2
+    assert coverage["evidence_kind_count"] == 3
+    assert coverage["evidence_modality_count"] == 3
+    assert diagnostics["answer_support_source_type_count"] == 2
+    assert diagnostics["answer_support_evidence_kind_count"] == 3
+    assert diagnostics["answer_support_evidence_modality_count"] == 3
+
+
 def test_memory_suggestion_review_audit_is_bounded_and_redacted() -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     now = datetime(2026, 1, 1, tzinfo=UTC)

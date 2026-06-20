@@ -94,6 +94,10 @@ class ContextRetrievalTraceEntry:
     max_score: float
     review_only_count: int = 0
     stale_count: int = 0
+    source_refs_with_char_range_count: int = 0
+    source_refs_with_page_count: int = 0
+    source_refs_with_bbox_count: int = 0
+    source_refs_with_time_range_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -253,6 +257,9 @@ class ContextBundleDiagnostics:
     answer_support_precise_location_count: int = 0
     answer_support_multimodal_count: int = 0
     answer_support_coverage_ratio: float = 0.0
+    answer_support_source_type_count: int = 0
+    answer_support_evidence_kind_count: int = 0
+    answer_support_evidence_modality_count: int = 0
     answer_support_warnings: tuple[str, ...] = ()
     citation_quote_previews_rendered: int = 0
     sensitive_citation_quote_previews_skipped: int = 0
@@ -631,6 +638,15 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
     answer_support_coverage_ratio = _safe_float(
         payload.get("answer_support_coverage_ratio")
     )
+    answer_support_source_type_count = _non_negative_int(
+        payload.get("answer_support_source_type_count")
+    )
+    answer_support_evidence_kind_count = _non_negative_int(
+        payload.get("answer_support_evidence_kind_count")
+    )
+    answer_support_evidence_modality_count = _non_negative_int(
+        payload.get("answer_support_evidence_modality_count")
+    )
     answer_support_warnings = tuple(
         warning
         for raw_warning in _as_list(payload.get("answer_support_warnings"))[:MAX_LIST_ITEMS]
@@ -642,6 +658,9 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
     safe_raw["answer_support_precise_location_count"] = answer_support_precise_location_count
     safe_raw["answer_support_multimodal_count"] = answer_support_multimodal_count
     safe_raw["answer_support_coverage_ratio"] = answer_support_coverage_ratio
+    safe_raw["answer_support_source_type_count"] = answer_support_source_type_count
+    safe_raw["answer_support_evidence_kind_count"] = answer_support_evidence_kind_count
+    safe_raw["answer_support_evidence_modality_count"] = answer_support_evidence_modality_count
     safe_raw["answer_support_warnings"] = list(answer_support_warnings)
     return ContextBundleDiagnostics(
         context_assembly_version=_safe_text(raw.get("context_assembly_version"), default="unknown"),
@@ -891,6 +910,9 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         answer_support_precise_location_count=answer_support_precise_location_count,
         answer_support_multimodal_count=answer_support_multimodal_count,
         answer_support_coverage_ratio=answer_support_coverage_ratio,
+        answer_support_source_type_count=answer_support_source_type_count,
+        answer_support_evidence_kind_count=answer_support_evidence_kind_count,
+        answer_support_evidence_modality_count=answer_support_evidence_modality_count,
         answer_support_warnings=answer_support_warnings,
         citation_quote_previews_rendered=_non_negative_int(
             raw.get("citation_quote_previews_rendered")
@@ -925,6 +947,18 @@ def _retrieval_trace_entry_from_payload(
         max_score=_safe_float(payload.get("max_score")),
         review_only_count=_non_negative_int(payload.get("review_only_count")),
         stale_count=_non_negative_int(payload.get("stale_count")),
+        source_refs_with_char_range_count=_non_negative_int(
+            payload.get("source_refs_with_char_range_count")
+        ),
+        source_refs_with_page_count=_non_negative_int(
+            payload.get("source_refs_with_page_count")
+        ),
+        source_refs_with_bbox_count=_non_negative_int(
+            payload.get("source_refs_with_bbox_count")
+        ),
+        source_refs_with_time_range_count=_non_negative_int(
+            payload.get("source_refs_with_time_range_count")
+        ),
     )
 
 
@@ -940,6 +974,10 @@ def _retrieval_trace_entry_to_raw(entry: ContextRetrievalTraceEntry) -> dict[str
         "max_score": entry.max_score,
         "review_only_count": entry.review_only_count,
         "stale_count": entry.stale_count,
+        "source_refs_with_char_range_count": entry.source_refs_with_char_range_count,
+        "source_refs_with_page_count": entry.source_refs_with_page_count,
+        "source_refs_with_bbox_count": entry.source_refs_with_bbox_count,
+        "source_refs_with_time_range_count": entry.source_refs_with_time_range_count,
     }
 
 

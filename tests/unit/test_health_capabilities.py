@@ -121,6 +121,22 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["limits"]["max_asset_upload_bytes"] == 25 * 1024 * 1024
     assert body["limits"]["asset_storage_bytes_per_memory_scope"] == 5 * 1024 * 1024 * 1024
     assert body["limits"]["media_analysis_seconds_per_month"] == 10 * 60 * 60
+    assert body["context"] == {
+        "api_version": 1,
+        "bundle_diagnostics_schema": "context-v2-hybrid-explainable",
+        "top_evidence_supported": True,
+        "citations_supported": True,
+        "answer_support_supported": True,
+        "answer_support_evidence_breakdown_supported": True,
+        "retrieval_quality_summary_supported": True,
+        "retrieval_trace_supported": True,
+        "retrieval_trace_location_counts_supported": True,
+        "stale_filtering_supported": True,
+        "review_only_excluded_by_default": True,
+        "source_text_policy": "untrusted_evidence",
+        "max_top_evidence_items": 5,
+        "max_answer_support_warnings": 8,
+    }
     assert body["storage"] == {
         "asset_backend": "local",
         "asset_backend_configured": True,

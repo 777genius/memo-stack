@@ -486,6 +486,14 @@ def _quality_golden_metrics(
             ),
             len(answer_support_cases),
         ),
+        "answer_support_breakdown_rate": _ratio(
+            sum(
+                1
+                for result in answer_support_cases
+                if _has_answer_support_breakdown(result)
+            ),
+            len(answer_support_cases),
+        ),
         "document_recall_at_5": _ratio(
             sum(1 for result in document_cases if result.recall_ok),
             len(document_cases),
@@ -501,6 +509,14 @@ def _quality_golden_metrics(
         "source_citation_failure_count": source_citation_failures,
         "retrieval_trace_support_rate": _ratio(
             sum(1 for result in retrieval_trace_cases if _has_retrieval_trace(result)),
+            len(retrieval_trace_cases),
+        ),
+        "retrieval_trace_location_contract_rate": _ratio(
+            sum(
+                1
+                for result in retrieval_trace_cases
+                if _has_retrieval_trace_location_contract(result)
+            ),
             len(retrieval_trace_cases),
         ),
         "item_contract_support_rate": _ratio(
@@ -543,11 +559,15 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "recall_at_5": float(metrics["recall_at_5"]) >= _QUALITY_GOLDEN_RECALL_GATE,
         "precision_at_5": float(metrics["precision_at_5"]) >= _QUALITY_GOLDEN_PRECISION_GATE,
         "answer_support_rate": metrics["answer_support_rate"] == 1.0,
+        "answer_support_breakdown_rate": metrics["answer_support_breakdown_rate"] == 1.0,
         "document_recall_at_5": float(metrics["document_recall_at_5"]) >= 0.95,
         "hybrid_retrieval_rate": metrics["hybrid_retrieval_rate"] == 1.0,
         "citation_support_rate": metrics["citation_support_rate"] == 1.0,
         "source_citation_failure_count": metrics["source_citation_failure_count"] == 0,
         "retrieval_trace_support_rate": metrics["retrieval_trace_support_rate"] == 1.0,
+        "retrieval_trace_location_contract_rate": (
+            metrics["retrieval_trace_location_contract_rate"] == 1.0
+        ),
         "item_contract_support_rate": metrics["item_contract_support_rate"] == 1.0,
         "item_contract_failure_count": metrics["item_contract_failure_count"] == 0,
         "duplicate_merge_review_rate": metrics["duplicate_merge_review_rate"] == 1.0,
@@ -716,6 +736,37 @@ def _has_retrieval_trace(result: EvalCaseResult) -> bool:
         if isinstance(source, str) and source and isinstance(item_count, int) and item_count > 0:
             return True
     return False
+
+
+def _has_answer_support_breakdown(result: EvalCaseResult) -> bool:
+    if _result_diagnostic_int(result, "answer_support_cited_count") <= 0:
+        return False
+    return _result_diagnostic_int(result, "answer_support_source_type_count") > 0
+
+
+def _has_retrieval_trace_location_contract(result: EvalCaseResult) -> bool:
+    trace = result.diagnostics.get("retrieval_trace")
+    if not isinstance(trace, list) or not trace:
+        return False
+    non_empty_entries = 0
+    for raw_entry in trace:
+        if not isinstance(raw_entry, dict):
+            continue
+        item_count = raw_entry.get("item_count")
+        if not isinstance(item_count, int) or item_count <= 0:
+            continue
+        non_empty_entries += 1
+        if not all(
+            isinstance(raw_entry.get(key), int) and raw_entry[key] >= 0
+            for key in (
+                "source_refs_with_char_range_count",
+                "source_refs_with_page_count",
+                "source_refs_with_bbox_count",
+                "source_refs_with_time_range_count",
+            )
+        ):
+            return False
+    return non_empty_entries > 0
 
 
 def _count_category_failures(

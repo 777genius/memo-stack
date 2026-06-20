@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from time import perf_counter
 from typing import Annotated, Any
 
@@ -29,6 +30,7 @@ _MAX_PUBLIC_CONTEXT_SOURCE_REFS = 20
 _MAX_PUBLIC_TOP_EVIDENCE = 5
 _MAX_PUBLIC_CONTEXT_DIAGNOSTICS = 260
 _MAX_PUBLIC_ANSWER_SUPPORT_WARNINGS = 8
+_MAX_ANSWER_SUPPORT_BREAKDOWN_ITEMS = 12
 
 
 class ContextRequest(BaseModel):
@@ -259,6 +261,15 @@ def _context_diagnostics_to_response(
             "answer_support_coverage_ratio": _safe_float(
                 support_coverage.get("supported_item_ratio")
             ),
+            "answer_support_source_type_count": _non_negative_int(
+                support_coverage.get("source_type_count")
+            ),
+            "answer_support_evidence_kind_count": _non_negative_int(
+                support_coverage.get("evidence_kind_count")
+            ),
+            "answer_support_evidence_modality_count": _non_negative_int(
+                support_coverage.get("evidence_modality_count")
+            ),
             "answer_support_warnings": [
                 warning
                 for raw_warning in (support.get("warnings") or [])[
@@ -351,6 +362,10 @@ def _answer_support_coverage(
     multimodal_support = [
         item for item in cited_support if _citation_has_multimodal_evidence(item.get("citation"))
     ]
+    location_counts = _answer_support_location_counts(cited_support)
+    source_type_counts = _support_citation_counts(cited_support, "source_type")
+    evidence_kind_counts = _support_citation_counts(cited_support, "evidence_kind")
+    evidence_modality_counts = _support_citation_counts(cited_support, "evidence_modality")
     return {
         "context_item_count": item_count,
         "supported_item_count": len(supported_item_ids),
@@ -360,6 +375,14 @@ def _answer_support_coverage(
         "quote_preview_support_count": len(quote_support),
         "multimodal_support_count": len(multimodal_support),
         "uncited_context_item_count": max(0, item_count - len(supported_item_ids)),
+        "supported_item_types": _support_item_type_counts(top_evidence),
+        "support_source_types": source_type_counts,
+        "support_evidence_kinds": evidence_kind_counts,
+        "support_evidence_modalities": evidence_modality_counts,
+        "location_support_counts": location_counts,
+        "source_type_count": len(_non_empty_keys(source_type_counts)),
+        "evidence_kind_count": len(_non_empty_keys(evidence_kind_counts)),
+        "evidence_modality_count": len(_non_empty_keys(evidence_modality_counts)),
     }
 
 
@@ -431,6 +454,61 @@ def _citation_has_multimodal_evidence(citation: object) -> bool:
     modality = citation.get("evidence_modality")
     kind = citation.get("evidence_kind")
     return bool(modality) or kind in {"ocr_region", "transcript_segment", "keyframe"}
+
+
+def _answer_support_location_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {
+        "char_range": 0,
+        "page_number": 0,
+        "time_range_ms": 0,
+        "bbox": 0,
+    }
+    for item in items:
+        citation = item.get("citation")
+        if not isinstance(citation, dict):
+            continue
+        if citation.get("char_range") is not None:
+            counts["char_range"] += 1
+        if citation.get("page_number") is not None:
+            counts["page_number"] += 1
+        if citation.get("time_range_ms") is not None:
+            counts["time_range_ms"] += 1
+        if citation.get("bbox") is not None:
+            counts["bbox"] += 1
+    return counts
+
+
+def _support_item_type_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    return _bounded_counts(
+        safe_public_text(str(item.get("item_type") or ""), limit=80)
+        for item in items
+    )
+
+
+def _support_citation_counts(items: list[dict[str, Any]], key: str) -> dict[str, int]:
+    return _bounded_counts(
+        safe_public_text(str((item.get("citation") or {}).get(key) or ""), limit=80)
+        for item in items
+        if isinstance(item.get("citation"), dict)
+    )
+
+
+def _bounded_counts(values: Iterable[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not isinstance(value, str) or not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return dict(
+        sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:_MAX_ANSWER_SUPPORT_BREAKDOWN_ITEMS]
+    )
+
+
+def _non_empty_keys(counts: dict[str, int]) -> tuple[str, ...]:
+    return tuple(key for key, count in counts.items() if count > 0)
 
 
 def _top_evidence_candidate(

@@ -258,6 +258,7 @@ class InfinityContextClient(
             "limits": payload.get("limits", {}),
             "captures": payload.get("captures", {}),
             "suggestions": payload.get("suggestions", {}),
+            "context": payload.get("context", {}),
             "extraction": payload.get("extraction", {}),
             "plans": payload.get("plans", {}),
         }

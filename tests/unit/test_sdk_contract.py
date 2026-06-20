@@ -162,6 +162,12 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
                 },
                 "captures": {"enabled": True},
                 "suggestions": {"review_tool_supported": True},
+                "context": {
+                    "api_version": 1,
+                    "answer_support_supported": True,
+                    "answer_support_evidence_breakdown_supported": True,
+                    "retrieval_trace_location_counts_supported": True,
+                },
                 "extraction": {
                     "enabled": True,
                     "default_profile": "standard_vision",
@@ -234,6 +240,12 @@ def test_sdk_exposes_capability_diagnostics_facade() -> None:
         },
         "captures": {"enabled": True},
         "suggestions": {"review_tool_supported": True},
+        "context": {
+            "api_version": 1,
+            "answer_support_supported": True,
+            "answer_support_evidence_breakdown_supported": True,
+            "retrieval_trace_location_counts_supported": True,
+        },
         "extraction": {
             "enabled": True,
             "default_profile": "standard_vision",
@@ -1024,6 +1036,9 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                         "answer_support_precise_location_count": 1,
                         "answer_support_multimodal_count": 1,
                         "answer_support_coverage_ratio": 0.5,
+                        "answer_support_source_type_count": 2,
+                        "answer_support_evidence_kind_count": 3,
+                        "answer_support_evidence_modality_count": 3,
                         "answer_support_warnings": [
                             "review_only_items_excluded",
                             "stale_items_excluded",
@@ -1040,6 +1055,10 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                                 "item_types": {"chunk": 1},
                                 "source_ref_count": 25,
                                 "multimodal_source_ref_count": 25,
+                                "source_refs_with_char_range_count": 11,
+                                "source_refs_with_page_count": 3,
+                                "source_refs_with_bbox_count": 1,
+                                "source_refs_with_time_range_count": 2,
                                 "evidence_kind_counts": {
                                     "transcript_segment": 1,
                                 },
@@ -1073,6 +1092,33 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
                             "quote_preview_support_count": 1,
                             "multimodal_support_count": 1,
                             "uncited_context_item_count": 1,
+                            "supported_item_types": {
+                                "chunk": 1,
+                                "extraction_artifact": 2,
+                            },
+                            "support_source_types": {
+                                "document": 1,
+                                "extraction_artifact": 2,
+                            },
+                            "support_evidence_kinds": {
+                                "document_page": 1,
+                                "ocr_region": 1,
+                                "transcript_segment": 1,
+                            },
+                            "support_evidence_modalities": {
+                                "audio": 1,
+                                "document": 1,
+                                "image": 1,
+                            },
+                            "location_support_counts": {
+                                "bbox": 1,
+                                "char_range": 0,
+                                "page_number": 1,
+                                "time_range_ms": 1,
+                            },
+                            "source_type_count": 2,
+                            "evidence_kind_count": 3,
+                            "evidence_modality_count": 3,
                         },
                         "policy": {
                             "requires_citations": True,
@@ -1309,6 +1355,9 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.diagnostics.answer_support_precise_location_count == 1
     assert bundle.diagnostics.answer_support_multimodal_count == 1
     assert bundle.diagnostics.answer_support_coverage_ratio == 0.5
+    assert bundle.diagnostics.answer_support_source_type_count == 2
+    assert bundle.diagnostics.answer_support_evidence_kind_count == 3
+    assert bundle.diagnostics.answer_support_evidence_modality_count == 3
     assert bundle.diagnostics.answer_support_warnings == (
         "review_only_items_excluded",
         "stale_items_excluded",
@@ -1325,6 +1374,10 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert trace.item_types == {"chunk": 1}
     assert trace.source_ref_count == 25
     assert trace.multimodal_source_ref_count == 25
+    assert trace.source_refs_with_char_range_count == 11
+    assert trace.source_refs_with_page_count == 3
+    assert trace.source_refs_with_bbox_count == 1
+    assert trace.source_refs_with_time_range_count == 2
     assert trace.evidence_kind_counts == {"transcript_segment": 1}
     assert trace.evidence_modality_counts == {"audio": 1}
     assert trace.max_score == 0.91
@@ -1377,6 +1430,22 @@ def test_sdk_build_typed_context_returns_bounded_safe_diagnostics() -> None:
     assert bundle.answer_support.items_returned == 1
     assert bundle.answer_support.coverage["supported_item_ratio"] == 0.5
     assert bundle.answer_support.coverage["multimodal_support_count"] == 1
+    assert bundle.answer_support.coverage["support_evidence_modalities"] == {
+        "audio": 1,
+        "document": 1,
+        "image": 1,
+    }
+    assert bundle.answer_support.coverage["support_evidence_kinds"] == {
+        "document_page": 1,
+        "ocr_region": 1,
+        "transcript_segment": 1,
+    }
+    assert bundle.answer_support.coverage["location_support_counts"] == {
+        "bbox": 1,
+        "char_range": 0,
+        "page_number": 1,
+        "time_range_ms": 1,
+    }
     assert bundle.answer_support.policy["requires_citations"] is True
     assert bundle.answer_support.warnings == (
         "review_only_items_excluded",
