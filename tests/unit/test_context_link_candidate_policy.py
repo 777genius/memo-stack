@@ -235,6 +235,27 @@ def test_scoring_penalizes_specific_project_identity_mismatch() -> None:
     assert target_score > wrong_project_score
 
 
+def test_scoring_allows_target_with_matching_and_additional_project_identities() -> None:
+    query = "Qdrant document chunks"
+    now = datetime(2026, 6, 19, 12, tzinfo=UTC)
+
+    score, reasons, hits = score_text_candidate(
+        query_terms=terms(query),
+        temporal_hints=temporal_hints(query),
+        target_text=(
+            "Qdrant memory architecture. Infinity Context keeps canonical memory "
+            "in Postgres. Qdrant stores derived document chunks for retrieval."
+        ),
+        updated_at=now,
+        now=now,
+        base=46,
+    )
+
+    assert "project:qdrant" in hits
+    assert "different anchor identity" not in reasons
+    assert score >= 70
+
+
 def test_evidence_summary_is_bounded_and_multimodal_without_quotes() -> None:
     refs = tuple(
         SourceRef(

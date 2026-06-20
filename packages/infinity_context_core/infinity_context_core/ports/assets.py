@@ -123,6 +123,15 @@ class AssetRepositoryPort(Protocol):
     ) -> list[StoredBlobReference]:
         """List active asset blob references for storage maintenance."""
 
+    async def sum_stored_blob_bytes(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        storage_backend: str,
+    ) -> int:
+        """Return physical stored blob bytes for unique active storage keys in one scope."""
+
     async def list_for_scope(
         self,
         *,

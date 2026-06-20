@@ -363,9 +363,7 @@ def _exclusive_anchor_mismatch(
 
 
 def _specific_anchor_identity_terms(values: set[str], prefix: str) -> set[str]:
-    identities = {value for value in values if value.startswith(prefix)}
-    multiword = {value for value in identities if " " in value.removeprefix(prefix).strip()}
-    return multiword or identities
+    return {value for value in values if value.startswith(prefix)}
 
 
 def _anchor_identity_sets_overlap(
@@ -373,10 +371,22 @@ def _anchor_identity_sets_overlap(
     target_identities: set[str],
     prefix: str,
 ) -> bool:
-    if query_identities & target_identities:
-        return True
     query_values = {value.removeprefix(prefix).strip() for value in query_identities}
     target_values = {value.removeprefix(prefix).strip() for value in target_identities}
+    query_multiword = {value for value in query_values if len(value.split()) > 1}
+    target_multiword = {value for value in target_values if len(value.split()) > 1}
+    if query_multiword and target_multiword:
+        return any(
+            _anchor_identity_value_contains(query_value, target_value)
+            for query_value in query_multiword
+            for target_value in target_values
+        ) or any(
+            _anchor_identity_value_contains(query_value, target_value)
+            for query_value in query_values
+            for target_value in target_multiword
+        )
+    if query_identities & target_identities:
+        return True
     return any(
         _anchor_identity_value_contains(query_value, target_value)
         for query_value in query_values
@@ -389,6 +399,12 @@ def _anchor_identity_value_contains(left: str, right: str) -> bool:
     right_terms = tuple(term for term in right.split() if term)
     if not left_terms or not right_terms:
         return False
+    if left_terms == right_terms:
+        return True
+    if len(left_terms) == 1 and len(right_terms) > 1:
+        return left_terms[0] == right_terms[0]
+    if len(right_terms) == 1 and len(left_terms) > 1:
+        return right_terms[0] == left_terms[0]
     return _ordered_subsequence(left_terms, right_terms) or _ordered_subsequence(
         right_terms,
         left_terms,

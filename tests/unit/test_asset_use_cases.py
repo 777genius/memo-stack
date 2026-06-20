@@ -13,7 +13,11 @@ from infinity_context_core.domain.assets import (
     MemoryContextLinkSuggestion,
 )
 from infinity_context_core.domain.entities import MemoryScopeId, SpaceId, ThreadId
-from infinity_context_core.domain.errors import MemoryConflictError, MemoryIngressLimitError
+from infinity_context_core.domain.errors import (
+    MemoryConflictError,
+    MemoryIngressLimitError,
+    MemoryQuotaExceededError,
+)
 from infinity_context_core.ports.assets import StoredBlob
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -62,6 +66,8 @@ class FakeAssetRepository:
         self.scope_lookup_calls = 0
         self.scope_lookup_storage_backends: list[str] = []
         self.storage_refs: set[str] = set()
+        self.stored_blob_bytes = 0
+        self.storage_usage_calls = 0
         self.created: list[MemoryAsset] = []
         self.fail_create = False
         self.create_error: Exception | None = None
@@ -107,7 +113,18 @@ class FakeAssetRepository:
             raise MemoryConflictError("asset conflict")
         self.created.append(asset)
         self.storage_refs.add(asset.storage_key)
+        self.stored_blob_bytes += asset.byte_size
         return asset
+
+    async def sum_stored_blob_bytes(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        storage_backend: str,
+    ) -> int:
+        self.storage_usage_calls += 1
+        return self.stored_blob_bytes
 
 
 class FakeContextLinksRepository:
@@ -345,6 +362,90 @@ def test_create_asset_same_thread_duplicate_returns_existing_without_scope_looku
     asyncio.run(run())
 
 
+def test_create_asset_rejects_scope_storage_quota_before_blob_write() -> None:
+    async def run() -> None:
+        assets = FakeAssetRepository()
+        assets.stored_blob_bytes = 8
+        storage = FakeBlobStorage()
+
+        try:
+            await _create_use_case(
+                assets=assets,
+                storage=storage,
+                max_storage_bytes_per_memory_scope=10,
+            ).execute(_command(filename="over-quota.txt", content=b"123"))
+        except MemoryQuotaExceededError as exc:
+            assert "storage quota" in str(exc)
+        else:
+            raise AssertionError("expected MemoryQuotaExceededError")
+
+        assert assets.storage_usage_calls == 1
+        assert storage.writes == []
+        assert assets.created == []
+
+    asyncio.run(run())
+
+
+def test_create_asset_storage_quota_allows_scope_blob_reuse() -> None:
+    async def run() -> None:
+        content = b"reuse does not consume new physical bytes"
+        digest = hashlib.sha256(content).hexdigest()
+        reusable = _asset(
+            asset_id="asset_reusable",
+            filename="original.txt",
+            sha256_hex=digest,
+            storage_key="space_asset_tests/scope_asset_tests/original.txt",
+            thread_id=ThreadId("thread_original"),
+        )
+        assets = FakeAssetRepository()
+        assets.stored_blob_bytes = 10
+        assets.scope_lookup_results = [reusable]
+        assets.storage_refs.add(reusable.storage_key)
+        storage = FakeBlobStorage()
+
+        result = await _create_use_case(
+            assets=assets,
+            storage=storage,
+            max_storage_bytes_per_memory_scope=10,
+        ).execute(_command(filename="copy.txt", content=content))
+
+        assert result.deduplication is not None
+        assert result.deduplication.status == "scope_blob_reused"
+        assert assets.storage_usage_calls == 0
+        assert storage.writes == []
+
+    asyncio.run(run())
+
+
+def test_create_asset_storage_quota_allows_same_thread_duplicate() -> None:
+    async def run() -> None:
+        content = b"same content"
+        digest = hashlib.sha256(content).hexdigest()
+        existing = _asset(
+            asset_id="asset_existing",
+            filename="existing.txt",
+            sha256_hex=digest,
+            storage_key="space_asset_tests/scope_asset_tests/existing.txt",
+        )
+        assets = FakeAssetRepository()
+        assets.stored_blob_bytes = 10
+        assets.lookup_results = [existing]
+        storage = FakeBlobStorage()
+
+        result = await _create_use_case(
+            assets=assets,
+            storage=storage,
+            max_storage_bytes_per_memory_scope=10,
+        ).execute(_command(filename="existing.txt", content=content))
+
+        assert result.deduplication is not None
+        assert result.deduplication.status == "exact_asset_match"
+        assert assets.storage_usage_calls == 0
+        assert storage.writes == []
+
+    asyncio.run(run())
+
+
 def test_create_asset_conflict_cleanup_keeps_referenced_storage_key() -> None:
     async def run() -> None:
         content = b"conflicting content"
@@ -501,12 +602,14 @@ def _create_use_case(
     *,
     assets: FakeAssetRepository,
     storage: FakeBlobStorage,
+    max_storage_bytes_per_memory_scope: int = 0,
 ) -> CreateAssetUseCase:
     return CreateAssetUseCase(
         uow_factory=FakeUnitOfWorkFactory(assets),
         clock=FakeClock(),
         ids=FakeIds(),
         blob_storage=storage,
+        max_storage_bytes_per_memory_scope=max_storage_bytes_per_memory_scope,
     )
 
 

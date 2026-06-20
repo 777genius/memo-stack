@@ -28,6 +28,7 @@ from infinity_context_core.domain.errors import (
     MemoryConflictError,
     MemoryIngressLimitError,
     MemoryNotFoundError,
+    MemoryQuotaExceededError,
 )
 from infinity_context_core.ports.assets import BlobStoragePort
 from infinity_context_core.ports.clock import ClockPort
@@ -62,6 +63,7 @@ class CreateAssetUseCase:
         storage_backend: str = "local",
         max_bytes: int = 25 * 1024 * 1024,
         max_image_pixels: int = 50_000_000,
+        max_storage_bytes_per_memory_scope: int = 0,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
@@ -70,6 +72,7 @@ class CreateAssetUseCase:
         self._storage_backend = storage_backend
         self._max_bytes = max(1, max_bytes)
         self._max_image_pixels = max(1, max_image_pixels)
+        self._max_storage_bytes_per_memory_scope = max(0, max_storage_bytes_per_memory_scope)
 
     async def execute(self, command: CreateAssetCommand) -> AssetResult:
         if not command.content:
@@ -117,6 +120,18 @@ class CreateAssetUseCase:
                 storage_backend=self._storage_backend,
                 sha256_hex=digest,
             )
+            if reusable_asset is None and self._max_storage_bytes_per_memory_scope > 0:
+                stored_blob_bytes = await uow.assets.sum_stored_blob_bytes(
+                    space_id=str(command.space_id),
+                    memory_scope_id=str(command.memory_scope_id),
+                    storage_backend=self._storage_backend,
+                )
+                if stored_blob_bytes + len(command.content) > (
+                    self._max_storage_bytes_per_memory_scope
+                ):
+                    raise MemoryQuotaExceededError(
+                        "Asset storage quota for memory scope would be exceeded"
+                    )
 
         asset_id = MemoryAssetId(self._ids.new_id("asset"))
         storage_key = (

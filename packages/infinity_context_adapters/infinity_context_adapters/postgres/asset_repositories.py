@@ -195,6 +195,34 @@ class PostgresAssetRepository(AssetRepositoryPort):
             for row in rows
         ]
 
+    async def sum_stored_blob_bytes(
+        self,
+        *,
+        space_id: str,
+        memory_scope_id: str,
+        storage_backend: str,
+    ) -> int:
+        scoped_unique_blobs = (
+            select(
+                MemoryAssetRow.storage_key.label("storage_key"),
+                func.max(MemoryAssetRow.byte_size).label("byte_size"),
+            )
+            .where(
+                MemoryAssetRow.space_id == space_id,
+                MemoryAssetRow.memory_scope_id == memory_scope_id,
+                MemoryAssetRow.storage_backend == storage_backend,
+                MemoryAssetRow.status == "stored",
+            )
+            .group_by(MemoryAssetRow.storage_key)
+            .subquery()
+        )
+        value = (
+            await self._session.execute(
+                select(func.coalesce(func.sum(scoped_unique_blobs.c.byte_size), 0))
+            )
+        ).scalar_one()
+        return int(value or 0)
+
     async def list_for_scope(
         self,
         *,

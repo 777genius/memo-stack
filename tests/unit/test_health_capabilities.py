@@ -119,6 +119,7 @@ def test_capabilities_return_noop_adapters() -> None:
     assert body["limits"]["max_pending_captures_per_memory_scope"] == 5_000
     assert body["limits"]["max_pending_suggestions_per_memory_scope"] == 500
     assert body["limits"]["max_asset_upload_bytes"] == 25 * 1024 * 1024
+    assert body["limits"]["asset_storage_bytes_per_memory_scope"] == 5 * 1024 * 1024 * 1024
     assert body["limits"]["media_analysis_seconds_per_month"] == 10 * 60 * 60
     assert body["storage"] == {
         "asset_backend": "local",
@@ -139,6 +140,9 @@ def test_capabilities_return_noop_adapters() -> None:
             "recommended_hosted_backend": "s3",
             "blob_identity": "sha256",
             "duplicate_detection": "exact_sha256",
+            "scope_storage_quota_enforced": True,
+            "scope_storage_quota_bytes": 5 * 1024 * 1024 * 1024,
+            "scope_storage_quota_unlimited_when_zero": True,
             "storage_cleanup_supported": True,
             "maintenance_enabled": False,
             "cleanup_apply_enabled": False,
@@ -148,6 +152,11 @@ def test_capabilities_return_noop_adapters() -> None:
         },
     }
     assert body["plans"]["current"] == "free"
+    assert body["plans"]["resources"]["asset_storage_bytes_per_memory_scope"] == {
+        "limit": 5 * 1024 * 1024 * 1024,
+        "unlimited_when_zero": True,
+        "scope": "memory_scope",
+    }
     assert body["plans"]["resources"]["media_analysis_seconds"]["limit_per_month"] == (10 * 60 * 60)
     assert body["extraction"]["enabled"] is True
     assert body["extraction"]["default_profile"] == "standard_local"
@@ -762,6 +771,9 @@ def test_capabilities_storage_readiness_redacts_s3_values(tmp_path: Path) -> Non
         "recommended_hosted_backend": "s3",
         "blob_identity": "sha256",
         "duplicate_detection": "exact_sha256",
+        "scope_storage_quota_enforced": True,
+        "scope_storage_quota_bytes": 5 * 1024 * 1024 * 1024,
+        "scope_storage_quota_unlimited_when_zero": True,
         "storage_cleanup_supported": True,
         "maintenance_enabled": True,
         "cleanup_apply_enabled": True,

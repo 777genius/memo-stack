@@ -316,6 +316,9 @@ def build_container(settings: Settings | None = None) -> Container:
                 resolved_settings.max_pending_suggestions_per_memory_scope
             ),
             "max_asset_upload_bytes": resolved_settings.max_asset_upload_bytes,
+            "asset_storage_bytes_per_memory_scope": (
+                resolved_settings.plan_asset_storage_bytes_per_memory_scope
+            ),
             "media_analysis_seconds_per_month": (product_plan.media_analysis_seconds_per_month),
         },
     )
@@ -350,6 +353,9 @@ def build_container(settings: Settings | None = None) -> Container:
         storage_backend=resolved_settings.asset_storage_backend,
         max_bytes=resolved_settings.max_asset_upload_bytes,
         max_image_pixels=resolved_settings.extraction_max_image_pixels,
+        max_storage_bytes_per_memory_scope=(
+            resolved_settings.plan_asset_storage_bytes_per_memory_scope
+        ),
     )
     get_asset = GetAssetUseCase(uow_factory=uow_factory)
     list_assets = ListAssetsUseCase(uow_factory=uow_factory)

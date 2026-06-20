@@ -78,6 +78,11 @@ class Settings(BaseSettings):
         ge=1,
         le=512 * 1024 * 1024,
     )
+    plan_asset_storage_bytes_per_memory_scope: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        ge=0,
+        le=10 * 1024 * 1024 * 1024 * 1024,
+    )
     max_asset_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1, le=500 * 1024 * 1024)
     extraction_enabled: bool = True
     extraction_default_profile: str = "standard_local"

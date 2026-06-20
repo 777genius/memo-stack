@@ -67,6 +67,11 @@ async def capabilities(
         "plans": {
             "current": container.settings.product_plan_tier,
             "resources": {
+                "asset_storage_bytes_per_memory_scope": {
+                    "limit": container.settings.plan_asset_storage_bytes_per_memory_scope,
+                    "unlimited_when_zero": True,
+                    "scope": "memory_scope",
+                },
                 "media_analysis_seconds": {
                     "limit_per_month": (container.settings.plan_media_analysis_seconds_per_month),
                     "free_default_seconds": 10 * 60 * 60,
@@ -142,6 +147,11 @@ def _storage_deployment_readiness(
         "recommended_hosted_backend": "s3",
         "blob_identity": "sha256",
         "duplicate_detection": "exact_sha256",
+        "scope_storage_quota_enforced": (
+            settings.plan_asset_storage_bytes_per_memory_scope > 0
+        ),
+        "scope_storage_quota_bytes": settings.plan_asset_storage_bytes_per_memory_scope,
+        "scope_storage_quota_unlimited_when_zero": True,
         "storage_cleanup_supported": True,
         "maintenance_enabled": maintenance_payload.get("enabled") is True,
         "cleanup_apply_enabled": maintenance_payload.get("cleanup_apply_enabled") is True,

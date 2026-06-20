@@ -2916,6 +2916,41 @@ def test_upload_extract_quota_error_redacts_sensitive_message(tmp_path: Path) ->
     assert "sk-proj-secretvalue1234567890" not in error["message"]
 
 
+def test_asset_upload_blocks_scope_storage_quota_before_blob_write(tmp_path: Path) -> None:
+    asset_storage_dir = tmp_path / "assets"
+    with make_client(
+        tmp_path,
+        plan_asset_storage_bytes_per_memory_scope=10,
+    ) as client:
+        first = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "filename": "first.txt",
+            },
+            content=b"12345678",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+        second = client.post(
+            "/v1/assets",
+            params={
+                "space_slug": "quick-capture",
+                "memory_scope_external_ref": "frontend",
+                "filename": "second.txt",
+            },
+            content=b"abc",
+            headers=auth_headers({"Content-Type": "text/plain"}),
+        )
+
+    stored_blobs = [path for path in asset_storage_dir.rglob("*") if path.is_file()]
+    assert first.status_code == 201, first.text
+    assert second.status_code == 402, second.text
+    assert second.json()["error"]["code"] == "memory.quota_exceeded"
+    assert "storage quota" in second.json()["error"]["message"]
+    assert len(stored_blobs) == 1
+
+
 def test_media_extraction_consumes_free_plan_quota_and_blocks_overage(
     tmp_path: Path,
 ) -> None:
