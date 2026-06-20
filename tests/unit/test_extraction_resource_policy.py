@@ -295,6 +295,26 @@ def test_extraction_archive_resource_policy_blocks_nested_archive_members() -> N
     assert "inner.zip" not in str(decision.metadata)
 
 
+def test_extraction_archive_resource_policy_blocks_encrypted_members() -> None:
+    content = _zip_with_encrypted_flag({"secret.txt": b"encrypted member marker"})
+
+    decision = assess_extraction_archive_resource_limits(
+        filename="encrypted.zip",
+        declared_content_type="application/zip",
+        detected_content_type="application/zip",
+        magic_content_type="application/zip",
+        content=content,
+        limits=ExtractionLimits(max_bytes=1_000_000),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "asset_extraction.archive_encrypted"
+    assert decision.message == "Archive contains encrypted members"
+    assert decision.metadata["extraction_archive_encrypted_entry_count"] == 1
+    assert decision.metadata["extraction_resource_limit_exceeded"] == "archive_encrypted"
+    assert "secret.txt" not in str(decision.metadata)
+
+
 def test_extraction_archive_resource_policy_blocks_malformed_zip() -> None:
     decision = assess_extraction_archive_resource_limits(
         filename="broken.docx",
@@ -386,3 +406,28 @@ def _zip_with_unix_mode(filename: str, content: bytes, mode: int) -> bytes:
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr(info, content)
     return buffer.getvalue()
+
+
+def _zip_with_encrypted_flag(files: dict[str, bytes]) -> bytes:
+    data = bytearray(_zip_bytes(files))
+    _set_zip_general_purpose_flag(data, b"PK\x03\x04", flag_offset=6, flag=0x1)
+    _set_zip_general_purpose_flag(data, b"PK\x01\x02", flag_offset=8, flag=0x1)
+    return bytes(data)
+
+
+def _set_zip_general_purpose_flag(
+    data: bytearray,
+    signature: bytes,
+    *,
+    flag_offset: int,
+    flag: int,
+) -> None:
+    start = 0
+    while True:
+        index = data.find(signature, start)
+        if index == -1:
+            return
+        field_index = index + flag_offset
+        current = int.from_bytes(data[field_index : field_index + 2], "little")
+        data[field_index : field_index + 2] = (current | flag).to_bytes(2, "little")
+        start = index + len(signature)

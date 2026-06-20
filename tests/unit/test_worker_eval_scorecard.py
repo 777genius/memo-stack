@@ -88,8 +88,6 @@ def _scorecard_fixture_results() -> dict[str, dict[str, Any]]:
                     "clean_architecture_recall_without_frontend_noise",
                     "deleted_fact_hidden",
                     "restricted_fact_hidden",
-                    "thread_current_visible_without_neighbor",
-                    "thread_other_visible_without_current",
                 )
             ),
             "failures": [],
@@ -2066,19 +2064,24 @@ def test_memory_quality_scorecard_fails_on_multimodal_retrieval_profile_regressi
 
 def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> None:
     suite_results = _scorecard_fixture_results()
+    quality_coverage_rate = round(
+        (len(QUALITY_GOLDEN_REQUIRED_CASE_IDS) - 1) / len(QUALITY_GOLDEN_REQUIRED_CASE_IDS),
+        4,
+    )
+    semantic_linking_coverage_rate = round(
+        (len(SEMANTIC_LINKING_REQUIRED_CASE_IDS) - 1)
+        / len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
+        4,
+    )
     suite_results["quality-golden"]["metrics"].update(
         {
-            "required_case_coverage_rate": 0.8889,
+            "required_case_coverage_rate": quality_coverage_rate,
             "missing_required_case_count": 1,
         }
     )
     suite_results["semantic-linking-golden"]["metrics"].update(
         {
-            "required_case_coverage_rate": round(
-                (len(SEMANTIC_LINKING_REQUIRED_CASE_IDS) - 1)
-                / len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
-                4,
-            ),
+            "required_case_coverage_rate": semantic_linking_coverage_rate,
             "missing_required_case_count": 1,
         }
     )
@@ -2093,11 +2096,11 @@ def test_memory_quality_scorecard_fails_on_missing_required_golden_cases() -> No
         "semantic_linking_missing_required_case_count",
         "semantic_linking_required_case_coverage_rate",
     ]
-    assert result["metrics"]["quality_required_case_coverage_rate"] == 0.8889
+    assert result["metrics"]["quality_required_case_coverage_rate"] == quality_coverage_rate
     assert result["metrics"]["quality_missing_required_case_count"] == 1
-    assert result["metrics"]["semantic_linking_required_case_coverage_rate"] == round(
-        (len(SEMANTIC_LINKING_REQUIRED_CASE_IDS) - 1) / len(SEMANTIC_LINKING_REQUIRED_CASE_IDS),
-        4,
+    assert (
+        result["metrics"]["semantic_linking_required_case_coverage_rate"]
+        == semantic_linking_coverage_rate
     )
     assert result["metrics"]["semantic_linking_missing_required_case_count"] == 1
 

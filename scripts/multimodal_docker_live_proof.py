@@ -623,11 +623,20 @@ def _prove_capabilities(
             "Missing extraction policy capability contract",
         )
     policy_summary = _extraction_policy_summary(policy)
+    storage = payload.get("storage") if isinstance(payload, dict) else None
+    if not isinstance(storage, dict):
+        raise DockerProofFailure(
+            "capabilities",
+            "storage_readiness_contract_missing",
+            "Missing asset storage deployment readiness capability contract",
+        )
+    storage_readiness_summary = _storage_readiness_summary(storage)
     security_summary = {
         "file_type_detection": file_type_detection_summary,
         "resource_policy": resource_policy_summary,
         "limits": limits_summary,
         "policy": policy_summary,
+        "storage_readiness": storage_readiness_summary,
     }
     if not all(item["ok"] for item in security_summary.values()):
         raise DockerProofFailure(
@@ -661,6 +670,7 @@ def _prove_capabilities(
         resource_policy=resource_policy_summary,
         limits=limits_summary,
         policy=policy_summary,
+        storage_readiness=storage_readiness_summary,
         manifest_contract_present=isinstance(extraction.get("manifest_contract"), dict),
         evidence_contract_present=isinstance(extraction.get("evidence_contract"), dict),
     )
@@ -907,6 +917,54 @@ def _extraction_policy_summary(policy: dict[str, Any]) -> dict[str, Any]:
         "provider_payloads_bounded": policy.get("provider_payloads_bounded"),
         "sensitive_data_in_diagnostics": policy.get("sensitive_data_in_diagnostics"),
         "canonical_store": policy.get("canonical_store"),
+    }
+
+
+def _storage_readiness_summary(storage: dict[str, Any]) -> dict[str, Any]:
+    readiness = storage.get("deployment_readiness")
+    readiness = readiness if isinstance(readiness, dict) else {}
+    scope_storage_quota_bytes = _positive_int(readiness.get("scope_storage_quota_bytes"))
+    degraded_reasons = _string_list(readiness.get("degraded_reasons"))
+    warnings = _string_list(readiness.get("warnings"))
+    return {
+        "ok": (
+            readiness.get("schema_version") == "asset-storage-deployment-readiness-v1"
+            and storage.get("asset_backend_configured") is True
+            and readiness.get("self_host_ready") is True
+            and readiness.get("recommended_hosted_backend") == "s3"
+            and readiness.get("blob_identity") == "sha256"
+            and readiness.get("duplicate_detection") == "exact_sha256"
+            and readiness.get("scope_storage_quota_enforced") is True
+            and scope_storage_quota_bytes is not None
+            and readiness.get("scope_storage_quota_unlimited_when_zero") is True
+            and readiness.get("storage_cleanup_supported") is True
+            and readiness.get("safe_diagnostics") is True
+        ),
+        "schema_version": readiness.get("schema_version"),
+        "asset_backend": storage.get("asset_backend"),
+        "asset_external": storage.get("asset_external"),
+        "self_host_ready": readiness.get("self_host_ready"),
+        "hosted_team_ready": readiness.get("hosted_team_ready"),
+        "self_host_production_ready": readiness.get("self_host_production_ready"),
+        "hosted_team_production_ready": readiness.get("hosted_team_production_ready"),
+        "recommended_hosted_backend": readiness.get("recommended_hosted_backend"),
+        "blob_identity": readiness.get("blob_identity"),
+        "duplicate_detection": readiness.get("duplicate_detection"),
+        "scope_storage_quota_enforced": readiness.get("scope_storage_quota_enforced"),
+        "scope_storage_quota_bytes": scope_storage_quota_bytes,
+        "scope_storage_quota_unlimited_when_zero": readiness.get(
+            "scope_storage_quota_unlimited_when_zero"
+        ),
+        "storage_cleanup_supported": readiness.get("storage_cleanup_supported"),
+        "maintenance_enabled": readiness.get("maintenance_enabled"),
+        "cleanup_apply_enabled": readiness.get("cleanup_apply_enabled"),
+        "backup_policy_configured": readiness.get("backup_policy_configured"),
+        "object_lifecycle_policy_configured": readiness.get(
+            "object_lifecycle_policy_configured"
+        ),
+        "safe_diagnostics": readiness.get("safe_diagnostics"),
+        "degraded_reasons": degraded_reasons,
+        "warnings": warnings,
     }
 
 

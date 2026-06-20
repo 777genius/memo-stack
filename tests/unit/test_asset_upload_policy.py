@@ -316,6 +316,21 @@ def test_upload_policy_marks_nested_archive_for_review() -> None:
     assert result.metadata["upload_archive_nested_archive_count"] == 1
 
 
+def test_upload_policy_marks_encrypted_archive_for_review() -> None:
+    result = assess_asset_upload(
+        filename="payload.zip",
+        declared_content_type="application/zip",
+        content=_zip_with_encrypted_flag({"secret.txt": b"encrypted member marker"}),
+    )
+
+    assert result.metadata["upload_archive_review_required"] is True
+    assert result.metadata["upload_archive_review_reason"] == (
+        "zip_archive_contains_encrypted_entries"
+    )
+    assert result.metadata["upload_archive_encrypted_entry_count"] == 1
+    assert "secret.txt" not in str(result.metadata)
+
+
 def test_upload_policy_reports_active_markup_without_high_risk_refs() -> None:
     result = assess_asset_upload(
         filename="diagram.svg",
@@ -380,6 +395,31 @@ def _zip_with_unix_mode(filename: str, content: bytes, mode: int) -> bytes:
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
         archive.writestr(info, content)
     return buffer.getvalue()
+
+
+def _zip_with_encrypted_flag(entries: dict[str, bytes]) -> bytes:
+    data = bytearray(_zip_bytes(entries))
+    _set_zip_general_purpose_flag(data, b"PK\x03\x04", flag_offset=6, flag=0x1)
+    _set_zip_general_purpose_flag(data, b"PK\x01\x02", flag_offset=8, flag=0x1)
+    return bytes(data)
+
+
+def _set_zip_general_purpose_flag(
+    data: bytearray,
+    signature: bytes,
+    *,
+    flag_offset: int,
+    flag: int,
+) -> None:
+    start = 0
+    while True:
+        index = data.find(signature, start)
+        if index == -1:
+            return
+        field_index = index + flag_offset
+        current = int.from_bytes(data[field_index : field_index + 2], "little")
+        data[field_index : field_index + 2] = (current | flag).to_bytes(2, "little")
+        start = index + len(signature)
 
 
 def _png_bytes(*, width: int, height: int) -> bytes:

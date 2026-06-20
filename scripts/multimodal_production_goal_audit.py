@@ -464,6 +464,11 @@ def _audit_docker_report(
     extraction_policy = (
         capabilities.get("policy") if isinstance(capabilities.get("policy"), dict) else {}
     )
+    storage_readiness = (
+        capabilities.get("storage_readiness")
+        if isinstance(capabilities.get("storage_readiness"), dict)
+        else {}
+    )
     contract_names = set(_string_list(capabilities.get("contract_names")))
     _check(
         checks,
@@ -618,6 +623,23 @@ def _audit_docker_report(
         capabilities.get("manifest_contract_present") is True
         and capabilities.get("evidence_contract_present") is True,
         "Docker live proof is missing manifest/evidence capability contracts",
+    )
+    _check(
+        checks,
+        failures,
+        "docker_live_capabilities_storage_readiness_contract_present",
+        storage_readiness.get("ok") is True
+        and storage_readiness.get("schema_version")
+        == "asset-storage-deployment-readiness-v1"
+        and storage_readiness.get("self_host_ready") is True
+        and storage_readiness.get("recommended_hosted_backend") == "s3"
+        and storage_readiness.get("blob_identity") == "sha256"
+        and storage_readiness.get("duplicate_detection") == "exact_sha256"
+        and storage_readiness.get("scope_storage_quota_enforced") is True
+        and _positive_int(storage_readiness.get("scope_storage_quota_bytes")) is not None
+        and storage_readiness.get("storage_cleanup_supported") is True
+        and storage_readiness.get("safe_diagnostics") is True,
+        "Docker live proof is missing asset storage deployment readiness contract",
     )
     _check(
         checks,
@@ -1115,6 +1137,7 @@ def _blocked_requirements(
             "docker_live_capabilities_media_duration_limit_present",
             "docker_live_capabilities_parser_timeout_present",
             "docker_live_capabilities_manifest_evidence_contracts_present",
+            "docker_live_capabilities_storage_readiness_contract_present",
             "docker_live_extraction_cases_complete",
         ]
         blocked.append(docker_blocker)

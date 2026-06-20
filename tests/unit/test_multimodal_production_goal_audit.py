@@ -158,6 +158,9 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
     assert "docker_live_capabilities_audio_upload_limit_present" in (result.not_evaluable_checks)
     assert "docker_live_capabilities_vision_payload_limits_present" in (result.not_evaluable_checks)
     assert "docker_live_capabilities_provider_contract_present" in (result.not_evaluable_checks)
+    assert "docker_live_capabilities_storage_readiness_contract_present" in (
+        result.not_evaluable_checks
+    )
     assert "live_provider_components_succeeded" in result.not_evaluable_checks
     assert "live_provider_proof_matrix_vision_real_provider" in result.not_evaluable_checks
     assert "live_provider_proof_matrix_vision_response_evidence" in (
@@ -664,6 +667,9 @@ def test_multimodal_production_goal_audit_rejects_docker_without_provider_contra
     assert result.checks[
         "docker_live_capabilities_manifest_evidence_contracts_present"
     ] is False
+    assert result.checks[
+        "docker_live_capabilities_storage_readiness_contract_present"
+    ] is False
     assert any("provider capability contract" in failure for failure in result.failures)
 
 
@@ -713,6 +719,38 @@ def test_multimodal_production_goal_audit_rejects_docker_without_resource_securi
         "docker_live_capabilities_manifest_evidence_contracts_present"
     ] is False
     assert any("resource policy" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_rejects_docker_without_storage_readiness(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    docker = _docker_report()
+    docker_capabilities = docker["components"]["capabilities"]
+    assert isinstance(docker_capabilities, dict)
+    docker_capabilities.pop("storage_readiness", None)
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(docker), encoding="utf-8")
+    provider_report.write_text(json.dumps(_provider_report()), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks[
+        "docker_live_capabilities_storage_readiness_contract_present"
+    ] is False
+    assert any("storage deployment readiness" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_core_boundary_and_secret_leak(
@@ -971,6 +1009,34 @@ def _docker_report() -> dict[str, object]:
                     "source_text_policy": "untrusted_evidence",
                     "provider_payloads_bounded": True,
                     "sensitive_data_in_diagnostics": False,
+                },
+                "storage_readiness": {
+                    "ok": True,
+                    "schema_version": "asset-storage-deployment-readiness-v1",
+                    "asset_backend": "local",
+                    "asset_external": False,
+                    "self_host_ready": True,
+                    "hosted_team_ready": False,
+                    "self_host_production_ready": False,
+                    "hosted_team_production_ready": False,
+                    "recommended_hosted_backend": "s3",
+                    "blob_identity": "sha256",
+                    "duplicate_detection": "exact_sha256",
+                    "scope_storage_quota_enforced": True,
+                    "scope_storage_quota_bytes": 5 * 1024 * 1024 * 1024,
+                    "scope_storage_quota_unlimited_when_zero": True,
+                    "storage_cleanup_supported": True,
+                    "maintenance_enabled": False,
+                    "cleanup_apply_enabled": False,
+                    "backup_policy_configured": False,
+                    "object_lifecycle_policy_configured": False,
+                    "safe_diagnostics": True,
+                    "degraded_reasons": [],
+                    "warnings": [
+                        "hosted_team_deployments_should_use_s3_compatible_storage",
+                        "asset_storage_backup_policy_not_confirmed",
+                        "asset_storage_maintenance_not_enabled",
+                    ],
                 },
                 "manifest_contract_present": True,
                 "evidence_contract_present": True,

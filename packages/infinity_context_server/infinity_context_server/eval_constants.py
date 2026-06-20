@@ -85,7 +85,10 @@ QUALITY_GOLDEN_REQUIRED_CASE_IDS = (
     "unrelated_query_returns_no_context_items",
     "cross_memory_scope_secret_hidden",
     "multi_memory_scope_explicit_recall",
+    "thread_current_visible_without_neighbor",
+    "thread_other_visible_without_current",
     "prompt_injection_evidence_only",
+    "mixed_script_event_anchor_recall_by_query_intent",
 )
 SEMANTIC_LINKING_REQUIRED_CASE_IDS = (
     "specific_target_beats_similar_project",

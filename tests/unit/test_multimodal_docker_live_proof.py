@@ -84,6 +84,37 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
             return {"status": "ok"}
         if method == "GET" and parsed.path == "/v1/capabilities":
             return {
+                "storage": {
+                    "asset_backend": "local",
+                    "asset_backend_configured": True,
+                    "asset_external": False,
+                    "deployment_readiness": {
+                        "schema_version": "asset-storage-deployment-readiness-v1",
+                        "status": "ok",
+                        "self_host_ready": True,
+                        "hosted_team_ready": False,
+                        "self_host_production_ready": False,
+                        "hosted_team_production_ready": False,
+                        "recommended_hosted_backend": "s3",
+                        "blob_identity": "sha256",
+                        "duplicate_detection": "exact_sha256",
+                        "scope_storage_quota_enforced": True,
+                        "scope_storage_quota_bytes": 5 * 1024 * 1024 * 1024,
+                        "scope_storage_quota_unlimited_when_zero": True,
+                        "storage_cleanup_supported": True,
+                        "maintenance_enabled": False,
+                        "cleanup_apply_enabled": False,
+                        "backup_policy_configured": False,
+                        "object_lifecycle_policy_configured": False,
+                        "safe_diagnostics": True,
+                        "degraded_reasons": [],
+                        "warnings": [
+                            "hosted_team_deployments_should_use_s3_compatible_storage",
+                            "asset_storage_backup_policy_not_confirmed",
+                            "asset_storage_maintenance_not_enabled",
+                        ],
+                    },
+                },
                 "extraction": {
                     "modality_actions": {
                         "document": {},
@@ -343,6 +374,34 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
     assert report["components"]["capabilities"]["resource_policy"]["ok"] is True
     assert report["components"]["capabilities"]["limits"]["ok"] is True
     assert report["components"]["capabilities"]["policy"]["ok"] is True
+    assert report["components"]["capabilities"]["storage_readiness"] == {
+        "ok": True,
+        "schema_version": "asset-storage-deployment-readiness-v1",
+        "asset_backend": "local",
+        "asset_external": False,
+        "self_host_ready": True,
+        "hosted_team_ready": False,
+        "self_host_production_ready": False,
+        "hosted_team_production_ready": False,
+        "recommended_hosted_backend": "s3",
+        "blob_identity": "sha256",
+        "duplicate_detection": "exact_sha256",
+        "scope_storage_quota_enforced": True,
+        "scope_storage_quota_bytes": 5 * 1024 * 1024 * 1024,
+        "scope_storage_quota_unlimited_when_zero": True,
+        "storage_cleanup_supported": True,
+        "maintenance_enabled": False,
+        "cleanup_apply_enabled": False,
+        "backup_policy_configured": False,
+        "object_lifecycle_policy_configured": False,
+        "safe_diagnostics": True,
+        "degraded_reasons": [],
+        "warnings": [
+            "hosted_team_deployments_should_use_s3_compatible_storage",
+            "asset_storage_backup_policy_not_confirmed",
+            "asset_storage_maintenance_not_enabled",
+        ],
+    }
     assert report["components"]["capabilities"]["manifest_contract_present"] is True
     assert report["components"]["capabilities"]["evidence_contract_present"] is True
     cases = report["components"]["extraction_flow"]["cases"]
