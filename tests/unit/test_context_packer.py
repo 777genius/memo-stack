@@ -180,7 +180,7 @@ def test_memory_items_render_multimodal_citation_locations() -> None:
     assert "source=asset_extraction:extract_image_1#chunk_vision" in rendered
     assert (
         'citations="asset_extraction:extract_image_1#chunk_vision '
-        'page=2 time_ms=1200-5400 bbox=12,32,300,88 '
+        "page=2 time_ms=1200-5400 bbox=12,32,300,88 "
         'quote=\\"Invoice threshold visible in screenshot.\\""'
     ) in rendered
     assert result.bundle.diagnostics["citations_rendered"] == 1
@@ -230,7 +230,7 @@ def test_context_packer_prefers_precise_citations_when_scores_tie() -> None:
 
     rendered_lines = result.bundle.rendered_text.splitlines()
     assert rendered_lines[3].startswith("[1] chunk:chunk_precise_provenance ")
-    assert 'page=3 time_ms=2100-4800 bbox=16,24,280,64' in rendered_lines[3]
+    assert "page=3 time_ms=2100-4800 bbox=16,24,280,64" in rendered_lines[3]
 
 
 def test_context_dedupe_prefers_precise_citations_when_duplicate_scores_tie() -> None:
@@ -506,6 +506,87 @@ def test_context_packer_preserves_multimodal_evidence_modality_diversity() -> No
     assert "IMAGE_DUPLICATE_MARKER" not in rendered
     assert "bbox=10,12,90,44" in rendered
     assert "time_ms=1200-2800" in rendered
+    assert result.bundle.diagnostics["diversity_families_considered"] == 2
+    assert result.bundle.diagnostics["diversity_families_used"] == 2
+    assert result.bundle.diagnostics["diversity_items_used"] == 2
+
+
+def test_context_packer_preserves_video_transcript_and_keyframe_diversity() -> None:
+    transcript = ContextItem(
+        item_id="artifact_video_transcript",
+        item_type="extraction_artifact",
+        text="VIDEO_TRANSCRIPT_MARKER Alex says Atlas launch was approved " + ("detail " * 5),
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-video",
+                chunk_id="segment-1",
+                time_start_ms=1200,
+                time_end_ms=3200,
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "video",
+            "evidence_kind": "transcript_segment",
+        },
+    )
+    keyframe = ContextItem(
+        item_id="artifact_video_keyframe",
+        item_type="extraction_artifact",
+        text="VIDEO_KEYFRAME_MARKER frame OCR shows Atlas launch approval " + ("detail " * 5),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-video",
+                chunk_id="keyframe-1",
+                time_start_ms=3000,
+                time_end_ms=3000,
+                bbox=(20.0, 30.0, 480.0, 260.0),
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "video",
+            "evidence_kind": "video_keyframe",
+        },
+    )
+    duplicate_transcript = ContextItem(
+        item_id="artifact_video_transcript_duplicate",
+        item_type="extraction_artifact",
+        text="VIDEO_DUPLICATE_TRANSCRIPT_MARKER another transcript line " + ("detail " * 30),
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="artifact-video",
+                chunk_id="segment-2",
+                time_start_ms=3400,
+                time_end_ms=5000,
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "evidence_modality": "video",
+            "evidence_kind": "transcript_segment",
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_video_transcript_keyframe_diversity",
+        items=(transcript, duplicate_transcript, keyframe),
+        token_budget=130,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "VIDEO_TRANSCRIPT_MARKER" in rendered
+    assert "VIDEO_KEYFRAME_MARKER" in rendered
+    assert "VIDEO_DUPLICATE_TRANSCRIPT_MARKER" not in rendered
+    assert "time_ms=1200-3200" in rendered
+    assert "time_ms=3000-3000" in rendered
+    assert "bbox=20,30,480,260" in rendered
     assert result.bundle.diagnostics["diversity_families_considered"] == 2
     assert result.bundle.diagnostics["diversity_families_used"] == 2
     assert result.bundle.diagnostics["diversity_items_used"] == 2

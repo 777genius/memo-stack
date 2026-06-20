@@ -145,9 +145,7 @@ class ContextPacker:
                     "items_considered": len(items),
                     "items_used": len(selected),
                     "diversity_families_considered": len(diversity_families),
-                    "diversity_families_used": len(
-                        {_diversity_family(item) for item in selected}
-                    ),
+                    "diversity_families_used": len({_diversity_family(item) for item in selected}),
                     "diversity_items_used": diversity_items_used,
                     "item_type_counts": _item_type_counts(selected),
                     "chunk_sources_considered": len(_chunk_source_counts(selectable_items)),
@@ -176,9 +174,7 @@ class ContextPacker:
                     "sensitive_citation_quote_previews_skipped": (
                         sum(_sensitive_citation_quote_skip_count(item) for item in selected)
                     ),
-                    "sensitive_item_text_redacted": len(
-                        selected_keys & redacted_item_keys
-                    ),
+                    "sensitive_item_text_redacted": len(selected_keys & redacted_item_keys),
                     "rendered_chars": len(rendered_text),
                     "max_rendered_chars": char_budget,
                 },
@@ -266,7 +262,7 @@ def _diversity_family(item: ContextItem) -> str:
     if item.item_type == "extraction_artifact":
         return _typed_diversity_family(
             "extraction_artifact",
-            _diagnostic_text(item, "evidence_modality") or _source_ref_modality_hint(item),
+            _artifact_diversity_hint(item),
         )
     if item.item_type in _DIVERSITY_FAMILY_PRIORITY:
         return item.item_type
@@ -317,6 +313,14 @@ def _source_ref_modality_hint(item: ContextItem) -> str:
     if any(ref.page_number is not None for ref in refs):
         return "document"
     return ""
+
+
+def _artifact_diversity_hint(item: ContextItem) -> str:
+    modality = _diagnostic_text(item, "evidence_modality") or _source_ref_modality_hint(item)
+    kind = _diagnostic_text(item, "evidence_kind")
+    if modality and kind:
+        return f"{modality}-{kind}"
+    return modality or kind
 
 
 def _item_type_counts(items: tuple[ContextItem, ...]) -> dict[str, int]:
@@ -526,11 +530,7 @@ def _citation_labels(item: ContextItem) -> tuple[str, ...]:
     labels: list[str] = []
     for ref in item.source_refs[:3]:
         location = _source_ref_location(ref)
-        label = (
-            f"{_source_ref_identity(ref)} {location}"
-            if location
-            else _source_ref_identity(ref)
-        )
+        label = f"{_source_ref_identity(ref)} {location}" if location else _source_ref_identity(ref)
         labels.append(label)
     return tuple(labels)
 
@@ -540,11 +540,7 @@ def _citation_quote_preview_count(item: ContextItem) -> int:
 
 
 def _sensitive_citation_quote_skip_count(item: ContextItem) -> int:
-    return sum(
-        1
-        for ref in item.source_refs[:3]
-        if _citation_quote_is_sensitive(ref.quote_preview)
-    )
+    return sum(1 for ref in item.source_refs[:3] if _citation_quote_is_sensitive(ref.quote_preview))
 
 
 def _source_ref_identity(ref: SourceRef) -> str:
