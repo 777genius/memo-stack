@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 
 from infinity_context_core.application.context_lexical import (
@@ -15,8 +16,11 @@ from infinity_context_core.domain.entities import SourceRef
 _DEFAULT_WINDOW_CHARS = 320
 _MAX_QUERY_TERMS = 12
 _MAX_SNIPPET_CHARS = 360
+_MAX_STRUCTURED_SNIPPET_CHARS = 640
+_MAX_STRUCTURED_SNIPPET_LINES = 4
 _MAX_BOUNDARY_SCAN_CHARS = 40
 _MAX_LINE_PREFIX_SCAN_CHARS = 240
+_STRUCTURED_EVIDENCE_LINE_RE = re.compile(r"^\s*(?:D\d+:\d+|S\d+:\d+|T\d+:\d+)\b")
 
 
 @dataclass(frozen=True)
@@ -52,9 +56,13 @@ def query_focused_snippet(
     )
     word_start = _left_word_boundary(text, start)
     line_start = _left_line_boundary(text, word_start)
-    start = line_start if end - line_start <= _MAX_SNIPPET_CHARS else word_start
+    structured_line = _is_structured_evidence_line(text, line_start)
+    max_chars = _MAX_STRUCTURED_SNIPPET_CHARS if structured_line else _MAX_SNIPPET_CHARS
+    start = line_start if end - line_start <= max_chars else word_start
     end = _right_word_boundary(text, end)
-    snippet = _render_snippet(text=text, start=start, end=end)
+    if structured_line and start == line_start:
+        end = _right_structured_line_boundary(text=text, start=start, end=end)
+    snippet = _render_snippet(text=text, start=start, end=end, max_chars=max_chars)
     if not snippet:
         return None
     return QuerySnippet(
@@ -199,7 +207,36 @@ def _right_word_boundary(text: str, end: int) -> int:
     return cursor
 
 
-def _render_snippet(*, text: str, start: int, end: int) -> str:
+def _is_structured_evidence_line(text: str, line_start: int) -> bool:
+    line_end = text.find("\n", line_start)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    return bool(_STRUCTURED_EVIDENCE_LINE_RE.match(line))
+
+
+def _right_structured_line_boundary(*, text: str, start: int, end: int) -> int:
+    cursor = _right_line_boundary_at_or_after(text, end)
+    line_count = text[start:cursor].count("\n") + 1
+    scan_start = cursor + 1 if cursor < len(text) else cursor
+    while scan_start < len(text) and line_count < _MAX_STRUCTURED_SNIPPET_LINES:
+        candidate_end = _right_line_boundary_at_or_after(text, scan_start)
+        if candidate_end - start > _MAX_STRUCTURED_SNIPPET_CHARS:
+            break
+        cursor = candidate_end
+        line_count += 1
+        if cursor >= len(text):
+            break
+        scan_start = cursor + 1
+    return min(len(text), max(end, cursor))
+
+
+def _right_line_boundary_at_or_after(text: str, end: int) -> int:
+    line_end = text.find("\n", end)
+    return len(text) if line_end == -1 else line_end
+
+
+def _render_snippet(*, text: str, start: int, end: int, max_chars: int) -> str:
     snippet = " ".join(text[start:end].strip().split())
     if not snippet:
         return ""
@@ -207,4 +244,4 @@ def _render_snippet(*, text: str, start: int, end: int) -> str:
         snippet = f"... {snippet}"
     if end < len(text):
         snippet = f"{snippet} ..."
-    return safe_metadata_text(snippet, limit=_MAX_SNIPPET_CHARS)
+    return safe_metadata_text(snippet, limit=max_chars)

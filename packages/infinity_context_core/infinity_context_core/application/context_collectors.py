@@ -520,6 +520,7 @@ def _rag_chunk_item(
 ) -> ContextItem:
     chunk_text = document_chunk_retrieval_text(text=chunk.text, metadata=chunk.metadata)
     snippet = query_focused_snippet(query=query_text, text=chunk_text)
+    evidence_text = snippet.text if snippet is not None else chunk_text
     source_refs = source_refs_with_query_snippet(
         chunk_source_refs(chunk, text_preview=(snippet.text if snippet else chunk_text)),
         snippet,
@@ -529,7 +530,7 @@ def _rag_chunk_item(
         ContextItem(
             item_id=str(chunk.id),
             item_type="chunk",
-            text=chunk_text,
+            text=evidence_text,
             score=candidate.score,
             source_refs=source_refs,
             diagnostics={

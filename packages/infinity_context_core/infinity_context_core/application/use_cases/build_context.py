@@ -888,6 +888,7 @@ def _chunk_context_item(
     query_text: str,
 ) -> ContextItem:
     snippet = query_focused_snippet(query=query_text, text=text)
+    evidence_text = snippet.text if snippet is not None else text
     source_refs = source_refs_with_query_snippet(
         chunk_source_refs(chunk, text_preview=(snippet.text if snippet else text[:200])),
         snippet,
@@ -907,7 +908,7 @@ def _chunk_context_item(
         ContextItem(
             item_id=str(chunk.id),
             item_type="chunk",
-            text=text,
+            text=evidence_text,
             score=score,
             source_refs=source_refs,
             diagnostics={

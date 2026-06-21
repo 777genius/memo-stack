@@ -755,6 +755,7 @@ def _linked_chunk_context_item(
     score = _linked_item_score(link)
     text = document_chunk_retrieval_text(text=chunk.text, metadata=chunk.metadata)
     snippet = query_focused_snippet(query=query_text, text=text)
+    evidence_text = snippet.text if snippet is not None else text
     source_refs = source_refs_with_query_snippet(
         chunk_source_refs(chunk, text_preview=snippet.text if snippet else text[:200]),
         snippet,
@@ -764,7 +765,7 @@ def _linked_chunk_context_item(
         ContextItem(
             item_id=str(chunk.id),
             item_type="chunk",
-            text=text,
+            text=evidence_text,
             score=score,
             source_refs=source_refs,
             diagnostics=_linked_item_diagnostics(

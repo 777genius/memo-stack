@@ -694,7 +694,9 @@ def test_context_enriches_chunk_citations_with_query_focused_snippet(
         >= 1
     )
     assert "query snippet marker Atlas renewal decision" in data["rendered_text"]
-    assert len(snippet) < len(item["text"])
+    assert snippet in item["text"]
+    assert len(item["text"]) <= 360
+    assert item["text"].count("Background notes before the useful section.") < 8
 
 
 def test_context_retrieves_media_manifest_artifact_evidence(tmp_path: Path) -> None:
@@ -995,6 +997,9 @@ def test_context_enriches_multimodal_evidence_with_query_focused_snippet(
     item = data["items"][0]
     snippet = item["diagnostics"]["query_snippet"]
     assert "MEDIA_SNIPPET_MARKER Alex confirmed the Atlas launch date" in snippet
+    assert snippet in item["text"]
+    assert len(item["text"]) <= 360
+    assert item["text"].count("Intro filler from the meeting transcript.") < 8
     assert snippet in item["citations"][0]["quote_preview"]
     assert item["citations"][0]["char_range"] == {
         "start": item["diagnostics"]["query_snippet_char_start"],

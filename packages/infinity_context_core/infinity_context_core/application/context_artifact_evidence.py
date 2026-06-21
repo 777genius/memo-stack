@@ -346,6 +346,7 @@ def _context_items_from_manifest(
         )
         artifact = candidate.artifact
         snippet = query_focused_snippet(query=query.query, text=text)
+        evidence_text = snippet.text if snippet is not None else text
         evidence_id = _safe_evidence_id(raw_item, index=index, diagnostics=diagnostics)
         source_refs = source_refs_with_query_snippet(
             (
@@ -426,7 +427,7 @@ def _context_items_from_manifest(
             ContextItem(
                 item_id=f"{artifact.id}:{evidence_id}",
                 item_type="extraction_artifact",
-                text=text,
+                text=evidence_text,
                 score=score,
                 source_refs=source_refs,
                 diagnostics={

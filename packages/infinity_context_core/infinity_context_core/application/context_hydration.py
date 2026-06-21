@@ -213,12 +213,13 @@ class ContextHydrator:
                     metadata=chunk.metadata,
                 )
                 snippet = query_focused_snippet(query=query.query, text=chunk_text)
+                evidence_text = snippet.text if snippet is not None else chunk_text
                 visible_items.append(
                     enrich_context_item_with_media_time(
                         ContextItem(
                             item_id=str(chunk.id),
                             item_type=item.item_type,
-                            text=chunk_text,
+                            text=evidence_text,
                             score=item.score,
                             source_refs=source_refs_with_query_snippet(
                                 chunk_source_refs(

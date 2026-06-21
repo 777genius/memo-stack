@@ -48,6 +48,33 @@ def test_query_focused_snippet_preserves_nearby_line_evidence_prefix() -> None:
     assert snippet.char_start == text.index("D4:5")
 
 
+def test_query_focused_snippet_keeps_adjacent_structured_dialog_turns() -> None:
+    text = "\n".join(
+        [
+            "D1:8 Melanie: That's really cool. You've got guts. What now?",
+            "D1:9 Caroline: Gonna continue my edu and check out career options "
+            "after talking through all the practical next steps.",
+            "D1:10 Melanie: Wow, Caroline! What kinda jobs are you thinkin' of?",
+            "D1:11 Caroline: I'm keen on counseling or working in mental health "
+            "because that connects directly to the people I want to help.",
+            "D1:12 Melanie: You'd be a great counselor!",
+        ]
+    )
+
+    snippet = query_focused_snippet(
+        query="Caroline continue edu career options",
+        text=text,
+        window_chars=110,
+    )
+
+    assert snippet is not None
+    assert "D1:9 Caroline:" in snippet.text
+    assert "D1:11 Caroline:" in snippet.text
+    assert "D1:12 Melanie:" not in snippet.text
+    assert len(snippet.text) > 360
+    assert len(snippet.text) <= 640
+
+
 def test_source_refs_with_query_snippet_preserves_location_metadata() -> None:
     source_ref = SourceRef(
         source_type="asset_extraction",
