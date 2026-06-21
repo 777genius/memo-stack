@@ -42,6 +42,7 @@ from infinity_context_core.reporting import build_report_provenance
 SUITE = "infinity-context-multimodal-live-provider-canary"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROOF_MATRIX_VERSION = "multimodal-provider-proof-matrix-v1"
+REPORT_SAFETY_SCHEMA_VERSION = "multimodal-provider-report-safety-v1"
 REQUIRED_ENV = "MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"
 DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
 DEFAULT_VISION_MODEL = "gpt-4.1-mini"
@@ -58,6 +59,25 @@ OPENAI_VISION_SUPPORTED_SUFFIXES = frozenset(OPENAI_VISION_SUPPORTED_FILE_SUFFIX
 SECRET_VALUE_PATTERNS = (
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
     re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
+)
+_MAX_REPORT_STRING_CHARS = 4_096
+_MAX_REPORT_LIST_ITEMS = 100
+_MAX_REPORT_DICT_ITEMS = 150
+_MAX_REPORT_DEPTH = 12
+_RAW_PROVIDER_PAYLOAD_KEYS = frozenset(
+    {
+        "raw_provider_payload",
+        "raw_provider_response",
+        "raw_request",
+        "raw_response",
+        "request_headers",
+        "response_body",
+    }
+)
+_SAFE_REPORT_SCHEMA_KEYS = frozenset(
+    {
+        "invalid_api_key",
+    }
 )
 
 _CONTENT_TYPES_BY_SUFFIX = {
@@ -666,12 +686,14 @@ def _base_report(
         "provider_key_present": has_provider_key,
         "provider_contract": provider_contract,
         "failure_policy_contract": _failure_policy_contract(),
+        "report_safety": _component("unknown"),
         "proof_matrix": _proof_matrix(
             components={},
             failure_policy_contract={},
             provider_contract=provider_contract,
             provider_key_present=has_provider_key,
             secrets_redacted=True,
+            report_safety_contract={},
         ),
         "models": {
             "vision": args.vision_model,
@@ -706,11 +728,17 @@ def _update_proof_matrix(report: dict[str, object]) -> None:
         ),
         provider_key_present=bool(report.get("provider_key_present")),
         secrets_redacted=report.get("secrets_redacted") is True,
+        report_safety_contract=(
+            report.get("report_safety")
+            if isinstance(report.get("report_safety"), dict)
+            else {}
+        ),
     )
 
 
 def _finalize_report(report: dict[str, object]) -> None:
     report["secrets_redacted"] = not _contains_secret_like_value(report)
+    report["report_safety"] = _report_safety_contract(report)
     _update_proof_matrix(report)
     report["readiness"] = _readiness_summary(report)
     report["provenance"] = build_report_provenance(
@@ -728,8 +756,10 @@ def _proof_matrix(
     provider_contract: dict[object, object] | None = None,
     provider_key_present: bool,
     secrets_redacted: bool,
+    report_safety_contract: dict[object, object] | None = None,
 ) -> dict[str, object]:
     provider_contract = provider_contract or {}
+    report_safety_contract = report_safety_contract or {}
     requirements = {
         "vision_real_provider": _live_component_requirement(
             components,
@@ -806,6 +836,7 @@ def _proof_matrix(
             "requires_provider_key": False,
             "ok": secrets_redacted,
         },
+        "report_safety_contract": _report_safety_requirement(report_safety_contract),
     }
     live_names = (
         "vision_real_provider",
@@ -1150,6 +1181,33 @@ def _contract_requirement(
     }
 
 
+def _report_safety_requirement(
+    contract: dict[object, object],
+) -> dict[str, object]:
+    if not isinstance(contract, dict) or contract.get("schema_version") != (
+        REPORT_SAFETY_SCHEMA_VERSION
+    ):
+        return {
+            "status": "missing",
+            "proof": "bounded_report_surface",
+            "requires_provider_key": False,
+            "ok": False,
+        }
+    ok = contract.get("ok") is True
+    result = {
+        "status": "contract_covered" if ok else "failed",
+        "proof": "bounded_report_surface",
+        "requires_provider_key": False,
+        "ok": ok,
+        "failed_checks": _string_list(contract.get("failed_checks")),
+    }
+    if isinstance(contract.get("max_string_chars"), int):
+        result["max_string_chars"] = contract["max_string_chars"]
+    if isinstance(contract.get("max_depth"), int):
+        result["max_depth"] = contract["max_depth"]
+    return result
+
+
 def _invalid_key_probe_requirement(components: dict[object, object]) -> dict[str, object]:
     component = components.get("invalid_key_probe")
     if not isinstance(component, dict):
@@ -1273,6 +1331,8 @@ def _readiness_next_steps(
         steps.append("provide_wav_and_mp3_audio_fixtures")
     if "invalid_key_live_probe" in blocking_requirements:
         steps.append("run_invalid_key_probe")
+    if "report_safety_contract" in blocking_requirements:
+        steps.append("inspect_provider_canary_report")
     if blocking_requirements and not steps:
         steps.append("inspect_provider_canary")
     if not blocking_requirements:
@@ -1534,6 +1594,172 @@ def _failure_policy_contract() -> dict[str, object]:
             reason="asset_extraction.vision.timeout",
         ),
     }
+
+
+def _report_safety_contract(report: dict[str, object]) -> dict[str, object]:
+    snapshot = {
+        key: value
+        for key, value in report.items()
+        if key not in {"proof_matrix", "readiness", "provenance", "report_safety"}
+    }
+    failed_checks: set[str] = set()
+    issues: list[dict[str, object]] = []
+    _scan_report_surface(
+        snapshot,
+        path="$",
+        depth=0,
+        failed_checks=failed_checks,
+        issues=issues,
+    )
+    if _contains_secret_like_value(snapshot):
+        failed_checks.add("no_secret_like_values")
+    if not _component_recovery_policy_surface_ok(snapshot.get("components")):
+        failed_checks.add("component_recovery_policy")
+    ok = not failed_checks
+    return {
+        "schema_version": REPORT_SAFETY_SCHEMA_VERSION,
+        "status": "contract_covered" if ok else "failed",
+        "proof": "bounded_report_surface",
+        "requires_provider_key": False,
+        "ok": ok,
+        "failed_checks": sorted(failed_checks),
+        "issue_count": len(issues),
+        "issues": issues[:20],
+        "max_string_chars": _MAX_REPORT_STRING_CHARS,
+        "max_list_items": _MAX_REPORT_LIST_ITEMS,
+        "max_dict_items": _MAX_REPORT_DICT_ITEMS,
+        "max_depth": _MAX_REPORT_DEPTH,
+    }
+
+
+def _scan_report_surface(
+    value: object,
+    *,
+    path: str,
+    depth: int,
+    failed_checks: set[str],
+    issues: list[dict[str, object]],
+) -> None:
+    if depth > _MAX_REPORT_DEPTH:
+        _add_report_safety_issue(
+            failed_checks,
+            issues,
+            check="bounded_depth",
+            path=path,
+            detail=f"depth>{_MAX_REPORT_DEPTH}",
+        )
+        return
+    if isinstance(value, str):
+        if len(value) > _MAX_REPORT_STRING_CHARS:
+            _add_report_safety_issue(
+                failed_checks,
+                issues,
+                check="bounded_strings",
+                path=path,
+                detail=f"chars={len(value)}",
+            )
+        if _contains_secret_like_value(value):
+            _add_report_safety_issue(
+                failed_checks,
+                issues,
+                check="no_secret_like_values",
+                path=path,
+                detail="secret_like_value",
+            )
+        return
+    if isinstance(value, dict):
+        if len(value) > _MAX_REPORT_DICT_ITEMS:
+            _add_report_safety_issue(
+                failed_checks,
+                issues,
+                check="bounded_dict_items",
+                path=path,
+                detail=f"items={len(value)}",
+            )
+        for raw_key, child_value in list(value.items()):
+            key = str(raw_key)
+            child_path = f"{path}.{key}"
+            if key.lower() not in _SAFE_REPORT_SCHEMA_KEYS and _is_sensitive_report_key(key):
+                _add_report_safety_issue(
+                    failed_checks,
+                    issues,
+                    check="no_sensitive_keys",
+                    path=child_path,
+                    detail="sensitive_key",
+                )
+                continue
+            if key.lower() in _RAW_PROVIDER_PAYLOAD_KEYS:
+                _add_report_safety_issue(
+                    failed_checks,
+                    issues,
+                    check="no_raw_provider_payloads",
+                    path=child_path,
+                    detail="raw_payload_key",
+                )
+                continue
+            _scan_report_surface(
+                child_value,
+                path=child_path,
+                depth=depth + 1,
+                failed_checks=failed_checks,
+                issues=issues,
+            )
+        return
+    if isinstance(value, list | tuple):
+        if len(value) > _MAX_REPORT_LIST_ITEMS:
+            _add_report_safety_issue(
+                failed_checks,
+                issues,
+                check="bounded_list_items",
+                path=path,
+                detail=f"items={len(value)}",
+            )
+        for index, child_value in enumerate(list(value)[:_MAX_REPORT_LIST_ITEMS]):
+            _scan_report_surface(
+                child_value,
+                path=f"{path}[{index}]",
+                depth=depth + 1,
+                failed_checks=failed_checks,
+                issues=issues,
+            )
+
+
+def _add_report_safety_issue(
+    failed_checks: set[str],
+    issues: list[dict[str, object]],
+    *,
+    check: str,
+    path: str,
+    detail: str,
+) -> None:
+    failed_checks.add(check)
+    if len(issues) >= 50:
+        return
+    issues.append(
+        {
+            "check": check,
+            "path": path[:240],
+            "detail": detail[:240],
+        }
+    )
+
+
+def _component_recovery_policy_surface_ok(value: object) -> bool:
+    if isinstance(value, dict):
+        status = value.get("status")
+        if (
+            isinstance(status, str)
+            and status not in {"configured", "succeeded", "unknown"}
+            and (
+                not isinstance(value.get("operator_action"), str)
+                or not isinstance(value.get("user_retryable"), bool)
+            )
+        ):
+            return False
+        return all(_component_recovery_policy_surface_ok(child) for child in value.values())
+    if isinstance(value, list | tuple):
+        return all(_component_recovery_policy_surface_ok(child) for child in value)
+    return True
 
 
 def _write_report(report: dict[str, object], report_out: str | None) -> None:

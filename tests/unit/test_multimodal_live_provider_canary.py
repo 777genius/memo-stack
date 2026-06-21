@@ -110,8 +110,8 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     proof = file_report["proof_matrix"]
     assert proof["schema_version"] == "multimodal-provider-proof-matrix-v1"
     assert proof["summary"] == {
-        "contract_requirements_passed": 7,
-        "contract_requirements_total": 8,
+        "contract_requirements_passed": 8,
+        "contract_requirements_total": 9,
         "live_requirements_passed": 0,
         "live_requirements_total": 6,
     }
@@ -225,6 +225,8 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "requires_provider_key": False,
         "status": "contract_covered",
     }
+    assert requirements["report_safety_contract"]["ok"] is True
+    assert requirements["report_safety_contract"]["status"] == "contract_covered"
     assert file_report["components"]["provider_key"] == {
         "message": (
             "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running the live provider canary"
@@ -484,8 +486,8 @@ def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_ke
         "status": "succeeded",
     }
     assert report["proof_matrix"]["summary"] == {
-        "contract_requirements_passed": 7,
-        "contract_requirements_total": 8,
+        "contract_requirements_passed": 8,
+        "contract_requirements_total": 9,
         "live_requirements_passed": 1,
         "live_requirements_total": 6,
     }
@@ -554,6 +556,16 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe()
         )["provider_contract"],
         provider_key_present=False,
         secrets_redacted=True,
+        report_safety_contract=module._report_safety_contract(
+            {
+                "components": components,
+                "failure_policy_contract": module._failure_policy_contract(),
+                "provider_contract": module._base_report(
+                    module._parse_args([]),
+                    has_provider_key=False,
+                )["provider_contract"],
+            }
+        ),
     )
 
     assert proof["requirements"]["invalid_key_live_probe"] == {
@@ -598,6 +610,29 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
         provider_contract=module._base_report(args, has_provider_key=True)["provider_contract"],
         provider_key_present=True,
         secrets_redacted=True,
+        report_safety_contract=module._report_safety_contract(
+            {
+                "components": {
+                    "vision": {
+                        "status": "succeeded",
+                        "summary_chars": 40,
+                        "visible_text_count": 1,
+                    },
+                    "transcription": {
+                        "status": "succeeded",
+                        "request_contract": request_contract,
+                        "transcript_chars": 52,
+                        "segment_count": 0,
+                        "word_count": 0,
+                    },
+                    "invalid_key_probe": {"status": "skipped"},
+                },
+                "failure_policy_contract": module._failure_policy_contract(),
+                "provider_contract": module._base_report(args, has_provider_key=True)[
+                    "provider_contract"
+                ],
+            }
+        ),
     )
 
     assert proof["requirements"]["vision_response_evidence"] == {
@@ -688,10 +723,66 @@ def test_multimodal_live_provider_canary_redacts_configured_key_from_failures(
     assert report["provider_key_present"] is True
     assert report["secrets_redacted"] is True
     assert report["proof_matrix"]["requirements"]["no_secret_leak_guard"]["ok"] is True
+    assert report["proof_matrix"]["requirements"]["report_safety_contract"]["ok"] is True
+    assert report["report_safety"]["ok"] is True
     assert report["components"]["vision"]["operator_action"] == "replace_provider_credential"
     assert report["components"]["transcription"]["operator_action"] == "retry_later"
     assert sentinel not in rendered
     assert "Bearer sk-" not in rendered
+
+
+def test_multimodal_live_provider_canary_rejects_unsafe_report_surface() -> None:
+    module = _load_canary_module()
+    args = module._parse_args([])
+    components = {
+        "vision": module._component(
+            "failed",
+            reason="asset_extraction.vision.timeout",
+            message="x" * (module._MAX_REPORT_STRING_CHARS + 1),
+            raw_provider_payload={"body": "provider response must not be public"},
+        ),
+        "transcription": module._component(
+            "skipped",
+            reason="provider_credential_missing",
+        ),
+        "invalid_key_probe": module._component(
+            "skipped",
+            reason="invalid_key_probe_not_requested",
+        ),
+    }
+    safety = module._report_safety_contract(
+        {
+            "components": components,
+            "failure_policy_contract": module._failure_policy_contract(),
+            "provider_contract": module._base_report(args, has_provider_key=True)[
+                "provider_contract"
+            ],
+        }
+    )
+    proof = module._proof_matrix(
+        components=components,
+        failure_policy_contract=module._failure_policy_contract(),
+        provider_contract=module._base_report(args, has_provider_key=True)["provider_contract"],
+        provider_key_present=True,
+        secrets_redacted=True,
+        report_safety_contract=safety,
+    )
+    readiness = module._readiness_summary(
+        {
+            "components": components,
+            "proof_matrix": proof,
+            "provider_key_present": True,
+        }
+    )
+
+    assert safety["ok"] is False
+    assert set(safety["failed_checks"]) == {
+        "bounded_strings",
+        "no_raw_provider_payloads",
+    }
+    assert proof["requirements"]["report_safety_contract"]["ok"] is False
+    assert "report_safety_contract" in readiness["blocking_requirements"]
+    assert "inspect_provider_canary_report" in readiness["next_steps"]
 
 
 def test_multimodal_live_provider_canary_transcribes_wav_and_mp3_matrix(
@@ -751,6 +842,25 @@ def test_multimodal_live_provider_canary_transcribes_wav_and_mp3_matrix(
         provider_contract=module._base_report(args, has_provider_key=True)["provider_contract"],
         provider_key_present=True,
         secrets_redacted=True,
+        report_safety_contract=module._report_safety_contract(
+            {
+                "components": {
+                    "vision": {"status": "succeeded", "summary_chars": 10, "visible_text_count": 0},
+                    "transcription": result,
+                    "vision_fixture": module._vision_fixture_preflight(),
+                    "audio_fixtures": module._audio_fixtures_preflight(args),
+                    "audio_fixture": module._audio_fixture_preflight(args),
+                    "invalid_key_probe": {
+                        "status": "succeeded",
+                        "observed_reason": "asset_extraction.vision.invalid_api_key",
+                    },
+                },
+                "failure_policy_contract": module._failure_policy_contract(),
+                "provider_contract": module._base_report(args, has_provider_key=True)[
+                    "provider_contract"
+                ],
+            }
+        ),
     )
 
     assert result["status"] == "succeeded"
@@ -864,18 +974,31 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
 
     vision = module._vision_fixture_preflight()
     audio = module._audio_fixture_preflight(args)
+    components = {
+        "vision": module._component("skipped", reason="provider_credential_missing"),
+        "transcription": module._component("skipped", reason="provider_credential_missing"),
+        "vision_fixture": vision,
+        "audio_fixture": audio,
+        "invalid_key_probe": module._component(
+            "skipped",
+            reason="invalid_key_probe_not_requested",
+        ),
+    }
     proof = module._proof_matrix(
-        components={
-            "vision": {"status": "skipped", "reason": "provider_credential_missing"},
-            "transcription": {"status": "skipped", "reason": "provider_credential_missing"},
-            "vision_fixture": vision,
-            "audio_fixture": audio,
-            "invalid_key_probe": {"status": "skipped", "reason": "invalid_key_probe_not_requested"},
-        },
+        components=components,
         failure_policy_contract=module._failure_policy_contract(),
         provider_contract=module._base_report(args, has_provider_key=False)["provider_contract"],
         provider_key_present=False,
         secrets_redacted=True,
+        report_safety_contract=module._report_safety_contract(
+            {
+                "components": components,
+                "failure_policy_contract": module._failure_policy_contract(),
+                "provider_contract": module._base_report(args, has_provider_key=False)[
+                    "provider_contract"
+                ],
+            }
+        ),
     )
 
     assert vision["status"] == "succeeded"
@@ -887,8 +1010,8 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
     assert proof["requirements"]["audio_fixture_contract"]["ok"] is True
     assert proof["requirements"]["audio_fixture_contract"]["requires_provider_key"] is False
     assert proof["summary"] == {
-        "contract_requirements_passed": 7,
-        "contract_requirements_total": 8,
+        "contract_requirements_passed": 8,
+        "contract_requirements_total": 9,
         "live_requirements_passed": 0,
         "live_requirements_total": 6,
     }
