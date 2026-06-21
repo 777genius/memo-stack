@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -277,6 +278,37 @@ def _with_idempotency(headers: dict[str, str], key: str | None) -> dict[str, str
     if key is None:
         return headers
     return {**headers, "Idempotency-Key": key}
+
+
+def _git_report(root: Path | None = None) -> dict[str, object]:
+    root = (root or Path.cwd()).resolve()
+    commit = _git_output(root, "rev-parse", "HEAD")
+    short_commit = _git_output(root, "rev-parse", "--short", "HEAD")
+    dirty = _git_output(root, "status", "--short")
+    return {
+        "commit": commit,
+        "short_commit": short_commit,
+        "dirty": bool(dirty) if dirty is not None else True,
+    }
+
+
+def _git_output(root: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
 
 def _write_redacted_report(result: dict[str, object], report_out: Path | None) -> None:
     if report_out is None:

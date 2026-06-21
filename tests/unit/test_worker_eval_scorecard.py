@@ -743,6 +743,9 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
 
     assert result["ok"] is True
     assert result["suite"] == "memory-quality-scorecard"
+    assert isinstance(result["git"]["commit"], str | type(None))
+    assert isinstance(result["git"]["dirty"], bool)
+    assert payload["git"] == result["git"]
     assert result["score"]["maturity_score_10"] == 10.0
     assert result["gates"]["required_suites_present"] is True
     assert result["capabilities"]["coverage_floors"]["ok"] is True
@@ -924,6 +927,12 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
         policy["retrieval_context_memory_layer"]["source_text_policy"]
         == "untrusted_evidence"
     )
+    assert "wrong_project_anchor_deflects_generic_match" in policy[
+        "retrieval_context_memory_layer"
+    ]["required_quality_case_ids"]
+    assert "media_timestamp_query_selects_matching_evidence" in policy[
+        "retrieval_context_memory_layer"
+    ]["required_quality_case_ids"]
     assert policy["dedup_merge_conflict_resolution"]["required_quality_case_ids"] == [
         "pending_conflict_review_visible",
         "pending_duplicate_merge_review_visible",
@@ -2424,6 +2433,26 @@ def test_memory_quality_scorecard_fails_on_retrieval_context_regression() -> Non
     assert (
         result["metrics"]["multimodal_offline_retrieval_evidence_location_gap_count"]
         == 2
+    )
+    assert result["gates"]["all_capabilities_ok"] is False
+
+
+def test_memory_quality_scorecard_fails_on_missing_retrieval_context_case() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["quality-golden"]["cases"] = [
+        case
+        for case in suite_results["quality-golden"]["cases"]
+        if case["case_id"] != "wrong_project_anchor_deflects_generic_match"
+    ]
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["ok"] is False
+    capability = result["capabilities"]["retrieval_context_memory_layer"]
+    assert capability["ok"] is False
+    assert (
+        "quality_case_wrong_project_anchor_deflects_generic_match"
+        in capability["failed_checks"]
     )
     assert result["gates"]["all_capabilities_ok"] is False
 

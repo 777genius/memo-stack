@@ -95,6 +95,38 @@ _DEDUP_MERGE_SEMANTIC_CHECKS = (
     "weak_overlap_below_review_threshold_denied",
     "cross_scope_fact_not_suggested",
 )
+_RETRIEVAL_CONTEXT_QUALITY_CASE_IDS = (
+    "updated_provider_current_only",
+    "temporal_supersedes_current_only",
+    "linked_temporal_supersedes_current_only",
+    "relative_time_current_fact_not_last_week_fact",
+    "contradicted_fact_hidden_by_default",
+    "contradicted_fact_visible_only_in_stale_review",
+    "document_architecture_precision",
+    "document_source_diversity_preserves_secondary_source",
+    "hybrid_document_beats_single_source",
+    "context_diversity_preserves_fact_and_chunk_evidence",
+    "multimodal_source_refs_recall_with_citations",
+    "multilingual_multimodal_source_refs_recall",
+    "multimodal_evidence_metadata_contract",
+    "multimodal_visual_region_query_requires_bbox",
+    "media_timestamp_query_selects_matching_evidence",
+    "canonical_project_anchor_recall_with_citation",
+    "canonical_event_anchor_recall_by_identity",
+    "event_anchor_relation_expands_linked_person_project_facts",
+    "person_event_project_precision",
+    "multilingual_recent_person_project_recall",
+    "same_person_time_wrong_project_does_not_pull_atlas",
+    "wrong_project_anchor_deflects_generic_match",
+    "identifier_like_query_deflects_partial_marker",
+    "unrelated_query_returns_no_context_items",
+    "cross_memory_scope_secret_hidden",
+    "multi_memory_scope_explicit_recall",
+    "thread_current_visible_without_neighbor",
+    "thread_other_visible_without_current",
+    "prompt_injection_evidence_only",
+    "mixed_script_event_anchor_recall_by_query_intent",
+)
 _MULTIMODAL_DOCKER_LIVE_PROOF_SUITE = "infinity-context-multimodal-docker-live-proof"
 
 
@@ -140,6 +172,7 @@ def memory_quality_scorecard_policy_snapshot(
             "requires_retrieval_evidence_coverage_profile": True,
         },
         "retrieval_context_memory_layer": {
+            "required_quality_case_ids": list(_RETRIEVAL_CONTEXT_QUALITY_CASE_IDS),
             "requires_hybrid_retrieval": True,
             "requires_document_recall": True,
             "requires_citations": True,
@@ -508,11 +541,17 @@ def _scorecard_canonical_recall_precision(
 def _scorecard_retrieval_context_memory_layer(
     suite_results: Mapping[str, dict[str, object]],
 ) -> dict[str, object]:
+    quality_result = suite_results.get(QUALITY_GOLDEN_SUITE)
     quality = _scorecard_result_metrics(suite_results.get(QUALITY_GOLDEN_SUITE))
     multimodal = _scorecard_result_metrics(
         suite_results.get(MULTIMODAL_OFFLINE_GOLDEN_SUITE)
     )
+    quality_case_ids = set(_scorecard_case_ids(quality_result))
     checks = {
+        **{
+            f"quality_case_{case_id}": case_id in quality_case_ids
+            for case_id in _RETRIEVAL_CONTEXT_QUALITY_CASE_IDS
+        },
         "quality_recall_at_5": (
             float(quality.get("recall_at_5", 0.0)) >= _QUALITY_GOLDEN_RECALL_GATE
         ),

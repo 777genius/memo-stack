@@ -45,6 +45,7 @@ from infinity_context_server.eval_case_runner import (
     _small_golden_metrics,
 )
 from infinity_context_server.eval_common import (
+    _git_report,
     _json_data_list,
     _remember_eval_fact,
     _remember_eval_fact_response,
@@ -416,6 +417,7 @@ def run_memory_quality_scorecard(
         results,
         require_top_evidence=require_top_evidence,
     )
+    result["git"] = _git_report()
     _write_redacted_report(result, report_out)
     return result
 

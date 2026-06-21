@@ -232,6 +232,7 @@ def run_goal_audit(
     )
     _audit_quality_scorecard_report(
         quality_scorecard,
+        current_commit=current_commit,
         checks=checks,
         failures=failures,
     )
@@ -948,6 +949,7 @@ def _audit_provider_proof_matrix(
 def _audit_quality_scorecard_report(
     report: Mapping[str, object] | None,
     *,
+    current_commit: str,
     checks: dict[str, bool],
     failures: list[str],
 ) -> None:
@@ -967,6 +969,7 @@ def _audit_quality_scorecard_report(
         report.get("capabilities") if isinstance(report.get("capabilities"), dict) else {}
     )
     metrics = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
+    git = report.get("git") if isinstance(report.get("git"), dict) else {}
     _check(
         checks,
         failures,
@@ -980,6 +983,20 @@ def _audit_quality_scorecard_report(
         "memory_quality_scorecard_passed",
         report.get("ok") is True and report.get("status") == "ok",
         "Memory quality scorecard did not pass",
+    )
+    _check(
+        checks,
+        failures,
+        "memory_quality_scorecard_clean_commit",
+        git.get("dirty") is False and bool(git.get("commit")),
+        "Memory quality scorecard must be tied to a clean git commit",
+    )
+    _check(
+        checks,
+        failures,
+        "memory_quality_scorecard_current_commit",
+        bool(current_commit) and git.get("commit") == current_commit,
+        "Memory quality scorecard must be generated for the current git commit",
     )
     _check(
         checks,

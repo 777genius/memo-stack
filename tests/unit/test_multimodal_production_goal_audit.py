@@ -464,10 +464,15 @@ def test_multimodal_production_goal_audit_rejects_stale_report_commits(
     assert result.checks["frontend_marionette_current_commit"] is False
     assert result.checks["docker_live_current_commit"] is False
     assert result.checks["live_provider_current_commit"] is False
+    assert result.checks["memory_quality_scorecard_current_commit"] is False
     assert any(
         "Frontend Marionette proof must be generated" in failure for failure in result.failures
     )
     assert any("Docker live proof must be generated" in failure for failure in result.failures)
+    assert any(
+        "Memory quality scorecard must be generated" in failure
+        for failure in result.failures
+    )
     assert any("Live provider proof must be generated" in failure for failure in result.failures)
 
 
@@ -941,6 +946,7 @@ def _quality_scorecard_report() -> dict[str, object]:
         "suite": "memory-quality-scorecard",
         "status": "ok",
         "ok": True,
+        "git": {"commit": "abc", "short_commit": "abc", "dirty": False},
         "score": {
             "passed_checks": 19,
             "total_checks": 19,
