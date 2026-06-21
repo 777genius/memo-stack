@@ -11,6 +11,11 @@ from typing import Any
 import httpx
 
 from infinity_context_cli.config import DEFAULT_SERVICE_TOKEN, InfinityContextCliConfig
+from infinity_context_cli.local_experience import (
+    build_first_capture_surface,
+    build_one_minute_path,
+    local_experience_score,
+)
 from infinity_context_cli.mcp_config import SUPPORTED_AGENTS
 from infinity_context_cli.runtime import docker_available, docker_compose_available
 
@@ -100,29 +105,43 @@ def _local_experience_payload(
         for entry in mcp_details.get("configs", [])
         if isinstance(entry, dict) and entry.get("ready") and entry.get("path")
     ]
+    capabilities_check = by_name.get("api_capabilities")
+    capabilities = capabilities_check.details if capabilities_check is not None else {}
+    first_capture = build_first_capture_surface(capabilities=capabilities)
+    mcp_ready = bool(ready_agents)
     return {
         "status": _local_experience_status(
             docker_ready=bool(by_name.get("docker") and by_name["docker"].ok),
             compose_ready=bool(by_name.get("docker_compose") and by_name["docker_compose"].ok),
             api_ready=api_ready,
             visual_ready=visual_ready,
-            mcp_ready=bool(ready_agents),
+            mcp_ready=mcp_ready,
         ),
         "api_url": config.api_url,
         "ui_url": _ui_url(config),
         "visual_memory_ready": visual_ready,
-        "mcp_ready": bool(ready_agents),
+        "mcp_ready": mcp_ready,
         "ready_agents": ready_agents,
         "mcp_config_paths": mcp_paths,
-        "first_capture": {
-            "surface": "visual_memory_browser",
-            "tab": "Capture",
-            "supports": ["text_note", "file_evidence"],
-        },
+        "first_capture": first_capture,
+        "one_minute_path": build_one_minute_path(
+            api_url=config.api_url,
+            agents=ready_agents or ["codex"],
+            runtime_ready=api_ready,
+            visual_ready=visual_ready,
+            mcp_ready=mcp_ready,
+            first_capture=first_capture,
+        ),
+        "readiness": local_experience_score(
+            runtime_ready=api_ready,
+            visual_ready=visual_ready,
+            mcp_ready=mcp_ready,
+            first_capture=first_capture,
+        ),
         "next_actions": _local_experience_next_actions(
             api_ready=api_ready,
             visual_ready=visual_ready,
-            mcp_ready=bool(ready_agents),
+            mcp_ready=mcp_ready,
         ),
     }
 

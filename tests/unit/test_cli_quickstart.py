@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 from infinity_context_cli import cli
 from infinity_context_cli.config import init_local_config, load_config
 from infinity_context_cli.runtime import RuntimeResult
@@ -48,10 +49,23 @@ def test_cli_quickstart_initializes_and_writes_redacted_mcp_config(
     assert payload["local_experience"]["mcp_ready"] is True
     assert payload["local_experience"]["ready_agents"] == ["codex"]
     assert payload["local_experience"]["mcp_config_paths"] == [str(mcp_path)]
-    assert payload["local_experience"]["first_capture"] == {
-        "surface": "visual_memory_browser",
-        "tab": "Capture",
-        "supports": ["text_note", "file_evidence"],
+    first_capture = payload["local_experience"]["first_capture"]
+    assert first_capture["surface"] == "visual_memory_browser"
+    assert first_capture["tab"] == "Capture"
+    assert first_capture["supports"] == ["text_note", "file_evidence"]
+    assert first_capture["visual_memory_tabs"] == [
+        "Capture",
+        "Overview",
+        "Graph",
+        "Review",
+        "Operations",
+        "Timeline",
+    ]
+    assert payload["local_experience"]["readiness"]["score"] == 4.0
+    assert payload["local_experience"]["one_minute_path"][0] == {
+        "id": "start_runtime",
+        "status": "todo",
+        "command": "infinity-context up --lite",
     }
     assert payload["mcp_configs"][0]["agent"] == "codex"
     assert payload["mcp_configs"][0]["token_included"] is False
@@ -129,9 +143,41 @@ def test_cli_quickstart_starts_runtime_waits_for_status_and_redacts_output(
                 stderr="",
             )
 
+    capabilities = {
+        "capture": {"enabled": True},
+        "suggestions": {"review_tool_supported": True},
+        "context": {"answer_support_supported": True},
+        "extraction": {
+            "profiles_v2": [
+                {
+                    "name": "standard_local",
+                    "enabled": True,
+                    "status": "ok",
+                    "input_modalities": [
+                        "text",
+                        "document",
+                        "image",
+                        "timed_text",
+                        "audio_metadata",
+                        "video_metadata",
+                    ],
+                },
+                {
+                    "name": "media_api",
+                    "enabled": True,
+                    "status": "blocked",
+                    "input_modalities": ["audio", "video"],
+                },
+            ]
+        },
+    }
     statuses = [
         {"ok": False, "api_url": "http://127.0.0.1:7788", "error": "ConnectError"},
-        {"ok": True, "api_url": "http://127.0.0.1:7788"},
+        {
+            "ok": True,
+            "api_url": "http://127.0.0.1:7788",
+            "capabilities": {"status_code": 200, "data": capabilities},
+        },
     ]
 
     def fake_status(_config) -> dict[str, Any]:
@@ -166,6 +212,19 @@ def test_cli_quickstart_starts_runtime_waits_for_status_and_redacts_output(
     assert payload["local_experience"]["status"] == "ready"
     assert payload["local_experience"]["visual_memory_ready"] is True
     assert payload["local_experience"]["mcp_ready"] is True
+    assert payload["local_experience"]["readiness"]["score"] == 10.0
+    assert payload["local_experience"]["first_capture"]["review_supported"] is True
+    assert payload["local_experience"]["first_capture"]["active_modalities"] == [
+        "audio_metadata",
+        "document",
+        "image",
+        "text",
+        "timed_text",
+        "video_metadata",
+    ]
+    assert "image_or_screenshot" in payload["local_experience"]["first_capture"]["supports"]
+    assert "audio_transcription" not in payload["local_experience"]["first_capture"]["supports"]
+    assert payload["local_experience"]["one_minute_path"][3]["status"] == "next"
     assert raw_secret not in captured.out
     assert "[redacted]" in payload["runtime"]["stdout"]
 
@@ -217,3 +276,43 @@ def test_cli_ui_check_returns_unready_status(
     assert exit_code == 1
     assert "http://127.0.0.1:7788/ui/" in captured.out
     assert "warning: local API is not ready" in captured.err
+
+
+def test_cli_status_payload_requires_visual_memory_browser(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = init_local_config(home=home, repo_dir=repo)
+
+    class FakeClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, path: str) -> httpx.Response:
+            if path == "/v1/health":
+                return httpx.Response(200, json={"status": "ok"})
+            if path == "/v1/capabilities":
+                return httpx.Response(200, json={"capture": {"enabled": True}})
+            if path == "/ui/":
+                return httpx.Response(200, text="<title>Wrong App</title>")
+            raise AssertionError(path)
+
+    monkeypatch.setattr(cli.httpx, "Client", FakeClient)
+
+    payload = cli._status_payload(config)
+
+    assert payload["ok"] is False
+    assert payload["ui"] == {
+        "status_code": 200,
+        "title_present": False,
+        "path": "/ui/",
+    }

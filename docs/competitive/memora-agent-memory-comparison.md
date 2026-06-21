@@ -34,7 +34,7 @@ Infinity Context local evidence:
 - `tests/unit/test_mcp_fact_relations.py`
 - `tests/unit/test_mcp_suggestion_batch_review.py`
 - `tests/unit/test_suggestions_api.py`
-- `tests/unit/test_memory scope_snapshot_api.py`
+- `tests/unit/test_memory_scope_snapshot_api.py`
 - `tests/e2e/test_memory_quality_e2e.py`
 - `tests/e2e/test_infinity_context_agent_behavior_bench_e2e.py`
 - `tests/e2e/test_infinity_context_agent_plugin_e2e.py`
@@ -154,14 +154,14 @@ make infinity-context-compare-memora
 | Large documents and architecture notes | 9.4 | 9.1 | Infinity Context |
 | Graph relationships and temporal context | 9.5 | 8.4 | Infinity Context |
 | Agent hooks, plugins and real agent ergonomics | 8.8 | 8.4 | Infinity Context |
-| Local MCP setup and visual memory UX | 7.8 | 9.3 | Memora |
+| Local MCP setup and visual memory UX | 8.1 | 9.3 | Memora |
 | Project/team/memory scope isolation | 9.2 | 7.5 | Infinity Context |
 | Operational confidence and benchmark evidence | 8.6 | 7.7 | Infinity Context |
 | Clean Architecture and extensibility | 9.1 | 6.8 | Infinity Context |
 
 Weighted total:
 
-- Infinity Context: 8.90
+- Infinity Context: 8.93
 - Memora: 8.26
 
 ## Honest conclusion
@@ -198,9 +198,11 @@ restore. Read-only memory insights are available through HTTP API, SDK, MCP and
 CLI for pending review load, expired facts, document indexing coverage,
 taxonomy hotspots, recent activity, duplicate/similar fact review, a safe
 consolidation plan and cleanup action items.
-Memora still has
-more polished local graph UI and a stronger zero-to-first-memory local MCP
-experience. Infinity Context now also has `memory_related_facts` and
+Memora still has more polished local graph UI and a stronger zero-to-first-memory
+local MCP experience. Infinity Context now narrows that gap with structured
+`local_experience` readiness, a first-use score, a one-minute path and
+capability-derived Capture modalities in `quickstart` and `doctor`.
+Infinity Context now also has `memory_related_facts` and
 `GET /v1/facts/{fact_id}/related`, giving agents read-only related fact
 traversal with explainable relation reasons before update/delete or summary
 work.

@@ -215,13 +215,17 @@ DIMENSIONS: tuple[Dimension, ...] = (
         id="local_mcp_visual_ux",
         label="Local MCP setup and visual memory UX",
         weight=0.10,
-        infinity_context_score=7.8,
+        infinity_context_score=8.1,
         memora_score=9.3,
         infinity_context_rationale=(
             "Infinity Context now has quickstart, generated MCP config, doctor, "
             "ui --open, a browser Capture panel, graph, review and timeline, plus "
-            "structured local_experience readiness in quickstart/doctor. The flow "
-            "is usable but still needs a more polished zero-to-first-memory path."
+            "structured local_experience readiness in quickstart/doctor. The "
+            "local_experience payload includes a first-use score, one-minute path "
+            "and capability-derived Capture modalities, so installers and humans "
+            "can see exactly whether runtime, visual memory, MCP config, capture "
+            "and review are ready. The flow is usable but still needs a more "
+            "polished zero-to-first-memory path."
         ),
         memora_rationale=(
             "Memora's README and direct smoke show a simpler local MCP server path "

@@ -22,6 +22,11 @@ from infinity_context_sdk import InfinityContextClient, InfinityContextError, Re
 from infinity_context_cli import __version__
 from infinity_context_cli.config import DEFAULT_API_URL, init_local_config, load_config
 from infinity_context_cli.doctor import doctor_payload, run_doctor
+from infinity_context_cli.local_experience import (
+    build_first_capture_surface,
+    build_one_minute_path,
+    local_experience_score,
+)
 from infinity_context_cli.mcp_config import SUPPORTED_AGENTS, render_mcp_config, write_mcp_config
 from infinity_context_cli.runtime import DockerComposeRuntime
 
@@ -638,14 +643,27 @@ def _status_payload(config) -> dict[str, Any]:
         "repo_dir": str(config.repo_dir),
         "health": None,
         "capabilities": None,
+        "ui": None,
     }
     try:
         with httpx.Client(base_url=config.api_url, timeout=3.0, headers=headers) as client:
             health = client.get("/v1/health")
             capabilities = client.get("/v1/capabilities")
+            ui = client.get("/ui/")
+            ui_title_present = "Infinity Context Browser" in ui.text
             payload["health"] = _response_payload(health)
             payload["capabilities"] = _response_payload(capabilities)
-            payload["ok"] = health.is_success and capabilities.is_success
+            payload["ui"] = {
+                "status_code": ui.status_code,
+                "title_present": ui_title_present,
+                "path": "/ui/",
+            }
+            payload["ok"] = (
+                health.is_success
+                and capabilities.is_success
+                and ui.is_success
+                and ui_title_present
+            )
     except httpx.HTTPError as exc:
         payload["error"] = exc.__class__.__name__
     return payload
@@ -724,23 +742,37 @@ def _quickstart_local_experience(
 ) -> dict[str, Any]:
     runtime_ready = bool(status and status.get("ok"))
     mcp_paths = [item["path"] for item in mcp_configs if item.get("path")]
+    capabilities = status.get("capabilities") if isinstance(status, dict) else None
+    first_capture = build_first_capture_surface(capabilities=capabilities)
+    visual_ready = runtime_ready
+    mcp_ready = bool(mcp_paths)
     return {
         "status": _quickstart_local_experience_status(
             no_start=no_start,
             runtime_ready=runtime_ready,
-            mcp_ready=bool(mcp_paths),
+            mcp_ready=mcp_ready,
         ),
         "api_url": config.api_url,
         "ui_url": _ui_url(config),
-        "visual_memory_ready": runtime_ready,
-        "mcp_ready": bool(mcp_paths),
+        "visual_memory_ready": visual_ready,
+        "mcp_ready": mcp_ready,
         "ready_agents": agents,
         "mcp_config_paths": mcp_paths,
-        "first_capture": {
-            "surface": "visual_memory_browser",
-            "tab": "Capture",
-            "supports": ["text_note", "file_evidence"],
-        },
+        "first_capture": first_capture,
+        "one_minute_path": build_one_minute_path(
+            api_url=config.api_url,
+            agents=agents,
+            runtime_ready=runtime_ready,
+            visual_ready=visual_ready,
+            mcp_ready=mcp_ready,
+            first_capture=first_capture,
+        ),
+        "readiness": local_experience_score(
+            runtime_ready=runtime_ready,
+            visual_ready=visual_ready,
+            mcp_ready=mcp_ready,
+            first_capture=first_capture,
+        ),
     }
 
 
@@ -787,6 +819,27 @@ def _print_quickstart_payload(payload: dict[str, Any], *, as_json: bool) -> None
         ready_agents = experience.get("ready_agents") or []
         if ready_agents:
             print(f"mcp_ready_for: {', '.join(str(agent) for agent in ready_agents)}")
+        readiness = experience.get("readiness")
+        if isinstance(readiness, dict):
+            print(f"first_use_score: {readiness.get('score')}/{readiness.get('scale')}")
+        first_capture = experience.get("first_capture")
+        if isinstance(first_capture, dict):
+            supports = first_capture.get("supports") or []
+            if supports:
+                print(f"capture_supports: {', '.join(str(item) for item in supports)}")
+        one_minute_path = experience.get("one_minute_path")
+        if isinstance(one_minute_path, list):
+            next_item = next(
+                (
+                    item
+                    for item in one_minute_path
+                    if isinstance(item, dict) and item.get("status") in {"todo", "next"}
+                ),
+                None,
+            )
+            if isinstance(next_item, dict):
+                next_label = next_item.get("command") or next_item.get("id")
+                print(f"first_use_next: {next_label}")
     if payload.get("opened_ui"):
         print(f"ui: opened {payload.get('ui_url')}")
     else:

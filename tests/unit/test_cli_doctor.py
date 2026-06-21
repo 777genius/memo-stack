@@ -92,7 +92,26 @@ def test_api_checks_include_visual_memory_browser_without_secret_leak(
             if path == "/v1/capabilities":
                 return httpx.Response(
                     200,
-                    json={"adapters": {}, "auth_token": config.service_token},
+                    json={
+                        "adapters": {},
+                        "auth_token": config.service_token,
+                        "suggestions": {"review_tool_supported": True},
+                        "context": {"answer_support_supported": True},
+                        "extraction": {
+                            "profiles_v2": [
+                                {
+                                    "name": "standard_local",
+                                    "enabled": True,
+                                    "status": "ok",
+                                    "input_modalities": [
+                                        "text",
+                                        "document",
+                                        "image",
+                                    ],
+                                }
+                            ]
+                        },
+                    },
                 )
             if path == "/ui/":
                 return httpx.Response(200, text="<title>Infinity Context Browser</title>")
@@ -138,7 +157,29 @@ def test_doctor_payload_includes_local_experience_without_secret_leak(
             if path == "/v1/health":
                 return httpx.Response(200, json={"status": "ok"})
             if path == "/v1/capabilities":
-                return httpx.Response(200, json={"adapters": {}})
+                return httpx.Response(
+                    200,
+                    json={
+                        "adapters": {},
+                        "suggestions": {"review_tool_supported": True},
+                        "context": {"answer_support_supported": True},
+                        "extraction": {
+                            "profiles_v2": [
+                                {
+                                    "name": "standard_local",
+                                    "enabled": True,
+                                    "status": "ok",
+                                    "input_modalities": [
+                                        "text",
+                                        "document",
+                                        "image",
+                                        "audio_metadata",
+                                    ],
+                                }
+                            ]
+                        },
+                    },
+                )
             if path == "/ui/":
                 return httpx.Response(200, text="<title>Infinity Context Browser</title>")
             raise AssertionError(path)
@@ -153,8 +194,16 @@ def test_doctor_payload_includes_local_experience_without_secret_leak(
     assert payload["local_experience"]["visual_memory_ready"] is True
     assert payload["local_experience"]["mcp_ready"] is True
     assert payload["local_experience"]["ready_agents"] == ["codex"]
-    assert payload["local_experience"]["first_capture"]["supports"] == [
+    first_capture = payload["local_experience"]["first_capture"]
+    assert first_capture["supports"] == [
         "text_note",
         "file_evidence",
+        "audio_metadata_file",
+        "document_file",
+        "image_or_screenshot",
     ]
+    assert first_capture["review_supported"] is True
+    assert payload["local_experience"]["readiness"]["score"] == 10.0
+    assert payload["local_experience"]["one_minute_path"][1]["status"] == "done"
+    assert payload["local_experience"]["one_minute_path"][3]["status"] == "next"
     assert config.service_token not in rendered
