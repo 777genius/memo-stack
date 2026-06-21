@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -33,6 +34,38 @@ def test_load_settings_uses_memory_service_token_fallback() -> None:
     assert settings.api_url == "http://memory.test"
     assert settings.allow_deletes is True
     assert settings.delete_mode == MemoryMcpDeleteMode.OFF
+
+
+def test_load_settings_reads_auth_token_file(tmp_path: Path) -> None:
+    token_file = tmp_path / ".env"
+    token_file.write_text(
+        "\n".join(
+            [
+                "MEMORY_POLICY_MODE=active_context",
+                "MEMORY_SERVICE_TOKEN=file-token",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings({"MEMORY_MCP_AUTH_TOKEN_FILE": str(token_file)})
+
+    assert settings.auth_token == "file-token"
+
+
+def test_load_settings_direct_auth_token_wins_over_token_file(tmp_path: Path) -> None:
+    token_file = tmp_path / ".env"
+    token_file.write_text("MEMORY_SERVICE_TOKEN=file-token\n", encoding="utf-8")
+
+    settings = load_settings(
+        {
+            "MEMORY_MCP_AUTH_TOKEN": "direct-token",
+            "MEMORY_MCP_AUTH_TOKEN_FILE": str(token_file),
+        }
+    )
+
+    assert settings.auth_token == "direct-token"
 
 
 def test_load_settings_parses_new_policy_modes() -> None:
@@ -366,7 +399,7 @@ def test_service_remember_fact_does_not_dedupe_different_engine_neighbor() -> No
             "conflict_match_type": "exclusive_anchor_mismatch",
             "conflict_score": 0.571,
             "conflict_reason_codes": ["semantic_conflict", "exclusive_anchor_mismatch"],
-            "conflict_overlap_terms": ["document", "owns", "retrieval", "vector"],
+            "conflict_overlap_terms": ["document", "owner", "retrieval", "vector"],
         }
 
     asyncio.run(run())

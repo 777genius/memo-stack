@@ -23,6 +23,43 @@ def test_doctor_reports_generated_mcp_configs(tmp_path: Path) -> None:
     assert check.ok is True
     assert check.name == "mcp_generated_configs"
     assert check.details["agents"] == ["codex"]
+    assert check.details["ready_agents"] == ["codex"]
+    assert check.details["configs"][0]["auth_source"] == "token_file"
+    assert check.details["configs"][0]["token_file_exists"] is True
+    assert check.details["configs"][0]["token_included"] is False
+    assert config.service_token not in rendered
+
+
+def test_doctor_reports_generated_mcp_config_with_unresolved_token_placeholder(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = init_local_config(home=home, repo_dir=repo)
+    generated = home / "generated"
+    generated.mkdir()
+    (generated / "codex-mcp.json").write_text(
+        json.dumps(
+            {
+                "infinity-context": {
+                    "command": "infinity-context-mcp",
+                    "env": {
+                        "MEMORY_MCP_AUTH_TOKEN": "${MEMORY_MCP_AUTH_TOKEN}",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    check = doctor._mcp_generated_config_check(config)
+    rendered = json.dumps(check.details, sort_keys=True)
+
+    assert check.ok is False
+    assert check.details["agents"] == ["codex"]
+    assert check.details["ready_agents"] == []
+    assert check.details["configs"][0]["auth_source"] == "unresolved_env_placeholder"
     assert config.service_token not in rendered
 
 

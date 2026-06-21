@@ -6,6 +6,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 from infinity_context_mcp.domain.policy import (
     MemoryMcpDeleteMode,
@@ -74,7 +75,11 @@ class MemoryMcpSettings:
 
 def load_settings(env: Mapping[str, str] | None = None) -> MemoryMcpSettings:
     values = env or os.environ
-    token = _get(values, "MEMORY_MCP_AUTH_TOKEN") or _get(values, "MEMORY_SERVICE_TOKEN")
+    token = (
+        _get(values, "MEMORY_MCP_AUTH_TOKEN")
+        or _get(values, "MEMORY_SERVICE_TOKEN")
+        or _token_from_file(_get(values, "MEMORY_MCP_AUTH_TOKEN_FILE"))
+    )
     write_mode = _write_mode(values)
     delete_mode = _delete_mode(values)
     return MemoryMcpSettings(
@@ -177,6 +182,25 @@ def _positive_int(value: str, name: str) -> int:
 
 def _bool(value: str) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def _token_from_file(path: str) -> str | None:
+    if not path:
+        return None
+    token_path = Path(path).expanduser()
+    if not token_path.exists() or not token_path.is_file():
+        return None
+    try:
+        lines = token_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if not separator:
+            continue
+        if key.strip() in {"MEMORY_MCP_AUTH_TOKEN", "MEMORY_SERVICE_TOKEN"}:
+            return value.strip().strip("'\"") or None
+    return None
 
 
 def _write_mode(values: Mapping[str, str]) -> MemoryMcpWriteMode:

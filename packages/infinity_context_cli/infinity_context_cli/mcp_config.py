@@ -23,9 +23,6 @@ def build_mcp_config(
     env = {
         "MEMORY_MCP_AGENT_NAME": agent,
         "MEMORY_MCP_API_URL": config.api_url,
-        "MEMORY_MCP_AUTH_TOKEN": (
-            config.service_token if include_token else "${MEMORY_MCP_AUTH_TOKEN}"
-        ),
         "MEMORY_MCP_DEFAULT_SPACE_SLUG": config.default_space_slug,
         "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": config.default_memory_scope_external_ref,
         "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": "__INFINITY_CONTEXT_NO_DEFAULT_THREAD__",
@@ -33,6 +30,10 @@ def build_mcp_config(
         "MEMORY_MCP_DELETE_MODE": "off",
         "MEMORY_MCP_INGEST_MODE": "small_docs",
     }
+    if include_token:
+        env["MEMORY_MCP_AUTH_TOKEN"] = config.service_token
+    else:
+        env["MEMORY_MCP_AUTH_TOKEN_FILE"] = str(config.env_path)
     if agent in {"codex", "cursor"}:
         return {"infinity-context": {"command": command, "env": env}}
     return {"mcpServers": {"infinity-context": {"command": command, "env": env}}}

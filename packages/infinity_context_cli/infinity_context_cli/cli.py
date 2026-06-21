@@ -700,9 +700,8 @@ def _quickstart_next_steps(
     if include_token:
         steps.append("Add the generated MCP config path to your agent.")
     else:
-        steps.append(
-            f"Set MEMORY_MCP_AUTH_TOKEN from {home / '.env'} before using the MCP config."
-        )
+        steps.append(f"Generated MCP config reads its local token from: {home / '.env'}")
+        steps.append("Add the generated MCP config path to your agent.")
     if agents:
         steps.append(f"Generated MCP config for: {', '.join(agents)}")
     return steps

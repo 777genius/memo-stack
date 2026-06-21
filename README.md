@@ -155,10 +155,12 @@ infinity-context digest "current architecture decisions" --space default --memor
 
 `infinity-context quickstart` initializes local config, starts the lite Docker
 runtime, waits for readiness and writes an MCP config under
-`~/.infinity-context/generated/`. `quickstart` and `mcp-config` redact the local
-service token by default. Use `--include-token` only when intentionally writing a
-private local config file. `infinity-context ui` prints the local memory browser
-URL, `infinity-context ui --open` opens it in your browser, and
+`~/.infinity-context/generated/`. `quickstart` and `mcp-config` keep the local
+service token out of generated agent config by default and point the MCP adapter
+at the private `~/.infinity-context/.env` token file instead. Use
+`--include-token` only when intentionally writing a private local config file.
+`infinity-context ui` prints the local memory browser URL,
+`infinity-context ui --open` opens it in your browser, and
 `quickstart --open-ui` opens the visual memory browser immediately after setup.
 `infinity-context doctor` also verifies the generated MCP config and `/ui/`
 browser entrypoint. The browser starts with a quick Capture panel for text notes

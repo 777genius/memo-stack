@@ -519,7 +519,12 @@ def _anchor_identity_keys(anchor: ObservedAnchor) -> tuple[str, ...]:
 
 
 def _is_false_person_anchor_key(canonical_key: str) -> bool:
-    return canonical_key.strip().casefold() in {
+    key = canonical_key.strip().casefold()
+    for prefix in ("use ", "uses ", "using "):
+        if key.startswith(prefix):
+            key = key.removeprefix(prefix).strip()
+            break
+    return key in {
         "audio",
         "backend",
         "database",

@@ -359,6 +359,19 @@ def test_semantic_dedupe_flags_engine_conflict_without_equivalence() -> None:
     )
 
 
+def test_semantic_dedupe_flags_canonical_database_conflict() -> None:
+    match = describe_conflicting_fact_match(
+        "Use Postgres as canonical truth.",
+        "Use MySQL as canonical truth.",
+    )
+
+    assert match is not None
+    assert match.match_type == "exclusive_anchor_mismatch"
+    assert "semantic_conflict" in match.reason_codes
+    assert "canonical" in match.overlap_terms
+    assert "truth" in match.overlap_terms
+
+
 def test_semantic_dedupe_flags_negated_decision_conflict() -> None:
     assert looks_conflicting_fact(
         "Use Graphiti for temporal facts.",
