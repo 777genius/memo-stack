@@ -449,6 +449,7 @@ def _answer_support_status(
 _CRITICAL_REQUIREMENT_WARNINGS = frozenset(
     {
         "missing_citation_requirement",
+        "missing_extracted_text_requirement",
         "missing_page_or_char_requirement",
         "missing_time_range_requirement",
         "missing_visual_region_requirement",

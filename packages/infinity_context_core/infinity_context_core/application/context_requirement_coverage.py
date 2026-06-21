@@ -121,6 +121,25 @@ _EVIDENCE_FEATURE_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "extracted_text",
+        (
+            "detected text",
+            "extracted text",
+            "ocr text",
+            "read text",
+            "written",
+            "what text",
+            "what is written",
+            "what does it say",
+            "текст",
+            "написано",
+            "что написано",
+            "прочитай",
+            "распознай",
+            "надпись",
+        ),
+    ),
+    (
         "page_or_char",
         (
             "page",
@@ -447,6 +466,8 @@ def _covered_evidence_features(items: tuple[ContextItem, ...]) -> tuple[str, ...
     for item in items:
         if item.source_refs:
             features.append("citation")
+        if _item_has_extracted_text_evidence(item):
+            features.append("extracted_text")
         for ref in item.source_refs:
             if ref.time_start_ms is not None or ref.time_end_ms is not None:
                 features.append("time_range")
@@ -459,6 +480,53 @@ def _covered_evidence_features(items: tuple[ContextItem, ...]) -> tuple[str, ...
             ):
                 features.append("page_or_char")
     return _bounded_unique(features)
+
+
+def _item_has_extracted_text_evidence(item: ContextItem) -> bool:
+    diagnostics = _diagnostics(item)
+    kind = _safe_key(diagnostics.get("evidence_kind"))
+    modality = _safe_key(diagnostics.get("evidence_modality"))
+    artifact_type = _safe_key(diagnostics.get("artifact_type"))
+    retrieval_source = _safe_key(diagnostics.get("retrieval_source"))
+    identity = " ".join(
+        (
+            item.item_type,
+            kind,
+            modality,
+            artifact_type,
+            retrieval_source,
+            *(
+                " ".join(
+                    (
+                        ref.source_type,
+                        ref.source_id,
+                        ref.chunk_id or "",
+                    )
+                )
+                for ref in item.source_refs
+            ),
+        )
+    ).casefold()
+    if any(
+        marker in identity
+        for marker in (
+            "ocr",
+            "detected_text",
+            "extracted_text",
+            "transcript",
+            "document_chunk",
+            "pdf_text",
+            "plain_text",
+        )
+    ):
+        return True
+    if item.item_type == "chunk":
+        return True
+    has_quote_preview = any(
+        bool((ref.quote_preview or "").strip())
+        for ref in item.source_refs
+    )
+    return has_quote_preview and modality in {"audio", "document", "video"}
 
 
 def _coverage_status(*, requested_total: int, missing_total: int) -> str:

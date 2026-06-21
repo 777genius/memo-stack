@@ -366,7 +366,13 @@ def _missing_requirement_count(diagnostics: dict[str, object]) -> int:
 
 def _critical_missing_evidence_requirement_count(diagnostics: dict[str, object]) -> int:
     coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
-    critical_features = {"citation", "page_or_char", "time_range", "visual_region"}
+    critical_features = {
+        "citation",
+        "extracted_text",
+        "page_or_char",
+        "time_range",
+        "visual_region",
+    }
     return sum(
         1
         for feature in _safe_string_list(coverage.get("missing_evidence_features"))

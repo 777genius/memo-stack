@@ -559,6 +559,41 @@ def test_answer_support_reports_missing_critical_query_requirement() -> None:
     assert "missing_visual_region_requirement" in diagnostics["answer_support_warnings"]
 
 
+def test_answer_support_reports_missing_extracted_text_as_critical_requirement() -> None:
+    citation = {
+        "citation_id": "artifact:image:citation:1",
+        "source_type": "asset",
+        "source_id": "asset_screenshot",
+        "quote_preview": None,
+        "evidence_kind": "image_metadata",
+        "evidence_modality": "image",
+    }
+    items = [
+        {
+            "item_id": "image_metadata",
+            "item_type": "extraction_artifact",
+            "score": 0.92,
+            "citations": [citation],
+            "diagnostics": {"retrieval_source": "artifact_evidence"},
+        }
+    ]
+
+    top_evidence = _top_evidence_to_response(items)
+    answer_support = _answer_support_to_response(
+        items=items,
+        top_evidence=top_evidence,
+        diagnostics={
+            "context_requirement_coverage": {
+                "missing_total": 1,
+                "missing_evidence_features": ["extracted_text"],
+            }
+        },
+    )
+
+    assert answer_support["status"] == "missing"
+    assert "missing_extracted_text_requirement" in answer_support["warnings"]
+
+
 def test_answer_support_reports_partial_for_missing_noncritical_requirement() -> None:
     citation = {
         "citation_id": "fact:atlas:citation:1",

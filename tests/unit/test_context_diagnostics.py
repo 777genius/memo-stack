@@ -96,6 +96,21 @@ def test_context_bundle_diagnostics_preserve_requirement_coverage() -> None:
     assert secret not in str(diagnostics)
 
 
+def test_context_bundle_diagnostics_preserve_artifact_coordinate_drop_counters() -> None:
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "artifact_evidence_visual_region_query_drop_count": 1,
+            "artifact_evidence_document_location_query_drop_count": 2,
+            "artifact_evidence_extracted_text_query_drop_count": 3,
+        },
+        items=(),
+    )
+
+    assert diagnostics["artifact_evidence_visual_region_query_drop_count"] == 1
+    assert diagnostics["artifact_evidence_document_location_query_drop_count"] == 2
+    assert diagnostics["artifact_evidence_extracted_text_query_drop_count"] == 3
+
+
 def test_context_rank_key_uses_phrase_signal_when_scores_tie() -> None:
     target = ContextItem(
         item_id="target",
@@ -625,6 +640,42 @@ def test_context_quality_downgrades_when_explicit_visual_region_requirement_miss
     assert "explicit_requirements_missing" in summary["actionable_gaps"]
     assert "missing_visual_region_requirement" in summary["actionable_gaps"]
     assert "missing_visual_region_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_explicit_extracted_text_requirement_missing() -> None:
+    item = ContextItem(
+        item_id="image_metadata_atlas",
+        item_type="extraction_artifact",
+        text="Project Atlas screenshot metadata is available, but OCR text is missing.",
+        score=0.95,
+        source_refs=(SourceRef(source_type="asset", source_id="asset_atlas_screenshot"),),
+        diagnostics={
+            "retrieval_sources": ["artifact_evidence", "keyword_chunks"],
+            "query_snippet": "Project Atlas screenshot metadata is available.",
+            "evidence_kind": "image_metadata",
+            "evidence_modality": "image",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_evidence_features": ["extracted_text"],
+                "missing_evidence_features": ["extracted_text"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_extracted_text_requirement" in summary["actionable_gaps"]
+    assert "missing_extracted_text_requirement" in summary["answerability_reasons"]
 
 
 def test_context_quality_keeps_caveat_for_noncritical_missing_anchor_requirement() -> None:

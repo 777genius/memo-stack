@@ -82,6 +82,12 @@ _DOCUMENT_LOCATION_QUERY_RE = re.compile(
     r"строк[аеуи]?|страниц[аеуы]?|абзац|раздел",
     re.IGNORECASE,
 )
+_EXTRACTED_TEXT_QUERY_RE = re.compile(
+    r"\b(?:detected text|extracted text|ocr text|read text|written|what text|"
+    r"what is written|what does it say)\b|"
+    r"текст|написано|что\s+написано|прочитай|распознай|надпись",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -649,6 +655,12 @@ def _missing_requested_coordinate(
         and source_ref.char_end is None
     ):
         return "document_location"
+    if (
+        _EXTRACTED_TEXT_QUERY_RE.search(query)
+        and _is_multimodal_evidence(kind=kind, modality=modality)
+        and not _is_extracted_text_evidence(kind=kind, source_ref=source_ref)
+    ):
+        return "extracted_text"
     return None
 
 
@@ -660,6 +672,37 @@ def _is_visual_evidence(*, kind: str, modality: str) -> bool:
 def _is_document_evidence(*, kind: str, modality: str) -> bool:
     normalized = f"{kind} {modality}".casefold()
     return any(token in normalized for token in ("document", "pdf", "page"))
+
+
+def _is_multimodal_evidence(*, kind: str, modality: str) -> bool:
+    normalized = f"{kind} {modality}".casefold()
+    return any(
+        token in normalized
+        for token in ("audio", "document", "image", "ocr", "pdf", "video", "vision")
+    )
+
+
+def _is_extracted_text_evidence(*, kind: str, source_ref: SourceRef) -> bool:
+    normalized = " ".join(
+        (
+            kind,
+            source_ref.source_type,
+            source_ref.source_id,
+            source_ref.chunk_id or "",
+        )
+    ).casefold()
+    return any(
+        token in normalized
+        for token in (
+            "ocr",
+            "transcript",
+            "document_chunk",
+            "pdf_text",
+            "plain_text",
+            "detected_text",
+            "extracted_text",
+        )
+    )
 
 
 def _evidence_kind_boost(kind: str) -> float:
@@ -717,6 +760,7 @@ def _init_diagnostics(diagnostics: dict[str, object]) -> None:
         "artifact_evidence_invalid_bbox_count",
         "artifact_evidence_visual_region_query_drop_count",
         "artifact_evidence_document_location_query_drop_count",
+        "artifact_evidence_extracted_text_query_drop_count",
         "artifact_evidence_query_drop_count",
         "artifact_evidence_sensitive_drop_count",
         "artifact_evidence_prompt_injection_drop_count",

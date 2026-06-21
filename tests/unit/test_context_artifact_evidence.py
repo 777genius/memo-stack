@@ -299,6 +299,61 @@ def test_media_manifest_ocr_text_query_does_not_require_bbox() -> None:
     assert diagnostics["artifact_evidence_visual_region_query_drop_count"] == 0
 
 
+def test_media_manifest_screenshot_text_query_requires_extracted_text_evidence() -> None:
+    artifact = ExtractionArtifact.create(
+        artifact_id=ExtractionArtifactId("artifact_screenshot_text_manifest"),
+        job_id=AssetExtractionJobId("job_screenshot_text_manifest"),
+        asset_id=MemoryAssetId("asset_screenshot_text_manifest"),
+        artifact_type="media_manifest",
+        storage_backend="local",
+        storage_key="scope/job/screenshot-text-media-manifest.json",
+        sha256_hex="7" * 64,
+        byte_size=512,
+        now=datetime(2026, 6, 20, tzinfo=UTC),
+    )
+    diagnostics: dict[str, object] = {}
+
+    items = context_items_from_media_manifest_payload(
+        artifact=artifact,
+        job_id="job_screenshot_text_manifest",
+        memory_scope_id="memory_scope_default",
+        payload={
+            "schema_version": "infinity_context.multimodal_manifest.v1",
+            "evidence_items": [
+                {
+                    "id": "image-metadata",
+                    "kind": "image_metadata",
+                    "modality": "image",
+                    "text_preview": (
+                        "Screenshot metadata mentions Project Atlas dashboard."
+                    ),
+                    "confidence": 0.99,
+                },
+                {
+                    "id": "ocr-region",
+                    "kind": "ocr_region",
+                    "modality": "image",
+                    "text_preview": "OCR text says Project Atlas renewal approved.",
+                    "confidence": 0.82,
+                },
+            ],
+        },
+        query=BuildContextQuery(
+            space_id=SpaceId("space_default"),
+            memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+            query="what text is written on screenshot Project Atlas",
+            max_evidence_items=5,
+        ),
+        diagnostics=diagnostics,
+    )
+
+    assert len(items) == 1
+    assert items[0].source_refs[0].chunk_id == "ocr-region"
+    assert "OCR text says Project Atlas renewal approved" in items[0].text
+    assert diagnostics["artifact_evidence_items_considered"] == 2
+    assert diagnostics["artifact_evidence_extracted_text_query_drop_count"] == 1
+
+
 def test_media_manifest_document_location_query_accepts_snippet_char_range() -> None:
     artifact = ExtractionArtifact.create(
         artifact_id=ExtractionArtifactId("artifact_document_location_manifest"),

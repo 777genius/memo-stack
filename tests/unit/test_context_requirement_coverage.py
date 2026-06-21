@@ -86,6 +86,87 @@ def test_context_requirement_coverage_reports_missing_visual_region() -> None:
     assert coverage["coverage_ratio"] == 0.0
 
 
+def test_context_requirement_coverage_requires_extracted_text_for_screenshot_text_query() -> None:
+    query = "что написано на скриншоте Project Atlas"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="image_metadata_only",
+            item_type="extraction_artifact",
+            text="Screenshot metadata: 1280x720 PNG.",
+            score=0.86,
+            source_refs=(
+                SourceRef(
+                    source_type="asset",
+                    source_id="asset_screenshot",
+                    quote_preview="Screenshot metadata: 1280x720 PNG.",
+                ),
+            ),
+            diagnostics={
+                "evidence_kind": "image_metadata",
+                "evidence_modality": "image",
+            },
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["status"] == "partial"
+    assert coverage["requested_modalities"] == ["image"]
+    assert coverage["covered_modalities"] == ["image"]
+    assert "extracted_text" in coverage["requested_evidence_features"]
+    assert "extracted_text" in coverage["missing_evidence_features"]
+
+
+def test_context_requirement_coverage_satisfies_screenshot_text_with_ocr_region() -> None:
+    query = "read text on screenshot Project Atlas, where on screen"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="artifact_screenshot_ocr",
+            item_type="extraction_artifact",
+            text="OCR region: Project Atlas approved.",
+            score=0.92,
+            source_refs=(
+                SourceRef(
+                    source_type="extraction_artifact",
+                    source_id="artifact_screenshot_ocr",
+                    chunk_id="ocr-region-1",
+                    quote_preview="Project Atlas approved.",
+                    bbox=(12.0, 20.0, 260.0, 64.0),
+                ),
+            ),
+            diagnostics={
+                "evidence_kind": "ocr_region",
+                "evidence_modality": "image",
+            },
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["status"] == "satisfied"
+    assert coverage["requested_modalities"] == ["image"]
+    assert set(coverage["requested_evidence_features"]) >= {
+        "extracted_text",
+        "visual_region",
+    }
+    assert set(coverage["covered_evidence_features"]) >= {
+        "citation",
+        "extracted_text",
+        "visual_region",
+    }
+    assert coverage["missing_total"] == 0
+
+
 def test_context_requirement_coverage_supports_document_page_citations() -> None:
     query = "find the page in the PDF document where Atlas renewal is mentioned"
     intent = build_query_anchor_intent(query)
