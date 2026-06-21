@@ -408,6 +408,42 @@ def test_public_memory_benchmark_seeds_duplicate_sources_once(tmp_path: Path) ->
     assert result["ok"] is True
 
 
+def test_public_memory_benchmark_uses_recall_oriented_context_budget(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text("[]", encoding="utf-8")
+    case = PublicBenchmarkCase(
+        benchmark="locomo",
+        case_id="recall-budget-case",
+        question="Where is the shared marker?",
+        expected_terms=("SHARED_MARKER",),
+        documents=(
+            BenchmarkDocumentInput(
+                title="Shared document",
+                text="SHARED_MARKER lives in a shared public benchmark document.",
+            ),
+        ),
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=(case,),
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+    )
+
+    context_posts = [post for post in adapter.posts if post[0] == "/v1/context"]
+    assert len(context_posts) == 1
+    assert context_posts[0][1]["token_budget"] == 4000
+    assert context_posts[0][1]["max_facts"] == 20
+    assert context_posts[0][1]["max_chunks"] == 50
+    assert result["ok"] is True
+
+
 def test_public_memory_benchmark_accepts_official_locomo_shape(tmp_path: Path) -> None:
     dataset = tmp_path / "locomo10-mini.json"
     dataset.write_text(
@@ -504,6 +540,84 @@ def test_public_memory_benchmark_indexes_official_locomo_observations(
     assert "D1:1 Caroline: Caroline is considering mental health counseling education." in (
         observation_docs[0].text
     )
+    assert result["ok"] is True
+
+
+def test_public_memory_benchmark_links_observations_to_related_locomo_turn_ids(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-related-observation-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-related-observation-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:9",
+                                "text": (
+                                    "Gonna continue my edu and check out career options, "
+                                    "which is pretty exciting!"
+                                ),
+                            },
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D1:10",
+                                "text": "Wow, what kind of jobs are you thinking of?",
+                            },
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:11",
+                                "text": (
+                                    "I'm keen on counseling or working in mental health "
+                                    "to support those with similar issues."
+                                ),
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "What fields would Caroline be likely to pursue in her "
+                                "educaton?"
+                            ),
+                            "answer": "Psychology, counseling certification",
+                            "evidence": ["D1:9", "D1:11"],
+                            "category": 3,
+                        }
+                    ],
+                    "observation": {
+                        "session_1_observation": {
+                            "Caroline": [
+                                [
+                                    (
+                                        "Caroline is planning to continue her education and "
+                                        "explore career options in counseling or mental health "
+                                        "to support those with similar issues."
+                                    ),
+                                    "D1:9",
+                                ]
+                            ]
+                        }
+                    },
+                    "event_summary": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+    observation_doc = next(
+        document for document in case.documents if document.source_type == "locomo_observation"
+    )
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert "D1:9 D1:11 Caroline:" in observation_doc.text
+    assert "D1:10" not in observation_doc.text
     assert result["ok"] is True
 
 

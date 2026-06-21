@@ -19,6 +19,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
+from infinity_context_core.application.context_relevance import (
+    QueryRelevance,
+    score_query_relevance,
+)
 from infinity_context_core.reporting import with_report_provenance
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +36,9 @@ SUPPORTED_CASE_SELECTION_STRATEGIES = frozenset(
     {CASE_SELECTION_FIRST, CASE_SELECTION_STRATIFIED}
 )
 _DEFAULT_MIN_ACCURACY = 0.85
+_PUBLIC_BENCHMARK_CONTEXT_TOKEN_BUDGET = 4000
+_PUBLIC_BENCHMARK_MAX_FACTS = 20
+_PUBLIC_BENCHMARK_MAX_CHUNKS = 50
 
 
 class BenchmarkValidationError(ValueError):
@@ -85,6 +92,15 @@ class PublicBenchmarkCase:
     memory_scope_external_ref: str | None = None
     thread_external_ref: str | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _OfficialLocomoTurn:
+    session_key: str
+    dia_id: str
+    speaker: str
+    text: str
+    turn_index: int
 
 
 @dataclass(frozen=True)
@@ -589,9 +605,9 @@ def _run_case(
             "memory_scope_external_ref": memory_scope_ref,
             "thread_external_ref": thread_ref,
             "query": case.question,
-            "token_budget": 2000,
-            "max_facts": 20,
-            "max_chunks": 30,
+            "token_budget": _PUBLIC_BENCHMARK_CONTEXT_TOKEN_BUDGET,
+            "max_facts": _PUBLIC_BENCHMARK_MAX_FACTS,
+            "max_chunks": _PUBLIC_BENCHMARK_MAX_CHUNKS,
         },
     )
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
@@ -749,6 +765,43 @@ def _official_locomo_evidence_lookup(raw: Mapping[str, object]) -> dict[str, str
     return lookup
 
 
+def _official_locomo_session_turns(
+    raw: Mapping[str, object],
+) -> dict[str, tuple[_OfficialLocomoTurn, ...]]:
+    conversation = raw.get("conversation")
+    if not isinstance(conversation, Mapping):
+        return {}
+    turns_by_session: dict[str, tuple[_OfficialLocomoTurn, ...]] = {}
+    for key in sorted(conversation, key=_session_sort_key):
+        if not _is_session_key(key):
+            continue
+        turns = conversation.get(key)
+        if not isinstance(turns, Sequence) or isinstance(turns, str | bytes):
+            continue
+        session_turns: list[_OfficialLocomoTurn] = []
+        for index, turn in enumerate(turns):
+            if not isinstance(turn, Mapping):
+                continue
+            dia_id = _first_str(turn, "dia_id", "id")
+            text = _first_str(turn, "text", "content", "utterance")
+            caption = _first_str(turn, "blip_caption", "caption")
+            evidence_text = text or caption
+            if not dia_id or not evidence_text:
+                continue
+            session_turns.append(
+                _OfficialLocomoTurn(
+                    session_key=key,
+                    dia_id=dia_id,
+                    speaker=_first_str(turn, "speaker", "role", "author") or "speaker",
+                    text=evidence_text,
+                    turn_index=index,
+                )
+            )
+        if session_turns:
+            turns_by_session[key] = tuple(session_turns)
+    return turns_by_session
+
+
 def _official_locomo_evidence_terms(
     qa: Mapping[str, object],
     evidence_lookup: Mapping[str, str],
@@ -816,12 +869,14 @@ def _official_locomo_observation_documents(
     observation = raw.get("observation")
     if not isinstance(observation, Mapping):
         return ()
+    turns_by_session = _official_locomo_session_turns(raw)
     documents: list[BenchmarkDocumentInput] = []
     for key in sorted(observation, key=_session_sort_key):
         value = observation.get(key)
         if not isinstance(value, Mapping):
             continue
         session_key = key.removesuffix("_observation")
+        session_turns = turns_by_session.get(session_key, ())
         lines = [f"{session_key} observations"]
         for actor, raw_items in value.items():
             actor_name = str(actor).strip() or "speaker"
@@ -829,7 +884,14 @@ def _official_locomo_observation_documents(
                 text, evidence_id = _official_locomo_observation_item(item)
                 if not text or not evidence_id:
                     continue
-                lines.append(f"{evidence_id} {actor_name}: {text}")
+                evidence_ids = _official_locomo_related_observation_evidence_ids(
+                    text=text,
+                    evidence_id=evidence_id,
+                    actor_name=actor_name,
+                    session_turns=session_turns,
+                )
+                evidence_label = " ".join(evidence_ids)
+                lines.append(f"{evidence_label} {actor_name}: {text}")
         if len(lines) <= 1:
             continue
         documents.append(
@@ -841,6 +903,64 @@ def _official_locomo_observation_documents(
             )
         )
     return tuple(documents)
+
+
+def _official_locomo_related_observation_evidence_ids(
+    *,
+    text: str,
+    evidence_id: str,
+    actor_name: str,
+    session_turns: tuple[_OfficialLocomoTurn, ...],
+) -> tuple[str, ...]:
+    evidence_id = evidence_id.strip()
+    if not evidence_id:
+        return ()
+    explicit_turn = next(
+        (turn for turn in session_turns if turn.dia_id == evidence_id),
+        None,
+    )
+    actor_key = actor_name.casefold().strip()
+    ranked: list[tuple[tuple[int, int, int, int, int], _OfficialLocomoTurn]] = []
+    for turn in session_turns:
+        if turn.dia_id == evidence_id:
+            continue
+        if actor_key and turn.speaker.casefold().strip() != actor_key:
+            continue
+        relevance = score_query_relevance(query=text, text=turn.text)
+        if not _is_related_locomo_observation_turn(relevance):
+            continue
+        distance = (
+            abs(turn.turn_index - explicit_turn.turn_index)
+            if explicit_turn is not None
+            else turn.turn_index
+        )
+        ranked.append(
+            (
+                (
+                    -relevance.distinctive_term_hits,
+                    -relevance.unique_term_hits,
+                    -relevance.capped_frequency_hits,
+                    distance,
+                    turn.turn_index,
+                ),
+                turn,
+            )
+        )
+    ranked.sort(key=lambda item: item[0])
+    related_ids = tuple(turn.dia_id for _, turn in ranked[:3])
+    session_order = {turn.dia_id: turn.turn_index for turn in session_turns}
+    return tuple(
+        sorted(
+            _unique((evidence_id, *related_ids)),
+            key=lambda item: session_order.get(item, 10_000),
+        )
+    )
+
+
+def _is_related_locomo_observation_turn(relevance: QueryRelevance) -> bool:
+    if relevance.unique_term_hits < 2:
+        return False
+    return relevance.distinctive_term_hits >= 2 or relevance.hit_ratio >= 0.2
 
 
 def _official_locomo_observation_item(item: object) -> tuple[str, str]:

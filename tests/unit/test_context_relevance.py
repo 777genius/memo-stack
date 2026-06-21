@@ -1,3 +1,4 @@
+from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_relevance import (
     has_project_identity_mismatch,
     is_query_relevance_sufficient,
@@ -26,6 +27,42 @@ def test_query_relevance_matches_english_plural_and_progressive_forms() -> None:
     assert relevance.unique_term_hits == 3
     assert relevance.capped_frequency_hits >= 3
     assert relevance.score_boost == 0.12
+
+
+def test_query_terms_drop_question_stopwords_before_retrieval() -> None:
+    terms = query_terms("What fields would Caroline likely pursue in her educaton?")
+
+    assert tuple(term.raw for term in terms) == (
+        "fields",
+        "caroline",
+        "pursue",
+        "educaton",
+    )
+
+
+def test_query_relevance_expands_personal_identity_terms() -> None:
+    relevance = score_query_relevance(
+        query="What is Caroline's identity?",
+        text="D1:5 Caroline: The transgender stories were inspiring.",
+    )
+
+    assert relevance.unique_term_hits == 2
+    assert relevance.distinctive_term_hits == 2
+    assert is_query_relevance_sufficient(relevance) is True
+
+
+def test_query_relevance_expands_relationship_context_terms() -> None:
+    relevance = score_query_relevance(
+        query="What is Caroline's relationship status?",
+        text=(
+            "D2:14 Caroline: She is excited to adopt as a single parent after a "
+            "tough breakup."
+        ),
+    )
+
+    assert relevance.unique_term_hits >= 2
+    assert relevance.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(relevance) is True
 
 
 def test_query_relevance_matches_underscore_metadata_parts() -> None:
