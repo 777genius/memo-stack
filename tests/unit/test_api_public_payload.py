@@ -515,6 +515,84 @@ def test_answer_support_reports_evidence_breakdown_for_frontend_review() -> None
     assert diagnostics["answer_support_evidence_modality_count"] == 3
 
 
+def test_answer_support_reports_missing_critical_query_requirement() -> None:
+    citation = {
+        "citation_id": "artifact:image:citation:1",
+        "source_type": "asset_extraction",
+        "source_id": "artifact_image",
+        "quote_preview": "OCR text says Atlas owner.",
+        "evidence_kind": "ocr_region",
+        "evidence_modality": "image",
+    }
+    items = [
+        {
+            "item_id": "image_text",
+            "item_type": "extraction_artifact",
+            "score": 0.94,
+            "citations": [citation],
+            "diagnostics": {"retrieval_source": "artifact_evidence"},
+        }
+    ]
+
+    top_evidence = _top_evidence_to_response(items)
+    answer_support = _answer_support_to_response(
+        items=items,
+        top_evidence=top_evidence,
+        diagnostics={
+            "context_requirement_coverage": {
+                "missing_total": 1,
+                "missing_evidence_features": ["visual_region"],
+            }
+        },
+    )
+    diagnostics = _context_diagnostics_to_response(
+        {},
+        items=items,
+        top_evidence=top_evidence,
+        answer_support=answer_support,
+    )
+
+    assert answer_support["status"] == "missing"
+    assert "explicit_requirements_missing" in answer_support["warnings"]
+    assert "missing_visual_region_requirement" in answer_support["warnings"]
+    assert diagnostics["answer_support_status"] == "missing"
+    assert "missing_visual_region_requirement" in diagnostics["answer_support_warnings"]
+
+
+def test_answer_support_reports_partial_for_missing_noncritical_requirement() -> None:
+    citation = {
+        "citation_id": "fact:atlas:citation:1",
+        "source_type": "fact",
+        "source_id": "fact_atlas",
+        "quote_preview": "Atlas renewal was approved by Alex.",
+        "char_range": {"start": 0, "end": 35},
+    }
+    items = [
+        {
+            "item_id": "fact_atlas",
+            "item_type": "fact",
+            "score": 0.95,
+            "citations": [citation],
+            "diagnostics": {"retrieval_source": "postgres_facts"},
+        }
+    ]
+
+    answer_support = _answer_support_to_response(
+        items=items,
+        top_evidence=_top_evidence_to_response(items),
+        diagnostics={
+            "context_requirement_coverage": {
+                "missing_total": 1,
+                "missing_anchor_kinds": ["person"],
+            }
+        },
+    )
+
+    assert answer_support["status"] == "partial"
+    assert "explicit_requirements_missing" in answer_support["warnings"]
+    assert "missing_person_anchor_requirement" in answer_support["warnings"]
+
+
 def test_memory_suggestion_review_audit_is_bounded_and_redacted() -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     now = datetime(2026, 1, 1, tzinfo=UTC)

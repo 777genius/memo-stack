@@ -319,11 +319,16 @@ def _answer_support_to_response(
     *,
     items: list[dict[str, Any]],
     top_evidence: list[dict[str, Any]],
+    diagnostics: dict[str, Any] | None = None,
     limit: int = _MAX_PUBLIC_TOP_EVIDENCE,
 ) -> dict[str, Any]:
     evidence_items = top_evidence[: max(0, limit)]
     coverage = _answer_support_coverage(items=items, top_evidence=evidence_items)
-    warnings = _answer_support_warnings(items=items, coverage=coverage)
+    warnings = _answer_support_warnings(
+        items=items,
+        coverage=coverage,
+        diagnostics=diagnostics or {},
+    )
     return {
         "status": _answer_support_status(coverage=coverage, warnings=warnings),
         "items": evidence_items,
@@ -390,6 +395,7 @@ def _answer_support_warnings(
     *,
     items: list[dict[str, Any]],
     coverage: dict[str, Any],
+    diagnostics: dict[str, Any],
 ) -> list[str]:
     warnings: list[str] = []
     if not items:
@@ -418,6 +424,7 @@ def _answer_support_warnings(
         warnings.append("review_only_items_excluded")
     if excluded_stale:
         warnings.append("stale_items_excluded")
+    warnings.extend(_answer_support_requirement_warnings(diagnostics))
     return warnings[:_MAX_PUBLIC_ANSWER_SUPPORT_WARNINGS]
 
 
@@ -426,13 +433,58 @@ def _answer_support_status(
     coverage: dict[str, Any],
     warnings: list[str],
 ) -> str:
+    if any(warning in warnings for warning in _CRITICAL_REQUIREMENT_WARNINGS):
+        return "missing"
     if "no_context_items" in warnings or "no_cited_support" in warnings:
         return "missing"
+    if "explicit_requirements_missing" in warnings:
+        return "partial"
     if "missing_quote_preview" in warnings or "missing_precise_location" in warnings:
         return "partial"
     if _safe_float(coverage.get("supported_item_ratio")) >= 0.5:
         return "strong"
     return "partial"
+
+
+_CRITICAL_REQUIREMENT_WARNINGS = frozenset(
+    {
+        "missing_citation_requirement",
+        "missing_page_or_char_requirement",
+        "missing_time_range_requirement",
+        "missing_visual_region_requirement",
+    }
+)
+
+
+def _answer_support_requirement_warnings(diagnostics: dict[str, Any]) -> list[str]:
+    coverage = diagnostics.get("context_requirement_coverage")
+    if not isinstance(coverage, dict):
+        return []
+    if _non_negative_int(coverage.get("missing_total")) <= 0:
+        return []
+
+    warnings = ["explicit_requirements_missing"]
+    for feature in _safe_requirement_values(coverage.get("missing_evidence_features")):
+        warnings.append(f"missing_{feature}_requirement")
+    for modality in _safe_requirement_values(coverage.get("missing_modalities")):
+        warnings.append(f"missing_{modality}_modality_requirement")
+    for kind in _safe_requirement_values(coverage.get("missing_anchor_kinds")):
+        warnings.append(f"missing_{kind}_anchor_requirement")
+    return warnings
+
+
+def _safe_requirement_values(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    safe_values: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip().lower().replace("-", "_")
+        if not normalized or not normalized.replace("_", "").isalnum():
+            continue
+        safe_values.append(normalized[:64])
+    return safe_values
 
 
 def _citation_has_precise_location(citation: object) -> bool:
@@ -699,6 +751,7 @@ async def build_context(
     answer_support = _answer_support_to_response(
         items=response_items,
         top_evidence=top_evidence,
+        diagnostics=bundle.diagnostics,
     )
     response_diagnostics = _context_diagnostics_to_response(
         bundle.diagnostics,
@@ -805,6 +858,7 @@ async def search_memory(
     answer_support = _answer_support_to_response(
         items=response_items,
         top_evidence=top_evidence,
+        diagnostics=bundle.diagnostics,
     )
     response_diagnostics = _context_diagnostics_to_response(
         bundle.diagnostics,
