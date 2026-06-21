@@ -70,6 +70,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert file_report["provenance"]["git"]["commit"]
     assert file_report["provenance"]["runtime"]["python_version"]
     assert file_report["provider_key_present"] is False
+    assert file_report["provider_contract"]["timeout_probe_seconds"] == 0.001
     assert file_report["provider_contract"]["transcription"] == {
         "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
         "endpoint": "/v1/audio/transcriptions",
@@ -115,7 +116,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
         "live_requirements_passed": 0,
-        "live_requirements_total": 6,
+        "live_requirements_total": 7,
     }
     assert file_report["readiness"] == {
         "blocking_requirements": [
@@ -126,6 +127,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             "audio_transcription_format_matrix",
             "audio_fixture_format_coverage",
             "invalid_key_live_probe",
+            "timeout_live_probe",
         ],
         "live_provider_key_required": True,
         "next_steps": [
@@ -217,6 +219,13 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "proof": "live_invalid_credential_call",
         "reason": "invalid_key_probe_skipped_by_request",
         "requires_provider_key": False,
+        "status": "skipped",
+    }
+    assert requirements["timeout_live_probe"] == {
+        "ok": False,
+        "proof": "live_timeout_call",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
         "status": "skipped",
     }
     assert requirements["rate_limit_classification"]["status"] == "contract_covered"
@@ -456,6 +465,7 @@ def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_ke
     assert report["ok"] is False
     assert report["provider_key_present"] is False
     assert report["components"]["provider_key"]["reason"] == "provider_credential_missing"
+    assert report["components"]["timeout_probe"]["reason"] == "provider_credential_missing"
     assert report["components"]["invalid_key_probe"] == {
         "diagnostics": {"message": "provider rejected <redacted>"},
         "observed_reason": (
@@ -491,7 +501,7 @@ def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_ke
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
         "live_requirements_passed": 1,
-        "live_requirements_total": 6,
+        "live_requirements_total": 7,
     }
     assert report["provenance"]["generated_by"] == ("scripts/multimodal_live_provider_canary.py")
     assert report["provenance"]["suite"] == ("infinity-context-multimodal-live-provider-canary")
@@ -527,6 +537,91 @@ def test_multimodal_live_provider_canary_explicit_invalid_key_probe_overrides_sk
 
     assert module._invalid_key_probe_mode(args, has_provider_key=False) == "explicit"
     assert module._invalid_key_probe_mode(args, has_provider_key=True) == "explicit"
+
+
+def test_multimodal_live_provider_canary_timeout_probe_modes() -> None:
+    module = _load_canary_module()
+
+    default_args = module._parse_args([])
+    assert module._timeout_probe_mode(default_args, has_provider_key=False) is None
+    assert module._timeout_probe_mode(default_args, has_provider_key=True) == "auto_with_key"
+
+    skip_args = module._parse_args(["--skip-timeout-probe"])
+    assert module._timeout_probe_mode(skip_args, has_provider_key=True) is None
+    assert (
+        module._timeout_probe_skip_reason(skip_args, has_provider_key=True)
+        == "timeout_probe_skipped_by_request"
+    )
+
+    explicit_args = module._parse_args(["--probe-timeout", "--skip-timeout-probe"])
+    assert module._timeout_probe_mode(explicit_args, has_provider_key=False) == "explicit"
+    assert module._timeout_probe_mode(explicit_args, has_provider_key=True) == "explicit"
+
+
+def test_multimodal_live_provider_canary_timeout_probe_succeeds_on_timeout(
+    monkeypatch,
+) -> None:
+    module = _load_canary_module()
+    observed_timeouts: list[float] = []
+
+    async def fake_run_vision(
+        *,
+        api_key: str,
+        args: object,
+    ) -> dict[str, object]:
+        assert api_key == "sk-test-provider-key"
+        observed_timeouts.append(args.timeout_seconds)
+        return module._component(
+            "failed",
+            reason="asset_extraction.vision.timeout",
+            diagnostics={"request_timeout_seconds": args.timeout_seconds},
+        )
+
+    monkeypatch.setattr(module, "_run_vision", fake_run_vision)
+
+    result = asyncio.run(
+        module._run_timeout_probe(
+            api_key="sk-test-provider-key",
+            args=module._parse_args(["--timeout-probe-seconds", "0.0001"]),
+        )
+    )
+
+    assert observed_timeouts == [0.001]
+    assert result["status"] == "succeeded"
+    assert result["proof"] == "live_timeout_call"
+    assert result["observed_reason"] == "asset_extraction.vision.timeout"
+    assert result["requires_provider_key"] is True
+
+
+def test_multimodal_live_provider_canary_timeout_probe_rejects_non_timeout(
+    monkeypatch,
+) -> None:
+    module = _load_canary_module()
+
+    async def fake_run_vision(
+        *,
+        api_key: str,
+        args: object,
+    ) -> dict[str, object]:
+        return module._component(
+            "failed",
+            reason="asset_extraction.vision.rate_limited",
+            diagnostics={"request_timeout_seconds": args.timeout_seconds},
+        )
+
+    monkeypatch.setattr(module, "_run_vision", fake_run_vision)
+
+    result = asyncio.run(
+        module._run_timeout_probe(
+            api_key="sk-test-provider-key",
+            args=module._parse_args(["--timeout-probe-seconds", "2.0"]),
+        )
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "timeout_probe_unexpected_result"
+    assert result["observed_reason"] == "asset_extraction.vision.rate_limited"
+    assert result["timeout_seconds"] == 0.25
 
 
 def test_multimodal_live_provider_canary_proof_matrix_tracks_invalid_key_probe() -> None:
@@ -607,6 +702,11 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
                 "word_count": 0,
             },
             "invalid_key_probe": {"status": "skipped"},
+            "timeout_probe": {
+                "status": "succeeded",
+                "observed_reason": "asset_extraction.vision.timeout",
+                "timeout_seconds": 0.001,
+            },
         },
         failure_policy_contract=module._failure_policy_contract(),
         provider_contract=module._base_report(args, has_provider_key=True)["provider_contract"],
@@ -628,6 +728,11 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
                         "word_count": 0,
                     },
                     "invalid_key_probe": {"status": "skipped"},
+                    "timeout_probe": {
+                        "status": "succeeded",
+                        "observed_reason": "asset_extraction.vision.timeout",
+                        "timeout_seconds": 0.001,
+                    },
                 },
                 "failure_policy_contract": module._failure_policy_contract(),
                 "provider_contract": module._base_report(args, has_provider_key=True)[
@@ -662,6 +767,14 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
         "required_suffixes": [".mp3", ".wav"],
         "requires_provider_key": True,
         "status": "failed",
+    }
+    assert proof["requirements"]["timeout_live_probe"] == {
+        "ok": True,
+        "observed_reason": "asset_extraction.vision.timeout",
+        "proof": "live_timeout_call",
+        "requires_provider_key": True,
+        "status": "succeeded",
+        "timeout_seconds": 0.001,
     }
 
 
@@ -750,6 +863,10 @@ def test_multimodal_live_provider_canary_rejects_unsafe_report_surface() -> None
         "invalid_key_probe": module._component(
             "skipped",
             reason="invalid_key_probe_not_requested",
+        ),
+        "timeout_probe": module._component(
+            "skipped",
+            reason="provider_credential_missing",
         ),
     }
     safety = module._report_safety_contract(
@@ -1017,7 +1134,7 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
         "live_requirements_passed": 0,
-        "live_requirements_total": 6,
+        "live_requirements_total": 7,
     }
 
 

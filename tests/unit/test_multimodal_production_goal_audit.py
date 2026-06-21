@@ -46,6 +46,8 @@ def test_multimodal_production_goal_audit_accepts_complete_proof(tmp_path: Path)
     assert payload["blocked_requirements"] == []
     assert payload["not_evaluable_checks"] == []
     assert all(result.checks.values())
+    assert result.checks["live_provider_proof_matrix_timeout_live_probe"] is True
+    assert result.checks["live_provider_proof_matrix_timeout_live_probe_observed"] is True
     assert payload["suite"] == "infinity-context-multimodal-production-goal-audit"
     assert payload["secrets_redacted"] is True
 
@@ -174,6 +176,7 @@ def test_multimodal_production_goal_audit_rejects_degraded_external_proofs(
         in result.not_evaluable_checks
     )
     assert "live_provider_proof_matrix_invalid_key_live_probe" in result.not_evaluable_checks
+    assert "live_provider_proof_matrix_timeout_live_probe" in result.not_evaluable_checks
     assert any("Docker multimodal live proof" in failure for failure in result.failures)
     assert any("Live provider canary" in failure for failure in result.failures)
     assert any("docker_daemon_timeout" in failure for failure in result.failures)
@@ -659,6 +662,45 @@ def test_multimodal_production_goal_audit_requires_live_invalid_key_probe(
         is False
     )
     assert any("invalid-key probe" in failure for failure in result.failures)
+
+
+def test_multimodal_production_goal_audit_requires_live_timeout_probe(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    _write_core(tmp_path)
+    frontend_report = tmp_path / "frontend.json"
+    docker_report = tmp_path / "docker.json"
+    provider_report = tmp_path / "provider.json"
+    provider = _provider_report()
+    proof_matrix = provider["proof_matrix"]
+    assert isinstance(proof_matrix, dict)
+    requirements = proof_matrix["requirements"]
+    assert isinstance(requirements, dict)
+    requirements["timeout_live_probe"] = {
+        "ok": False,
+        "observed_reason": "asset_extraction.vision.rate_limited",
+        "proof": "live_timeout_call",
+        "requires_provider_key": True,
+        "status": "failed",
+    }
+    frontend_report.write_text(json.dumps(_frontend_report()), encoding="utf-8")
+    docker_report.write_text(json.dumps(_docker_report()), encoding="utf-8")
+    provider_report.write_text(json.dumps(provider), encoding="utf-8")
+
+    result = module.run_goal_audit(
+        root=tmp_path,
+        frontend_report=frontend_report.relative_to(tmp_path),
+        docker_report=docker_report.relative_to(tmp_path),
+        provider_report=provider_report.relative_to(tmp_path),
+        require_clean_git=False,
+        git={"commit": "abc", "short_commit": "abc", "dirty": False},
+    )
+
+    assert result.ok is False
+    assert result.checks["live_provider_proof_matrix_timeout_live_probe"] is False
+    assert result.checks["live_provider_proof_matrix_timeout_live_probe_observed"] is False
+    assert any("timeout probe" in failure for failure in result.failures)
 
 
 def test_multimodal_production_goal_audit_rejects_docker_without_provider_contract(
@@ -1207,6 +1249,14 @@ def _provider_proof_matrix() -> dict[str, object]:
                 },
                 "provider_probe_count": 2,
             },
+            "timeout_live_probe": {
+                "status": "succeeded",
+                "proof": "live_timeout_call",
+                "requires_provider_key": True,
+                "ok": True,
+                "observed_reason": "asset_extraction.vision.timeout",
+                "timeout_seconds": 0.001,
+            },
             "vision_fixture_contract": {
                 "status": "contract_covered",
                 "proof": "local_fixture_contract",
@@ -1285,8 +1335,8 @@ def _provider_proof_matrix() -> dict[str, object]:
             },
         },
         "summary": {
-            "live_requirements_passed": 6,
-            "live_requirements_total": 6,
+            "live_requirements_passed": 7,
+            "live_requirements_total": 7,
             "contract_requirements_passed": 9,
             "contract_requirements_total": 9,
         },

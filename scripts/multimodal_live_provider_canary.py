@@ -50,6 +50,7 @@ DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
+DEFAULT_TIMEOUT_PROBE_SECONDS = 0.001
 DEFAULT_REQUIRED_AUDIO_SUFFIXES = (".wav", ".mp3")
 INVALID_KEY_PROBE_VALUE = "sk-" + "invalid-live-provider-canary-not-a-real-secret"
 SYNTHETIC_AUDIO_PHRASE = "infinity context live transcription canary"
@@ -149,6 +150,18 @@ async def run_multimodal_live_provider_canary(
             "skipped",
             reason=_invalid_key_probe_skip_reason(args, has_provider_key=bool(api_key)),
         )
+    timeout_probe_mode = _timeout_probe_mode(args, has_provider_key=bool(api_key))
+    if timeout_probe_mode:
+        report["components"]["timeout_probe"] = await _run_timeout_probe(
+            api_key=api_key,
+            args=args,
+            probe_mode=timeout_probe_mode,
+        )
+    else:
+        report["components"]["timeout_probe"] = _component(
+            "skipped",
+            reason=_timeout_probe_skip_reason(args, has_provider_key=bool(api_key)),
+        )
     if not api_key:
         report["components"]["provider_key"] = _component(
             "degraded",
@@ -160,6 +173,10 @@ async def run_multimodal_live_provider_canary(
             reason="provider_credential_missing",
         )
         report["components"]["transcription"] = _component(
+            "skipped",
+            reason="provider_credential_missing",
+        )
+        report["components"]["timeout_probe"] = _component(
             "skipped",
             reason="provider_credential_missing",
         )
@@ -176,6 +193,7 @@ async def run_multimodal_live_provider_canary(
         vision["status"] == "succeeded"
         and transcription["status"] == "succeeded"
         and report["components"]["invalid_key_probe"]["status"] == "succeeded"
+        and report["components"]["timeout_probe"]["status"] == "succeeded"
     )
     _finalize_report(report)
     return report
@@ -572,6 +590,100 @@ def _invalid_key_probe_skip_reason(
     return "invalid_key_probe_not_requested"
 
 
+async def _run_timeout_probe(
+    *,
+    api_key: str | None,
+    args: argparse.Namespace,
+    probe_mode: str = "auto_with_key",
+) -> dict[str, object]:
+    if not api_key:
+        return _component(
+            "skipped",
+            reason="provider_credential_missing",
+            proof="live_timeout_call",
+            probe_mode=probe_mode,
+            requires_provider_key=True,
+        )
+
+    probe_args = argparse.Namespace(**vars(args))
+    probe_args.timeout_seconds = _timeout_probe_seconds(args)
+    vision_result = await _run_vision(api_key=api_key, args=probe_args)
+    probe_result = _timeout_probe_result(vision_result)
+    if probe_result["ok"] is True:
+        return _component(
+            "succeeded",
+            proof="live_timeout_call",
+            probe_mode=probe_mode,
+            requires_provider_key=True,
+            provider="vision",
+            timeout_seconds=probe_args.timeout_seconds,
+            observed_reason=probe_result["reason"],
+            observed_status=probe_result["status"],
+            diagnostics=_safe_diagnostics(
+                vision_result.get("diagnostics")
+                if isinstance(vision_result.get("diagnostics"), dict)
+                else {}
+            ),
+        )
+    return _component(
+        "failed",
+        reason="timeout_probe_unexpected_result",
+        message="Live timeout probe did not produce timeout classification",
+        proof="live_timeout_call",
+        probe_mode=probe_mode,
+        requires_provider_key=True,
+        provider="vision",
+        timeout_seconds=probe_args.timeout_seconds,
+        observed_reason=probe_result["reason"],
+        observed_status=probe_result["status"],
+        diagnostics=_safe_diagnostics(
+            vision_result.get("diagnostics")
+            if isinstance(vision_result.get("diagnostics"), dict)
+            else {}
+        ),
+    )
+
+
+def _timeout_probe_result(result: dict[str, object]) -> dict[str, object]:
+    reason = str(result.get("reason") or "")
+    status = str(result.get("status") or "")
+    return {
+        "ok": status == "failed" and ".timeout" in reason,
+        "status": status,
+        "reason": reason,
+    }
+
+
+def _timeout_probe_mode(
+    args: argparse.Namespace,
+    *,
+    has_provider_key: bool,
+) -> str | None:
+    if args.probe_timeout:
+        return "explicit"
+    if args.skip_timeout_probe:
+        return None
+    if has_provider_key:
+        return "auto_with_key"
+    return None
+
+
+def _timeout_probe_skip_reason(
+    args: argparse.Namespace,
+    *,
+    has_provider_key: bool,
+) -> str:
+    if not has_provider_key:
+        return "provider_credential_missing"
+    if args.skip_timeout_probe:
+        return "timeout_probe_skipped_by_request"
+    return "timeout_probe_not_requested"
+
+
+def _timeout_probe_seconds(args: argparse.Namespace) -> float:
+    return max(0.001, min(float(args.timeout_probe_seconds), 0.25))
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -650,6 +762,35 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--probe-timeout",
+        action="store_true",
+        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_PROBE_TIMEOUT") == "1",
+        help=(
+            "Make a live provider call with a tiny timeout to verify timeout "
+            "classification and redaction."
+        ),
+    )
+    parser.add_argument(
+        "--skip-timeout-probe",
+        action="store_true",
+        default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_SKIP_TIMEOUT_PROBE") == "1",
+        help=(
+            "Skip the automatic live timeout probe. Explicit --probe-timeout "
+            "still runs the probe."
+        ),
+    )
+    parser.add_argument(
+        "--timeout-probe-seconds",
+        type=float,
+        default=float(
+            os.environ.get(
+                "MEMORY_MULTIMODAL_PROVIDER_TIMEOUT_PROBE_SECONDS",
+                DEFAULT_TIMEOUT_PROBE_SECONDS,
+            )
+        ),
+        help="Tiny timeout used only for the live timeout proof probe.",
+    )
+    parser.add_argument(
         "--allow-missing-key",
         action="store_true",
         default=os.environ.get("MEMORY_MULTIMODAL_PROVIDER_ALLOW_MISSING_KEY") == "1",
@@ -670,6 +811,7 @@ def _base_report(
     provider_contract = {
         "external_ai_required": True,
         "timeout_seconds": args.timeout_seconds,
+        "timeout_probe_seconds": _timeout_probe_seconds(args),
         "vision": {
             "endpoint_family": OPENAI_VISION_ENDPOINT_FAMILY,
             "model": args.vision_model,
@@ -722,6 +864,7 @@ def _base_report(
             "audio_fixture": _component("unknown"),
             "audio_fixtures": [],
             "invalid_key_probe": _component("unknown"),
+            "timeout_probe": _component("unknown"),
         },
     }
 
@@ -833,6 +976,10 @@ def _proof_matrix(
             expected_retryable=False,
         ),
         "invalid_key_live_probe": _invalid_key_probe_requirement(components),
+        "timeout_live_probe": _timeout_probe_requirement(
+            components,
+            provider_key_present=provider_key_present,
+        ),
         "rate_limit_classification": _contract_requirement(
             failure_policy_contract,
             "rate_limited",
@@ -860,6 +1007,7 @@ def _proof_matrix(
         "transcription_response_artifact",
         "audio_transcription_format_matrix",
         "invalid_key_live_probe",
+        "timeout_live_probe",
     )
     contract_names = tuple(name for name in requirements if name not in live_names)
     return {
@@ -1268,6 +1416,43 @@ def _provider_invalid_key_reasons_ok(observed_reasons: object) -> bool:
     )
 
 
+def _timeout_probe_requirement(
+    components: dict[object, object],
+    *,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    component = components.get("timeout_probe")
+    if not isinstance(component, dict):
+        return {
+            "status": "not_run" if provider_key_present else "skipped",
+            "proof": "live_timeout_call",
+            "requires_provider_key": True,
+            "ok": False,
+        }
+    status = str(component.get("status") or "unknown")
+    observed_reason = (
+        component.get("observed_reason")
+        if isinstance(component.get("observed_reason"), str)
+        else None
+    )
+    reason = component.get("reason") if isinstance(component.get("reason"), str) else None
+    timeout_seconds = (
+        component.get("timeout_seconds")
+        if isinstance(component.get("timeout_seconds"), int | float)
+        else None
+    )
+    return {
+        "status": status,
+        "proof": "live_timeout_call",
+        "requires_provider_key": True,
+        "ok": status == "succeeded" and isinstance(observed_reason, str)
+        and ".timeout" in observed_reason,
+        **({"reason": reason} if reason else {}),
+        **({"observed_reason": observed_reason} if observed_reason else {}),
+        **({"timeout_seconds": timeout_seconds} if timeout_seconds is not None else {}),
+    }
+
+
 def _readiness_summary(report: dict[str, object]) -> dict[str, object]:
     proof_matrix = (
         report.get("proof_matrix") if isinstance(report.get("proof_matrix"), dict) else {}
@@ -1346,6 +1531,8 @@ def _readiness_next_steps(
         steps.append("provide_wav_and_mp3_audio_fixtures")
     if "invalid_key_live_probe" in blocking_requirements:
         steps.append("run_invalid_key_probe")
+    if "timeout_live_probe" in blocking_requirements and provider_key_present:
+        steps.append("run_timeout_probe")
     if "report_safety_contract" in blocking_requirements:
         steps.append("inspect_provider_canary_report")
     if blocking_requirements and not steps:

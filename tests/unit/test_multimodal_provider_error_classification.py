@@ -110,7 +110,7 @@ def test_openai_transcription_adapter_classifies_permanent_invalid_api_key() -> 
     assert raw_secret not in json.dumps(result.diagnostics)
 
 
-def test_openai_transcription_adapter_classifies_timeout_as_retryable_unavailable() -> None:
+def test_openai_transcription_adapter_classifies_timeout_as_retryable_timeout() -> None:
     adapter = OpenAISpeechTranscriptionAdapter(
         api_key="test-key",
         model="gpt-4o-mini-transcribe",
@@ -120,7 +120,7 @@ def test_openai_transcription_adapter_classifies_timeout_as_retryable_unavailabl
     result = asyncio.run(adapter.transcribe(_speech_request()))
 
     assert result.status == "unsupported"
-    assert result.safe_error_code == "asset_extraction.transcription.provider_unavailable"
+    assert result.safe_error_code == "asset_extraction.transcription.timeout"
     assert result.diagnostics["provider_retryable"] is True
     assert result.diagnostics["request_timeout_seconds"] == 60.0
 
@@ -230,7 +230,7 @@ def test_openai_vision_adapter_classifies_provider_quota_as_permanent() -> None:
     assert raw_secret not in json.dumps(result.diagnostics)
 
 
-def test_openai_vision_adapter_classifies_timeout_as_retryable_unavailable() -> None:
+def test_openai_vision_adapter_classifies_timeout_as_retryable_timeout() -> None:
     adapter = OpenAIImageVisionAdapter(
         api_key="test-key",
         model="gpt-4.1-mini",
@@ -240,7 +240,7 @@ def test_openai_vision_adapter_classifies_timeout_as_retryable_unavailable() -> 
     result = asyncio.run(adapter.analyze(_vision_request()))
 
     assert result.status == "unsupported"
-    assert result.safe_error_code == "asset_extraction.vision.provider_unavailable"
+    assert result.safe_error_code == "asset_extraction.vision.timeout"
     assert result.diagnostics["provider_retryable"] is True
     assert result.diagnostics["request_timeout_seconds"] == 60.0
 

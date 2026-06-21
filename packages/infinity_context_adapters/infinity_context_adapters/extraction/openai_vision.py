@@ -151,7 +151,7 @@ class OpenAIVisionImageExtractionEngine(ExtractionEngine):
         self._detail = detail
         self._client_factory = client_factory
         self._max_output_tokens = max_output_tokens
-        self._request_timeout_seconds = max(1.0, float(request_timeout_seconds))
+        self._request_timeout_seconds = max(0.001, float(request_timeout_seconds))
         adapter_client_factory = self._client if (api_key or client_factory is not None) else None
         self._vision = vision or OpenAIImageVisionAdapter(
             api_key=api_key,
@@ -339,7 +339,7 @@ class OpenAIImageVisionAdapter(ImageVisionPort):
         self._detail = detail
         self._client_factory = client_factory
         self._max_output_tokens = max_output_tokens
-        self._request_timeout_seconds = max(1.0, float(request_timeout_seconds))
+        self._request_timeout_seconds = max(0.001, float(request_timeout_seconds))
 
     async def analyze(self, request: ImageVisionRequest) -> ImageVisionResult:
         if not self._api_key and self._client_factory is None:

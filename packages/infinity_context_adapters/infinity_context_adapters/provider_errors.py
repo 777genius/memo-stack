@@ -37,9 +37,12 @@ def classify_provider_exception(
         return f"{prefix}.invalid_request", False
     if (
         "timeout" in class_name
-        or "connection" in class_name
-        or status_code in {408, 409, 500, 502, 503, 504}
+        or status_code == 408
+        or error_code in {"timeout", "timed_out", "request_timeout"}
+        or error_type in {"timeout", "timed_out", "request_timeout"}
     ):
+        return f"{prefix}.timeout", True
+    if "connection" in class_name or status_code in {409, 500, 502, 503, 504}:
         return f"{prefix}.provider_unavailable", True
     return default_code, True
 

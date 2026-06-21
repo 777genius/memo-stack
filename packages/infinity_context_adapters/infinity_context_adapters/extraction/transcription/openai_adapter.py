@@ -85,7 +85,7 @@ class OpenAISpeechTranscriptionAdapter(SpeechTranscriptionPort):
         self._client_factory = client_factory
         self._prompt = prompt
         self._max_upload_bytes = max(1, int(max_upload_bytes))
-        self._request_timeout_seconds = max(1.0, float(request_timeout_seconds))
+        self._request_timeout_seconds = max(0.001, float(request_timeout_seconds))
 
     async def transcribe(
         self,

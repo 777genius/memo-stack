@@ -95,6 +95,7 @@ PROVIDER_REQUIREMENT_CHECKS = {
         "live_provider_proof_matrix_audio_transcription_format_matrix"
     ),
     "invalid_key_live_probe": "live_provider_proof_matrix_invalid_key_live_probe",
+    "timeout_live_probe": "live_provider_proof_matrix_timeout_live_probe",
     "vision_fixture_contract": "live_provider_proof_matrix_vision_fixture_contract",
     "audio_fixture_contract": "live_provider_proof_matrix_audio_fixture_contract",
     "audio_fixture_format_coverage": "live_provider_proof_matrix_audio_fixture_format_coverage",
@@ -861,6 +862,7 @@ def _audit_provider_proof_matrix(
         "transcription_response_artifact": "succeeded",
         "audio_transcription_format_matrix": "succeeded",
         "invalid_key_live_probe": "succeeded",
+        "timeout_live_probe": "succeeded",
         "vision_fixture_contract": "contract_covered",
         "audio_fixture_contract": "contract_covered",
         "audio_fixture_format_coverage": "contract_covered",
@@ -912,6 +914,22 @@ def _audit_provider_proof_matrix(
         "live_provider_proof_matrix_invalid_key_probe_covers_vision_and_transcription",
         provider_reasons_ok,
         "Live provider invalid-key probe must cover both vision and transcription endpoints",
+    )
+    timeout_probe = (
+        requirements.get("timeout_live_probe")
+        if isinstance(requirements.get("timeout_live_probe"), dict)
+        else {}
+    )
+    timeout_observed_reason = timeout_probe.get("observed_reason")
+    _check(
+        checks,
+        failures,
+        "live_provider_proof_matrix_timeout_live_probe_observed",
+        timeout_probe.get("proof") == "live_timeout_call"
+        and timeout_probe.get("requires_provider_key") is True
+        and isinstance(timeout_observed_reason, str)
+        and ".timeout" in timeout_observed_reason,
+        "Live provider proof matrix timeout probe did not prove timeout classification",
     )
 
 

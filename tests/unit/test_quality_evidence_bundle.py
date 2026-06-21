@@ -88,7 +88,9 @@ def _minimal_multimodal_live_provider_report(
         "transcription_response_artifact",
         "transcription_request_contract",
         "invalid_key_live_probe",
+        "timeout_live_probe",
         "no_secret_leak_guard",
+        "report_safety_contract",
     )
     return {
         "suite": "infinity-context-multimodal-live-provider-canary",
@@ -103,10 +105,10 @@ def _minimal_multimodal_live_provider_report(
         "proof_matrix": {
             "schema_version": "multimodal-provider-proof-matrix-v1",
             "summary": {
-                "contract_requirements_passed": 8,
-                "contract_requirements_total": 8,
-                "live_requirements_passed": 6,
-                "live_requirements_total": 6,
+                "contract_requirements_passed": 9,
+                "contract_requirements_total": 9,
+                "live_requirements_passed": 7,
+                "live_requirements_total": 7,
             },
             "requirements": {
                 name: {"ok": True, "status": "succeeded"}
