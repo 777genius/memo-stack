@@ -23,7 +23,11 @@ from infinity_context_server.eval_constants import (
     _PUBLIC_MEMORY_BENCHMARK_COMPETITIVE_FLOORS,
     _PUBLIC_MEMORY_BENCHMARK_REQUIRED,
 )
-from infinity_context_server.public_benchmark import run_public_memory_benchmark
+from infinity_context_server.public_benchmark import (
+    CASE_SELECTION_FIRST,
+    CASE_SELECTION_STRATIFIED,
+    run_public_memory_benchmark,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
@@ -35,6 +39,7 @@ LONGMEMEVAL_URL = (
 DEFAULT_MAX_CASES = 2
 DEFAULT_MIN_ACCURACY = 0.5
 DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_CASE_SELECTION_STRATEGY = CASE_SELECTION_STRATIFIED
 
 
 @dataclass(frozen=True)
@@ -89,6 +94,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--case-selection-strategy",
+        choices=(CASE_SELECTION_FIRST, CASE_SELECTION_STRATIFIED),
+        default=os.getenv(
+            "MEMORY_PUBLIC_BENCHMARK_CASE_SELECTION_STRATEGY",
+            DEFAULT_CASE_SELECTION_STRATEGY,
+        ),
+        help="Case sampling policy for small public benchmark canaries.",
+    )
+    parser.add_argument(
         "--api-url",
         default=os.getenv("MEMORY_PUBLIC_BENCHMARK_API_URL") or None,
     )
@@ -129,6 +143,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         competitive_floor=args.competitive_floor,
         api_url=args.api_url,
         auth_token=args.auth_token,
+        case_selection_strategy=args.case_selection_strategy,
         locomo_dataset=args.locomo_dataset,
         longmemeval_dataset=args.longmemeval_dataset,
         download_timeout_seconds=args.download_timeout_seconds,
@@ -146,6 +161,7 @@ def run_official_public_benchmark_canary(
     competitive_floor: bool = False,
     api_url: str | None = None,
     auth_token: str | None = None,
+    case_selection_strategy: str = DEFAULT_CASE_SELECTION_STRATEGY,
     locomo_dataset: Path | None = None,
     longmemeval_dataset: Path | None = None,
     download_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
@@ -183,6 +199,7 @@ def run_official_public_benchmark_canary(
                 benchmark=name,
                 max_cases=int(policy["max_cases"]),
                 min_accuracy=float(policy["min_accuracy"]),
+                case_selection_strategy=case_selection_strategy,
             )
             reports.append(report)
             dataset_sources[name] = _dataset_source_metadata(
@@ -199,6 +216,7 @@ def run_official_public_benchmark_canary(
         min_accuracy=min_accuracy,
         competitive_floor=competitive_floor,
         run_policies=run_policies,
+        case_selection_strategy=case_selection_strategy,
         api_url=api_url,
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
     )
@@ -276,6 +294,7 @@ def _merge_reports(
     min_accuracy: float,
     competitive_floor: bool,
     run_policies: Mapping[str, Mapping[str, object]],
+    case_selection_strategy: str,
     api_url: str | None,
     elapsed_ms: float,
 ) -> dict[str, object]:
@@ -283,6 +302,7 @@ def _merge_reports(
     benchmarks: list[object] = []
     failures: list[object] = []
     dataset_hashes: dict[str, str] = {}
+    case_selection: dict[str, object] = {}
     checks = {
         "official_sources_configured": True,
         "case_count": True,
@@ -334,6 +354,11 @@ def _merge_reports(
         report_failures = report.get("failures")
         if isinstance(report_failures, list):
             failures.extend(report_failures)
+        report_case_selection = report.get("case_selection")
+        if isinstance(report_case_selection, Mapping):
+            for item in report_benchmarks if isinstance(report_benchmarks, list) else []:
+                if isinstance(item, Mapping) and isinstance(item.get("name"), str):
+                    case_selection[item["name"]] = dict(report_case_selection)
         report_metrics = report.get("metrics")
         if isinstance(report_metrics, Mapping):
             for key, value in report_metrics.items():
@@ -369,6 +394,8 @@ def _merge_reports(
         },
         "requested_max_cases": max_cases,
         "requested_min_accuracy": min_accuracy,
+        "case_selection_strategy": case_selection_strategy,
+        "case_selection": case_selection,
         "effective_case_limits": {
             name: int(policy["max_cases"]) for name, policy in run_policies.items()
         },

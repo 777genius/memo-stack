@@ -6,9 +6,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
 from infinity_context_server.public_benchmark import (
+    CASE_SELECTION_FIRST,
+    CASE_SELECTION_STRATIFIED,
     BenchmarkDocumentInput,
     BenchmarkHttpResponsePort,
+    BenchmarkValidationError,
     PublicBenchmarkCase,
     _execute_cases,
     _load_cases,
@@ -172,6 +176,126 @@ def test_public_memory_benchmark_counts_normalized_cases_without_running(
     assert profile["benchmark_counts"] == {"locomo": 1, "longmemeval": 1}
     assert profile["dataset_path_label"] == dataset.name
     assert len(str(profile["dataset_hash"])) == 64
+
+
+def test_public_memory_benchmark_stratifies_limited_cases_by_capability(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-stratified.json"
+    rows = [
+        _longmemeval_row(
+            "info-1",
+            "single-session-user",
+            "Where is the first information marker?",
+            "INFO_MARKER_ONE",
+        ),
+        _longmemeval_row(
+            "info-2",
+            "single-session-assistant",
+            "Where is the second information marker?",
+            "INFO_MARKER_TWO",
+        ),
+        _longmemeval_row(
+            "temporal-1",
+            "temporal-reasoning",
+            "Where is the temporal marker?",
+            "TEMPORAL_MARKER",
+        ),
+        _longmemeval_row(
+            "knowledge-1",
+            "knowledge-update",
+            "Where is the knowledge marker?",
+            "KNOWLEDGE_MARKER",
+        ),
+        _longmemeval_row(
+            "multi-1",
+            "multi-session",
+            "Where is the multi-session marker?",
+            "MULTI_MARKER",
+        ),
+    ]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        max_cases=3,
+        case_selection_strategy=CASE_SELECTION_STRATIFIED,
+    )
+
+    assert result["ok"] is True
+    assert [case["case_id"] for case in result["cases"]] == [
+        "info-1",
+        "knowledge-1",
+        "multi-1",
+    ]
+    assert [case["capability"] for case in result["cases"]] == [
+        "information_extraction",
+        "knowledge_update",
+        "multi_session_reasoning",
+    ]
+    assert result["case_selection"]["strategy"] == CASE_SELECTION_STRATIFIED
+    assert result["case_selection"]["input_case_count"] == 5
+    assert result["case_selection"]["selected_case_count"] == 3
+    assert result["case_selection"]["available_capability_count"] == 4
+    assert result["case_selection"]["selected_capability_count"] == 3
+
+
+def test_public_memory_benchmark_first_case_selection_preserves_old_order(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-first.json"
+    rows = [
+        _longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1"),
+        _longmemeval_row("info-2", "single-session-user", "Where is marker 2?", "MARKER_2"),
+        _longmemeval_row(
+            "temporal-1",
+            "temporal-reasoning",
+            "Where is marker 3?",
+            "MARKER_3",
+        ),
+    ]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        max_cases=2,
+        case_selection_strategy=CASE_SELECTION_FIRST,
+    )
+
+    assert result["ok"] is True
+    assert [case["case_id"] for case in result["cases"]] == ["info-1", "info-2"]
+    assert result["case_selection"]["strategy"] == CASE_SELECTION_FIRST
+    assert result["case_selection"]["selected_capability_count"] == 1
+
+
+def test_public_memory_benchmark_rejects_unknown_case_selection_strategy(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "public-benchmark.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "benchmark": "locomo",
+                    "case_id": "one",
+                    "question": "Where is the marker?",
+                    "memories": ["The marker is in Atlas."],
+                    "expected_terms": ["Atlas"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="Unsupported case selection"):
+        run_public_memory_benchmark(
+            dataset_path=dataset,
+            min_accuracy=1.0,
+            max_cases=1,
+            case_selection_strategy="weighted-random",
+        )
 
 
 def test_public_memory_benchmark_profile_counts_duplicate_case_ids(
@@ -646,3 +770,19 @@ def test_public_memory_benchmark_uses_longmemeval_answer_session_ids_as_evidence
     assert result["ok"] is True
     assert result["cases"][0]["missing_terms"] == []
     assert result["metrics"]["longmemeval_accuracy"] == 1.0
+
+
+def _longmemeval_row(
+    case_id: str,
+    question_type: str,
+    question: str,
+    marker: str,
+) -> dict[str, object]:
+    return {
+        "benchmark": "longmemeval",
+        "case_id": case_id,
+        "question": question,
+        "answer": marker,
+        "documents": [{"title": case_id, "text": f"{case_id} stores {marker}."}],
+        "metadata": {"question_type": question_type},
+    }

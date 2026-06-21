@@ -26,6 +26,11 @@ PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
 LOCOMO_BENCHMARK_SUITE = "locomo"
 LONGMEMEVAL_BENCHMARK_SUITE = "longmemeval"
 SUPPORTED_BENCHMARKS = frozenset({LOCOMO_BENCHMARK_SUITE, LONGMEMEVAL_BENCHMARK_SUITE})
+CASE_SELECTION_FIRST = "first"
+CASE_SELECTION_STRATIFIED = "stratified"
+SUPPORTED_CASE_SELECTION_STRATEGIES = frozenset(
+    {CASE_SELECTION_FIRST, CASE_SELECTION_STRATIFIED}
+)
 _DEFAULT_MIN_ACCURACY = 0.85
 
 
@@ -133,6 +138,7 @@ def run_public_memory_benchmark(
     benchmark: str | None = None,
     min_accuracy: float = _DEFAULT_MIN_ACCURACY,
     max_cases: int | None = None,
+    case_selection_strategy: str = CASE_SELECTION_FIRST,
 ) -> dict[str, object]:
     """Run normalized public memory cases and optionally write a JSON report."""
 
@@ -141,10 +147,11 @@ def run_public_memory_benchmark(
     if benchmark:
         canonical_benchmark = _normalize_benchmark_name(benchmark)
         cases = tuple(case for case in cases if case.benchmark == canonical_benchmark)
-    if max_cases is not None:
-        if max_cases < 1:
-            raise BenchmarkValidationError("max_cases must be greater than zero")
-        cases = cases[:max_cases]
+    cases, case_selection = _select_cases(
+        cases,
+        max_cases=max_cases,
+        strategy=case_selection_strategy,
+    )
 
     duplicate_case_keys = _duplicate_case_keys(cases)
     if duplicate_case_keys:
@@ -153,6 +160,7 @@ def run_public_memory_benchmark(
             duplicate_case_keys=duplicate_case_keys,
         )
         result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
+        result["case_selection"] = case_selection
         _write_report(result, report_out)
         return result
 
@@ -179,6 +187,7 @@ def run_public_memory_benchmark(
                     "reason": "no_supported_cases",
                 }
             ],
+            "case_selection": case_selection,
         }
         result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
         _write_report(result, report_out)
@@ -188,6 +197,7 @@ def run_public_memory_benchmark(
     if not token:
         result = _setup_failure_result(reason="auth_token_required", case_count=len(cases))
         result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
+        result["case_selection"] = case_selection
         _write_report(result, report_out)
         return result
 
@@ -201,6 +211,7 @@ def run_public_memory_benchmark(
                 dataset_path=dataset_path,
                 min_accuracy=min_accuracy,
                 started=started,
+                case_selection=case_selection,
             )
     else:
         from fastapi.testclient import TestClient
@@ -229,6 +240,7 @@ def run_public_memory_benchmark(
                     dataset_path=dataset_path,
                     min_accuracy=min_accuracy,
                     started=started,
+                    case_selection=case_selection,
                 )
 
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
@@ -271,13 +283,18 @@ def load_public_benchmark_dataset_profile(
     case_keys = tuple(f"{case.benchmark}:{case.case_id}" for case in cases)
     unique_case_keys = set(case_keys)
     benchmark_counts: dict[str, int] = defaultdict(int)
+    capability_counts: dict[str, int] = defaultdict(int)
     for case in cases:
         benchmark_counts[case.benchmark] += 1
+        capability = _case_capability(case)
+        if capability:
+            capability_counts[f"{case.benchmark}:{capability}"] += 1
     return {
         "case_count": len(cases),
         "unique_case_id_count": len(unique_case_keys),
         "duplicate_case_id_count": len(case_keys) - len(unique_case_keys),
         "benchmark_counts": dict(sorted(benchmark_counts.items())),
+        "capability_counts": dict(sorted(capability_counts.items())),
         "dataset_hash": _dataset_hash(dataset_path),
         "dataset_path_label": dataset_path.name,
     }
@@ -304,6 +321,7 @@ def _execute_cases(
     dataset_path: Path,
     min_accuracy: float,
     started: float,
+    case_selection: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     dataset_hash = _dataset_hash(dataset_path)
     scope_slug = f"public-benchmark-{dataset_hash[:16]}"
@@ -358,6 +376,7 @@ def _execute_cases(
         "evaluation_mode": "retrieved_expected_terms",
         "dataset_path_label": dataset_path.name,
         "dataset_hash": dataset_hash,
+        "case_selection": dict(case_selection or {}),
         "dataset_sources": {
             summary["name"]: _dataset_source_metadata(
                 dataset_path=dataset_path,
@@ -395,6 +414,103 @@ def _execute_cases(
             result["metrics"][f"{name}_accuracy"] = metrics.get("accuracy")
             result["metrics"][f"{name}_case_count"] = metrics.get("case_count")
     return result
+
+
+def _select_cases(
+    cases: Sequence[PublicBenchmarkCase],
+    *,
+    max_cases: int | None,
+    strategy: str,
+) -> tuple[tuple[PublicBenchmarkCase, ...], dict[str, object]]:
+    normalized_strategy = _normalize_case_selection_strategy(strategy)
+    available = tuple(cases)
+    if max_cases is not None and max_cases < 1:
+        raise BenchmarkValidationError("max_cases must be greater than zero")
+    if max_cases is None or max_cases >= len(available):
+        selected = available
+    elif normalized_strategy == CASE_SELECTION_FIRST:
+        selected = available[:max_cases]
+    else:
+        selected = _stratified_case_selection(available, max_cases=max_cases)
+    return selected, _case_selection_report(
+        available=available,
+        selected=selected,
+        max_cases=max_cases,
+        strategy=normalized_strategy,
+    )
+
+
+def _normalize_case_selection_strategy(value: str) -> str:
+    normalized = (value or "").strip().lower().replace("_", "-")
+    if normalized in {"", CASE_SELECTION_FIRST}:
+        return CASE_SELECTION_FIRST
+    if normalized == CASE_SELECTION_STRATIFIED:
+        return CASE_SELECTION_STRATIFIED
+    raise BenchmarkValidationError(f"Unsupported case selection strategy: {value}")
+
+
+def _stratified_case_selection(
+    cases: Sequence[PublicBenchmarkCase],
+    *,
+    max_cases: int,
+) -> tuple[PublicBenchmarkCase, ...]:
+    grouped: dict[str, list[PublicBenchmarkCase]] = defaultdict(list)
+    for case in cases:
+        grouped[_case_selection_group(case)].append(case)
+    selected: list[PublicBenchmarkCase] = []
+    round_index = 0
+    ordered_groups = sorted(grouped)
+    while len(selected) < max_cases:
+        added = False
+        for group in ordered_groups:
+            group_cases = grouped[group]
+            if round_index >= len(group_cases):
+                continue
+            selected.append(group_cases[round_index])
+            added = True
+            if len(selected) >= max_cases:
+                break
+        if not added:
+            break
+        round_index += 1
+    return tuple(selected)
+
+
+def _case_selection_report(
+    *,
+    available: Sequence[PublicBenchmarkCase],
+    selected: Sequence[PublicBenchmarkCase],
+    max_cases: int | None,
+    strategy: str,
+) -> dict[str, object]:
+    available_counts = _case_selection_counts(available)
+    selected_counts = _case_selection_counts(selected)
+    return {
+        "schema_version": "public-benchmark-case-selection-v1",
+        "strategy": strategy,
+        "requested_max_cases": max_cases,
+        "input_case_count": len(available),
+        "selected_case_count": len(selected),
+        "truncated": len(selected) < len(available),
+        "available_capability_count": len(available_counts),
+        "selected_capability_count": len(selected_counts),
+        "available_capability_counts": available_counts,
+        "selected_capability_counts": selected_counts,
+    }
+
+
+def _case_selection_counts(
+    cases: Sequence[PublicBenchmarkCase],
+) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for case in cases:
+        counts[_case_selection_group(case)] += 1
+    return dict(sorted(counts.items()))
+
+
+def _case_selection_group(case: PublicBenchmarkCase) -> str:
+    capability = _case_capability(case)
+    return f"{case.benchmark}:{capability or 'uncategorized'}"
 
 
 def _run_case(

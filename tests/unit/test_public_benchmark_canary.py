@@ -90,6 +90,14 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["publishable_public_benchmark_candidate"] is True
     assert result["requested_max_cases"] == 1
     assert result["requested_min_accuracy"] == 1.0
+    assert result["case_selection_strategy"] == canary.DEFAULT_CASE_SELECTION_STRATEGY
+    assert set(result["case_selection"]) == {"locomo", "longmemeval"}
+    assert result["case_selection"]["locomo"]["strategy"] == (
+        canary.DEFAULT_CASE_SELECTION_STRATEGY
+    )
+    assert result["case_selection"]["longmemeval"]["strategy"] == (
+        canary.DEFAULT_CASE_SELECTION_STRATEGY
+    )
     assert result["effective_case_limits"] == {"locomo": 600, "longmemeval": 500}
     assert result["effective_accuracy_floors"] == {"locomo": 1.0, "longmemeval": 1.0}
     assert result["competitive_floor_requirements"]["locomo"] == {
