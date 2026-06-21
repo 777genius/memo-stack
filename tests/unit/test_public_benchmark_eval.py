@@ -383,6 +383,83 @@ def test_public_memory_benchmark_indexes_official_locomo_observations(
     assert result["ok"] is True
 
 
+def test_public_memory_benchmark_indexes_official_locomo_summaries(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-summary-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-summary-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:1",
+                                "text": "I checked in with Melanie today.",
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What launch window did Caroline discuss?",
+                            "answer": "Q4 launch window",
+                            "evidence": [],
+                            "category": 2,
+                        },
+                        {
+                            "question": "What did Caroline decide during the event?",
+                            "answer": "Atlas migration fallback",
+                            "evidence": [],
+                            "category": 3,
+                        },
+                    ],
+                    "session_summary": {
+                        "session_1_summary": (
+                            "Caroline discussed the Q4 launch window with Melanie."
+                        )
+                    },
+                    "event_summary": {
+                        "events_session_1": {
+                            "date": "8 May, 2023",
+                            "Caroline": [
+                                "Caroline decided the Atlas migration fallback during the event."
+                            ],
+                        }
+                    },
+                    "observation": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cases = _load_cases(dataset)
+    summary_docs = [
+        document
+        for case in cases
+        for document in case.documents
+        if document.source_type in {"locomo_session_summary", "locomo_event_summary"}
+    ]
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert {document.source_type for document in summary_docs} == {
+        "locomo_session_summary",
+        "locomo_event_summary",
+    }
+    assert any("Q4 launch window" in document.text for document in summary_docs)
+    assert any("Atlas migration fallback" in document.text for document in summary_docs)
+    assert result["ok"] is True
+    assert result["benchmarks"][0]["metrics"]["capability_count"] == 2
+    assert result["benchmarks"][0]["capability_breakdown"]["locomo_category_2"][
+        "accuracy"
+    ] == 1.0
+    assert result["benchmarks"][0]["capability_breakdown"]["locomo_category_3"][
+        "case_count"
+    ] == 1
+
+
 def test_public_memory_benchmark_accepts_official_longmemeval_shape(tmp_path: Path) -> None:
     dataset = tmp_path / "longmemeval_s_cleaned-mini.json"
     dataset.write_text(
@@ -421,6 +498,71 @@ def test_public_memory_benchmark_accepts_official_longmemeval_shape(tmp_path: Pa
     assert result["benchmarks"][0]["name"] == "longmemeval"
     assert result["metrics"]["longmemeval_case_count"] == 1
     assert result["cases"][0]["case_id"] == "long-mini"
+    assert result["cases"][0]["capability"] == "information_extraction"
+    assert result["benchmarks"][0]["capability_breakdown"]["information_extraction"][
+        "accuracy"
+    ] == 1.0
+
+
+def test_public_memory_benchmark_reports_longmemeval_capability_breakdown(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval_capabilities.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "long-knowledge-update",
+                    "question_type": "knowledge-update",
+                    "question": "Which provider should I use now?",
+                    "question_date": "2023/06/01 (Thu) 10:00",
+                    "answer": "Qdrant",
+                    "answer_session_ids": ["answer_session"],
+                    "haystack_session_ids": ["answer_session"],
+                    "haystack_dates": ["2023/05/31 (Wed) 18:00"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "Use Qdrant as the current retrieval provider.",
+                            }
+                        ]
+                    ],
+                },
+                {
+                    "question_id": "long-temporal",
+                    "question_type": "temporal-reasoning",
+                    "question": "When did I review the launch notes?",
+                    "question_date": "2023/06/01 (Thu) 10:00",
+                    "answer": "Tuesday",
+                    "answer_session_ids": ["temporal_session"],
+                    "haystack_session_ids": ["temporal_session"],
+                    "haystack_dates": ["2023/05/30 (Tue) 18:00"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "On Tuesday I reviewed the launch notes.",
+                            }
+                        ]
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+    breakdown = result["benchmarks"][0]["capability_breakdown"]
+
+    assert result["ok"] is True
+    assert result["benchmarks"][0]["metrics"]["capability_count"] == 2
+    assert breakdown["knowledge_update"]["case_count"] == 1
+    assert breakdown["temporal_reasoning"]["accuracy"] == 1.0
+    assert {case["capability"] for case in result["cases"]} == {
+        "knowledge_update",
+        "temporal_reasoning",
+    }
 
 
 def test_public_memory_benchmark_accepts_longmemeval_numeric_answer(tmp_path: Path) -> None:

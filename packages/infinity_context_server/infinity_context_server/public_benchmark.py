@@ -86,6 +86,7 @@ class PublicBenchmarkCase:
 class CaseRunResult:
     benchmark: str
     case_id: str
+    capability: str
     ok: bool
     expected_ok: bool
     forbidden_ok: bool
@@ -334,6 +335,7 @@ def _execute_cases(
                 CaseRunResult(
                     benchmark=case.benchmark,
                     case_id=case.case_id,
+                    capability=_case_capability(case),
                     ok=False,
                     expected_ok=False,
                     forbidden_ok=True,
@@ -493,6 +495,7 @@ def _run_case(
     return CaseRunResult(
         benchmark=case.benchmark,
         case_id=case.case_id,
+        capability=_case_capability(case),
         ok=not missing and not leaked,
         expected_ok=not missing,
         forbidden_ok=not leaked,
@@ -684,6 +687,8 @@ def _official_locomo_documents(
                 )
             )
     documents.extend(_official_locomo_observation_documents(raw, sample_id=sample_id))
+    documents.extend(_official_locomo_session_summary_documents(raw, sample_id=sample_id))
+    documents.extend(_official_locomo_event_summary_documents(raw, sample_id=sample_id))
     return tuple(documents)
 
 
@@ -732,6 +737,83 @@ def _official_locomo_observation_item(item: object) -> tuple[str, str]:
         if len(values) >= 2:
             return values[0], values[1]
     return "", ""
+
+
+def _official_locomo_session_summary_documents(
+    raw: Mapping[str, object],
+    *,
+    sample_id: str,
+) -> tuple[BenchmarkDocumentInput, ...]:
+    summaries = raw.get("session_summary")
+    if not isinstance(summaries, Mapping):
+        return ()
+    documents: list[BenchmarkDocumentInput] = []
+    for key in sorted(summaries, key=_session_sort_key):
+        summary = summaries.get(key)
+        if not isinstance(summary, str) or not summary.strip():
+            continue
+        session_key = key.removesuffix("_summary")
+        documents.append(
+            BenchmarkDocumentInput(
+                title=f"LoCoMo {sample_id} {session_key} summary",
+                text=f"{session_key} summary\n{summary.strip()}",
+                source_type="locomo_session_summary",
+                source_external_id=f"locomo:{sample_id}:{session_key}:summary",
+            )
+        )
+    return tuple(documents)
+
+
+def _official_locomo_event_summary_documents(
+    raw: Mapping[str, object],
+    *,
+    sample_id: str,
+) -> tuple[BenchmarkDocumentInput, ...]:
+    summaries = raw.get("event_summary")
+    if not isinstance(summaries, Mapping):
+        return ()
+    documents: list[BenchmarkDocumentInput] = []
+    for key in sorted(summaries, key=_session_sort_key):
+        value = summaries.get(key)
+        session_key = key.removeprefix("events_")
+        lines = [f"{session_key} events"]
+        if isinstance(value, Mapping):
+            date = _first_str(value, "date", "session_date")
+            if date:
+                lines.append(f"date: {date}")
+            for actor, raw_items in value.items():
+                if str(actor).strip().lower() in {"date", "session_date"}:
+                    continue
+                actor_name = str(actor).strip() or "speaker"
+                for item in _as_list(raw_items):
+                    text = _official_locomo_event_summary_text(item)
+                    if text:
+                        lines.append(f"{actor_name}: {text}")
+        else:
+            text = _official_locomo_event_summary_text(value)
+            if text:
+                lines.append(text)
+        if len(lines) <= 1:
+            continue
+        documents.append(
+            BenchmarkDocumentInput(
+                title=f"LoCoMo {sample_id} {session_key} events",
+                text="\n".join(lines),
+                source_type="locomo_event_summary",
+                source_external_id=f"locomo:{sample_id}:{session_key}:events",
+            )
+        )
+    return tuple(documents)
+
+
+def _official_locomo_event_summary_text(item: object) -> str:
+    if isinstance(item, str) and item.strip():
+        return item.strip()
+    if isinstance(item, Mapping):
+        return _first_str(item, "text", "content", "event", "summary") or ""
+    if isinstance(item, Sequence) and not isinstance(item, str | bytes):
+        return " ".join(str(value).strip() for value in item if str(value).strip())
+    return ""
 
 
 def _is_session_key(value: object) -> bool:
@@ -1056,6 +1138,9 @@ def _benchmark_summaries(
                 "metrics": {
                     "accuracy": accuracy,
                     "case_count": len(cases),
+                    "capability_count": len(
+                        {item.capability for item in cases if item.capability}
+                    ),
                     "expected_recall": _ratio(
                         sum(1 for item in cases if item.expected_ok),
                         len(cases),
@@ -1066,6 +1151,7 @@ def _benchmark_summaries(
                     ),
                     "latency_ms_p95": _p95([item.latency_ms for item in cases]),
                 },
+                "capability_breakdown": _capability_breakdown(cases),
             }
         )
     return summaries
@@ -1075,6 +1161,7 @@ def _case_payload(item: CaseRunResult) -> dict[str, object]:
     return {
         "benchmark": item.benchmark,
         "case_id": item.case_id,
+        "capability": item.capability,
         "status": "ok" if item.ok else "failed",
         "expected_ok": item.expected_ok,
         "forbidden_ok": item.forbidden_ok,
@@ -1090,6 +1177,7 @@ def _case_failures(run_results: Sequence[CaseRunResult]) -> list[dict[str, objec
         {
             "case_id": item.case_id,
             "category": item.benchmark,
+            "capability": item.capability,
             "reason": "missing_expected_terms" if item.missing_terms else "forbidden_terms_leaked",
             "missing_terms": list(item.missing_terms),
             "leaked_terms": list(item.leaked_terms),
@@ -1101,6 +1189,68 @@ def _case_failures(run_results: Sequence[CaseRunResult]) -> list[dict[str, objec
 
 def _accuracy(run_results: Sequence[CaseRunResult]) -> float:
     return _ratio(sum(1 for item in run_results if item.ok), len(run_results))
+
+
+def _capability_breakdown(cases: Sequence[CaseRunResult]) -> dict[str, dict[str, object]]:
+    grouped: dict[str, list[CaseRunResult]] = defaultdict(list)
+    for item in cases:
+        if item.capability:
+            grouped[item.capability].append(item)
+    return {
+        capability: {
+            "case_count": len(items),
+            "accuracy": _accuracy(items),
+            "expected_recall": _ratio(
+                sum(1 for item in items if item.expected_ok),
+                len(items),
+            ),
+            "forbidden_leak_rate": _ratio(
+                sum(1 for item in items if not item.forbidden_ok),
+                len(items),
+            ),
+        }
+        for capability, items in sorted(grouped.items())
+    }
+
+
+def _case_capability(case: PublicBenchmarkCase) -> str:
+    if case.benchmark == LONGMEMEVAL_BENCHMARK_SUITE:
+        question_type = case.metadata.get("question_type")
+        return _longmemeval_capability(question_type)
+    if case.benchmark == LOCOMO_BENCHMARK_SUITE:
+        return _locomo_capability(case.metadata.get("category"))
+    value = case.metadata.get("capability")
+    return _safe_metric_key(value) if isinstance(value, str) else ""
+
+
+def _longmemeval_capability(value: object) -> str:
+    normalized = _safe_metric_key(value)
+    if not normalized:
+        return ""
+    return {
+        "single_session_user": "information_extraction",
+        "single_session_assistant": "information_extraction",
+        "single_session_preference": "information_extraction",
+        "multi_session": "multi_session_reasoning",
+        "temporal_reasoning": "temporal_reasoning",
+        "knowledge_update": "knowledge_update",
+    }.get(normalized, normalized)
+
+
+def _locomo_capability(value: object) -> str:
+    if isinstance(value, int):
+        return f"locomo_category_{value}"
+    if isinstance(value, float) and value.is_integer():
+        return f"locomo_category_{int(value)}"
+    normalized = _safe_metric_key(value)
+    return f"locomo_{normalized}" if normalized else ""
+
+
+def _safe_metric_key(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    normalized = value.strip().casefold().replace("-", "_").replace(" ", "_")
+    return "".join(char for char in normalized if char.isalnum() or char == "_").strip("_")
 
 
 def _ratio(numerator: int, denominator: int) -> float:
