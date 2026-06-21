@@ -482,6 +482,24 @@ def test_multimodal_production_goal_audit_rejects_stale_report_commits(
         for failure in result.failures
     )
     assert any("Live provider proof must be generated" in failure for failure in result.failures)
+    assert result.blocked_requirements == (
+        {
+            "area": "live_provider_proof",
+            "blocking_requirements": ["current_commit_live_provider_proof"],
+            "component": "provider_key",
+            "downstream_checks": [
+                "live_provider_current_commit",
+                "live_provider_credential_configured_for_rerun",
+            ],
+            "operator_action": "configure_provider_credential",
+            "reason": "live_provider_proof_stale_without_credential",
+            "user_retryable": False,
+        },
+    )
+    assert result.not_evaluable_checks == (
+        "live_provider_current_commit",
+        "live_provider_credential_configured_for_rerun",
+    )
 
 
 def test_multimodal_production_goal_audit_rejects_stale_provider_contract(

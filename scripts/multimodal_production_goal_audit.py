@@ -271,6 +271,8 @@ def run_goal_audit(
         frontend=frontend,
         docker=docker,
         provider=provider,
+        current_commit=current_commit,
+        environment=environment,
     )
     return GoalAuditResult(
         ok=all(checks.values()),
@@ -1173,6 +1175,8 @@ def _blocked_requirements(
     frontend: Mapping[str, object] | None,
     docker: Mapping[str, object] | None,
     provider: Mapping[str, object] | None,
+    current_commit: str,
+    environment: Mapping[str, object],
 ) -> tuple[dict[str, object], ...]:
     blocked: list[dict[str, object]] = []
     frontend_blocker = _proof_blocker(
@@ -1225,7 +1229,43 @@ def _blocked_requirements(
         )
         provider_blocker["downstream_checks"] = list(_provider_downstream_checks(provider))
         blocked.append(provider_blocker)
+    else:
+        stale_provider_blocker = _stale_provider_proof_blocker(
+            provider,
+            current_commit=current_commit,
+            environment=environment,
+        )
+        if stale_provider_blocker is not None:
+            blocked.append(stale_provider_blocker)
     return tuple(blocked)
+
+
+def _stale_provider_proof_blocker(
+    report: Mapping[str, object] | None,
+    *,
+    current_commit: str,
+    environment: Mapping[str, object],
+) -> dict[str, object] | None:
+    if not isinstance(report, Mapping) or report.get("ok") is not True:
+        return None
+    git = report.get("git")
+    report_commit = git.get("commit") if isinstance(git, Mapping) else None
+    if not current_commit or report_commit == current_commit:
+        return None
+    if environment.get("provider_credential_configured") is True:
+        return None
+    return {
+        "area": "live_provider_proof",
+        "component": "provider_key",
+        "reason": "live_provider_proof_stale_without_credential",
+        "operator_action": "configure_provider_credential",
+        "user_retryable": False,
+        "blocking_requirements": ["current_commit_live_provider_proof"],
+        "downstream_checks": [
+            "live_provider_current_commit",
+            "live_provider_credential_configured_for_rerun",
+        ],
+    }
 
 
 def _proof_blocker(
