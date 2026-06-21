@@ -530,10 +530,18 @@ def test_public_memory_benchmark_indexes_official_locomo_visual_queries(
     session_doc = next(
         document for document in case.documents if document.source_type == "locomo_session"
     )
+    turn_doc = next(
+        document for document in case.documents if document.source_type == "locomo_turn"
+    )
     result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
 
     assert "D1:12 Melanie image caption: a photo of a painting" in session_doc.text
     assert "D1:12 Melanie visual query: painting sunrise" in session_doc.text
+    assert turn_doc.source_external_id == "locomo:conv-visual-query-mini:session_1:D1:12:turn"
+    assert "session_1 turn D1:12" in turn_doc.text
+    assert "D1:12 Melanie: I made something new." in turn_doc.text
+    assert "image caption: a photo of a painting" in turn_doc.text
+    assert "visual query: painting sunrise" in turn_doc.text
     assert result["ok"] is True
 
 

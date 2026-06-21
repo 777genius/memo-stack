@@ -869,8 +869,38 @@ def _official_locomo_documents(
                 )
             )
     documents.extend(_official_locomo_observation_documents(raw, sample_id=sample_id))
+    documents.extend(_official_locomo_turn_documents(raw, sample_id=sample_id))
     documents.extend(_official_locomo_session_summary_documents(raw, sample_id=sample_id))
     documents.extend(_official_locomo_event_summary_documents(raw, sample_id=sample_id))
+    return tuple(documents)
+
+
+def _official_locomo_turn_documents(
+    raw: Mapping[str, object],
+    *,
+    sample_id: str,
+) -> tuple[BenchmarkDocumentInput, ...]:
+    turns_by_session = _official_locomo_session_turns(raw)
+    documents: list[BenchmarkDocumentInput] = []
+    conversation = raw.get("conversation")
+    conversation_map = conversation if isinstance(conversation, Mapping) else {}
+    for session_key in sorted(turns_by_session, key=_session_sort_key):
+        date_value = conversation_map.get(f"{session_key}_date_time")
+        for turn in turns_by_session[session_key]:
+            lines = [f"{session_key} turn {turn.dia_id}"]
+            if isinstance(date_value, str) and date_value.strip():
+                lines.append(f"{session_key} date: {date_value.strip()}")
+            lines.append(f"{turn.dia_id} {turn.speaker}: {turn.text}")
+            documents.append(
+                BenchmarkDocumentInput(
+                    title=f"LoCoMo {sample_id} {session_key} turn {turn.dia_id}",
+                    text="\n".join(lines),
+                    source_type="locomo_turn",
+                    source_external_id=(
+                        f"locomo:{sample_id}:{session_key}:{turn.dia_id}:turn"
+                    ),
+                )
+            )
     return tuple(documents)
 
 
