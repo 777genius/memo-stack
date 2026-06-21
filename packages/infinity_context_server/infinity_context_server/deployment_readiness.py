@@ -62,6 +62,7 @@ def build_storage_deployment_readiness(
             and configured
             and backup_policy_configured
             and maintenance_enabled
+            and cleanup_apply_enabled
             and migration_runner_required
         ),
         "hosted_team_production_ready": (
@@ -71,6 +72,7 @@ def build_storage_deployment_readiness(
             and backup_policy_configured
             and object_lifecycle_policy_configured
             and maintenance_enabled
+            and cleanup_apply_enabled
             and migration_runner_required
         ),
         "schema_management_mode": schema_management_mode,

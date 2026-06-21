@@ -22,6 +22,7 @@ from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES,
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
 )
+from infinity_context_core.application.asset_upload_policy import BLOCKED_UPLOAD_EXTENSIONS
 from infinity_context_core.application.extraction_resource_policy import (
     EXTRACTION_ARCHIVE_RESOURCE_POLICY_VERSION,
     EXTRACTION_RESOURCE_LIMIT_CAPS,
@@ -755,6 +756,8 @@ def _file_type_detection_contract_payload() -> dict[str, object]:
         },
         "binary_executable_policy": {
             "reject_magic_signatures": True,
+            "reject_blocked_filename_extensions": True,
+            "blocked_filename_extensions": list(BLOCKED_UPLOAD_EXTENSIONS),
             "blocked_magic_content_types": [
                 "application/x-elf",
                 "application/x-mach-binary",

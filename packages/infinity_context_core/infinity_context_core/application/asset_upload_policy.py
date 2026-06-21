@@ -24,17 +24,31 @@ _ARCHIVE_RATIO_MIN_UNCOMPRESSED_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_IMAGE_PIXELS = 50_000_000
 _BLOCKED_EXTENSIONS = {
     ".app",
+    ".asp",
+    ".aspx",
     ".bat",
+    ".cgi",
     ".cmd",
     ".com",
     ".dmg",
     ".dll",
     ".exe",
+    ".jsp",
+    ".jspx",
     ".msi",
+    ".phar",
+    ".php",
+    ".php3",
+    ".php4",
+    ".php5",
+    ".php7",
+    ".phtml",
     ".ps1",
     ".scr",
     ".sh",
+    ".war",
 }
+BLOCKED_UPLOAD_EXTENSIONS = tuple(sorted(_BLOCKED_EXTENSIONS))
 _BLOCKED_MAGIC_CONTENT_TYPES = {
     "application/x-elf",
     "application/x-mach-binary",

@@ -446,6 +446,14 @@ def _quality_golden_cases(
                 ("citations_rendered", "gte", 1),
                 ("retrieval_sources_used", "contains", "canonical_anchors"),
             ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "anchor"),
+                    ("text", "contains", "project: Project Atlas"),
+                    ("diagnostics.retrieval_source", "eq", "canonical_anchors"),
+                    ("diagnostics.anchor_kind", "eq", "project"),
+                ),
+            ),
             required_source_ref_matches=(
                 (
                     ("source_type", "eq", "asset_extraction"),
@@ -484,6 +492,14 @@ def _quality_golden_cases(
             required_diagnostics=(
                 ("anchors_used", "gte", 1),
                 ("retrieval_sources_used", "contains", "canonical_anchors"),
+            ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "anchor"),
+                    ("text", "contains", "event: Atlas billing call"),
+                    ("diagnostics.retrieval_source", "eq", "canonical_anchors"),
+                    ("diagnostics.anchor_kind", "eq", "event"),
+                ),
             ),
             required_source_ref_matches=(
                 (
@@ -753,6 +769,55 @@ def _quality_golden_cases(
                     ("time_range_ms.end", "eq", 5400),
                     ("bbox", "eq", [12.0, 32.0, 300.0, 88.0]),
                     ("quote_preview", "contains", "Project Atlas screenshot"),
+                    ("label", "contains", "bbox"),
+                ),
+            ),
+        ),
+        EvalCase(
+            case_id="multimodal_visual_region_query_requires_bbox",
+            category="documents",
+            space_id=space_id,
+            memory_scope_ids=(alpha_memory_scope_id,),
+            query="where on screen is Project Atlas screenshot invoice owner Alex",
+            must_include=("QUALITY_MM_CONTEXT",),
+            must_not_include=("summary has no screen box",),
+            max_facts=0,
+            max_chunks=0,
+            max_evidence_items=1,
+            required_diagnostics=(
+                ("artifact_evidence_items_used", "gte", 1),
+                ("artifact_evidence_visual_region_query_drop_count", "gte", 1),
+                ("artifact_evidence_coordinate_signal_count", "gte", 1),
+                ("source_refs_with_bbox_count", "gte", 1),
+                ("retrieval_sources_used", "contains", "artifact_evidence"),
+                ("context_requirement_coverage.status", "eq", "satisfied"),
+                (
+                    "context_requirement_coverage.covered_evidence_features",
+                    "contains",
+                    "visual_region",
+                ),
+            ),
+            required_item_matches=(
+                (
+                    ("item_type", "eq", "extraction_artifact"),
+                    ("diagnostics.retrieval_source", "eq", "artifact_evidence"),
+                    ("diagnostics.evidence_kind", "eq", "ocr_region"),
+                    ("diagnostics.evidence_modality", "eq", "image"),
+                ),
+            ),
+            required_source_ref_matches=(
+                (
+                    ("source_type", "eq", "extraction_artifact"),
+                    ("chunk_id", "eq", "quality-mm-manifest-ocr-owner"),
+                    ("bbox", "eq", [12.0, 32.0, 300.0, 88.0]),
+                    ("quote_preview", "contains", "Project Atlas screenshot"),
+                ),
+            ),
+            required_citation_matches=(
+                (
+                    ("source_type", "eq", "extraction_artifact"),
+                    ("chunk_id", "eq", "quality-mm-manifest-ocr-owner"),
+                    ("bbox", "eq", [12.0, 32.0, 300.0, 88.0]),
                     ("label", "contains", "bbox"),
                 ),
             ),

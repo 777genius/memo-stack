@@ -574,6 +574,31 @@ def test_create_asset_rejects_archive_bomb_before_blob_write() -> None:
     asyncio.run(run())
 
 
+def test_create_asset_rejects_server_side_script_extension_before_blob_write() -> None:
+    async def run() -> None:
+        assets = FakeAssetRepository()
+        storage = FakeBlobStorage()
+
+        try:
+            await _create_use_case(assets=assets, storage=storage).execute(
+                _command(
+                    filename="avatar.PHTML",
+                    content_type="image/jpeg",
+                    content=b"\xff\xd8\xff<?php echo getenv('SECRET_TOKEN'); ?>",
+                )
+            )
+        except MemoryIngressLimitError as exc:
+            assert "extension is blocked" in str(exc)
+            assert "SECRET_TOKEN" not in str(exc)
+        else:
+            raise AssertionError("expected MemoryIngressLimitError")
+
+        assert storage.writes == []
+        assert assets.created == []
+
+    asyncio.run(run())
+
+
 def test_create_asset_rejects_archive_single_large_member_before_blob_write() -> None:
     async def run() -> None:
         assets = FakeAssetRepository()

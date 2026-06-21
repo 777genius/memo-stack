@@ -197,3 +197,151 @@ def test_media_manifest_clock_time_query_keeps_normal_text_relevance() -> None:
     assert len(items) == 1
     assert diagnostics["artifact_evidence_time_query_count"] == 0
     assert items[0].source_refs[0].time_start_ms is None
+
+
+def test_media_manifest_visual_region_query_requires_bbox() -> None:
+    artifact = ExtractionArtifact.create(
+        artifact_id=ExtractionArtifactId("artifact_visual_region_manifest"),
+        job_id=AssetExtractionJobId("job_visual_region_manifest"),
+        asset_id=MemoryAssetId("asset_visual_region_manifest"),
+        artifact_type="media_manifest",
+        storage_backend="local",
+        storage_key="scope/job/visual-region-media-manifest.json",
+        sha256_hex="d" * 64,
+        byte_size=512,
+        now=datetime(2026, 6, 20, tzinfo=UTC),
+    )
+    diagnostics: dict[str, object] = {}
+
+    items = context_items_from_media_manifest_payload(
+        artifact=artifact,
+        job_id="job_visual_region_manifest",
+        memory_scope_id="memory_scope_default",
+        payload={
+            "schema_version": "infinity_context.multimodal_manifest.v1",
+            "evidence_items": [
+                {
+                    "id": "summary-without-bbox",
+                    "kind": "ocr_region",
+                    "modality": "image",
+                    "text_preview": "Atlas approval button is visible on the screenshot.",
+                    "confidence": 0.99,
+                },
+                {
+                    "id": "region-with-bbox",
+                    "kind": "ocr_region",
+                    "modality": "image",
+                    "text_preview": "Atlas approval button is visible on the screenshot.",
+                    "bbox": [12.0, 24.0, 240.0, 96.0],
+                    "confidence": 0.82,
+                },
+            ],
+        },
+        query=BuildContextQuery(
+            space_id=SpaceId("space_default"),
+            memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+            query="where on screen is the Atlas approval button",
+            max_evidence_items=5,
+        ),
+        diagnostics=diagnostics,
+    )
+
+    assert len(items) == 1
+    assert items[0].source_refs[0].chunk_id == "region-with-bbox"
+    assert items[0].source_refs[0].bbox == (12.0, 24.0, 240.0, 96.0)
+    assert diagnostics["artifact_evidence_items_considered"] == 2
+    assert diagnostics["artifact_evidence_visual_region_query_drop_count"] == 1
+    assert diagnostics["artifact_evidence_coordinate_signal_count"] == 1
+
+
+def test_media_manifest_ocr_text_query_does_not_require_bbox() -> None:
+    artifact = ExtractionArtifact.create(
+        artifact_id=ExtractionArtifactId("artifact_ocr_text_manifest"),
+        job_id=AssetExtractionJobId("job_ocr_text_manifest"),
+        asset_id=MemoryAssetId("asset_ocr_text_manifest"),
+        artifact_type="media_manifest",
+        storage_backend="local",
+        storage_key="scope/job/ocr-text-media-manifest.json",
+        sha256_hex="f" * 64,
+        byte_size=512,
+        now=datetime(2026, 6, 20, tzinfo=UTC),
+    )
+    diagnostics: dict[str, object] = {}
+
+    items = context_items_from_media_manifest_payload(
+        artifact=artifact,
+        job_id="job_ocr_text_manifest",
+        memory_scope_id="memory_scope_default",
+        payload={
+            "schema_version": "infinity_context.multimodal_manifest.v1",
+            "evidence_items": [
+                {
+                    "id": "ocr-text-without-bbox",
+                    "kind": "ocr_region",
+                    "modality": "image",
+                    "text_preview": "OCR text says Atlas renewal is approved.",
+                    "confidence": 0.9,
+                },
+            ],
+        },
+        query=BuildContextQuery(
+            space_id=SpaceId("space_default"),
+            memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+            query="what OCR text says Atlas renewal",
+            max_evidence_items=5,
+        ),
+        diagnostics=diagnostics,
+    )
+
+    assert len(items) == 1
+    assert items[0].source_refs[0].chunk_id == "ocr-text-without-bbox"
+    assert items[0].source_refs[0].bbox is None
+    assert diagnostics["artifact_evidence_visual_region_query_drop_count"] == 0
+
+
+def test_media_manifest_document_location_query_accepts_snippet_char_range() -> None:
+    artifact = ExtractionArtifact.create(
+        artifact_id=ExtractionArtifactId("artifact_document_location_manifest"),
+        job_id=AssetExtractionJobId("job_document_location_manifest"),
+        asset_id=MemoryAssetId("asset_document_location_manifest"),
+        artifact_type="media_manifest",
+        storage_backend="local",
+        storage_key="scope/job/document-location-media-manifest.json",
+        sha256_hex="e" * 64,
+        byte_size=512,
+        now=datetime(2026, 6, 20, tzinfo=UTC),
+    )
+    diagnostics: dict[str, object] = {}
+
+    items = context_items_from_media_manifest_payload(
+        artifact=artifact,
+        job_id="job_document_location_manifest",
+        memory_scope_id="memory_scope_default",
+        payload={
+            "schema_version": "infinity_context.multimodal_manifest.v1",
+            "evidence_items": [
+                {
+                    "id": "doc-char-supported",
+                    "kind": "document_chunk",
+                    "modality": "document",
+                    "text_preview": (
+                        "Section notes say Atlas renewal is approved by finance."
+                    ),
+                    "confidence": 0.9,
+                },
+            ],
+        },
+        query=BuildContextQuery(
+            space_id=SpaceId("space_default"),
+            memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+            query="which paragraph in the document mentions Atlas renewal",
+            max_evidence_items=5,
+        ),
+        diagnostics=diagnostics,
+    )
+
+    assert len(items) == 1
+    assert items[0].source_refs[0].chunk_id == "doc-char-supported"
+    assert items[0].source_refs[0].char_start is not None
+    assert items[0].source_refs[0].char_end is not None
+    assert diagnostics["artifact_evidence_document_location_query_drop_count"] == 0

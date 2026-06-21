@@ -34,6 +34,7 @@ SUITE = "infinity-context-multimodal-docker-live-proof"
 PROJECT_PREFIX = "infinity-context-multimodal-"
 DEFAULT_REPORT = ".e2e-artifacts/multimodal-docker-live-proof.json"
 DEFAULT_MIN_HOST_FREE_BYTES = 2 * 1024 * 1024 * 1024
+DEFAULT_MAX_BUILD_RECLAIMABLE_BYTES = 20 * 1000**3
 
 RunCommand = Callable[[list[str]], subprocess.CompletedProcess[str]]
 RequestJson = Callable[..., dict[str, Any]]
@@ -170,6 +171,20 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-build-reclaimable-bytes",
+        type=int,
+        default=int(
+            os.environ.get(
+                "MEMORY_MULTIMODAL_DOCKER_MAX_BUILD_RECLAIMABLE_BYTES",
+                str(DEFAULT_MAX_BUILD_RECLAIMABLE_BYTES),
+            )
+        ),
+        help=(
+            "Fail before compose build when docker system df reports at least this "
+            "many reclaimable bytes. Set 0 to disable."
+        ),
+    )
+    parser.add_argument(
         "--report-out",
         default=os.environ.get(
             "MEMORY_MULTIMODAL_DOCKER_PROOF_REPORT_OUT",
@@ -302,6 +317,28 @@ def _prove_docker_disk_preflight(
             degraded=True,
             diagnostics=diagnostics,
         )
+    docker_df = diagnostics["docker_system_df"]
+    reclaimable = int(docker_df.get("total_reclaimable_bytes") or 0)
+    max_reclaimable = max(0, int(args.max_build_reclaimable_bytes))
+    reclaimable_gate_enforced = _reclaimable_gate_enforced(args, env)
+    if (
+        not args.no_build
+        and reclaimable_gate_enforced
+        and max_reclaimable
+        and reclaimable >= max_reclaimable
+    ):
+        raise DockerProofFailure(
+            "docker_disk_preflight",
+            "docker_reclaimable_space_requires_cleanup",
+            (
+                "Docker proof build is likely to fail because Docker reports too much "
+                "reclaimable space before image build: "
+                f"reclaimable_bytes={reclaimable}; "
+                f"max_build_reclaimable_bytes={max_reclaimable}"
+            ),
+            degraded=True,
+            diagnostics=diagnostics,
+        )
     warnings = _docker_disk_preflight_warnings(diagnostics)
     _mark_component(
         report,
@@ -309,6 +346,7 @@ def _prove_docker_disk_preflight(
         "succeeded",
         diagnostics=diagnostics,
         warnings=warnings,
+        reclaimable_gate_enforced=reclaimable_gate_enforced,
     )
 
 
@@ -453,7 +491,7 @@ def _detect_compose_error_codes(message: str, compose_logs: dict[str, Any]) -> l
             values.append(value)
     lowered = "\n".join(values).lower()
     detected: list[str] = []
-    if "no space left on device" in lowered:
+    if "no space left on device" in lowered or "enough free space" in lowered:
         detected.append("no_space_left_on_device")
     if "address already in use" in lowered or "port is already allocated" in lowered:
         detected.append("port_conflict")
@@ -483,13 +521,14 @@ def _prove_container_dependencies(
         "ffmpeg": "ffmpeg -version | head -n 1",
         "ffprobe": "ffprobe -version | head -n 1",
         "tesseract": "tesseract --version | head -n 1",
-        "docling": (
+    }
+    if _expects_docling_dependency(args, env):
+        checks["docling"] = (
             "python - <<'PY'\n"
             "import importlib.metadata\n"
             "print(importlib.metadata.version('docling'))\n"
             "PY"
-        ),
-    }
+        )
     versions: dict[str, str] = {}
     for name, shell in checks.items():
         command = [
@@ -1592,7 +1631,29 @@ def _compose_env(args: argparse.Namespace, *, ports: dict[str, int], token: str)
             else os.environ.get("MEMORY_TRANSCRIPTION_PROVIDER", "openai"),
         }
     )
+    if args.profile == "lite":
+        env.setdefault("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS", "dev")
+        env.setdefault("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS", "dev")
+        env.setdefault("INFINITY_CONTEXT_PREINSTALL_TORCH_CPU", "false")
     return env
+
+
+def _expects_docling_dependency(args: argparse.Namespace, env: dict[str, str]) -> bool:
+    if args.profile == "full":
+        return True
+    return _extras_include(env.get("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS"), "docling") or (
+        _extras_include(env.get("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS"), "docling")
+    )
+
+
+def _extras_include(value: str | None, extra: str) -> bool:
+    if not value:
+        return False
+    return extra in {item.strip() for item in value.split(",") if item.strip()}
+
+
+def _reclaimable_gate_enforced(args: argparse.Namespace, env: dict[str, str]) -> bool:
+    return args.profile != "lite" or _expects_docling_dependency(args, env)
 
 
 def _ports(args: argparse.Namespace) -> dict[str, int]:
@@ -1888,7 +1949,11 @@ def _recovery_policy(*, status: str, reason: str | None) -> dict[str, Any]:
             "user_retryable": False,
             "operator_action": "install_docker_cli",
         }
-    if "no_space_left_on_device" in normalized or "disk_space_insufficient" in normalized:
+    if (
+        "no_space_left_on_device" in normalized
+        or "disk_space_insufficient" in normalized
+        or "reclaimable_space_requires_cleanup" in normalized
+    ):
         return {
             "user_retryable": True,
             "operator_action": "free_docker_disk_space",

@@ -169,7 +169,7 @@ def _required_diagnostic_mismatches(
     mismatches: list[dict[str, object]] = []
     for requirement in required:
         key, operator, expected = _parse_diagnostic_requirement(requirement)
-        actual = diagnostics.get(key)
+        actual = _mapping_value(diagnostics, key)
         if _diagnostic_requirement_matches(
             actual,
             operator=operator,

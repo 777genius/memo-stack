@@ -116,6 +116,88 @@ def test_approved_link_expands_media_manifest_artifact_evidence() -> None:
     assert item.source_refs[0].bbox == (0.0, 0.0, 320.0, 180.0)
 
 
+def test_approved_artifact_link_drops_deleted_backing_asset() -> None:
+    now = datetime(2026, 6, 19, tzinfo=UTC)
+    link = MemoryContextLink.create(
+        link_id=MemoryContextLinkId("context_link_deleted_asset_artifact"),
+        space_id=SpaceId("space_client_app"),
+        memory_scope_id=MemoryScopeId("memory_scope_default"),
+        source_type="anchor",
+        source_id="anchor_event_alex",
+        target_type="extraction_artifact",
+        target_id="artifact_manifest_1",
+        relation_type="evidence_of",
+        confidence="high",
+        reason="deleted assets must not re-enter context through old artifact links",
+        now=now,
+    )
+    uow = _LinkedArtifactUnitOfWork(
+        now=now,
+        link=link,
+        asset=_asset(now=now).delete(now=now),
+    )
+    expander = ApprovedContextLinkExpander(
+        uow_factory=lambda: uow,
+        hydrator=object(),
+        blob_storage=_BlobStorage({"artifact/manifest.json": b"{}"}),
+    )
+
+    result = asyncio.run(
+        expander.collect(
+            items=(_visible_anchor_item(),),
+            query=_artifact_query(),
+            memory_scope_ids=("memory_scope_default",),
+        )
+    )
+
+    assert result.items == ()
+    assert result.diagnostics["approved_context_links_considered"] == 1
+    assert result.diagnostics["approved_context_linked_extraction_artifacts_used"] == 0
+    assert result.diagnostics["stale_context_linked_extraction_artifact_drop_count"] == 1
+    assert (
+        result.diagnostics["approved_context_linked_extraction_artifact_manifest_items_used"] == 0
+    )
+
+
+def test_approved_artifact_link_drops_non_succeeded_extraction_job() -> None:
+    now = datetime(2026, 6, 19, tzinfo=UTC)
+    link = MemoryContextLink.create(
+        link_id=MemoryContextLinkId("context_link_failed_job_artifact"),
+        space_id=SpaceId("space_client_app"),
+        memory_scope_id=MemoryScopeId("memory_scope_default"),
+        source_type="anchor",
+        source_id="anchor_event_alex",
+        target_type="extraction_artifact",
+        target_id="artifact_manifest_1",
+        relation_type="evidence_of",
+        confidence="high",
+        reason="failed extraction artifacts must remain stale evidence",
+        now=now,
+    )
+    uow = _LinkedArtifactUnitOfWork(now=now, link=link, job=_failed_job(now=now))
+    expander = ApprovedContextLinkExpander(
+        uow_factory=lambda: uow,
+        hydrator=object(),
+        blob_storage=_BlobStorage({"artifact/manifest.json": b"{}"}),
+    )
+
+    result = asyncio.run(
+        expander.collect(
+            items=(_visible_anchor_item(),),
+            query=_artifact_query(),
+            memory_scope_ids=("memory_scope_default",),
+        )
+    )
+
+    assert result.items == ()
+    assert result.diagnostics["approved_context_links_considered"] == 1
+    assert result.diagnostics["approved_context_linked_extraction_artifacts_used"] == 0
+    assert result.diagnostics["stale_context_linked_extraction_artifact_drop_count"] == 1
+    assert (
+        result.diagnostics["approved_context_linked_extraction_artifact_manifest_items_used"] == 0
+    )
+
+
 def test_approved_asset_link_expands_latest_media_manifest_evidence() -> None:
     now = datetime(2026, 6, 19, tzinfo=UTC)
     link = MemoryContextLink.create(
@@ -376,13 +458,16 @@ class _LinkedArtifactUnitOfWork:
         now: datetime,
         link: MemoryContextLink,
         anchor: MemoryAnchor | None = None,
+        asset: MemoryAsset | None = None,
+        artifact: ExtractionArtifact | None = None,
+        job: AssetExtractionJob | None = None,
     ) -> None:
         self.context_links = _ContextLinksRepository(link)
-        self.assets = _AssetsRepository(_asset(now=now))
+        self.assets = _AssetsRepository(asset or _asset(now=now))
         self.anchors = _AnchorsRepository(anchor or _anchor(now=now))
         self.asset_extractions = _AssetExtractionsRepository(
-            artifact=_artifact(now=now),
-            job=_job(now=now),
+            artifact=artifact or _artifact(now=now),
+            job=job or _job(now=now),
         )
 
     async def __aenter__(self) -> "_LinkedArtifactUnitOfWork":
@@ -525,6 +610,27 @@ def _job(*, now: datetime) -> AssetExtractionJob:
     )
 
 
+def _failed_job(*, now: datetime) -> AssetExtractionJob:
+    return (
+        AssetExtractionJob.create(
+            job_id=AssetExtractionJobId("extract_video_1"),
+            asset_id=MemoryAssetId("asset_video_1"),
+            space_id=SpaceId("space_client_app"),
+            memory_scope_id=MemoryScopeId("memory_scope_default"),
+            parser_profile="standard_local",
+            parser_config_hash="profile_hash",
+            source_sha256_hex="a" * 64,
+            now=now,
+        )
+        .mark_running(now=now)
+        .mark_failed(
+            now=now,
+            code="parser_failed",
+            message="Parser failed before producing valid evidence",
+        )
+    )
+
+
 def _artifact(*, now: datetime) -> ExtractionArtifact:
     return ExtractionArtifact.create(
         artifact_id=ExtractionArtifactId("artifact_manifest_1"),
@@ -540,4 +646,26 @@ def _artifact(*, now: datetime) -> ExtractionArtifact:
             "filename": "alex-call.manifest.json",
             "content_type": "application/json",
         },
+    )
+
+
+def _visible_anchor_item() -> ContextItem:
+    return ContextItem(
+        item_id="anchor_event_alex",
+        item_type="anchor",
+        text="event: Sprint review. with: Alex",
+        score=0.86,
+        source_refs=(),
+        diagnostics={"memory_scope_id": "memory_scope_default"},
+    )
+
+
+def _artifact_query() -> BuildContextQuery:
+    return BuildContextQuery(
+        space_id=SpaceId("space_client_app"),
+        memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+        query="Alex last week",
+        max_facts=0,
+        max_chunks=0,
+        max_evidence_items=4,
     )

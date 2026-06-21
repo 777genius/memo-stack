@@ -433,6 +433,12 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
     assert any(
         "up" in command and "infinity_context_extraction_worker" in command for command in commands
     )
+    dependency_commands = [
+        " ".join(command)
+        for command in commands
+        if "exec" in command and "infinity_context_server" in command
+    ]
+    assert not any("docling" in command for command in dependency_commands)
     assert any("down" in command and "-v" in command for command in commands)
     assert any(command[:3] == ["docker", "ps", "-aq"] for command in commands)
     assert report["components"]["cleanup"]["status"] == "succeeded"
@@ -720,6 +726,15 @@ def test_docker_live_proof_reports_compose_up_no_space_with_logs_and_cleanup(
     assert any("down" in command for command in commands)
 
 
+def test_compose_error_detection_handles_apt_free_space_phrase() -> None:
+    detected = proof._detect_compose_error_codes(
+        "E: You don't have enough free space in /var/cache/apt/archives/.",
+        {},
+    )
+
+    assert detected == ["no_space_left_on_device"]
+
+
 def test_docker_live_proof_fails_fast_when_host_disk_is_below_threshold(
     monkeypatch,
 ) -> None:
@@ -775,6 +790,103 @@ def test_docker_live_proof_fails_fast_when_host_disk_is_below_threshold(
     assert report["components"]["docker_disk_preflight"]["status"] == "degraded"
     assert report["components"]["cleanup"]["status"] == "unknown"
     assert not any("up" in command for command in commands)
+
+
+def test_docker_live_proof_fails_fast_when_build_reclaimable_space_is_high(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(proof, "_docker_context_show", lambda _command: "desktop-linux")
+    monkeypatch.setattr(proof, "_host_disk_usage", lambda _path: _disk_usage())
+    monkeypatch.setenv("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS", "dev,docling")
+    monkeypatch.setenv("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS", "dev,docling")
+    args = proof._parse_args(
+        [
+            "--project-name",
+            "infinity-context-proof-test",
+            "--max-build-reclaimable-bytes",
+            "20000000000",
+            "--server-port",
+            "18181",
+            "--postgres-port",
+            "18182",
+            "--qdrant-port",
+            "18183",
+            "--neo4j-http-port",
+            "18184",
+            "--neo4j-bolt-port",
+            "18185",
+        ]
+    )
+    commands: list[list[str]] = []
+
+    def run_cmd(command: list[str]) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if "config" in command:
+            return _completed(command)
+        if command[:2] == ["docker", "info"]:
+            return _completed(command, stdout="29.0.0\n")
+        if command[:3] == ["docker", "system", "df"]:
+            return _completed(command, stdout=_docker_system_df_high_reclaimable_output())
+        raise AssertionError(f"Unexpected command: {command}")
+
+    report = proof.run_multimodal_docker_live_proof(
+        args,
+        run_cmd=run_cmd,
+        request_json=lambda *_args, **_kwargs: {},
+        sleep=lambda _: None,
+    )
+
+    assert report["ok"] is False
+    assert report["failure"]["component"] == "docker_disk_preflight"
+    assert report["failure"]["reason"] == "docker_reclaimable_space_requires_cleanup"
+    assert report["failure"]["operator_action"] == "free_docker_disk_space"
+    assert (
+        report["failure"]["diagnostics"]["docker_system_df"][
+            "total_reclaimable_bytes"
+        ]
+        == 22500000000
+    )
+    assert report["components"]["docker_disk_preflight"]["status"] == "degraded"
+    assert report["components"]["cleanup"]["status"] == "unknown"
+    assert not any("up" in command for command in commands)
+
+
+def test_docker_live_proof_allows_high_reclaimable_for_lean_lite(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(proof, "_host_disk_usage", lambda _path: _disk_usage())
+    monkeypatch.delenv("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS", raising=False)
+    monkeypatch.delenv("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS", raising=False)
+    args = proof._parse_args(
+        [
+            "--profile",
+            "lite",
+            "--max-build-reclaimable-bytes",
+            "20000000000",
+        ]
+    )
+    env = proof._compose_env(args, ports=_proof_ports(), token="proof-token")
+    report = proof._base_report(
+        args,
+        project_name="infinity-context-proof-test",
+        ports=_proof_ports(),
+        token="proof-token",
+    )
+
+    proof._prove_docker_disk_preflight(
+        args,
+        run_cmd=lambda command: _completed(
+            command,
+            stdout=_docker_system_df_high_reclaimable_output(),
+        ),
+        report=report,
+        env=env,
+    )
+
+    component = report["components"]["docker_disk_preflight"]
+    assert component["status"] == "succeeded"
+    assert component["reclaimable_gate_enforced"] is False
+    assert "docker_reclaimable_space_available" in component["warnings"]
 
 
 def test_docker_system_df_parser_bounds_reclaimable_diagnostics() -> None:
@@ -1061,6 +1173,51 @@ def test_makefile_exposes_multimodal_docker_live_proof_target() -> None:
     assert "$(PYTHON) scripts/multimodal_docker_live_proof.py" in makefile
 
 
+def test_compose_exposes_lightweight_lite_extras() -> None:
+    compose = (proof.ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS" in compose
+    assert "INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS" in compose
+
+
+def test_docker_live_proof_sets_lean_lite_extras_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS", raising=False)
+    monkeypatch.delenv("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS", raising=False)
+    monkeypatch.delenv("INFINITY_CONTEXT_PREINSTALL_TORCH_CPU", raising=False)
+    args = proof._parse_args(["--profile", "lite"])
+
+    env = proof._compose_env(args, ports=_proof_ports(), token="proof-token")
+
+    assert env["INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS"] == "dev"
+    assert env["INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS"] == "dev"
+    assert env["INFINITY_CONTEXT_PREINSTALL_TORCH_CPU"] == "false"
+    assert proof._expects_docling_dependency(args, env) is False
+
+
+def test_docker_live_proof_respects_explicit_lite_docling_extras(monkeypatch) -> None:
+    monkeypatch.setenv("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS", "dev,docling")
+    monkeypatch.setenv("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS", "dev,docling")
+    args = proof._parse_args(["--profile", "lite"])
+
+    env = proof._compose_env(args, ports=_proof_ports(), token="proof-token")
+
+    assert env["INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS"] == "dev,docling"
+    assert env["INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS"] == "dev,docling"
+    assert proof._expects_docling_dependency(args, env) is True
+
+
+def test_docker_live_proof_full_profile_keeps_docling_dependency(monkeypatch) -> None:
+    monkeypatch.delenv("INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS", raising=False)
+    monkeypatch.delenv("INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS", raising=False)
+    args = proof._parse_args(["--profile", "full"])
+
+    env = proof._compose_env(args, ports=_proof_ports(), token="proof-token")
+
+    assert "INFINITY_CONTEXT_DOCKER_BUILD_EXTRAS" not in env
+    assert "INFINITY_CONTEXT_LITE_RUNTIME_EXTRAS" not in env
+    assert proof._expects_docling_dependency(args, env) is True
+
+
 def test_command_timeout_prioritizes_docker_compose_over_docker() -> None:
     args = proof._parse_args(
         [
@@ -1146,6 +1303,16 @@ def _completed(
     )
 
 
+def _proof_ports() -> dict[str, int]:
+    return {
+        "server": 18181,
+        "postgres": 18182,
+        "qdrant": 18183,
+        "neo4j_http": 18184,
+        "neo4j_bolt": 18185,
+    }
+
+
 def _disk_usage(
     *,
     total: int = 20_000_000_000,
@@ -1161,4 +1328,13 @@ def _docker_system_df_output() -> str:
         '"TotalCount":"156","Type":"Images"}\n'
         '{"Active":"0","Reclaimable":"343MB","Size":"2.1GB",'
         '"TotalCount":"129","Type":"Build Cache"}\n'
+    )
+
+
+def _docker_system_df_high_reclaimable_output() -> str:
+    return (
+        '{"Active":"14","Reclaimable":"12.5GB (29%)","Size":"44.1GB",'
+        '"TotalCount":"159","Type":"Images"}\n'
+        '{"Active":"14","Reclaimable":"10GB (96%)","Size":"10.2GB",'
+        '"TotalCount":"171","Type":"Local Volumes"}\n'
     )

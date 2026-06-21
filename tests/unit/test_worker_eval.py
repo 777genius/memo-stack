@@ -39,6 +39,7 @@ from infinity_context_server.eval import (
     run_semantic_linking_golden,
     run_small_golden,
 )
+from infinity_context_server.eval_case_catalog import _quality_golden_cases
 from infinity_context_server.eval_constants import (
     LONG_MEMORY_REQUIRED_CASE_IDS,
     QUALITY_GOLDEN_REQUIRED_CASE_IDS,
@@ -1310,6 +1311,39 @@ def test_quality_golden_eval_passes() -> None:
     assert "QUALITY_RESTRICTED_SECRET" not in str(result)
     assert "QUALITY_BETA_ONLY_SECRET" not in str(result)
     assert "Ignore previous instructions" not in str(result)
+
+
+def test_quality_golden_anchor_recall_cases_require_typed_anchor_items() -> None:
+    cases = {
+        case.case_id: case
+        for case in _quality_golden_cases(
+            space_id="space",
+            alpha_memory_scope_id="alpha",
+            beta_memory_scope_id="beta",
+            current_thread_id="thread_current",
+            other_thread_id="thread_other",
+        )
+    }
+
+    project_case = cases["canonical_project_anchor_recall_with_citation"]
+    assert project_case.required_item_matches == (
+        (
+            ("item_type", "eq", "anchor"),
+            ("text", "contains", "project: Project Atlas"),
+            ("diagnostics.retrieval_source", "eq", "canonical_anchors"),
+            ("diagnostics.anchor_kind", "eq", "project"),
+        ),
+    )
+
+    event_case = cases["canonical_event_anchor_recall_by_identity"]
+    assert event_case.required_item_matches == (
+        (
+            ("item_type", "eq", "anchor"),
+            ("text", "contains", "event: Atlas billing call"),
+            ("diagnostics.retrieval_source", "eq", "canonical_anchors"),
+            ("diagnostics.anchor_kind", "eq", "event"),
+        ),
+    )
 
 
 def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:

@@ -103,6 +103,39 @@ def test_required_diagnostics_support_operator_requirements() -> None:
     )
 
 
+def test_required_diagnostics_support_nested_dot_paths() -> None:
+    diagnostics = {
+        "context_requirement_coverage": {
+            "status": "satisfied",
+            "covered_evidence_features": ["citation", "visual_region"],
+        },
+    }
+
+    assert _required_diagnostics_ok(
+        diagnostics,
+        required=(
+            ("context_requirement_coverage.status", "eq", "satisfied"),
+            (
+                "context_requirement_coverage.covered_evidence_features",
+                "contains",
+                "visual_region",
+            ),
+        ),
+    )
+
+    assert _required_diagnostic_mismatches(
+        diagnostics,
+        required=(("context_requirement_coverage.status", "eq", "missing"),),
+    ) == (
+        {
+            "key": "context_requirement_coverage.status",
+            "operator": "eq",
+            "expected": "missing",
+            "actual": "satisfied",
+        },
+    )
+
+
 def test_required_mapping_groups_match_source_refs_and_nested_citations() -> None:
     source_refs = (
         {

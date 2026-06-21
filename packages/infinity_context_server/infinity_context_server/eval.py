@@ -1209,6 +1209,17 @@ def _seed_quality_media_manifest_artifact(
                             "confidence": 0.93,
                         },
                         {
+                            "id": "quality-mm-manifest-owner-no-bbox",
+                            "kind": "ocr_region",
+                            "modality": "image",
+                            "text_preview": (
+                                "QUALITY_MM_CONTEXT: Project Atlas screenshot invoice "
+                                "owner Alex appears in OCR transcript evidence, but this "
+                                "summary has no screen box."
+                            ),
+                            "confidence": 0.99,
+                        },
+                        {
                             "id": "quality-mm-manifest-decoy",
                             "kind": "ocr_region",
                             "modality": "image",

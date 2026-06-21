@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from json import JSONDecodeError
@@ -69,6 +70,17 @@ _SECRET_MARKERS = (
     "sk-",
     "token=",
     "token:",
+)
+_VISUAL_REGION_QUERY_RE = re.compile(
+    r"\b(?:bbox|box|region)\b|"
+    r"where\s+on\s+screen|"
+    r"област[ьи]|регион|на\s+скрин[еа]|на\s+экране",
+    re.IGNORECASE,
+)
+_DOCUMENT_LOCATION_QUERY_RE = re.compile(
+    r"\b(?:page|paragraph|section)\b|"
+    r"строк[аеуи]?|страниц[аеуы]?|абзац|раздел",
+    re.IGNORECASE,
 )
 
 
@@ -320,13 +332,15 @@ def _context_items_from_manifest(
                 int(diagnostics["artifact_evidence_prompt_injection_drop_count"]) + 1
             )
             continue
+        kind = safe_metadata_text(str(raw_item.get("kind") or "unknown"))
+        modality = safe_metadata_text(str(raw_item.get("modality") or "unknown"))
         relevance = score_query_relevance(
             query=query.query,
             text=" ".join(
                 (
                     text,
-                    str(raw_item.get("kind") or ""),
-                    str(raw_item.get("modality") or ""),
+                    kind,
+                    modality,
                 )
             ),
         )
@@ -347,6 +361,22 @@ def _context_items_from_manifest(
             include_char_range=True,
         )
         source_ref = source_refs[0]
+        missing_coordinate = (
+            _missing_requested_coordinate(
+                query=query.query,
+                kind=kind,
+                modality=modality,
+                source_ref=source_ref,
+            )
+            if require_query_match
+            else None
+        )
+        if missing_coordinate is not None:
+            _increment_diagnostic(
+                diagnostics,
+                f"artifact_evidence_{missing_coordinate}_query_drop_count",
+            )
+            continue
         time_match = media_time_match_for_source_ref(source_ref, time_windows)
         if time_windows and time_match is None and require_query_match:
             diagnostics["artifact_evidence_time_query_drop_count"] = (
@@ -367,8 +397,6 @@ def _context_items_from_manifest(
             )
             continue
         confidence = _confidence(raw_item.get("confidence"))
-        kind = safe_metadata_text(str(raw_item.get("kind") or "unknown"))
-        modality = safe_metadata_text(str(raw_item.get("modality") or "unknown"))
         kind_boost = _evidence_kind_boost(kind)
         modality_boost = _evidence_modality_boost(modality)
         confidence_boost = _confidence_boost(confidence)
@@ -599,6 +627,40 @@ def _coordinate_boost(source_ref: SourceRef) -> float:
     return min(0.03, round(coordinate_count * 0.012, 4))
 
 
+def _missing_requested_coordinate(
+    *,
+    query: str,
+    kind: str,
+    modality: str,
+    source_ref: SourceRef,
+) -> str | None:
+    if (
+        _VISUAL_REGION_QUERY_RE.search(query)
+        and _is_visual_evidence(kind=kind, modality=modality)
+        and source_ref.bbox is None
+    ):
+        return "visual_region"
+    if (
+        _DOCUMENT_LOCATION_QUERY_RE.search(query)
+        and _is_document_evidence(kind=kind, modality=modality)
+        and source_ref.page_number is None
+        and source_ref.char_start is None
+        and source_ref.char_end is None
+    ):
+        return "document_location"
+    return None
+
+
+def _is_visual_evidence(*, kind: str, modality: str) -> bool:
+    normalized = f"{kind} {modality}".casefold()
+    return any(token in normalized for token in ("image", "ocr", "vision", "keyframe"))
+
+
+def _is_document_evidence(*, kind: str, modality: str) -> bool:
+    normalized = f"{kind} {modality}".casefold()
+    return any(token in normalized for token in ("document", "pdf", "page"))
+
+
 def _evidence_kind_boost(kind: str) -> float:
     return _EVIDENCE_KIND_BOOSTS.get(kind.casefold().strip(), 0.0)
 
@@ -652,6 +714,8 @@ def _init_diagnostics(diagnostics: dict[str, object]) -> None:
         "artifact_evidence_time_query_drop_count",
         "artifact_evidence_invalid_time_range_count",
         "artifact_evidence_invalid_bbox_count",
+        "artifact_evidence_visual_region_query_drop_count",
+        "artifact_evidence_document_location_query_drop_count",
         "artifact_evidence_query_drop_count",
         "artifact_evidence_sensitive_drop_count",
         "artifact_evidence_prompt_injection_drop_count",

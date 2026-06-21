@@ -399,14 +399,24 @@ class MarionetteAnchorLifecycleRunner {
       flowRecorder.recordAnchorLifecycleCheck('split_alias');
       _log('split alias into anchor $splitAnchorId');
 
+      final mergeTarget = await infinityContext.call(
+        'infinityContext.createMemoryAnchor',
+        {
+          'memoryScopeExternalRef': config.scopeRef,
+          'kind': 'event',
+          'label': 'Call with Alex about Atlas yesterday $runMarker',
+          'description': 'Target event anchor for automated merge e2e',
+        },
+      );
+      final mergeTargetAnchorId = _field(_map(mergeTarget['anchor']), 'id');
+
       final duplicate = await infinityContext.call(
         'infinityContext.createMemoryAnchor',
         {
           'memoryScopeExternalRef': config.scopeRef,
-          'kind': 'person',
-          'label': 'Alex Script $runMarker Candidate',
-          'aliases': 'AS Candidate $runMarker, Alex Candidate $runMarker',
-          'description': 'Possible duplicate for automated merge e2e',
+          'kind': 'event',
+          'label': 'Call with Alex about Atlas yesterday recap $runMarker',
+          'description': 'Possible duplicate event for automated merge e2e',
         },
       );
       final duplicateAnchorId = _field(_map(duplicate['anchor']), 'id');
@@ -428,14 +438,14 @@ class MarionetteAnchorLifecycleRunner {
         'infinityContext.mergeFirstAnchorSuggestion',
         {
           'sourceAnchorId': duplicateAnchorId,
-          'targetAnchorId': targetAnchorId,
+          'targetAnchorId': mergeTargetAnchorId,
         },
       );
       if (merged['merged'] != true) {
         merged = await infinityContext.call(
           'infinityContext.mergeFirstAnchorSuggestion',
           {
-            'sourceAnchorId': targetAnchorId,
+            'sourceAnchorId': mergeTargetAnchorId,
             'targetAnchorId': duplicateAnchorId,
           },
         );

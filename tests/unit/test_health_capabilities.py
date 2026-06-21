@@ -19,6 +19,7 @@ from infinity_context_adapters.extraction.transcription.openai_adapter import (
     OPENAI_TRANSCRIPTION_SUPPORTED_CONTENT_TYPES,
     OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES,
 )
+from infinity_context_core.application.asset_upload_policy import BLOCKED_UPLOAD_EXTENSIONS
 from infinity_context_core.domain.entities import SourceRef
 from infinity_context_core.domain.errors import MemoryInfrastructureError, MemoryInvariantError
 from infinity_context_core.ports import (
@@ -433,6 +434,8 @@ def test_capabilities_return_noop_adapters() -> None:
         },
         "binary_executable_policy": {
             "reject_magic_signatures": True,
+            "reject_blocked_filename_extensions": True,
+            "blocked_filename_extensions": list(BLOCKED_UPLOAD_EXTENSIONS),
             "blocked_magic_content_types": [
                 "application/x-elf",
                 "application/x-mach-binary",
@@ -911,6 +914,40 @@ def test_capabilities_storage_readiness_warns_when_s3_governance_is_unconfirmed(
         "asset_storage_maintenance_not_enabled",
         "s3_region_not_configured",
     }
+
+
+def test_capabilities_storage_readiness_requires_cleanup_apply_for_production(
+    tmp_path: Path,
+) -> None:
+    payload = _storage_payload(
+        SimpleNamespace(
+            settings=Settings(
+                deploy_profile=DeployProfile.SERVER,
+                database_url=f"sqlite+aiosqlite:///{tmp_path / 'capabilities-s3-cleanup.db'}",
+                auto_create_schema=False,
+                service_token="server-token",
+                qdrant_enabled=False,
+                graphiti_enabled=False,
+                embeddings_enabled=False,
+                asset_storage_backend="s3",
+                asset_storage_s3_bucket="private-memory-bucket",
+                asset_storage_s3_region="us-east-1",
+                asset_storage_maintenance_enabled=True,
+                asset_storage_cleanup_apply_enabled=False,
+                asset_storage_backup_policy_configured=True,
+                asset_storage_object_lifecycle_policy_configured=True,
+            )
+        )
+    )
+
+    readiness = payload["deployment_readiness"]
+    assert readiness["hosted_team_ready"] is True
+    assert readiness["self_host_production_ready"] is False
+    assert readiness["hosted_team_production_ready"] is False
+    assert readiness["maintenance_enabled"] is True
+    assert readiness["cleanup_apply_enabled"] is False
+    assert "asset_storage_cleanup_apply_disabled" in readiness["warnings"]
+    assert "private-memory-bucket" not in repr(payload)
 
 
 def test_capabilities_storage_readiness_reports_external_migration_runner_for_s3(
