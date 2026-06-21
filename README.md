@@ -140,6 +140,12 @@ After install:
 
 ```bash
 export PATH="$HOME/.infinity-context/bin:$PATH"
+infinity-context quickstart --agent codex
+```
+
+Manual local controls remain available:
+
+```bash
 infinity-context up --lite
 infinity-context status
 infinity-context doctor
@@ -147,8 +153,11 @@ infinity-context mcp-config --agent codex
 infinity-context digest "current architecture decisions" --space default --memory_scope default
 ```
 
-`infinity-context mcp-config` redacts the generated local service token by default. Use
-`--include-token` only when intentionally writing a private local config file.
+`infinity-context quickstart` initializes local config, starts the lite Docker
+runtime, waits for readiness and writes an MCP config under
+`~/.infinity-context/generated/`. `quickstart` and `mcp-config` redact the local
+service token by default. Use `--include-token` only when intentionally writing a
+private local config file.
 
 Agent-assisted local setup is also available through MCP, but it is off by
 default so agents do not create files or start background services unexpectedly:

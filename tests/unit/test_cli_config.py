@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 from infinity_context_cli.config import init_local_config, load_config
@@ -42,7 +43,9 @@ def test_mcp_config_redacts_token_by_default(tmp_path: Path) -> None:
     home = tmp_path / "home"
     repo = tmp_path / "repo"
     (repo / "plugins" / "infinity-context-agent-plugin" / "bin").mkdir(parents=True)
-    (repo / "plugins" / "infinity-context-agent-plugin" / "bin" / "infinity-context-mcp").write_text(
+    (
+        repo / "plugins" / "infinity-context-agent-plugin" / "bin" / "infinity-context-mcp"
+    ).write_text(
         "#!/usr/bin/env bash\n",
         encoding="utf-8",
     )
@@ -54,3 +57,15 @@ def test_mcp_config_redacts_token_by_default(tmp_path: Path) -> None:
     assert config.service_token not in rendered
     assert "${MEMORY_MCP_AUTH_TOKEN}" in rendered
     assert written.read_text(encoding="utf-8") == rendered + "\n"
+
+
+def test_mcp_config_with_token_is_private(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = init_local_config(home=home, repo_dir=repo)
+
+    written = write_mcp_config(agent="codex", config=config, include_token=True)
+
+    assert config.service_token in written.read_text(encoding="utf-8")
+    assert stat.S_IMODE(written.stat().st_mode) == 0o600

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,36 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--force", action="store_true")
     init_parser.add_argument("--json", action="store_true")
     init_parser.set_defaults(handler=_cmd_init)
+
+    quickstart_parser = subparsers.add_parser(
+        "quickstart",
+        help="Initialize config, start local runtime, and write MCP config.",
+    )
+    quickstart_parser.add_argument("--home", default=None)
+    quickstart_parser.add_argument("--repo-dir", default=None)
+    quickstart_parser.add_argument("--api-url", default=DEFAULT_API_URL)
+    quickstart_profile = quickstart_parser.add_mutually_exclusive_group()
+    quickstart_profile.add_argument("--lite", action="store_true", help="Start lite stack.")
+    quickstart_profile.add_argument("--full", action="store_true", help="Start full stack.")
+    quickstart_parser.add_argument(
+        "--agent",
+        action="append",
+        choices=sorted(SUPPORTED_AGENTS),
+        default=None,
+        help="Agent config to write. Repeat for multiple agents. Defaults to codex.",
+    )
+    quickstart_parser.add_argument("--all-agents", action="store_true")
+    quickstart_parser.add_argument("--no-start", action="store_true")
+    quickstart_parser.add_argument("--no-wait", action="store_true")
+    quickstart_parser.add_argument("--wait-seconds", type=float, default=90.0)
+    quickstart_parser.add_argument("--force", action="store_true")
+    quickstart_parser.add_argument(
+        "--include-token",
+        action="store_true",
+        help="Write private MCP configs with the local service token.",
+    )
+    quickstart_parser.add_argument("--json", action="store_true")
+    quickstart_parser.set_defaults(handler=_cmd_quickstart)
 
     up_parser = subparsers.add_parser("up", help="Start local Infinity Context.")
     compose_profile = up_parser.add_mutually_exclusive_group()
@@ -214,6 +245,67 @@ def _cmd_init(args: argparse.Namespace) -> int:
     }
     _print_payload(payload, as_json=args.json)
     return 0
+
+
+def _cmd_quickstart(args: argparse.Namespace) -> int:
+    current = load_config()
+    repo_dir = Path(args.repo_dir).expanduser() if args.repo_dir else current.repo_dir
+    home = Path(args.home).expanduser() if args.home else current.home
+    config = init_local_config(
+        home=home,
+        repo_dir=repo_dir,
+        api_url=args.api_url,
+        force=args.force,
+    )
+    compose_profile = "full" if args.full else "lite"
+    runtime_result = None
+    if not args.no_start:
+        runtime_result = DockerComposeRuntime(config=config).up(compose_profile)
+    status = None
+    if runtime_result is not None and runtime_result.ok:
+        status = (
+            _status_payload(config)
+            if args.no_wait
+            else _wait_for_status(config, timeout_seconds=args.wait_seconds)
+        )
+    agents = sorted(SUPPORTED_AGENTS) if args.all_agents else sorted(set(args.agent or ["codex"]))
+    mcp_configs = [
+        {
+            "agent": agent,
+            "path": str(
+                write_mcp_config(
+                    agent=agent,
+                    config=config,
+                    include_token=args.include_token,
+                )
+            ),
+            "token_included": bool(args.include_token),
+        }
+        for agent in agents
+    ]
+    payload = {
+        "ok": _quickstart_ok(
+            runtime_result=runtime_result,
+            status=status,
+            no_start=args.no_start,
+        ),
+        "home": str(config.home),
+        "repo_dir": str(config.repo_dir),
+        "api_url": config.api_url,
+        "compose_profile": compose_profile,
+        "runtime": _runtime_payload(runtime_result) if runtime_result is not None else None,
+        "status": status,
+        "mcp_configs": mcp_configs,
+        "token_included": bool(args.include_token),
+        "next_steps": _quickstart_next_steps(
+            agents=agents,
+            home=config.home,
+            include_token=args.include_token,
+            no_start=args.no_start,
+        ),
+    }
+    _print_quickstart_payload(payload, as_json=args.json)
+    return 0 if payload["ok"] else 1
 
 
 def _cmd_up(args: argparse.Namespace) -> int:
@@ -511,12 +603,87 @@ def _status_payload(config) -> dict[str, Any]:
     return payload
 
 
+def _wait_for_status(config, *, timeout_seconds: float) -> dict[str, Any]:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    status = _status_payload(config)
+    while not status["ok"] and time.monotonic() < deadline:
+        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+        status = _status_payload(config)
+    return status
+
+
 def _response_payload(response: httpx.Response) -> dict[str, Any]:
     try:
         payload = response.json()
     except ValueError:
         payload = {"body": _safe_cli_text(response.text, limit=500)}
     return {"status_code": response.status_code, "data": payload}
+
+
+def _runtime_payload(result) -> dict[str, Any]:
+    return {
+        "ok": result.ok,
+        "command": list(result.command),
+        "returncode": result.returncode,
+        "stdout": _safe_cli_text(result.stdout, limit=1000),
+        "stderr": _safe_cli_text(result.stderr, limit=1000),
+    }
+
+
+def _quickstart_ok(*, runtime_result, status: dict[str, Any] | None, no_start: bool) -> bool:
+    if no_start:
+        return True
+    return bool(runtime_result is not None and runtime_result.ok and status and status.get("ok"))
+
+
+def _quickstart_next_steps(
+    *,
+    agents: list[str],
+    home: Path,
+    include_token: bool,
+    no_start: bool,
+) -> list[str]:
+    steps = []
+    if no_start:
+        steps.append("Start the local runtime with: infinity-context up --lite")
+    steps.append("Check readiness with: infinity-context status")
+    if include_token:
+        steps.append("Add the generated MCP config path to your agent.")
+    else:
+        steps.append(
+            f"Set MEMORY_MCP_AUTH_TOKEN from {home / '.env'} before using the MCP config."
+        )
+    if agents:
+        steps.append(f"Generated MCP config for: {', '.join(agents)}")
+    return steps
+
+
+def _print_quickstart_payload(payload: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    print(f"ok: {payload['ok']}")
+    print(f"home: {payload['home']}")
+    print(f"api_url: {payload['api_url']}")
+    runtime = payload.get("runtime")
+    if isinstance(runtime, dict):
+        print(f"runtime: {'started' if runtime.get('ok') else 'failed'}")
+        if not runtime.get("ok") and runtime.get("stderr"):
+            print(f"runtime_error: {runtime['stderr']}", file=sys.stderr)
+    else:
+        print("runtime: skipped")
+    status = payload.get("status")
+    if isinstance(status, dict):
+        print(f"status: {'ready' if status.get('ok') else 'not_ready'}")
+    for item in payload.get("mcp_configs", []):
+        if isinstance(item, dict):
+            token_note = (
+                "private token included" if item.get("token_included") else "token redacted"
+            )
+            print(f"mcp_config[{item.get('agent')}]: {item.get('path')} ({token_note})")
+    print("next_steps:")
+    for step in payload.get("next_steps", []):
+        print(f"  - {step}")
 
 
 def _print_runtime_result(result) -> None:

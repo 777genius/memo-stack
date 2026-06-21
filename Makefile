@@ -38,6 +38,10 @@ infinity-context-format:
 infinity-context-lint:
 	$(RUFF) check .
 
+.PHONY: local-memory
+local-memory:
+	$(PYTHON) -m infinity_context_cli quickstart --agent codex
+
 .PHONY: infinity-context-test-unit
 infinity-context-test-unit:
 	$(PYTHON) -m pytest tests/unit

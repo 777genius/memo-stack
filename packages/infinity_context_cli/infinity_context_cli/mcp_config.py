@@ -64,11 +64,19 @@ def write_mcp_config(
         render_mcp_config(agent=agent, config=config, include_token=include_token) + "\n",
         encoding="utf-8",
     )
+    if include_token:
+        path.chmod(0o600)
     return path
 
 
 def _mcp_command(repo_dir: Path) -> str:
-    plugin_command = repo_dir / "plugins" / "infinity-context-agent-plugin" / "bin" / "infinity-context-mcp"
+    plugin_command = (
+        repo_dir
+        / "plugins"
+        / "infinity-context-agent-plugin"
+        / "bin"
+        / "infinity-context-mcp"
+    )
     if plugin_command.exists():
         return str(plugin_command)
     return "infinity-context-mcp"
