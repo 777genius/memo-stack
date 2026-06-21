@@ -41,12 +41,14 @@ def test_cli_quickstart_initializes_and_writes_redacted_mcp_config(
     assert exit_code == 0
     assert payload["ok"] is True
     assert payload["runtime"] is None
+    assert payload["ui_url"] == "http://127.0.0.1:7788/ui/"
     assert payload["mcp_configs"][0]["agent"] == "codex"
     assert payload["mcp_configs"][0]["token_included"] is False
     assert config.service_token not in captured.out
     assert config.service_token not in mcp_path.read_text(encoding="utf-8")
     assert "${MEMORY_MCP_AUTH_TOKEN}" in mcp_path.read_text(encoding="utf-8")
     assert str(home / ".env") in "\n".join(payload["next_steps"])
+    assert "infinity-context ui --open" in "\n".join(payload["next_steps"])
 
 
 def test_cli_quickstart_starts_runtime_waits_for_status_and_redacts_output(
@@ -110,3 +112,52 @@ def test_cli_quickstart_starts_runtime_waits_for_status_and_redacts_output(
     assert payload["status"]["ok"] is True
     assert raw_secret not in captured.out
     assert "[redacted]" in payload["runtime"]["stdout"]
+
+
+def test_cli_ui_prints_url_and_can_open_browser(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_local_config(home=home, repo_dir=repo, api_url="http://127.0.0.1:18888")
+    monkeypatch.setenv("INFINITY_CONTEXT_HOME", str(home))
+    opened: list[str] = []
+    monkeypatch.setattr(cli.webbrowser, "open", lambda url: opened.append(url) or True)
+
+    exit_code = cli.main(["ui", "--open", "--json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["ui_url"] == "http://127.0.0.1:18888/ui/"
+    assert payload["opened"] is True
+    assert opened == ["http://127.0.0.1:18888/ui/"]
+
+
+def test_cli_ui_check_returns_unready_status(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_local_config(home=home, repo_dir=repo)
+    monkeypatch.setenv("INFINITY_CONTEXT_HOME", str(home))
+    monkeypatch.setattr(
+        cli,
+        "_status_payload",
+        lambda _config: {"ok": False, "api_url": "http://127.0.0.1:7788"},
+    )
+
+    exit_code = cli.main(["ui", "--check"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "http://127.0.0.1:7788/ui/" in captured.out
+    assert "warning: local API is not ready" in captured.err

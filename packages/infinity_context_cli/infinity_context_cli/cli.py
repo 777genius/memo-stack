@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import time
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +119,12 @@ def _build_parser() -> argparse.ArgumentParser:
     logs_parser.add_argument("--service", default=None)
     logs_parser.add_argument("--tail", type=int, default=120)
     logs_parser.set_defaults(handler=_cmd_logs)
+
+    ui_parser = subparsers.add_parser("ui", help="Print or open the local memory browser URL.")
+    ui_parser.add_argument("--open", action="store_true", dest="open_browser")
+    ui_parser.add_argument("--check", action="store_true", help="Check API readiness first.")
+    ui_parser.add_argument("--json", action="store_true")
+    ui_parser.set_defaults(handler=_cmd_ui)
 
     mcp_parser = subparsers.add_parser("mcp-config", help="Print or write MCP config.")
     mcp_parser.add_argument("--agent", choices=sorted(SUPPORTED_AGENTS), required=True)
@@ -292,6 +299,7 @@ def _cmd_quickstart(args: argparse.Namespace) -> int:
         "home": str(config.home),
         "repo_dir": str(config.repo_dir),
         "api_url": config.api_url,
+        "ui_url": _ui_url(config),
         "compose_profile": compose_profile,
         "runtime": _runtime_payload(runtime_result) if runtime_result is not None else None,
         "status": status,
@@ -353,6 +361,30 @@ def _cmd_logs(args: argparse.Namespace) -> int:
     result = DockerComposeRuntime(config=load_config()).logs(args.service, args.tail)
     _print_runtime_result(result)
     return 0 if result.ok else result.returncode or 1
+
+
+def _cmd_ui(args: argparse.Namespace) -> int:
+    config = load_config()
+    payload: dict[str, Any] = {
+        "ok": True,
+        "ui_url": _ui_url(config),
+        "api_url": config.api_url,
+        "opened": False,
+        "status": None,
+    }
+    if args.check:
+        status = _status_payload(config)
+        payload["status"] = status
+        payload["ok"] = bool(status.get("ok"))
+    if args.open_browser:
+        payload["opened"] = bool(webbrowser.open(payload["ui_url"]))
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(payload["ui_url"])
+        if args.check and not payload["ok"]:
+            print("warning: local API is not ready", file=sys.stderr)
+    return 0 if payload["ok"] else 1
 
 
 def _cmd_mcp_config(args: argparse.Namespace) -> int:
@@ -612,6 +644,10 @@ def _wait_for_status(config, *, timeout_seconds: float) -> dict[str, Any]:
     return status
 
 
+def _ui_url(config) -> str:
+    return f"{config.api_url.rstrip('/')}/ui/"
+
+
 def _response_payload(response: httpx.Response) -> dict[str, Any]:
     try:
         payload = response.json()
@@ -647,6 +683,7 @@ def _quickstart_next_steps(
     if no_start:
         steps.append("Start the local runtime with: infinity-context up --lite")
     steps.append("Check readiness with: infinity-context status")
+    steps.append("Open visual memory with: infinity-context ui --open")
     if include_token:
         steps.append("Add the generated MCP config path to your agent.")
     else:

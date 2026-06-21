@@ -42,6 +42,10 @@ infinity-context-lint:
 local-memory:
 	$(PYTHON) -m infinity_context_cli quickstart --agent codex
 
+.PHONY: local-memory-ui
+local-memory-ui:
+	$(PYTHON) -m infinity_context_cli ui --open
+
 .PHONY: infinity-context-test-unit
 infinity-context-test-unit:
 	$(PYTHON) -m pytest tests/unit
