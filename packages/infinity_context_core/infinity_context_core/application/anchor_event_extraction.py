@@ -14,8 +14,12 @@ from infinity_context_core.application.anchor_identity_normalization import (
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _HANDLE_PERSON_TOKEN = r"@[A-Za-z][A-Za-z0-9._-]{2,39}"
 _TEMPORAL_PHRASE = (
+    r"earlier today|this morning|this afternoon|this evening|"
     r"last week|yesterday|today|tomorrow|an hour ago|hour ago|"
     r"\d{1,3}\s+hours?\s+ago|\d{1,3}\s+days?\s+ago|\d{1,2}\s+weeks?\s+ago|"
+    r"ранее сегодня|сегодня утром|утром сегодня|"
+    r"сегодня д[нн]ём|д[нн]ём сегодня|сегодня днем|днем сегодня|"
+    r"сегодня вечером|вечером сегодня|"
     r"неделю назад|на прошлой неделе|прошлой неделе|прошлую неделю|"
     r"вчера|сегодня|завтра|час назад|"
     r"\d{1,3}\s+час(?:а|ов)?\s+назад|"
@@ -437,6 +441,20 @@ def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
         return "", None, ""
     if normalized in {"today", "сегодня"}:
         return "today", 0, "day"
+    if normalized in {"earlier today", "ранее сегодня"}:
+        return "earlier_today", 0, "day"
+    if normalized in {"this morning", "сегодня утром", "утром сегодня"}:
+        return "today_morning", 0, "part_of_day"
+    if normalized in {
+        "this afternoon",
+        "сегодня днем",
+        "днем сегодня",
+        "сегодня днём",
+        "днём сегодня",
+    }:
+        return "today_afternoon", 0, "part_of_day"
+    if normalized in {"this evening", "сегодня вечером", "вечером сегодня"}:
+        return "today_evening", 0, "part_of_day"
     if normalized in {"yesterday", "вчера"}:
         return "yesterday", 1, "day"
     if normalized in {"tomorrow", "завтра"}:

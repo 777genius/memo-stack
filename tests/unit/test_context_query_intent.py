@@ -108,6 +108,27 @@ def test_query_anchor_intent_matches_lowercase_actor_before_message_event() -> N
     )
 
 
+def test_query_anchor_intent_matches_partial_day_temporal_only_event_query() -> None:
+    intent = build_query_anchor_intent("with alex about atlas this morning")
+    anchor = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Call with Alex about Atlas this morning",
+    )
+
+    match = match_query_anchor_intent(intent, anchor)
+
+    assert intent.keys_for_kind(MemoryAnchorKind.PERSON) == {"aleks"}
+    assert intent.keys_for_kind(MemoryAnchorKind.PROJECT) == {"atlas"}
+    assert intent.temporal_keys() == {"today_morning", "today_morning:0:part_of_day"}
+    assert match is not None
+    assert match.reasons == (
+        "query_event_participant_match",
+        "query_event_project_match",
+        "query_event_temporal_match",
+    )
+    assert set(match.matched_keys) >= {"aleks", "atlas", "today_morning:0:part_of_day"}
+
+
 def test_query_anchor_intent_rejects_wrong_event_participant() -> None:
     intent = build_query_anchor_intent("созвон с алексом в атласе час назад")
     anchor = _anchor(

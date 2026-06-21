@@ -26,8 +26,12 @@ _EVENTISH_QUERY_RE = re.compile(
 )
 _RELATIVE_TIME_RE = re.compile(
     r"\b("
+    r"earlier today|this morning|this afternoon|this evening|"
     r"last week|yesterday|today|tomorrow|an hour ago|hour ago|"
     r"\d{1,3}\s+hours?\s+ago|\d{1,3}\s+days?\s+ago|"
+    r"ранее сегодня|сегодня утром|утром сегодня|"
+    r"сегодня д[нн]ём|д[нн]ём сегодня|сегодня днем|днем сегодня|"
+    r"сегодня вечером|вечером сегодня|"
     r"неделю назад|на прошлой неделе|вчера|сегодня|завтра|час назад|"
     r"\d{1,3}\s+час(?:а|ов)?\s+назад|"
     r"\d{1,3}\s+д(?:ень|ня|ней)\s+назад"
@@ -145,6 +149,8 @@ def build_query_anchor_intent(query: str) -> QueryAnchorIntent:
         _append_observed_hint(hints, seen, observed)
     if _is_eventish_query(query):
         _append_lowercase_event_hints(hints, seen, query)
+        if not _event_temporal_keys(hints):
+            _append_temporal_event_hints(hints, seen, query)
     return QueryAnchorIntent(hints=tuple(hints[:16]))
 
 
@@ -227,6 +233,36 @@ def _append_lowercase_event_hints(
             kind=MemoryAnchorKind.PROJECT,
             label=label,
             reason="event query project hint",
+        )
+
+
+def _append_temporal_event_hints(
+    hints: list[QueryAnchorHint],
+    seen: set[tuple[str, str]],
+    query: str,
+) -> None:
+    for match in _RELATIVE_TIME_RE.finditer(query):
+        phrase = match.group(1)
+        metadata = structured_anchor_metadata_for_label(
+            MemoryAnchorKind.EVENT,
+            f"meeting {phrase}",
+        )
+        temporal_keys = _temporal_identity_keys(metadata)
+        if not temporal_keys:
+            continue
+        strongest_key = sorted(temporal_keys, key=lambda value: (":" not in value, value))[-1]
+        _append_hint(
+            hints,
+            seen,
+            kind=MemoryAnchorKind.EVENT,
+            canonical_key=f"event_temporal:{strongest_key}",
+            label=phrase,
+            reason="event query temporal hint",
+            metadata={
+                "extraction_reason": "event query temporal hint",
+                "extractor": "context-query-intent-v1",
+                **metadata,
+            },
         )
 
 
@@ -413,6 +449,14 @@ def _temporal_identity_keys(metadata: Mapping[str, object]) -> frozenset[str]:
             text = _metadata_text(item)
             if text.startswith(f"{hint_code}:"):
                 keys.add(text)
+    return frozenset(keys)
+
+
+def _event_temporal_keys(hints: Iterable[QueryAnchorHint]) -> frozenset[str]:
+    keys: set[str] = set()
+    for hint in hints:
+        if hint.kind == MemoryAnchorKind.EVENT:
+            keys.update(_temporal_identity_keys(hint.metadata))
     return frozenset(keys)
 
 

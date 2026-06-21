@@ -39,6 +39,33 @@ def test_temporal_window_resolves_day_and_week_event_anchors() -> None:
     assert week_to == datetime(2026, 6, 15, tzinfo=UTC)
 
 
+def test_temporal_window_resolves_partial_day_event_anchors() -> None:
+    earlier_today = _event_anchor("Alex wrote about Project Atlas earlier today.")
+    morning = _event_anchor("Meeting with Dana this morning.")
+    afternoon = _event_anchor("Review with Alex this afternoon.")
+    evening = _event_anchor("Созвон с Марией по Project Atlas сегодня вечером.")
+
+    earlier_from, earlier_to = temporal_window_for_observed_anchor(
+        earlier_today,
+        observed_at=NOW,
+    )
+    morning_from, morning_to = temporal_window_for_observed_anchor(morning, observed_at=NOW)
+    afternoon_from, afternoon_to = temporal_window_for_observed_anchor(
+        afternoon,
+        observed_at=NOW,
+    )
+    evening_from, evening_to = temporal_window_for_observed_anchor(evening, observed_at=NOW)
+
+    assert earlier_from == datetime(2026, 6, 19, tzinfo=UTC)
+    assert earlier_to == NOW
+    assert morning_from == datetime(2026, 6, 19, 6, tzinfo=UTC)
+    assert morning_to == datetime(2026, 6, 19, 12, tzinfo=UTC)
+    assert afternoon_from == datetime(2026, 6, 19, 12, tzinfo=UTC)
+    assert afternoon_to == datetime(2026, 6, 19, 18, tzinfo=UTC)
+    assert evening_from == datetime(2026, 6, 19, 18, tzinfo=UTC)
+    assert evening_to == datetime(2026, 6, 20, tzinfo=UTC)
+
+
 def test_temporal_window_ignores_non_event_and_unknown_relative_time() -> None:
     project = next(
         anchor

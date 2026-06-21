@@ -23,6 +23,15 @@ def temporal_window_for_observed_anchor(
     now = _aware_utc(observed_at)
     if hint == "today":
         return _day_window(now)
+    if hint == "earlier_today":
+        start, _ = _day_window(now)
+        return start, now
+    if hint == "today_morning":
+        return _time_window(now, hour_from=6, hour_to=12)
+    if hint == "today_afternoon":
+        return _time_window(now, hour_from=12, hour_to=18)
+    if hint == "today_evening":
+        return _time_window(now, hour_from=18, hour_to=24)
     if hint == "tomorrow":
         return _day_window(now + timedelta(days=quantity))
     if hint == "yesterday":
@@ -55,6 +64,18 @@ def temporal_window_metadata(
 def _day_window(value: datetime) -> tuple[datetime, datetime]:
     start = datetime.combine(value.date(), time.min, tzinfo=UTC)
     return start, start + timedelta(days=1)
+
+
+def _time_window(
+    value: datetime,
+    *,
+    hour_from: int,
+    hour_to: int,
+) -> tuple[datetime, datetime]:
+    start = datetime.combine(value.date(), time(hour_from), tzinfo=UTC)
+    if hour_to >= 24:
+        return start, datetime.combine(value.date(), time.min, tzinfo=UTC) + timedelta(days=1)
+    return start, datetime.combine(value.date(), time(hour_to), tzinfo=UTC)
 
 
 def _week_start(value: datetime) -> datetime:

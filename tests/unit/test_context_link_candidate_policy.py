@@ -165,6 +165,43 @@ def test_query_terms_include_multilingual_semantic_anchor_terms() -> None:
     assert "invoice" in result
 
 
+def test_query_terms_and_temporal_hints_include_partial_day_event_identity() -> None:
+    result = terms("Созвон с Марией по Project Atlas сегодня утром.")
+    hints = temporal_hints("Show Alex Atlas notes from earlier today and this morning.")
+
+    assert "person:mariya" in result
+    assert "project:atlas" in result
+    assert "event_temporal:today_morning:0:part_of_day" in result
+    assert "утром" not in result
+    assert "сегодня" not in result
+    assert [hint.code for hint in hints] == ["earlier_today", "today_morning", "today"]
+
+
+def test_partial_day_temporal_hint_boosts_recent_candidate_without_text_hit() -> None:
+    now = datetime(2026, 6, 19, 15, tzinfo=UTC)
+
+    matched_score, matched_reasons, _matched_hits = score_text_candidate(
+        query_terms=terms("meeting this morning"),
+        temporal_hints=temporal_hints("meeting this morning"),
+        target_text="Calendar capture without shared lexical terms",
+        updated_at=datetime(2026, 6, 19, 8, tzinfo=UTC),
+        now=now,
+        base=20,
+    )
+    stale_score, stale_reasons, _stale_hits = score_text_candidate(
+        query_terms=terms("meeting this morning"),
+        temporal_hints=temporal_hints("meeting this morning"),
+        target_text="Calendar capture without shared lexical terms",
+        updated_at=datetime(2026, 6, 18, 8, tzinfo=UTC),
+        now=now,
+        base=20,
+    )
+
+    assert "temporal intent match" in matched_reasons
+    assert "temporal intent match" not in stale_reasons
+    assert matched_score > stale_score
+
+
 def test_multilingual_scoring_preserves_precise_lexical_ranking() -> None:
     query = (
         "Скрин после созвона с Алексом час назад по проекту Atlas "

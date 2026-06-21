@@ -520,6 +520,41 @@ def test_anchor_extraction_handles_lowercase_actor_before_message_event() -> Non
     )
 
 
+def test_anchor_extraction_structures_partial_day_event_temporal_hints() -> None:
+    anchors = extract_observed_anchors(
+        "Alex wrote about Atlas earlier today. "
+        "Созвон с Марией по Project Atlas сегодня утром."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "wrote with alex about atlas earlier today" in events
+    wrote = events["wrote with alex about atlas earlier today"]
+    assert wrote["event_participant_canonical_key"] == "aleks"
+    assert wrote["event_project_canonical_key"] == "atlas"
+    assert wrote["event_temporal_hint_code"] == "earlier_today"
+    assert wrote["event_identity_terms"] == [
+        "wrote",
+        "aleks",
+        "atlas",
+        "earlier_today:0:day",
+    ]
+
+    assert "созвон с марией по atlas сегодня утром" in events
+    call = events["созвон с марией по atlas сегодня утром"]
+    assert call["event_participant_canonical_key"] == "mariya"
+    assert call["event_project_canonical_key"] == "atlas"
+    assert call["event_temporal_hint_code"] == "today_morning"
+    assert call["event_identity_terms"] == [
+        "sozvon",
+        "mariya",
+        "atlas",
+        "today_morning:0:part_of_day",
+    ]
+
+
 def test_anchor_extraction_does_not_promote_temporal_or_topic_words_from_event_context() -> None:
     anchors = extract_observed_anchors(
         "the call last week covered notes. weekly sync yesterday. call about documents last week."

@@ -41,6 +41,8 @@ _LINK_STOP_TERMS = {
     "credentials",
     "days",
     "developer",
+    "earlier",
+    "evening",
     "from",
     "hour",
     "hours",
@@ -49,6 +51,7 @@ _LINK_STOP_TERMS = {
     "instructions",
     "key",
     "last",
+    "morning",
     "note",
     "password",
     "previous",
@@ -72,6 +75,7 @@ _LINK_STOP_TERMS = {
     "when",
     "where",
     "which",
+    "afternoon",
     "yesterday",
     "вчера",
     "день",
@@ -80,6 +84,9 @@ _LINK_STOP_TERMS = {
     "игнорируй",
     "инструкции",
     "инструкций",
+    "вечером",
+    "днем",
+    "днём",
     "ключ",
     "ключи",
     "когда",
@@ -90,6 +97,7 @@ _LINK_STOP_TERMS = {
     "прошлой",
     "прошлую",
     "про",
+    "ранее",
     "скриншот",
     "секрет",
     "секреты",
@@ -101,6 +109,7 @@ _LINK_STOP_TERMS = {
     "час",
     "часа",
     "часов",
+    "утром",
 }
 _NUMERIC_TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, int], ...] = (
     (
@@ -198,6 +207,40 @@ _PROMPT_INJECTION_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] = (
+    (
+        "earlier_today",
+        re.compile(r"\b(?:earlier\s+today|ранее\s+сегодня)\b", re.IGNORECASE),
+        0.0,
+        30.0,
+    ),
+    (
+        "today_morning",
+        re.compile(
+            r"\b(?:this\s+morning|сегодня\s+утром|утром\s+сегодня)\b",
+            re.IGNORECASE,
+        ),
+        0.0,
+        18.0,
+    ),
+    (
+        "today_afternoon",
+        re.compile(
+            r"\b(?:this\s+afternoon|сегодня\s+д[нн]ём|д[нн]ём\s+сегодня|"
+            r"сегодня\s+днем|днем\s+сегодня)\b",
+            re.IGNORECASE,
+        ),
+        0.0,
+        12.0,
+    ),
+    (
+        "today_evening",
+        re.compile(
+            r"\b(?:this\s+evening|сегодня\s+вечером|вечером\s+сегодня)\b",
+            re.IGNORECASE,
+        ),
+        0.0,
+        8.0,
+    ),
     (
         "hour_ago",
         re.compile(
