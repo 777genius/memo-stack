@@ -321,14 +321,15 @@ _RETRIEVAL_SOURCE_PRIORITY = {
     "artifact_evidence": 7,
     "canonical_anchors": 8,
     "keyword_chunks": 9,
-    "graph_hydrated": 10,
-    "temporal_supersedes_relation": 11,
-    "pending_conflict_suggestion": 12,
-    "pending_duplicate_merge_suggestion": 13,
-    "superseded_review": 14,
-    "disputed_review": 15,
-    "stale_review": 16,
-    "postgres_facts": 16,
+    "keyword_neighbor_chunks": 10,
+    "graph_hydrated": 11,
+    "temporal_supersedes_relation": 12,
+    "pending_conflict_suggestion": 13,
+    "pending_duplicate_merge_suggestion": 14,
+    "superseded_review": 15,
+    "disputed_review": 16,
+    "stale_review": 17,
+    "postgres_facts": 17,
 }
 
 

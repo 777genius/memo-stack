@@ -673,6 +673,58 @@ def test_context_citation_snippet_preserves_nearby_document_evidence_prefix(
     assert "18th birthday ten years ago" in quote_preview
 
 
+def test_context_expands_keyword_chunk_with_adjacent_document_evidence(
+    tmp_path: Path,
+) -> None:
+    text = "\n".join(
+        [
+            "NEIGHBOR_PRIMARY_MARKER Atlas renewal budget signal. "
+            + "Primary filler keeps this evidence in the first chunk. " * 40,
+            "NEIGHBOR_ADJACENT_MARKER Morgan approved the follow-up owner. "
+            + "Adjacent filler avoids the query words while staying useful evidence. " * 40,
+            "Trailing neutral paragraph. " * 40,
+        ]
+    )
+    with make_client(tmp_path) as client:
+        document = client.post(
+            "/v1/documents",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "title": "Neighbor evidence notes",
+                "text": text,
+                "source_type": "document",
+                "source_external_id": "neighbor-evidence-doc",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "Atlas renewal budget signal",
+                "token_budget": 1600,
+                "max_facts": 0,
+                "max_chunks": 12,
+                "max_evidence_items": 0,
+            },
+            headers=auth_headers(),
+        )
+
+    assert document.status_code == 201
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    assert "NEIGHBOR_PRIMARY_MARKER" in data["rendered_text"]
+    assert "NEIGHBOR_ADJACENT_MARKER" in data["rendered_text"]
+    assert data["diagnostics"]["keyword_neighbor_chunks_used"] >= 1
+    assert any(
+        item["diagnostics"]["retrieval_source"] == "keyword_neighbor_chunks"
+        and "NEIGHBOR_ADJACENT_MARKER" in item["text"]
+        for item in data["items"]
+    )
+
+
 def test_document_ingest_returns_backpressure_when_outbox_high(tmp_path: Path) -> None:
     with make_client_with_settings(
         tmp_path,

@@ -50,8 +50,9 @@ def query_focused_snippet(
         hits=hits,
         window_chars=window,
     )
-    start = _left_word_boundary(text, start)
-    start = _left_line_boundary(text, start)
+    word_start = _left_word_boundary(text, start)
+    line_start = _left_line_boundary(text, word_start)
+    start = line_start if end - line_start <= _MAX_SNIPPET_CHARS else word_start
     end = _right_word_boundary(text, end)
     snippet = _render_snippet(text=text, start=start, end=end)
     if not snippet:

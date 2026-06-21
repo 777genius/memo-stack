@@ -75,6 +75,8 @@ from infinity_context_core.application.source_refs import (
 )
 from infinity_context_core.application.temporal_validity import is_temporal_window_current
 from infinity_context_core.domain.entities import (
+    DataClassification,
+    LifecycleStatus,
     MemoryAnchor,
     MemoryChunk,
     MemoryFact,
@@ -86,6 +88,8 @@ from infinity_context_core.ports.capabilities import RagRecallPort
 from infinity_context_core.ports.clock import ClockPort
 from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
+
+_KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS = (1, -1, 2, -2, 3, -3)
 
 
 class BuildContextUseCase:
@@ -152,6 +156,9 @@ class BuildContextUseCase:
             "facts_considered": len(canonical.facts),
             "keyword_chunks_considered": len(canonical.keyword_chunks),
             "keyword_chunks_dropped_by_relevance": 0,
+            "keyword_neighbor_chunks_considered": 0,
+            "keyword_neighbor_chunks_used": 0,
+            "keyword_neighbor_chunks_skipped": 0,
             "anchors_considered": len(canonical.anchors),
             "anchors_used": 0,
             "anchors_used_by_query_intent": 0,
@@ -281,6 +288,7 @@ class BuildContextUseCase:
         diagnostics["anchor_relation_candidates_considered"] = related_anchor_candidates
         diagnostics["anchor_relation_items_used"] = len(related_anchor_items)
         items.extend(related_anchor_items)
+        used_keyword_chunks: list[MemoryChunk] = []
         for chunk in canonical.keyword_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -298,6 +306,7 @@ class BuildContextUseCase:
                 )
                 continue
             score = min(0.87, round(0.75 + relevance.score_boost, 4))
+            used_keyword_chunks.append(chunk)
             items.append(
                 _chunk_context_item(
                     chunk=chunk,
@@ -309,6 +318,13 @@ class BuildContextUseCase:
                     query_text=query.query,
                 )
             )
+        neighbor_items, neighbor_diagnostics = await self._keyword_neighbor_chunk_items(
+            query=query,
+            memory_scope_ids=memory_scope_ids,
+            seed_chunks=tuple(used_keyword_chunks),
+        )
+        diagnostics.update(neighbor_diagnostics)
+        items.extend(neighbor_items)
         for chunk in vector_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -432,6 +448,97 @@ class BuildContextUseCase:
             token_estimate=result.bundle.token_estimate,
             diagnostics=bundle_diagnostics,
         )
+
+    async def _keyword_neighbor_chunk_items(
+        self,
+        *,
+        query: BuildContextQuery,
+        memory_scope_ids: tuple[str, ...],
+        seed_chunks: tuple[MemoryChunk, ...],
+    ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
+        if query.max_chunks <= 0 or not seed_chunks:
+            return (
+                (),
+                {
+                    "keyword_neighbor_chunks_considered": 0,
+                    "keyword_neighbor_chunks_used": 0,
+                    "keyword_neighbor_chunks_skipped": 0,
+                },
+            )
+
+        seed_ids = {str(chunk.id) for chunk in seed_chunks}
+        document_ids = tuple(
+            dict.fromkeys(str(chunk.document_id) for chunk in seed_chunks if chunk.document_id)
+        )
+        if not document_ids:
+            return (
+                (),
+                {
+                    "keyword_neighbor_chunks_considered": 0,
+                    "keyword_neighbor_chunks_used": 0,
+                    "keyword_neighbor_chunks_skipped": 0,
+                },
+            )
+
+        max_neighbor_items = min(8, max(2, query.max_chunks // 3))
+        items: list[ContextItem] = []
+        used_neighbor_ids: set[str] = set()
+        considered = 0
+        skipped = 0
+        async with self._uow_factory() as uow:
+            for document_id in document_ids:
+                if len(items) >= max_neighbor_items:
+                    break
+                chunks = await uow.documents.list_chunks(document_id, limit=400)
+                by_sequence = {chunk.sequence: chunk for chunk in chunks}
+                seed_sequences = tuple(
+                    chunk.sequence
+                    for chunk in seed_chunks
+                    if chunk.document_id is not None and str(chunk.document_id) == document_id
+                )
+                for sequence in seed_sequences:
+                    for offset in _KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS:
+                        if len(items) >= max_neighbor_items:
+                            break
+                        neighbor_sequence = sequence + offset
+                        neighbor = by_sequence.get(neighbor_sequence)
+                        if neighbor is None:
+                            continue
+                        neighbor_id = str(neighbor.id)
+                        if neighbor_id in seed_ids or neighbor_id in used_neighbor_ids:
+                            continue
+                        considered += 1
+                        if not _is_neighbor_chunk_visible(
+                            neighbor,
+                            query=query,
+                            memory_scope_ids=memory_scope_ids,
+                        ):
+                            skipped += 1
+                            continue
+                        used_neighbor_ids.add(neighbor_id)
+                        chunk_text = document_chunk_retrieval_text(
+                            text=neighbor.text,
+                            metadata=neighbor.metadata,
+                        )
+                        items.append(
+                            _chunk_context_item(
+                                chunk=neighbor,
+                                text=chunk_text,
+                                retrieval_source="keyword_neighbor_chunks",
+                                base_score=0.68,
+                                score=0.68,
+                                relevance=None,
+                                query_text=query.query,
+                            )
+                        )
+                    if len(items) >= max_neighbor_items:
+                        break
+
+        return tuple(items), {
+            "keyword_neighbor_chunks_considered": considered,
+            "keyword_neighbor_chunks_used": len(items),
+            "keyword_neighbor_chunks_skipped": skipped,
+        }
 
     async def _apply_temporal_relation_signals(
         self,
@@ -832,6 +939,25 @@ def _chunk_context_item(
         ),
         query_text=query_text,
     )
+
+
+def _is_neighbor_chunk_visible(
+    chunk: MemoryChunk,
+    *,
+    query: BuildContextQuery,
+    memory_scope_ids: tuple[str, ...],
+) -> bool:
+    if chunk.status != LifecycleStatus.ACTIVE:
+        return False
+    if chunk.classification == DataClassification.RESTRICTED.value:
+        return False
+    if str(chunk.space_id) != str(query.space_id):
+        return False
+    if str(chunk.memory_scope_id) not in memory_scope_ids:
+        return False
+    if query.thread_id is None:
+        return chunk.thread_id is None
+    return chunk.thread_id is None or str(chunk.thread_id) == str(query.thread_id)
 
 
 def _score_signals(diagnostics: dict[str, object]) -> dict[str, object]:
