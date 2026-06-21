@@ -7,6 +7,7 @@ from infinity_context_core.agent_behavior_contract import (
     AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
 from infinity_context_server.eval import (
+    _merge_standard_scorecard_external_reports,
     build_memory_quality_scorecard,
     memory_quality_scorecard_policy_snapshot,
     run_memory_quality_scorecard,
@@ -1053,6 +1054,89 @@ def test_memory_quality_scorecard_rejects_duplicate_additional_suite_report(
         )
 
     assert "Duplicate scorecard suite report for suite: small-golden" in str(exc.value)
+
+
+def test_memory_quality_scorecard_auto_discovers_standard_external_report(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "multimodal-live-provider-canary.json"
+    report_path.write_text(
+        json.dumps(_degraded_multimodal_live_provider_canary_report()),
+        encoding="utf-8",
+    )
+    results = _scorecard_fixture_results()
+
+    _merge_standard_scorecard_external_reports(
+        results,
+        report_paths=(
+            (
+                "infinity-context-multimodal-live-provider-canary",
+                report_path,
+            ),
+        ),
+    )
+
+    scorecard = build_memory_quality_scorecard(results)
+    provider = scorecard["external_evidence"]["multimodal_live_provider"]
+    assert provider["present"] is True
+    assert provider["ok"] is False
+    assert provider["provider_key_present"] is False
+    assert "multimodal_live_provider_canary_failed" in (
+        scorecard["external_evidence"]["evidence_gaps"]
+    )
+    assert "multimodal_live_provider_canary_missing" not in (
+        scorecard["external_evidence"]["evidence_gaps"]
+    )
+
+
+def test_memory_quality_scorecard_auto_discovery_keeps_existing_suite_result(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "multimodal-live-provider-canary.json"
+    report_path.write_text(
+        json.dumps(_degraded_multimodal_live_provider_canary_report()),
+        encoding="utf-8",
+    )
+    results = _scorecard_fixture_results()
+    results["infinity-context-multimodal-live-provider-canary"] = (
+        _multimodal_live_provider_canary_report()
+    )
+
+    _merge_standard_scorecard_external_reports(
+        results,
+        report_paths=(
+            (
+                "infinity-context-multimodal-live-provider-canary",
+                report_path,
+            ),
+        ),
+    )
+
+    assert results["infinity-context-multimodal-live-provider-canary"]["ok"] is True
+
+
+def test_memory_quality_scorecard_auto_discovery_rejects_unexpected_suite(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "multimodal-live-provider-canary.json"
+    report_path.write_text(
+        json.dumps(_full_provider_canary_report()),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as exc:
+        _merge_standard_scorecard_external_reports(
+            _scorecard_fixture_results(),
+            report_paths=(
+                (
+                    "infinity-context-multimodal-live-provider-canary",
+                    report_path,
+                ),
+            ),
+        )
+
+    assert "unexpected suite" in str(exc.value)
+    assert "infinity-context-multimodal-live-provider-canary" in str(exc.value)
 
 
 def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:

@@ -68,6 +68,7 @@ from infinity_context_server.eval_constants import (
     LONG_MEMORY_REQUIRED_CASE_IDS,
     LONGMEMEVAL_BENCHMARK_SUITE,
     MEMORY_QUALITY_SCORECARD_SUITE,
+    MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE,
     MULTIMODAL_OFFLINE_GOLDEN_SUITE,
     PROMPT_CONTRACT_SNAPSHOT_FILE,
     PROMPT_CONTRACT_SNAPSHOT_VERSION,
@@ -110,6 +111,13 @@ from infinity_context_server.eval_types import (  # noqa: F401
 )
 from infinity_context_server.main import create_app
 from infinity_context_server.public_benchmark import run_public_memory_benchmark
+
+_STANDARD_SCORECARD_EXTERNAL_REPORT_PATHS: tuple[tuple[str, Path], ...] = (
+    (
+        MULTIMODAL_LIVE_PROVIDER_CANARY_SUITE,
+        Path(".e2e-artifacts/multimodal-live-provider-canary.json"),
+    ),
+)
 
 __all__ = (
     "AGENT_BEHAVIOR_BENCH_SUITE",
@@ -371,6 +379,7 @@ def run_memory_quality_scorecard(
 
     if suite_results is not None and suite_report_paths:
         raise ValueError("suite_results and suite_report_paths are mutually exclusive")
+    auto_discover_external_reports = suite_results is None and suite_report_paths is None
     if suite_results is not None:
         results = dict(suite_results)
     elif suite_report_paths:
@@ -393,12 +402,40 @@ def run_memory_quality_scorecard(
             if suite in results:
                 raise ValueError(f"Duplicate scorecard suite report for suite: {suite}")
             results[suite] = payload
+    if auto_discover_external_reports:
+        _merge_standard_scorecard_external_reports(results)
     result = build_memory_quality_scorecard(
         results,
         require_top_evidence=require_top_evidence,
     )
     _write_redacted_report(result, report_out)
     return result
+
+
+def _merge_standard_scorecard_external_reports(
+    results: dict[str, dict[str, object]],
+    *,
+    report_paths: Sequence[tuple[str, Path]] = _STANDARD_SCORECARD_EXTERNAL_REPORT_PATHS,
+) -> None:
+    """Merge known local external-evidence reports when they already exist.
+
+    This keeps the default scorecard honest after a local canary has run: the
+    report should be treated as present/degraded rather than missing. Explicit
+    suite results and explicit report paths remain authoritative and are not
+    auto-discovered by ``run_memory_quality_scorecard``.
+    """
+
+    for expected_suite, path in report_paths:
+        if expected_suite in results or not path.is_file():
+            continue
+        loaded = _load_scorecard_suite_reports((path,))
+        if set(loaded) != {expected_suite}:
+            found = ", ".join(sorted(loaded)) or "<none>"
+            raise ValueError(
+                "Standard scorecard external report has unexpected suite "
+                f"at {path}: expected {expected_suite}, found {found}"
+            )
+        results[expected_suite] = loaded[expected_suite]
 
 
 def _eval_setup_failure(suite: str, reason: str) -> dict[str, object]:
