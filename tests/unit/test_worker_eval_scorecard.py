@@ -394,6 +394,7 @@ def _multimodal_live_provider_canary_report() -> dict[str, Any]:
         "transcription_request_contract": {"ok": True, "status": "contract_covered"},
         "invalid_key_live_probe": {"ok": True, "status": "succeeded"},
         "no_secret_leak_guard": {"ok": True, "status": "contract_covered"},
+        "report_safety_contract": {"ok": True, "status": "contract_covered"},
     }
     return {
         "suite": "infinity-context-multimodal-live-provider-canary",
@@ -406,8 +407,8 @@ def _multimodal_live_provider_canary_report() -> dict[str, Any]:
         "proof_matrix": {
             "schema_version": "multimodal-provider-proof-matrix-v1",
             "summary": {
-                "contract_requirements_passed": 8,
-                "contract_requirements_total": 8,
+                "contract_requirements_passed": 9,
+                "contract_requirements_total": 9,
                 "live_requirements_passed": 6,
                 "live_requirements_total": 6,
             },
@@ -435,8 +436,8 @@ def _degraded_multimodal_live_provider_canary_report() -> dict[str, Any]:
             "status": "skipped",
         }
     report["proof_matrix"]["summary"] = {
-        "contract_requirements_passed": 8,
-        "contract_requirements_total": 8,
+        "contract_requirements_passed": 9,
+        "contract_requirements_total": 9,
         "live_requirements_passed": 1,
         "live_requirements_total": 6,
     }
@@ -1222,6 +1223,41 @@ def test_memory_quality_scorecard_reports_degraded_multimodal_live_provider() ->
     assert "vision_real_provider_ok" in provider["failed_required_checks"]
     assert "multimodal_live_provider_canary_failed" in evidence["evidence_gaps"]
     assert "multimodal_live_provider_key_missing" in evidence["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_requires_multimodal_report_safety_contract() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
+    provider_report = _multimodal_live_provider_canary_report()
+    provider_report["ok"] = False
+    provider_report["proof_matrix"]["requirements"]["report_safety_contract"] = {
+        "ok": False,
+        "reason": "report_safety_failed",
+        "status": "failed",
+    }
+    provider_report["proof_matrix"]["summary"] = {
+        "contract_requirements_passed": 8,
+        "contract_requirements_total": 9,
+        "live_requirements_passed": 6,
+        "live_requirements_total": 6,
+    }
+    suite_results["infinity-context-multimodal-live-provider-canary"] = provider_report
+    suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()
+    suite_results["infinity-context-agent-live-smoke"] = _agent_live_smoke_report()
+    suite_results["public-memory-benchmark"] = _public_benchmark_report()
+
+    result = build_memory_quality_scorecard(suite_results, require_top_evidence=True)
+
+    evidence = result["external_evidence"]
+    provider = evidence["multimodal_live_provider"]
+    assert result["ok"] is False
+    assert provider["ok"] is False
+    assert provider["required_checks"]["report_safety_contract_ok"] is False
+    assert "report_safety_contract_ok" in provider["failed_required_checks"]
+    assert provider["requirement_reasons"]["report_safety_contract"] == (
+        "report_safety_failed"
+    )
+    assert "multimodal_live_provider_canary_failed" in evidence["evidence_gaps"]
 
 
 def test_memory_quality_scorecard_rejects_weak_live_agent_smoke_evidence() -> None:

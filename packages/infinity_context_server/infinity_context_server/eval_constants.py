@@ -155,6 +155,7 @@ _MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS = (
     "transcription_request_contract",
     "invalid_key_live_probe",
     "no_secret_leak_guard",
+    "report_safety_contract",
 )
 _FULL_PROVIDER_REQUIRED_ADAPTERS = ("qdrant", "graphiti", "embeddings")
 _FULL_PROVIDER_REQUIRED_CHECK_KEYS = (
