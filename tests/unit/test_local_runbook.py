@@ -48,7 +48,19 @@ def test_makefile_has_one_command_stack_smoke_target() -> None:
         in makefile
     )
     assert ".PHONY: infinity-context-multimodal-live-provider-canary" in makefile
-    assert "$(PYTHON) scripts/multimodal_live_provider_canary.py" in makefile
+    assert "MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT ?=" in makefile
+    assert (
+        '$(PYTHON) scripts/multimodal_live_provider_canary.py --report-out '
+        '"$(MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT)"'
+        in makefile
+    )
+    assert ".PHONY: infinity-context-multimodal-provider-contract-canary" in makefile
+    assert (
+        '$(PYTHON) scripts/multimodal_live_provider_canary.py --allow-missing-key '
+        '--report-out "$(MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT)"'
+        in makefile
+    )
+    assert "--skip-invalid-key-probe" not in makefile
     assert "curl -fsS http://127.0.0.1:7788/v1/health" in makefile
     assert "$(MAKE) infinity-context-api-smoke" in makefile
 

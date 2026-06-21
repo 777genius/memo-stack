@@ -8,6 +8,7 @@ export PYTHONPATH := $(INFINITY_CONTEXT_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONP
 FRONTEND_DIR ?= frontend
 FLUTTER ?= $(shell command -v flutter 2>/dev/null || if [ -x "$$HOME/dev/flutter/bin/flutter" ]; then echo "$$HOME/dev/flutter/bin/flutter"; elif [ -x "$$HOME/dev/projects/flutter/bin/flutter" ]; then echo "$$HOME/dev/projects/flutter/bin/flutter"; else echo flutter; fi)
 MEMORY_FRONTEND_MARIONETTE_REPORT ?= .e2e-artifacts/frontend-marionette-local-e2e.json
+MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT ?= .e2e-artifacts/multimodal-live-provider-canary.json
 MEMORY_SERVER_ENV ?= MEMORY_AUTO_CREATE_SCHEMA=true MEMORY_SERVICE_TOKEN=local-dev-token
 PLUGIN_KIT_AI ?= scripts/plugin-kit-ai-local
 MEMORY_AGENT_PLUGIN_ROOT ?= plugins/infinity-context-agent-plugin
@@ -60,11 +61,11 @@ infinity-context-multimodal-production-e2e:
 
 .PHONY: infinity-context-multimodal-live-provider-canary
 infinity-context-multimodal-live-provider-canary:
-	$(PYTHON) scripts/multimodal_live_provider_canary.py
+	$(PYTHON) scripts/multimodal_live_provider_canary.py --report-out "$(MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT)"
 
 .PHONY: infinity-context-multimodal-provider-contract-canary
 infinity-context-multimodal-provider-contract-canary:
-	$(PYTHON) scripts/multimodal_live_provider_canary.py --allow-missing-key --skip-invalid-key-probe
+	$(PYTHON) scripts/multimodal_live_provider_canary.py --allow-missing-key --report-out "$(MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT)"
 
 .PHONY: infinity-context-multimodal-docker-live-proof
 infinity-context-multimodal-docker-live-proof:
