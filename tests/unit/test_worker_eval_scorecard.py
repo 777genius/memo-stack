@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from infinity_context_core.agent_behavior_contract import (
     AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS,
 )
@@ -1012,6 +1013,46 @@ def test_memory_quality_scorecard_loads_existing_suite_reports(tmp_path: Path) -
     assert result["score"]["maturity_score_10"] == 10.0
     assert result["suites"]["auto-memory-golden"]["case_count"] == 13
     assert result["suites"]["prompt-contract"]["ok"] is True
+
+
+def test_memory_quality_scorecard_merges_additional_suite_reports(
+    tmp_path: Path,
+) -> None:
+    public_report = tmp_path / "public-memory-benchmark.json"
+    public_report.write_text(
+        json.dumps(_public_benchmark_report()),
+        encoding="utf-8",
+    )
+
+    result = run_memory_quality_scorecard(
+        suite_results=_scorecard_fixture_results(),
+        additional_suite_report_paths=(public_report,),
+    )
+
+    assert result["ok"] is True
+    public = result["external_evidence"]["public_benchmark"]
+    assert public["present"] is True
+    assert public["ok"] is True
+    assert public["benchmark_count"] == 2
+    assert public["competitive_floor_ok"] is True
+
+
+def test_memory_quality_scorecard_rejects_duplicate_additional_suite_report(
+    tmp_path: Path,
+) -> None:
+    duplicate_report = tmp_path / "small-golden.json"
+    duplicate_report.write_text(
+        json.dumps(_scorecard_fixture_results()["small-golden"]),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as exc:
+        run_memory_quality_scorecard(
+            suite_results=_scorecard_fixture_results(),
+            additional_suite_report_paths=(duplicate_report,),
+        )
+
+    assert "Duplicate scorecard suite report for suite: small-golden" in str(exc.value)
 
 
 def test_memory_quality_scorecard_reports_external_evidence_tier() -> None:

@@ -358,6 +358,7 @@ def run_memory_quality_scorecard(
     report_out: Path | None = None,
     suite_results: Mapping[str, dict[str, object]] | None = None,
     suite_report_paths: Sequence[Path] | None = None,
+    additional_suite_report_paths: Sequence[Path] | None = None,
     require_top_evidence: bool = False,
 ) -> dict[str, object]:
     """Aggregate deterministic memory eval suites into one capability scorecard.
@@ -385,6 +386,13 @@ def run_memory_quality_scorecard(
             GRAPH_NATIVE_GOLDEN_SUITE: run_graph_native_golden(),
             PROMPT_CONTRACT_SUITE: run_prompt_snapshots(),
         }
+    if additional_suite_report_paths:
+        for suite, payload in _load_scorecard_suite_reports(
+            additional_suite_report_paths,
+        ).items():
+            if suite in results:
+                raise ValueError(f"Duplicate scorecard suite report for suite: {suite}")
+            results[suite] = payload
     result = build_memory_quality_scorecard(
         results,
         require_top_evidence=require_top_evidence,
@@ -2329,6 +2337,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Existing redacted eval JSON report to include in the scorecard.",
     )
     scorecard.add_argument(
+        "--additional-suite-report",
+        action="append",
+        type=Path,
+        default=None,
+        help=(
+            "Extra redacted eval JSON report to merge with the default or supplied "
+            "scorecard suites."
+        ),
+    )
+    scorecard.add_argument(
         "--require-top-evidence",
         action="store_true",
         help=(
@@ -2411,6 +2429,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             result = run_memory_quality_scorecard(
                 report_out=args.report_out,
                 suite_report_paths=args.suite_report,
+                additional_suite_report_paths=args.additional_suite_report,
                 require_top_evidence=args.require_top_evidence,
             )
         except ValueError as exc:
