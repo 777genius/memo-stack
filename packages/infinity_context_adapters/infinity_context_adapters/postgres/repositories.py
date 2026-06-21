@@ -448,19 +448,39 @@ class PostgresChunkRepository(ChunkRepositoryPort):
             conditions.append(
                 or_(MemoryChunkRow.thread_id == thread_id, MemoryChunkRow.thread_id.is_(None))
             )
+        statement = select(MemoryChunkRow).where(*conditions)
+        if terms:
+            unique_terms = tuple(dict.fromkeys(terms))
+            term_matches = tuple(
+                MemoryChunkRow.normalized_text.contains(term) for term in unique_terms
+            )
+            lexical_score = sum(
+                case((match, 1), else_=0)
+                for match in term_matches
+            )
+            statement = statement.where(or_(*term_matches)).order_by(
+                lexical_score.desc(),
+                MemoryChunkRow.sequence.asc(),
+                MemoryChunkRow.created_at.asc(),
+            )
+        else:
+            statement = statement.order_by(MemoryChunkRow.created_at.desc())
         rows = list(
             (
                 await self._session.execute(
-                    select(MemoryChunkRow)
-                    .where(*conditions)
-                    .order_by(MemoryChunkRow.created_at.desc())
-                    .limit(_retrieval_candidate_limit(limit))
+                    statement.limit(_retrieval_candidate_limit(limit))
                 )
             ).scalars()
         )
         if terms:
-            rows.sort(key=lambda row: _score(row.normalized_text, terms), reverse=True)
-            rows = [row for row in rows if _score(row.normalized_text, terms) > 0]
+            scored_rows = [
+                (score, index, row)
+                for index, row in enumerate(rows)
+                for score in (_score(row.normalized_text, terms),)
+                if score > 0
+            ]
+            scored_rows.sort(key=lambda item: (-item[0], item[1]))
+            rows = [row for _, _, row in scored_rows]
         return [chunk_row_to_domain(row) for row in rows[:limit]]
 
 

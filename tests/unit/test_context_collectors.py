@@ -58,6 +58,25 @@ def test_rank_facts_for_query_uses_normalized_lexical_variants() -> None:
     assert ranked == (current,)
 
 
+def test_rank_facts_for_query_uses_bounded_typo_match_for_long_terms() -> None:
+    decoy = _fact(
+        "fact_decoy",
+        "Caroline shared an unrelated update about art, family and daily plans.",
+    )
+    current = _fact(
+        "fact_current",
+        "Caroline plans to continue her education and explore mental health counseling.",
+    )
+
+    ranked = _rank_facts_for_query(
+        (decoy, current),
+        query_text="What fields would Caroline pursue in her educaton?",
+        limit=1,
+    )
+
+    assert ranked == (current,)
+
+
 def test_rank_facts_for_query_prefers_phrase_signal_over_loose_decoy_terms() -> None:
     target = _fact(
         "fact_graphiti",

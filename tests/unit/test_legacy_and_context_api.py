@@ -9,7 +9,11 @@ from infinity_context_adapters.noop import (
     NoopGraphMemoryAdapter,
     NoopVectorMemoryAdapter,
 )
-from infinity_context_adapters.postgres.models import MemoryEpisodeRow, MemoryOutboxRow, MemoryThreadRow
+from infinity_context_adapters.postgres.models import (
+    MemoryEpisodeRow,
+    MemoryOutboxRow,
+    MemoryThreadRow,
+)
 from infinity_context_core.application import (
     BuildContextQuery,
     BuildContextUseCase,
@@ -740,6 +744,126 @@ def test_canonical_collector_reads_facts_and_keyword_chunks(tmp_path: Path) -> N
 
     assert any("CANONICAL_COLLECTOR_FACT_MARKER" in fact.text for fact in result.facts)
     assert any("CANONICAL_COLLECTOR_CHUNK_MARKER" in chunk.text for chunk in result.keyword_chunks)
+
+
+def test_keyword_chunk_search_finds_relevant_old_chunk_beyond_newest_window(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        scope = {
+            "space_slug": "client-app",
+            "memory_scope_external_ref": "default",
+            "thread_external_ref": "keyword-window-thread",
+        }
+        relevant = client.post(
+            "/v1/documents",
+            json={
+                **scope,
+                "title": "Old relevant note",
+                "text": (
+                    "RARE OLD NEEDLE BENCHMARK MARKER should be retrieved even "
+                    "after many newer unrelated documents."
+                ),
+                "source_type": "document",
+                "source_external_id": "old-relevant-keyword-window-doc",
+            },
+            headers=auth_headers(),
+        )
+        assert relevant.status_code == 201, relevant.text
+        for index in range(25):
+            distractor = client.post(
+                "/v1/documents",
+                json={
+                    **scope,
+                    "title": f"New distractor {index}",
+                    "text": (
+                        f"Newest distractor document {index} talks about routine "
+                        "planning, calendars and unrelated notes."
+                    ),
+                    "source_type": "document",
+                    "source_external_id": f"new-distractor-{index}",
+                },
+                headers=auth_headers(),
+            )
+            assert distractor.status_code == 201, distractor.text
+
+        context = client.post(
+            "/v1/context",
+            json={
+                **scope,
+                "query": "rare old needle",
+                "max_facts": 0,
+                "max_chunks": 1,
+                "max_evidence_items": 0,
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    assert "RARE OLD NEEDLE BENCHMARK MARKER" in data["rendered_text"]
+    assert data["diagnostics"]["keyword_chunks_considered"] == 1
+
+
+def test_keyword_chunk_search_ranks_old_typo_match_above_new_name_matches(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        scope = {
+            "space_slug": "client-app",
+            "memory_scope_external_ref": "default",
+            "thread_external_ref": "keyword-typo-thread",
+        }
+        relevant = client.post(
+            "/v1/documents",
+            json={
+                **scope,
+                "title": "Old education note",
+                "text": (
+                    "Caroline plans to continue her education and explore career options, "
+                    "especially counseling and mental health. TYPO_RANKING_MARKER"
+                ),
+                "source_type": "document",
+                "source_external_id": "old-education-typo-ranking-doc",
+            },
+            headers=auth_headers(),
+        )
+        assert relevant.status_code == 201, relevant.text
+        for index in range(40):
+            distractor = client.post(
+                "/v1/documents",
+                json={
+                    **scope,
+                    "title": f"New Caroline distractor {index}",
+                    "text": (
+                        f"Caroline shared a routine update {index} about art, family, "
+                        "weather and unrelated daily plans."
+                    ),
+                    "source_type": "document",
+                    "source_external_id": f"new-caroline-distractor-{index}",
+                },
+                headers=auth_headers(),
+            )
+            assert distractor.status_code == 201, distractor.text
+
+        context = client.post(
+            "/v1/context",
+            json={
+                **scope,
+                "query": "What fields would Caroline likely pursue in her educaton?",
+                "max_facts": 0,
+                "max_chunks": 1,
+                "max_evidence_items": 0,
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    assert "TYPO_RANKING_MARKER" in data["rendered_text"]
+    assert data["diagnostics"]["keyword_chunks_considered"] == 1
 
 
 def test_v1_document_ingest_accepts_external_scope_and_thread_context(

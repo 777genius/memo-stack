@@ -630,9 +630,9 @@ def _official_locomo_evidence_terms(
     for item in _as_list(evidence):
         if not isinstance(item, str):
             continue
-        text = evidence_lookup.get(item.strip())
-        if text:
-            terms.append(text)
+        evidence_id = item.strip()
+        if evidence_id and evidence_id in evidence_lookup:
+            terms.append(evidence_id)
     return tuple(_unique(terms))
 
 
@@ -674,7 +674,55 @@ def _official_locomo_documents(
                     source_external_id=f"locomo:{sample_id}:{key}",
                 )
             )
+    documents.extend(_official_locomo_observation_documents(raw, sample_id=sample_id))
     return tuple(documents)
+
+
+def _official_locomo_observation_documents(
+    raw: Mapping[str, object],
+    *,
+    sample_id: str,
+) -> tuple[BenchmarkDocumentInput, ...]:
+    observation = raw.get("observation")
+    if not isinstance(observation, Mapping):
+        return ()
+    documents: list[BenchmarkDocumentInput] = []
+    for key in sorted(observation, key=_session_sort_key):
+        value = observation.get(key)
+        if not isinstance(value, Mapping):
+            continue
+        session_key = key.removesuffix("_observation")
+        lines = [f"{session_key} observations"]
+        for actor, raw_items in value.items():
+            actor_name = str(actor).strip() or "speaker"
+            for item in _as_list(raw_items):
+                text, evidence_id = _official_locomo_observation_item(item)
+                if not text or not evidence_id:
+                    continue
+                lines.append(f"{evidence_id} {actor_name}: {text}")
+        if len(lines) <= 1:
+            continue
+        documents.append(
+            BenchmarkDocumentInput(
+                title=f"LoCoMo {sample_id} {session_key} observations",
+                text="\n".join(lines),
+                source_type="locomo_observation",
+                source_external_id=f"locomo:{sample_id}:{session_key}:observation",
+            )
+        )
+    return tuple(documents)
+
+
+def _official_locomo_observation_item(item: object) -> tuple[str, str]:
+    if isinstance(item, Mapping):
+        text = _first_str(item, "text", "content", "observation", "summary")
+        evidence_id = _first_str(item, "dia_id", "evidence", "evidence_id", "id")
+        return text, evidence_id
+    if isinstance(item, Sequence) and not isinstance(item, str | bytes):
+        values = tuple(str(value).strip() for value in item if isinstance(value, str))
+        if len(values) >= 2:
+            return values[0], values[1]
+    return "", ""
 
 
 def _is_session_key(value: object) -> bool:
@@ -705,7 +753,12 @@ def _is_official_longmemeval_row(raw: Mapping[str, object]) -> bool:
 def _official_longmemeval_case(raw: Mapping[str, object]) -> PublicBenchmarkCase:
     question_id = _first_str(raw, "question_id", "id") or _case_hash(raw)
     question = _first_str(raw, "question", "query")
-    expected_terms = _terms(raw, "answer", "expected_answer", "answers")
+    expected_terms = _official_longmemeval_evidence_terms(raw) or _terms(
+        raw,
+        "answer",
+        "expected_answer",
+        "answers",
+    )
     if not question or not expected_terms:
         raise BenchmarkValidationError(f"LongMemEval row {question_id} is missing question/answer")
     return PublicBenchmarkCase(
@@ -725,6 +778,24 @@ def _official_longmemeval_case(raw: Mapping[str, object]) -> PublicBenchmarkCase
             else [],
         },
     )
+
+
+def _official_longmemeval_evidence_terms(raw: Mapping[str, object]) -> tuple[str, ...]:
+    answer_session_ids = tuple(
+        item.strip()
+        for item in _as_list(raw.get("answer_session_ids"))
+        if isinstance(item, str) and item.strip()
+    )
+    if not answer_session_ids:
+        return ()
+    haystack_session_ids = {
+        item.strip()
+        for item in _as_list(raw.get("haystack_session_ids"))
+        if isinstance(item, str) and item.strip()
+    }
+    if not haystack_session_ids:
+        return tuple(_unique(answer_session_ids))
+    return tuple(_unique(item for item in answer_session_ids if item in haystack_session_ids))
 
 
 def _official_longmemeval_documents(

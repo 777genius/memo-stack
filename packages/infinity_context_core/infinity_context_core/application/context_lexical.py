@@ -151,7 +151,10 @@ def text_variant_sequence(text: str, *, min_chars: int = 2) -> tuple[tuple[str, 
 
 
 def query_term_frequency(term: LexicalQueryTerm, text_counts: Counter[str]) -> int:
-    return max((text_counts.get(variant, 0) for variant in term.variants), default=0)
+    exact_frequency = max((text_counts.get(variant, 0) for variant in term.variants), default=0)
+    if exact_frequency > 0:
+        return exact_frequency
+    return _approximate_term_frequency(term.variants, text_counts)
 
 
 def matching_token_spans(
@@ -282,6 +285,46 @@ def _expand_cross_language_aliases(values: Iterable[str]) -> tuple[str, ...]:
             elif _has_latin(normalized_alias):
                 expanded.extend(_english_stems(normalized_alias))
     return _dedupe(variant for variant in expanded if len(variant) >= 2)
+
+
+def _approximate_term_frequency(
+    variants: tuple[str, ...],
+    text_counts: Counter[str],
+) -> int:
+    long_variants = tuple(variant for variant in variants if len(variant) >= 6)
+    if not long_variants:
+        return 0
+    for variant in long_variants:
+        for candidate, frequency in text_counts.items():
+            if len(candidate) < 6 or abs(len(candidate) - len(variant)) > 1:
+                continue
+            if _edit_distance_at_most_one(variant, candidate):
+                return frequency
+    return 0
+
+
+def _edit_distance_at_most_one(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) > len(right):
+        left, right = right, left
+    mismatch_count = 0
+    left_index = 0
+    right_index = 0
+    while left_index < len(left) and right_index < len(right):
+        if left[left_index] == right[right_index]:
+            left_index += 1
+            right_index += 1
+            continue
+        mismatch_count += 1
+        if mismatch_count > 1:
+            return False
+        if len(left) == len(right):
+            left_index += 1
+        right_index += 1
+    return True
 
 
 def _has_cyrillic(token: str) -> bool:

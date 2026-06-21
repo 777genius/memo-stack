@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from infinity_context_server.public_benchmark import (
+    _load_cases,
     load_public_benchmark_case_count,
     load_public_benchmark_dataset_profile,
     run_public_memory_benchmark,
@@ -244,6 +245,63 @@ def test_public_memory_benchmark_accepts_official_locomo_shape(tmp_path: Path) -
     assert result["cases"][0]["case_id"] == "conv-mini:qa:1"
 
 
+def test_public_memory_benchmark_indexes_official_locomo_observations(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-observation-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-observation-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:1",
+                                "text": "I am thinking about next steps.",
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What field is Caroline considering for education?",
+                            "answer": "Mental health counseling",
+                            "evidence": ["D1:1"],
+                            "category": 3,
+                        }
+                    ],
+                    "observation": {
+                        "session_1_observation": {
+                            "Caroline": [
+                                [
+                                    "Caroline is considering mental health counseling education.",
+                                    "D1:1",
+                                ]
+                            ]
+                        }
+                    },
+                    "event_summary": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+    observation_docs = [
+        document for document in case.documents if document.source_type == "locomo_observation"
+    ]
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert len(observation_docs) == 1
+    assert "D1:1 Caroline: Caroline is considering mental health counseling education." in (
+        observation_docs[0].text
+    )
+    assert result["ok"] is True
+
+
 def test_public_memory_benchmark_accepts_official_longmemeval_shape(tmp_path: Path) -> None:
     dataset = tmp_path / "longmemeval_s_cleaned-mini.json"
     dataset.write_text(
@@ -315,4 +373,53 @@ def test_public_memory_benchmark_accepts_longmemeval_numeric_answer(tmp_path: Pa
     result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
 
     assert result["ok"] is True
+    assert result["metrics"]["longmemeval_accuracy"] == 1.0
+
+
+def test_public_memory_benchmark_uses_longmemeval_answer_session_ids_as_evidence(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval_abstention_evidence.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "long-abstention",
+                    "question_type": "single-session-user",
+                    "question": "What pet did I mention named Luna instead of a hamster?",
+                    "question_date": "2023/06/01 (Thu) 10:00",
+                    "answer": (
+                        "You did not mention this information. "
+                        "You mentioned your cat Luna but not your hamster."
+                    ),
+                    "answer_session_ids": ["answer_session"],
+                    "haystack_session_ids": ["answer_session", "distractor_session"],
+                    "haystack_dates": [
+                        "2023/05/31 (Wed) 18:00",
+                        "2023/05/29 (Mon) 11:00",
+                    ],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "My cat Luna needs a new carrier.",
+                            }
+                        ],
+                        [
+                            {
+                                "role": "user",
+                                "content": "I bought food for the neighbor's dog.",
+                            }
+                        ],
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
     assert result["metrics"]["longmemeval_accuracy"] == 1.0
