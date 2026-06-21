@@ -723,7 +723,10 @@ def _audit_provider_report(
         failures,
         "live_provider_key_present",
         report.get("provider_key_present") is True,
-        "Live provider proof needs MEMORY_OPENAI_API_KEY or OPENAI_API_KEY",
+        (
+            "Live provider proof needs MEMORY_OPENAI_API_KEY, OPENAI_API_KEY "
+            "or MEMORY_OPENAI_API_KEY_FILE"
+        ),
     )
     _check(
         checks,

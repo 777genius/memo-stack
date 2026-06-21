@@ -54,7 +54,9 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert stdout_report == file_report
     assert file_report["ok"] is False
     assert file_report["suite"] == "infinity-context-multimodal-live-provider-canary"
-    assert file_report["required_env"] == ["MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"]
+    assert file_report["required_env"] == [
+        "MEMORY_OPENAI_API_KEY, OPENAI_API_KEY or MEMORY_OPENAI_API_KEY_FILE"
+    ]
     assert file_report["secrets_redacted"] is True
     assert isinstance(file_report["generated_at"], str)
     assert file_report["git"]["commit"]
@@ -240,7 +242,8 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert requirements["report_safety_contract"]["status"] == "contract_covered"
     assert file_report["components"]["provider_key"] == {
         "message": (
-            "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running the live provider canary"
+            "Set MEMORY_OPENAI_API_KEY, OPENAI_API_KEY or MEMORY_OPENAI_API_KEY_FILE "
+            "before running the live provider canary"
         ),
         "operator_action": "configure_provider_credential",
         "reason": "provider_credential_missing",
@@ -1019,6 +1022,112 @@ def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
 
     assert args.report_out == ".e2e-artifacts/multimodal-live-provider-canary.json"
     assert args.allow_missing_key is False
+    assert args.api_key_file is None
+
+
+def test_multimodal_live_provider_canary_reads_api_key_file_without_report_leak(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    sentinel = "sk-live-file-secret-that-must-not-leak"
+    key_file = tmp_path / "openai-key.env"
+    key_file.write_text(
+        f"# local secret file\nexport MEMORY_OPENAI_API_KEY='{sentinel}'\n",
+        encoding="utf-8",
+    )
+    audio_fixture = tmp_path / "fixture.wav"
+    audio_fixture.write_bytes(_valid_wav_bytes())
+
+    class FailedVisionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def analyze(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="failed",
+                safe_error_code="asset_extraction.vision.invalid_api_key",
+                safe_error_message=f"provider echoed {sentinel}",
+                provider_name="fake_vision",
+                provider_model="fake-vision-model",
+                provider_version="fake-version",
+                diagnostics={"message": f"Authorization failed for Bearer {sentinel}"},
+            )
+
+    class FailedTranscriptionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def transcribe(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="failed",
+                safe_error_code="asset_extraction.transcription.invalid_api_key",
+                safe_error_message=f"provider echoed {sentinel}",
+                provider_name="fake_transcription",
+                provider_model="fake-transcription-model",
+                provider_version="fake-version",
+                diagnostics={"message": f"Authorization failed for Bearer {sentinel}"},
+            )
+
+    monkeypatch.delenv("MEMORY_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(module, "OpenAIImageVisionAdapter", FailedVisionAdapter)
+    monkeypatch.setattr(module, "OpenAISpeechTranscriptionAdapter", FailedTranscriptionAdapter)
+    args = module._parse_args(
+        [
+            "--api-key-file",
+            str(key_file),
+            "--audio-fixture",
+            str(audio_fixture),
+            "--skip-invalid-key-probe",
+            "--skip-timeout-probe",
+        ]
+    )
+
+    assert module._provider_api_key(args) == sentinel
+    report = asyncio.run(module.run_multimodal_live_provider_canary(args))
+    rendered = json.dumps(report, sort_keys=True)
+
+    assert report["provider_key_present"] is True
+    assert report["components"]["provider_key"] == {"status": "configured"}
+    assert report["secrets_redacted"] is True
+    assert sentinel not in rendered
+    assert str(key_file) not in rendered
+
+
+def test_multimodal_live_provider_canary_api_key_file_parsing_and_precedence(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    raw_file = tmp_path / "raw.key"
+    raw_file.write_text("sk-file-secret\n", encoding="utf-8")
+    env_file = tmp_path / "openai.env"
+    env_file.write_text(
+        'OTHER=value\nOPENAI_API_KEY="sk-env-file-secret"\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("MEMORY_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert module._provider_api_key(module._parse_args(["--api-key-file", str(raw_file)])) == (
+        "sk-file-secret"
+    )
+    assert module._provider_api_key(module._parse_args(["--api-key-file", str(env_file)])) == (
+        "sk-env-file-secret"
+    )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-process-env-secret")
+    assert module._provider_api_key(module._parse_args(["--api-key-file", str(raw_file)])) == (
+        "sk-process-env-secret"
+    )
+
+    empty_file = tmp_path / "empty.env"
+    empty_file.write_text("# no key here\n", encoding="utf-8")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    args = module._parse_args(["--api-key-file", str(empty_file)])
+    assert module._provider_api_key(args) is None
+    assert module._provider_key_missing_reason(args) == "provider_credential_file_unusable"
 
 
 def test_multimodal_live_provider_canary_reports_model_specific_vision_details() -> None:

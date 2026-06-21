@@ -44,7 +44,7 @@ SUITE = "infinity-context-multimodal-live-provider-canary"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROOF_MATRIX_VERSION = "multimodal-provider-proof-matrix-v1"
 REPORT_SAFETY_SCHEMA_VERSION = "multimodal-provider-report-safety-v1"
-REQUIRED_ENV = "MEMORY_OPENAI_API_KEY or OPENAI_API_KEY"
+REQUIRED_ENV = "MEMORY_OPENAI_API_KEY, OPENAI_API_KEY or MEMORY_OPENAI_API_KEY_FILE"
 DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
 DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
 async def run_multimodal_live_provider_canary(
     args: argparse.Namespace,
 ) -> dict[str, object]:
-    api_key = _provider_api_key()
+    api_key = _provider_api_key(args)
     report = _base_report(args, has_provider_key=bool(api_key))
     report["components"]["vision_fixture"] = _vision_fixture_preflight()
     audio_fixture_components = _audio_fixtures_preflight(args)
@@ -163,22 +163,23 @@ async def run_multimodal_live_provider_canary(
             reason=_timeout_probe_skip_reason(args, has_provider_key=bool(api_key)),
         )
     if not api_key:
+        missing_reason = _provider_key_missing_reason(args)
         report["components"]["provider_key"] = _component(
             "degraded",
-            reason="provider_credential_missing",
+            reason=missing_reason,
             message=f"Set {REQUIRED_ENV} before running the live provider canary",
         )
         report["components"]["vision"] = _component(
             "skipped",
-            reason="provider_credential_missing",
+            reason=missing_reason,
         )
         report["components"]["transcription"] = _component(
             "skipped",
-            reason="provider_credential_missing",
+            reason=missing_reason,
         )
         report["components"]["timeout_probe"] = _component(
             "skipped",
-            reason="provider_credential_missing",
+            reason=missing_reason,
         )
         report["ok"] = False
         _finalize_report(report)
@@ -798,6 +799,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "Return exit code 0 for no-key degraded reports. This is only for "
             "contract/degraded diagnostics gates and does not mark live provider "
             "proof as production-ready."
+        ),
+    )
+    parser.add_argument(
+        "--api-key-file",
+        default=os.environ.get("MEMORY_OPENAI_API_KEY_FILE"),
+        help=(
+            "Optional local file containing the OpenAI API key. Supports either a raw "
+            "key or .env lines for MEMORY_OPENAI_API_KEY/OPENAI_API_KEY. The path and "
+            "contents are never written to the canary report."
         ),
     )
     return parser.parse_args(argv)
@@ -1577,11 +1587,62 @@ def _string_list(value: object) -> list[str]:
     return []
 
 
-def _provider_api_key() -> str | None:
+def _provider_api_key(args: argparse.Namespace) -> str | None:
     value = os.environ.get("MEMORY_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if value and value.strip():
         return value.strip()
+    key_file = _configured_api_key_file(args)
+    if key_file is None:
+        return None
+    try:
+        return _parse_provider_api_key_file(
+            Path(key_file).expanduser().read_text(encoding="utf-8")
+        )
+    except OSError:
+        return None
+
+
+def _provider_key_missing_reason(args: argparse.Namespace) -> str:
+    if _configured_api_key_file(args) is not None:
+        return "provider_credential_file_unusable"
+    return "provider_credential_missing"
+
+
+def _configured_api_key_file(args: argparse.Namespace) -> str | None:
+    value = getattr(args, "api_key_file", None)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return None
+
+
+def _parse_provider_api_key_file(text: str) -> str | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    lines = [line.strip() for line in stripped.splitlines()]
+    if len(lines) == 1 and "=" not in lines[0] and not lines[0].startswith("#"):
+        return lines[0]
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        name, raw_value = line.split("=", 1)
+        if name.strip() not in {"MEMORY_OPENAI_API_KEY", "OPENAI_API_KEY"}:
+            continue
+        value = _strip_env_value(raw_value)
+        if value:
+            return value
+    return None
+
+
+def _strip_env_value(value: str) -> str:
+    clean = value.strip()
+    if len(clean) >= 2 and clean[0] == clean[-1] and clean[0] in {"'", '"'}:
+        clean = clean[1:-1].strip()
+    return clean or ""
 
 
 def _required_audio_suffixes(args: argparse.Namespace) -> frozenset[str]:

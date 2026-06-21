@@ -128,7 +128,8 @@ exported; it reads the key with terminal echo disabled and passes it only via
 process environment.
 `infinity-context-multimodal-live-provider-canary` is the direct multimodal provider
 canary for image vision and audio transcription adapters. It requires
-`MEMORY_OPENAI_API_KEY` or `OPENAI_API_KEY`, uses
+`MEMORY_OPENAI_API_KEY`, `OPENAI_API_KEY`, `MEMORY_OPENAI_API_KEY_FILE` or
+`--api-key-file`, uses
 `MEMORY_EXTRACTION_VISION_MODEL`, `MEMORY_EXTRACTION_VISION_DETAIL` and
 `MEMORY_TRANSCRIPTION_OPENAI_MODEL` when set, and writes a bounded JSON report
 to `.e2e-artifacts/multimodal-live-provider-canary.json` by default. Override
@@ -136,7 +137,10 @@ the path with `MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT`. For audio it uses
 `MEMORY_MULTIMODAL_PROVIDER_AUDIO_FIXTURE` when provided; otherwise it tries the
 macOS `say` command to synthesize a short speech fixture. Missing keys or missing
 speech fixture are reported as degraded diagnostics, not fake success, and the
-report never includes API key values.
+report never includes API key values. Prefer `MEMORY_OPENAI_API_KEY_FILE` or
+`--api-key-file` for local proof runs when you want to avoid putting a key in the
+shell command or process environment; the file can contain either a raw key or
+`.env` lines for `MEMORY_OPENAI_API_KEY`/`OPENAI_API_KEY`.
 `infinity-context-multimodal-provider-contract-canary` is the no-key contract gate:
 it exits 0 for degraded missing-key diagnostics so CI/local checks can verify
 fixtures, request contracts, invalid-key classification, readiness and redaction.
