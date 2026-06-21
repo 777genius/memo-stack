@@ -93,7 +93,8 @@ def test_comparison_does_not_overclaim_when_memora_was_not_run() -> None:
     )
     assert (
         "Do not claim Infinity Context has top-tier public retrieval "
-        "quality without a fresh large LoCoMo/LongMemEval report."
+        "quality without a fresh large LoCoMo/LongMemEval report "
+        "that meets competitive floors."
         in report["evidence_policy"]["do_not_claim"]
     )
 

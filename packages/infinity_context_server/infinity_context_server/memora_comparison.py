@@ -141,10 +141,10 @@ DIMENSIONS: tuple[Dimension, ...] = (
             "and graph/vector adapters are covered by deterministic gates. "
             "Semantic-equivalent duplicate checks now run in core consolidation "
             "and MCP preflight, while conflict-aware auto-apply keeps competing "
-            "decisions in review before they pollute recall. Current confidence "
-            "is provisional: internal smoke/golden gates are strong, but a fresh "
-            "large public LoCoMo/LongMemEval run is required before claiming "
-            "top-tier retrieval quality."
+            "decisions in review before they pollute recall. Large public "
+            "LoCoMo/LongMemEval evidence is summarized separately when provided; "
+            "top-tier retrieval should not be claimed unless both benchmarks meet "
+            "the competitive floor."
         ),
         memora_rationale=(
             "Memora has hybrid search, semantic search, memory_digest, related "
@@ -263,8 +263,8 @@ DIMENSIONS: tuple[Dimension, ...] = (
             "MemoryScope snapshots now include durable typed fact relations. Memory "
             "insights, recent activity, duplicate/similar fact review actions and "
             "safe consolidation plans are available via API, SDK, MCP and CLI. "
-            "This is capped below 9 until live provider proof and a large public "
-            "retrieval benchmark are current on the latest commit."
+            "This is capped below 9 until live provider proof is current and the "
+            "large public retrieval benchmark meets competitive floors."
         ),
         memora_rationale=(
             "Direct temp-db smoke passed and public repo is active, but we did "
@@ -329,7 +329,8 @@ def build_memora_agent_memory_comparison(
                 ),
                 (
                     "Do not claim Infinity Context has top-tier public retrieval "
-                    "quality without a fresh large LoCoMo/LongMemEval report."
+                    "quality without a fresh large LoCoMo/LongMemEval report "
+                    "that meets competitive floors."
                 ),
             ],
         },

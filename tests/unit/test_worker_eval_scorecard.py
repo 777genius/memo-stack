@@ -1192,6 +1192,52 @@ def test_memory_quality_scorecard_auto_discovers_standard_public_benchmark_repor
     )
 
 
+def test_memory_quality_scorecard_prefers_representative_public_benchmark_report(
+    tmp_path: Path,
+) -> None:
+    representative_report = _public_benchmark_report()
+    representative_report["benchmarks"][0]["metrics"]["accuracy"] = 0.7283
+    representative_report["benchmarks"][1]["metrics"]["accuracy"] = 0.94
+    representative_path = tmp_path / "public-benchmark-full-600-current.json"
+    representative_path.write_text(
+        json.dumps(representative_report),
+        encoding="utf-8",
+    )
+
+    canary_report = _public_benchmark_report()
+    canary_report["benchmarks"][0]["metrics"]["accuracy"] = 0.64
+    canary_report["benchmarks"][1]["metrics"]["accuracy"] = 0.376
+    canary_path = tmp_path / "public-benchmark-canary.json"
+    canary_path.write_text(
+        json.dumps(canary_report),
+        encoding="utf-8",
+    )
+    results = _scorecard_fixture_results()
+
+    _merge_standard_scorecard_external_reports(
+        results,
+        report_paths=(
+            (
+                "public-memory-benchmark",
+                representative_path,
+            ),
+            (
+                "public-memory-benchmark",
+                canary_path,
+            ),
+        ),
+    )
+
+    scorecard = build_memory_quality_scorecard(results)
+    public = scorecard["external_evidence"]["public_benchmark"]
+    assert public["benchmarks"]["locomo"]["accuracy"] == 0.7283
+    assert public["benchmarks"]["longmemeval"]["accuracy"] == 0.94
+    assert public["competitive_floor"]["failed_benchmarks"] == ["locomo"]
+    assert "public_benchmark_competitive_floor_failed" in (
+        scorecard["external_evidence"]["evidence_gaps"]
+    )
+
+
 def test_memory_quality_scorecard_auto_discovery_keeps_existing_suite_result(
     tmp_path: Path,
 ) -> None:

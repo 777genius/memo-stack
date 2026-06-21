@@ -82,6 +82,48 @@ def test_cli_quickstart_initializes_and_writes_redacted_mcp_config(
     assert "infinity-context ui --open" in "\n".join(payload["next_steps"])
 
 
+def test_cli_quickstart_human_output_shows_first_use_path(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("INFINITY_CONTEXT_HOME", str(home))
+
+    exit_code = cli.main(
+        [
+            "quickstart",
+            "--home",
+            str(home),
+            "--repo-dir",
+            str(repo),
+            "--no-start",
+            "--agent",
+            "codex",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    config = load_config(home)
+
+    assert exit_code == 0
+    assert "experience: configured_not_started" in captured.out
+    assert "first_use_score: 4.0/10" in captured.out
+    assert "capture_supports: text_note, file_evidence" in captured.out
+    assert "visual_previews: capture_preview, source_quote" in captured.out
+    assert "first_use_path:" in captured.out
+    assert "  - [todo] start_runtime: infinity-context up --lite" in captured.out
+    assert "  - [todo] open_visual_memory: infinity-context ui --open" in captured.out
+    assert (
+        "  - [done] connect_agent_mcp: "
+        "infinity-context mcp-config --agent codex --write"
+    ) in captured.out
+    assert "  - [blocked] save_first_memory: Capture" in captured.out
+    assert config.service_token not in captured.out
+
+
 def test_cli_quickstart_can_open_visual_memory(
     tmp_path: Path,
     monkeypatch,

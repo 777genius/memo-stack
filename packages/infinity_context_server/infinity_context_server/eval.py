@@ -120,6 +120,10 @@ _STANDARD_SCORECARD_EXTERNAL_REPORT_PATHS: tuple[tuple[str, Path], ...] = (
     ),
     (
         PUBLIC_MEMORY_BENCHMARK_SUITE,
+        Path(".e2e-artifacts/public-benchmark-full-600-current.json"),
+    ),
+    (
+        PUBLIC_MEMORY_BENCHMARK_SUITE,
         Path(".e2e-artifacts/public-benchmark-canary.json"),
     ),
     (

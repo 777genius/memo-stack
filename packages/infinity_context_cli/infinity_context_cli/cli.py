@@ -810,36 +810,7 @@ def _print_quickstart_payload(payload: dict[str, Any], *, as_json: bool) -> None
         print(f"status: {'ready' if status.get('ok') else 'not_ready'}")
     experience = payload.get("local_experience")
     if isinstance(experience, dict):
-        print(f"experience: {experience.get('status')}")
-        print(
-            "visual_memory: "
-            f"{'ready' if experience.get('visual_memory_ready') else 'not_ready'} "
-            f"({experience.get('ui_url')})"
-        )
-        ready_agents = experience.get("ready_agents") or []
-        if ready_agents:
-            print(f"mcp_ready_for: {', '.join(str(agent) for agent in ready_agents)}")
-        readiness = experience.get("readiness")
-        if isinstance(readiness, dict):
-            print(f"first_use_score: {readiness.get('score')}/{readiness.get('scale')}")
-        first_capture = experience.get("first_capture")
-        if isinstance(first_capture, dict):
-            supports = first_capture.get("supports") or []
-            if supports:
-                print(f"capture_supports: {', '.join(str(item) for item in supports)}")
-        one_minute_path = experience.get("one_minute_path")
-        if isinstance(one_minute_path, list):
-            next_item = next(
-                (
-                    item
-                    for item in one_minute_path
-                    if isinstance(item, dict) and item.get("status") in {"todo", "next"}
-                ),
-                None,
-            )
-            if isinstance(next_item, dict):
-                next_label = next_item.get("command") or next_item.get("id")
-                print(f"first_use_next: {next_label}")
+        _print_local_experience_summary(experience)
     if payload.get("opened_ui"):
         print(f"ui: opened {payload.get('ui_url')}")
     else:
@@ -855,6 +826,49 @@ def _print_quickstart_payload(payload: dict[str, Any], *, as_json: bool) -> None
         print(f"  - {step}")
 
 
+def _print_local_experience_summary(experience: dict[str, Any]) -> None:
+    print(f"experience: {experience.get('status')}")
+    print(
+        "visual_memory: "
+        f"{'ready' if experience.get('visual_memory_ready') else 'not_ready'} "
+        f"({experience.get('ui_url')})"
+    )
+    ready_agents = experience.get("ready_agents") or []
+    if ready_agents:
+        print(f"mcp_ready_for: {', '.join(str(agent) for agent in ready_agents)}")
+    readiness = experience.get("readiness")
+    if isinstance(readiness, dict):
+        print(f"first_use_score: {readiness.get('score')}/{readiness.get('scale')}")
+    first_capture = experience.get("first_capture")
+    if isinstance(first_capture, dict):
+        supports = first_capture.get("supports") or []
+        if supports:
+            print(f"capture_supports: {', '.join(str(item) for item in supports)}")
+        artifact_previews = first_capture.get("artifact_previews") or []
+        if artifact_previews:
+            print(f"visual_previews: {', '.join(str(item) for item in artifact_previews)}")
+    one_minute_path = experience.get("one_minute_path")
+    if not isinstance(one_minute_path, list):
+        return
+    next_item = next(
+        (
+            item
+            for item in one_minute_path
+            if isinstance(item, dict) and item.get("status") in {"todo", "next"}
+        ),
+        None,
+    )
+    if isinstance(next_item, dict):
+        next_label = next_item.get("command") or next_item.get("id")
+        print(f"first_use_next: {next_label}")
+    print("first_use_path:")
+    for item in one_minute_path:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("command") or item.get("tab") or item.get("id")
+        print(f"  - [{item.get('status')}] {item.get('id')}: {label}")
+
+
 def _print_runtime_result(result) -> None:
     if result.stdout:
         print(_safe_cli_text(result.stdout), end="")
@@ -867,6 +881,9 @@ def _print_payload(payload: dict[str, Any], *, as_json: bool) -> None:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
     for key, value in payload.items():
+        if key == "local_experience" and isinstance(value, dict):
+            _print_local_experience_summary(value)
+            continue
         print(f"{key}: {value}")
 
 
