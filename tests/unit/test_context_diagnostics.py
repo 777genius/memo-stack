@@ -582,6 +582,98 @@ def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() ->
     }
 
 
+def test_context_quality_downgrades_when_explicit_visual_region_requirement_missing() -> None:
+    item = ContextItem(
+        item_id="chunk_atlas",
+        item_type="chunk",
+        text="Atlas invoice owner is Alex, but this chunk has no screen region.",
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="asset_extraction",
+                source_id="extract_atlas",
+                chunk_id="ocr_owner_text",
+                quote_preview="Atlas invoice owner is Alex.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["artifact_evidence", "keyword_chunks"],
+            "query_snippet": "Atlas invoice owner is Alex.",
+            "evidence_kind": "ocr_region",
+            "evidence_modality": "image",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_evidence_features": ["visual_region"],
+                "missing_evidence_features": ["visual_region"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["evidence_strength"] == "strong"
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "explicit_requirements_missing" in summary["actionable_gaps"]
+    assert "missing_visual_region_requirement" in summary["actionable_gaps"]
+    assert "missing_visual_region_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_keeps_caveat_for_noncritical_missing_anchor_requirement() -> None:
+    item = ContextItem(
+        item_id="fact_atlas",
+        item_type="fact",
+        text="Atlas renewal was approved by Alex.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="fact",
+                source_id="fact_atlas",
+                char_start=0,
+                char_end=35,
+                quote_preview="Atlas renewal was approved by Alex.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["postgres_facts", "keyword_chunks"],
+            "query_snippet": "Atlas renewal was approved by Alex.",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 2,
+                "covered_total": 1,
+                "requested_anchor_kinds": ["project", "person"],
+                "covered_anchor_kinds": ["project"],
+                "missing_anchor_kinds": ["person"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["evidence_strength"] == "strong"
+    assert summary["answerability_status"] == "usable_with_caveats"
+    assert summary["recommended_response_policy"] == "answer_with_caveat_and_citations"
+    assert "missing_person_anchor_requirement" in summary["actionable_gaps"]
+    assert summary["answerability_reasons"] == [
+        "explicit_requirements_missing",
+        "missing_person_anchor_requirement",
+    ]
+
+
 def test_context_bundle_diagnostics_report_weak_retrieval_quality_gaps() -> None:
     stale_review = ContextItem(
         item_id="suggestion_conflict",

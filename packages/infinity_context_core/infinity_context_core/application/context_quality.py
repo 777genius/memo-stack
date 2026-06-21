@@ -101,6 +101,10 @@ def retrieval_quality_summary(
         review_only_items=review_only_items,
         pending_review_items=pending_review_items,
         stale_items=stale_items,
+        missing_requirement_count=_missing_requirement_count(diagnostics),
+        critical_missing_evidence_requirement_count=(
+            _critical_missing_evidence_requirement_count(diagnostics)
+        ),
     )
     return {
         "schema_version": "retrieval-quality-v1",
@@ -218,11 +222,17 @@ def _answerability_status(
     review_only_items: int,
     pending_review_items: int,
     stale_items: int,
+    missing_requirement_count: int,
+    critical_missing_evidence_requirement_count: int,
 ) -> str:
     if item_count <= 0:
         return "insufficient_context"
     if review_only_items + pending_review_items >= item_count or stale_items >= item_count:
         return "needs_review"
+    if critical_missing_evidence_requirement_count > 0:
+        return "insufficient_evidence"
+    if missing_requirement_count > 0 and evidence_strength == "strong":
+        return "usable_with_caveats"
     if evidence_strength == "strong":
         return "grounded"
     if evidence_strength == "weak":
@@ -292,6 +302,7 @@ def _retrieval_quality_gaps(
         gaps.append("low_evidence_location_coverage")
     if evidence_location_gap_count > 0:
         gaps.append("evidence_location_gaps_present")
+    gaps.extend(_requirement_coverage_gaps(diagnostics))
     if retrieval_source_count <= 1 and item_count > 1:
         gaps.append("single_retrieval_channel")
     if query_snippet_items <= 0 and item_count > 1:
@@ -331,6 +342,36 @@ def _retrieval_quality_gaps(
     ):
         gaps.append("unsafe_source_identity_sanitized")
     return gaps[:_MAX_ACTIONABLE_GAPS]
+
+
+def _requirement_coverage_gaps(diagnostics: dict[str, object]) -> list[str]:
+    coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
+    if _non_negative_int(coverage.get("missing_total"), default=0) <= 0:
+        return []
+
+    gaps = ["explicit_requirements_missing"]
+    for feature in _safe_string_list(coverage.get("missing_evidence_features")):
+        gaps.append(f"missing_{feature}_requirement")
+    for modality in _safe_string_list(coverage.get("missing_modalities")):
+        gaps.append(f"missing_{modality}_modality_requirement")
+    for kind in _safe_string_list(coverage.get("missing_anchor_kinds")):
+        gaps.append(f"missing_{kind}_anchor_requirement")
+    return gaps
+
+
+def _missing_requirement_count(diagnostics: dict[str, object]) -> int:
+    coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
+    return _non_negative_int(coverage.get("missing_total"), default=0)
+
+
+def _critical_missing_evidence_requirement_count(diagnostics: dict[str, object]) -> int:
+    coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
+    critical_features = {"citation", "page_or_char", "time_range", "visual_region"}
+    return sum(
+        1
+        for feature in _safe_string_list(coverage.get("missing_evidence_features"))
+        if feature in critical_features
+    )
 
 
 def _safe_item_score(item: ContextItem) -> float:
@@ -386,3 +427,19 @@ def _non_negative_int(value: object, *, default: int) -> int:
 
 def _as_dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _safe_string_list(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    safe_values: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip().lower().replace("-", "_")
+        if not normalized:
+            continue
+        if not normalized.replace("_", "").isalnum():
+            continue
+        safe_values.append(normalized[:64])
+    return safe_values
