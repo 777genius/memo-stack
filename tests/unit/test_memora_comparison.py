@@ -73,12 +73,76 @@ def test_comparison_does_not_overclaim_when_memora_was_not_run() -> None:
     report = build_memora_agent_memory_comparison()
 
     assert report["direct_memora_smoke"]["status"] == "not_run"
+    assert report["infinity_context_public_benchmark"]["status"] == "not_provided"
+    assert report["infinity_context_production_audit"]["status"] == "not_provided"
     assert "provenance" not in report["direct_memora_smoke"]
     assert report["evidence_policy"]["competitor_paid_openai_llm_mode_verified"] is False
     assert (
         "Do not claim Memora failed production OpenAI mode."
         in report["evidence_policy"]["do_not_claim"]
     )
+    assert (
+        "Do not claim Infinity Context live provider proof is current "
+        "unless production audit passes."
+        in report["evidence_policy"]["do_not_claim"]
+    )
+
+
+def test_comparison_summarizes_current_public_benchmark_and_audit_gaps() -> None:
+    report = build_memora_agent_memory_comparison(
+        public_benchmark_report={
+            "ok": True,
+            "suite": "public-memory-benchmark",
+            "metrics": {
+                "case_count": 1100,
+                "accuracy": 0.8245,
+                "locomo_accuracy": 0.7283,
+                "longmemeval_accuracy": 0.94,
+                "duplicate_case_id_count": 0,
+            },
+            "checks": {"unique_case_ids": True},
+            "benchmarks": [
+                {
+                    "name": "locomo",
+                    "capability_breakdown": {
+                        "locomo_category_1": {"accuracy": 0.4286, "case_count": 126},
+                        "locomo_category_2": {"accuracy": 0.9524, "case_count": 126},
+                    },
+                },
+                {
+                    "name": "longmemeval",
+                    "capability_breakdown": {
+                        "multi_session_reasoning": {"accuracy": 0.9023, "case_count": 133},
+                    },
+                },
+            ],
+            "provenance": {
+                "generated_by": "infinity_context_server.official_public_benchmark",
+                "suite": "public-memory-benchmark",
+                "git": {"short_commit": "4bd72bf", "dirty": False},
+            },
+        },
+        production_goal_audit={
+            "ok": False,
+            "git": {"short_commit": "4bd72bf", "dirty": False},
+            "failures": ["Live provider proof must be generated for the current git commit"],
+            "blocked_requirements": [{"area": "live_provider_proof"}],
+            "reports": {"docker": {"ok": True}},
+        },
+    )
+
+    benchmark = report["infinity_context_public_benchmark"]
+    assert benchmark["status"] == "passed"
+    assert benchmark["case_count"] == 1100
+    assert benchmark["locomo_accuracy"] == 0.7283
+    assert benchmark["weakest_capabilities"][0]["capability"] == "locomo_category_1"
+
+    audit = report["infinity_context_production_audit"]
+    assert audit["status"] == "blocked"
+    assert audit["blocked_requirements"] == [{"area": "live_provider_proof"}]
+
+    gap_ids = {item["id"] for item in report["current_gaps"]}
+    assert gap_ids == {"current_live_provider_proof", "locomo_retrieval_reasoning"}
 
 
 def test_comparison_module_does_not_import_competitor_runtime() -> None:

@@ -789,6 +789,14 @@ def test_makefile_persists_and_reuses_memora_direct_smoke_report() -> None:
     compare_recipe = "\n".join(_make_target_recipe(makefile, "infinity-context-compare-memora"))
 
     assert "MEMORA_DIRECT_SMOKE_REPORT ?= .tmp/memora-direct-smoke.json" in makefile
+    assert (
+        "MEMORA_PUBLIC_BENCHMARK_REPORT ?= .e2e-artifacts/public-benchmark-full-600-current.json"
+        in makefile
+    )
+    assert (
+        "MEMORA_PRODUCTION_AUDIT_REPORT ?= .e2e-artifacts/multimodal-production-goal-audit.json"
+        in makefile
+    )
     assert ".tmp/" in gitignore
     assert '--report-out "$(MEMORA_DIRECT_SMOKE_REPORT)"' in smoke_recipe
     assert "with_report_provenance(" in (
@@ -799,6 +807,8 @@ def test_makefile_persists_and_reuses_memora_direct_smoke_report() -> None:
     )
     assert '[ -f "$$smoke_report" ]' in compare_recipe
     assert "--memora-smoke-report" in compare_recipe
+    assert "--public-benchmark-report" in compare_recipe
+    assert "--production-goal-audit" in compare_recipe
 
 
 def test_makefile_has_official_public_benchmark_canary() -> None:

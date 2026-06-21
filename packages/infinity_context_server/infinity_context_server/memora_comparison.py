@@ -263,6 +263,8 @@ DIMENSIONS: tuple[Dimension, ...] = (
 def build_memora_agent_memory_comparison(
     *,
     memora_direct_smoke: Mapping[str, Any] | None = None,
+    public_benchmark_report: Mapping[str, Any] | None = None,
+    production_goal_audit: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic comparison report.
 
@@ -272,6 +274,8 @@ def build_memora_agent_memory_comparison(
     """
 
     direct_smoke = _summarize_memora_direct_smoke(memora_direct_smoke)
+    public_benchmark = _summarize_public_benchmark_report(public_benchmark_report)
+    production_audit = _summarize_production_goal_audit(production_goal_audit)
     dimensions = [_dimension_to_report(dimension) for dimension in DIMENSIONS]
     infinity_context_weighted = _weighted_score("infinity_context_score")
     memora_weighted = _weighted_score("memora_score")
@@ -288,6 +292,10 @@ def build_memora_agent_memory_comparison(
                 "Do not claim Memora failed production OpenAI mode.",
                 "Do not claim Infinity Context beats Memora on simple local setup.",
                 "Do not claim Memora architecture score is proven by source audit.",
+                (
+                    "Do not claim Infinity Context live provider proof is current "
+                    "unless production audit passes."
+                ),
             ],
         },
         "sources": {
@@ -315,9 +323,13 @@ def build_memora_agent_memory_comparison(
                 "tests/e2e/test_infinity_context_agent_behavior_bench_e2e.py",
                 "tests/e2e/test_infinity_context_agent_plugin_e2e.py",
                 "scripts/clean_full_smoke.py",
+                ".e2e-artifacts/public-benchmark-full-600-current.json",
+                ".e2e-artifacts/multimodal-production-goal-audit.json",
             ],
         },
         "direct_memora_smoke": direct_smoke,
+        "infinity_context_public_benchmark": public_benchmark,
+        "infinity_context_production_audit": production_audit,
         "dimensions": dimensions,
         "overall": {
             "infinity_context_score": round(infinity_context_weighted, 2),
@@ -327,9 +339,13 @@ def build_memora_agent_memory_comparison(
             "decision": (
                 "Infinity Context is stronger as a governed, extensible team/coding "
                 "agent memory platform. Memora is stronger as a ready-to-use "
-                "personal MCP memory with rich local UX and document fragments."
+                "personal MCP memory with rich local UX, action history and document fragments."
             ),
         },
+        "current_gaps": _current_gaps(
+            public_benchmark=public_benchmark,
+            production_audit=production_audit,
+        ),
         "recommendations": [
             {
                 "case": "Personal local coding-agent memory today",
@@ -346,6 +362,14 @@ def build_memora_agent_memory_comparison(
                 "winner": "infinity_context",
                 "reason": (
                     "Ports/adapters keep Graphiti, Qdrant, Cognee and future engines replaceable."
+                ),
+            },
+            {
+                "case": "Multimodal evidence-backed capture and review",
+                "winner": "infinity_context",
+                "reason": (
+                    "Current local proofs cover document/image/audio/video evidence, "
+                    "artifact previews, suggestions and review flow."
                 ),
             },
         ],
@@ -444,6 +468,103 @@ def _provenance_summary(value: object) -> dict[str, Any] | None:
     }
 
 
+def _summarize_public_benchmark_report(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not value:
+        return {
+            "status": "not_provided",
+            "note": "Pass --public-benchmark-report for fresh LoCoMo/LongMemEval evidence.",
+        }
+    metrics = value.get("metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    provenance = value.get("provenance")
+    checks = value.get("checks")
+    return {
+        "status": "passed" if value.get("ok") is True else "failed",
+        "suite": value.get("suite"),
+        "case_count": metrics_map.get("case_count"),
+        "accuracy": metrics_map.get("accuracy"),
+        "locomo_accuracy": metrics_map.get("locomo_accuracy"),
+        "longmemeval_accuracy": metrics_map.get("longmemeval_accuracy"),
+        "duplicate_case_id_count": metrics_map.get("duplicate_case_id_count"),
+        "checks": dict(checks) if isinstance(checks, Mapping) else {},
+        "provenance": _provenance_summary(provenance),
+        "weakest_capabilities": _weakest_capabilities(value),
+    }
+
+
+def _weakest_capabilities(value: Mapping[str, Any]) -> list[dict[str, Any]]:
+    breakdowns: list[dict[str, Any]] = []
+    benchmarks = value.get("benchmarks")
+    if not isinstance(benchmarks, list):
+        return breakdowns
+    for benchmark in benchmarks:
+        if not isinstance(benchmark, Mapping):
+            continue
+        capability_breakdown = benchmark.get("capability_breakdown")
+        if not isinstance(capability_breakdown, Mapping):
+            continue
+        for capability, metrics in capability_breakdown.items():
+            if not isinstance(capability, str) or not isinstance(metrics, Mapping):
+                continue
+            accuracy = metrics.get("accuracy")
+            if isinstance(accuracy, int | float):
+                breakdowns.append(
+                    {
+                        "benchmark": benchmark.get("name"),
+                        "capability": capability,
+                        "accuracy": round(float(accuracy), 4),
+                        "case_count": metrics.get("case_count"),
+                    }
+                )
+    return sorted(breakdowns, key=lambda item: item["accuracy"])[:5]
+
+
+def _summarize_production_goal_audit(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not value:
+        return {
+            "status": "not_provided",
+            "note": "Pass --production-goal-audit for current production proof blockers.",
+        }
+    failures = value.get("failures")
+    blocked_requirements = value.get("blocked_requirements")
+    reports = value.get("reports")
+    return {
+        "status": "passed" if value.get("ok") is True else "blocked",
+        "git": value.get("git") if isinstance(value.get("git"), Mapping) else None,
+        "failures": list(failures) if isinstance(failures, list) else [],
+        "blocked_requirements": (
+            list(blocked_requirements) if isinstance(blocked_requirements, list) else []
+        ),
+        "reports": dict(reports) if isinstance(reports, Mapping) else {},
+    }
+
+
+def _current_gaps(
+    *,
+    public_benchmark: Mapping[str, Any],
+    production_audit: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    gaps: list[dict[str, str]] = []
+    if production_audit.get("status") == "blocked":
+        gaps.append(
+            {
+                "id": "current_live_provider_proof",
+                "severity": "high",
+                "summary": "Live provider proof is not current for the latest commit.",
+            }
+        )
+    locomo_accuracy = public_benchmark.get("locomo_accuracy")
+    if isinstance(locomo_accuracy, int | float) and float(locomo_accuracy) < 0.8:
+        gaps.append(
+            {
+                "id": "locomo_retrieval_reasoning",
+                "severity": "high",
+                "summary": "LoCoMo retrieval/reasoning is below the desired competitive floor.",
+            }
+        )
+    return gaps
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -458,10 +579,35 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Optional JSON output from scripts/memora_direct_mcp_smoke.py.",
     )
+    parser.add_argument(
+        "--public-benchmark-report",
+        type=Path,
+        help="Optional JSON output from official public memory benchmark proof.",
+    )
+    parser.add_argument(
+        "--production-goal-audit",
+        type=Path,
+        help="Optional JSON output from multimodal production goal audit.",
+    )
     args = parser.parse_args(argv)
 
     smoke = _load_json(args.memora_smoke_report) if args.memora_smoke_report else None
-    print(json.dumps(build_memora_agent_memory_comparison(memora_direct_smoke=smoke), indent=2))
+    public_benchmark = (
+        _load_json(args.public_benchmark_report) if args.public_benchmark_report else None
+    )
+    production_audit = (
+        _load_json(args.production_goal_audit) if args.production_goal_audit else None
+    )
+    print(
+        json.dumps(
+            build_memora_agent_memory_comparison(
+                memora_direct_smoke=smoke,
+                public_benchmark_report=public_benchmark,
+                production_goal_audit=production_audit,
+            ),
+            indent=2,
+        )
+    )
     return 0
 
 

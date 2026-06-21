@@ -26,6 +26,8 @@ MEMORY_AGENT_SMOKE_SERVER_PORT ?= 17788
 MEMORY_PROD_CONFIDENCE_POSTGRES_PORT ?= 55431
 MEMORY_PROD_CONFIDENCE_SERVER_PORT ?= 17791
 MEMORA_DIRECT_SMOKE_REPORT ?= .tmp/memora-direct-smoke.json
+MEMORA_PUBLIC_BENCHMARK_REPORT ?= .e2e-artifacts/public-benchmark-full-600-current.json
+MEMORA_PRODUCTION_AUDIT_REPORT ?= .e2e-artifacts/multimodal-production-goal-audit.json
 OBSIDIAN_PLUGIN_DIR ?= packages/infinity_context_obsidian_plugin
 
 .PHONY: infinity-context-format
@@ -234,11 +236,19 @@ infinity-context-memora-direct-smoke:
 infinity-context-compare-memora:
 	@set -e; \
 	smoke_report="$${MEMORA_DIRECT_SMOKE_REPORT:-$(MEMORA_DIRECT_SMOKE_REPORT)}"; \
+	public_benchmark_report="$${MEMORA_PUBLIC_BENCHMARK_REPORT:-$(MEMORA_PUBLIC_BENCHMARK_REPORT)}"; \
+	production_audit_report="$${MEMORA_PRODUCTION_AUDIT_REPORT:-$(MEMORA_PRODUCTION_AUDIT_REPORT)}"; \
+	set --; \
 	if [ -n "$$smoke_report" ] && [ -f "$$smoke_report" ]; then \
-		$(PYTHON) -m infinity_context_server.memora_comparison --memora-smoke-report "$$smoke_report"; \
-	else \
-		$(PYTHON) -m infinity_context_server.memora_comparison; \
-	fi
+		set -- "$$@" --memora-smoke-report "$$smoke_report"; \
+	fi; \
+	if [ -n "$$public_benchmark_report" ] && [ -f "$$public_benchmark_report" ]; then \
+		set -- "$$@" --public-benchmark-report "$$public_benchmark_report"; \
+	fi; \
+	if [ -n "$$production_audit_report" ] && [ -f "$$production_audit_report" ]; then \
+		set -- "$$@" --production-goal-audit "$$production_audit_report"; \
+	fi; \
+	$(PYTHON) -m infinity_context_server.memora_comparison "$$@"
 
 .PHONY: infinity-context-official-public-benchmark-canary
 infinity-context-official-public-benchmark-canary:
