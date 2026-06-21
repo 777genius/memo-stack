@@ -333,8 +333,25 @@ def _anchor_kinds_from_text(text: str) -> tuple[str, ...]:
 def _requested_modalities(query: str) -> tuple[str, ...]:
     lowered = query.casefold()
     return _bounded_unique(
-        modality for modality, hints in _MODALITY_HINTS if any(hint in lowered for hint in hints)
+        modality
+        for modality, hints in _MODALITY_HINTS
+        if any(_modality_hint_matches(lowered, hint) for hint in hints)
     )
+
+
+def _modality_hint_matches(lowered_query: str, hint: str) -> bool:
+    if _is_ascii_word_hint(hint):
+        return bool(
+            re.search(
+                rf"(?<![a-z0-9]){re.escape(hint)}s?(?![a-z0-9])",
+                lowered_query,
+            )
+        )
+    return hint in lowered_query
+
+
+def _is_ascii_word_hint(hint: str) -> bool:
+    return bool(re.fullmatch(r"[a-z0-9]+", hint))
 
 
 def _covered_modalities(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
@@ -344,30 +361,73 @@ def _covered_modalities(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
         modality = _safe_key(diagnostics.get("evidence_modality"))
         if modality:
             modalities.append(modality)
+        explicit_modality = modality if modality in {"audio", "document", "image", "video"} else ""
         kind = _safe_key(diagnostics.get("evidence_kind"))
-        if "ocr" in kind or any(ref.bbox is not None for ref in item.source_refs):
+        source_identity_parts = [
+            item.item_type,
+            kind,
+            _safe_key(diagnostics.get("artifact_type")),
+            _safe_key(diagnostics.get("retrieval_source")),
+        ]
+        for ref in item.source_refs:
+            source_identity_parts.extend(
+                (
+                    ref.source_type,
+                    ref.source_id,
+                    ref.chunk_id or "",
+                )
+            )
+        source_identity = " ".join(source_identity_parts).casefold()
+        if explicit_modality != "audio" and (
+            "ocr" in kind or any(ref.bbox is not None for ref in item.source_refs)
+        ):
             modalities.append("image")
-        if "transcript" in kind or "speech" in kind:
+        has_audio_identity = (
+            "transcript" in kind
+            or "speech" in kind
+            or _source_identity_has_any(source_identity, ("audio", "transcript", "speech"))
+        )
+        has_video_identity = (
+            "keyframe" in kind
+            or "frame" in kind
+            or _source_identity_has_any(
+                source_identity,
+                ("video", "keyframe", "frame_timeline", "video_frame"),
+            )
+        )
+        if explicit_modality not in {"document", "image", "video"} and (
+            has_audio_identity and not has_video_identity
+        ):
             modalities.append("audio")
-        if "keyframe" in kind or "frame" in kind:
+        if explicit_modality not in {"audio", "document", "image"} and has_video_identity:
             modalities.append("video")
-        if "document" in kind or "pdf" in kind:
+        if explicit_modality not in {"audio", "image", "video"} and (
+            "document" in kind or "pdf" in kind
+        ):
             modalities.append("document")
         for ref in item.source_refs:
             source_type = ref.source_type.casefold()
-            if source_type in {"document", "document_chunk"}:
+            if (
+                explicit_modality not in {"audio", "image", "video"}
+                and source_type in {"document", "document_chunk"}
+            ):
                 modalities.append("document")
             if (
+                explicit_modality not in {"audio", "image", "video"}
+                and (
                 ref.page_number is not None
                 or ref.char_start is not None
                 or ref.char_end is not None
+                )
             ):
                 modalities.append("document")
-            if ref.time_start_ms is not None or ref.time_end_ms is not None:
-                modalities.append("audio")
-            if ref.bbox is not None:
+            if explicit_modality != "audio" and ref.bbox is not None:
                 modalities.append("image")
     return _bounded_unique(modalities)
+
+
+def _source_identity_has_any(source_identity: str, hints: tuple[str, ...]) -> bool:
+    return any(hint in source_identity for hint in hints)
 
 
 def _requested_evidence_features(query: str) -> tuple[str, ...]:

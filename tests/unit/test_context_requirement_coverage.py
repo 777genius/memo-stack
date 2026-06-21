@@ -121,6 +121,136 @@ def test_context_requirement_coverage_supports_document_page_citations() -> None
     assert set(coverage["covered_evidence_features"]) >= {"citation", "page_or_char"}
 
 
+def test_context_requirement_coverage_infers_video_from_frame_timeline_source() -> None:
+    query = "покажи таймкод в видео где Atlas launch approved"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="artifact_video_timeline",
+            item_type="extraction_artifact",
+            text="Video frame timeline: Atlas launch approved at 00:42.",
+            score=0.91,
+            source_refs=(
+                SourceRef(
+                    source_type="extraction_artifact",
+                    source_id="video_frame_timeline_artifact",
+                    chunk_id="keyframe-0001",
+                    quote_preview="Atlas launch approved at 00:42.",
+                    time_start_ms=42_000,
+                    time_end_ms=49_000,
+                ),
+            ),
+            diagnostics={},
+        ),
+        ContextItem(
+            item_id="anchor_launch_event",
+            item_type="anchor",
+            text="event: Atlas launch approved in the video.",
+            score=0.89,
+            source_refs=(),
+            diagnostics={"anchor_kind": "event", "memory_scope_id": "scope"},
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["status"] == "satisfied"
+    assert coverage["requested_modalities"] == ["video"]
+    assert coverage["covered_modalities"] == ["video"]
+    assert "audio" not in coverage["covered_modalities"]
+    assert set(coverage["covered_evidence_features"]) >= {"citation", "time_range"}
+
+
+def test_context_requirement_coverage_does_not_treat_unknown_timestamp_as_audio() -> None:
+    query = "найди аудио где Atlas renewal approved"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="generic_timed_artifact",
+            item_type="extraction_artifact",
+            text="Atlas renewal approved.",
+            score=0.9,
+            source_refs=(
+                SourceRef(
+                    source_type="extraction_artifact",
+                    source_id="generic_artifact",
+                    chunk_id="segment-1",
+                    quote_preview="Atlas renewal approved.",
+                    time_start_ms=1200,
+                    time_end_ms=6400,
+                ),
+            ),
+            diagnostics={},
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["status"] == "partial"
+    assert coverage["requested_modalities"] == ["audio"]
+    assert coverage["missing_modalities"] == ["audio"]
+    assert "time_range" in coverage["covered_evidence_features"]
+
+
+def test_context_requirement_coverage_does_not_request_audio_for_invoice_voice_substring() -> None:
+    query = "where on screen is Project Atlas screenshot invoice owner Alex"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="artifact_invoice_screenshot",
+            item_type="extraction_artifact",
+            text="Project Atlas screenshot invoice owner Alex",
+            score=0.91,
+            source_refs=(
+                SourceRef(
+                    source_type="extraction_artifact",
+                    source_id="artifact_invoice_screenshot",
+                    chunk_id="ocr-owner",
+                    quote_preview="Project Atlas screenshot invoice owner Alex",
+                    bbox=(12.0, 32.0, 300.0, 88.0),
+                ),
+            ),
+            diagnostics={
+                "evidence_kind": "ocr_region",
+                "evidence_modality": "image",
+            },
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["status"] == "satisfied"
+    assert coverage["requested_modalities"] == ["image"]
+    assert "audio" not in coverage["requested_modalities"]
+
+
+def test_context_requirement_coverage_still_requests_audio_for_voice_word() -> None:
+    query = "find the voice recording where Alex approved Atlas"
+    intent = build_query_anchor_intent(query)
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(),
+    )
+
+    assert coverage["status"] == "missing"
+    assert coverage["requested_modalities"] == ["audio"]
+    assert coverage["missing_modalities"] == ["audio"]
+
+
 def test_sanitize_context_requirement_coverage_bounds_and_redacts_payload() -> None:
     secret = "sk-proj-contextcoverage-secret1234567890"
 
