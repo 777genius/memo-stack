@@ -2,12 +2,14 @@ from infinity_context_server.eval_case_runner import (
     _MAX_DIAGNOSTIC_MISMATCH_FAILURES,
     _case_failures,
     _item_mappings,
+    _quality_golden_gates,
+    _quality_golden_metrics,
     _required_case_metrics,
     _required_diagnostic_mismatches,
     _required_diagnostics_ok,
     _required_mapping_group_mismatches,
 )
-from infinity_context_server.eval_types import EvalCase
+from infinity_context_server.eval_types import EvalCase, EvalCaseResult
 
 
 def test_required_diagnostic_failures_are_bounded_and_redacted() -> None:
@@ -134,6 +136,67 @@ def test_required_diagnostics_support_nested_dot_paths() -> None:
             "actual": "satisfied",
         },
     )
+
+
+def test_quality_metrics_gate_no_candidate_abstention() -> None:
+    no_candidate_case = EvalCase(
+        case_id="unrelated_query_returns_no_context_items",
+        category="no_candidate",
+        space_id="space_eval",
+        memory_scope_ids=("scope_eval",),
+        query="xqzv no candidate",
+    )
+    leak_case = EvalCase(
+        case_id="identifier_like_query_deflects_partial_marker",
+        category="no_candidate",
+        space_id="space_eval",
+        memory_scope_ids=("scope_eval",),
+        query="secret marker",
+    )
+    result_ok = EvalCaseResult(
+        case=no_candidate_case,
+        status_code=200,
+        recall_ok=True,
+        precision_ok=True,
+        evidence_guard=True,
+        token_overflow=False,
+        item_ids=(),
+        diagnostics={"items_used": 0, "retrieval_quality_summary": _answerability_summary()},
+        failures=(),
+    )
+    result_leak = EvalCaseResult(
+        case=leak_case,
+        status_code=200,
+        recall_ok=True,
+        precision_ok=False,
+        evidence_guard=True,
+        token_overflow=False,
+        item_ids=("fact_leak",),
+        diagnostics={"items_used": 1, "retrieval_quality_summary": _answerability_summary()},
+        failures=({"case_id": leak_case.case_id, "reason": "must_not_include_matched"},),
+    )
+
+    metrics = _quality_golden_metrics(
+        (result_ok, result_leak),
+        include_required_case_metrics=False,
+    )
+    gates = _quality_golden_gates(
+        {
+            **_passing_quality_gate_metrics(),
+            "no_candidate_abstention_rate": metrics["no_candidate_abstention_rate"],
+            "no_candidate_leak_count": metrics["no_candidate_leak_count"],
+            "critical_failure_count": metrics["critical_failure_count"],
+            "harmful_context_rate": metrics["harmful_context_rate"],
+        }
+    )
+
+    assert metrics["no_candidate_case_count"] == 2
+    assert metrics["no_candidate_abstention_rate"] == 0.5
+    assert metrics["no_candidate_leak_count"] == 1
+    assert metrics["critical_failure_count"] == 1
+    assert gates["no_candidate_abstention_rate"] is False
+    assert gates["no_candidate_leak_count"] is False
+    assert gates["critical_failure_count"] is False
 
 
 def test_required_mapping_groups_match_source_refs_and_nested_citations() -> None:
@@ -358,4 +421,47 @@ def test_required_case_metrics_report_missing_required_cases() -> None:
         "missing_required_case_count": 1,
         "missing_required_cases": ["event_call_beats_recent_chat"],
         "required_case_coverage_rate": 0.6667,
+    }
+
+
+def _answerability_summary() -> dict[str, object]:
+    return {
+        "answerability_status": "insufficient_context",
+        "recommended_response_policy": "ask_for_more_context",
+        "answerability_reasons": ["no_context_items"],
+    }
+
+
+def _passing_quality_gate_metrics() -> dict[str, object]:
+    return {
+        "required_case_coverage_rate": 1.0,
+        "missing_required_case_count": 0,
+        "recall_at_5": 1.0,
+        "precision_at_5": 1.0,
+        "answer_support_rate": 1.0,
+        "answer_support_breakdown_rate": 1.0,
+        "document_recall_at_5": 1.0,
+        "hybrid_retrieval_rate": 1.0,
+        "citation_support_rate": 1.0,
+        "precise_citation_contract_rate": 1.0,
+        "source_citation_failure_count": 0,
+        "retrieval_trace_support_rate": 1.0,
+        "retrieval_trace_location_contract_rate": 1.0,
+        "retrieval_answerability_contract_rate": 1.0,
+        "item_contract_support_rate": 1.0,
+        "item_contract_failure_count": 0,
+        "duplicate_merge_review_rate": 1.0,
+        "conflict_review_rate": 1.0,
+        "anchor_context_recall_rate": 1.0,
+        "multi_memory_scope_recall_at_5": 1.0,
+        "thread_recall_at_5": 1.0,
+        "stale_memory_rate": 0.0,
+        "deleted_memory_leak_count": 0,
+        "cross_memory_scope_leak_count": 0,
+        "cross_thread_leak_count": 0,
+        "restricted_memory_leak_count": 0,
+        "prompt_injection_promoted_count": 0,
+        "fallback_success_rate": 1.0,
+        "context_token_overflow_count": 0,
+        "harmful_context_rate": 0.0,
     }

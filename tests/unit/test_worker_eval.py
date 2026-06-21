@@ -1280,6 +1280,11 @@ def test_quality_golden_eval_passes() -> None:
     assert result["gates"]["retrieval_trace_location_contract_rate"] is True
     assert result["metrics"]["retrieval_answerability_contract_rate"] == 1.0
     assert result["gates"]["retrieval_answerability_contract_rate"] is True
+    assert result["metrics"]["no_candidate_case_count"] >= 2
+    assert result["metrics"]["no_candidate_abstention_rate"] == 1.0
+    assert result["metrics"]["no_candidate_leak_count"] == 0
+    assert result["gates"]["no_candidate_abstention_rate"] is True
+    assert result["gates"]["no_candidate_leak_count"] is True
     assert result["metrics"]["item_contract_support_rate"] == 1.0
     assert result["metrics"]["item_contract_failure_count"] == 0
     assert result["gates"]["item_contract_support_rate"] is True
@@ -1382,6 +1387,8 @@ def test_quality_golden_eval_writes_redacted_report(tmp_path: Path) -> None:
     assert payload["metrics"]["retrieval_trace_support_rate"] == 1.0
     assert payload["metrics"]["retrieval_trace_location_contract_rate"] == 1.0
     assert payload["metrics"]["retrieval_answerability_contract_rate"] == 1.0
+    assert payload["metrics"]["no_candidate_abstention_rate"] == 1.0
+    assert payload["metrics"]["no_candidate_leak_count"] == 0
     assert payload["metrics"]["precise_citation_contract_rate"] == 1.0
     assert payload["metrics"]["answer_support_breakdown_rate"] == 1.0
     assert payload["failures"] == []

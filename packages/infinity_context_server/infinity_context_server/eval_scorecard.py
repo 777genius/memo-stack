@@ -529,6 +529,10 @@ def _scorecard_canonical_recall_precision(
         "retrieval_answerability_contract_rate": (
             quality.get("retrieval_answerability_contract_rate") == 1.0
         ),
+        "no_candidate_abstention_rate": (
+            quality.get("no_candidate_abstention_rate") == 1.0
+        ),
+        "no_candidate_leak_count": quality.get("no_candidate_leak_count") == 0,
         "precise_citation_contract_rate": (
             quality.get("precise_citation_contract_rate") == 1.0
         ),
@@ -575,6 +579,10 @@ def _scorecard_retrieval_context_memory_layer(
         "retrieval_answerability_contract_rate": (
             quality.get("retrieval_answerability_contract_rate") == 1.0
         ),
+        "no_candidate_abstention_rate": (
+            quality.get("no_candidate_abstention_rate") == 1.0
+        ),
+        "no_candidate_leak_count": quality.get("no_candidate_leak_count") == 0,
         "precise_citation_contract_rate": (
             quality.get("precise_citation_contract_rate") == 1.0
         ),
@@ -622,6 +630,10 @@ def _scorecard_longitudinal_memory(
         "temporal_update_accuracy": metrics.get("temporal_update_accuracy") == 1.0,
         "preference_synthesis_recall": metrics.get("preference_synthesis_recall") == 1.0,
         "long_document_recall_at_5": float(metrics.get("long_document_recall_at_5", 0.0)) >= 0.95,
+        "no_candidate_abstention_rate": (
+            metrics.get("no_candidate_abstention_rate") == 1.0
+        ),
+        "no_candidate_leak_count": metrics.get("no_candidate_leak_count") == 0,
         "long_safety_leak_count": metrics.get("long_safety_leak_count") == 0,
         "stale_memory_rate": metrics.get("stale_memory_rate") == 0.0,
     }
@@ -2189,6 +2201,11 @@ def _scorecard_metrics(
             "retrieval_answerability_contract_rate",
             0.0,
         ),
+        "quality_no_candidate_abstention_rate": quality.get(
+            "no_candidate_abstention_rate",
+            0.0,
+        ),
+        "quality_no_candidate_leak_count": quality.get("no_candidate_leak_count", 0),
         "quality_precise_citation_contract_rate": quality.get(
             "precise_citation_contract_rate",
             0.0,
@@ -2217,6 +2234,11 @@ def _scorecard_metrics(
         ),
         "quality_critical_failure_count": quality.get("critical_failure_count", 0),
         "quality_harmful_context_rate": quality.get("harmful_context_rate", 0.0),
+        "long_no_candidate_abstention_rate": long.get(
+            "no_candidate_abstention_rate",
+            0.0,
+        ),
+        "long_no_candidate_leak_count": long.get("no_candidate_leak_count", 0),
         "long_multi_session_recall_at_5": long.get("multi_session_recall_at_5", 0.0),
         "long_temporal_update_accuracy": long.get("temporal_update_accuracy", 0.0),
         "auto_extraction_positive_recall_rate": auto.get(

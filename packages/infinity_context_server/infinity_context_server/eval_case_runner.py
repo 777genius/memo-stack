@@ -467,6 +467,9 @@ def _quality_golden_metrics(
     anchor_context_cases = tuple(
         result for result in case_results if result.case.category == "anchor_context"
     )
+    no_candidate_cases = tuple(
+        result for result in case_results if result.case.category == "no_candidate"
+    )
     multi_memory_scope_cases = tuple(
         result for result in case_results if result.case.category == "multi_memory_scope"
     )
@@ -488,6 +491,7 @@ def _quality_golden_metrics(
         ("required_source_refs_missing", "required_citations_missing"),
     )
     item_contract_failures = _count_failures(case_results, ("required_items_missing",))
+    no_candidate_leaks = _no_candidate_leak_count(no_candidate_cases)
     critical_failure_count = (
         int(base["deleted_memory_leak_count"])
         + int(base["cross_memory_scope_leak_count"])
@@ -495,6 +499,7 @@ def _quality_golden_metrics(
         + int(base["context_token_overflow_count"])
         + restricted_leaks
         + cross_thread_leaks
+        + no_candidate_leaks
         + source_citation_failures
         + item_contract_failures
         + _count_category_failures(case_results, "stale_update", "must_not_include_matched")
@@ -572,6 +577,12 @@ def _quality_golden_metrics(
             sum(1 for result in anchor_context_cases if not result.failures),
             len(anchor_context_cases),
         ),
+        "no_candidate_case_count": len(no_candidate_cases),
+        "no_candidate_abstention_rate": _ratio(
+            sum(1 for result in no_candidate_cases if _no_candidate_abstained(result)),
+            len(no_candidate_cases),
+        ),
+        "no_candidate_leak_count": no_candidate_leaks,
         "multi_memory_scope_recall_at_5": _ratio(
             sum(1 for result in multi_memory_scope_cases if result.recall_ok),
             len(multi_memory_scope_cases),
@@ -613,6 +624,8 @@ def _quality_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "duplicate_merge_review_rate": metrics["duplicate_merge_review_rate"] == 1.0,
         "conflict_review_rate": metrics["conflict_review_rate"] == 1.0,
         "anchor_context_recall_rate": metrics["anchor_context_recall_rate"] == 1.0,
+        "no_candidate_abstention_rate": metrics["no_candidate_abstention_rate"] == 1.0,
+        "no_candidate_leak_count": metrics["no_candidate_leak_count"] == 0,
         "multi_memory_scope_recall_at_5": metrics["multi_memory_scope_recall_at_5"] == 1.0,
         "thread_recall_at_5": metrics["thread_recall_at_5"] == 1.0,
         "stale_memory_rate": metrics["stale_memory_rate"] == 0.0,
@@ -710,6 +723,8 @@ def _long_memory_golden_gates(metrics: dict[str, object]) -> dict[str, bool]:
         "temporal_update_accuracy": metrics["temporal_update_accuracy"] == 1.0,
         "preference_synthesis_recall": metrics["preference_synthesis_recall"] == 1.0,
         "long_document_recall_at_5": float(metrics["long_document_recall_at_5"]) >= 0.95,
+        "no_candidate_abstention_rate": metrics["no_candidate_abstention_rate"] == 1.0,
+        "no_candidate_leak_count": metrics["no_candidate_leak_count"] == 0,
         "thread_recall_at_5": metrics["thread_recall_at_5"] == 1.0,
         "multi_memory_scope_recall_at_5": metrics["multi_memory_scope_recall_at_5"] == 1.0,
         "stale_memory_rate": metrics["stale_memory_rate"] == 0.0,
@@ -864,6 +879,26 @@ def _has_retrieval_answerability_contract(result: EvalCaseResult) -> bool:
         and isinstance(reasons, list)
         and len(reasons) <= 8
         and all(isinstance(reason, str) and reason for reason in reasons)
+    )
+
+
+def _no_candidate_abstained(result: EvalCaseResult) -> bool:
+    return (
+        result.status_code == 200
+        and result.precision_ok
+        and not result.item_ids
+        and _result_diagnostic_int(result, "items_used") == 0
+        and not result.failures
+    )
+
+
+def _no_candidate_leak_count(case_results: tuple[EvalCaseResult, ...]) -> int:
+    return sum(
+        1
+        for result in case_results
+        if not result.precision_ok
+        or bool(result.item_ids)
+        or _result_diagnostic_int(result, "items_used") > 0
     )
 
 
