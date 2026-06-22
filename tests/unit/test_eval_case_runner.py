@@ -1,6 +1,7 @@
 from infinity_context_server.eval_case_runner import (
     _MAX_DIAGNOSTIC_MISMATCH_FAILURES,
     _case_failures,
+    _eval_failure_summary,
     _item_mappings,
     _quality_golden_gates,
     _quality_golden_metrics,
@@ -405,6 +406,108 @@ def test_case_failures_include_item_contract_requirements() -> None:
     )
 
 
+def test_eval_failure_summary_groups_reasons_and_categories() -> None:
+    recall_case = EvalCase(
+        case_id="hybrid_recall_case",
+        category="hybrid_retrieval",
+        space_id="space_eval",
+        memory_scope_ids=("scope_eval",),
+        query="hybrid recall",
+        must_include=("EXPECTED_MARKER",),
+    )
+    diagnostics_case = EvalCase(
+        case_id="hybrid_diagnostics_case",
+        category="hybrid_retrieval",
+        space_id="space_eval",
+        memory_scope_ids=("scope_eval",),
+        query="hybrid diagnostics",
+    )
+    passing_case = EvalCase(
+        case_id="document_pass_case",
+        category="documents",
+        space_id="space_eval",
+        memory_scope_ids=("scope_eval",),
+        query="document pass",
+    )
+    case_results = (
+        EvalCaseResult(
+            case=recall_case,
+            status_code=200,
+            recall_ok=False,
+            precision_ok=True,
+            evidence_guard=True,
+            token_overflow=False,
+            item_ids=("chunk_wrong",),
+            diagnostics={},
+            failures=(
+                {
+                    "case_id": recall_case.case_id,
+                    "category": recall_case.category,
+                    "reason": "must_include_missing",
+                    "item_ids": ["chunk_wrong"],
+                },
+            ),
+        ),
+        EvalCaseResult(
+            case=diagnostics_case,
+            status_code=200,
+            recall_ok=True,
+            precision_ok=True,
+            evidence_guard=True,
+            token_overflow=False,
+            item_ids=("chunk_hybrid",),
+            diagnostics={},
+            failures=(
+                {
+                    "case_id": diagnostics_case.case_id,
+                    "category": diagnostics_case.category,
+                    "reason": "required_diagnostics_missing",
+                    "item_ids": ["chunk_hybrid"],
+                },
+            ),
+        ),
+        EvalCaseResult(
+            case=passing_case,
+            status_code=200,
+            recall_ok=True,
+            precision_ok=True,
+            evidence_guard=True,
+            token_overflow=False,
+            item_ids=("chunk_doc",),
+            diagnostics={},
+            failures=(),
+        ),
+    )
+
+    summary = _eval_failure_summary(case_results)
+
+    assert summary["case_count"] == 3
+    assert summary["failed_case_count"] == 2
+    assert summary["failure_count"] == 2
+    assert summary["failure_reason_counts"] == {
+        "must_include_missing": 1,
+        "required_diagnostics_missing": 1,
+    }
+    assert summary["category_summary"][0] == {
+        "category": "hybrid_retrieval",
+        "case_count": 2,
+        "passed_case_count": 0,
+        "failed_case_count": 2,
+        "request_failure_count": 0,
+        "recall_failure_count": 1,
+        "precision_failure_count": 0,
+        "evidence_guard_failure_count": 0,
+        "token_overflow_count": 0,
+        "failure_reason_counts": {
+            "must_include_missing": 1,
+            "required_diagnostics_missing": 1,
+        },
+        "failed_case_ids": ["hybrid_recall_case", "hybrid_diagnostics_case"],
+    }
+    assert summary["category_summary"][1]["category"] == "documents"
+    assert summary["category_summary"][1]["passed_case_count"] == 1
+
+
 def test_required_case_metrics_report_missing_required_cases() -> None:
     metrics = _required_case_metrics(
         case_ids=("specific_target_beats_similar_project", "unrelated_capture_has_no_candidates"),
@@ -436,6 +539,9 @@ def _passing_quality_gate_metrics() -> dict[str, object]:
     return {
         "required_case_coverage_rate": 1.0,
         "missing_required_case_count": 0,
+        "memory_ability_coverage_rate": 1.0,
+        "missing_memory_ability_cases": {},
+        "failed_memory_ability_cases": {},
         "recall_at_5": 1.0,
         "precision_at_5": 1.0,
         "answer_support_rate": 1.0,

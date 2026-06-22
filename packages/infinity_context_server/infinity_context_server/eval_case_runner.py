@@ -27,6 +27,8 @@ from infinity_context_server.eval_types import (
 
 _MAX_DIAGNOSTIC_MISMATCH_FAILURES = 8
 _MAX_DIAGNOSTIC_FAILURE_TEXT_CHARS = 160
+_MAX_EVAL_SUMMARY_ITEMS = 24
+_MAX_FAILED_CASE_IDS_PER_CATEGORY = 8
 _PRECISE_SOURCE_REF_REQUIREMENT_KEYS = frozenset(
     {
         "char_start",
@@ -1012,6 +1014,79 @@ def _case_report(result: EvalCaseResult) -> dict[str, object]:
         "category": result.case.category,
         "status": "ok" if not result.failures else "failed",
         "item_ids": list(result.item_ids),
+    }
+
+
+def _eval_failure_summary(case_results: tuple[EvalCaseResult, ...]) -> dict[str, object]:
+    failure_reason_counts: dict[str, int] = {}
+    failure_count = 0
+    failed_case_count = 0
+    for result in case_results:
+        if result.failures:
+            failed_case_count += 1
+        for failure in result.failures:
+            failure_count += 1
+            reason = _safe_failure_text(failure.get("reason") or "unknown")
+            failure_reason_counts[reason] = failure_reason_counts.get(reason, 0) + 1
+    return {
+        "case_count": len(case_results),
+        "failed_case_count": failed_case_count,
+        "failure_count": failure_count,
+        "failure_reason_counts": _sorted_count_mapping(failure_reason_counts),
+        "category_summary": _case_category_summary(case_results),
+    }
+
+
+def _case_category_summary(case_results: tuple[EvalCaseResult, ...]) -> list[dict[str, object]]:
+    by_category: dict[str, list[EvalCaseResult]] = {}
+    for result in case_results:
+        category = _safe_failure_text(result.case.category or "unknown")
+        by_category.setdefault(category, []).append(result)
+    summaries = [
+        _category_summary_row(category, tuple(results))
+        for category, results in by_category.items()
+    ]
+    return sorted(
+        summaries,
+        key=lambda row: (-int(row["failed_case_count"]), str(row["category"])),
+    )[:_MAX_EVAL_SUMMARY_ITEMS]
+
+
+def _category_summary_row(
+    category: str,
+    results: tuple[EvalCaseResult, ...],
+) -> dict[str, object]:
+    reason_counts: dict[str, int] = {}
+    failed_case_ids: list[str] = []
+    for result in results:
+        if result.failures and len(failed_case_ids) < _MAX_FAILED_CASE_IDS_PER_CATEGORY:
+            failed_case_ids.append(_safe_failure_text(result.case.case_id))
+        for failure in result.failures:
+            reason = _safe_failure_text(failure.get("reason") or "unknown")
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    return {
+        "category": category,
+        "case_count": len(results),
+        "passed_case_count": sum(1 for result in results if not result.failures),
+        "failed_case_count": sum(1 for result in results if result.failures),
+        "request_failure_count": sum(1 for result in results if result.status_code != 200),
+        "recall_failure_count": sum(1 for result in results if not result.recall_ok),
+        "precision_failure_count": sum(1 for result in results if not result.precision_ok),
+        "evidence_guard_failure_count": sum(
+            1 for result in results if not result.evidence_guard
+        ),
+        "token_overflow_count": sum(1 for result in results if result.token_overflow),
+        "failure_reason_counts": _sorted_count_mapping(reason_counts),
+        "failed_case_ids": failed_case_ids,
+    }
+
+
+def _sorted_count_mapping(counts: dict[str, int]) -> dict[str, int]:
+    return {
+        key: value
+        for key, value in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[
+            :_MAX_EVAL_SUMMARY_ITEMS
+        ]
     }
 
 

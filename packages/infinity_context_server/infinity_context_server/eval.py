@@ -34,6 +34,7 @@ from infinity_context_server.eval_case_catalog import (
 from infinity_context_server.eval_case_runner import (
     _case_by_id,
     _case_report,
+    _eval_failure_summary,
     _graph_native_gates,
     _graph_native_metrics,
     _long_memory_golden_gates,
@@ -507,6 +508,7 @@ def _execute_small_golden(client, headers: dict[str, str]) -> dict[str, object]:
         "metrics": metrics,
         "gates": gates,
         "cases": [_case_report(result) for result in case_results],
+        "failure_summary": _eval_failure_summary(case_results),
         "failures": list(failures),
     }
 
@@ -543,6 +545,7 @@ def _execute_quality_golden(client, headers: dict[str, str]) -> dict[str, object
         "metrics": metrics,
         "gates": gates,
         "cases": [_case_report(result) for result in case_results],
+        "failure_summary": _eval_failure_summary(case_results),
         "failures": list(failures),
     }
 
@@ -579,6 +582,7 @@ def _execute_long_memory_golden(client, headers: dict[str, str]) -> dict[str, ob
         "metrics": metrics,
         "gates": gates,
         "cases": [_case_report(result) for result in case_results],
+        "failure_summary": _eval_failure_summary(case_results),
         "failures": list(failures),
     }
 
@@ -630,6 +634,7 @@ def _execute_graph_native_golden(
         "metrics": metrics,
         "gates": gates,
         "cases": [_case_report(result) for result in case_results],
+        "failure_summary": _eval_failure_summary(case_results),
         "failures": list(failures),
     }
 
