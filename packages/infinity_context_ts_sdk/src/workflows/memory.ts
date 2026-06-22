@@ -45,6 +45,25 @@ import type {
   UserRecord,
 } from "../types.js";
 import { InfinityContextError } from "../errors.js";
+import {
+  citationSourceRef,
+  incrementCount,
+  isDefined,
+  isEnabled,
+  jsonObjectField,
+  memoryBriefRetrievalHealthy,
+  normalizeBatchConcurrency,
+  optional,
+  ratio,
+  requiredStepOptions,
+  requiredWorkflowText,
+  sourceRefKey,
+  stepOptions,
+  stringField,
+  uniqueStrings,
+  workflowConflict,
+  workflowErrorData,
+} from "./workflow-helpers.js";
 
 export interface MemoryWorkflowResources {
   readonly anchors?: AnchorsClient;
@@ -2389,36 +2408,6 @@ function countItemSourceRefs(items: readonly { readonly source_refs?: readonly S
   return items.reduce((total, item) => total + (item.source_refs?.length ?? 0), 0);
 }
 
-function memoryBriefRetrievalHealthy(
-  diagnostics: MemoryBriefDiagnostics,
-  component: ContextRetrievalComponent,
-): boolean {
-  if (component === "vector") {
-    return diagnostics.vectorHealthy;
-  }
-  if (component === "graph") {
-    return diagnostics.graphHealthy;
-  }
-  return diagnostics.ragHealthy;
-}
-
-function sourceRefKey(sourceRef: SourceRef): string {
-  return `${sourceRef.source_type}:${sourceRef.source_id}`;
-}
-
-function citationSourceRef(
-  citation: { readonly source_type?: string; readonly source_id?: string },
-): SourceRef | undefined {
-  if (!citation.source_type || !citation.source_id) {
-    return undefined;
-  }
-
-  return {
-    source_type: citation.source_type,
-    source_id: citation.source_id,
-  };
-}
-
 function seedMemoryDiagnostics(
   input: SeedMemoryAndBuildBriefInput,
   facts: readonly ApiEnvelope<FactRecord>[],
@@ -2472,62 +2461,6 @@ function seedMemorySourceRefs(
   }];
 }
 
-function uniqueStrings(values: readonly string[]): readonly string[] {
-  return [...new Set(values)];
-}
-
-function isEnabled<TOptions extends object>(
-  value: WorkflowStepOptions<TOptions> | undefined,
-  defaultValue: boolean,
-): boolean {
-  return value === undefined ? defaultValue : value !== false;
-}
-
-function stepOptions<TOptions extends object>(
-  value: WorkflowStepOptions<TOptions> | undefined,
-): Partial<TOptions> {
-  return typeof value === "object" ? value : {};
-}
-
-function requiredStepOptions<TOptions extends object>(
-  value: WorkflowStepOptions<TOptions> | undefined,
-  message: string,
-): TOptions {
-  if (typeof value !== "object" || value === null) {
-    throw new ValueError(message);
-  }
-  return value;
-}
-
-function stringField(input: JsonObject, key: string): string | undefined {
-  const value = input[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function requiredWorkflowText(value: string | undefined, message: string): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new ValueError(message);
-  }
-  return value;
-}
-
-function jsonObjectField(input: JsonObject, key: string): JsonObject | undefined {
-  const value = input[key];
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as JsonObject
-    : undefined;
-}
-
-function normalizeBatchConcurrency(value: number | undefined): number {
-  if (value === undefined) {
-    return 4;
-  }
-  if (!Number.isInteger(value) || value < 1 || value > 25) {
-    throw new ValueError("recordSourceEvidenceBatch concurrency must be an integer from 1 to 25");
-  }
-  return value;
-}
-
 function batchItemResult(
   index: number,
   input: RecordSourceEvidenceInput,
@@ -2541,46 +2474,4 @@ function batchItemResult(
     ok: "result" in outcome,
     ...("result" in outcome ? { result: outcome.result } : { error: outcome.error }),
   };
-}
-
-function workflowErrorData(error: unknown): MemoryWorkflowErrorData {
-  const record = typeof error === "object" && error !== null ? error as Record<string, unknown> : {};
-  const message = error instanceof Error ? error.message : String(error);
-  const name = error instanceof Error ? error.name : "Error";
-  const code = typeof record.code === "string" ? record.code : undefined;
-  const statusCode = typeof record.statusCode === "number" ? record.statusCode : undefined;
-  const retryable = typeof record.retryable === "boolean" ? record.retryable : undefined;
-  const requestId = typeof record.requestId === "string" ? record.requestId : undefined;
-
-  return {
-    name,
-    message,
-    ...(code === undefined ? {} : { code }),
-    ...(statusCode === undefined ? {} : { statusCode }),
-    ...(retryable === undefined ? {} : { retryable }),
-    ...(requestId === undefined ? {} : { requestId }),
-  };
-}
-
-function workflowConflict(error: unknown): boolean {
-  return error instanceof InfinityContextError && error.statusCode === 409;
-}
-
-function isDefined<TValue>(value: TValue | undefined): value is TValue {
-  return value !== undefined;
-}
-
-function ratio(value: number, total: number): number {
-  return total <= 0 ? 0 : value / total;
-}
-
-function incrementCount(counts: Record<string, number>, key: string): void {
-  counts[key] = (counts[key] ?? 0) + 1;
-}
-
-function optional<TKey extends string, TValue>(
-  key: TKey,
-  value: TValue | undefined,
-): { readonly [K in TKey]?: TValue } {
-  return value === undefined ? {} : { [key]: value } as { readonly [K in TKey]: TValue };
 }
