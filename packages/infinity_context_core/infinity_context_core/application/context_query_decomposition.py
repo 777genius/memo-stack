@@ -166,6 +166,15 @@ _COMPARISON_TERMS = frozenset(
         "сравни",
     }
 )
+_EVIDENCE_REASON_RE = re.compile(
+    r"\b("
+    r"why|reason|because|what evidence|which evidence|what shows|what showed|"
+    r"what indicates|how do we know|how can we tell|how would we know|"
+    r"почему|причин|потому что|какие доказательства|какое доказательство|"
+    r"что показывает|что показало|как мы знаем|откуда известно"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -265,6 +274,18 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_source_evidence",
         )
+    if _requests_evidence_reason(query):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "reason evidence because observed mentioned showed indicates "
+                    "supporting fact source citation quote explanation why"
+                ),
+            ),
+            reason="decomposition_evidence_reason",
+        )
     if variants.intersection(_INFERENCE_TERMS):
         _append_candidate(
             candidates,
@@ -357,6 +378,10 @@ def _compose_query(
     tail: str,
 ) -> str:
     return _normalize_query(" ".join((*identities, tail)))
+
+
+def _requests_evidence_reason(query: str) -> bool:
+    return bool(_EVIDENCE_REASON_RE.search(query))
 
 
 def _with_missing_identities(clause: str, identities: tuple[str, ...]) -> str:

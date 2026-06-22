@@ -115,6 +115,39 @@ def test_query_decomposition_adds_inference_support_query() -> None:
     assert "support supportive encouraging" in inference.query
 
 
+def test_query_decomposition_adds_evidence_reason_query() -> None:
+    plan = build_query_decomposition_plan(
+        "Why would Project Atlas be considered blocked?"
+    )
+
+    reason = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_evidence_reason"
+    )
+
+    assert "project" in reason.query.casefold()
+    assert "atlas" in reason.query.casefold()
+    assert "reason evidence because observed" in reason.query
+    assert "source citation quote explanation" in reason.query
+
+
+def test_query_decomposition_adds_russian_evidence_reason_query() -> None:
+    plan = build_query_decomposition_plan(
+        "Почему Алекс считается владельцем проекта Атлас?"
+    )
+
+    reason = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_evidence_reason"
+    )
+
+    assert "алекс" in reason.query.casefold()
+    assert "атлас" in reason.query.casefold()
+    assert "reason evidence because observed" in reason.query
+
+
 def test_query_decomposition_adds_comparison_preference_query() -> None:
     plan = build_query_decomposition_plan(
         "Would Melanie be more interested in a national park or a theme park?"
@@ -141,3 +174,18 @@ def test_best_query_relevance_uses_inference_support_decomposition() -> None:
 
     assert reason in {"ally_support_bridge", "decomposition_inference_support"}
     assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_uses_evidence_reason_decomposition() -> None:
+    plan = build_query_expansion_plan("Why would Project Atlas be considered blocked?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Project Atlas reason evidence showed the blocker because Alex "
+            "observed a missing invoice owner in the source quote."
+        ),
+    )
+
+    assert reason == "decomposition_evidence_reason"
+    assert relevance.distinctive_term_hits >= 5
