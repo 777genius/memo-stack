@@ -2040,6 +2040,13 @@ describe("InfinityContextClient", () => {
         memoryScopeExternalRefs: ["topic:ai-agents"],
         tokenBudget: 1200,
       },
+      qualityPolicy: {
+        requireSearch: true,
+        minSearchItems: 1,
+        requireDigest: true,
+        requireDerivedRetrieval: true,
+        requiredRetrieval: ["vector", "graph"],
+      },
     });
 
     expect(loop.topology?.created).toMatchObject({
@@ -2059,11 +2066,29 @@ describe("InfinityContextClient", () => {
       max_blocking_items: 0,
     });
     expect(loop.brief.digest?.data.digest_id).toBe("digest_1");
+    expect(loop.quality).toMatchObject({
+      ok: true,
+      errors: [],
+      metrics: {
+        contextItems: 1,
+        searchItems: 1,
+        digestSections: 0,
+      },
+    });
+    expect(loop.evidenceSummary).toMatchObject({
+      contextItems: 1,
+      searchItems: 1,
+      digestSections: 0,
+      sourceRefsTotal: 2,
+      uniqueSourceRefs: 1,
+      bySourceType: { "sdk-full-memory-proof": 2 },
+    });
     expect(loop.diagnostics).toEqual({
       ok: true,
       readinessOk: true,
       sourceEvidenceOk: true,
       outboxDrainOk: true,
+      qualityOk: true,
       warnings: [],
     });
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
@@ -2092,6 +2117,84 @@ describe("InfinityContextClient", () => {
       topic: "AI agents digest",
       token_budget: 1200,
     });
+  });
+
+  it("fails memory summary loops when brief quality policy is not satisfied", async () => {
+    const poorContext = {
+      data: {
+        ...contextResponse("loop-poor-brief", {
+          retrieval_sources_used: ["keyword"],
+          vector_status: "disabled",
+          graph_status: "disabled",
+          vector_query_count: 0,
+          graph_query_count: 0,
+        }).data,
+        items: [],
+        answer_support: {
+          status: "unsupported",
+          items_returned: 0,
+          coverage: {},
+          policy: {},
+          warnings: ["no supported evidence"],
+        },
+      },
+    };
+
+    const transport = new RecordingTransport([
+      jsonResponse(poorContext),
+      jsonResponse(searchResponse({
+        retrieval_sources_used: ["keyword"],
+        vector_status: "disabled",
+        graph_status: "disabled",
+        vector_query_count: 0,
+        graph_query_count: 0,
+      })),
+      jsonResponse(digestResponse("loop-poor-brief")),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await expect(
+      client.workflows.runMemorySummaryLoop({
+        readiness: false,
+        brief: {
+          query: "What should the AI agents digest highlight?",
+          topic: "AI agents digest",
+          spaceSlug: "workspace",
+          memoryScopeExternalRefs: ["topic:ai-agents"],
+        },
+        qualityPolicy: {
+          requireSearch: true,
+          requireDigest: true,
+          requireDerivedRetrieval: true,
+          requiredRetrieval: ["vector", "graph"],
+          failOnWarnings: true,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "memory.brief_quality_failed",
+      retryable: false,
+      details: {
+        metrics: {
+          context_items: 0,
+          search_items: 1,
+        },
+        retrieval: {
+          derived_retrieval_used: false,
+          vector_healthy: false,
+          graph_healthy: false,
+        },
+      },
+    });
+
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/context",
+      "POST /v1/search",
+      "POST /v1/digest",
+    ]);
   });
 
   it("inspects memory across read models, diagnostics, graph and snapshot preview", async () => {

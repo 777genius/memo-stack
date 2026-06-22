@@ -254,6 +254,7 @@ export interface RunMemorySummaryLoopInput extends RequestControls {
   readonly sourceEvidence?: RecordSourceEvidenceBatchInput;
   readonly outboxDrain?: WorkflowStepOptions<WaitForOutboxDrainInput>;
   readonly brief: BuildMemoryBriefInput;
+  readonly qualityPolicy?: MemoryBriefQualityPolicy;
   readonly stopOnSourceEvidenceFailure?: boolean;
 }
 
@@ -262,6 +263,7 @@ export interface RunMemorySummaryLoopDiagnostics {
   readonly readinessOk: boolean | null;
   readonly sourceEvidenceOk: boolean | null;
   readonly outboxDrainOk: boolean | null;
+  readonly qualityOk: boolean | null;
   readonly warnings: readonly string[];
 }
 
@@ -272,6 +274,8 @@ export interface RunMemorySummaryLoopResult {
   readonly sourceEvidenceSummary?: RecordSourceEvidenceBatchSummary;
   readonly outboxDrain?: OutboxDrainResult;
   readonly brief: BuildMemoryBriefResult;
+  readonly quality?: MemoryBriefQualityReport;
+  readonly evidenceSummary: MemoryBriefEvidenceSummary;
   readonly diagnostics: RunMemorySummaryLoopDiagnostics;
 }
 
@@ -1228,6 +1232,10 @@ export class MemoryWorkflows {
         .waitForOutboxDrain(withWorkflowControls(input, stepOptions(input.outboxDrain)))
       : undefined;
     const brief = await this.buildMemoryBrief(withWorkflowControls(input, input.brief));
+    const quality = input.qualityPolicy === undefined
+      ? undefined
+      : assertMemoryBriefQuality(brief, input.qualityPolicy);
+    const evidenceSummary = summarizeMemoryBriefEvidence(brief);
     const readinessOk = readiness?.readiness.ok ?? null;
     const sourceEvidenceOk = sourceEvidenceSummary === undefined
       ? null
@@ -1235,6 +1243,7 @@ export class MemoryWorkflows {
     const outboxDrainOk = outboxDrain === undefined
       ? null
       : outboxDrain.diagnostics.blocking_count <= outboxDrain.diagnostics.max_blocking_items;
+    const qualityOk = quality?.ok ?? null;
     const warnings = uniqueStrings([
       ...(readiness?.diagnostics.warnings ?? []),
       ...(sourceEvidenceSummary !== undefined && !sourceEvidenceOk
@@ -1253,11 +1262,14 @@ export class MemoryWorkflows {
       ...(sourceEvidenceSummary ? { sourceEvidenceSummary } : {}),
       ...(outboxDrain ? { outboxDrain } : {}),
       brief,
+      ...(quality ? { quality } : {}),
+      evidenceSummary,
       diagnostics: {
-        ok: (readinessOk ?? true) && (sourceEvidenceOk ?? true) && (outboxDrainOk ?? true),
+        ok: (readinessOk ?? true) && (sourceEvidenceOk ?? true) && (outboxDrainOk ?? true) && (qualityOk ?? true),
         readinessOk,
         sourceEvidenceOk,
         outboxDrainOk,
+        qualityOk,
         warnings,
       },
     };

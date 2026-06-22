@@ -263,10 +263,20 @@ const loop = await memory.workflows.runMemorySummaryLoop({
     spaceSlug: "social-monitor:tenant_1:workspace_1",
     memoryScopeExternalRefs: ["topic:ai-agents"],
   },
+  qualityPolicy: {
+    requireSearch: true,
+    minSearchItems: 1,
+    requireDigest: true,
+    requireDerivedRetrieval: true,
+    requiredRetrieval: ["vector", "graph"],
+  },
 });
 
-console.log(loop.sourceEvidenceSummary?.successRate, loop.brief.digest?.data.rendered_markdown);
+console.log(loop.sourceEvidenceSummary?.successRate, loop.quality?.ok, loop.evidenceSummary.uniqueSourceRefs);
+console.log(loop.brief.digest?.data.rendered_markdown);
 ```
+
+When `qualityPolicy` is set, the loop throws `memory.brief_quality_failed` before returning an unsupported or non-derived summary. `evidenceSummary` is always returned so beta smokes can prove which provider/source refs reached the final brief.
 
 Use `inspectMemory` when an operator, beta smoke or backend job needs one typed view over read models, usage, runtime diagnostics and optional graph/snapshot checks.
 
