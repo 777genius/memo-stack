@@ -46,6 +46,7 @@ from infinity_context_server.eval_constants import (
     AUTO_MEMORY_GOLDEN_SUITE,
     FULL_PROVIDER_CANARY_SUITE,
     GRAPH_NATIVE_GOLDEN_SUITE,
+    LOCAL_EXPERIENCE_PROOF_SUITE,
     LONG_MEMORY_ABILITY_CASE_IDS,
     LONG_MEMORY_GOLDEN_SUITE,
     LONG_MEMORY_REQUIRED_CASE_IDS,
@@ -64,6 +65,7 @@ from infinity_context_server.eval_constants import (
 from infinity_context_server.top_evidence_policy import (
     TOP_EVIDENCE_PROVENANCE_CHECKS,
     TOP_EVIDENCE_SAFETY_CHECKS,
+    TopEvidenceReportPolicy,
     top_evidence_provenance_summary,
     top_evidence_safety_summary,
 )
@@ -96,6 +98,11 @@ _DEDUP_MERGE_SEMANTIC_CHECKS = (
     "high_impact_relation_requires_explicit_signal",
     "weak_overlap_below_review_threshold_denied",
     "cross_scope_fact_not_suggested",
+)
+_LOCAL_EXPERIENCE_MIN_MCP_TOOL_COUNT = 40
+_LOCAL_EXPERIENCE_PROVENANCE_POLICY = TopEvidenceReportPolicy(
+    expected_generators=frozenset({"scripts/local_experience_proof.py"}),
+    provenance_suites=frozenset({LOCAL_EXPERIENCE_PROOF_SUITE}),
 )
 _RETRIEVAL_CONTEXT_QUALITY_CASE_IDS = (
     "longmemeval_knowledge_update_current_truth",
@@ -275,6 +282,16 @@ def memory_quality_scorecard_policy_snapshot(
             "top_evidence_required_provenance_checks": list(TOP_EVIDENCE_PROVENANCE_CHECKS),
             "top_evidence_requires_safety_scan": True,
             "top_evidence_required_safety_checks": list(TOP_EVIDENCE_SAFETY_CHECKS),
+        },
+        "local_experience": {
+            "suite": LOCAL_EXPERIENCE_PROOF_SUITE,
+            "requires_quickstart_live": True,
+            "requires_doctor_ready": True,
+            "requires_visual_memory_smoke": True,
+            "requires_mcp_digest": True,
+            "requires_reviewed_search": True,
+            "requires_token_safety": True,
+            "minimum_mcp_tool_count": _LOCAL_EXPERIENCE_MIN_MCP_TOOL_COUNT,
         },
         "public_benchmark": {
             "required_benchmarks": list(_PUBLIC_MEMORY_BENCHMARK_REQUIRED),
@@ -1117,6 +1134,7 @@ def _scorecard_external_evidence(
     multimodal_live_provider = _scorecard_find_multimodal_live_provider_report(suite_results)
     agent_behavior = _scorecard_find_agent_behavior_report(suite_results, full_provider)
     agent_live_smoke = _scorecard_find_agent_live_smoke_report(suite_results)
+    local_experience = _scorecard_find_local_experience_report(suite_results)
     full_provider_summary = _scorecard_full_provider_evidence_summary(
         full_provider,
         require_top_evidence=require_top_evidence,
@@ -1133,6 +1151,10 @@ def _scorecard_external_evidence(
         agent_live_smoke,
         require_top_evidence=require_top_evidence,
     )
+    local_experience_summary = _scorecard_local_experience_evidence_summary(
+        local_experience,
+        require_top_evidence=require_top_evidence,
+    )
     public_benchmark_summary = _scorecard_public_benchmark_evidence_summary(
         suite_results,
         full_provider=full_provider,
@@ -1142,12 +1164,14 @@ def _scorecard_external_evidence(
     multimodal_live_provider_ok = multimodal_live_provider_summary["ok"] is True
     agent_behavior_ok = agent_behavior_summary["ok"] is True
     agent_live_smoke_ok = agent_live_smoke_summary["ok"] is True
+    local_experience_ok = local_experience_summary["ok"] is True
     public_benchmark_ok = public_benchmark_summary["ok"] is True
     confidence_tier = _scorecard_confidence_tier(
         full_provider_ok=full_provider_ok,
         multimodal_live_provider_ok=multimodal_live_provider_ok,
         agent_behavior_ok=agent_behavior_ok,
         agent_live_smoke_ok=agent_live_smoke_ok,
+        local_experience_ok=local_experience_ok,
         public_benchmark_ok=public_benchmark_ok,
     )
 
@@ -1214,6 +1238,7 @@ def _scorecard_external_evidence(
         multimodal_live_provider_ok=multimodal_live_provider_ok,
         agent_behavior_ok=agent_behavior_ok,
         agent_live_smoke_ok=agent_live_smoke_ok,
+        local_experience_ok=local_experience_ok,
         public_benchmark_ok=public_benchmark_ok,
         top_library_ready=top_library_ready,
         evidence_gaps=evidence_gaps,
@@ -1234,6 +1259,7 @@ def _scorecard_external_evidence(
         "multimodal_live_provider": multimodal_live_provider_summary,
         "agent_behavior_benchmark": agent_behavior_summary,
         "agent_live_smoke": agent_live_smoke_summary,
+        "local_experience": local_experience_summary,
         "public_benchmark": public_benchmark_summary,
     }
 
@@ -1244,6 +1270,7 @@ def _scorecard_external_evidence_readiness(
     multimodal_live_provider_ok: bool,
     agent_behavior_ok: bool,
     agent_live_smoke_ok: bool,
+    local_experience_ok: bool,
     public_benchmark_ok: bool,
     top_library_ready: bool,
     evidence_gaps: Sequence[str],
@@ -1263,6 +1290,8 @@ def _scorecard_external_evidence_readiness(
         level = "top_library_comparison_ready"
     elif full_provider_ok and multimodal_live_provider_ok and public_benchmark_ok:
         level = "provider_and_public_benchmark_verified"
+    elif not ok_components and local_experience_ok:
+        level = "local_experience_verified"
     elif ok_components:
         level = "external_partial"
     else:
@@ -1272,6 +1301,7 @@ def _scorecard_external_evidence_readiness(
         "level": level,
         "score_10": round(10 * len(ok_components) / 5, 2),
         "ok_components": ok_components,
+        "local_experience_ready": local_experience_ok,
         "blocking_gaps": list(evidence_gaps),
         "next_actions": _scorecard_external_evidence_next_actions(evidence_gaps),
     }
@@ -1359,12 +1389,19 @@ def _scorecard_find_agent_live_smoke_report(
     return None
 
 
+def _scorecard_find_local_experience_report(
+    suite_results: Mapping[str, dict[str, object]],
+) -> dict[str, object] | None:
+    return suite_results.get(LOCAL_EXPERIENCE_PROOF_SUITE)
+
+
 def _scorecard_confidence_tier(
     *,
     full_provider_ok: bool,
     multimodal_live_provider_ok: bool,
     agent_behavior_ok: bool,
     agent_live_smoke_ok: bool,
+    local_experience_ok: bool,
     public_benchmark_ok: bool,
 ) -> str:
     labels = []
@@ -1376,6 +1413,8 @@ def _scorecard_confidence_tier(
         labels.append("agent_behavior")
     if agent_live_smoke_ok:
         labels.append("agent_live_smoke")
+    if local_experience_ok:
+        labels.append("local_experience")
     if public_benchmark_ok:
         labels.append("public_benchmark")
     if not labels:
@@ -1441,6 +1480,98 @@ def _scorecard_agent_live_smoke_evidence_summary(
     }
 
 
+def _scorecard_local_experience_evidence_summary(
+    result: dict[str, object] | None,
+    *,
+    require_top_evidence: bool = False,
+) -> dict[str, object]:
+    if result is None:
+        return {"present": False, "ok": None}
+    components_raw = result.get("components")
+    components = components_raw if isinstance(components_raw, Mapping) else {}
+    quickstart_live = _scorecard_mapping(components.get("quickstart_live"))
+    doctor = _scorecard_mapping(components.get("doctor"))
+    visual_smoke = _scorecard_mapping(components.get("local_visual_smoke"))
+    visual_checks = _scorecard_mapping(visual_smoke.get("checks"))
+    mcp_tool_count = _scorecard_int(visual_smoke.get("mcp_tool_count"))
+    required_checks = {
+        "result_ok": result.get("ok") is True,
+        "quickstart_live_ok": quickstart_live.get("ok") is True,
+        "quickstart_live_ready": quickstart_live.get("local_experience_status") == "ready",
+        "doctor_ok": doctor.get("ok") is True,
+        "doctor_ready": doctor.get("local_experience_status") == "ready",
+        "visual_smoke_ok": visual_smoke.get("ok") is True,
+        "mcp_tool_count_min": (
+            mcp_tool_count is not None and mcp_tool_count >= _LOCAL_EXPERIENCE_MIN_MCP_TOOL_COUNT
+        ),
+        "visual_memory_visible": visual_checks.get("visual_memory_visible") is True,
+        "pending_review_created": visual_checks.get("pending_review_created") is True,
+        "mcp_digest_ready": visual_checks.get("mcp_digest_ready") is True,
+        "mcp_digest_evidence_only": visual_checks.get("mcp_digest_evidence_only") is True,
+        "mcp_digest_token_safe": visual_checks.get("mcp_digest_token_safe") is True,
+        "mcp_reviewed_search_ready": visual_checks.get("mcp_reviewed_search_ready") is True,
+        "mcp_reviewed_search_grounded": (
+            visual_checks.get("mcp_reviewed_search_grounded") is True
+        ),
+        "mcp_reviewed_search_cited": visual_checks.get("mcp_reviewed_search_cited") is True,
+        "mcp_reviewed_search_source_bound": (
+            visual_checks.get("mcp_reviewed_search_source_bound") is True
+        ),
+        "mcp_reviewed_search_token_safe": (
+            visual_checks.get("mcp_reviewed_search_token_safe") is True
+        ),
+        "generated_mcp_raw_token_absent": visual_checks.get("raw_token_absent") is True,
+        "generated_mcp_token_not_included": visual_checks.get("token_not_included") is True,
+    }
+    failed_required_checks = sorted(
+        check for check, ok in required_checks.items() if ok is not True
+    )
+    provenance = top_evidence_provenance_summary(
+        result,
+        policy=_LOCAL_EXPERIENCE_PROVENANCE_POLICY,
+        allow_dirty_top_evidence=True,
+    )
+    safety = _scorecard_local_experience_safety_summary(result)
+    quality_ok = not failed_required_checks
+    return {
+        "present": True,
+        "suite": result.get("suite", LOCAL_EXPERIENCE_PROOF_SUITE),
+        "ok": quality_ok
+        and (not require_top_evidence or (provenance["ok"] is True and safety["ok"] is True)),
+        "quality_ok": quality_ok,
+        "provenance_ok": provenance["ok"] if require_top_evidence else None,
+        "provenance": provenance,
+        "safety_ok": safety["ok"] if require_top_evidence else None,
+        "safety": _scorecard_bounded_safety_summary(safety),
+        "required_checks": required_checks,
+        "failed_required_checks": failed_required_checks,
+        "mcp_tool_count": mcp_tool_count,
+        "ui_url": visual_smoke.get("ui_url") or result.get("ui_url"),
+        "review_url": visual_smoke.get("review_url"),
+        "readiness_score": quickstart_live.get("readiness_score"),
+        "retrieval_answerability_status": visual_smoke.get("retrieval_answerability_status"),
+    }
+
+
+def _scorecard_local_experience_safety_summary(
+    result: Mapping[str, object],
+) -> dict[str, object]:
+    raw = top_evidence_safety_summary(result)
+    raw_checks = _scorecard_mapping(raw.get("checks"))
+    checks = {
+        "no_sensitive_text": raw_checks.get("no_sensitive_text") is True,
+        "local_path_count_bounded": _scorecard_int(raw.get("local_path_count")) is not None,
+    }
+    failed_checks = sorted(check for check, ok in checks.items() if ok is not True)
+    return {
+        "ok": not failed_checks,
+        "checks": checks,
+        "failed_checks": failed_checks,
+        "local_path_count": _scorecard_int(raw.get("local_path_count")),
+        "sensitive_path_count": _scorecard_int(raw.get("sensitive_path_count")),
+    }
+
+
 def _scorecard_live_check_ok(
     value: object,
     *,
@@ -1448,6 +1579,16 @@ def _scorecard_live_check_ok(
     expected: object,
 ) -> bool:
     return isinstance(value, Mapping) and value.get(ok_key) == expected
+
+
+def _scorecard_bounded_safety_summary(summary: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "ok": summary.get("ok"),
+        "checks": summary.get("checks") if isinstance(summary.get("checks"), Mapping) else {},
+        "failed_checks": _scorecard_string_list(summary.get("failed_checks")),
+        "local_path_count": _scorecard_int(summary.get("local_path_count")),
+        "sensitive_path_count": _scorecard_int(summary.get("sensitive_path_count")),
+    }
 
 
 def _scorecard_live_check_statuses(
@@ -2448,6 +2589,10 @@ def _scorecard_result_metrics(result: dict[str, object] | None) -> dict[str, obj
         return {}
     metrics = result.get("metrics", {})
     return metrics if isinstance(metrics, dict) else {}
+
+
+def _scorecard_mapping(value: object) -> Mapping[object, object]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _scorecard_float(value: object) -> float | None:

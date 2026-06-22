@@ -64,6 +64,7 @@ from infinity_context_server.eval_constants import (
     AUTO_MEMORY_GOLDEN_SUITE,
     FULL_PROVIDER_CANARY_SUITE,
     GRAPH_NATIVE_GOLDEN_SUITE,
+    LOCAL_EXPERIENCE_PROOF_SUITE,
     LOCOMO_BENCHMARK_SUITE,
     LONG_MEMORY_GOLDEN_SUITE,
     LONG_MEMORY_REQUIRED_CASE_IDS,
@@ -129,6 +130,10 @@ _STANDARD_SCORECARD_EXTERNAL_REPORT_PATHS: tuple[tuple[str, Path], ...] = (
     (
         AGENT_LIVE_SMOKE_SUITE,
         Path(".e2e-artifacts/agent-live-smoke.json"),
+    ),
+    (
+        LOCAL_EXPERIENCE_PROOF_SUITE,
+        Path(".e2e-artifacts/local-experience-proof.json"),
     ),
 )
 

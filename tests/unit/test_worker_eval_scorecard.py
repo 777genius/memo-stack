@@ -13,6 +13,7 @@ from infinity_context_server.eval import (
     run_memory_quality_scorecard,
 )
 from infinity_context_server.eval_constants import (
+    LOCAL_EXPERIENCE_PROOF_SUITE,
     LONG_MEMORY_ABILITY_CASE_IDS,
     LONG_MEMORY_REQUIRED_CASE_IDS,
     MULTIMODAL_OFFLINE_GOLDEN_SUITE,
@@ -638,6 +639,53 @@ def _agent_live_smoke_report() -> dict[str, Any]:
     }
 
 
+def _local_experience_report() -> dict[str, Any]:
+    return {
+        "suite": LOCAL_EXPERIENCE_PROOF_SUITE,
+        "ok": True,
+        "ui_url": "http://127.0.0.1:17792/ui/",
+        "local_artifact_path": "/Users/tester/dev/memo-stack/.e2e-artifacts/local.png",
+        "provenance": _scorecard_provenance(
+            generated_by="scripts/local_experience_proof.py",
+            suite=LOCAL_EXPERIENCE_PROOF_SUITE,
+            dirty=True,
+        ),
+        "components": {
+            "quickstart_live": {
+                "ok": True,
+                "local_experience_status": "ready",
+                "readiness_score": 10.0,
+            },
+            "doctor": {
+                "ok": True,
+                "local_experience_status": "ready",
+            },
+            "local_visual_smoke": {
+                "ok": True,
+                "ui_url": "http://127.0.0.1:17792/ui/#capture",
+                "review_url": "http://127.0.0.1:17792/ui/#review",
+                "mcp_tool_count": 45,
+                "retrieval_answerability_status": "grounded",
+                "checks": {
+                    "visual_memory_visible": True,
+                    "pending_review_created": True,
+                    "mcp_digest_ready": True,
+                    "mcp_digest_evidence_only": True,
+                    "mcp_digest_token_safe": True,
+                    "mcp_reviewed_search_ready": True,
+                    "mcp_reviewed_search_grounded": True,
+                    "mcp_reviewed_search_cited": True,
+                    "mcp_reviewed_search_source_bound": True,
+                    "mcp_reviewed_search_token_safe": True,
+                    "raw_token_absent": True,
+                    "token_not_included": True,
+                },
+            },
+        },
+        "failures": [],
+    }
+
+
 def _agent_behavior_scenario_reports(
     *,
     scenario_count: int = len(AGENT_BEHAVIOR_TOP_EVIDENCE_SCENARIO_IDS),
@@ -789,6 +837,7 @@ def test_memory_quality_scorecard_passes_with_required_capabilities(tmp_path: Pa
     assert readiness["level"] == "internal_deterministic_only"
     assert readiness["score_10"] == 0.0
     assert readiness["ok_components"] == []
+    assert readiness["local_experience_ready"] is False
     assert readiness["next_actions"] == [
         "run_full_provider_canary",
         "run_multimodal_live_provider_canary",
@@ -972,6 +1021,12 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     )
     assert policy["longitudinal_memory"]["requires_knowledge_update"] is True
     assert policy["longitudinal_memory"]["requires_abstention"] is True
+    assert policy["local_experience"]["suite"] == LOCAL_EXPERIENCE_PROOF_SUITE
+    assert policy["local_experience"]["requires_visual_memory_smoke"] is True
+    assert policy["local_experience"]["requires_mcp_digest"] is True
+    assert policy["local_experience"]["requires_reviewed_search"] is True
+    assert policy["local_experience"]["requires_token_safety"] is True
+    assert policy["local_experience"]["minimum_mcp_tool_count"] == 40
     assert (
         policy["retrieval_context_memory_layer"]["source_text_policy"]
         == "untrusted_evidence"
@@ -1425,6 +1480,68 @@ def test_memory_quality_scorecard_auto_discovers_agent_live_smoke_report(
     assert "agent_live_smoke_failed" not in evidence["evidence_gaps"]
 
 
+def test_memory_quality_scorecard_reports_local_experience_proof() -> None:
+    suite_results = _scorecard_fixture_results()
+    suite_results[LOCAL_EXPERIENCE_PROOF_SUITE] = _local_experience_report()
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    evidence = result["external_evidence"]
+    local = evidence["local_experience"]
+    assert local["present"] is True
+    assert local["ok"] is True
+    assert local["mcp_tool_count"] == 45
+    assert local["readiness_score"] == 10.0
+    assert local["retrieval_answerability_status"] == "grounded"
+    assert local["provenance"]["ok"] is True
+    assert local["safety"]["ok"] is True
+    assert local["safety"]["local_path_count"] == 1
+    assert "no_local_home_paths" not in local["safety"]["checks"]
+    assert local["required_checks"]["mcp_digest_evidence_only"] is True
+    assert local["required_checks"]["mcp_reviewed_search_source_bound"] is True
+    assert evidence["readiness"]["level"] == "local_experience_verified"
+    assert evidence["readiness"]["local_experience_ready"] is True
+    assert evidence["confidence_tier"] == "local_experience_evaluated"
+    assert evidence["top_library_comparison_ready"] is False
+
+
+def test_memory_quality_scorecard_flags_failed_local_experience_proof() -> None:
+    suite_results = _scorecard_fixture_results()
+    local_report = _local_experience_report()
+    local_report["components"]["local_visual_smoke"]["checks"][
+        "mcp_reviewed_search_cited"
+    ] = False
+    suite_results[LOCAL_EXPERIENCE_PROOF_SUITE] = local_report
+
+    result = build_memory_quality_scorecard(suite_results)
+
+    local = result["external_evidence"]["local_experience"]
+    assert local["present"] is True
+    assert local["ok"] is False
+    assert local["quality_ok"] is False
+    assert local["failed_required_checks"] == ["mcp_reviewed_search_cited"]
+    assert result["external_evidence"]["readiness"]["local_experience_ready"] is False
+    assert "local_experience_proof_failed" not in result["external_evidence"]["evidence_gaps"]
+
+
+def test_memory_quality_scorecard_auto_discovers_local_experience_report(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "local-experience-proof.json"
+    report_path.write_text(json.dumps(_local_experience_report()), encoding="utf-8")
+    suite_results = _scorecard_fixture_results()
+
+    _merge_standard_scorecard_external_reports(
+        suite_results,
+        report_paths=((LOCAL_EXPERIENCE_PROOF_SUITE, report_path),),
+    )
+    result = build_memory_quality_scorecard(suite_results)
+
+    assert result["external_evidence"]["local_experience"]["present"] is True
+    assert result["external_evidence"]["local_experience"]["ok"] is True
+    assert result["external_evidence"]["readiness"]["local_experience_ready"] is True
+
+
 def test_memory_quality_scorecard_reports_public_benchmark_canary_scale_gap() -> None:
     suite_results = _scorecard_fixture_results()
     suite_results["infinity-context-full-provider-canary"] = _full_provider_canary_report()
@@ -1595,6 +1712,7 @@ def test_memory_quality_scorecard_reports_top_library_ready_with_public_benchmar
             "agent_live_smoke",
             "public_benchmark",
         ],
+        "local_experience_ready": False,
         "blocking_gaps": [],
         "next_actions": [],
     }
