@@ -101,6 +101,35 @@ def test_query_anchor_intent_text_match_rejects_wrong_person_same_project() -> N
     assert match is None
 
 
+def test_query_anchor_intent_matches_text_event_identity() -> None:
+    intent = build_query_anchor_intent("call Alex about Atlas last week")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Call with Alex about Atlas last week confirmed the launch decision.",
+    )
+
+    assert match is not None
+    assert set(match.reasons) >= {
+        "query_event_participant_match",
+        "query_event_project_match",
+        "query_event_type_match",
+        "query_event_temporal_match",
+    }
+    assert set(match.matched_keys) >= {"aleks", "atlas", "group:call", "last_week"}
+
+
+def test_query_anchor_intent_text_match_rejects_wrong_event_time() -> None:
+    intent = build_query_anchor_intent("call Alex about Atlas last week")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Call with Alex about Atlas yesterday confirmed the launch decision.",
+    )
+
+    assert match is None
+
+
 def test_query_anchor_intent_matches_cross_language_event_identity() -> None:
     intent = build_query_anchor_intent("созвон с алексом в атласе час назад")
     anchor = _anchor(

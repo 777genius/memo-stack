@@ -696,6 +696,23 @@ def _observed_anchor_conflicts_intent(
                 observed_keys.update(_observed_anchor_identity_keys(anchor))
         if observed_keys and not _compatible_identity_matches(observed_keys, query_keys):
             return True
+    event_anchors = tuple(anchor for anchor in anchors if anchor.kind == MemoryAnchorKind.EVENT)
+    if event_anchors:
+        observed_temporal_keys: set[str] = set()
+        observed_event_type_keys: set[str] = set()
+        for anchor in event_anchors:
+            observed_temporal_keys.update(_temporal_identity_keys(anchor.metadata))
+            observed_event_type_keys.update(_event_type_identity_keys(anchor.metadata))
+        if _event_type_keys_conflict(
+            query_event_type_keys=intent.event_type_keys(),
+            anchor_event_type_keys=frozenset(observed_event_type_keys),
+        ):
+            return True
+        if _temporal_keys_conflict(
+            query_temporal_keys=intent.temporal_keys(),
+            anchor_temporal_keys=frozenset(observed_temporal_keys),
+        ):
+            return True
     return False
 
 
