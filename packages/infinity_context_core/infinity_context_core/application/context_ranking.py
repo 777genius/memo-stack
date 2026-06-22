@@ -28,9 +28,11 @@ from infinity_context_core.application.context_query_expansion import QueryExpan
 from infinity_context_core.application.context_query_intent import (
     QueryAnchorIntent,
     match_query_anchor_intent_to_text,
+    query_anchor_intent_text_conflicts,
 )
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
+    has_project_identity_mismatch,
     is_query_relevance_sufficient,
     score_query_relevance,
 )
@@ -71,7 +73,23 @@ _CONTEXT_REQUIREMENT_MAX_BOOST = 0.04
 _CONTEXT_REQUIREMENT_ANCHOR_BOOST = 0.008
 _CONTEXT_REQUIREMENT_MODALITY_BOOST = 0.022
 _CONTEXT_REQUIREMENT_FEATURE_BOOST = 0.014
+_DETERMINISTIC_RERANK_MAX_BOOST = 0.055
+_DETERMINISTIC_RERANK_MAX_PENALTY = 0.085
 _DUPLICATE_SOURCE_SCORE_TOLERANCE = 0.015
+_STRONG_EVIDENCE_RERANK_SOURCES = frozenset(
+    {
+        "approved_context_linked_anchors",
+        "approved_context_linked_asset_manifest_evidence",
+        "approved_context_linked_assets",
+        "approved_context_linked_chunks",
+        "approved_context_linked_extraction_artifacts",
+        "approved_context_linked_facts",
+        "artifact_evidence",
+        "canonical_anchor_relations",
+        "canonical_anchors",
+        "temporal_supersedes_relation",
+    }
+)
 _KEYWORD_EXPANSION_SCORE_CAPS = {
     "career_intent_bridge": 0.91,
     "education_career_field_bridge": 0.96,
@@ -305,6 +323,37 @@ def apply_context_requirement_boosts(
     )
 
 
+def apply_deterministic_rerank_adjustments(
+    items: tuple[ContextItem, ...],
+    *,
+    query: str,
+    plan: QueryExpansionPlan,
+    query_anchor_intent: QueryAnchorIntent,
+    max_boost: float = _DETERMINISTIC_RERANK_MAX_BOOST,
+    max_penalty: float = _DETERMINISTIC_RERANK_MAX_PENALTY,
+) -> tuple[ContextItem, ...]:
+    if not items or (max_boost <= 0 and max_penalty <= 0):
+        return items
+    requested_coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=query_anchor_intent,
+        items=(),
+    )
+    requested_total = _coverage_int(requested_coverage.get("requested_total"))
+    return tuple(
+        _with_deterministic_rerank_adjustment(
+            item,
+            query=query,
+            plan=plan,
+            query_anchor_intent=query_anchor_intent,
+            requested_total=requested_total,
+            max_boost=max_boost,
+            max_penalty=max_penalty,
+        )
+        for item in items
+    )
+
+
 def reciprocal_rank_fusion_scores(
     rankings: Mapping[str, Sequence[ContextItem]],
     *,
@@ -521,6 +570,22 @@ class _Bm25QueryMatch:
     matched_term_count: int
     query_reason: str
     query_coverage: float = 0.0
+
+
+@dataclass(frozen=True)
+class _DeterministicRerankSignals:
+    boost: float
+    penalty: float
+    reasons: tuple[str, ...]
+    source_count: int
+    strong_source_count: int
+    coverage_ratio: float
+    anchor_conflict: bool
+    query_reason: str
+
+    @property
+    def net_adjustment(self) -> float:
+        return round(self.boost - self.penalty, 4)
 
 
 def _best_bm25_query_matches(
@@ -841,6 +906,175 @@ def _context_requirement_boost_already_applied(item: ContextItem) -> bool:
     diagnostics = normalize_context_diagnostics(item.diagnostics)
     provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
     return provenance.get("context_requirement_boost_applied") is True
+
+
+def _with_deterministic_rerank_adjustment(
+    item: ContextItem,
+    *,
+    query: str,
+    plan: QueryExpansionPlan,
+    query_anchor_intent: QueryAnchorIntent,
+    requested_total: int,
+    max_boost: float,
+    max_penalty: float,
+) -> ContextItem:
+    if _deterministic_rerank_already_applied(item):
+        return item
+    normalized_item = normalize_context_item_diagnostics(item)
+    signals = _deterministic_rerank_signals(
+        normalized_item,
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+        requested_total=requested_total,
+        max_boost=max_boost,
+        max_penalty=max_penalty,
+    )
+    if signals.net_adjustment == 0:
+        return item
+    diagnostics = normalize_context_diagnostics(normalized_item.diagnostics)
+    diagnostics["deterministic_rerank_reason"] = (
+        "query-aware deterministic rerank over fused candidates"
+    )
+    diagnostics["score_signals"] = {
+        **safe_score_signals(diagnostics.get("score_signals")),
+        "deterministic_rerank_boost": signals.boost,
+        "deterministic_rerank_penalty": signals.penalty,
+        "deterministic_rerank_net_adjustment": signals.net_adjustment,
+        "deterministic_rerank_source_count": signals.source_count,
+        "deterministic_rerank_strong_source_count": signals.strong_source_count,
+        "deterministic_rerank_requirement_coverage": signals.coverage_ratio,
+        "deterministic_rerank_query_reason": signals.query_reason,
+    }
+    diagnostics["provenance"] = {
+        **safe_diagnostic_mapping(diagnostics.get("provenance")),
+        "deterministic_rerank_applied": True,
+        "deterministic_rerank_reasons": list(signals.reasons[:8]),
+        "deterministic_rerank_anchor_conflict": signals.anchor_conflict,
+    }
+    return replace(
+        normalized_item,
+        score=min(0.99, max(0.0, round(normalized_item.score + signals.net_adjustment, 4))),
+        diagnostics=normalize_context_diagnostics(diagnostics),
+    )
+
+
+def _deterministic_rerank_signals(
+    item: ContextItem,
+    *,
+    query: str,
+    plan: QueryExpansionPlan,
+    query_anchor_intent: QueryAnchorIntent,
+    requested_total: int,
+    max_boost: float,
+    max_penalty: float,
+) -> _DeterministicRerankSignals:
+    sources = diagnostic_retrieval_sources(item.diagnostics)
+    strong_source_count = len(set(sources).intersection(_STRONG_EVIDENCE_RERANK_SOURCES))
+    query_text, query_reason, relevance = best_query_relevance(plan, text=item.text)
+    del query_text
+    coverage_ratio = _item_requirement_coverage_ratio(
+        item,
+        query=query,
+        query_anchor_intent=query_anchor_intent,
+        requested_total=requested_total,
+    )
+    anchor_match = match_query_anchor_intent_to_text(query_anchor_intent, item.text)
+    anchor_conflict = query_anchor_intent_text_conflicts(
+        query_anchor_intent,
+        item.text,
+    ) or has_project_identity_mismatch(query=query, text=item.text)
+    boost = 0.0
+    penalty = 0.0
+    reasons: list[str] = []
+    if len(sources) >= 2:
+        boost += min(0.018, 0.006 * len(sources))
+        reasons.append("hybrid_source_diversity")
+    if strong_source_count:
+        boost += min(0.018, 0.008 * strong_source_count)
+        reasons.append("strong_evidence_source")
+    if anchor_match is not None:
+        boost += min(0.018, max(0.0, anchor_match.score_boost) * 0.35)
+        reasons.append("query_anchor_match")
+    if requested_total > 0 and coverage_ratio > 0:
+        boost += 0.014 * coverage_ratio
+        reasons.append("explicit_requirement_covered")
+    if is_query_relevance_sufficient(relevance):
+        relevance_boost = min(
+            0.012,
+            relevance.score_boost * 0.1 + relevance.distinctive_term_hits * 0.003,
+        )
+        if relevance_boost > 0:
+            boost += relevance_boost
+            reasons.append("query_relevance_supported")
+    if anchor_conflict:
+        penalty += 0.07
+        reasons.append("query_anchor_conflict")
+    if requested_total > 0:
+        if coverage_ratio <= 0:
+            penalty += 0.025
+            reasons.append("explicit_requirement_missing")
+        elif coverage_ratio < 0.5:
+            penalty += 0.012
+            reasons.append("explicit_requirement_partial")
+    if (
+        not is_query_relevance_sufficient(relevance)
+        and anchor_match is None
+        and coverage_ratio <= 0
+    ):
+        penalty += 0.018
+        reasons.append("weak_query_relevance")
+    return _DeterministicRerankSignals(
+        boost=round(min(max_boost, boost), 4),
+        penalty=round(min(max_penalty, penalty), 4),
+        reasons=tuple(dict.fromkeys(reasons)),
+        source_count=len(sources),
+        strong_source_count=strong_source_count,
+        coverage_ratio=round(coverage_ratio, 4),
+        anchor_conflict=anchor_conflict,
+        query_reason=query_reason,
+    )
+
+
+def _item_requirement_coverage_ratio(
+    item: ContextItem,
+    *,
+    query: str,
+    query_anchor_intent: QueryAnchorIntent,
+    requested_total: int,
+) -> float:
+    if requested_total <= 0:
+        return 0.0
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=query_anchor_intent,
+        items=(item,),
+    )
+    return _coverage_ratio(coverage.get("coverage_ratio"))
+
+
+def _coverage_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, float):
+        return max(0, int(value))
+    return 0
+
+
+def _coverage_ratio(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, int | float):
+        return min(1.0, max(0.0, float(value)))
+    return 0.0
+
+
+def _deterministic_rerank_already_applied(item: ContextItem) -> bool:
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
+    return provenance.get("deterministic_rerank_applied") is True
 
 
 def _coverage_value_set(value: object) -> frozenset[str]:

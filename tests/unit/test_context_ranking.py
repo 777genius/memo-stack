@@ -5,6 +5,7 @@ from infinity_context_core.application.context_query_intent import build_query_a
 from infinity_context_core.application.context_ranking import (
     apply_bm25_lexical_boosts,
     apply_context_requirement_boosts,
+    apply_deterministic_rerank_adjustments,
     apply_query_anchor_intent_boosts,
     apply_query_plan_bm25_lexical_boosts,
     apply_rank_fusion_boosts,
@@ -683,6 +684,127 @@ def test_context_requirement_boost_does_not_apply_twice() -> None:
     second_pass = apply_context_requirement_boosts(
         first_pass,
         query=query,
+        query_anchor_intent=intent,
+    )
+
+    assert second_pass[0].score == first_pass[0].score
+
+
+def test_deterministic_rerank_penalizes_wrong_person_decoy() -> None:
+    query = "Would Melanie be considered an ally?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "melanie",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        retrieval_sources=("keyword_chunks", "vector_chunks", "canonical_anchors"),
+        text="Melanie encourages Caroline and helps her feel accepted and supported.",
+    )
+    wrong_person = _item(
+        "caroline",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Caroline encourages the community and helps people feel supported.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, wrong_person),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert reranked[1].diagnostics["score_signals"][
+        "deterministic_rerank_penalty"
+    ] > 0
+    assert "query_anchor_conflict" in reranked[1].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+
+
+def test_deterministic_rerank_prefers_multisignal_artifact_evidence() -> None:
+    query = "What text is written in the screenshot about Project Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "generic",
+        score=0.73,
+        retrieval_source="vector_chunks",
+        text="Project Atlas was discussed in a planning note.",
+    )
+    artifact = ContextItem(
+        item_id="artifact_image_ocr",
+        item_type="extraction_artifact",
+        text="Screenshot OCR detected text: Project Atlas budget threshold is 25k.",
+        score=0.7,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="image-1",
+                chunk_id="ocr-region-1",
+                bbox=(10.0, 20.0, 160.0, 70.0),
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "artifact_evidence",
+            "retrieval_sources": [
+                "artifact_evidence",
+                "vector_chunks",
+                "canonical_anchors",
+            ],
+            "evidence_modality": "image",
+            "evidence_kind": "ocr_region",
+            "score_signals": {"base_score": 0.7},
+            "provenance": {
+                "retrieval_sources": [
+                    "artifact_evidence",
+                    "vector_chunks",
+                    "canonical_anchors",
+                ]
+            },
+        },
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, artifact),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[1].score > reranked[0].score
+    assert reranked[1].diagnostics["score_signals"][
+        "deterministic_rerank_boost"
+    ] > reranked[0].diagnostics["score_signals"]["deterministic_rerank_boost"]
+    assert "explicit_requirement_covered" in reranked[1].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+
+
+def test_deterministic_rerank_does_not_apply_twice() -> None:
+    query = "What changed after the Atlas call?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    item = _item(
+        "atlas",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        retrieval_sources=("keyword_chunks", "vector_chunks"),
+        text="Alex said after the Atlas call that the launch date changed.",
+    )
+
+    first_pass = apply_deterministic_rerank_adjustments(
+        (item,),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    second_pass = apply_deterministic_rerank_adjustments(
+        first_pass,
+        query=query,
+        plan=plan,
         query_anchor_intent=intent,
     )
 

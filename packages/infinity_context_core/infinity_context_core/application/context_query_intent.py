@@ -359,6 +359,18 @@ def query_anchor_intent_conflicts(
     return not _compatible_identity_matches(_anchor_identity_keys(anchor), query_keys)
 
 
+def query_anchor_intent_text_conflicts(
+    intent: QueryAnchorIntent,
+    text: str,
+) -> bool:
+    """Return True when observed text anchors contradict explicit query anchors."""
+
+    if intent.empty:
+        return False
+    anchors = tuple(extract_observed_anchors(text))
+    return bool(anchors and _observed_anchor_conflicts_intent(intent, anchors))
+
+
 def _append_observed_hint(
     hints: list[QueryAnchorHint],
     seen: set[tuple[str, str]],
