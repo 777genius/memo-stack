@@ -25,6 +25,8 @@ Installed binaries:
 - `infinity-context-full-memory-proof`: run the full-memory release proof script.
 - `infinity-context-runtime-canary`: run the non-mutating runtime canary script.
 
+Both binaries support `--help` and `--version` without contacting the service.
+
 ## Usage
 
 ```ts

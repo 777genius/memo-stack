@@ -2,13 +2,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import {
-  buildFullMemoryProofArtifact,
-  evaluateFullMemoryProofArtifact,
-  InfinityContextClient,
-  runFullMemoryProof,
-} from "../dist/index.js";
-
 const env = process.env;
 const baseUrl = env.INFINITY_CONTEXT_URL ?? "http://127.0.0.1:7788";
 const token = env.INFINITY_CONTEXT_TOKEN;
@@ -18,6 +11,26 @@ const outputMode = env.INFINITY_CONTEXT_PROOF_OUTPUT_MODE === "artifact" ? "arti
 const requireFullMemory = env.INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY === undefined
   ? true
   : !["0", "false", "no"].includes(env.INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY.toLowerCase());
+const packageMetadata = await readPackageMetadata();
+const commandName = "infinity-context-full-memory-proof";
+const cliArgs = process.argv.slice(2);
+
+if (hasCliFlag(cliArgs, "--help", "-h")) {
+  printFullMemoryProofHelp(commandName);
+  process.exit(0);
+}
+
+if (hasCliFlag(cliArgs, "--version", "-v")) {
+  process.stdout.write(`${packageMetadata.packageVersion ?? "0.0.0"}\n`);
+  process.exit(0);
+}
+
+const {
+  buildFullMemoryProofArtifact,
+  evaluateFullMemoryProofArtifact,
+  InfinityContextClient,
+  runFullMemoryProof,
+} = await import("../dist/index.js");
 
 const startedAt = new Date();
 const report = await runFullMemoryProof({
@@ -40,7 +53,7 @@ const artifact = buildFullMemoryProofArtifact({
   startedAt,
   finishedAt,
   metadata: {
-    sdk: await readPackageMetadata(),
+    sdk: packageMetadata,
     git: gitMetadata(env),
     runtime: {
       baseUrl,
@@ -72,6 +85,30 @@ if (!artifactEvaluation.ok) {
 
 if (!report.ok || !artifactEvaluation.ok) {
   process.exitCode = 1;
+}
+
+function hasCliFlag(args, ...flags) {
+  return args.some((arg) => flags.includes(arg));
+}
+
+function printFullMemoryProofHelp(command) {
+  process.stdout.write(`Usage: ${command} [--help] [--version]
+
+Runs the full-memory release proof against an Infinity Context service.
+
+Options:
+  -h, --help       Show this help without contacting the service.
+  -v, --version    Print the package version.
+
+Environment:
+  INFINITY_CONTEXT_URL                         Service base URL. Default: http://127.0.0.1:7788
+  INFINITY_CONTEXT_TOKEN                       Bearer token for the service.
+  INFINITY_CONTEXT_PROOF_OUTPUT                Optional report output JSON path.
+  INFINITY_CONTEXT_PROOF_ARTIFACT_OUTPUT       Optional evidence artifact JSON path.
+  INFINITY_CONTEXT_PROOF_OUTPUT_MODE           report or artifact. Default: report.
+  INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY   Require Postgres/Qdrant/Graphiti/embeddings readiness. Default: true.
+  INFINITY_CONTEXT_PROOF_TIMEOUT_MS            Per-request timeout. Default: 15000.
+`);
 }
 
 function parsePositiveInteger(value) {

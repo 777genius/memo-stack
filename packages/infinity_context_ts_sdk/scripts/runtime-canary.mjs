@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-
-import { InfinityContextClient, runRuntimeCanary, waitForRuntimeCanary } from "../dist/index.js";
 
 const env = process.env;
 const baseUrl = env.INFINITY_CONTEXT_URL ?? "http://127.0.0.1:7788";
@@ -12,6 +10,21 @@ const requireReady = env.INFINITY_CONTEXT_CANARY_REQUIRE_READY === undefined
   ? true
   : !["0", "false", "no"].includes(env.INFINITY_CONTEXT_CANARY_REQUIRE_READY.toLowerCase());
 const shouldWait = parseBoolean(env.INFINITY_CONTEXT_CANARY_WAIT, false);
+const packageMetadata = await readPackageMetadata();
+const commandName = "infinity-context-runtime-canary";
+const cliArgs = process.argv.slice(2);
+
+if (hasCliFlag(cliArgs, "--help", "-h")) {
+  printRuntimeCanaryHelp(commandName);
+  process.exit(0);
+}
+
+if (hasCliFlag(cliArgs, "--version", "-v")) {
+  process.stdout.write(`${packageMetadata.packageVersion ?? "0.0.0"}\n`);
+  process.exit(0);
+}
+
+const { InfinityContextClient, runRuntimeCanary, waitForRuntimeCanary } = await import("../dist/index.js");
 
 const canaryOptions = {
   client: new InfinityContextClient({
@@ -56,6 +69,45 @@ if (outputPath === undefined || outputPath.trim().length === 0) {
 
 if (requireReady && !report.ok) {
   process.exitCode = 1;
+}
+
+function hasCliFlag(args, ...flags) {
+  return args.some((arg) => flags.includes(arg));
+}
+
+function printRuntimeCanaryHelp(command) {
+  process.stdout.write(`Usage: ${command} [--help] [--version]
+
+Runs a non-mutating runtime canary against an Infinity Context service.
+
+Options:
+  -h, --help       Show this help without contacting the service.
+  -v, --version    Print the package version.
+
+Environment:
+  INFINITY_CONTEXT_URL                                Service base URL. Default: http://127.0.0.1:7788
+  INFINITY_CONTEXT_TOKEN                              Bearer token for the service.
+  INFINITY_CONTEXT_CANARY_OUTPUT                      Optional report output JSON path.
+  INFINITY_CONTEXT_CANARY_WAIT                        Poll until ready instead of one probe. Default: false.
+  INFINITY_CONTEXT_CANARY_REQUIRE_READY               Exit non-zero when runtime is not ready. Default: true.
+  INFINITY_CONTEXT_CANARY_SPACE_SLUG                  Optional memory space slug.
+  INFINITY_CONTEXT_CANARY_MEMORY_SCOPE_EXTERNAL_REFS  Optional comma-separated memory scope refs.
+  INFINITY_CONTEXT_CANARY_INCLUDE_SEARCH_PROBE        Include search probe. Default: false.
+  INFINITY_CONTEXT_CANARY_TIMEOUT_MS                  Per-request timeout. Default: 15000.
+`);
+}
+
+async function readPackageMetadata() {
+  try {
+    const text = await readFile(new URL("../package.json", import.meta.url), "utf8");
+    const parsed = JSON.parse(text);
+    return {
+      ...(typeof parsed.name === "string" ? { packageName: parsed.name } : {}),
+      ...(typeof parsed.version === "string" ? { packageVersion: parsed.version } : {}),
+    };
+  } catch {
+    return {};
+  }
 }
 
 function parsePositiveInteger(value) {

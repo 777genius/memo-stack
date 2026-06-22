@@ -1,6 +1,10 @@
+import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFile, stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
+const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
@@ -45,6 +49,17 @@ for (const [binName, targetPath] of expectedBins) {
   const targetText = await readFile(targetUrl, "utf8");
   if (!targetText.startsWith("#!/usr/bin/env node")) {
     throw new Error(`Package bin target is missing node shebang: ${targetPath}`);
+  }
+
+  const resolvedTargetPath = fileURLToPath(targetUrl);
+  const help = await execFileAsync(process.execPath, [resolvedTargetPath, "--help"]);
+  if (help.stderr.trim().length > 0 || !help.stdout.includes(`Usage: ${binName}`)) {
+    throw new Error(`Package bin help output is invalid for ${binName}`);
+  }
+
+  const version = await execFileAsync(process.execPath, [resolvedTargetPath, "--version"]);
+  if (version.stderr.trim().length > 0 || version.stdout.trim() !== packageJson.version) {
+    throw new Error(`Package bin version output is invalid for ${binName}`);
   }
 }
 
