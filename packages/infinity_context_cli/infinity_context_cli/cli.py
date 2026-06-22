@@ -1023,5 +1023,5 @@ def _nested(payload: dict[str, Any], *keys: str) -> Any:
 
 
 def _safe_cli_text(value: str, *, limit: int | None = None) -> str:
-    redacted = redact_sensitive_text(value or "Unexpected CLI error")
+    redacted = redact_sensitive_text(value)
     return redacted if limit is None else redacted[:limit]

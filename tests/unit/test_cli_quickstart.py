@@ -308,6 +308,21 @@ def test_cli_quickstart_starts_runtime_waits_for_status_and_redacts_output(
     assert "[redacted]" in payload["runtime"]["stdout"]
 
 
+def test_cli_runtime_payload_preserves_empty_output_without_fake_error() -> None:
+    result = RuntimeResult(
+        ok=True,
+        command=("docker", "compose", "up", "-d"),
+        returncode=0,
+        stdout="",
+        stderr="",
+    )
+
+    payload = cli._runtime_payload(result)
+
+    assert payload["stdout"] == ""
+    assert payload["stderr"] == ""
+
+
 def test_cli_ui_prints_url_and_can_open_browser(
     tmp_path: Path,
     monkeypatch,
