@@ -81,6 +81,22 @@ def test_rank_fusion_weights_evidence_sources_by_default() -> None:
     assert boosted[0].diagnostics["provenance"]["rank_fusion_source_weighted"] is True
 
 
+def test_rank_fusion_counts_all_sources_on_hybrid_candidate() -> None:
+    hybrid = _item(
+        "hybrid",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        retrieval_sources=("keyword_chunks", "vector_chunks"),
+    )
+    keyword = _item("keyword", score=0.69, retrieval_source="keyword_chunks")
+
+    boosted = apply_rank_fusion_boosts((hybrid, keyword), max_boost=0.04)
+
+    assert boosted[0].score > hybrid.score
+    assert boosted[0].diagnostics["score_signals"]["rank_fusion_source_count"] == 2
+    assert boosted[0].diagnostics["provenance"]["rank_fusion_source_count"] == 2
+
+
 def test_rank_fusion_does_not_apply_twice_to_same_candidate() -> None:
     keyword_top = _item("shared", score=0.8, retrieval_source="keyword_chunks")
     keyword_low = _item("keyword_low", score=0.6, retrieval_source="keyword_chunks")
@@ -198,8 +214,10 @@ def _item(
     *,
     score: float,
     retrieval_source: str,
+    retrieval_sources: tuple[str, ...] | None = None,
     text: str | None = None,
 ) -> ContextItem:
+    listed_sources = retrieval_sources or (retrieval_source,)
     return ContextItem(
         item_id=item_id,
         item_type="chunk",
@@ -208,8 +226,8 @@ def _item(
         source_refs=(SourceRef(source_type="document", source_id="doc"),),
         diagnostics={
             "retrieval_source": retrieval_source,
-            "retrieval_sources": [retrieval_source],
+            "retrieval_sources": list(listed_sources),
             "score_signals": {"base_score": score},
-            "provenance": {"retrieval_sources": [retrieval_source]},
+            "provenance": {"retrieval_sources": list(listed_sources)},
         },
     )

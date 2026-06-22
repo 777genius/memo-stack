@@ -358,9 +358,8 @@ def _ranked_items_by_retrieval_source(
     by_source: dict[str, list[ContextItem]] = {}
     for item in items:
         sources = diagnostic_retrieval_sources(item.diagnostics)
-        if not sources:
-            continue
-        by_source.setdefault(sources[0], []).append(item)
+        for source in sources:
+            by_source.setdefault(source, []).append(item)
     return {
         source: tuple(sorted(source_items, key=context_rank_key))
         for source, source_items in by_source.items()
