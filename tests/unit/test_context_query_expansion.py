@@ -2,11 +2,11 @@ from infinity_context_core.application.context_query_expansion import (
     QueryExpansionPlan,
     build_query_expansion_plan,
 )
-from infinity_context_core.application.context_relevance import score_query_relevance
-from infinity_context_core.application.use_cases.build_context import (
-    _best_query_relevance,
-    _keyword_chunk_score,
+from infinity_context_core.application.context_ranking import (
+    best_query_relevance,
+    keyword_chunk_score,
 )
+from infinity_context_core.application.context_relevance import score_query_relevance
 
 
 def test_query_expansion_preserves_identity_for_relocation_bridge() -> None:
@@ -105,10 +105,49 @@ def test_query_expansion_covers_trait_and_adverse_trip_bridges() -> None:
     )
 
 
+def test_query_expansion_covers_generic_multimodal_evidence_bridges() -> None:
+    screenshot = build_query_expansion_plan(
+        "What text is written in this screenshot image?"
+    )
+    video = build_query_expansion_plan(
+        "What did Alex say in the video about the launch?"
+    )
+    meeting = build_query_expansion_plan("What action items came from the meeting?")
+
+    assert "ocr detected text written" in _expansion_query(
+        screenshot,
+        "visual_text_evidence_bridge",
+    )
+    assert screenshot.diagnostics()["query_expansion_reasons"].count(
+        "visual_text_evidence_bridge"
+    ) == 1
+    assert "transcript speech said told" in _expansion_query(
+        video,
+        "video_transcript_evidence_bridge",
+    )
+    assert "transcript notes discussed decision" in _expansion_query(
+        meeting,
+        "meeting_evidence_bridge",
+    )
+
+
+def test_query_expansion_covers_russian_multimodal_evidence_bridges() -> None:
+    video = build_query_expansion_plan("Что Алекс сказал в видео про запуск?")
+    screenshot = build_query_expansion_plan("Что написано на скриншоте?")
+
+    assert "транскрипт сказал сказала" in _expansion_query(
+        video,
+        "video_transcript_evidence_bridge",
+    )
+    screenshot_expansion = _expansion_query(screenshot, "visual_text_evidence_bridge")
+    assert "ocr" in screenshot_expansion
+    assert "текст написано" in screenshot_expansion
+
+
 def test_best_query_relevance_uses_expansion_for_low_overlap_evidence() -> None:
     plan = build_query_expansion_plan("Where did Caroline move from 4 years ago?")
 
-    query, reason, relevance = _best_query_relevance(
+    query, reason, relevance = best_query_relevance(
         plan,
         text=(
             "D4:3 Caroline: This necklace was a gift from my grandma in my home "
@@ -127,7 +166,7 @@ def test_best_query_relevance_uses_specific_support_origin_bridge() -> None:
         "received support growing up?"
     )
 
-    _, reason, relevance = _best_query_relevance(
+    _, reason, relevance = best_query_relevance(
         plan,
         text=(
             "D3:5 Caroline: I've been blessed with loads of love and support "
@@ -147,7 +186,7 @@ def test_best_query_relevance_uses_support_career_motivation_bridge() -> None:
         "received support growing up?"
     )
 
-    _, reason, relevance = _best_query_relevance(
+    _, reason, relevance = best_query_relevance(
         plan,
         text=(
             "D4:15 Caroline: My own journey and the support I got made a huge "
@@ -176,10 +215,10 @@ def test_best_query_relevance_uses_support_career_motivation_bridge() -> None:
 
     assert reason == "support_career_motivation_bridge"
     assert relevance.distinctive_term_hits >= 10
-    assert _keyword_chunk_score(
+    assert keyword_chunk_score(
         focused,
         query_expansion_reason="support_career_motivation_bridge",
-    ) > _keyword_chunk_score(
+    ) > keyword_chunk_score(
         looser,
         query_expansion_reason="support_career_motivation_bridge",
     )
@@ -191,7 +230,7 @@ def test_best_query_relevance_uses_trait_and_adverse_trip_bridges() -> None:
     )
     roadtrip = build_query_expansion_plan("Would Melanie go on another roadtrip soon?")
 
-    _, trait_reason, trait_relevance = _best_query_relevance(
+    _, trait_reason, trait_relevance = best_query_relevance(
         traits,
         text=(
             "D16:18 Melanie: Thank you for your concern, you're so thoughtful. "
@@ -199,7 +238,7 @@ def test_best_query_relevance_uses_trait_and_adverse_trip_bridges() -> None:
             "D7:4 Melanie: Your drive to help is awesome."
         ),
     )
-    _, trip_reason, trip_relevance = _best_query_relevance(
+    _, trip_reason, trip_relevance = best_query_relevance(
         roadtrip,
         text=(
             "D18:1 Melanie: That roadtrip was insane and we were all freaked "
@@ -219,20 +258,20 @@ def test_trait_query_decomposition_targets_single_trait_turns() -> None:
         "What personality traits might Melanie say Caroline has?"
     )
 
-    _, thoughtful_reason, thoughtful = _best_query_relevance(
+    _, thoughtful_reason, thoughtful = best_query_relevance(
         plan,
         text=(
             "D16:18 Melanie: The sign was just a precaution, but thank you for "
             "your concern, you're so thoughtful!"
         ),
     )
-    _, authentic_reason, authentic = _best_query_relevance(
+    _, authentic_reason, authentic = best_query_relevance(
         plan,
         text=(
             "D13:16 Melanie: You really care about being real and helping others."
         ),
     )
-    _, drive_reason, drive = _best_query_relevance(
+    _, drive_reason, drive = best_query_relevance(
         plan,
         text=(
             "D7:4 Melanie: Your drive to help is awesome! What's your plan to "
@@ -253,7 +292,7 @@ def test_best_query_relevance_uses_specific_outdoor_nature_memory_bridge() -> No
         "Would Melanie be more interested in going to a national park or a theme park?"
     )
 
-    _, reason, relevance = _best_query_relevance(
+    _, reason, relevance = best_query_relevance(
         plan,
         text=(
             "D10:14 Melanie: I'll always remember our camping trip last year "
@@ -284,10 +323,10 @@ def test_keyword_chunk_score_separates_stronger_evidence_from_loose_match() -> N
         text="D15:2 Melanie took her kids to a park and enjoyed seeing them outdoors.",
     )
 
-    assert _keyword_chunk_score(
+    assert keyword_chunk_score(
         strong,
         query_expansion_reason="outdoor_preference_bridge",
-    ) > _keyword_chunk_score(
+    ) > keyword_chunk_score(
         loose,
         query_expansion_reason="outdoor_preference_bridge",
     )

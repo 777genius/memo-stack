@@ -36,7 +36,6 @@ from infinity_context_core.application.context_policy import (
     is_context_review_fact_visible,
 )
 from infinity_context_core.application.context_query_expansion import (
-    QueryExpansionPlan,
     build_query_expansion_plan,
 )
 from infinity_context_core.application.context_query_intent import (
@@ -46,7 +45,12 @@ from infinity_context_core.application.context_query_intent import (
     query_anchor_intent_conflicts,
     query_anchor_lookup_keys,
 )
-from infinity_context_core.application.context_ranking import dedupe_rank_items
+from infinity_context_core.application.context_ranking import (
+    apply_rank_fusion_boosts,
+    best_query_relevance,
+    dedupe_rank_items,
+    keyword_chunk_score,
+)
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     has_project_identity_mismatch,
@@ -96,30 +100,6 @@ from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS = (1, -1, 2, -2, 3, -3)
-_KEYWORD_EXPANSION_SCORE_CAPS = {
-    "career_intent_bridge": 0.91,
-    "support_career_motivation_bridge": 0.96,
-    "support_counterfactual_bridge": 0.94,
-    "support_origin_bridge": 0.94,
-    "outdoor_preference_bridge": 0.94,
-    "outdoor_nature_memory_bridge": 0.94,
-    "personality_trait_bridge": 0.94,
-    "personality_authenticity_bridge": 0.94,
-    "personality_drive_bridge": 0.94,
-    "personality_thoughtfulness_bridge": 0.94,
-    "adverse_trip_bridge": 0.94,
-}
-_KEYWORD_EXPANSION_REASON_BOOSTS = {
-    "adverse_trip_bridge": 0.012,
-    "outdoor_nature_memory_bridge": 0.018,
-    "personality_authenticity_bridge": 0.014,
-    "personality_drive_bridge": 0.014,
-    "personality_thoughtfulness_bridge": 0.014,
-    "personality_trait_bridge": 0.012,
-    "support_career_motivation_bridge": 0.022,
-    "support_origin_bridge": 0.01,
-}
-
 
 class BuildContextUseCase:
     def __init__(
@@ -340,7 +320,7 @@ class BuildContextUseCase:
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
                 continue
-            expansion_query, expansion_reason, relevance = _best_query_relevance(
+            expansion_query, expansion_reason, relevance = best_query_relevance(
                 query_expansion_plan,
                 text=chunk_text,
             )
@@ -349,7 +329,7 @@ class BuildContextUseCase:
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
                 continue
-            score = _keyword_chunk_score(
+            score = keyword_chunk_score(
                 relevance,
                 query_expansion_reason=expansion_reason,
             )
@@ -393,7 +373,7 @@ class BuildContextUseCase:
         items.extend(rag_items)
 
         deduped = await self._hydrator.revalidate_visible_items(
-            dedupe_rank_items(tuple(items)),
+            dedupe_rank_items(apply_rank_fusion_boosts(tuple(items))),
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
@@ -445,12 +425,14 @@ class BuildContextUseCase:
             memory_scope_ids=memory_scope_ids,
         )
         candidate_items = dedupe_rank_items(
-            (
-                *temporal_items,
-                *artifact_evidence_items,
-                *linked_temporal_items,
-                *stale_review_items,
-                *pending_review_items,
+            apply_rank_fusion_boosts(
+                (
+                    *temporal_items,
+                    *artifact_evidence_items,
+                    *linked_temporal_items,
+                    *stale_review_items,
+                    *pending_review_items,
+                )
             )
         )
         guarded_items, requirement_guard_diagnostics = (
@@ -932,61 +914,6 @@ def _annotate_temporal_relation(
         item,
         score=min(0.99, round(item.score + score_delta, 4)),
         diagnostics=diagnostics,
-    )
-
-
-def _best_query_relevance(
-    plan: QueryExpansionPlan,
-    *,
-    text: str,
-) -> tuple[str, str, QueryRelevance]:
-    scored = tuple(
-        (
-            expansion.query,
-            expansion.reason,
-            score_query_relevance(query=expansion.query, text=text),
-        )
-        for expansion in plan.retrieval_queries
-    )
-    return max(scored, key=_query_relevance_rank_key)
-
-
-def _query_relevance_rank_key(
-    item: tuple[str, str, QueryRelevance],
-) -> tuple[bool, int, int, float, bool]:
-    _, reason, relevance = item
-    return (
-        is_query_relevance_sufficient(relevance),
-        relevance.distinctive_term_hits,
-        relevance.unique_term_hits,
-        relevance.score_boost,
-        reason == "original_query",
-    )
-
-
-def _keyword_chunk_score(
-    relevance: QueryRelevance,
-    *,
-    query_expansion_reason: str,
-) -> float:
-    distinctive_boost = min(0.028, relevance.distinctive_term_hits * 0.007)
-    phrase_boost = min(0.018, relevance.phrase_bigram_hits * 0.006)
-    frequency_boost = min(0.014, relevance.capped_frequency_hits * 0.0015)
-    expansion_boost = 0.004 if query_expansion_reason != "original_query" else 0.0
-    reason_boost = _KEYWORD_EXPANSION_REASON_BOOSTS.get(query_expansion_reason, 0.0)
-    score_cap = _KEYWORD_EXPANSION_SCORE_CAPS.get(query_expansion_reason, 0.93)
-    return min(
-        score_cap,
-        round(
-            0.75
-            + relevance.score_boost
-            + distinctive_boost
-            + phrase_boost
-            + frequency_boost
-            + expansion_boost
-            + reason_boost,
-            4,
-        ),
     )
 
 

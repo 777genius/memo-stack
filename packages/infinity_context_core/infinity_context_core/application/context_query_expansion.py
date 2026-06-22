@@ -157,6 +157,54 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "roadtrip accident scary scared bad start freaked lucky okay family",
         "adverse_trip_bridge",
     ),
+    (
+        frozenset({"screenshot"}),
+        "ocr detected text written label title screen image visual текст написано",
+        "visual_text_evidence_bridge",
+    ),
+    (
+        frozenset({"image"}),
+        "ocr detected text written label title photo picture visual текст написано",
+        "visual_text_evidence_bridge",
+    ),
+    (
+        frozenset({"audio"}),
+        "transcript speech voice said told mentioned discussed audio транскрипт сказал сказала",
+        "audio_transcript_evidence_bridge",
+    ),
+    (
+        frozenset({"video"}),
+        (
+            "transcript speech said told mentioned discussed keyframe frame video audio "
+            "транскрипт сказал сказала обсудили кадр"
+        ),
+        "video_transcript_evidence_bridge",
+    ),
+    (
+        frozenset({"call"}),
+        "transcript conversation said told mentioned discussed decision action item call",
+        "conversation_transcript_evidence_bridge",
+    ),
+    (
+        frozenset({"meeting"}),
+        "transcript notes discussed decision decisions action items follow up meeting",
+        "meeting_evidence_bridge",
+    ),
+    (
+        frozenset({"видео"}),
+        "транскрипт сказал сказала обсудили упомянул упомянула кадр видео аудио",
+        "video_transcript_evidence_bridge",
+    ),
+    (
+        frozenset({"аудио"}),
+        "транскрипт речь голос сказал сказала обсудили аудио",
+        "audio_transcript_evidence_bridge",
+    ),
+    (
+        frozenset({"скриншот"}),
+        "ocr текст написано надпись экран изображение визуальный",
+        "visual_text_evidence_bridge",
+    ),
 )
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 _CAPITALIZED_IDENTITY_STOPWORDS = frozenset(
