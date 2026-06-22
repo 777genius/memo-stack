@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -57,6 +58,55 @@ class _CountingBenchmarkAdapter:
                 },
             )
         return _FakeBenchmarkResponse(201, {"data": {}})
+
+
+class _ParallelBenchmarkAdapter:
+    def __init__(self, *, expected_parallel_contexts: int) -> None:
+        self.posts: list[tuple[str, Mapping[str, object]]] = []
+        self.max_active_context_posts = 0
+        self._active_context_posts = 0
+        self._remaining_barrier_waits = expected_parallel_contexts
+        self._lock = threading.Lock()
+        self._context_barrier = threading.Barrier(expected_parallel_contexts, timeout=3)
+
+    def post(
+        self,
+        path: str,
+        *,
+        json_body: Mapping[str, object],
+        headers: Mapping[str, str],
+    ) -> BenchmarkHttpResponsePort:
+        del headers
+        with self._lock:
+            self.posts.append((path, dict(json_body)))
+        if path != "/v1/context":
+            return _FakeBenchmarkResponse(201, {"data": {}})
+        with self._lock:
+            self._active_context_posts += 1
+            self.max_active_context_posts = max(
+                self.max_active_context_posts,
+                self._active_context_posts,
+            )
+            should_wait = self._remaining_barrier_waits > 0
+            if should_wait:
+                self._remaining_barrier_waits -= 1
+        try:
+            if should_wait:
+                self._context_barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        finally:
+            with self._lock:
+                self._active_context_posts -= 1
+        return _FakeBenchmarkResponse(
+            200,
+            {
+                "data": {
+                    "rendered_text": "SHARED_MARKER",
+                    "items": [{"item_id": "chunk_shared", "text": "SHARED_MARKER"}],
+                }
+            },
+        )
 
 
 def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
@@ -621,6 +671,128 @@ def test_public_memory_benchmark_uses_recall_oriented_context_budget(
     assert context_posts[0][1]["max_facts"] == 20
     assert context_posts[0][1]["max_chunks"] == 50
     assert result["ok"] is True
+
+
+def test_public_memory_benchmark_runs_isolated_cases_in_parallel(
+    tmp_path: Path,
+) -> None:
+    adapter = _ParallelBenchmarkAdapter(expected_parallel_contexts=2)
+    dataset = tmp_path / "dataset.json"
+    progress_out = tmp_path / "progress.jsonl"
+    checkpoint_out = tmp_path / "checkpoint.json"
+    dataset.write_text("[]", encoding="utf-8")
+    cases = tuple(
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id=f"parallel-{index}",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(
+                BenchmarkDocumentInput(
+                    title=f"Parallel document {index}",
+                    text=f"SHARED_MARKER lives in isolated benchmark document {index}.",
+                ),
+            ),
+        )
+        for index in range(3)
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=cases,
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+        checkpoint_every_cases=1,
+        parallelism=2,
+    )
+
+    progress_events = [
+        json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
+    ]
+    execution_configured = next(
+        event
+        for event in progress_events
+        if event["event_type"] == "run_execution_configured"
+    )
+    checkpoint = json.loads(checkpoint_out.read_text(encoding="utf-8"))
+
+    assert result["ok"] is True
+    assert result["metrics"]["requested_parallelism"] == 2
+    assert result["metrics"]["effective_parallelism"] == 2
+    assert result["metrics"]["parallelism_degraded"] is False
+    assert adapter.max_active_context_posts == 2
+    assert [case["case_id"] for case in result["cases"]] == [
+        "parallel-0",
+        "parallel-1",
+        "parallel-2",
+    ]
+    assert [case["case_id"] for case in checkpoint["cases"]] == [
+        "parallel-0",
+        "parallel-1",
+        "parallel-2",
+    ]
+    assert execution_configured["effective_parallelism"] == 2
+    assert [event["event_type"] for event in progress_events].count("case_completed") == 3
+
+
+def test_public_memory_benchmark_degrades_parallelism_for_shared_contexts(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "dataset.json"
+    progress_out = tmp_path / "progress.jsonl"
+    dataset.write_text("[]", encoding="utf-8")
+    shared_document = BenchmarkDocumentInput(
+        title="Shared document",
+        text="SHARED_MARKER lives in a shared public benchmark document.",
+        source_external_id="shared-document",
+    )
+    cases = tuple(
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id=f"shared-{index}",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(shared_document,),
+            memory_scope_external_ref="shared-scope",
+            thread_external_ref="shared-thread",
+        )
+        for index in range(2)
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=cases,
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+        progress_out=progress_out,
+        parallelism=2,
+    )
+
+    progress_events = [
+        json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
+    ]
+    execution_configured = next(
+        event
+        for event in progress_events
+        if event["event_type"] == "run_execution_configured"
+    )
+
+    assert result["ok"] is True
+    assert result["metrics"]["requested_parallelism"] == 2
+    assert result["metrics"]["effective_parallelism"] == 1
+    assert result["metrics"]["parallelism_degraded"] is True
+    assert result["metrics"]["seed_source_attempt_count"] == 2
+    assert result["metrics"]["seeded_source_count"] == 1
+    assert result["metrics"]["seed_cache_hit_count"] == 1
+    assert len([post for post in adapter.posts if post[0] == "/v1/documents"]) == 1
+    assert execution_configured["parallelism_degraded_reason"] == "shared_case_context_refs"
 
 
 def test_public_memory_benchmark_writes_progress_and_checkpoint(

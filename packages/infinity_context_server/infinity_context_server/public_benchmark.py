@@ -8,6 +8,7 @@ specific provider adapter.
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import tempfile
@@ -39,6 +40,39 @@ from infinity_context_server.public_benchmark_checkpoint import (
 )
 from infinity_context_server.public_benchmark_checkpoint import (
     SeedCorpusMetadata as _SeedCorpusMetadata,
+)
+from infinity_context_server.public_benchmark_execution import (
+    CaseExecutionEntry as _CaseExecutionEntry,
+)
+from infinity_context_server.public_benchmark_execution import (
+    case_exception_outcome as _case_exception_outcome,
+)
+from infinity_context_server.public_benchmark_execution import (
+    case_execution_parallelism as _case_execution_parallelism,
+)
+from infinity_context_server.public_benchmark_execution import (
+    emit_case_completed as _emit_case_completed,
+)
+from infinity_context_server.public_benchmark_execution import (
+    emit_case_failed as _emit_case_failed,
+)
+from infinity_context_server.public_benchmark_execution import (
+    emit_case_started as _emit_case_started,
+)
+from infinity_context_server.public_benchmark_execution import (
+    execute_case_sequentially as _execute_case_sequentially,
+)
+from infinity_context_server.public_benchmark_execution import (
+    execute_case_with_isolated_state as _execute_case_with_isolated_state,
+)
+from infinity_context_server.public_benchmark_execution import (
+    merge_case_execution_outcome as _merge_case_execution_outcome,
+)
+from infinity_context_server.public_benchmark_execution import (
+    normalize_parallelism as _normalize_parallelism,
+)
+from infinity_context_server.public_benchmark_execution import (
+    ordered_run_results as _ordered_run_results,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -248,6 +282,7 @@ def run_public_memory_benchmark(
     max_cases: int | None = None,
     case_selection_strategy: str = CASE_SELECTION_FIRST,
     resume_from_checkpoint: bool = False,
+    parallelism: int = 1,
 ) -> dict[str, object]:
     """Run normalized public memory cases and optionally write a JSON report."""
 
@@ -325,6 +360,7 @@ def run_public_memory_benchmark(
                 checkpoint_out=checkpoint_out,
                 checkpoint_every_cases=checkpoint_every_cases,
                 resume_from_checkpoint=resume_from_checkpoint,
+                parallelism=parallelism,
             )
     else:
         from fastapi.testclient import TestClient
@@ -366,6 +402,7 @@ def run_public_memory_benchmark(
                     resume_from_checkpoint=(
                         resume_from_checkpoint and local_state_dir is not None
                     ),
+                    parallelism=parallelism,
                 )
 
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
@@ -463,7 +500,12 @@ def _execute_cases(
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
     resume_from_checkpoint: bool = False,
+    parallelism: int = 1,
 ) -> dict[str, object]:
+    requested_parallelism = _normalize_parallelism(
+        parallelism,
+        error_factory=BenchmarkValidationError,
+    )
     dataset_hash = _dataset_hash(dataset_path)
     scope_slug = f"public-benchmark-{dataset_hash[:16]}"
     run_results: list[CaseRunResult] = []
@@ -487,6 +529,7 @@ def _execute_cases(
         "run_started",
         total_case_count=len(cases),
         benchmark_count=len({case.benchmark for case in cases}),
+        requested_parallelism=requested_parallelism,
     )
     resumed_case_keys: set[tuple[str, str]] = set()
     if resume_from_checkpoint:
@@ -515,88 +558,142 @@ def _execute_cases(
             )
         else:
             progress.event("run_resume_skipped", reason="no_compatible_checkpoint")
-    for case_index, case in enumerate(cases, start=1):
-        if case_result_key(case.benchmark, case.case_id) in resumed_case_keys:
-            continue
-        progress.event(
-            "case_started",
+    pending_entries = tuple(
+        _CaseExecutionEntry(case_index=case_index, case=case)
+        for case_index, case in enumerate(cases, start=1)
+        if case_result_key(case.benchmark, case.case_id) not in resumed_case_keys
+    )
+    effective_parallelism, parallelism_degraded_reason = _case_execution_parallelism(
+        pending_entries,
+        requested_parallelism=requested_parallelism,
+    )
+    progress.event(
+        "run_execution_configured",
+        pending_case_count=len(pending_entries),
+        requested_parallelism=requested_parallelism,
+        effective_parallelism=effective_parallelism,
+        parallelism_degraded_reason=parallelism_degraded_reason,
+    )
+
+    def run_case_adapter(
+        case: PublicBenchmarkCase,
+        source_keys: set[tuple[str, str, str, str]],
+        corpus_identities: set[tuple[str, str, int, int]],
+        metadata_cache: dict[tuple[int, int], _SeedCorpusMetadata],
+        stats: _BenchmarkSeedStats,
+        case_progress: _BenchmarkProgress | None,
+        case_index: int | None,
+        total_case_count: int | None,
+    ) -> CaseRunResult:
+        return _run_case(
+            adapter=adapter,
+            headers=headers,
+            scope_slug=scope_slug,
+            dataset_hash=dataset_hash,
+            case=case,
+            seeded_source_keys=source_keys,
+            seeded_corpus_identities=corpus_identities,
+            seed_corpus_metadata_cache=metadata_cache,
+            seed_stats=stats,
+            progress=case_progress,
             case_index=case_index,
-            total_case_count=len(cases),
-            case_id=case.case_id,
-            benchmark=case.benchmark,
-            capability=_case_capability(case),
-            memory_count=len(case.memories),
-            document_count=len(case.documents),
+            total_case_count=total_case_count,
         )
-        try:
-            result = _run_case(
-                adapter=adapter,
-                headers=headers,
-                scope_slug=scope_slug,
-                dataset_hash=dataset_hash,
-                case=case,
+
+    if effective_parallelism <= 1:
+        for entry in pending_entries:
+            _execute_case_sequentially(
+                entry=entry,
+                run_case=run_case_adapter,
+                capability_resolver=_case_capability,
                 seeded_source_keys=seeded_source_keys,
                 seeded_corpus_identities=seeded_corpus_identities,
                 seed_corpus_metadata_cache=seed_corpus_metadata_cache,
                 seed_stats=seed_stats,
                 progress=progress,
-                case_index=case_index,
                 total_case_count=len(cases),
+                run_results=run_results,
+                failures=failures,
+                effective_parallelism=effective_parallelism,
             )
-            run_results.append(result)
-            progress.event(
-                "case_completed",
-                case_index=case_index,
-                total_case_count=len(cases),
-                case_id=case.case_id,
-                benchmark=case.benchmark,
-                capability=result.capability,
-                ok=result.ok,
-                missing_term_count=len(result.missing_terms),
-                leaked_term_count=len(result.leaked_terms),
-                latency_ms=result.latency_ms,
-                seeded_source_count=len(seeded_source_keys),
-                seed_cache_hit_count=seed_stats.seed_cache_hit_count,
-            )
-        except Exception as exc:
-            failure = {
-                "case_id": case.case_id,
-                "category": case.benchmark,
-                "reason": exc.__class__.__name__,
-            }
-            failures.append(failure)
-            run_results.append(
-                CaseRunResult(
-                    benchmark=case.benchmark,
-                    case_id=case.case_id,
-                    capability=_case_capability(case),
-                    ok=False,
-                    expected_ok=False,
-                    forbidden_ok=True,
-                    missing_terms=case.expected_terms,
-                    leaked_terms=(),
-                    item_ids=(),
-                    latency_ms=0.0,
-                )
-            )
-            progress.event(
-                "case_failed",
-                case_index=case_index,
-                total_case_count=len(cases),
-                case_id=case.case_id,
-                benchmark=case.benchmark,
-                reason=exc.__class__.__name__,
-                seeded_source_count=len(seeded_source_keys),
-                seed_cache_hit_count=seed_stats.seed_cache_hit_count,
-            )
-        finally:
             progress.checkpoint(
-                processed_case_count=case_index,
+                processed_case_count=len(run_results),
                 run_results=run_results,
                 failures=failures,
                 seeded_source_count=len(seeded_source_keys),
                 seed_stats=seed_stats,
             )
+    else:
+        result_by_key = {
+            case_result_key(result.benchmark, result.case_id): result
+            for result in run_results
+        }
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=effective_parallelism,
+            thread_name_prefix="public-benchmark-case",
+        ) as executor:
+            future_to_entry = {}
+            for entry in pending_entries:
+                _emit_case_started(
+                    progress=progress,
+                    entry=entry,
+                    capability_resolver=_case_capability,
+                    total_case_count=len(cases),
+                    effective_parallelism=effective_parallelism,
+                )
+                future = executor.submit(
+                    _execute_case_with_isolated_state,
+                    entry=entry,
+                    run_case=run_case_adapter,
+                    capability_resolver=_case_capability,
+                )
+                future_to_entry[future] = entry
+            for future in concurrent.futures.as_completed(future_to_entry):
+                entry = future_to_entry[future]
+                try:
+                    outcome = future.result()
+                except Exception as exc:
+                    outcome = _case_exception_outcome(
+                        entry,
+                        exc,
+                        capability_resolver=_case_capability,
+                    )
+                _merge_case_execution_outcome(
+                    outcome=outcome,
+                    seeded_source_keys=seeded_source_keys,
+                    seeded_corpus_identities=seeded_corpus_identities,
+                    seed_stats=seed_stats,
+                )
+                if outcome.failure is not None:
+                    failures.append(outcome.failure)
+                    _emit_case_failed(
+                        progress=progress,
+                        entry=entry,
+                        reason=str(outcome.failure["reason"]),
+                        seeded_source_count=len(seeded_source_keys),
+                        seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+                        effective_parallelism=effective_parallelism,
+                    )
+                else:
+                    _emit_case_completed(
+                        progress=progress,
+                        entry=entry,
+                        result=outcome.result,
+                        seeded_source_count=len(seeded_source_keys),
+                        seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+                        effective_parallelism=effective_parallelism,
+                    )
+                result_by_key[
+                    case_result_key(outcome.result.benchmark, outcome.result.case_id)
+                ] = outcome.result
+                run_results[:] = _ordered_run_results(cases, result_by_key)
+                progress.checkpoint(
+                    processed_case_count=len(run_results),
+                    run_results=run_results,
+                    failures=failures,
+                    seeded_source_count=len(seeded_source_keys),
+                    seed_stats=seed_stats,
+                )
 
     progress.event(
         "run_completed",
@@ -655,6 +752,9 @@ def _execute_cases(
             "seed_source_attempt_count": seed_stats.source_attempt_count,
             "seeded_source_count": len(seeded_source_keys),
             "seed_cache_hit_count": seed_stats.seed_cache_hit_count,
+            "requested_parallelism": requested_parallelism,
+            "effective_parallelism": effective_parallelism,
+            "parallelism_degraded": parallelism_degraded_reason is not None,
         },
         "benchmarks": benchmarks,
         "cases": [_case_payload(item) for item in run_results],

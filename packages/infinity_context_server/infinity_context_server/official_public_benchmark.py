@@ -103,6 +103,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Case sampling policy for small public benchmark canaries.",
     )
     parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=int(os.getenv("MEMORY_PUBLIC_BENCHMARK_PARALLELISM", "1")),
+        help=(
+            "Maximum parallel isolated cases per benchmark. Shared memory scopes "
+            "automatically run sequentially to keep evidence ordering honest."
+        ),
+    )
+    parser.add_argument(
         "--api-url",
         default=os.getenv("MEMORY_PUBLIC_BENCHMARK_API_URL") or None,
     )
@@ -198,6 +207,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         checkpoint_every_cases=args.checkpoint_every_cases,
         resume_from_checkpoint=args.resume_from_checkpoint,
         local_state_dir=args.local_state_dir,
+        parallelism=args.parallelism,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["ok"] else 1
@@ -221,6 +231,7 @@ def run_official_public_benchmark_canary(
     checkpoint_every_cases: int = 25,
     resume_from_checkpoint: bool = False,
     local_state_dir: Path | None = None,
+    parallelism: int = 1,
 ) -> dict[str, object]:
     if max_cases < 1:
         raise ValueError("max_cases must be greater than zero")
@@ -264,6 +275,7 @@ def run_official_public_benchmark_canary(
                 checkpoint_every_cases=checkpoint_every_cases,
                 resume_from_checkpoint=resume_from_checkpoint,
                 local_state_dir=local_state_dir,
+                parallelism=parallelism,
             )
             reports.append(report)
             dataset_sources[name] = _dataset_source_metadata(
