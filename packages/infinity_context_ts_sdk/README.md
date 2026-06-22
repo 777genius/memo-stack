@@ -41,6 +41,7 @@ import {
   createMemoryIngestionLoopPlan,
   createMemoryPreferenceBriefPlan,
   createMemoryQualityPreset,
+  createMemoryReviewPlan,
   createMemoryScopePlan,
   createMemorySourceEvidencePlan,
   createMemorySummaryLoopPlan,
@@ -722,6 +723,53 @@ for (const candidate of mergeCandidates.data) {
       reason: "high-confidence duplicate anchor",
     });
   }
+}
+
+const reviewPlan = createMemoryReviewPlan({
+  reason: "weekly memory review",
+  continueOnError: true,
+  contextLinks: {
+    visibleFilter: {
+      spaceSlug: "social-monitor:tenant_1:workspace_1",
+      memoryScopeExternalRef: "topic:ai-agents:feedback",
+      status: "pending",
+    },
+    items: [
+      {
+        suggestionId: "ctx_suggestion_1",
+        targetType: "fact",
+        targetId: "fact_1",
+        relationType: "supports",
+      },
+      {
+        suggestionId: "ctx_suggestion_2",
+        action: "reject",
+        reason: "weak match",
+      },
+    ],
+  },
+  suggestions: {
+    action: "approve",
+    force: true,
+    items: [
+      { suggestionId: "suggestion_1" },
+      { suggestionId: "suggestion_2", reason: "durable preference" },
+    ],
+  },
+});
+
+if (reviewPlan.contextLinks) {
+  await memory.contextLinks.reviewContextLinkSuggestionsBatch(
+    reviewPlan.contextLinks.items,
+    reviewPlan.contextLinks.options,
+  );
+}
+
+if (reviewPlan.suggestions) {
+  await memory.suggestions.reviewSuggestionsBatch(
+    reviewPlan.suggestions.items,
+    reviewPlan.suggestions.options,
+  );
 }
 
 await memory.suggestions.resolveSuggestionConflict(suggestionId, {

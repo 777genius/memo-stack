@@ -14,6 +14,7 @@ import {
   createMemoryIngestionLoopPlan,
   createMemoryPreferenceBriefPlan,
   createMemoryQualityPreset,
+  createMemoryReviewPlan,
   createMemoryScopePlan,
   createMemorySourceEvidencePlan,
   createMemorySummaryLoopPlan,
@@ -3505,6 +3506,119 @@ describe("InfinityContextClient", () => {
       spaceSlug: "workspace",
     } as unknown as Parameters<typeof MemoryScope.canonical>[0];
     expect(() => MemoryScope.canonical(mixedInput).toPayload()).toThrow(ValueError);
+  });
+
+  it("plans memory review batches across context links and suggestions", () => {
+    const plan = createMemoryReviewPlan({
+      reason: "weekly memory review",
+      continueOnError: true,
+      headers: { "x-review-id": "review_1" },
+      contextLinks: {
+        visibleFilter: {
+          spaceSlug: "workspace",
+          memoryScopeExternalRef: "scope",
+          status: "pending",
+          limit: 20,
+        },
+        items: [
+          {
+            suggestionId: "ctx_suggestion_1",
+            targetType: "fact",
+            targetId: "fact_1",
+            relationType: "supports",
+            confidence: "high",
+            linkReason: "review selected exact target",
+          },
+          {
+            suggestionId: "ctx_suggestion_2",
+            action: "reject",
+            reason: "weak semantic match",
+          },
+        ],
+      },
+      suggestions: {
+        action: "approve",
+        force: true,
+        items: [
+          { suggestionId: "memory_suggestion_1" },
+          {
+            suggestionId: "memory_suggestion_2",
+            action: "expire",
+            reason: "stale preference",
+            force: false,
+          },
+        ],
+      },
+    });
+
+    expect(plan.contextLinks?.items).toEqual([
+      {
+        suggestionId: "ctx_suggestion_1",
+        action: "approve",
+        reason: "weekly memory review",
+        targetType: "fact",
+        targetId: "fact_1",
+        relationType: "supports",
+        confidence: "high",
+        linkReason: "review selected exact target",
+      },
+      {
+        suggestionId: "ctx_suggestion_2",
+        action: "reject",
+        reason: "weak semantic match",
+      },
+    ]);
+    expect(plan.contextLinks?.options).toMatchObject({
+      headers: { "x-review-id": "review_1" },
+      continueOnError: true,
+      visibleFilter: {
+        spaceSlug: "workspace",
+        memoryScopeExternalRef: "scope",
+        status: "pending",
+        limit: 20,
+      },
+    });
+    expect(plan.suggestions?.items).toEqual([
+      {
+        suggestionId: "memory_suggestion_1",
+        action: "approve",
+        reason: "weekly memory review",
+        force: true,
+      },
+      {
+        suggestionId: "memory_suggestion_2",
+        action: "expire",
+        reason: "stale preference",
+        force: false,
+      },
+    ]);
+    expect(plan.suggestions?.options).toMatchObject({
+      headers: { "x-review-id": "review_1" },
+      continueOnError: true,
+    });
+    expect(plan.summary).toEqual({
+      total: 4,
+      contextLinkReviews: 2,
+      suggestionReviews: 2,
+      byAction: { approve: 2, reject: 1, expire: 1 },
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(Object.isFrozen(plan.contextLinks?.items)).toBe(true);
+    expect(Object.isFrozen(plan.suggestions?.items)).toBe(true);
+  });
+
+  it("validates memory review plans", () => {
+    expect(() => createMemoryReviewPlan({})).toThrow("createMemoryReviewPlan requires at least one review item");
+    expect(() => createMemoryReviewPlan({
+      contextLinks: {
+        items: [{ suggestionId: "", action: "approve" }],
+      },
+    })).toThrow("context link review item 0 requires suggestionId");
+    expect(() => createMemoryReviewPlan({
+      suggestions: {
+        items: [{ suggestionId: "", action: "reject" }],
+      },
+    })).toThrow("suggestion review item 0 requires suggestionId");
   });
 
   it("supports context link creation, suggestion review and batch validation", async () => {

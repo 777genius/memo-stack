@@ -227,6 +227,9 @@ export {
 export {
   createMemoryPreferenceBriefPlan,
 } from "./memory-preference-brief-plan.js";
+export {
+  createMemoryReviewPlan,
+} from "./memory-review-plan.js";
 export type {
   MemoryQualityPreset,
   MemoryQualityPresetName,
@@ -250,6 +253,18 @@ export type {
   MemoryPreferenceBriefScopeOptions,
   MemoryPreferenceSeed,
 } from "./memory-preference-brief-plan.js";
+export type {
+  CreateMemoryReviewPlanInput,
+  MemoryContextLinkReviewDecision,
+  MemoryContextLinkReviewPlan,
+  MemoryContextLinkReviewPlanOptions,
+  MemoryReviewDecisionDefaults,
+  MemoryReviewPlan,
+  MemoryReviewPlanSummary,
+  MemorySuggestionReviewDecision,
+  MemorySuggestionReviewPlan,
+  MemorySuggestionReviewPlanOptions,
+} from "./memory-review-plan.js";
 export type {
   MemoryWorkflowErrorData,
   RecordSourceEvidenceBatchFailure,
