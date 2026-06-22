@@ -236,6 +236,8 @@ def run_official_public_benchmark_canary(
     if max_cases < 1:
         raise ValueError("max_cases must be greater than zero")
     selected = _selected_benchmarks(benchmark)
+    effective_progress_out = progress_out or _default_progress_out(report_out)
+    effective_checkpoint_out = checkpoint_out or _default_checkpoint_out(report_out)
     run_id = f"official-public-{time.time_ns()}"
     started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="memo-official-public-benchmark-") as tmp_dir:
@@ -266,9 +268,9 @@ def run_official_public_benchmark_canary(
                 max_cases=int(policy["max_cases"]),
                 min_accuracy=float(policy["min_accuracy"]),
                 case_selection_strategy=case_selection_strategy,
-                progress_out=progress_out,
+                progress_out=effective_progress_out,
                 checkpoint_out=_benchmark_checkpoint_path(
-                    checkpoint_out,
+                    effective_checkpoint_out,
                     benchmark=name,
                     split=len(selected) > 1,
                 ),
@@ -295,6 +297,8 @@ def run_official_public_benchmark_canary(
         case_selection_strategy=case_selection_strategy,
         api_url=api_url,
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
+        progress_out=effective_progress_out,
+        checkpoint_out=effective_checkpoint_out,
     )
     result = with_report_provenance(
         result,
@@ -367,6 +371,24 @@ def _benchmark_checkpoint_path(
     return checkpoint_out.with_name(f"{stem}.{benchmark}{suffix}")
 
 
+def _default_progress_out(report_out: Path | None) -> Path | None:
+    if report_out is None:
+        return None
+    return _sibling_artifact_path(report_out, artifact="progress", suffix=".jsonl")
+
+
+def _default_checkpoint_out(report_out: Path | None) -> Path | None:
+    if report_out is None:
+        return None
+    return _sibling_artifact_path(report_out, artifact="checkpoint", suffix=".json")
+
+
+def _sibling_artifact_path(path: Path, *, artifact: str, suffix: str) -> Path:
+    original_suffix = path.suffix
+    stem = path.name[: -len(original_suffix)] if original_suffix else path.name
+    return path.with_name(f"{stem}.{artifact}{suffix}")
+
+
 def _download(url: str, destination: Path, *, timeout_seconds: float) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(url, headers={"User-Agent": "infinity-context-benchmark/1"})
@@ -386,6 +408,8 @@ def _merge_reports(
     case_selection_strategy: str,
     api_url: str | None,
     elapsed_ms: float,
+    progress_out: Path | None = None,
+    checkpoint_out: Path | None = None,
 ) -> dict[str, object]:
     cases: list[object] = []
     benchmarks: list[object] = []
@@ -494,6 +518,10 @@ def _merge_reports(
         "dataset_hashes": dataset_hashes,
         "dataset_sources": {name: dict(source) for name, source in dataset_sources.items()},
         "api_url": api_url,
+        "artifact_labels": {
+            "progress": progress_out.name if progress_out is not None else None,
+            "checkpoint": checkpoint_out.name if checkpoint_out is not None else None,
+        },
         "max_cases_per_benchmark": max_cases,
         "min_accuracy": min_accuracy,
         "checks": checks,

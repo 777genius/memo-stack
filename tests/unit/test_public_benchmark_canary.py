@@ -14,6 +14,11 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     locomo = tmp_path / "locomo10-mini.json"
     longmemeval = tmp_path / "longmemeval-mini.json"
     report = tmp_path / "official-public-report.json"
+    progress = tmp_path / "official-public-report.progress.jsonl"
+    locomo_checkpoint = tmp_path / "official-public-report.checkpoint.locomo.json"
+    longmemeval_checkpoint = (
+        tmp_path / "official-public-report.checkpoint.longmemeval.json"
+    )
     locomo.write_text(
         json.dumps(
             [
@@ -91,6 +96,10 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["requested_max_cases"] == 1
     assert result["requested_min_accuracy"] == 1.0
     assert result["case_selection_strategy"] == canary.DEFAULT_CASE_SELECTION_STRATEGY
+    assert result["artifact_labels"] == {
+        "progress": progress.name,
+        "checkpoint": "official-public-report.checkpoint.json",
+    }
     assert set(result["case_selection"]) == {"locomo", "longmemeval"}
     assert result["case_selection"]["locomo"]["strategy"] == (
         canary.DEFAULT_CASE_SELECTION_STRATEGY
@@ -122,11 +131,27 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["provenance"]["suite"] == "public-memory-benchmark"
     assert result["provenance"]["git"]["dirty"] in {True, False}
     assert report.exists()
+    assert progress.exists()
+    assert locomo_checkpoint.exists()
+    assert longmemeval_checkpoint.exists()
     written = json.loads(report.read_text(encoding="utf-8"))
+    progress_events = [
+        json.loads(line) for line in progress.read_text(encoding="utf-8").splitlines()
+    ]
+    locomo_progress = json.loads(locomo_checkpoint.read_text(encoding="utf-8"))[
+        "progress"
+    ]
+    longmemeval_progress = json.loads(
+        longmemeval_checkpoint.read_text(encoding="utf-8")
+    )["progress"]
     assert written["ok"] is True
     assert written["provenance"]["generated_by"] == (
         "infinity_context_server.official_public_benchmark"
     )
+    assert [event["event_type"] for event in progress_events].count("run_started") == 2
+    assert progress_events[-1]["event_type"] == "run_completed"
+    assert locomo_progress["processed_case_count"] == 1
+    assert longmemeval_progress["processed_case_count"] == 1
 
 
 def test_official_public_benchmark_canary_can_run_single_dataset(tmp_path: Path) -> None:
