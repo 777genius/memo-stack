@@ -132,7 +132,7 @@ export type {
 } from "./resources/read-models.js";
 export type { UsageSummaryInput } from "./resources/usage.js";
 export { MemoryScope, ReadScope, ValueError } from "./payload.js";
-export { DEFAULT_RETRY_POLICY, shouldRetry, type RetryPolicy } from "./retry.js";
+export { DEFAULT_RETRY_POLICY, parseRetryAfterMs, retryDelayMs, shouldRetry, type RetryPolicy } from "./retry.js";
 export { assertFullMemoryReady, assertRuntimeReadiness, evaluateRuntimeReadiness } from "./runtime.js";
 export type {
   MemoryRuntimeAdapter,

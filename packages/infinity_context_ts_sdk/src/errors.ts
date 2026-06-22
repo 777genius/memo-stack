@@ -17,6 +17,7 @@ export interface InfinityContextErrorOptions {
   readonly code: string;
   readonly message: string;
   readonly retryable: boolean;
+  readonly retryAfterMs?: number | undefined;
   readonly details?: JsonValue | undefined;
   readonly requestId?: string | undefined;
 }
@@ -25,6 +26,7 @@ export class InfinityContextError extends Error {
   readonly statusCode: number;
   readonly code: string;
   readonly retryable: boolean;
+  readonly retryAfterMs: number | undefined;
   readonly details: JsonValue | undefined;
   readonly requestId: string | undefined;
 
@@ -34,6 +36,7 @@ export class InfinityContextError extends Error {
     this.statusCode = options.statusCode;
     this.code = options.code;
     this.retryable = options.retryable;
+    this.retryAfterMs = options.retryAfterMs;
     this.details = redactJson(options.details);
     this.requestId = options.requestId;
   }

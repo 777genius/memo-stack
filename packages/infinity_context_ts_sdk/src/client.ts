@@ -8,7 +8,7 @@ import type {
   RequestRetryEvent,
   RequestStartEvent,
 } from "./instrumentation.js";
-import { DEFAULT_RETRY_POLICY, retryDelayMs, shouldRetry, sleep, type RetryPolicy } from "./retry.js";
+import { DEFAULT_RETRY_POLICY, parseRetryAfterMs, retryDelayMs, shouldRetry, sleep, type RetryPolicy } from "./retry.js";
 import { buildUrl, FetchTransport, type HttpBody, type HttpMethod, type HttpTransport, withTimeout } from "./transport.js";
 import type { JsonValue, QueryParams } from "./types.js";
 
@@ -180,7 +180,7 @@ export class HttpClient implements RequestExecutor {
     attemptIndex: number,
     durationMs: number,
   ): Promise<void> {
-    const delayMs = retryDelayMs(this.#retryPolicy, attemptIndex);
+    const delayMs = retryDelayMs(this.#retryPolicy, attemptIndex, error.retryAfterMs);
     await this.#notifyRetry({ ...errorEvent(context, error, durationMs), delayMs });
     await this.#sleep(delayMs);
   }
@@ -281,6 +281,7 @@ function toHttpError(statusCode: number, headers: Headers, body: string): Infini
     code,
     message: redactSensitiveText(message),
     retryable: Boolean(errorPayload.retryable ?? statusCode >= 500),
+    retryAfterMs: parseRetryAfterMs(headers.get("retry-after")),
     details: payload,
     requestId,
   });

@@ -13,6 +13,7 @@ import {
   retrievalDiagnostics,
   runFullMemoryProof,
   runRuntimeCanary,
+  parseRetryAfterMs,
   summarizeMemoryBriefEvidence,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
@@ -2601,6 +2602,58 @@ describe("InfinityContextClient", () => {
 
     expect(retryTransport.requests).toHaveLength(2);
     expect(retryTransport.requests[1]?.headers.get("idempotency-key")).toBe("process:doc_1");
+  });
+
+  it("uses bounded Retry-After headers for retry delays", async () => {
+    const delays: number[] = [];
+    const retries: number[] = [];
+    const transport = new RecordingTransport([
+      jsonResponse(
+        { error: { code: "rate_limited", message: "slow down", retryable: true } },
+        429,
+        { "retry-after": "2" },
+      ),
+      jsonResponse(
+        { error: { code: "temporary", message: "still slow", retryable: true } },
+        503,
+        { "retry-after": "120" },
+      ),
+      jsonResponse({ data: { status: "ok" } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 10,
+        maxDelayMs: 10,
+        maxRetryAfterMs: 3000,
+        jitter: false,
+      },
+      instrumentation: {
+        onRetry: (event) => {
+          retries.push(event.delayMs);
+        },
+      },
+    });
+
+    await client.system.capabilities();
+
+    expect(delays).toEqual([2000, 3000]);
+    expect(retries).toEqual([2000, 3000]);
+    expect(transport.requests).toHaveLength(3);
+  });
+
+  it("parses Retry-After seconds and HTTP dates", () => {
+    expect(parseRetryAfterMs("1.25", 1000)).toBe(1250);
+    expect(parseRetryAfterMs("Wed, 21 Oct 2015 07:28:00 GMT", Date.parse("Wed, 21 Oct 2015 07:27:58 GMT")))
+      .toBe(2000);
+    expect(parseRetryAfterMs("Wed, 21 Oct 2015 07:27:00 GMT", Date.parse("Wed, 21 Oct 2015 07:28:00 GMT")))
+      .toBe(0);
+    expect(parseRetryAfterMs("not a date", 1000)).toBeUndefined();
   });
 
   it("redacts sensitive data from HTTP errors", async () => {

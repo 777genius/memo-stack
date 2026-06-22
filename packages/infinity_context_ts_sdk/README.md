@@ -39,12 +39,17 @@ import {
 const memory = new InfinityContextClient({
   baseUrl: process.env.INFINITY_CONTEXT_URL ?? "http://127.0.0.1:7788",
   token: () => process.env.INFINITY_CONTEXT_TOKEN,
+  timeoutMs: 10_000,
+  retryPolicy: { maxAttempts: 3, maxRetryAfterMs: 30_000 },
   instrumentation: {
     onResponse: (event) => {
       console.log("memory api", event.method, event.path, event.statusCode, event.durationMs);
     },
   },
 });
+
+// Retries use exponential backoff and honor Retry-After for retryable 429/503 responses,
+// bounded by maxRetryAfterMs.
 
 const space = await memory.spaces.createSpace({
   slug: "social-monitor:tenant_1:workspace_1",
