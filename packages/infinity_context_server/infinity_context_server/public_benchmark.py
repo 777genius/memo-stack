@@ -192,6 +192,8 @@ class _BenchmarkProgress:
                 "accuracy": _accuracy(run_results),
                 "latency_ms_p95": _p95([item.latency_ms for item in run_results]),
             },
+            "cases": [_case_payload(item) for item in run_results],
+            "failures": list(failures),
             "recent_cases": [_case_payload(item) for item in run_results[-20:]],
             "recent_failures": list(failures[-20:]),
         }
@@ -214,6 +216,15 @@ class _SeedCorpusMetadata:
     reusable_by_identity: bool
     source_count: int
     source_kind_counts: Mapping[str, int]
+
+
+@dataclass(frozen=True)
+class _BenchmarkResumeState:
+    run_results: tuple[CaseRunResult, ...]
+    failures: tuple[Mapping[str, object], ...]
+    seeded_source_keys: frozenset[tuple[str, str, str, str]]
+    seeded_corpus_identities: frozenset[tuple[str, str, int, int]]
+    seed_stats: _BenchmarkSeedStats
 
 
 class _TestClientBenchmarkAdapter:
@@ -258,6 +269,7 @@ def run_public_memory_benchmark(
     min_accuracy: float = _DEFAULT_MIN_ACCURACY,
     max_cases: int | None = None,
     case_selection_strategy: str = CASE_SELECTION_FIRST,
+    resume_from_checkpoint: bool = False,
 ) -> dict[str, object]:
     """Run normalized public memory cases and optionally write a JSON report."""
 
@@ -334,6 +346,7 @@ def run_public_memory_benchmark(
                 progress_out=progress_out,
                 checkpoint_out=checkpoint_out,
                 checkpoint_every_cases=checkpoint_every_cases,
+                resume_from_checkpoint=resume_from_checkpoint,
             )
     else:
         from fastapi.testclient import TestClient
@@ -372,6 +385,9 @@ def run_public_memory_benchmark(
                     progress_out=progress_out,
                     checkpoint_out=checkpoint_out,
                     checkpoint_every_cases=checkpoint_every_cases,
+                    resume_from_checkpoint=(
+                        resume_from_checkpoint and local_state_dir is not None
+                    ),
                 )
 
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
@@ -468,6 +484,7 @@ def _execute_cases(
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    resume_from_checkpoint: bool = False,
 ) -> dict[str, object]:
     dataset_hash = _dataset_hash(dataset_path)
     scope_slug = f"public-benchmark-{dataset_hash[:16]}"
@@ -493,7 +510,36 @@ def _execute_cases(
         total_case_count=len(cases),
         benchmark_count=len({case.benchmark for case in cases}),
     )
+    resumed_case_keys: set[tuple[str, str]] = set()
+    if resume_from_checkpoint:
+        resume_state = _load_checkpoint_resume_state(
+            checkpoint_out=checkpoint_out,
+            dataset_hash=dataset_hash,
+            case_selection=case_selection,
+            cases=cases,
+        )
+        if resume_state is not None:
+            run_results.extend(resume_state.run_results)
+            failures.extend(dict(item) for item in resume_state.failures)
+            seeded_source_keys.update(resume_state.seeded_source_keys)
+            seeded_corpus_identities.update(resume_state.seeded_corpus_identities)
+            seed_stats = resume_state.seed_stats
+            resumed_case_keys = {
+                _case_result_key(result.benchmark, result.case_id)
+                for result in resume_state.run_results
+            }
+            progress.event(
+                "run_resumed",
+                resumed_case_count=len(resumed_case_keys),
+                seeded_source_count=len(seeded_source_keys),
+                seed_source_attempt_count=seed_stats.source_attempt_count,
+                seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+            )
+        else:
+            progress.event("run_resume_skipped", reason="no_compatible_checkpoint")
     for case_index, case in enumerate(cases, start=1):
+        if _case_result_key(case.benchmark, case.case_id) in resumed_case_keys:
+            continue
         progress.event(
             "case_started",
             case_index=case_index,
@@ -644,6 +690,140 @@ def _execute_cases(
             result["metrics"][f"{name}_accuracy"] = metrics.get("accuracy")
             result["metrics"][f"{name}_case_count"] = metrics.get("case_count")
     return result
+
+
+def _load_checkpoint_resume_state(
+    *,
+    checkpoint_out: Path | None,
+    dataset_hash: str,
+    case_selection: Mapping[str, object] | None,
+    cases: Sequence[PublicBenchmarkCase],
+) -> _BenchmarkResumeState | None:
+    if checkpoint_out is None or not checkpoint_out.exists():
+        return None
+    try:
+        payload = json.loads(checkpoint_out.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    if payload.get("schema_version") != "public-benchmark-checkpoint-v1":
+        return None
+    if payload.get("dataset_hash") != dataset_hash:
+        return None
+    if dict(_as_mapping(payload.get("case_selection"))) != dict(case_selection or {}):
+        return None
+    selected_cases = {_case_result_key(case.benchmark, case.case_id): case for case in cases}
+    raw_cases = payload.get("cases")
+    if not isinstance(raw_cases, Sequence) or isinstance(raw_cases, str | bytes):
+        return None
+    run_results: list[CaseRunResult] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_case in raw_cases:
+        result = _case_run_result_from_payload(raw_case)
+        if result is None:
+            continue
+        key = _case_result_key(result.benchmark, result.case_id)
+        if key not in selected_cases or key in seen:
+            continue
+        run_results.append(result)
+        seen.add(key)
+    if not run_results:
+        return None
+    seeded_source_keys, seeded_corpus_identities = _resume_seed_state(
+        cases=(selected_cases[key] for key in seen),
+        dataset_hash=dataset_hash,
+    )
+    progress = _as_mapping(payload.get("progress"))
+    seed_stats = _BenchmarkSeedStats(
+        source_attempt_count=_int_field(
+            progress,
+            "seed_source_attempt_count",
+            default=len(seeded_source_keys),
+        ),
+        seeded_source_count=max(
+            len(seeded_source_keys),
+            _int_field(progress, "seeded_source_count", default=len(seeded_source_keys)),
+        ),
+        seed_cache_hit_count=_int_field(progress, "seed_cache_hit_count", default=0),
+    )
+    failures = tuple(
+        dict(item)
+        for item in _as_sequence(payload.get("failures"))
+        if isinstance(item, Mapping)
+    )
+    return _BenchmarkResumeState(
+        run_results=tuple(run_results),
+        failures=failures,
+        seeded_source_keys=frozenset(seeded_source_keys),
+        seeded_corpus_identities=frozenset(seeded_corpus_identities),
+        seed_stats=seed_stats,
+    )
+
+
+def _case_run_result_from_payload(raw: object) -> CaseRunResult | None:
+    if not isinstance(raw, Mapping):
+        return None
+    benchmark = _non_empty_str(raw.get("benchmark"))
+    case_id = _non_empty_str(raw.get("case_id"))
+    if benchmark is None or case_id is None:
+        return None
+    status = str(raw.get("status") or "")
+    expected_ok = _bool_field(raw, "expected_ok", default=status == "ok")
+    forbidden_ok = _bool_field(raw, "forbidden_ok", default=status == "ok")
+    return CaseRunResult(
+        benchmark=benchmark,
+        case_id=case_id,
+        capability=str(raw.get("capability") or "unknown"),
+        ok=status == "ok" and expected_ok and forbidden_ok,
+        expected_ok=expected_ok,
+        forbidden_ok=forbidden_ok,
+        missing_terms=_str_tuple(raw.get("missing_terms")),
+        leaked_terms=_str_tuple(raw.get("leaked_terms")),
+        item_ids=_str_tuple(raw.get("item_ids")),
+        latency_ms=_float_field(raw, "latency_ms", default=0.0),
+    )
+
+
+def _resume_seed_state(
+    *,
+    cases: Iterable[PublicBenchmarkCase],
+    dataset_hash: str,
+) -> tuple[set[tuple[str, str, str, str]], set[tuple[str, str, int, int]]]:
+    source_keys: set[tuple[str, str, str, str]] = set()
+    corpus_identities: set[tuple[str, str, int, int]] = set()
+    metadata_cache: dict[tuple[int, int], _SeedCorpusMetadata] = {}
+    for case in cases:
+        memory_scope_ref = case.memory_scope_external_ref or f"{case.benchmark}-{case.case_id}"
+        thread_ref = case.thread_external_ref or f"{case.benchmark}-{case.case_id}"
+        for index, memory in enumerate(case.memories):
+            source_id = _safe_identifier(
+                memory.source_external_id
+                or f"{dataset_hash}:{case.case_id}:memory:{index}",
+                max_chars=160,
+            )
+            source_keys.add((memory_scope_ref, thread_ref, "fact", source_id))
+        for index, document in enumerate(case.documents):
+            source_id = _safe_identifier(
+                document.source_external_id
+                or f"{dataset_hash}:{case.case_id}:doc:{index}",
+                max_chars=240,
+            )
+            source_keys.add((memory_scope_ref, thread_ref, "document", source_id))
+        metadata = _seed_corpus_metadata(case, cache=metadata_cache)
+        if metadata.reusable_by_identity:
+            corpus_identities.add(
+                _seed_corpus_identity(
+                    case,
+                    memory_scope_ref=memory_scope_ref,
+                    thread_ref=thread_ref,
+                )
+            )
+    return source_keys, corpus_identities
+
+
+def _case_result_key(benchmark: str, case_id: str) -> tuple[str, str]:
+    return benchmark, case_id
 
 
 def _select_cases(
@@ -1796,6 +1976,62 @@ def _as_list(value: object) -> list[object]:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def _as_sequence(value: object) -> Sequence[object]:
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return value
+    return ()
+
+
+def _as_mapping(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _non_empty_str(value: object) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _str_tuple(value: object) -> tuple[str, ...]:
+    return tuple(str(item) for item in _as_sequence(value) if item is not None)
+
+
+def _bool_field(
+    raw: Mapping[str, object],
+    key: str,
+    *,
+    default: bool,
+) -> bool:
+    value = raw.get(key)
+    return value if isinstance(value, bool) else default
+
+
+def _int_field(
+    raw: Mapping[str, object],
+    key: str,
+    *,
+    default: int,
+) -> int:
+    value = raw.get(key)
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return max(0, value)
+    return default
+
+
+def _float_field(
+    raw: Mapping[str, object],
+    key: str,
+    *,
+    default: float,
+) -> float:
+    value = raw.get(key)
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int | float):
+        return max(0.0, float(value))
+    return default
 
 
 def _metadata(raw: Mapping[str, object]) -> Mapping[str, object]:

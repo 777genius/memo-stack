@@ -159,6 +159,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=int(os.getenv("MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES", "25")),
     )
     parser.add_argument(
+        "--resume-from-checkpoint",
+        action="store_true",
+        default=_bool_env(os.getenv("MEMORY_PUBLIC_BENCHMARK_RESUME_FROM_CHECKPOINT")),
+        help=(
+            "Resume already completed cases from --checkpoint-out when dataset and "
+            "case selection fingerprints match."
+        ),
+    )
+    parser.add_argument(
         "--local-state-dir",
         type=Path,
         default=(
@@ -187,6 +196,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         progress_out=args.progress_out,
         checkpoint_out=args.checkpoint_out,
         checkpoint_every_cases=args.checkpoint_every_cases,
+        resume_from_checkpoint=args.resume_from_checkpoint,
         local_state_dir=args.local_state_dir,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
@@ -209,6 +219,7 @@ def run_official_public_benchmark_canary(
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    resume_from_checkpoint: bool = False,
     local_state_dir: Path | None = None,
 ) -> dict[str, object]:
     if max_cases < 1:
@@ -251,6 +262,7 @@ def run_official_public_benchmark_canary(
                     split=len(selected) > 1,
                 ),
                 checkpoint_every_cases=checkpoint_every_cases,
+                resume_from_checkpoint=resume_from_checkpoint,
                 local_state_dir=local_state_dir,
             )
             reports.append(report)
