@@ -1,0 +1,151 @@
+import type { RequestExecutor } from "../client.js";
+import { MemoryScope, scopeQuery, singleScopePayload, withoutUndefined, type SingleScopeInput } from "../payload.js";
+import type { ApiEnvelope, FactRecord, JsonObject, SourceRef } from "../types.js";
+
+export interface RememberFactInput extends SingleScopeInput {
+  readonly scope?: MemoryScope;
+  readonly text: string;
+  readonly sourceRefs: readonly SourceRef[];
+  readonly kind?: string;
+  readonly idempotencyKey?: string;
+  readonly classification?: string;
+  readonly category?: string;
+  readonly tags?: readonly string[];
+  readonly ttlPolicy?: string;
+}
+
+export class FactsClient {
+  constructor(private readonly http: RequestExecutor) {}
+
+  rememberFact(input: RememberFactInput): Promise<ApiEnvelope<FactRecord>> {
+    const scope = input.scope?.toPayload() ?? singleScopePayload(input);
+    return this.http.request<ApiEnvelope<FactRecord>>({
+      method: "POST",
+      path: "/v1/facts",
+      idempotencyKey: input.idempotencyKey,
+      json: withoutUndefined({
+        ...scope,
+        text: input.text,
+        kind: input.kind ?? "note",
+        source_refs: input.sourceRefs,
+        classification: input.classification ?? "internal",
+        category: input.category,
+        tags: input.tags,
+        ttl_policy: input.ttlPolicy,
+      }) as JsonObject,
+    });
+  }
+
+  updateFact(
+    factId: string,
+    input: {
+      readonly expectedVersion: number;
+      readonly text: string;
+      readonly reason: string;
+      readonly sourceRefs: readonly SourceRef[];
+    },
+  ): Promise<ApiEnvelope<FactRecord>> {
+    return this.http.request<ApiEnvelope<FactRecord>>({
+      method: "PATCH",
+      path: `/v1/facts/${factId}`,
+      json: {
+        expected_version: input.expectedVersion,
+        text: input.text,
+        reason: input.reason,
+        source_refs: input.sourceRefs,
+      },
+    });
+  }
+
+  forgetFact(factId: string): Promise<ApiEnvelope<FactRecord>> {
+    return this.http.request<ApiEnvelope<FactRecord>>({
+      method: "DELETE",
+      path: `/v1/facts/${factId}`,
+    });
+  }
+
+  getFact(factId: string): Promise<ApiEnvelope<FactRecord>> {
+    return this.http.request<ApiEnvelope<FactRecord>>({
+      method: "GET",
+      path: `/v1/facts/${factId}`,
+    });
+  }
+
+  listFacts(input: SingleScopeInput & {
+    readonly status?: string | null;
+    readonly category?: string;
+    readonly tag?: string;
+    readonly limit?: number;
+    readonly cursor?: string;
+  }): Promise<ApiEnvelope<FactRecord[]>> {
+    return this.http.request<ApiEnvelope<FactRecord[]>>({
+      method: "GET",
+      path: "/v1/facts",
+      params: withoutUndefined({
+        ...scopeQuery(input),
+        status: input.status === undefined ? "active" : input.status,
+        category: input.category,
+        tag: input.tag,
+        limit: input.limit ?? 100,
+        cursor: input.cursor,
+      }),
+    });
+  }
+
+  getRelatedFacts(
+    factId: string,
+    input: { readonly limit?: number; readonly includeOtherThreads?: boolean } = {},
+  ): Promise<ApiEnvelope<FactRecord[]>> {
+    return this.http.request<ApiEnvelope<FactRecord[]>>({
+      method: "GET",
+      path: `/v1/facts/${factId}/related`,
+      params: {
+        limit: input.limit ?? 10,
+        include_other_threads: input.includeOtherThreads ?? false,
+      },
+    });
+  }
+
+  linkFacts(
+    sourceFactId: string,
+    input: { readonly targetFactId: string; readonly relationType?: string; readonly reason: string },
+  ): Promise<ApiEnvelope<JsonObject>> {
+    return this.http.request<ApiEnvelope<JsonObject>>({
+      method: "POST",
+      path: `/v1/facts/${sourceFactId}/relations`,
+      json: {
+        target_fact_id: input.targetFactId,
+        relation_type: input.relationType ?? "related_to",
+        reason: input.reason,
+      },
+    });
+  }
+
+  listFactRelations(
+    factId: string,
+    input: { readonly status?: string | null; readonly limit?: number } = {},
+  ): Promise<ApiEnvelope<JsonObject[]>> {
+    return this.http.request<ApiEnvelope<JsonObject[]>>({
+      method: "GET",
+      path: `/v1/facts/${factId}/relations`,
+      params: withoutUndefined({
+        status: input.status === undefined ? "active" : input.status,
+        limit: input.limit ?? 50,
+      }),
+    });
+  }
+
+  unlinkFactRelation(relationId: string): Promise<ApiEnvelope<JsonObject>> {
+    return this.http.request<ApiEnvelope<JsonObject>>({
+      method: "DELETE",
+      path: `/v1/facts/relations/${relationId}`,
+    });
+  }
+
+  listFactVersions(factId: string): Promise<ApiEnvelope<JsonObject[]>> {
+    return this.http.request<ApiEnvelope<JsonObject[]>>({
+      method: "GET",
+      path: `/v1/facts/${factId}/versions`,
+    });
+  }
+}
