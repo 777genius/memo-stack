@@ -107,6 +107,33 @@ const capture = await memory.captures.createCapture({
 await memory.captures.consolidateCapture(capture.data.id, { force: false });
 ```
 
+## Asset extraction lifecycle
+
+Use extraction lifecycle helpers when documents, screenshots, PDFs or transcripts need asynchronous parsing before retrieval.
+
+```ts
+const extraction = await memory.assets.requestAssetExtraction(assetId, {
+  parserProfile: "markdown-strict",
+});
+
+const pending = await memory.assets.listScopeAssetExtractions({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:feedback",
+  status: "failed",
+  limit: 25,
+});
+
+for (const job of pending.data) {
+  await memory.assets.retryAssetExtraction(job.id);
+}
+
+const details = await memory.assets.getAssetExtraction(extraction.data.id);
+const artifact = details.data.artifacts[0];
+if (artifact) {
+  await memory.assets.downloadExtractionArtifact(artifact.id);
+}
+```
+
 ## Read models
 
 Use read models to inspect the memory browser projection and operations queue from a typed SDK surface.

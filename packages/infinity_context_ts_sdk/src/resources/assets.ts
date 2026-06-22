@@ -1,6 +1,17 @@
 import type { RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
-import type { ApiEnvelope, AssetRecord, JsonObject } from "../types.js";
+import type {
+  ApiEnvelope,
+  AssetExtractionDetails,
+  AssetExtractionJobRecord,
+  AssetRecord,
+  JsonObject,
+} from "../types.js";
+
+export type AssetExtractionListInput = {
+  readonly status?: string | null;
+  readonly limit?: number;
+};
 
 export class AssetsClient {
   constructor(private readonly http: RequestExecutor) {}
@@ -66,18 +77,60 @@ export class AssetsClient {
     });
   }
 
-  requestAssetExtraction(assetId: string, input: { readonly parserProfile?: string } = {}): Promise<ApiEnvelope<JsonObject>> {
-    return this.http.request<ApiEnvelope<JsonObject>>({
+  requestAssetExtraction(
+    assetId: string,
+    input: { readonly parserProfile?: string } = {},
+  ): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
+    return this.http.request<ApiEnvelope<AssetExtractionJobRecord>>({
       method: "POST",
       path: `/v1/assets/${assetId}/extractions`,
       params: withoutUndefined({ parser_profile: input.parserProfile }),
     });
   }
 
-  getAssetExtraction(jobId: string): Promise<ApiEnvelope<JsonObject>> {
-    return this.http.request<ApiEnvelope<JsonObject>>({
+  listAssetExtractions(
+    assetId: string,
+    input: AssetExtractionListInput = {},
+  ): Promise<ApiEnvelope<AssetExtractionJobRecord[]>> {
+    return this.http.request<ApiEnvelope<AssetExtractionJobRecord[]>>({
+      method: "GET",
+      path: `/v1/assets/${assetId}/extractions`,
+      params: extractionListQuery(input),
+    });
+  }
+
+  listScopeAssetExtractions(
+    input: SingleScopeInput & AssetExtractionListInput,
+  ): Promise<ApiEnvelope<AssetExtractionJobRecord[]>> {
+    return this.http.request<ApiEnvelope<AssetExtractionJobRecord[]>>({
+      method: "GET",
+      path: "/v1/asset-extractions",
+      params: withoutUndefined({
+        ...scopeQuery(input),
+        status: input.status,
+        limit: input.limit ?? 50,
+      }),
+    });
+  }
+
+  getAssetExtraction(jobId: string): Promise<ApiEnvelope<AssetExtractionDetails>> {
+    return this.http.request<ApiEnvelope<AssetExtractionDetails>>({
       method: "GET",
       path: `/v1/asset-extractions/${jobId}`,
+    });
+  }
+
+  retryAssetExtraction(jobId: string): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
+    return this.http.request<ApiEnvelope<AssetExtractionJobRecord>>({
+      method: "POST",
+      path: `/v1/asset-extractions/${jobId}/retry`,
+    });
+  }
+
+  cancelAssetExtraction(jobId: string): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
+    return this.http.request<ApiEnvelope<AssetExtractionJobRecord>>({
+      method: "POST",
+      path: `/v1/asset-extractions/${jobId}/cancel`,
     });
   }
 
@@ -89,3 +142,9 @@ export class AssetsClient {
     });
   }
 }
+
+const extractionListQuery = (input: AssetExtractionListInput): JsonObject =>
+  withoutUndefined({
+    status: input.status,
+    limit: input.limit ?? 50,
+  }) as JsonObject;

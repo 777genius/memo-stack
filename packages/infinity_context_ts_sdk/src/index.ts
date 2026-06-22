@@ -24,6 +24,7 @@ export {
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
+export type { AssetExtractionListInput } from "./resources/assets.js";
 export type { ConsolidateCaptureData, CreateCaptureData } from "./resources/captures.js";
 export type {
   ContextLinkCandidate,
@@ -46,11 +47,14 @@ export { DEFAULT_RETRY_POLICY, shouldRetry, type RetryPolicy } from "./retry.js"
 export { FetchTransport, type HttpRequest, type HttpResponse, type HttpTransport } from "./transport.js";
 export type {
   ApiEnvelope,
+  AssetExtractionDetails,
+  AssetExtractionJobRecord,
   AssetRecord,
   CaptureRecord,
   ContextLinkRecord,
   ContextLinkSuggestionRecord,
   DocumentRecord,
+  ExtractionArtifactRecord,
   FactRecord,
   InfinityContextCapabilities,
   InfinityContextHealth,

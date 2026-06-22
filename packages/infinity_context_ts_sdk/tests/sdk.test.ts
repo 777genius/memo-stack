@@ -228,6 +228,64 @@ describe("InfinityContextClient", () => {
     await expect(client.assets.downloadAsset("asset_1")).resolves.toEqual(bytes);
   });
 
+  it("manages asset extraction lifecycle endpoints", async () => {
+    const job = assetExtractionJobRecord("job_1");
+    const transport = new RecordingTransport([
+      jsonResponse({ data: job }, 202),
+      jsonResponse({ data: [job] }),
+      jsonResponse({ data: [{ ...job, id: "job_2", status: "failed" }] }),
+      jsonResponse({ data: { ...job, artifacts: [extractionArtifactRecord("artifact_1")] } }),
+      jsonResponse({ data: { ...job, status: "queued", attempt_count: 2 } }, 202),
+      jsonResponse({ data: { ...job, status: "canceled" } }, 202),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const requested = await client.assets.requestAssetExtraction("asset_1", {
+      parserProfile: "markdown-strict",
+    });
+    const assetJobs = await client.assets.listAssetExtractions("asset_1", {
+      status: "running",
+      limit: 20,
+    });
+    const scopeJobs = await client.assets.listScopeAssetExtractions({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      threadExternalRef: "review-thread",
+      status: "failed",
+      limit: 15,
+    });
+    const details = await client.assets.getAssetExtraction("job_1");
+    const retried = await client.assets.retryAssetExtraction("job_1");
+    const canceled = await client.assets.cancelAssetExtraction("job_1");
+
+    expect(requested.data.id).toBe("job_1");
+    expect(assetJobs.data[0]?.status).toBe("running");
+    expect(scopeJobs.data[0]?.status).toBe("failed");
+    expect(details.data.artifacts[0]?.download_path).toBe("/v1/extraction-artifacts/artifact_1/download");
+    expect(retried.data.attempt_count).toBe(2);
+    expect(canceled.data.status).toBe("canceled");
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/assets/asset_1/extractions",
+      "GET /v1/assets/asset_1/extractions",
+      "GET /v1/asset-extractions",
+      "GET /v1/asset-extractions/job_1",
+      "POST /v1/asset-extractions/job_1/retry",
+      "POST /v1/asset-extractions/job_1/cancel",
+    ]);
+    expect(transport.requests[0]?.url.searchParams.get("parser_profile")).toBe("markdown-strict");
+    expect(transport.requests[1]?.url.searchParams.get("status")).toBe("running");
+    expect(transport.requests[1]?.url.searchParams.get("limit")).toBe("20");
+    expect(transport.requests[2]?.url.searchParams.get("space_slug")).toBe("workspace");
+    expect(transport.requests[2]?.url.searchParams.get("memory_scope_external_ref")).toBe("scope");
+    expect(transport.requests[2]?.url.searchParams.get("thread_external_ref")).toBe("review-thread");
+    expect(transport.requests[2]?.url.searchParams.get("status")).toBe("failed");
+    expect(transport.requests[2]?.url.searchParams.get("limit")).toBe("15");
+  });
+
   it("validates mixed canonical and external scopes", () => {
     expect(() =>
       MemoryScope.canonical({ spaceId: "space_1", memoryScopeId: "scope_1" }).toPayload(),
@@ -835,5 +893,49 @@ function captureRecord(id: string) {
       resolver: "resolver.v1",
     },
     last_error_code: null,
+  };
+}
+
+function assetExtractionJobRecord(id: string) {
+  return {
+    id,
+    asset_id: "asset_1",
+    space_id: "space_1",
+    memory_scope_id: "scope_1",
+    thread_id: "thread_1",
+    parser_profile: "markdown-strict",
+    parser_config_hash: "parser_hash_1",
+    source_sha256_hex: "sha_1",
+    status: "running",
+    attempt_count: 1,
+    safe_error_code: null,
+    safe_error_message: null,
+    parser_name: "markdown",
+    parser_version: "1.0.0",
+    model_version: null,
+    result_document_ids: ["document_1"],
+    metadata: {},
+    progress: { phase: "parsing", percent: 60 },
+    execution: { available_actions: ["cancel"] },
+    usage: { input_bytes: 1024 },
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:01:00.000Z",
+    started_at: "2026-06-06T00:00:05.000Z",
+    finished_at: null,
+  };
+}
+
+function extractionArtifactRecord(id: string) {
+  return {
+    id,
+    job_id: "job_1",
+    asset_id: "asset_1",
+    artifact_type: "markdown",
+    storage_backend: "local",
+    download_path: `/v1/extraction-artifacts/${id}/download`,
+    sha256_hex: "artifact_sha_1",
+    byte_size: 256,
+    metadata: {},
+    created_at: "2026-06-06T00:02:00.000Z",
   };
 }

@@ -79,6 +79,50 @@ export interface AssetRecord extends JsonObject {
   readonly status: string;
 }
 
+export interface AssetExtractionJobRecord extends JsonObject {
+  readonly id: string;
+  readonly asset_id: string;
+  readonly space_id: string;
+  readonly memory_scope_id: string;
+  readonly thread_id?: string | null;
+  readonly parser_profile: string;
+  readonly parser_config_hash: string;
+  readonly source_sha256_hex: string;
+  readonly status: string;
+  readonly attempt_count: number;
+  readonly safe_error_code?: string | null;
+  readonly safe_error_message?: string | null;
+  readonly parser_name?: string | null;
+  readonly parser_version?: string | null;
+  readonly model_version?: string | null;
+  readonly result_document_ids: readonly string[];
+  readonly metadata: JsonObject;
+  readonly progress: JsonObject;
+  readonly execution: JsonObject;
+  readonly usage: JsonObject;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly started_at?: string | null;
+  readonly finished_at?: string | null;
+}
+
+export interface ExtractionArtifactRecord extends JsonObject {
+  readonly id: string;
+  readonly job_id: string;
+  readonly asset_id: string;
+  readonly artifact_type: string;
+  readonly storage_backend: string;
+  readonly download_path: string;
+  readonly sha256_hex: string;
+  readonly byte_size: number;
+  readonly metadata: JsonObject;
+  readonly created_at: string;
+}
+
+export interface AssetExtractionDetails extends AssetExtractionJobRecord {
+  readonly artifacts: readonly ExtractionArtifactRecord[];
+}
+
 export interface SuggestionRecord extends JsonObject {
   readonly id: string;
   readonly status: string;
