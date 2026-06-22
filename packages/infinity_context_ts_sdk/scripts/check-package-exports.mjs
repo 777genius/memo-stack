@@ -4,6 +4,7 @@ const require = createRequire(import.meta.url);
 
 const expectedExports = [
   ["@infinity-context/sdk", "InfinityContextClient"],
+  ["@infinity-context/sdk/instrumentation", "noopInstrumentation"],
   ["@infinity-context/sdk/pagination", "iterateCursorItems"],
   ["@infinity-context/sdk/runtime", "assertFullMemoryReady"],
   ["@infinity-context/sdk/workflows", "MemoryWorkflows"],

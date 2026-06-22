@@ -1,5 +1,13 @@
 import { resolveAuthToken, type AuthTokenProvider } from "./auth.js";
 import { InfinityContextError, networkError, redactSensitiveText } from "./errors.js";
+import type {
+  InfinityContextInstrumentation,
+  RequestErrorEvent,
+  RequestInstrumentationContext,
+  RequestResponseEvent,
+  RequestRetryEvent,
+  RequestStartEvent,
+} from "./instrumentation.js";
 import { DEFAULT_RETRY_POLICY, retryDelayMs, shouldRetry, sleep, type RetryPolicy } from "./retry.js";
 import { buildUrl, FetchTransport, type HttpBody, type HttpMethod, type HttpTransport, withTimeout } from "./transport.js";
 import type { JsonValue, QueryParams } from "./types.js";
@@ -11,6 +19,7 @@ export interface InfinityContextClientOptions {
   readonly transport?: HttpTransport;
   readonly retryPolicy?: Partial<RetryPolicy>;
   readonly sleep?: (ms: number) => Promise<void>;
+  readonly instrumentation?: InfinityContextInstrumentation;
 }
 
 export interface RequestOptions {
@@ -37,6 +46,7 @@ export class HttpClient implements RequestExecutor {
   readonly #transport: HttpTransport;
   readonly #retryPolicy: RetryPolicy;
   readonly #sleep: (ms: number) => Promise<void>;
+  readonly #instrumentation: InfinityContextInstrumentation | undefined;
 
   constructor(options: InfinityContextClientOptions = {}) {
     this.#baseUrl = options.baseUrl ?? "http://127.0.0.1:7788";
@@ -45,6 +55,7 @@ export class HttpClient implements RequestExecutor {
     this.#transport = options.transport ?? new FetchTransport();
     this.#retryPolicy = { ...DEFAULT_RETRY_POLICY, ...options.retryPolicy };
     this.#sleep = options.sleep ?? sleep;
+    this.#instrumentation = options.instrumentation;
   }
 
   async request<T = JsonValue>(options: RequestOptions): Promise<T> {
@@ -52,43 +63,60 @@ export class HttpClient implements RequestExecutor {
     const maxAttempts = Math.max(1, this.#retryPolicy.maxAttempts);
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const context = instrumentationContext(options, attempt + 1, maxAttempts);
+      await this.#notifyRequest(context);
+      const started = monotonicNowMs();
       try {
         const response = await this.#send(options);
+        const durationMs = durationSince(started);
+        await this.#notifyResponse({
+          ...context,
+          statusCode: response.status,
+          durationMs,
+          requestId: response.headers.get("x-request-id") ?? undefined,
+        });
         if (response.status < 400) {
-          if (options.responseType === "bytes") {
-            return response.body as T;
+          try {
+            if (options.responseType === "bytes") {
+              return response.body as T;
+            }
+            return parseJson(response.body as string) as T;
+          } catch (error) {
+            const sdkError = networkError(error);
+            lastError = sdkError;
+            const retry = shouldRetryAttempt(options, attempt, maxAttempts, sdkError);
+            await this.#notifyError(errorEvent(context, sdkError, durationMs));
+            if (!retry) {
+              throw sdkError;
+            }
+            await this.#retry(context, sdkError, attempt, durationMs);
+            continue;
           }
-          return parseJson(response.body as string) as T;
         }
 
         const error = toHttpError(response.status, response.headers, response.body as string);
         lastError = error;
-        if (
-          attempt + 1 >= maxAttempts ||
-          !shouldRetry({
-            method: options.method,
-            status: response.status,
-            hasIdempotencyKey: Boolean(options.idempotencyKey),
-          })
-        ) {
+        const retry = shouldRetryAttempt(options, attempt, maxAttempts, error, response.status);
+        await this.#notifyError(errorEvent(context, error, durationMs));
+        if (!retry) {
           throw error;
         }
+        await this.#retry(context, error, attempt, durationMs);
+        continue;
       } catch (error) {
+        if (error instanceof InfinityContextError && error === lastError) {
+          throw error;
+        }
         const sdkError = error instanceof InfinityContextError ? error : networkError(error);
         lastError = sdkError;
-        if (
-          attempt + 1 >= maxAttempts ||
-          !shouldRetry({
-            method: options.method,
-            retryableError: sdkError.retryable,
-            hasIdempotencyKey: Boolean(options.idempotencyKey),
-          })
-        ) {
+        const durationMs = durationSince(started);
+        const retry = shouldRetryAttempt(options, attempt, maxAttempts, sdkError);
+        await this.#notifyError(errorEvent(context, sdkError, durationMs));
+        if (!retry) {
           throw sdkError;
         }
+        await this.#retry(context, sdkError, attempt, durationMs);
       }
-
-      await this.#sleep(retryDelayMs(this.#retryPolicy, attempt));
     }
 
     throw lastError ?? new InfinityContextError({
@@ -125,6 +153,93 @@ export class HttpClient implements RequestExecutor {
       responseType: options.responseType,
     });
   }
+
+  async #retry(
+    context: RequestInstrumentationContext,
+    error: InfinityContextError,
+    attemptIndex: number,
+    durationMs: number,
+  ): Promise<void> {
+    const delayMs = retryDelayMs(this.#retryPolicy, attemptIndex);
+    await this.#notifyRetry({ ...errorEvent(context, error, durationMs), delayMs });
+    await this.#sleep(delayMs);
+  }
+
+  async #notifyRequest(event: RequestStartEvent): Promise<void> {
+    await notifyInstrumentation(() => this.#instrumentation?.onRequest?.(event));
+  }
+
+  async #notifyResponse(event: RequestResponseEvent): Promise<void> {
+    await notifyInstrumentation(() => this.#instrumentation?.onResponse?.(event));
+  }
+
+  async #notifyError(event: RequestErrorEvent): Promise<void> {
+    await notifyInstrumentation(() => this.#instrumentation?.onError?.(event));
+  }
+
+  async #notifyRetry(event: RequestRetryEvent): Promise<void> {
+    await notifyInstrumentation(() => this.#instrumentation?.onRetry?.(event));
+  }
+}
+
+function instrumentationContext(
+  options: RequestOptions,
+  attempt: number,
+  maxAttempts: number,
+): RequestInstrumentationContext {
+  return {
+    method: options.method,
+    path: options.path,
+    attempt,
+    maxAttempts,
+    idempotencyKeyPresent: Boolean(options.idempotencyKey),
+    responseType: options.responseType ?? "json",
+  };
+}
+
+function shouldRetryAttempt(
+  options: RequestOptions,
+  attemptIndex: number,
+  maxAttempts: number,
+  error: InfinityContextError,
+  status?: number,
+): boolean {
+  return attemptIndex + 1 < maxAttempts && shouldRetry({
+    method: options.method,
+    ...(status !== undefined ? { status } : {}),
+    ...(status === undefined ? { retryableError: error.retryable } : {}),
+    hasIdempotencyKey: Boolean(options.idempotencyKey),
+  });
+}
+
+function errorEvent(
+  context: RequestInstrumentationContext,
+  error: InfinityContextError,
+  durationMs: number,
+): RequestErrorEvent {
+  return {
+    ...context,
+    error,
+    durationMs,
+    statusCode: error.statusCode > 0 ? error.statusCode : undefined,
+    requestId: error.requestId,
+  };
+}
+
+async function notifyInstrumentation(callback: () => Promise<void> | void | undefined): Promise<void> {
+  try {
+    await callback();
+  } catch {
+    // Instrumentation must not change SDK request semantics.
+  }
+}
+
+function monotonicNowMs(): number {
+  return globalThis.performance?.now() ?? Date.now();
+}
+
+function durationSince(startedMs: number): number {
+  return Math.max(0, monotonicNowMs() - startedMs);
 }
 
 function parseJson(body: string): JsonValue {

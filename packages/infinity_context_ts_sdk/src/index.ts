@@ -24,6 +24,15 @@ export {
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
+export { noopInstrumentation } from "./instrumentation.js";
+export type {
+  InfinityContextInstrumentation,
+  RequestErrorEvent,
+  RequestInstrumentationContext,
+  RequestResponseEvent,
+  RequestRetryEvent,
+  RequestStartEvent,
+} from "./instrumentation.js";
 export { collectCursorItems, cursorPageRequest, iterateCursorItems } from "./pagination.js";
 export type {
   CursorPageLoader,

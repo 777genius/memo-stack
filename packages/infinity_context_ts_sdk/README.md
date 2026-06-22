@@ -13,6 +13,7 @@ npm install @infinity-context/sdk
 Stable entry points:
 
 - `@infinity-context/sdk`: full SDK.
+- `@infinity-context/sdk/instrumentation`: request instrumentation types.
 - `@infinity-context/sdk/runtime`: runtime readiness guards.
 - `@infinity-context/sdk/pagination`: reusable cursor helpers.
 - `@infinity-context/sdk/workflows`: workflow facade types and classes.
@@ -32,6 +33,11 @@ import {
 const memory = new InfinityContextClient({
   baseUrl: process.env.INFINITY_CONTEXT_URL ?? "http://127.0.0.1:7788",
   token: () => process.env.INFINITY_CONTEXT_TOKEN,
+  instrumentation: {
+    onResponse: (event) => {
+      console.log("memory api", event.method, event.path, event.statusCode, event.durationMs);
+    },
+  },
 });
 
 const space = await memory.spaces.createSpace({

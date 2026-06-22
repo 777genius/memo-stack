@@ -66,6 +66,105 @@ describe("InfinityContextClient", () => {
     });
   });
 
+  it("emits request instrumentation events without exposing headers or bodies", async () => {
+    const events: string[] = [];
+    const transport = new RecordingTransport([
+      jsonResponse(
+        { error: { code: "temporary", message: "try again", retryable: true } },
+        503,
+        { "x-request-id": "req_503" },
+      ),
+      jsonResponse({ data: { id: "fact_1" } }, 200, { "x-request-id": "req_ok" }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      sleep: async () => undefined,
+      retryPolicy: { maxAttempts: 2, baseDelayMs: 10, maxDelayMs: 10, jitter: false },
+      instrumentation: {
+        onRequest: (event) => {
+          events.push(`request:${event.attempt}:${event.method}:${event.path}`);
+        },
+        onResponse: (event) => {
+          events.push(`response:${event.attempt}:${event.statusCode}:${event.requestId}`);
+        },
+        onError: (event) => {
+          events.push(`error:${event.attempt}:${event.error.code}:${event.statusCode}`);
+        },
+        onRetry: (event) => {
+          events.push(`retry:${event.attempt}:${event.delayMs}`);
+        },
+      },
+    });
+
+    await client.facts.rememberFact({
+      spaceId: "space_1",
+      memoryScopeId: "scope_1",
+      text: "Remember user likes source-rich summaries.",
+      sourceRefs: [{ source_type: "test", source_id: "case_1" }],
+      idempotencyKey: "case_1",
+    });
+
+    expect(events).toEqual([
+      "request:1:POST:/v1/facts",
+      "response:1:503:req_503",
+      "error:1:temporary:503",
+      "retry:1:10",
+      "request:2:POST:/v1/facts",
+      "response:2:200:req_ok",
+    ]);
+  });
+
+  it("keeps instrumentation hook failures from changing request results", async () => {
+    const transport = new RecordingTransport([jsonResponse({ data: { id: "fact_1" } })]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+      instrumentation: {
+        onRequest: () => {
+          throw new Error("metrics sink unavailable");
+        },
+      },
+    });
+
+    const response = await client.facts.rememberFact({
+      spaceId: "space_1",
+      memoryScopeId: "scope_1",
+      text: "Remember user likes source-rich summaries.",
+      sourceRefs: [{ source_type: "test", source_id: "case_1" }],
+      idempotencyKey: "case_1",
+    });
+
+    expect(response.data.id).toBe("fact_1");
+  });
+
+  it("emits one error event for a final non-retryable HTTP error", async () => {
+    const events: string[] = [];
+    const transport = new RecordingTransport([
+      jsonResponse({ error: { code: "bad_request", message: "invalid", retryable: false } }, 400),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+      instrumentation: {
+        onRequest: () => {
+          events.push("request");
+        },
+        onResponse: (event) => {
+          events.push(`response:${event.statusCode}`);
+        },
+        onError: (event) => {
+          events.push(`error:${event.error.code}`);
+        },
+      },
+    });
+
+    await expect(client.facts.getFact("fact_1")).rejects.toBeInstanceOf(InfinityContextError);
+    expect(events).toEqual(["request", "response:400", "error:bad_request"]);
+  });
+
   it("maps external read scopes to typed context payloads", async () => {
     const transport = new RecordingTransport([
       jsonResponse({
@@ -1329,10 +1428,10 @@ describe("InfinityContextClient", () => {
   });
 });
 
-function jsonResponse(body: unknown, status = 200): HttpResponse {
+function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): HttpResponse {
   return {
     status,
-    headers: new Headers(),
+    headers: new Headers(headers),
     body: JSON.stringify(body),
   };
 }
