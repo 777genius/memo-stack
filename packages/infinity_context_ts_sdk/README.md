@@ -37,7 +37,9 @@ import {
   ReadScope,
   assertFullMemoryReady,
   assertMemoryBriefQuality,
+  createMemoryQualityPreset,
   healthyRetrievalComponents,
+  MEMORY_QUALITY_PRESETS,
   retrievalDiagnostics,
   runRuntimeCanary,
   summarizeMemoryBriefEvidence,
@@ -310,6 +312,35 @@ assertMemorySummaryLoopPolicy(report, {
 ```
 
 The report preserves the raw workflow result separately while collecting readiness, source evidence, outbox, quality, retrieval and evidence counts into one serializable shape.
+
+Use quality presets when you want one consistent standard across brief quality, summary loop gates, inspection, maintenance, snapshot transfer and full-memory proof artifacts.
+
+```ts
+const betaQuality = createMemoryQualityPreset("durable", {
+  summaryLoop: {
+    requiredEvidenceSourceTypes: ["reddit", "github"],
+  },
+});
+
+const loop = await memory.workflows.runMemorySummaryLoop({
+  sourceEvidence: {
+    items: providerItems,
+    concurrency: 4,
+    continueOnError: true,
+  },
+  outboxDrain: true,
+  brief: {
+    query: "What matters most in AI agents today?",
+    spaceSlug: "social-monitor:tenant_1:workspace_1",
+    memoryScopeExternalRefs: ["topic:ai-agents"],
+  },
+  qualityPolicy: betaQuality.brief,
+});
+
+assertMemorySummaryLoopPolicy(loop, betaQuality.summaryLoop);
+```
+
+`MEMORY_QUALITY_PRESETS.lite` is useful for smoke tests, `durable` is the beta/MVP default, and `full` additionally requires Qdrant, Graphiti and derived vector/graph retrieval.
 
 Use `inspectMemory` when an operator, beta smoke or backend job needs one typed view over read models, usage, runtime diagnostics and optional graph/snapshot checks.
 

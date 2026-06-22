@@ -188,6 +188,15 @@ export type {
   MemoryBriefQualityPolicy,
   MemoryBriefQualityReport,
 } from "./memory-brief-quality.js";
+export {
+  createMemoryQualityPreset,
+  MEMORY_QUALITY_PRESETS,
+} from "./memory-quality-presets.js";
+export type {
+  MemoryQualityPreset,
+  MemoryQualityPresetName,
+  MemoryQualityPresetOverrides,
+} from "./memory-quality-presets.js";
 export type {
   MemoryWorkflowErrorData,
   RecordSourceEvidenceBatchFailure,

@@ -11,6 +11,7 @@ import {
   assertMemoryMaintenancePolicy,
   assertMemorySnapshotTransferPolicy,
   assertMemorySummaryLoopPolicy,
+  createMemoryQualityPreset,
   evaluateMemoryBriefQuality,
   evaluateMemoryInspectionPolicy,
   evaluateMemoryMaintenancePolicy,
@@ -18,6 +19,7 @@ import {
   evaluateMemorySummaryLoopPolicy,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
+  MEMORY_QUALITY_PRESETS,
   retrievalDiagnostics,
   runRuntimeCanary,
   summarizeMemoryBriefEvidence,
@@ -437,6 +439,64 @@ describe("InfinityContextClient", () => {
         ],
       });
     }
+  });
+
+  it("provides immutable memory quality presets with safe overrides", () => {
+    const durable = MEMORY_QUALITY_PRESETS.durable;
+
+    expect(durable.brief).toMatchObject({
+      requireSearch: true,
+      requireDigest: true,
+      requireSupportedAnswer: true,
+    });
+    expect(durable.summaryLoop).toMatchObject({
+      requireReadiness: true,
+      requireSourceEvidence: true,
+      requireOutboxDrain: true,
+      requireQuality: true,
+      minSourceEvidenceSuccessRate: 1,
+    });
+    expect(durable.snapshotPreview).toMatchObject({
+      allowedModes: ["preview"],
+      forbidMutation: true,
+      requireRedacted: true,
+      requireManifest: true,
+      requirePreview: true,
+      forbidSameScope: true,
+    });
+    expect(durable.proofArtifact).toMatchObject({
+      requireOk: true,
+      requireFullMemory: false,
+      maxFailedChecks: 0,
+      requireGitCommit: true,
+      requirePackageVersion: true,
+    });
+    expect(Object.isFrozen(durable)).toBe(true);
+    expect(Object.isFrozen(durable.summaryLoop)).toBe(true);
+    expect(Object.isFrozen(durable.snapshotPreview.allowedModes)).toBe(true);
+
+    const customized = createMemoryQualityPreset("full", {
+      summaryLoop: {
+        minUniqueSourceRefs: 5,
+        requiredEvidenceSourceTypes: ["reddit", "github"],
+      },
+      proofArtifact: {
+        maxDurationMs: 30_000,
+      },
+    });
+
+    expect(customized.summaryLoop).toMatchObject({
+      minUniqueSourceRefs: 5,
+      requiredEvidenceSourceTypes: ["reddit", "github"],
+      requiredRetrieval: ["vector", "graph"],
+    });
+    expect(customized.proofArtifact).toMatchObject({
+      requireFullMemory: true,
+      maxDurationMs: 30_000,
+      requiredAdapters: ["qdrant", "graphiti"],
+    });
+    expect(MEMORY_QUALITY_PRESETS.full.summaryLoop.minUniqueSourceRefs).toBe(2);
+    expect(MEMORY_QUALITY_PRESETS.full.proofArtifact.maxDurationMs).toBeUndefined();
   });
 
   it("runs a non-mutating runtime canary against full memory retrieval", async () => {
