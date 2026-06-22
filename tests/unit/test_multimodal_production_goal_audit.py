@@ -48,6 +48,12 @@ def test_multimodal_production_goal_audit_accepts_complete_proof(tmp_path: Path)
     assert payload["not_evaluable_checks"] == []
     assert all(result.checks.values())
     assert result.checks["live_provider_proof_matrix_timeout_live_probe"] is True
+    assert (
+        result.checks[
+            "live_provider_proof_matrix_transcription_time_ranges_live_provider"
+        ]
+        is True
+    )
     assert result.checks["live_provider_proof_matrix_timeout_live_probe_observed"] is True
     assert (
         result.checks[
@@ -1390,6 +1396,17 @@ def _provider_proof_matrix() -> dict[str, object]:
                 "transcript_chars": 80,
                 "segment_count": 0,
                 "word_count": 0,
+            },
+            "transcription_time_ranges_live_provider": {
+                "status": "succeeded",
+                "proof": "live_provider_transcript_time_ranges",
+                "requires_provider_key": True,
+                "ok": True,
+                "response_format": "verbose_json",
+                "timestamp_granularities": ["segment"],
+                "segment_count": 1,
+                "time_range_count": 1,
+                "max_segment_end_ms": 1200,
             },
             "audio_transcription_format_matrix": {
                 "status": "succeeded",

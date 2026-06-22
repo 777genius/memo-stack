@@ -48,6 +48,7 @@ REQUIRED_ENV = "MEMORY_OPENAI_API_KEY, OPENAI_API_KEY or MEMORY_OPENAI_API_KEY_F
 DEFAULT_REPORT_OUT = ".e2e-artifacts/multimodal-live-provider-canary.json"
 DEFAULT_VISION_MODEL = "gpt-4.1-mini"
 DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+DEFAULT_TIMESTAMP_TRANSCRIPTION_MODEL = "whisper-1"
 DEFAULT_VISION_DETAIL = "low"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_TIMEOUT_PROBE_SECONDS = 0.001
@@ -175,6 +176,10 @@ async def run_multimodal_live_provider_canary(
             "skipped",
             reason=missing_reason,
         )
+        report["components"]["timestamp_transcription"] = _component(
+            "skipped",
+            reason=missing_reason,
+        )
         report["components"]["timeout_probe"] = _component(
             "skipped",
             reason=missing_reason,
@@ -186,11 +191,17 @@ async def run_multimodal_live_provider_canary(
     report["components"]["provider_key"] = _component("configured")
     vision = await _run_vision(api_key=api_key, args=args)
     transcription = await _run_transcription(api_key=api_key, args=args)
+    timestamp_transcription = await _run_timestamp_transcription(
+        api_key=api_key,
+        args=args,
+    )
     report["components"]["vision"] = vision
     report["components"]["transcription"] = transcription
+    report["components"]["timestamp_transcription"] = timestamp_transcription
     report["ok"] = (
         vision["status"] == "succeeded"
         and transcription["status"] == "succeeded"
+        and timestamp_transcription["status"] == "succeeded"
         and report["components"]["invalid_key_probe"]["status"] == "succeeded"
         and report["components"]["timeout_probe"]["status"] == "succeeded"
     )
@@ -313,6 +324,69 @@ async def _run_transcription(
         )
 
 
+async def _run_timestamp_transcription(
+    *,
+    api_key: str,
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    with tempfile.TemporaryDirectory(prefix="infinity-context-live-asr-timestamps-") as tmp:
+        timestamp_args = argparse.Namespace(**vars(args))
+        timestamp_args.transcription_model = args.timestamp_transcription_model
+        candidates = _timestamp_audio_fixture_candidates(args, Path(tmp))
+        if not candidates:
+            return _component(
+                "degraded",
+                reason="audio_fixture_missing",
+                message=(
+                    "Timestamp transcription proof needs generated speech from macOS say "
+                    "or a configured audio fixture"
+                ),
+            )
+        result = await _run_transcription_fixture(
+            api_key=api_key,
+            args=timestamp_args,
+            audio_path=candidates[0][0],
+            generated_audio=candidates[0][1],
+        )
+        if result.get("status") != "succeeded":
+            return result
+        time_range_count = result.get("time_range_count")
+        if not isinstance(time_range_count, int) or time_range_count <= 0:
+            return _component(
+                "failed",
+                reason="transcription_time_ranges_missing",
+                message="Timestamp-capable provider response did not include segment time ranges",
+                fixture=result.get("fixture"),
+                request_contract=result.get("request_contract"),
+                transcript_chars=result.get("transcript_chars"),
+                segment_count=result.get("segment_count"),
+                word_count=result.get("word_count"),
+                time_range_count=time_range_count,
+                diagnostics=result.get("diagnostics"),
+            )
+        return _component(
+            "succeeded",
+            provider_name=result.get("provider_name"),
+            provider_model=result.get("provider_model"),
+            provider_version=result.get("provider_version"),
+            fixture=result.get("fixture"),
+            request_contract=result.get("request_contract"),
+            transcript_chars=result.get("transcript_chars"),
+            transcript_preview=result.get("transcript_preview"),
+            matched_terms=result.get("matched_terms"),
+            term_match_count=result.get("term_match_count"),
+            similarity=result.get("similarity"),
+            segment_count=result.get("segment_count"),
+            word_count=result.get("word_count"),
+            time_range_count=time_range_count,
+            min_segment_start_ms=result.get("min_segment_start_ms"),
+            max_segment_end_ms=result.get("max_segment_end_ms"),
+            language=result.get("language"),
+            duration_seconds=result.get("duration_seconds"),
+            diagnostics=result.get("diagnostics"),
+        )
+
+
 async def _run_transcription_fixture(
     *,
     api_key: str,
@@ -399,6 +473,7 @@ async def _run_transcription_fixture(
         **transcript_check_details,
         segment_count=len(result.segments),
         word_count=len(result.words),
+        **_segment_time_range_summary(result.segments),
         language=result.language,
         duration_seconds=result.duration_seconds,
         diagnostics=_safe_diagnostics(result.diagnostics),
@@ -781,6 +856,18 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--timestamp-transcription-model",
+        default=os.environ.get(
+            "MEMORY_TRANSCRIPTION_OPENAI_TIMESTAMP_MODEL",
+            DEFAULT_TIMESTAMP_TRANSCRIPTION_MODEL,
+        ),
+        help=(
+            "Timestamp-capable model used only to prove transcript time ranges. "
+            "Defaults to whisper-1 because OpenAI segment timestamp granularities "
+            "require verbose_json."
+        ),
+    )
+    parser.add_argument(
         "--timeout-seconds",
         type=float,
         default=float(
@@ -888,6 +975,14 @@ def _base_report(
             "required_live_file_types": sorted(_required_audio_suffixes(args)),
             "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
         },
+        "timestamp_transcription": {
+            "endpoint": OPENAI_TRANSCRIPTION_ENDPOINT,
+            "model": args.timestamp_transcription_model,
+            "request_contract": openai_transcription_request_contract(
+                args.timestamp_transcription_model
+            ),
+            "docs_url": OPENAI_TRANSCRIPTION_DOCS_URL,
+        },
     }
     return {
         "suite": SUITE,
@@ -911,11 +1006,13 @@ def _base_report(
         "models": {
             "vision": args.vision_model,
             "transcription": args.transcription_model,
+            "timestamp_transcription": args.timestamp_transcription_model,
         },
         "components": {
             "provider_key": _component("unknown"),
             "vision": _component("unknown"),
             "transcription": _component("unknown"),
+            "timestamp_transcription": _component("unknown"),
             "vision_fixture": _component("unknown"),
             "audio_fixture": _component("unknown"),
             "audio_fixtures": [],
@@ -995,6 +1092,10 @@ def _proof_matrix(
             components,
             provider_key_present=provider_key_present,
         ),
+        "transcription_time_ranges_live_provider": _transcription_time_ranges_requirement(
+            components,
+            provider_key_present=provider_key_present,
+        ),
         "audio_transcription_format_matrix": _transcription_format_matrix_requirement(
             components,
             provider_contract,
@@ -1061,6 +1162,7 @@ def _proof_matrix(
         "vision_response_evidence",
         "audio_transcription_real_provider",
         "transcription_response_artifact",
+        "transcription_time_ranges_live_provider",
         "audio_transcription_format_matrix",
         "invalid_key_live_probe",
         "timeout_live_probe",
@@ -1206,6 +1308,67 @@ def _transcription_response_artifact_requirement(
         "transcript_chars": transcript_chars,
         "segment_count": segment_count,
         "word_count": word_count,
+    }
+
+
+def _transcription_time_ranges_requirement(
+    components: dict[object, object],
+    *,
+    provider_key_present: bool,
+) -> dict[str, object]:
+    component = components.get("timestamp_transcription")
+    if not isinstance(component, dict):
+        return {
+            "status": "not_run" if provider_key_present else "skipped",
+            "proof": "live_provider_transcript_time_ranges",
+            "requires_provider_key": True,
+            "ok": False,
+        }
+    status = str(component.get("status") or "unknown")
+    if status != "succeeded":
+        return {
+            "status": status,
+            "proof": "live_provider_transcript_time_ranges",
+            "requires_provider_key": True,
+            "ok": False,
+            **(
+                {"reason": component.get("reason")}
+                if isinstance(component.get("reason"), str)
+                else {}
+            ),
+        }
+    request_contract = (
+        component.get("request_contract")
+        if isinstance(component.get("request_contract"), dict)
+        else {}
+    )
+    response_format = request_contract.get("response_format")
+    timestamp_granularities = request_contract.get("timestamp_granularities")
+    segment_count = component.get("segment_count")
+    time_range_count = component.get("time_range_count")
+    max_segment_end_ms = component.get("max_segment_end_ms")
+    ok = (
+        response_format == "verbose_json"
+        and timestamp_granularities == ["segment"]
+        and isinstance(segment_count, int)
+        and segment_count > 0
+        and isinstance(time_range_count, int)
+        and time_range_count > 0
+        and isinstance(max_segment_end_ms, int)
+        and max_segment_end_ms > 0
+    )
+    return {
+        "status": "succeeded" if ok else "failed",
+        "proof": "live_provider_transcript_time_ranges",
+        "requires_provider_key": True,
+        "ok": ok,
+        "response_format": response_format,
+        "timestamp_granularities": (
+            timestamp_granularities if isinstance(timestamp_granularities, list) else []
+        ),
+        "segment_count": segment_count,
+        "time_range_count": time_range_count,
+        "max_segment_end_ms": max_segment_end_ms,
     }
 
 
@@ -1603,6 +1766,11 @@ def _readiness_next_steps(
         "audio_transcription_format_matrix" in blocking_requirements and provider_key_present
     ):
         steps.append("provide_wav_and_mp3_audio_fixtures")
+    if (
+        "transcription_time_ranges_live_provider" in blocking_requirements
+        and provider_key_present
+    ):
+        steps.append("run_timestamp_transcription_probe")
     if "invalid_key_live_probe" in blocking_requirements:
         steps.append("run_invalid_key_probe")
     if "timeout_live_probe" in blocking_requirements and provider_key_present:
@@ -2158,6 +2326,19 @@ def _audio_fixture_candidates(
     )
 
 
+def _timestamp_audio_fixture_candidates(
+    args: argparse.Namespace,
+    tmp_dir: Path,
+) -> list[tuple[Path, bool]]:
+    synthesized = _synthesize_audio_fixtures(
+        tmp_dir,
+        required_suffixes=frozenset({".wav"}),
+    )
+    if synthesized:
+        return synthesized
+    return _configured_audio_fixture_paths(args)
+
+
 def _configured_audio_fixture_paths(args: argparse.Namespace) -> list[tuple[Path, bool]]:
     raw_values = []
     raw_values.extend(_split_configured_values(getattr(args, "audio_fixture", None)))
@@ -2442,6 +2623,26 @@ def _transcript_check_details(check: dict[str, object]) -> dict[str, object]:
         "min_similarity",
     }
     return {key: check[key] for key in allowed if key in check}
+
+
+def _segment_time_range_summary(segments: tuple[object, ...]) -> dict[str, object]:
+    starts: list[int] = []
+    ends: list[int] = []
+    for segment in segments:
+        start = getattr(segment, "start_ms", None)
+        end = getattr(segment, "end_ms", None)
+        if isinstance(start, int) and isinstance(end, int) and end > start >= 0:
+            starts.append(start)
+            ends.append(end)
+    if not ends:
+        return {
+            "time_range_count": 0,
+        }
+    return {
+        "time_range_count": len(ends),
+        "min_segment_start_ms": min(starts),
+        "max_segment_end_ms": max(ends),
+    }
 
 
 def _safe_transcript_preview(transcript: str, *, max_chars: int = 160) -> str:

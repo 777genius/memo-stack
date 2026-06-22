@@ -98,6 +98,20 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             ".webm",
         ],
     }
+    assert file_report["provider_contract"]["timestamp_transcription"] == {
+        "docs_url": "https://developers.openai.com/api/docs/guides/speech-to-text",
+        "endpoint": "/v1/audio/transcriptions",
+        "model": "whisper-1",
+        "request_contract": {
+            "chunking_strategy": None,
+            "requires_chunking_strategy": False,
+            "response_format": "verbose_json",
+            "speaker_segments_supported": False,
+            "supports_prompt": True,
+            "supports_segment_timestamps": True,
+            "timestamp_granularities": ["segment"],
+        },
+    }
     assert file_report["provider_contract"]["vision"] == {
         "detail": "low",
         "detail_levels": ["low", "high", "auto"],
@@ -116,7 +130,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
         "live_requirements_passed": 0,
-        "live_requirements_total": 7,
+        "live_requirements_total": 8,
     }
     assert file_report["readiness"] == {
         "blocking_requirements": [
@@ -124,6 +138,7 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             "vision_response_evidence",
             "audio_transcription_real_provider",
             "transcription_response_artifact",
+            "transcription_time_ranges_live_provider",
             "audio_transcription_format_matrix",
             "audio_fixture_format_coverage",
             "invalid_key_live_probe",
@@ -168,6 +183,13 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
     assert requirements["transcription_response_artifact"] == {
         "ok": False,
         "proof": "live_provider_artifact_shape",
+        "reason": "provider_credential_missing",
+        "requires_provider_key": True,
+        "status": "skipped",
+    }
+    assert requirements["transcription_time_ranges_live_provider"] == {
+        "ok": False,
+        "proof": "live_provider_transcript_time_ranges",
         "reason": "provider_credential_missing",
         "requires_provider_key": True,
         "status": "skipped",
@@ -255,6 +277,12 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
         "user_retryable": False,
     }
     assert file_report["components"]["transcription"] == {
+        "operator_action": "configure_provider_credential",
+        "reason": "provider_credential_missing",
+        "status": "skipped",
+        "user_retryable": False,
+    }
+    assert file_report["components"]["timestamp_transcription"] == {
         "operator_action": "configure_provider_credential",
         "reason": "provider_credential_missing",
         "status": "skipped",
@@ -502,7 +530,7 @@ def test_multimodal_live_provider_canary_auto_probes_invalid_key_without_real_ke
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
         "live_requirements_passed": 1,
-        "live_requirements_total": 7,
+        "live_requirements_total": 8,
     }
     assert report["provenance"]["generated_by"] == ("scripts/multimodal_live_provider_canary.py")
     assert report["provenance"]["suite"] == ("infinity-context-multimodal-live-provider-canary")
@@ -752,6 +780,16 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
                 "segment_count": 0,
                 "word_count": 0,
             },
+            "timestamp_transcription": {
+                "status": "succeeded",
+                "request_contract": module.openai_transcription_request_contract("whisper-1"),
+                "transcript_chars": 52,
+                "segment_count": 1,
+                "word_count": 0,
+                "time_range_count": 1,
+                "min_segment_start_ms": 0,
+                "max_segment_end_ms": 1200,
+            },
             "invalid_key_probe": {"status": "skipped"},
             "timeout_probe": {
                 "status": "succeeded",
@@ -785,6 +823,18 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
                         "transcript_chars": 52,
                         "segment_count": 0,
                         "word_count": 0,
+                    },
+                    "timestamp_transcription": {
+                        "status": "succeeded",
+                        "request_contract": module.openai_transcription_request_contract(
+                            "whisper-1"
+                        ),
+                        "transcript_chars": 52,
+                        "segment_count": 1,
+                        "word_count": 0,
+                        "time_range_count": 1,
+                        "min_segment_start_ms": 0,
+                        "max_segment_end_ms": 1200,
                     },
                     "invalid_key_probe": {"status": "skipped"},
                     "timeout_probe": {
@@ -826,6 +876,17 @@ def test_multimodal_live_provider_canary_proof_matrix_tracks_live_artifacts() ->
         "status": "succeeded",
         "transcript_chars": 52,
         "word_count": 0,
+    }
+    assert proof["requirements"]["transcription_time_ranges_live_provider"] == {
+        "ok": True,
+        "proof": "live_provider_transcript_time_ranges",
+        "requires_provider_key": True,
+        "response_format": "verbose_json",
+        "segment_count": 1,
+        "status": "succeeded",
+        "time_range_count": 1,
+        "timestamp_granularities": ["segment"],
+        "max_segment_end_ms": 1200,
     }
     assert proof["requirements"]["audio_transcription_format_matrix"] == {
         "covered_suffixes": [],
@@ -1078,6 +1139,100 @@ def test_multimodal_live_provider_canary_transcribes_wav_and_mp3_matrix(
     }
 
 
+def test_multimodal_live_provider_canary_proves_timestamp_time_ranges(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    wav_fixture = tmp_path / "fixture.wav"
+    wav_fixture.write_bytes(_valid_wav_bytes())
+
+    class TimestampTranscriptionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def transcribe(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="succeeded",
+                text="infinity context live transcription canary",
+                segments=[
+                    SimpleNamespace(
+                        text="infinity context live transcription canary",
+                        start_ms=0,
+                        end_ms=1250,
+                    )
+                ],
+                words=[],
+                language="en",
+                duration_seconds=1.25,
+                provider_name="fake_transcription",
+                provider_model="whisper-1",
+                provider_version="fake-version",
+                diagnostics={"request_timeout_seconds": 1},
+            )
+
+    monkeypatch.setattr(module, "OpenAISpeechTranscriptionAdapter", TimestampTranscriptionAdapter)
+    args = module._parse_args(["--audio-fixture", str(wav_fixture), "--timeout-seconds", "1"])
+
+    result = asyncio.run(
+        module._run_timestamp_transcription(api_key="sk-test-provider-key", args=args)
+    )
+    requirement = module._transcription_time_ranges_requirement(
+        {"timestamp_transcription": result},
+        provider_key_present=True,
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["request_contract"]["response_format"] == "verbose_json"
+    assert result["request_contract"]["timestamp_granularities"] == ["segment"]
+    assert result["time_range_count"] == 1
+    assert result["max_segment_end_ms"] == 1250
+    assert requirement["ok"] is True
+
+
+def test_multimodal_live_provider_canary_rejects_timestamp_proof_without_time_ranges(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_canary_module()
+    wav_fixture = tmp_path / "fixture.wav"
+    wav_fixture.write_bytes(_valid_wav_bytes())
+
+    class TextOnlyTranscriptionAdapter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def transcribe(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                status="succeeded",
+                text="infinity context live transcription canary",
+                segments=[],
+                words=[],
+                language="en",
+                duration_seconds=1.25,
+                provider_name="fake_transcription",
+                provider_model="whisper-1",
+                provider_version="fake-version",
+                diagnostics={"request_timeout_seconds": 1},
+            )
+
+    monkeypatch.setattr(module, "OpenAISpeechTranscriptionAdapter", TextOnlyTranscriptionAdapter)
+    args = module._parse_args(["--audio-fixture", str(wav_fixture), "--timeout-seconds", "1"])
+
+    result = asyncio.run(
+        module._run_timestamp_transcription(api_key="sk-test-provider-key", args=args)
+    )
+    requirement = module._transcription_time_ranges_requirement(
+        {"timestamp_transcription": result},
+        provider_key_present=True,
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "transcription_time_ranges_missing"
+    assert requirement["ok"] is False
+    assert requirement["reason"] == "transcription_time_ranges_missing"
+
+
 def test_multimodal_live_provider_canary_failure_policy_contract_covers_provider_errors() -> None:
     module = _load_canary_module()
 
@@ -1095,6 +1250,7 @@ def test_multimodal_live_provider_canary_default_report_matches_goal_audit(
     assert args.report_out == ".e2e-artifacts/multimodal-live-provider-canary.json"
     assert args.allow_missing_key is False
     assert args.api_key_file is None
+    assert args.timestamp_transcription_model == "whisper-1"
 
 
 def test_multimodal_live_provider_canary_reads_api_key_file_without_report_leak(
@@ -1313,7 +1469,7 @@ def test_multimodal_live_provider_canary_preflights_local_fixtures_without_key(
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
         "live_requirements_passed": 0,
-        "live_requirements_total": 7,
+        "live_requirements_total": 8,
     }
 
 

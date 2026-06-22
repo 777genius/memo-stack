@@ -91,6 +91,9 @@ PROVIDER_REQUIREMENT_CHECKS = {
     "transcription_response_artifact": (
         "live_provider_proof_matrix_transcription_response_artifact"
     ),
+    "transcription_time_ranges_live_provider": (
+        "live_provider_proof_matrix_transcription_time_ranges_live_provider"
+    ),
     "audio_transcription_format_matrix": (
         "live_provider_proof_matrix_audio_transcription_format_matrix"
     ),
@@ -892,6 +895,7 @@ def _audit_provider_proof_matrix(
         "vision_response_evidence": "succeeded",
         "audio_transcription_real_provider": "succeeded",
         "transcription_response_artifact": "succeeded",
+        "transcription_time_ranges_live_provider": "succeeded",
         "audio_transcription_format_matrix": "succeeded",
         "invalid_key_live_probe": "succeeded",
         "timeout_live_probe": "succeeded",
