@@ -1017,6 +1017,134 @@ describe("InfinityContextClient", () => {
     });
   });
 
+  it("inspects memory across read models, diagnostics, graph and snapshot preview", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({ data: memoryBrowserData() }),
+      jsonResponse({ data: operationsConsoleData() }),
+      jsonResponse({
+        data: {
+          space_id: "space_1",
+          plan: { tier: "beta", display_name: "Beta", media_analysis_seconds_per_month: 3600 },
+          resources: [],
+        },
+      }),
+      jsonResponse({ enabled_adapters: ["qdrant", "graphiti"], supports_qdrant: true, supports_graphiti: true }),
+      jsonResponse({ adapters: { qdrant: "ok", graphiti: "ok" } }),
+      jsonResponse({ requests: 12 }),
+      jsonResponse({ backend: "postgres" }),
+      jsonResponse({ data: { memory_scope_id: "scope_1", vector_status: "ok" } }),
+      jsonResponse({ data: { nodes: [], edges: [] } }),
+      jsonResponse({ data: { facts: [] }, manifest: { version: "snapshot.v1" } }),
+      jsonResponse({ data: { dry_run: true, conflicts: [] } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const inspection = await client.workflows.inspectMemory({
+      spaceId: "space_1",
+      memoryScopeId: "scope_1",
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+      limit: 5,
+      includeGraph: true,
+      includeSnapshotPreview: true,
+      graphMaxFacts: 25,
+      snapshotMergeStrategy: "fail_on_conflict",
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_inspect_memory" },
+    });
+
+    expect(inspection.memoryBrowser.data.stats).toMatchObject({ facts: 1 });
+    expect(inspection.operationsConsole?.data.diagnostics).toMatchObject({ queue_lag: 0 });
+    expect(inspection.usage?.data.plan.tier).toBe("beta");
+    expect(inspection.capabilities?.enabled_adapters).toEqual(["qdrant", "graphiti"]);
+    expect(inspection.runtimeDiagnostics?.adapters).toMatchObject({ adapters: { qdrant: "ok" } });
+    expect(inspection.graph).toMatchObject({ data: { nodes: [], edges: [] } });
+    expect(inspection.snapshotPreview).toMatchObject({ data: { dry_run: true, conflicts: [] } });
+    expect(inspection.inspection).toMatchObject({
+      partial: false,
+      issues: [],
+      warnings: [],
+      optionalSections: [
+        "memoryBrowser",
+        "operationsConsole",
+        "usage",
+        "capabilities",
+        "runtimeDiagnostics",
+        "graph",
+        "snapshotPreview",
+      ],
+    });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/memory-browser",
+      "GET /v1/operations-console",
+      "GET /v1/usage",
+      "GET /v1/capabilities",
+      "GET /v1/diagnostics/adapters",
+      "GET /v1/diagnostics/metrics",
+      "GET /v1/diagnostics/storage",
+      "GET /v1/diagnostics/memory-scope/scope_1",
+      "GET /v1/export/graph.json",
+      "GET /v1/export/memory_scope-snapshot",
+      "POST /v1/export/memory_scope-snapshot/preview",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual(
+      Array.from({ length: 11 }, () => "trace_inspect_memory"),
+    );
+    expect(transport.requests[8]?.url.searchParams.get("max_facts")).toBe("25");
+    expect(transport.requests[9]?.url.searchParams.get("redacted")).toBe("true");
+    expect(transport.bodies.at(-1)).toMatchObject({
+      snapshot: { facts: [] },
+      manifest: { version: "snapshot.v1" },
+      merge_strategy: "fail_on_conflict",
+    });
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel inspection");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+  });
+
+  it("returns partial memory inspection issues when optional sections fail", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: memoryBrowserData() }),
+      jsonResponse({ error: { code: "operations_unavailable", message: "temporarily unavailable" } }, 503),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const inspection = await client.workflows.inspectMemory({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+      continueOnError: true,
+      includeUsage: false,
+      includeCapabilities: false,
+      includeDiagnostics: false,
+      includeGraph: false,
+      includeSnapshotPreview: false,
+    });
+
+    expect(inspection.memoryBrowser.data.memory_scope?.external_ref).toBe("topic:ai-agents");
+    expect(inspection.operationsConsole).toBeUndefined();
+    expect(inspection.inspection.partial).toBe(true);
+    expect(inspection.inspection.issues).toMatchObject([
+      {
+        section: "operationsConsole",
+        error: {
+          name: "InfinityContextError",
+          code: "operations_unavailable",
+          statusCode: 503,
+        },
+      },
+    ]);
+  });
+
   it("keeps unsafe writes from retrying unless an idempotency key exists", async () => {
     const noRetryTransport = new RecordingTransport([
       jsonResponse({ error: { code: "temporary", message: "try again", retryable: true } }, 503),
@@ -1289,6 +1417,57 @@ describe("InfinityContextClient", () => {
       }),
       jsonResponse({
         data: {
+          generated_at: "2026-06-06T00:00:00.000Z",
+          memory_scope: scopeRecord("scope_topic", "topic:full-memory-proof:feedback"),
+          facts: [factRecord("fact_feedback")],
+          episodes: [],
+          documents: [],
+          chunks: [],
+          extraction_jobs: [],
+          threads: [],
+          captures: [captureRecord("capture_1")],
+          assets: [],
+          anchors: [],
+          context_links: [],
+          context_link_suggestions: [],
+          stats: { facts: 1, captures: 1 },
+          visual_summary: { status: "ready" },
+          quick_actions: [],
+          diagnostics: { browser_version: "memory-browser-v1" },
+        },
+      }),
+      jsonResponse({
+        data: {
+          generated_at: "2026-06-06T00:00:00.000Z",
+          scope: { space_id: "space_1", memory_scope_id: "scope_topic" },
+          extraction_status_counts: {},
+          link_suggestion_status_counts: { pending: 1 },
+          extraction_jobs: [],
+          context_link_suggestions: [],
+          diagnostics: { console_version: "memory-operations-console-v1" },
+        },
+      }),
+      jsonResponse({
+        data: {
+          space_id: "space_1",
+          plan: {
+            tier: "beta",
+            display_name: "Beta",
+            media_analysis_seconds_per_month: 3600,
+          },
+          resources: [],
+        },
+      }),
+      jsonResponse({
+        enabled_adapters: ["qdrant", "graphiti"],
+        supports_qdrant: true,
+        supports_graphiti: true,
+      }),
+      jsonResponse({ adapters: { qdrant: "ok", graphiti: "ok" } }),
+      jsonResponse({ requests: 12 }),
+      jsonResponse({ backend: "postgres" }),
+      jsonResponse({
+        data: {
           space_id: "space_1",
           plan: {
             tier: "beta",
@@ -1338,6 +1517,7 @@ describe("InfinityContextClient", () => {
       anchorCreated: true,
       anchorBackfillReadable: true,
       memoryBrowserReadable: true,
+      memoryInspectionReadable: true,
       operationsConsoleReadable: true,
       usageReadable: true,
       snapshotPreviewSucceeded: true,
@@ -1357,6 +1537,8 @@ describe("InfinityContextClient", () => {
       bySourceType: { "sdk-full-memory-proof": 2 },
     });
     expect(report.observed.anchorBackfillCreated).toBe(1);
+    expect(report.observed.memoryInspectionIssueCount).toBe(0);
+    expect(report.observed.memoryInspectionSections).toContain("runtimeDiagnostics");
     expect(report.observed.usageResourceCount).toBe(0);
     expect(report.retrieval.vector.queryCount).toBe(4);
     expect(report.retrieval.graph.queryCount).toBe(3);
@@ -1391,6 +1573,13 @@ describe("InfinityContextClient", () => {
       "GET /v1/anchors/merge-suggestions",
       "GET /v1/memory-browser",
       "GET /v1/operations-console",
+      "GET /v1/memory-browser",
+      "GET /v1/operations-console",
+      "GET /v1/usage",
+      "GET /v1/capabilities",
+      "GET /v1/diagnostics/adapters",
+      "GET /v1/diagnostics/metrics",
+      "GET /v1/diagnostics/storage",
       "GET /v1/usage",
       "GET /v1/export/memory_scope-snapshot",
       "POST /v1/export/memory_scope-snapshot/preview",
@@ -2078,6 +2267,48 @@ function anchorRecord(id: string, label: string) {
     metadata: {},
     created_at: "2026-06-06T00:00:00.000Z",
     updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function memoryBrowserData() {
+  return {
+    generated_at: "2026-06-22T10:00:00.000Z",
+    memory_scope: {
+      id: "scope_1",
+      space_id: "space_1",
+      external_ref: "topic:ai-agents",
+      name: "AI agents",
+      status: "active",
+      created_at: "2026-06-22T10:00:00.000Z",
+      updated_at: "2026-06-22T10:00:00.000Z",
+    },
+    facts: [factRecord("fact_1")],
+    episodes: [],
+    documents: [],
+    chunks: [],
+    extraction_jobs: [],
+    threads: [],
+    captures: [],
+    assets: [],
+    anchors: [],
+    context_links: [],
+    context_link_suggestions: [],
+    stats: { facts: 1 },
+    visual_summary: {},
+    quick_actions: [],
+    diagnostics: {},
+  };
+}
+
+function operationsConsoleData() {
+  return {
+    generated_at: "2026-06-22T10:00:00.000Z",
+    scope: { space_id: "space_1", memory_scope_id: "scope_1" },
+    extraction_status_counts: {},
+    link_suggestion_status_counts: {},
+    extraction_jobs: [],
+    context_link_suggestions: [],
+    diagnostics: { queue_lag: 0 },
   };
 }
 

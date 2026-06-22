@@ -167,6 +167,31 @@ const batchSummary = summarizeSourceEvidenceBatch(batch);
 console.log(batchSummary.succeeded, batchSummary.failed, batchSummary.retryableFailures);
 ```
 
+Use `inspectMemory` when an operator, beta smoke or backend job needs one typed view over read models, usage, runtime diagnostics and optional graph/snapshot checks.
+
+```ts
+const inspection = await memory.workflows.inspectMemory({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:preferences",
+  limit: 25,
+  includeGraph: true,
+  includeSnapshotPreview: true,
+  continueOnError: true,
+  signal: scanAbortController.signal,
+  headers: { "x-trace-id": "inspect:2026-06-22" },
+});
+
+if (inspection.inspection.partial) {
+  console.warn(inspection.inspection.issues);
+}
+
+console.log(inspection.memoryBrowser.data.stats);
+console.log(inspection.operationsConsole?.data.diagnostics);
+console.log(inspection.snapshotPreview?.data);
+```
+
+`inspectMemory` keeps browser, operations, usage, capabilities and runtime diagnostics enabled by default. Graph export and snapshot preview are opt-in because they are heavier and snapshot preview requires `spaceSlug` plus `memoryScopeExternalRef`.
+
 ## Runtime readiness
 
 Use runtime guards in CI, beta smoke tests or app boot checks before relying on full memory retrieval.

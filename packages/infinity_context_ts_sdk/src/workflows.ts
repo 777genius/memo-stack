@@ -2,6 +2,11 @@ export { MemoryWorkflows, summarizeSourceEvidenceBatch } from "./workflows/memor
 export type {
   BuildMemoryBriefInput,
   BuildMemoryBriefResult,
+  InspectMemoryDiagnostics,
+  InspectMemoryInput,
+  InspectMemoryIssue,
+  InspectMemoryResult,
+  InspectMemoryRuntimeDiagnostics,
   MemoryWorkflowErrorData,
   MemoryBriefDiagnostics,
   MemoryWorkflowResources,

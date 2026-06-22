@@ -58,8 +58,13 @@ export class InfinityContextClient {
       captures: this.captures,
       context: this.context,
       contextLinks: this.contextLinks,
+      diagnostics: this.diagnostics,
       documents: this.documents,
+      exports: this.exports,
       facts: this.facts,
+      readModels: this.readModels,
+      system: this.system,
+      usage: this.usage,
     });
   }
 }
