@@ -136,6 +136,33 @@ await memory.workflows.recordSourceEvidence({
 });
 ```
 
+For provider scans, batch items with bounded concurrency and keep per-item errors inspectable.
+
+```ts
+const batch = await memory.workflows.recordSourceEvidenceBatch({
+  concurrency: 4,
+  continueOnError: true,
+  items: redditPosts.map((post) => ({
+    spaceSlug: "social-monitor:tenant_1:workspace_1",
+    memoryScopeExternalRef: "source:reddit:ai-agents",
+    threadExternalRef: "scan:2026-06-22",
+    sourceAgent: "social-monitor",
+    sourceType: "reddit",
+    sourceId: post.id,
+    title: post.title,
+    text: post.selftext,
+    occurredAt: post.createdAt,
+    idempotencyKey: `reddit:${post.id}`,
+    metadata: { subreddit: post.subreddit },
+    episode: true,
+    capture: true,
+    linkSuggestions: { persist: true, limit: 5 },
+  })),
+});
+
+console.log(batch.succeeded, batch.failed, batch.results.filter((item) => !item.ok));
+```
+
 ## Runtime readiness
 
 Use runtime guards in CI, beta smoke tests or app boot checks before relying on full memory retrieval.

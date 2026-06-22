@@ -642,6 +642,149 @@ describe("InfinityContextClient", () => {
     });
   });
 
+  it("records source evidence batches with per-item errors", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: { id: "episode_1", status: "active" } }, 201),
+      jsonResponse({
+        data: {
+          ...captureRecord("capture_1"),
+          duplicate: false,
+          created_suggestions: 0,
+          suggestion_ids: [],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({ data: { candidates: [], diagnostics: {} } }),
+      jsonResponse({
+        error: {
+          code: "memory.provider_payload_invalid",
+          message: "provider payload rejected",
+          retryable: false,
+        },
+      }, 400, { "x-request-id": "req_bad_item" }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const batch = await client.workflows.recordSourceEvidenceBatch({
+      concurrency: 1,
+      continueOnError: true,
+      items: [
+        {
+          spaceSlug: "social-monitor:tenant:workspace",
+          memoryScopeExternalRef: "source:reddit:ai-agents",
+          sourceAgent: "social-monitor",
+          sourceType: "reddit",
+          sourceId: "reddit:t3_ok",
+          text: "First provider item should be stored.",
+          idempotencyKey: "reddit:t3_ok",
+        },
+        {
+          spaceSlug: "social-monitor:tenant:workspace",
+          memoryScopeExternalRef: "source:reddit:ai-agents",
+          sourceAgent: "social-monitor",
+          sourceType: "reddit",
+          sourceId: "reddit:t3_bad",
+          text: "Second provider item should fail.",
+          idempotencyKey: "reddit:t3_bad",
+        },
+      ],
+    });
+
+    expect(batch).toMatchObject({
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      stopped: false,
+    });
+    expect(batch.results[0]).toMatchObject({
+      index: 0,
+      sourceType: "reddit",
+      sourceId: "reddit:t3_ok",
+      idempotencyKey: "reddit:t3_ok",
+      ok: true,
+    });
+    expect(batch.results[0]?.result?.episode?.data.id).toBe("episode_1");
+    expect(batch.results[1]).toMatchObject({
+      index: 1,
+      sourceType: "reddit",
+      sourceId: "reddit:t3_bad",
+      idempotencyKey: "reddit:t3_bad",
+      ok: false,
+      error: {
+        name: "InfinityContextError",
+        code: "memory.provider_payload_invalid",
+        statusCode: 400,
+        retryable: false,
+        requestId: "req_bad_item",
+      },
+    });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/episodes",
+      "POST /v1/captures",
+      "POST /v1/link-suggestions",
+      "POST /v1/episodes",
+    ]);
+  });
+
+  it("stops source evidence batches after the first error when configured", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({
+        error: {
+          code: "memory.provider_payload_invalid",
+          message: "provider payload rejected",
+          retryable: false,
+        },
+      }, 400),
+      jsonResponse({ data: { id: "episode_after_stop", status: "active" } }, 201),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const batch = await client.workflows.recordSourceEvidenceBatch({
+      concurrency: 1,
+      continueOnError: false,
+      items: [
+        {
+          spaceSlug: "social-monitor:tenant:workspace",
+          memoryScopeExternalRef: "source:reddit:ai-agents",
+          sourceAgent: "social-monitor",
+          sourceType: "reddit",
+          sourceId: "reddit:t3_bad",
+          text: "Bad provider item.",
+          idempotencyKey: "reddit:t3_bad",
+        },
+        {
+          spaceSlug: "social-monitor:tenant:workspace",
+          memoryScopeExternalRef: "source:reddit:ai-agents",
+          sourceAgent: "social-monitor",
+          sourceType: "reddit",
+          sourceId: "reddit:t3_skipped",
+          text: "This item should not be scheduled.",
+          idempotencyKey: "reddit:t3_skipped",
+        },
+      ],
+    });
+
+    expect(batch).toMatchObject({
+      total: 2,
+      succeeded: 0,
+      failed: 1,
+      stopped: true,
+    });
+    expect(batch.results).toHaveLength(1);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/episodes",
+    ]);
+  });
+
   it("builds a memory brief workflow across context, search and digest", async () => {
     const transport = new RecordingTransport([
       jsonResponse(contextResponse("brief", {

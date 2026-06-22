@@ -1,6 +1,6 @@
 import type { ContextEnvelope, ContextBundleData, MemoryDigestData, SearchMemoryData } from "../context-types.js";
 import { healthyRetrievalComponents, usedDerivedRetrieval } from "../diagnostics.js";
-import type { ReadScope, ReadScopeInput, SingleScopeInput } from "../payload.js";
+import { ValueError, type ReadScope, type ReadScopeInput, type SingleScopeInput } from "../payload.js";
 import type { CapturesClient, CreateCaptureData, CreateCaptureInput } from "../resources/captures.js";
 import type { ContextLinksClient, SuggestContextLinksData } from "../resources/context-links.js";
 import type { BuildContextInput, BuildDigestInput, ContextClient } from "../resources/context.js";
@@ -145,6 +145,39 @@ export interface RecordSourceEvidenceResult {
   readonly capture?: ApiEnvelope<CreateCaptureData>;
   readonly fact?: ApiEnvelope<FactRecord>;
   readonly linkSuggestions?: ApiEnvelope<SuggestContextLinksData>;
+}
+
+export interface MemoryWorkflowErrorData {
+  readonly name: string;
+  readonly message: string;
+  readonly code?: string;
+  readonly statusCode?: number;
+  readonly retryable?: boolean;
+  readonly requestId?: string;
+}
+
+export interface RecordSourceEvidenceBatchItemResult {
+  readonly index: number;
+  readonly sourceType: string;
+  readonly sourceId: string;
+  readonly idempotencyKey: string;
+  readonly ok: boolean;
+  readonly result?: RecordSourceEvidenceResult;
+  readonly error?: MemoryWorkflowErrorData;
+}
+
+export interface RecordSourceEvidenceBatchInput {
+  readonly items: readonly RecordSourceEvidenceInput[];
+  readonly concurrency?: number;
+  readonly continueOnError?: boolean;
+}
+
+export interface RecordSourceEvidenceBatchResult {
+  readonly total: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly stopped: boolean;
+  readonly results: readonly RecordSourceEvidenceBatchItemResult[];
 }
 
 export class MemoryWorkflows {
@@ -308,6 +341,61 @@ export class MemoryWorkflows {
     };
   }
 
+  async recordSourceEvidenceBatch(
+    input: RecordSourceEvidenceBatchInput,
+  ): Promise<RecordSourceEvidenceBatchResult> {
+    const concurrency = normalizeBatchConcurrency(input.concurrency);
+    const items = [...input.items];
+    if (items.length > 500) {
+      throw new ValueError("recordSourceEvidenceBatch supports at most 500 items");
+    }
+    if (items.length === 0) {
+      return { total: 0, succeeded: 0, failed: 0, stopped: false, results: [] };
+    }
+
+    const continueOnError = input.continueOnError ?? true;
+    const results: Array<RecordSourceEvidenceBatchItemResult | undefined> = [];
+    let nextIndex = 0;
+    let stopped = false;
+
+    const workerCount = Math.min(concurrency, items.length);
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      for (;;) {
+        if (stopped) {
+          return;
+        }
+
+        const index = nextIndex;
+        nextIndex += 1;
+        const item = items[index];
+        if (item === undefined) {
+          return;
+        }
+
+        try {
+          const result = await this.recordSourceEvidence(item);
+          results[index] = batchItemResult(index, item, { result });
+        } catch (error) {
+          results[index] = batchItemResult(index, item, { error: workflowErrorData(error) });
+          if (!continueOnError) {
+            stopped = true;
+            return;
+          }
+        }
+      }
+    }));
+
+    const completedResults = results.filter(isDefined);
+    const failed = completedResults.filter((result) => !result.ok).length;
+    return {
+      total: items.length,
+      succeeded: completedResults.length - failed,
+      failed,
+      stopped,
+      results: completedResults,
+    };
+  }
+
   async buildMemoryBrief(input: BuildMemoryBriefInput): Promise<BuildMemoryBriefResult> {
     const contextInput: BuildContextInput = {
       ...readScopeInput(input),
@@ -433,6 +521,54 @@ function stepOptions<TOptions extends object>(
 function stringField(input: JsonObject, key: string): string | undefined {
   const value = input[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizeBatchConcurrency(value: number | undefined): number {
+  if (value === undefined) {
+    return 4;
+  }
+  if (!Number.isInteger(value) || value < 1 || value > 25) {
+    throw new ValueError("recordSourceEvidenceBatch concurrency must be an integer from 1 to 25");
+  }
+  return value;
+}
+
+function batchItemResult(
+  index: number,
+  input: RecordSourceEvidenceInput,
+  outcome: { readonly result: RecordSourceEvidenceResult } | { readonly error: MemoryWorkflowErrorData },
+): RecordSourceEvidenceBatchItemResult {
+  return {
+    index,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    idempotencyKey: input.idempotencyKey,
+    ok: "result" in outcome,
+    ...("result" in outcome ? { result: outcome.result } : { error: outcome.error }),
+  };
+}
+
+function workflowErrorData(error: unknown): MemoryWorkflowErrorData {
+  const record = typeof error === "object" && error !== null ? error as Record<string, unknown> : {};
+  const message = error instanceof Error ? error.message : String(error);
+  const name = error instanceof Error ? error.name : "Error";
+  const code = typeof record.code === "string" ? record.code : undefined;
+  const statusCode = typeof record.statusCode === "number" ? record.statusCode : undefined;
+  const retryable = typeof record.retryable === "boolean" ? record.retryable : undefined;
+  const requestId = typeof record.requestId === "string" ? record.requestId : undefined;
+
+  return {
+    name,
+    message,
+    ...(code === undefined ? {} : { code }),
+    ...(statusCode === undefined ? {} : { statusCode }),
+    ...(retryable === undefined ? {} : { retryable }),
+    ...(requestId === undefined ? {} : { requestId }),
+  };
+}
+
+function isDefined<TValue>(value: TValue | undefined): value is TValue {
+  return value !== undefined;
 }
 
 function optional<TKey extends string, TValue>(
