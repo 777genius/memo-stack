@@ -134,6 +134,32 @@ if (artifact) {
 }
 ```
 
+## Graph maintenance and suggestions
+
+Use anchor maintenance and advanced suggestion resolution when the memory graph needs reviewable cleanup instead of one-off fact edits.
+
+```ts
+const mergeCandidates = await memory.anchors.listAnchorMergeSuggestions({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:feedback",
+  kind: "project",
+});
+
+for (const candidate of mergeCandidates.data) {
+  if (candidate.score > 0.9) {
+    await memory.anchors.mergeAnchor(candidate.source_anchor.id, {
+      targetAnchorId: candidate.target_anchor.id,
+      reason: "high-confidence duplicate anchor",
+    });
+  }
+}
+
+await memory.suggestions.resolveSuggestionConflict(suggestionId, {
+  action: "approve",
+  reason: "latest explicit user feedback wins",
+});
+```
+
 ## Read models
 
 Use read models to inspect the memory browser projection and operations queue from a typed SDK surface.
@@ -220,3 +246,13 @@ Useful optional env:
 - `INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY=false`: allow lite/local mode while still proving the SDK write/read loop.
 
 The report fails when full mode is required and Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval.
+
+## Maintainer parity check
+
+Run the parity guard after adding server endpoints:
+
+```bash
+npm run check:parity
+```
+
+The guard scans FastAPI v1 routes and TypeScript SDK paths, then fails when a server endpoint is neither covered nor documented as an explicit exception.

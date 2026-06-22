@@ -24,10 +24,11 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --clean",
+    "check:parity": "node scripts/check-api-parity.mjs",
     "proof:full-memory": "npm run build && node scripts/full-memory-proof.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm run test && npm run build"
+    "verify": "npm run check:parity && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {},
   "overrides": {

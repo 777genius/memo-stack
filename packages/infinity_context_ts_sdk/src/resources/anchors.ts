@@ -2,6 +2,32 @@ import type { RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type { AnchorRecord, ApiEnvelope, JsonObject, SourceRef } from "../types.js";
 
+type AnchorScopeInput = Omit<SingleScopeInput, "threadId" | "threadExternalRef">;
+
+export interface AnchorBackfillSource extends JsonObject {
+  readonly source_type: string;
+  readonly scanned: number;
+  readonly observed: number;
+  readonly skipped_conflicts: number;
+}
+
+export interface AnchorBackfillData extends JsonObject {
+  readonly anchors: readonly AnchorRecord[];
+  readonly created: number;
+  readonly updated: number;
+  readonly sources: readonly AnchorBackfillSource[];
+  readonly diagnostics: JsonObject;
+}
+
+export interface AnchorMergeCandidate extends JsonObject {
+  readonly source_anchor: AnchorRecord;
+  readonly target_anchor: AnchorRecord;
+  readonly confidence: string;
+  readonly score: number;
+  readonly reasons: readonly string[];
+  readonly metadata: JsonObject;
+}
+
 export class AnchorsClient {
   constructor(private readonly http: RequestExecutor) {}
 
@@ -103,6 +129,63 @@ export class AnchorsClient {
       method: "DELETE",
       path: `/v1/anchors/${anchorId}`,
       json: { reason: input.reason ?? "manual delete" },
+    });
+  }
+
+  backfillAnchors(input: AnchorScopeInput & {
+    readonly limitPerSource?: number;
+  }): Promise<ApiEnvelope<AnchorBackfillData>> {
+    return this.http.request<ApiEnvelope<AnchorBackfillData>>({
+      method: "POST",
+      path: "/v1/anchors/backfill",
+      json: withoutUndefined({
+        ...scopeQuery(input),
+        limit_per_source: input.limitPerSource ?? 100,
+      }) as JsonObject,
+    });
+  }
+
+  listAnchorMergeSuggestions(input: AnchorScopeInput & {
+    readonly kind?: string;
+    readonly limit?: number;
+  }): Promise<ApiEnvelope<AnchorMergeCandidate[]>> {
+    return this.http.request<ApiEnvelope<AnchorMergeCandidate[]>>({
+      method: "GET",
+      path: "/v1/anchors/merge-suggestions",
+      params: withoutUndefined({
+        ...scopeQuery(input),
+        kind: input.kind,
+        limit: input.limit ?? 50,
+      }),
+    });
+  }
+
+  mergeAnchor(
+    sourceAnchorId: string,
+    input: { readonly targetAnchorId: string; readonly reason: string },
+  ): Promise<ApiEnvelope<AnchorRecord>> {
+    return this.http.request<ApiEnvelope<AnchorRecord>>({
+      method: "POST",
+      path: `/v1/anchors/${sourceAnchorId}/merge`,
+      json: {
+        target_anchor_id: input.targetAnchorId,
+        reason: input.reason,
+      },
+    });
+  }
+
+  splitAnchor(
+    anchorId: string,
+    input: { readonly alias: string; readonly newLabel?: string; readonly reason?: string },
+  ): Promise<ApiEnvelope<AnchorRecord>> {
+    return this.http.request<ApiEnvelope<AnchorRecord>>({
+      method: "POST",
+      path: `/v1/anchors/${anchorId}/split`,
+      json: withoutUndefined({
+        alias: input.alias,
+        new_label: input.newLabel,
+        reason: input.reason ?? "manual split",
+      }) as JsonObject,
     });
   }
 }

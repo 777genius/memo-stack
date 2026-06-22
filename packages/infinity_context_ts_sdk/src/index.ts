@@ -24,6 +24,7 @@ export {
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
+export type { AnchorBackfillData, AnchorBackfillSource, AnchorMergeCandidate } from "./resources/anchors.js";
 export type { AssetExtractionListInput } from "./resources/assets.js";
 export type { ConsolidateCaptureData, CreateCaptureData } from "./resources/captures.js";
 export type {
@@ -36,6 +37,12 @@ export type {
   ReviewContextLinkSuggestionsBatchData,
   SuggestContextLinksData,
 } from "./resources/context-links.js";
+export type {
+  CreateSuggestionInput,
+  CreateSuggestionsBatchData,
+  CreateSuggestionsBatchItemInput,
+  ResolveSuggestionData,
+} from "./resources/suggestions.js";
 export type {
   MemoryBrowserData,
   MemoryBrowserInput,

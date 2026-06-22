@@ -524,6 +524,175 @@ describe("InfinityContextClient", () => {
     ).toThrow(ValueError);
   });
 
+  it("supports suggestion batch creation and advanced resolution", async () => {
+    const suggestion = memorySuggestionRecord("suggestion_1");
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          created: 1,
+          existing: 0,
+          failed: 0,
+          stopped: false,
+          results: [{ index: 0, status: "created", suggestion }],
+        },
+      }, 201),
+      jsonResponse({ data: { suggestion: { ...suggestion, status: "approved" }, fact: factRecord("fact_1") } }),
+      jsonResponse({ data: { suggestion: { ...suggestion, status: "rejected" } } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const created = await client.suggestions.createSuggestionsBatch({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      continueOnError: true,
+      items: [
+        {
+          candidateText: "Prefer citations from original sources.",
+          safeReason: "feedback review",
+          operation: "update",
+          targetFactId: "fact_1",
+          targetFactVersion: 1,
+          expiresAt: "2026-07-01T00:00:00.000Z",
+          expiryReason: "seasonal preference",
+          createdFromCaptureId: "capture_1",
+          autoApprove: false,
+        },
+      ],
+    });
+    const conflict = await client.suggestions.resolveSuggestionConflict("suggestion_1", {
+      action: "approve",
+      reason: "latest feedback wins",
+      force: true,
+    });
+    const duplicate = await client.suggestions.resolveDuplicateMerge("suggestion_1", {
+      action: "reject",
+      reason: "duplicate fact",
+    });
+
+    expect(created.data.created).toBe(1);
+    expect(conflict.data.fact?.id).toBe("fact_1");
+    expect(duplicate.data.suggestion.status).toBe("rejected");
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/suggestions/batch",
+      "POST /v1/suggestions/suggestion_1/resolve-conflict",
+      "POST /v1/suggestions/suggestion_1/resolve-duplicate",
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      space_slug: "workspace",
+      memory_scope_external_ref: "scope",
+      continue_on_error: true,
+      items: [
+        {
+          candidate_text: "Prefer citations from original sources.",
+          target_fact_id: "fact_1",
+          target_fact_version: 1,
+          expires_at: "2026-07-01T00:00:00.000Z",
+          created_from_capture_id: "capture_1",
+          auto_approve: false,
+        },
+      ],
+    });
+    expect(transport.bodies[1]).toEqual({
+      action: "approve",
+      reason: "latest feedback wins",
+      force: true,
+    });
+    expect(() =>
+      client.suggestions.createSuggestion({
+        spaceSlug: "workspace",
+        memoryScopeExternalRef: "scope",
+        candidateText: "Invalid update",
+        safeReason: "missing version",
+        targetFactId: "fact_1",
+      }),
+    ).toThrow(ValueError);
+  });
+
+  it("supports anchor merge, split and backfill lifecycle", async () => {
+    const sourceAnchor = anchorRecord("anchor_source", "Project Atlas");
+    const targetAnchor = anchorRecord("anchor_target", "Atlas");
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: [
+          {
+            source_anchor: sourceAnchor,
+            target_anchor: targetAnchor,
+            confidence: "high",
+            score: 0.94,
+            reasons: ["alias overlap"],
+            metadata: {},
+          },
+        ],
+      }),
+      jsonResponse({
+        data: {
+          anchors: [sourceAnchor],
+          created: 1,
+          updated: 2,
+          sources: [{ source_type: "fact", scanned: 10, observed: 3, skipped_conflicts: 1 }],
+          diagnostics: { scanned_sources: 1 },
+        },
+      }),
+      jsonResponse({ data: targetAnchor }),
+      jsonResponse({ data: { ...sourceAnchor, label: "Atlas Mobile" } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const candidates = await client.anchors.listAnchorMergeSuggestions({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      kind: "project",
+      limit: 5,
+    });
+    const backfill = await client.anchors.backfillAnchors({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      limitPerSource: 50,
+    });
+    await client.anchors.mergeAnchor("anchor_source", {
+      targetAnchorId: "anchor_target",
+      reason: "same project",
+    });
+    await client.anchors.splitAnchor("anchor_source", {
+      alias: "Atlas Mobile",
+      newLabel: "Atlas Mobile",
+      reason: "distinct product",
+    });
+
+    expect(candidates.data[0]?.score).toBe(0.94);
+    expect(backfill.data.created).toBe(1);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/anchors/merge-suggestions",
+      "POST /v1/anchors/backfill",
+      "POST /v1/anchors/anchor_source/merge",
+      "POST /v1/anchors/anchor_source/split",
+    ]);
+    expect(transport.requests[0]?.url.searchParams.get("kind")).toBe("project");
+    expect(transport.requests[0]?.url.searchParams.get("limit")).toBe("5");
+    expect(transport.bodies).toContainEqual({
+      space_slug: "workspace",
+      memory_scope_external_ref: "scope",
+      limit_per_source: 50,
+    });
+    expect(transport.bodies).toContainEqual({
+      target_anchor_id: "anchor_target",
+      reason: "same project",
+    });
+    expect(transport.bodies).toContainEqual({
+      alias: "Atlas Mobile",
+      new_label: "Atlas Mobile",
+      reason: "distinct product",
+    });
+  });
+
   it("supports capture ingestion, consolidation, diagnostics and purge", async () => {
     const capture = captureRecord("capture_1");
     const transport = new RecordingTransport([
@@ -773,6 +942,37 @@ describe("InfinityContextClient", () => {
     ]);
     expect(transport.requests[3]?.url.searchParams.get("space_slug")).toBe("workspace");
   });
+
+  it("previews memory scope snapshot imports before mutating state", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: { dry_run: true, created: 0, updated: 0, conflicts: [] } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const preview = await client.exports.previewMemoryScopeSnapshotImport({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      snapshot: { schema_version: "memory_scope_snapshot.v1", facts: [] },
+      manifest: { sha256: "snapshot-sha" },
+      mergeStrategy: "merge_by_external_id",
+    });
+
+    expect(preview.data).toMatchObject({ dry_run: true });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/export/memory_scope-snapshot/preview",
+    ]);
+    expect(transport.bodies[0]).toEqual({
+      space_slug: "workspace",
+      memory_scope_external_ref: "scope",
+      snapshot: { schema_version: "memory_scope_snapshot.v1", facts: [] },
+      manifest: { sha256: "snapshot-sha" },
+      merge_strategy: "merge_by_external_id",
+    });
+  });
 });
 
 function jsonResponse(body: unknown, status = 200): HttpResponse {
@@ -813,6 +1013,36 @@ function factRecord(id: string) {
     kind: "note",
     status: "active",
     version: 1,
+  };
+}
+
+function memorySuggestionRecord(id: string) {
+  return {
+    id,
+    status: "pending",
+    candidate_text: `${id} candidate`,
+  };
+}
+
+function anchorRecord(id: string, label: string) {
+  return {
+    id,
+    space_id: "space_1",
+    memory_scope_id: "scope_1",
+    kind: "project",
+    normalized_key: label.toLowerCase().replaceAll(" ", "-"),
+    label,
+    aliases: [],
+    description: null,
+    status: "active",
+    confidence: "medium",
+    evidence_refs: [],
+    observed_at: "2026-06-06T00:00:00.000Z",
+    valid_from: null,
+    valid_to: null,
+    metadata: {},
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
   };
 }
 

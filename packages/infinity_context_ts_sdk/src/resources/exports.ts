@@ -70,4 +70,24 @@ export class ExportsClient {
       }) as JsonObject,
     });
   }
+
+  previewMemoryScopeSnapshotImport(input: {
+    readonly spaceSlug: string;
+    readonly memoryScopeExternalRef: string;
+    readonly snapshot: JsonObject;
+    readonly manifest?: JsonObject;
+    readonly mergeStrategy?: string;
+  }): Promise<JsonObject> {
+    return this.http.request<JsonObject>({
+      method: "POST",
+      path: "/v1/export/memory_scope-snapshot/preview",
+      json: withoutUndefined({
+        space_slug: input.spaceSlug,
+        memory_scope_external_ref: input.memoryScopeExternalRef,
+        snapshot: input.snapshot,
+        manifest: input.manifest,
+        merge_strategy: input.mergeStrategy ?? "fail_on_conflict",
+      }) as JsonObject,
+    });
+  }
 }
