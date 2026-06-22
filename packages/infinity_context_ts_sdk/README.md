@@ -394,7 +394,7 @@ if (!capabilities.enabled_adapters?.includes("qdrant")) {
 }
 ```
 
-For beta-grade proof, run a loop that writes facts, captures, suggestions, anchors, documents and episodes, inspects read models and operational projections, verifies vector/graph diagnostics, previews snapshot import safety, then builds a digest from the same scopes.
+For beta-grade proof, run a loop that writes facts, captures, suggestions, anchors, documents and episodes, exercises source evidence batch workflows, inspects read models and operational projections, verifies vector/graph diagnostics, previews snapshot import safety, then builds a digest from the same scopes.
 
 ## Full memory proof script
 
@@ -412,7 +412,7 @@ Useful optional env:
 - `INFINITY_CONTEXT_PROOF_OUTPUT`: write the JSON evidence report to a file.
 - `INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY=false`: allow lite/local mode while still proving the SDK write/read loop.
 
-The report fails when the durable SDK loop cannot prove write/read/operations/export coverage. In full mode it also fails when Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval.
+The report fails when the durable SDK loop cannot prove write/read/workflow/operations/export coverage. In full mode it also fails when Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval.
 
 ## Maintainer parity check
 

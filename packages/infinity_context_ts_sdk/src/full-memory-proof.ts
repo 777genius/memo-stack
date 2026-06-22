@@ -8,6 +8,10 @@ import {
 } from "./diagnostics.js";
 import { InfinityContextError } from "./errors.js";
 import { ReadScope } from "./payload.js";
+import {
+  summarizeSourceEvidenceBatch,
+  type RecordSourceEvidenceBatchSummary,
+} from "./workflows/memory.js";
 import type {
   AnchorRecord,
   DocumentRecord,
@@ -41,6 +45,8 @@ export interface FullMemoryProofReport {
     readonly contextLinkCreated: boolean;
     readonly captureCreated: boolean;
     readonly suggestionBatchCreated: boolean;
+    readonly sourceEvidenceBatchRecorded: boolean;
+    readonly sourceEvidenceBatchSummarized: boolean;
     readonly anchorCreated: boolean;
     readonly anchorBackfillReadable: boolean;
     readonly memoryBrowserReadable: boolean;
@@ -69,6 +75,7 @@ export interface FullMemoryProofReport {
     readonly operationsDiagnostics: JsonObject;
     readonly usageResourceCount: number;
     readonly snapshotPreview: JsonObject;
+    readonly sourceEvidenceBatchSummary: RecordSourceEvidenceBatchSummary;
   };
   readonly capabilities: {
     readonly enabledAdapters: readonly string[];
@@ -239,6 +246,57 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       },
     ],
   });
+  const sourceEvidenceBatch = await options.client.workflows.recordSourceEvidenceBatch({
+    concurrency: 1,
+    continueOnError: false,
+    items: [
+      {
+        spaceSlug,
+        memoryScopeExternalRef: "source:full-memory-proof-transcript",
+        threadExternalRef: `${runId}:provider-scan`,
+        sourceAgent: "infinity-context-ts-sdk",
+        sourceType: "sdk-full-memory-proof",
+        sourceId: `${runId}:workflow-source:1`,
+        title: `${runId} workflow source evidence 1`,
+        text: `${runId}: Workflow batch evidence says provider scans should keep per-item retry diagnostics and citations.`,
+        occurredAt: now().toISOString(),
+        idempotencyKey: `${runId}:workflow-source:1`,
+        metadata: { run_id: runId, proof: "source-evidence-batch", item: 1 },
+        episode: { trustLevel: "high", kindHint: "fact_evidence" },
+        capture: {
+          eventType: "sdk.full_memory.source_evidence_recorded",
+          actorRole: "tool",
+          trustLevel: "high",
+          sourceAuthority: "tool_verified",
+          consolidate: true,
+        },
+        linkSuggestions: { persist: true, limit: 5 },
+      },
+      {
+        spaceSlug,
+        memoryScopeExternalRef: "source:full-memory-proof-transcript",
+        threadExternalRef: `${runId}:provider-scan`,
+        sourceAgent: "infinity-context-ts-sdk",
+        sourceType: "sdk-full-memory-proof",
+        sourceId: `${runId}:workflow-source:2`,
+        title: `${runId} workflow source evidence 2`,
+        text: `${runId}: Workflow batch evidence says summaries should expose source freshness and degraded retrieval state.`,
+        occurredAt: now().toISOString(),
+        idempotencyKey: `${runId}:workflow-source:2`,
+        metadata: { run_id: runId, proof: "source-evidence-batch", item: 2 },
+        episode: { trustLevel: "high", kindHint: "fact_evidence" },
+        capture: {
+          eventType: "sdk.full_memory.source_evidence_recorded",
+          actorRole: "tool",
+          trustLevel: "high",
+          sourceAuthority: "tool_verified",
+          consolidate: true,
+        },
+        linkSuggestions: { persist: true, limit: 5 },
+      },
+    ],
+  });
+  const sourceEvidenceBatchSummary = summarizeSourceEvidenceBatch(sourceEvidenceBatch);
   const anchor = await ensureAnchor(options.client, {
     spaceSlug,
     memoryScopeExternalRef: "workspace-global",
@@ -332,6 +390,9 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     contextLinkCreated: contextLink.data.id.length > 0,
     captureCreated: capture.data.id.length > 0,
     suggestionBatchCreated: suggestions.data.created + suggestions.data.existing > 0,
+    sourceEvidenceBatchRecorded: sourceEvidenceBatch.succeeded === 2 && sourceEvidenceBatch.failed === 0,
+    sourceEvidenceBatchSummarized: sourceEvidenceBatchSummary.completed === 2 &&
+      sourceEvidenceBatchSummary.bySourceType["sdk-full-memory-proof"] === 2,
     anchorCreated: anchor.id.length > 0,
     anchorBackfillReadable: Array.isArray(anchorBackfill.data.sources),
     memoryBrowserReadable: memoryBrowser.data.memory_scope?.external_ref === "topic:full-memory-proof:feedback",
@@ -377,6 +438,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       operationsDiagnostics: operationsConsole.data.diagnostics,
       usageResourceCount: usage.data.resources.length,
       snapshotPreview: jsonObjectField(snapshotPreview, "data") ?? {},
+      sourceEvidenceBatchSummary,
     },
     capabilities: {
       enabledAdapters: capabilities.enabled_adapters ?? [],

@@ -607,7 +607,7 @@ describe("InfinityContextClient", () => {
       source_type: "reddit",
       source_external_id: "reddit:t3_abc",
       trust_level: "medium",
-      kind_hint: "source_evidence",
+      kind_hint: "fact_evidence",
       metadata: { provider: "reddit", subreddit: "LocalLLaMA" },
     });
     expect(transport.bodies[2]).toMatchObject({
@@ -1144,6 +1144,30 @@ describe("InfinityContextClient", () => {
           results: [{ index: 0, status: "created", suggestion: memorySuggestionRecord("suggestion_1") }],
         },
       }, 201),
+      jsonResponse({ data: { id: "workflow_episode_1", status: "active" } }, 201),
+      jsonResponse({
+        data: {
+          ...captureRecord("workflow_capture_1"),
+          duplicate: false,
+          created_suggestions: 0,
+          suggestion_ids: [],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({ data: { candidates: [], diagnostics: { persisted: true } } }),
+      jsonResponse({ data: { id: "workflow_episode_2", status: "active" } }, 201),
+      jsonResponse({
+        data: {
+          ...captureRecord("workflow_capture_2"),
+          duplicate: false,
+          created_suggestions: 0,
+          suggestion_ids: [],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({ data: { candidates: [], diagnostics: { persisted: true } } }),
       jsonResponse({ data: [] }),
       jsonResponse({ data: anchorRecord("anchor_1", "sdk-proof full memory proof") }),
       jsonResponse({
@@ -1234,6 +1258,8 @@ describe("InfinityContextClient", () => {
       contextLinkCreated: true,
       captureCreated: true,
       suggestionBatchCreated: true,
+      sourceEvidenceBatchRecorded: true,
+      sourceEvidenceBatchSummarized: true,
       anchorCreated: true,
       anchorBackfillReadable: true,
       memoryBrowserReadable: true,
@@ -1247,6 +1273,14 @@ describe("InfinityContextClient", () => {
     expect(report.created.captureId).toBe("capture_1");
     expect(report.created.anchorId).toBe("anchor_1");
     expect(report.observed.suggestionsCreated).toBe(1);
+    expect(report.observed.sourceEvidenceBatchSummary).toMatchObject({
+      total: 2,
+      completed: 2,
+      skipped: 0,
+      succeeded: 2,
+      failed: 0,
+      bySourceType: { "sdk-full-memory-proof": 2 },
+    });
     expect(report.observed.anchorBackfillCreated).toBe(1);
     expect(report.observed.usageResourceCount).toBe(0);
     expect(report.retrieval.vector.queryCount).toBe(4);
@@ -1270,6 +1304,12 @@ describe("InfinityContextClient", () => {
       "POST /v1/context-links",
       "POST /v1/captures",
       "POST /v1/suggestions/batch",
+      "POST /v1/episodes",
+      "POST /v1/captures",
+      "POST /v1/link-suggestions",
+      "POST /v1/episodes",
+      "POST /v1/captures",
+      "POST /v1/link-suggestions",
       "GET /v1/anchors",
       "POST /v1/anchors",
       "POST /v1/anchors/backfill",

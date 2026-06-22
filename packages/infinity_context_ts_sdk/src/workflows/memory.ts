@@ -345,7 +345,7 @@ export class MemoryWorkflows {
         ...optional("occurredAt", episodeOptions.occurredAt ?? input.occurredAt),
         ...optional("speaker", episodeOptions.speaker),
         trustLevel: episodeOptions.trustLevel ?? "medium",
-        kindHint: episodeOptions.kindHint ?? "source_evidence",
+        kindHint: episodeOptions.kindHint ?? "fact_evidence",
         ...optional("language", episodeOptions.language),
         metadata: { ...input.metadata, ...episodeOptions.metadata },
         idempotencyKey: `${input.idempotencyKey}:episode`,
