@@ -204,6 +204,38 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "meeting_evidence_bridge",
     ),
     (
+        frozenset({"source"}),
+        (
+            "source citation evidence quote reference provenance origin document "
+            "artifact transcript ocr"
+        ),
+        "source_evidence_bridge",
+    ),
+    (
+        frozenset({"citation"}),
+        (
+            "source citation evidence quote reference provenance origin document "
+            "artifact transcript ocr"
+        ),
+        "source_evidence_bridge",
+    ),
+    (
+        frozenset({"evidence"}),
+        (
+            "source citation evidence quote reference provenance origin document "
+            "artifact transcript ocr"
+        ),
+        "source_evidence_bridge",
+    ),
+    (
+        frozenset({"proof"}),
+        (
+            "source citation evidence quote reference provenance origin document "
+            "artifact transcript ocr"
+        ),
+        "source_evidence_bridge",
+    ),
+    (
         frozenset({"видео"}),
         "транскрипт сказал сказала обсудили упомянул упомянула кадр видео аудио",
         "video_transcript_evidence_bridge",
@@ -217,6 +249,30 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         frozenset({"скриншот"}),
         "ocr текст написано надпись экран изображение визуальный",
         "visual_text_evidence_bridge",
+    ),
+    (
+        frozenset({"источник"}),
+        (
+            "источник ссылка доказательство цитата откуда документ артефакт "
+            "транскрипт ocr source citation"
+        ),
+        "source_evidence_bridge",
+    ),
+    (
+        frozenset({"ссылка"}),
+        (
+            "источник ссылка доказательство цитата откуда документ артефакт "
+            "транскрипт ocr source citation"
+        ),
+        "source_evidence_bridge",
+    ),
+    (
+        frozenset({"доказательство"}),
+        (
+            "источник ссылка доказательство цитата откуда документ артефакт "
+            "транскрипт ocr source citation"
+        ),
+        "source_evidence_bridge",
     ),
     (
         frozenset({"latest"}),

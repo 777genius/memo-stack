@@ -131,6 +131,23 @@ def test_query_expansion_covers_generic_multimodal_evidence_bridges() -> None:
     )
 
 
+def test_query_expansion_covers_source_evidence_bridge() -> None:
+    source = build_query_expansion_plan("Show source citation for the Atlas decision")
+    russian = build_query_expansion_plan("Покажи источник по решению Атлас")
+
+    assert "source citation evidence quote" in _expansion_query(
+        source,
+        "source_evidence_bridge",
+    )
+    assert source.diagnostics()["query_expansion_reasons"].count(
+        "source_evidence_bridge"
+    ) == 1
+    assert "источник ссылка доказательство" in _expansion_query(
+        russian,
+        "source_evidence_bridge",
+    )
+
+
 def test_query_expansion_covers_russian_multimodal_evidence_bridges() -> None:
     video = build_query_expansion_plan("Что Алекс сказал в видео про запуск?")
     screenshot = build_query_expansion_plan("Что написано на скриншоте?")
@@ -206,6 +223,21 @@ def test_best_query_relevance_uses_expansion_for_low_overlap_evidence() -> None:
 
     assert query.startswith("Caroline ")
     assert reason == "relocation_origin_bridge"
+    assert relevance.distinctive_term_hits >= 2
+
+
+def test_best_query_relevance_uses_source_evidence_bridge() -> None:
+    plan = build_query_expansion_plan("Show proof for the Atlas decision")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Evidence quote from the meeting transcript: Alex approved the Atlas "
+            "launch path."
+        ),
+    )
+
+    assert reason == "source_evidence_bridge"
     assert relevance.distinctive_term_hits >= 2
 
 
