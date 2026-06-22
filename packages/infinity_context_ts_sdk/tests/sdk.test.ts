@@ -8,9 +8,11 @@ import {
   assertMemoryBriefQuality,
   assertFullMemoryReady,
   assertMemoryInspectionPolicy,
+  assertMemoryMaintenancePolicy,
   assertMemorySummaryLoopPolicy,
   evaluateMemoryBriefQuality,
   evaluateMemoryInspectionPolicy,
+  evaluateMemoryMaintenancePolicy,
   evaluateMemorySummaryLoopPolicy,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
@@ -18,6 +20,7 @@ import {
   runRuntimeCanary,
   summarizeMemoryBriefEvidence,
   summarizeMemoryInspection,
+  summarizeMemoryMaintenance,
   summarizeMemorySummaryLoop,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
@@ -2311,6 +2314,48 @@ describe("InfinityContextClient", () => {
       "consolidate_captures",
       "retry_or_triage_extractions",
     ]);
+    const report = summarizeMemoryMaintenance(plan);
+    expect(report).toMatchObject({
+      ok: true,
+      status: "action_required",
+      totalActionable: 5,
+      counts: {
+        contextLinkSuggestions: 1,
+        memorySuggestions: 1,
+        anchorMergeCandidates: 1,
+        capturesPendingConsolidation: 1,
+        extractionJobs: 1,
+      },
+      actions: {
+        total: 5,
+        high: 0,
+        medium: 0,
+        low: 5,
+        byKind: {
+          review_context_links: 1,
+          resolve_memory_suggestions: 1,
+          merge_duplicate_anchors: 1,
+          consolidate_captures: 1,
+          retry_or_triage_extractions: 1,
+        },
+      },
+      partial: false,
+      errors: [],
+    });
+    expect(evaluateMemoryMaintenancePolicy(report, {
+      requireComplete: true,
+      maxIssues: 0,
+      maxTotalActionable: 5,
+      maxHighPriorityActions: 0,
+      maxExtractionJobs: 1,
+    })).toMatchObject({
+      ok: true,
+      errors: [],
+    });
+    expect(() => assertMemoryMaintenancePolicy(report, {
+      maxTotalActionable: 0,
+      blockedActionKinds: ["retry_or_triage_extractions"],
+    })).toThrow("Memory maintenance policy failed: total actionable maintenance items 5, expected at most 0");
     expect(plan.diagnostics).toMatchObject({
       partial: false,
       issues: [],
@@ -2377,6 +2422,18 @@ describe("InfinityContextClient", () => {
         },
       },
     ]);
+    const report = summarizeMemoryMaintenance(plan);
+    expect(report).toMatchObject({
+      ok: false,
+      status: "failed",
+      partial: true,
+      totalActionable: 0,
+      errors: ["contextLinkSuggestions: queue unavailable"],
+    });
+    expect(() => assertMemoryMaintenancePolicy(report, {
+      requireComplete: true,
+      maxIssues: 0,
+    })).toThrow(InfinityContextError);
   });
 
   it("transfers memory snapshots through safe preview and confirmed modes", async () => {

@@ -371,6 +371,22 @@ console.log(maintenance.diagnostics.issues);
 
 The maintenance workflow reads operations, pending context link suggestions, memory suggestions, anchor merge candidates, capture consolidation diagnostics and extraction jobs. It returns suggested actions only; applying merges, retries or approvals stays explicit.
 
+For beta gates, turn the plan into a report and block promotion when maintenance backlog crosses your threshold.
+
+```ts
+import { assertMemoryMaintenancePolicy, summarizeMemoryMaintenance } from "@infinity-context/sdk";
+
+const maintenanceReport = summarizeMemoryMaintenance(maintenance);
+
+assertMemoryMaintenancePolicy(maintenanceReport, {
+  requireComplete: true,
+  maxIssues: 0,
+  maxTotalActionable: 10,
+  maxHighPriorityActions: 0,
+  blockedActionKinds: ["retry_or_triage_extractions"],
+});
+```
+
 ## Runtime readiness
 
 Use runtime guards in CI, beta smoke tests or app boot checks before relying on full memory retrieval.

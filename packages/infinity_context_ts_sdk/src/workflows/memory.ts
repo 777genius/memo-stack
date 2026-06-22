@@ -131,6 +131,18 @@ export type {
   PlanMemoryMaintenanceInput,
   PlanMemoryMaintenanceResult,
 } from "./memory-maintenance.js";
+export {
+  assertMemoryMaintenancePolicy,
+  evaluateMemoryMaintenancePolicy,
+  summarizeMemoryMaintenance,
+} from "./memory-maintenance-report.js";
+export type {
+  MemoryMaintenanceActionSummary,
+  MemoryMaintenancePolicy,
+  MemoryMaintenancePolicyEvaluation,
+  MemoryMaintenanceReport,
+  MemoryMaintenanceStatus,
+} from "./memory-maintenance-report.js";
 export type {
   MemorySummaryLoopGateReport,
   MemorySummaryLoopGateStatus,
