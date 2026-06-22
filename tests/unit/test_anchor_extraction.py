@@ -281,6 +281,30 @@ def test_anchor_extraction_handles_dm_event_shorthand() -> None:
     assert events["dm with alex about atlas yesterday"]["event_temporal_hint_code"] == ("yesterday")
 
 
+def test_anchor_extraction_handles_said_and_told_event_phrasing() -> None:
+    anchors = extract_observed_anchors(
+        "alex said about Atlas yesterday. Алекс сказал про Атлас вчера."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "said with alex about atlas yesterday" in events
+    assert events["said with alex about atlas yesterday"]["event_type_canonical"] == "said"
+    assert events["said with alex about atlas yesterday"][
+        "event_participant_canonical_key"
+    ] == "aleks"
+    assert events["said with alex about atlas yesterday"]["event_project_canonical_key"] == (
+        "atlas"
+    )
+    assert "сказал с алекс про атлас вчера" in events
+    assert events["сказал с алекс про атлас вчера"]["event_type_canonical"] == "skazal"
+    assert events["сказал с алекс про атлас вчера"]["event_participant_canonical_key"] == (
+        "aleks"
+    )
+
+
 def test_anchor_extraction_handles_chat_handles_and_email_people() -> None:
     anchors = extract_observed_anchors(
         "DM @alex.cooper yesterday about Atlas invoice. "

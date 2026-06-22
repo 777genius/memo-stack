@@ -44,6 +44,7 @@ from infinity_context_core.application.context_query_intent import (
     build_query_anchor_intent,
     match_query_anchor_intent,
     query_anchor_intent_conflicts,
+    query_anchor_lookup_keys,
 )
 from infinity_context_core.application.context_ranking import dedupe_rank_items
 from infinity_context_core.application.context_relevance import (
@@ -163,11 +164,16 @@ class BuildContextUseCase:
     async def execute(self, query: BuildContextQuery) -> ContextBundle:
         memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
         query_expansion_plan = build_query_expansion_plan(query.query)
+        query_anchor_intent = build_query_anchor_intent(query.query)
         canonical = await self._canonical_collector.collect(
             query=query,
             memory_scope_ids=memory_scope_ids,
             keyword_queries=tuple(
                 expansion.query for expansion in query_expansion_plan.retrieval_queries
+            ),
+            anchor_lookup_keys=tuple(
+                (key.kind.value, key.normalized_key)
+                for key in query_anchor_lookup_keys(query_anchor_intent)
             ),
         )
 
@@ -181,6 +187,8 @@ class BuildContextUseCase:
             "keyword_neighbor_chunks_used": 0,
             "keyword_neighbor_chunks_skipped": 0,
             "anchors_considered": len(canonical.anchors),
+            "anchor_lookup_keys_considered": canonical.anchor_lookup_keys_considered,
+            "anchors_loaded_by_lookup": canonical.anchors_loaded_by_lookup,
             "anchors_used": 0,
             "anchors_used_by_query_intent": 0,
             "anchors_dropped_by_query_intent_conflict": 0,
@@ -247,7 +255,6 @@ class BuildContextUseCase:
 
         items: list[ContextItem] = []
         now = self._clock.now() if self._clock is not None else None
-        query_anchor_intent = build_query_anchor_intent(query.query)
         diagnostics.update(query_anchor_intent.diagnostics())
         diagnostics.update(query_expansion_plan.diagnostics())
         for fact in canonical.facts:
@@ -387,6 +394,7 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
             diagnostics=diagnostics,
+            query_expansion_plan=query_expansion_plan,
         )
         include_stale_review = query.include_stale or query.include_superseded
         stale_review_items, stale_diagnostics = (

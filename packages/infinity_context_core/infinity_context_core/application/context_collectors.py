@@ -80,6 +80,8 @@ class CanonicalCollectionResult:
     facts: tuple[MemoryFact, ...]
     keyword_chunks: tuple[MemoryChunk, ...]
     anchors: tuple[MemoryAnchor, ...] = ()
+    anchor_lookup_keys_considered: int = 0
+    anchors_loaded_by_lookup: int = 0
 
 
 class CanonicalContextCollector:
@@ -92,6 +94,7 @@ class CanonicalContextCollector:
         query: BuildContextQuery,
         memory_scope_ids: tuple[str, ...],
         keyword_queries: tuple[str, ...] | None = None,
+        anchor_lookup_keys: tuple[tuple[str, str], ...] | None = None,
     ) -> CanonicalCollectionResult:
         async with self._uow_factory() as uow:
             facts = await uow.facts.find_active(
@@ -130,10 +133,34 @@ class CanonicalContextCollector:
                         limit=anchor_limit,
                     )
                 )
+            anchors_by_id = {str(anchor.id): anchor for anchor in anchors}
+            lookup_keys_considered = 0
+            anchors_loaded_by_lookup = 0
+            for memory_scope_id in memory_scope_ids:
+                for kind, normalized_key in _bounded_anchor_lookup_keys(
+                    anchor_lookup_keys or (),
+                ):
+                    if lookup_keys_considered >= 64:
+                        break
+                    lookup_keys_considered += 1
+                    anchor = await uow.anchors.find_active_by_key(
+                        space_id=str(query.space_id),
+                        memory_scope_id=memory_scope_id,
+                        kind=kind,
+                        normalized_key=normalized_key,
+                    )
+                    if anchor is None or str(anchor.id) in anchors_by_id:
+                        continue
+                    anchors_by_id[str(anchor.id)] = anchor
+                    anchors_loaded_by_lookup += 1
+                if lookup_keys_considered >= 64:
+                    break
         return CanonicalCollectionResult(
             facts=tuple(facts),
             keyword_chunks=tuple(keyword_chunks),
-            anchors=tuple(anchors),
+            anchors=tuple(anchors_by_id.values()),
+            anchor_lookup_keys_considered=lookup_keys_considered,
+            anchors_loaded_by_lookup=anchors_loaded_by_lookup,
         )
 
 
@@ -174,6 +201,26 @@ def _canonical_fact_candidate_limit(max_facts: int) -> int:
     if max_facts <= 0:
         return 0
     return min(100, max(max_facts * 4, max_facts + 8))
+
+
+def _bounded_anchor_lookup_keys(
+    keys: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for kind, normalized_key in keys:
+        safe_kind = kind.strip().casefold()
+        safe_key = " ".join(normalized_key.split()).casefold()
+        if not safe_kind or not safe_key:
+            continue
+        key = (safe_kind, safe_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+        if len(deduped) >= 32:
+            break
+    return tuple(deduped)
 
 
 def _rank_facts_for_query(

@@ -33,17 +33,17 @@ _EVENT_PERSON_TOKEN = (
 )
 _EVENT_KEYWORDS = (
     r"call|meeting|review|sync|demo|chat|dm|direct message|message|conversation|"
-    r"meet|met|wrote|sent|messaged|texted|"
+    r"meet|met|wrote|sent|messaged|texted|said|told|"
     r"standup|planning|retro|retrospective|workshop|interview|presentation|release|launch|"
     r"звонок|созвон|позвонил|позвонила|звонил|звонила|"
     r"встреча|ревью|демо|переписка|переписывался|"
-    r"написал|написала|"
+    r"написал|написала|сказал|сказала|рассказал|рассказала|"
     r"встретился|встретилась|встречался|встречалась|встречались|"
     r"разговор(?:а|е|ом)?|чат|планерка|планёрка|стендап|ретро|"
     r"интервью|воркшоп|релиз|запуск"
 )
 _LOWERCASE_PREFIX_EVENT_KEYWORDS = frozenset(
-    {"dm", "message", "messaged", "sent", "texted", "wrote"}
+    {"dm", "message", "messaged", "said", "sent", "texted", "told", "wrote"}
 )
 _EVENT_PATTERN = re.compile(
     rf"\b({_EVENT_KEYWORDS})"

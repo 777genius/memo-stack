@@ -6,6 +6,7 @@ from infinity_context_core.application.context_artifact_evidence import (
     context_items_from_media_manifest_payload,
 )
 from infinity_context_core.application.context_packer import ContextPacker
+from infinity_context_core.application.context_query_expansion import build_query_expansion_plan
 from infinity_context_core.application.dto import BuildContextQuery
 from infinity_context_core.domain.assets import MemoryAssetId
 from infinity_context_core.domain.entities import MemoryScopeId, SpaceId
@@ -153,6 +154,67 @@ def test_media_manifest_timestamp_query_returns_matching_segment_only() -> None:
     assert diagnostics["artifact_evidence_time_query_count"] == 1
     assert diagnostics["artifact_evidence_time_query_match_count"] == 1
     assert diagnostics["artifact_evidence_time_query_drop_count"] == 2
+
+
+def test_media_manifest_evidence_uses_query_expansion_for_relevance() -> None:
+    artifact = ExtractionArtifact.create(
+        artifact_id=ExtractionArtifactId("artifact_expansion_manifest"),
+        job_id=AssetExtractionJobId("job_expansion_manifest"),
+        asset_id=MemoryAssetId("asset_expansion_manifest"),
+        artifact_type="media_manifest",
+        storage_backend="local",
+        storage_key="scope/job/expansion-media-manifest.json",
+        sha256_hex="c" * 64,
+        byte_size=512,
+        now=datetime(2026, 6, 20, tzinfo=UTC),
+    )
+    diagnostics: dict[str, object] = {}
+    query = BuildContextQuery(
+        space_id=SpaceId("space_default"),
+        memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+        query="which national park did she prefer",
+        max_evidence_items=5,
+    )
+
+    items = context_items_from_media_manifest_payload(
+        artifact=artifact,
+        job_id="job_expansion_manifest",
+        memory_scope_id="memory_scope_default",
+        payload={
+            "schema_version": "infinity_context.multimodal_manifest.v1",
+            "evidence_items": [
+                {
+                    "id": "transcript-outdoor-memory",
+                    "kind": "transcript_segment",
+                    "modality": "audio",
+                    "text_preview": (
+                        "She loved the camping trip under the meteor shower in the mountains."
+                    ),
+                    "confidence": 0.9,
+                },
+                {
+                    "id": "transcript-unrelated",
+                    "kind": "transcript_segment",
+                    "modality": "audio",
+                    "text_preview": "The invoice export finished after lunch.",
+                    "confidence": 0.9,
+                },
+            ],
+        },
+        query=query,
+        query_expansion_plan=build_query_expansion_plan(query.query),
+        diagnostics=diagnostics,
+    )
+
+    assert len(items) == 1
+    assert items[0].source_refs[0].chunk_id == "transcript-outdoor-memory"
+    assert items[0].diagnostics["query_expansion_reason"] == (
+        "outdoor_preference_bridge"
+    )
+    assert items[0].diagnostics["score_signals"]["query_expansion_reason"] == (
+        "outdoor_preference_bridge"
+    )
+    assert diagnostics["artifact_evidence_query_drop_count"] == 1
 
 
 def test_media_manifest_clock_time_query_keeps_normal_text_relevance() -> None:

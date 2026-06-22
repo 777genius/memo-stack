@@ -446,6 +446,9 @@ def test_public_memory_benchmark_seeds_duplicate_sources_once(tmp_path: Path) ->
     assert len(document_posts) == 1
     assert len(context_posts) == 2
     assert result["ok"] is True
+    assert result["metrics"]["seed_source_attempt_count"] == 2
+    assert result["metrics"]["seeded_source_count"] == 1
+    assert result["metrics"]["seed_cache_hit_count"] == 1
 
 
 def test_public_memory_benchmark_uses_recall_oriented_context_budget(
@@ -552,10 +555,18 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
         and event["source_kind"] == "document"
         for event in progress_events
     )
+    assert any(
+        event["event_type"] == "source_seed_reused"
+        and event["source_kind"] == "document"
+        and event["seed_cache_hit_count"] == 1
+        for event in progress_events
+    )
     assert progress_events[-1]["event_type"] == "run_completed"
     assert checkpoint["status"] == "completed"
     assert checkpoint["progress"]["processed_case_count"] == 2
     assert checkpoint["progress"]["seeded_source_count"] == 1
+    assert checkpoint["progress"]["seed_source_attempt_count"] == 2
+    assert checkpoint["progress"]["seed_cache_hit_count"] == 1
     assert checkpoint["metrics_so_far"]["accuracy"] == 1.0
     assert str(tmp_path) not in rendered
     assert "shared-document" not in rendered

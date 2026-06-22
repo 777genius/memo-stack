@@ -81,6 +81,8 @@ _SAFE_ANCHOR_LIST_DIAGNOSTIC_KEYS = (
 _BUNDLE_COUNTER_KEYS = (
     "facts_considered",
     "anchors_considered",
+    "anchor_lookup_keys_considered",
+    "anchors_loaded_by_lookup",
     "anchors_used",
     "anchor_relation_candidates_considered",
     "anchor_relation_items_used",
@@ -199,6 +201,8 @@ _BUNDLE_COUNTER_KEYS = (
 _BUNDLE_COUNTER_DEFAULTS = {
     "facts_considered": 0,
     "anchors_considered": 0,
+    "anchor_lookup_keys_considered": 0,
+    "anchors_loaded_by_lookup": 0,
     "anchors_used": 0,
     "anchor_relation_candidates_considered": 0,
     "anchor_relation_items_used": 0,

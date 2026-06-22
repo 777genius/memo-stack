@@ -1886,6 +1886,31 @@ def test_context_retrieves_event_anchor_by_structured_query_intent(
             },
             headers=auth_headers(),
         )
+        wrong_type = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "event",
+                "label": "Chat with Alex about Atlas 1 hour ago",
+                "confidence": "high",
+                "metadata": structured_anchor_metadata_for_label(
+                    MemoryAnchorKind.EVENT,
+                    "Chat with Alex about Atlas 1 hour ago",
+                ),
+                "evidence_refs": [
+                    {
+                        "source_type": "asset_extraction",
+                        "source_id": "extract_event_chat_alex_atlas",
+                        "chunk_id": "chunk_event_chat_alex_atlas",
+                        "quote_preview": (
+                            "Transcript mentions the chat with Alex about Atlas."
+                        ),
+                    }
+                ],
+            },
+            headers=auth_headers(),
+        )
         container = client.app.state.container
         use_case = BuildContextUseCase(
             uow_factory=container.uow_factory,
@@ -1909,29 +1934,111 @@ def test_context_retrieves_event_anchor_by_structured_query_intent(
 
     assert target.status_code == 200, target.text
     assert decoy.status_code == 200, decoy.text
+    assert wrong_type.status_code == 200, wrong_type.text
     rendered = context.rendered_text
     assert "event: Call with Alex about Atlas 1 hour ago" in rendered
     assert "event: Call with Sam about Atlas 1 hour ago" not in rendered
+    assert "event: Chat with Alex about Atlas 1 hour ago" not in rendered
     anchor_items = [item for item in context.items if item.item_type == "anchor"]
     assert len(anchor_items) == 1
     diagnostics = anchor_items[0].diagnostics
     assert diagnostics["query_anchor_match_reasons"] == [
         "query_event_participant_match",
         "query_event_project_match",
+        "query_event_type_match",
         "query_event_temporal_match",
     ]
     assert set(diagnostics["query_anchor_match_keys"]) >= {
         "aleks",
         "atlas",
+        "group:call",
         "hours_ago:1:hour",
     }
     assert context.diagnostics["query_anchor_person_hint_count"] == 1
     assert context.diagnostics["query_anchor_project_hint_count"] == 1
     assert context.diagnostics["query_anchor_temporal_hint_count"] == 2
-    assert context.diagnostics["anchors_considered"] == 2
+    assert context.diagnostics["query_anchor_event_type_hint_count"] == 2
+    assert context.diagnostics["anchors_considered"] == 3
     assert context.diagnostics["anchors_used"] == 1
     assert context.diagnostics["anchors_used_by_query_intent"] == 1
-    assert context.diagnostics["anchors_dropped_by_query_intent_conflict"] == 1
+    assert context.diagnostics["anchors_dropped_by_query_intent_conflict"] == 2
+
+
+def test_context_anchor_lookup_recovers_target_outside_recent_anchor_window(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        target = client.post(
+            "/v1/anchors",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_id": "memory_scope_default",
+                "kind": "event",
+                "label": "Call with Alex about Atlas last week",
+                "confidence": "high",
+                "metadata": structured_anchor_metadata_for_label(
+                    MemoryAnchorKind.EVENT,
+                    "Call with Alex about Atlas last week",
+                ),
+                "evidence_refs": [
+                    {
+                        "source_type": "asset_extraction",
+                        "source_id": "extract_old_target_event",
+                        "chunk_id": "chunk_old_target_event",
+                        "quote_preview": (
+                            "Transcript mentions the call with Alex about Atlas last week."
+                        ),
+                    }
+                ],
+            },
+            headers=auth_headers(),
+        )
+        assert target.status_code == 200, target.text
+        for index in range(25):
+            decoy = client.post(
+                "/v1/anchors",
+                json={
+                    "space_id": "space_client_app",
+                    "memory_scope_id": "memory_scope_default",
+                    "kind": "event",
+                    "label": f"Chat with Decoy {index} about Apollo yesterday",
+                    "confidence": "high",
+                    "metadata": structured_anchor_metadata_for_label(
+                        MemoryAnchorKind.EVENT,
+                        f"Chat with Decoy {index} about Apollo yesterday",
+                    ),
+                },
+                headers=auth_headers(),
+            )
+            assert decoy.status_code == 200, decoy.text
+        container = client.app.state.container
+        use_case = BuildContextUseCase(
+            uow_factory=container.uow_factory,
+            ids=container.ids,
+            vector_index=NoopVectorMemoryAdapter(),
+            graph_index=NoopGraphMemoryAdapter(),
+            embedder=NoopEmbeddingAdapter(),
+        )
+        context = asyncio.run(
+            use_case.execute(
+                BuildContextQuery(
+                    space_id=SpaceId("space_client_app"),
+                    memory_scope_ids=(MemoryScopeId("memory_scope_default"),),
+                    query="call with alex about atlas last week",
+                    token_budget=512,
+                    max_facts=0,
+                    max_chunks=0,
+                )
+            )
+        )
+
+    rendered = context.rendered_text
+    assert "event: Call with Alex about Atlas last week" in rendered
+    assert "event: Chat with Decoy" not in rendered
+    assert context.diagnostics["anchor_lookup_keys_considered"] > 0
+    assert context.diagnostics["anchors_loaded_by_lookup"] == 1
+    assert context.diagnostics["anchors_used"] == 1
+    assert context.diagnostics["anchors_used_by_query_intent"] == 1
 
 
 def test_context_drops_stale_fact_reached_through_approved_anchor_link(

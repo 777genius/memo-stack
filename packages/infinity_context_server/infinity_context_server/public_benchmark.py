@@ -151,6 +151,7 @@ class _BenchmarkProgress:
         run_results: Sequence[CaseRunResult],
         failures: Sequence[Mapping[str, object]],
         seeded_source_count: int,
+        seed_stats: _BenchmarkSeedStats | None = None,
         force: bool = False,
     ) -> None:
         if self.checkpoint_out is None:
@@ -176,6 +177,12 @@ class _BenchmarkProgress:
                 "processed_case_count": processed_case_count,
                 "total_case_count": self.total_case_count,
                 "seeded_source_count": seeded_source_count,
+                "seed_source_attempt_count": (
+                    seed_stats.source_attempt_count if seed_stats is not None else 0
+                ),
+                "seed_cache_hit_count": (
+                    seed_stats.seed_cache_hit_count if seed_stats is not None else 0
+                ),
                 "failure_count": len(failures),
                 "elapsed_ms": round((time.perf_counter() - self.started) * 1000, 2),
             },
@@ -192,6 +199,13 @@ class _BenchmarkProgress:
             json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
             encoding="utf-8",
         )
+
+
+@dataclass
+class _BenchmarkSeedStats:
+    source_attempt_count: int = 0
+    seeded_source_count: int = 0
+    seed_cache_hit_count: int = 0
 
 
 class _TestClientBenchmarkAdapter:
@@ -452,6 +466,7 @@ def _execute_cases(
     run_results: list[CaseRunResult] = []
     failures: list[dict[str, object]] = []
     seeded_source_keys: set[tuple[str, str, str, str]] = set()
+    seed_stats = _BenchmarkSeedStats()
     progress = _BenchmarkProgress(
         dataset_path=dataset_path,
         dataset_hash=dataset_hash,
@@ -487,6 +502,7 @@ def _execute_cases(
                 dataset_hash=dataset_hash,
                 case=case,
                 seeded_source_keys=seeded_source_keys,
+                seed_stats=seed_stats,
                 progress=progress,
                 case_index=case_index,
                 total_case_count=len(cases),
@@ -504,6 +520,7 @@ def _execute_cases(
                 leaked_term_count=len(result.leaked_terms),
                 latency_ms=result.latency_ms,
                 seeded_source_count=len(seeded_source_keys),
+                seed_cache_hit_count=seed_stats.seed_cache_hit_count,
             )
         except Exception as exc:
             failure = {
@@ -534,6 +551,7 @@ def _execute_cases(
                 benchmark=case.benchmark,
                 reason=exc.__class__.__name__,
                 seeded_source_count=len(seeded_source_keys),
+                seed_cache_hit_count=seed_stats.seed_cache_hit_count,
             )
         finally:
             progress.checkpoint(
@@ -541,6 +559,7 @@ def _execute_cases(
                 run_results=run_results,
                 failures=failures,
                 seeded_source_count=len(seeded_source_keys),
+                seed_stats=seed_stats,
             )
 
     progress.event(
@@ -549,12 +568,14 @@ def _execute_cases(
         processed_case_count=len(run_results),
         failure_count=len(failures),
         seeded_source_count=len(seeded_source_keys),
+        seed_cache_hit_count=seed_stats.seed_cache_hit_count,
     )
     progress.checkpoint(
         processed_case_count=len(cases),
         run_results=run_results,
         failures=failures,
         seeded_source_count=len(seeded_source_keys),
+        seed_stats=seed_stats,
         force=True,
     )
 
@@ -595,6 +616,9 @@ def _execute_cases(
             "duplicate_case_id_count": 0,
             "accuracy": accuracy,
             "latency_ms_p95": _p95([item.latency_ms for item in run_results]),
+            "seed_source_attempt_count": seed_stats.source_attempt_count,
+            "seeded_source_count": len(seeded_source_keys),
+            "seed_cache_hit_count": seed_stats.seed_cache_hit_count,
         },
         "benchmarks": benchmarks,
         "cases": [_case_payload(item) for item in run_results],
@@ -715,6 +739,7 @@ def _run_case(
     dataset_hash: str,
     case: PublicBenchmarkCase,
     seeded_source_keys: set[tuple[str, str, str, str]],
+    seed_stats: _BenchmarkSeedStats,
     progress: _BenchmarkProgress | None = None,
     case_index: int | None = None,
     total_case_count: int | None = None,
@@ -727,6 +752,7 @@ def _run_case(
             max_chars=160,
         )
         seed_key = (memory_scope_ref, thread_ref, "fact", source_id)
+        seed_stats.source_attempt_count += 1
         if seed_key not in seeded_source_keys:
             if progress is not None:
                 progress.event(
@@ -763,6 +789,7 @@ def _run_case(
                 idempotency_key=source_id,
             )
             seeded_source_keys.add(seed_key)
+            seed_stats.seeded_source_count = len(seeded_source_keys)
             if progress is not None:
                 progress.event(
                     "source_seed_completed",
@@ -775,6 +802,21 @@ def _run_case(
                     source_id_hash=_short_hash(source_id),
                     seeded_source_count=len(seeded_source_keys),
                 )
+        else:
+            seed_stats.seed_cache_hit_count += 1
+            if progress is not None:
+                progress.event(
+                    "source_seed_reused",
+                    case_index=case_index,
+                    total_case_count=total_case_count,
+                    case_id=case.case_id,
+                    benchmark=case.benchmark,
+                    source_kind="fact",
+                    source_index=index + 1,
+                    source_id_hash=_short_hash(source_id),
+                    seeded_source_count=len(seeded_source_keys),
+                    seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+                )
 
     for index, document in enumerate(case.documents):
         source_id = _safe_identifier(
@@ -782,6 +824,7 @@ def _run_case(
             max_chars=240,
         )
         seed_key = (memory_scope_ref, thread_ref, "document", source_id)
+        seed_stats.source_attempt_count += 1
         if seed_key not in seeded_source_keys:
             if progress is not None:
                 progress.event(
@@ -814,6 +857,7 @@ def _run_case(
                 idempotency_key=source_id,
             )
             seeded_source_keys.add(seed_key)
+            seed_stats.seeded_source_count = len(seeded_source_keys)
             if progress is not None:
                 progress.event(
                     "source_seed_completed",
@@ -826,6 +870,22 @@ def _run_case(
                     source_id_hash=_short_hash(source_id),
                     source_type=document.source_type,
                     seeded_source_count=len(seeded_source_keys),
+                )
+        else:
+            seed_stats.seed_cache_hit_count += 1
+            if progress is not None:
+                progress.event(
+                    "source_seed_reused",
+                    case_index=case_index,
+                    total_case_count=total_case_count,
+                    case_id=case.case_id,
+                    benchmark=case.benchmark,
+                    source_kind="document",
+                    source_index=index + 1,
+                    source_id_hash=_short_hash(source_id),
+                    source_type=document.source_type,
+                    seeded_source_count=len(seeded_source_keys),
+                    seed_cache_hit_count=seed_stats.seed_cache_hit_count,
                 )
 
     if progress is not None:

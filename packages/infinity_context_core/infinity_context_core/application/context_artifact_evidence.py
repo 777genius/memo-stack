@@ -18,7 +18,9 @@ from infinity_context_core.application.context_media_time import (
     media_time_query_diagnostics,
     media_time_windows_from_query,
 )
+from infinity_context_core.application.context_query_expansion import QueryExpansionPlan
 from infinity_context_core.application.context_relevance import (
+    QueryRelevance,
     is_query_relevance_sufficient,
     query_relevance_score_signals,
     score_query_relevance,
@@ -117,6 +119,7 @@ class ArtifactEvidenceContextCollector:
         query: BuildContextQuery,
         memory_scope_ids: tuple[str, ...],
         diagnostics: dict[str, object],
+        query_expansion_plan: QueryExpansionPlan | None = None,
     ) -> tuple[ContextItem, ...]:
         _init_diagnostics(diagnostics)
         if query.max_evidence_items <= 0:
@@ -153,6 +156,7 @@ class ArtifactEvidenceContextCollector:
                     payload=payload,
                     query=query,
                     diagnostics=diagnostics,
+                    query_expansion_plan=query_expansion_plan,
                 )
             )
             if len(ranked_candidates) > candidate_limit:
@@ -276,6 +280,7 @@ def context_items_from_media_manifest_payload(
     retrieval_source: str = "artifact_evidence",
     ranking_reason: str = "matched first-party multimodal extraction evidence",
     require_query_match: bool = True,
+    query_expansion_plan: QueryExpansionPlan | None = None,
     extra_diagnostics: Mapping[str, object] | None = None,
     extra_provenance: Mapping[str, object] | None = None,
 ) -> tuple[ContextItem, ...]:
@@ -292,6 +297,7 @@ def context_items_from_media_manifest_payload(
         retrieval_source=retrieval_source,
         ranking_reason=ranking_reason,
         require_query_match=require_query_match,
+        query_expansion_plan=query_expansion_plan,
         extra_diagnostics=extra_diagnostics,
         extra_provenance=extra_provenance,
     )
@@ -306,6 +312,7 @@ def _context_items_from_manifest(
     retrieval_source: str = "artifact_evidence",
     ranking_reason: str = "matched first-party multimodal extraction evidence",
     require_query_match: bool = True,
+    query_expansion_plan: QueryExpansionPlan | None = None,
     extra_diagnostics: Mapping[str, object] | None = None,
     extra_provenance: Mapping[str, object] | None = None,
 ) -> tuple[ContextItem, ...]:
@@ -340,18 +347,20 @@ def _context_items_from_manifest(
             continue
         kind = safe_metadata_text(str(raw_item.get("kind") or "unknown"))
         modality = safe_metadata_text(str(raw_item.get("modality") or "unknown"))
-        relevance = score_query_relevance(
-            query=query.query,
-            text=" ".join(
-                (
-                    text,
-                    kind,
-                    modality,
-                )
-            ),
+        evidence_retrieval_text = " ".join(
+            (
+                text,
+                kind,
+                modality,
+            )
+        )
+        relevance_query, expansion_reason, relevance = _best_evidence_relevance(
+            query=query,
+            text=evidence_retrieval_text,
+            query_expansion_plan=query_expansion_plan,
         )
         artifact = candidate.artifact
-        snippet = query_focused_snippet(query=query.query, text=text)
+        snippet = query_focused_snippet(query=relevance_query, text=text)
         evidence_text = snippet.text if snippet is not None else text
         evidence_id = _safe_evidence_id(raw_item, index=index, diagnostics=diagnostics)
         source_refs = source_refs_with_query_snippet(
@@ -450,6 +459,7 @@ def _context_items_from_manifest(
                         "coordinate_boost": coordinate_boost,
                         "evidence_kind_boost": kind_boost,
                         "evidence_modality_boost": modality_boost,
+                        "query_expansion_reason": expansion_reason,
                         **query_relevance_score_signals(relevance),
                         **query_snippet_score_signals(snippet),
                         **media_time_match_score_signals(time_match),
@@ -466,6 +476,7 @@ def _context_items_from_manifest(
                         "evidence_modality": modality,
                         "evidence_confidence": confidence,
                         **source_ref_location_summary(source_refs),
+                        "query_expansion_reason": expansion_reason,
                         **query_snippet_diagnostics(snippet),
                         **media_time_query_diagnostics(time_windows),
                         **dict(extra_provenance or {}),
@@ -475,6 +486,7 @@ def _context_items_from_manifest(
                     "evidence_kind": kind,
                     "evidence_modality": modality,
                     "evidence_confidence": confidence,
+                    "query_expansion_reason": expansion_reason,
                     **source_ref_location_summary(source_refs),
                     **query_snippet_diagnostics(snippet),
                     **media_time_query_diagnostics(time_windows),
@@ -503,6 +515,41 @@ def _source_ref(
         time_start_ms=time_start_ms,
         time_end_ms=time_end_ms,
         bbox=_bbox(raw_item.get("bbox"), diagnostics=diagnostics),
+    )
+
+
+def _best_evidence_relevance(
+    *,
+    query: BuildContextQuery,
+    text: str,
+    query_expansion_plan: QueryExpansionPlan | None,
+) -> tuple[str, str, QueryRelevance]:
+    candidates = (
+        query_expansion_plan.retrieval_queries
+        if query_expansion_plan is not None
+        else ()
+    )
+    if not candidates:
+        relevance = score_query_relevance(query=query.query, text=text)
+        return query.query, "original_query", relevance
+    ranked = [
+        (
+            expansion.query,
+            expansion.reason,
+            score_query_relevance(query=expansion.query, text=text),
+        )
+        for expansion in candidates
+    ]
+    return max(
+        ranked,
+        key=lambda item: (
+            item[2].phrase_bigram_hits,
+            item[2].unique_term_hits,
+            item[2].hit_ratio,
+            item[2].score_boost,
+            item[2].capped_frequency_hits,
+            1 if item[1] == "original_query" else 0,
+        ),
     )
 
 
