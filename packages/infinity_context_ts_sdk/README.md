@@ -86,6 +86,27 @@ if (suggestionId) {
 }
 ```
 
+## Captures
+
+Captures are the canonical ingestion surface for agent hooks, app events and feedback that may later consolidate into suggestions or durable facts.
+
+```ts
+const capture = await memory.captures.createCapture({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:feedback",
+  sourceAgent: "social-monitor",
+  sourceKind: "summary_feedback",
+  eventType: "summary.feedback.recorded",
+  actorRole: "user",
+  text: "User says Reddit source freshness matters for AI agent summaries.",
+  evidenceRefs: [{ source_type: "summary", source_id: "summary:1" }],
+  idempotencyKey: "feedback:1",
+  consolidate: true,
+});
+
+await memory.captures.consolidateCapture(capture.data.id, { force: false });
+```
+
 ## Recommended Social Monitor mapping
 
 - `spaceSlug`: `social-monitor:{tenantId}:{workspaceId}`

@@ -126,6 +126,34 @@ export interface ContextLinkSuggestionRecord extends JsonObject {
   readonly review_audit?: JsonObject;
 }
 
+export interface CaptureRecord extends JsonObject {
+  readonly id: string;
+  readonly space_id: string;
+  readonly memory_scope_id: string;
+  readonly thread_id?: string | null;
+  readonly source_agent: string;
+  readonly source_kind: string;
+  readonly event_type: string;
+  readonly actor_role: string;
+  readonly text_preview: string;
+  readonly payload_hash: string;
+  readonly status: string;
+  readonly consolidation_status: string;
+  readonly trust_level: string;
+  readonly source_authority: string;
+  readonly sensitivity: string;
+  readonly data_classification: string;
+  readonly evidence_refs: readonly SourceRef[];
+  readonly metadata: JsonObject;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly occurred_at: string;
+  readonly received_at: string;
+  readonly trace_id?: string | null;
+  readonly versions: JsonObject;
+  readonly last_error_code?: string | null;
+}
+
 export interface AnchorRecord extends JsonObject {
   readonly id: string;
   readonly kind: string;

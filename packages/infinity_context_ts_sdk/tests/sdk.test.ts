@@ -465,6 +465,110 @@ describe("InfinityContextClient", () => {
       ]),
     ).toThrow(ValueError);
   });
+
+  it("supports capture ingestion, consolidation, diagnostics and purge", async () => {
+    const capture = captureRecord("capture_1");
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          ...capture,
+          duplicate: false,
+          created_suggestions: 1,
+          suggestion_ids: ["suggestion_1"],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({ data: [capture] }),
+      jsonResponse({ data: capture }),
+      jsonResponse({
+        data: {
+          ...capture,
+          consolidation_status: "consolidated",
+          created_suggestions: 1,
+          suggestion_ids: ["suggestion_1"],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }),
+      jsonResponse({ data: [{ ...capture, consolidation_status: "consolidated" }] }),
+      jsonResponse({ data: { ...capture, status: "purged" } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await client.captures.createCapture({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      threadExternalRef: "review-thread",
+      sourceAgent: "social-monitor",
+      sourceKind: "summary_feedback",
+      eventType: "summary.feedback.recorded",
+      actorRole: "user",
+      text: "User says Reddit source freshness matters.",
+      sourceEventId: "feedback_1",
+      sourceActorExternalRef: "user_1",
+      clientInstanceId: "sdk-test",
+      agentSessionExternalRef: "session_1",
+      turnExternalRef: "turn_1",
+      sequenceIndex: 3,
+      evidenceRefs: [{ source_type: "summary", source_id: "summary_1" }],
+      trustLevel: "high",
+      sourceAuthority: "user_feedback",
+      sensitivity: "medium",
+      dataClassification: "internal",
+      occurredAt: "2026-06-06T00:00:00.000Z",
+      metadata: { topic: "ai-agents" },
+      traceId: "trace_1",
+      idempotencyKey: "feedback_1",
+      consolidate: true,
+    });
+    await client.captures.listCaptures({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      status: "active",
+      consolidationStatus: "pending",
+      limit: 25,
+    });
+    await client.captures.getCapture("capture_1");
+    await client.captures.consolidateCapture("capture_1", { force: true });
+    await client.captures.captureDiagnostics({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      consolidationStatus: "consolidated",
+      limit: 25,
+    });
+    await client.captures.purgeCapture("capture_1", { reason: "privacy_request" });
+
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/captures",
+      "GET /v1/captures",
+      "GET /v1/captures/capture_1",
+      "POST /v1/captures/capture_1/consolidate",
+      "GET /v1/diagnostics/captures",
+      "DELETE /v1/captures/capture_1",
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      space_slug: "workspace",
+      memory_scope_external_ref: "scope",
+      thread_external_ref: "review-thread",
+      source_agent: "social-monitor",
+      source_kind: "summary_feedback",
+      event_type: "summary.feedback.recorded",
+      actor_role: "user",
+      text: "User says Reddit source freshness matters.",
+      evidence_refs: [{ source_type: "summary", source_id: "summary_1" }],
+      idempotency_key: "feedback_1",
+      consolidate: true,
+    });
+    expect(transport.requests[1]?.url.searchParams.get("status")).toBe("active");
+    expect(transport.requests[1]?.url.searchParams.get("consolidation_status")).toBe("pending");
+    expect(transport.bodies).toContainEqual({ force: true });
+    expect(transport.bodies).toContainEqual({ reason: "privacy_request" });
+  });
 });
 
 function jsonResponse(body: unknown, status = 200): HttpResponse {
@@ -618,5 +722,44 @@ function contextLinkSuggestionRecord(id: string) {
     reviewed_at: null,
     review_reason: null,
     review_audit: { events: [], event_count: 0, truncated: false },
+  };
+}
+
+function captureRecord(id: string) {
+  return {
+    id,
+    space_id: "space_1",
+    memory_scope_id: "scope_1",
+    thread_id: "thread_1",
+    source_agent: "social-monitor",
+    source_kind: "summary_feedback",
+    event_type: "summary.feedback.recorded",
+    actor_role: "user",
+    text_preview: "User says Reddit source freshness matters.",
+    payload_hash: "hash_1",
+    status: "active",
+    consolidation_status: "pending",
+    trust_level: "high",
+    source_authority: "user_feedback",
+    sensitivity: "medium",
+    data_classification: "internal",
+    evidence_refs: [{ source_type: "summary", source_id: "summary_1" }],
+    metadata: {},
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+    occurred_at: "2026-06-06T00:00:00.000Z",
+    received_at: "2026-06-06T00:00:01.000Z",
+    trace_id: "trace_1",
+    versions: {
+      schema: "capture.v1",
+      parser: "parser.v1",
+      redaction: "redaction.v1",
+      admission: "admission.v1",
+      normalization: "normalization.v1",
+      policy: "policy.v1",
+      extractor: "extractor.v1",
+      resolver: "resolver.v1",
+    },
+    last_error_code: null,
   };
 }

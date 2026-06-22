@@ -24,6 +24,7 @@ export {
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
+export type { ConsolidateCaptureData, CreateCaptureData } from "./resources/captures.js";
 export type {
   ContextLinkCandidate,
   ContextLinkVisibleFilterInput,
@@ -40,6 +41,7 @@ export { FetchTransport, type HttpRequest, type HttpResponse, type HttpTransport
 export type {
   ApiEnvelope,
   AssetRecord,
+  CaptureRecord,
   ContextLinkRecord,
   ContextLinkSuggestionRecord,
   DocumentRecord,
