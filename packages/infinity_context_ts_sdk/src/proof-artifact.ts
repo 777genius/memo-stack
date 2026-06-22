@@ -19,6 +19,7 @@ export interface FullMemoryProofRuntimeMetadata {
   readonly baseUrl?: string;
   readonly profile?: string;
   readonly requireFullMemory?: boolean;
+  readonly qualityPreset?: string;
 }
 
 export interface FullMemoryProofArtifactMetadata {

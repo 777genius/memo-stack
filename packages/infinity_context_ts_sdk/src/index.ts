@@ -61,6 +61,8 @@ export {
   FULL_MEMORY_PROOF_ARTIFACT_SCHEMA,
   summarizeFullMemoryProofReport,
 } from "./proof-artifact.js";
+export { buildFullMemoryProofArtifactPolicyFromEnv } from "./proof-policy.js";
+export type { FullMemoryProofArtifactPolicyConfig } from "./proof-policy.js";
 export type {
   FullMemoryProofArtifact,
   FullMemoryProofArtifactEvaluation,

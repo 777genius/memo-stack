@@ -3,6 +3,7 @@ import {
   InfinityContextClient,
   InfinityContextError,
   assertFullMemoryProofArtifact,
+  buildFullMemoryProofArtifactPolicyFromEnv,
   buildFullMemoryProofArtifact,
   evaluateFullMemoryProofArtifact,
   runFullMemoryProof,
@@ -24,6 +25,56 @@ import {
 } from "./fixtures.js";
 
 describe("full memory proof", () => {
+  it("builds artifact policy config from quality preset env", () => {
+    expect(buildFullMemoryProofArtifactPolicyFromEnv({})).toMatchObject({
+      requireFullMemory: true,
+      policy: {
+        requireOk: true,
+        requireFullMemory: true,
+      },
+    });
+
+    expect(buildFullMemoryProofArtifactPolicyFromEnv({
+      INFINITY_CONTEXT_PROOF_QUALITY_PRESET: "durable",
+    })).toMatchObject({
+      qualityPreset: "durable",
+      requireFullMemory: false,
+      policy: {
+        requireOk: true,
+        requireFullMemory: false,
+        maxFailedChecks: 0,
+        minSourceEvidenceSuccessRate: 1,
+        maxMemoryInspectionIssues: 0,
+        maxOutboxBlocking: 0,
+        requireGitCommit: true,
+        requirePackageVersion: true,
+      },
+    });
+
+    expect(buildFullMemoryProofArtifactPolicyFromEnv({
+      INFINITY_CONTEXT_PROOF_QUALITY_PRESET: "full",
+      INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY: "false",
+      INFINITY_CONTEXT_PROOF_REQUIRED_ADAPTERS: "postgres,rabbitmq",
+      INFINITY_CONTEXT_PROOF_REQUIRED_RETRIEVAL_SOURCES: "rag",
+      INFINITY_CONTEXT_PROOF_REQUIRE_GIT_COMMIT: "false",
+      INFINITY_CONTEXT_PROOF_MAX_DURATION_MS: "30000",
+    })).toMatchObject({
+      qualityPreset: "full",
+      requireFullMemory: false,
+      policy: {
+        requireFullMemory: false,
+        requiredAdapters: ["postgres", "rabbitmq"],
+        requiredRetrievalSources: ["rag"],
+        requireGitCommit: false,
+        maxDurationMs: 30_000,
+      },
+    });
+
+    expect(() => buildFullMemoryProofArtifactPolicyFromEnv({
+      INFINITY_CONTEXT_PROOF_QUALITY_PRESET: "strict",
+    })).toThrow("INFINITY_CONTEXT_PROOF_QUALITY_PRESET must be one of: lite, durable, full");
+  });
+
   it("runs the full memory proof loop through public SDK clients", async () => {
     const transport = new RecordingTransport([
       jsonResponse({

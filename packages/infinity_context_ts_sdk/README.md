@@ -789,6 +789,7 @@ Run the SDK proof against a live Infinity Context service:
 ```bash
 INFINITY_CONTEXT_URL=http://127.0.0.1:7788 \
 INFINITY_CONTEXT_TOKEN=... \
+INFINITY_CONTEXT_PROOF_QUALITY_PRESET=durable \
 npm run proof:full-memory
 ```
 
@@ -798,6 +799,7 @@ Useful optional env:
 - `INFINITY_CONTEXT_PROOF_OUTPUT`: write the JSON evidence report to a file.
 - `INFINITY_CONTEXT_PROOF_OUTPUT_MODE=artifact`: write the release evidence artifact shape instead of the raw report.
 - `INFINITY_CONTEXT_PROOF_ARTIFACT_OUTPUT`: additionally write an artifact with SDK package, CI git and runtime metadata.
+- `INFINITY_CONTEXT_PROOF_QUALITY_PRESET`: use `lite`, `durable` or `full` artifact policy defaults from `MEMORY_QUALITY_PRESETS`.
 - `INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY=false`: allow lite/local mode while still proving the SDK write/read loop.
 - `INFINITY_CONTEXT_PROOF_RUNTIME_PROFILE`: label the artifact with a runtime profile such as `docker`, `staging` or `beta`.
 - `INFINITY_CONTEXT_PROOF_MAX_FAILED_CHECKS`: fail artifact policy when more checks fail.

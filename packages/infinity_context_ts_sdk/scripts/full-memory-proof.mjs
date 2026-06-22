@@ -8,9 +8,6 @@ const token = env.INFINITY_CONTEXT_TOKEN;
 const outputPath = env.INFINITY_CONTEXT_PROOF_OUTPUT;
 const artifactOutputPath = env.INFINITY_CONTEXT_PROOF_ARTIFACT_OUTPUT;
 const outputMode = env.INFINITY_CONTEXT_PROOF_OUTPUT_MODE === "artifact" ? "artifact" : "report";
-const requireFullMemory = env.INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY === undefined
-  ? true
-  : !["0", "false", "no"].includes(env.INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY.toLowerCase());
 const packageMetadata = await readPackageMetadata();
 const commandName = "infinity-context-full-memory-proof";
 const cliArgs = process.argv.slice(2);
@@ -26,11 +23,14 @@ if (hasCliFlag(cliArgs, "--version", "-v")) {
 }
 
 const {
+  buildFullMemoryProofArtifactPolicyFromEnv,
   buildFullMemoryProofArtifact,
   evaluateFullMemoryProofArtifact,
   InfinityContextClient,
   runFullMemoryProof,
 } = await import("../dist/index.js");
+const policyConfig = proofPolicyConfig(env);
+const requireFullMemory = policyConfig.requireFullMemory;
 
 const startedAt = new Date();
 const report = await runFullMemoryProof({
@@ -58,13 +58,16 @@ const artifact = buildFullMemoryProofArtifact({
     runtime: {
       baseUrl,
       requireFullMemory,
+      ...(policyConfig.qualityPreset !== undefined
+        ? { qualityPreset: policyConfig.qualityPreset }
+        : {}),
       ...(env.INFINITY_CONTEXT_PROOF_RUNTIME_PROFILE !== undefined
         ? { profile: env.INFINITY_CONTEXT_PROOF_RUNTIME_PROFILE }
         : {}),
     },
   },
 });
-const artifactEvaluation = evaluateFullMemoryProofArtifact(artifact, artifactPolicy(env, requireFullMemory));
+const artifactEvaluation = evaluateFullMemoryProofArtifact(artifact, policyConfig.policy);
 
 if (artifactOutputPath !== undefined && artifactOutputPath.trim().length > 0) {
   await writeJsonFile(artifactOutputPath, artifact);
@@ -106,6 +109,7 @@ Environment:
   INFINITY_CONTEXT_PROOF_OUTPUT                Optional report output JSON path.
   INFINITY_CONTEXT_PROOF_ARTIFACT_OUTPUT       Optional evidence artifact JSON path.
   INFINITY_CONTEXT_PROOF_OUTPUT_MODE           report or artifact. Default: report.
+  INFINITY_CONTEXT_PROOF_QUALITY_PRESET        Optional quality preset: lite, durable or full.
   INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY   Require Postgres/Qdrant/Graphiti/embeddings readiness. Default: true.
   INFINITY_CONTEXT_PROOF_TIMEOUT_MS            Per-request timeout. Default: 15000.
 `);
@@ -118,31 +122,6 @@ function parsePositiveInteger(value) {
   const parsed = Number(value);
 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function parseNonNegativeInteger(value) {
-  if (value === undefined) {
-    return undefined;
-  }
-  const parsed = Number(value);
-
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function parseNonNegativeNumber(value) {
-  if (value === undefined) {
-    return undefined;
-  }
-  const parsed = Number(value);
-
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function parseBoolean(value, fallback) {
-  if (value === undefined) {
-    return fallback;
-  }
-  return !["0", "false", "no"].includes(value.toLowerCase());
 }
 
 async function writeJsonFile(path, payload) {
@@ -199,53 +178,15 @@ function firstString(env, outputKey, keys) {
   return value === undefined ? {} : { [outputKey]: value };
 }
 
-function artifactPolicy(env, requireFullMemory) {
-  return {
-    requireOk: true,
-    requireFullMemory,
-    ...numberPolicy("maxFailedChecks", env.INFINITY_CONTEXT_PROOF_MAX_FAILED_CHECKS, parseNonNegativeInteger),
-    ...numberPolicy("minChecksPassed", env.INFINITY_CONTEXT_PROOF_MIN_CHECKS_PASSED, parseNonNegativeInteger),
-    ...numberPolicy(
-      "minSourceEvidenceSuccessRate",
-      env.INFINITY_CONTEXT_PROOF_MIN_SOURCE_EVIDENCE_SUCCESS_RATE,
-      parseUnitInterval,
-    ),
-    ...numberPolicy(
-      "maxMemoryInspectionIssues",
-      env.INFINITY_CONTEXT_PROOF_MAX_MEMORY_INSPECTION_ISSUES,
-      parseNonNegativeInteger,
-    ),
-    ...numberPolicy(
-      "maxMaintenanceActionable",
-      env.INFINITY_CONTEXT_PROOF_MAX_MAINTENANCE_ACTIONABLE,
-      parseNonNegativeInteger,
-    ),
-    ...numberPolicy("maxOutboxBlocking", env.INFINITY_CONTEXT_PROOF_MAX_OUTBOX_BLOCKING, parseNonNegativeInteger),
-    ...numberPolicy("maxDurationMs", env.INFINITY_CONTEXT_PROOF_MAX_DURATION_MS, parseNonNegativeInteger),
-    ...csvPolicy("requiredAdapters", env.INFINITY_CONTEXT_PROOF_REQUIRED_ADAPTERS),
-    ...csvPolicy("requiredRetrievalSources", env.INFINITY_CONTEXT_PROOF_REQUIRED_RETRIEVAL_SOURCES),
-    requireGitCommit: parseBoolean(env.INFINITY_CONTEXT_PROOF_REQUIRE_GIT_COMMIT, false),
-    requirePackageVersion: parseBoolean(env.INFINITY_CONTEXT_PROOF_REQUIRE_PACKAGE_VERSION, false),
-  };
-}
-
-function numberPolicy(outputKey, value, parse) {
-  const parsed = parse(value);
-
-  return parsed === undefined ? {} : { [outputKey]: parsed };
-}
-
-function csvPolicy(outputKey, value) {
-  if (value === undefined) {
-    return {};
+function proofPolicyConfig(env) {
+  try {
+    return buildFullMemoryProofArtifactPolicyFromEnv(env);
+  } catch (error) {
+    process.stderr.write(`${errorMessage(error)}\n`);
+    process.exit(2);
   }
-  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
-
-  return items.length === 0 ? {} : { [outputKey]: items };
 }
 
-function parseUnitInterval(value) {
-  const parsed = parseNonNegativeNumber(value);
-
-  return parsed !== undefined && parsed <= 1 ? parsed : undefined;
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }

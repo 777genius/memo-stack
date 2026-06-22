@@ -1,5 +1,7 @@
 export { runFullMemoryProof } from "./full-memory-proof.js";
 export type { FullMemoryProofOptions, FullMemoryProofReport } from "./full-memory-proof.js";
+export { buildFullMemoryProofArtifactPolicyFromEnv } from "./proof-policy.js";
+export type { FullMemoryProofArtifactPolicyConfig } from "./proof-policy.js";
 export {
   assertFullMemoryProofArtifact,
   buildFullMemoryProofArtifact,
