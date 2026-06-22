@@ -205,6 +205,88 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "ocr текст написано надпись экран изображение визуальный",
         "visual_text_evidence_bridge",
     ),
+    (
+        frozenset({"latest"}),
+        (
+            "latest current active newest recent updated now valid not stale "
+            "актуальный текущий последний"
+        ),
+        "current_state_temporal_bridge",
+    ),
+    (
+        frozenset({"current"}),
+        (
+            "latest current active newest recent updated now valid not stale "
+            "актуальный текущий последний"
+        ),
+        "current_state_temporal_bridge",
+    ),
+    (
+        frozenset({"changed"}),
+        (
+            "changed change updated now before after previous current old new "
+            "superseded replaced difference"
+        ),
+        "change_over_time_bridge",
+    ),
+    (
+        frozenset({"change"}),
+        (
+            "changed change updated now before after previous current old new "
+            "superseded replaced difference"
+        ),
+        "change_over_time_bridge",
+    ),
+    (
+        frozenset({"updated"}),
+        "changed change updated latest current previous superseded replaced difference",
+        "change_over_time_bridge",
+    ),
+    (
+        frozenset({"after"}),
+        "after later following post meeting call decision follow up next",
+        "after_event_temporal_bridge",
+    ),
+    (
+        frozenset({"before"}),
+        "before earlier prior previous previous state old initial",
+        "before_event_temporal_bridge",
+    ),
+    (
+        frozenset({"актуальн"}),
+        "актуальный текущий последний сейчас обновлен действует не устаревший latest current",
+        "current_state_temporal_bridge",
+    ),
+    (
+        frozenset({"последн"}),
+        "последний актуальный текущий сейчас обновлен latest current recent",
+        "current_state_temporal_bridge",
+    ),
+    (
+        frozenset({"обновлен"}),
+        "изменилось обновилось последний текущий предыдущий старый новый replaced superseded",
+        "change_over_time_bridge",
+    ),
+    (
+        frozenset({"изменилось"}),
+        "изменилось изменили стало раньше сейчас до после предыдущий текущий старый новый",
+        "change_over_time_bridge",
+    ),
+    (
+        frozenset({"после"}),
+        "после позже затем встреча созвон решение follow up next after",
+        "after_event_temporal_bridge",
+    ),
+    (
+        frozenset({"до"}),
+        "до раньше перед предыдущий начальный старый before prior previous",
+        "before_event_temporal_bridge",
+    ),
+    (
+        frozenset({"устаревш"}),
+        "устаревший старый superseded replaced previous not current актуальный текущий",
+        "stale_state_temporal_bridge",
+    ),
 )
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 _CAPITALIZED_IDENTITY_STOPWORDS = frozenset(

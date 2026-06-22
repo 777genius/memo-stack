@@ -144,6 +144,55 @@ def test_query_expansion_covers_russian_multimodal_evidence_bridges() -> None:
     assert "текст написано" in screenshot_expansion
 
 
+def test_query_expansion_covers_temporal_change_bridges() -> None:
+    latest = build_query_expansion_plan("What is the latest current Atlas decision?")
+    changed = build_query_expansion_plan("What changed after the meeting with Alex?")
+    before = build_query_expansion_plan("What was the plan before the call?")
+
+    assert "latest current active newest" in _expansion_query(
+        latest,
+        "current_state_temporal_bridge",
+    )
+    assert latest.diagnostics()["query_expansion_reasons"].count(
+        "current_state_temporal_bridge"
+    ) == 1
+    assert "changed change updated now" in _expansion_query(
+        changed,
+        "change_over_time_bridge",
+    )
+    assert "after later following" in _expansion_query(
+        changed,
+        "after_event_temporal_bridge",
+    )
+    assert "before earlier prior" in _expansion_query(
+        before,
+        "before_event_temporal_bridge",
+    )
+
+
+def test_query_expansion_covers_russian_temporal_change_bridges() -> None:
+    current = build_query_expansion_plan("Какое актуальное решение по проекту Атлас?")
+    changed = build_query_expansion_plan("Что изменилось после встречи с Алексом?")
+    stale = build_query_expansion_plan("Устаревшее не учитывать, что сейчас актуально?")
+
+    assert "актуальный текущий последний" in _expansion_query(
+        current,
+        "current_state_temporal_bridge",
+    )
+    assert "изменилось изменили стало" in _expansion_query(
+        changed,
+        "change_over_time_bridge",
+    )
+    assert "после позже затем" in _expansion_query(
+        changed,
+        "after_event_temporal_bridge",
+    )
+    assert "устаревший старый" in _expansion_query(
+        stale,
+        "stale_state_temporal_bridge",
+    )
+
+
 def test_best_query_relevance_uses_expansion_for_low_overlap_evidence() -> None:
     plan = build_query_expansion_plan("Where did Caroline move from 4 years ago?")
 
