@@ -1307,6 +1307,58 @@ def test_public_memory_benchmark_indexes_official_locomo_observations(
     assert result["ok"] is True
 
 
+def test_public_memory_benchmark_recalls_locomo_classical_music_preference(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-music-preference-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-music-preference-mini",
+                    "conversation": {
+                        "session_15": [
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D15:28",
+                                "text": (
+                                    "I'm a fan of both classical like Bach and Mozart, "
+                                    "as well as modern music like Ed Sheeran's Perfect."
+                                ),
+                            },
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D15:29",
+                                "text": "I usually listen to podcasts instead.",
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                'Would Melanie likely enjoy the song "The Four '
+                                'Seasons" by Vivaldi?'
+                            ),
+                            "answer": "Yes; it's classical music",
+                            "evidence": ["D15:28"],
+                            "category": 3,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
 def test_public_memory_benchmark_links_observations_to_related_locomo_turn_ids(
     tmp_path: Path,
 ) -> None:

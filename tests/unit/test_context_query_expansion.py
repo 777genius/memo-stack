@@ -395,6 +395,23 @@ def test_best_query_relevance_uses_specific_outdoor_nature_memory_bridge() -> No
     assert relevance.distinctive_term_hits >= 6
 
 
+def test_best_query_relevance_bridges_classical_music_preferences() -> None:
+    plan = build_query_expansion_plan(
+        'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    )
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D15:28 Melanie: I'm a fan of both classical like Bach and Mozart, "
+            "as well as modern music like Ed Sheeran's Perfect."
+        ),
+    )
+
+    assert reason == "classical_music_preference_bridge"
+    assert relevance.distinctive_term_hits >= 4
+
+
 def test_keyword_chunk_score_separates_stronger_evidence_from_loose_match() -> None:
     query = (
         "Melanie camping trip campfire meteor shower nature outdoors"

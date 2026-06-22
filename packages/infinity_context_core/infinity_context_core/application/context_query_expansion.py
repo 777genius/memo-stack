@@ -176,6 +176,16 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "adverse_trip_bridge",
     ),
     (
+        frozenset({"song"}),
+        "music classical composer bach mozart vivaldi orchestra symphony artist",
+        "classical_music_preference_bridge",
+    ),
+    (
+        frozenset({"music"}),
+        "music classical composer bach mozart vivaldi orchestra symphony artist",
+        "classical_music_preference_bridge",
+    ),
+    (
         frozenset({"screenshot"}),
         "ocr detected text written label title screen image visual текст написано",
         "visual_text_evidence_bridge",
