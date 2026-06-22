@@ -148,6 +148,50 @@ export interface BuildMemoryBriefResult {
   readonly diagnostics: MemoryBriefDiagnostics;
 }
 
+export interface SeedMemoryFactInput extends SingleScopeInput, RequestControls {
+  readonly text: string;
+  readonly sourceRefs?: readonly SourceRef[];
+  readonly idempotencyKey?: string;
+  readonly kind?: string;
+  readonly classification?: string;
+  readonly category?: string;
+  readonly tags?: readonly string[];
+  readonly ttlPolicy?: string;
+}
+
+export interface SeedMemoryAndBuildBriefInput extends SingleScopeInput, RequestControls {
+  readonly facts?: readonly SeedMemoryFactInput[];
+  readonly idempotencyKeyPrefix?: string;
+  readonly sourceType?: string;
+  readonly sourceIdPrefix?: string;
+  readonly topology?: WorkflowStepOptions<EnsureMemoryTopologyInput>;
+  readonly outboxDrain?: WorkflowStepOptions<WaitForOutboxDrainInput>;
+  readonly brief: BuildMemoryBriefInput;
+}
+
+export interface SeedMemoryDiagnostics {
+  readonly total: number;
+  readonly remembered: number;
+  readonly factIds: readonly string[];
+  readonly warnings: readonly string[];
+}
+
+export interface SeedMemoryAndBuildBriefDiagnostics {
+  readonly ok: boolean;
+  readonly seededFactsOk: boolean;
+  readonly outboxDrainOk: boolean | null;
+  readonly warnings: readonly string[];
+}
+
+export interface SeedMemoryAndBuildBriefResult {
+  readonly topology?: EnsureMemoryTopologyResult;
+  readonly facts: readonly ApiEnvelope<FactRecord>[];
+  readonly outboxDrain?: OutboxDrainResult;
+  readonly brief: BuildMemoryBriefResult;
+  readonly seed: SeedMemoryDiagnostics;
+  readonly diagnostics: SeedMemoryAndBuildBriefDiagnostics;
+}
+
 export interface RunMemorySummaryLoopInput extends RequestControls {
   readonly topology?: WorkflowStepOptions<EnsureMemoryTopologyInput>;
   readonly readiness?: WorkflowStepOptions<CheckFullMemoryReadinessInput>;
@@ -850,6 +894,47 @@ export class MemoryWorkflows {
     };
   }
 
+  async seedMemoryAndBuildBrief(input: SeedMemoryAndBuildBriefInput): Promise<SeedMemoryAndBuildBriefResult> {
+    const topology = isEnabled(input.topology, false)
+      ? await this.ensureMemoryTopology(withWorkflowControls(
+          input,
+          requiredStepOptions(input.topology, "seedMemoryAndBuildBrief topology requires options"),
+        ))
+      : undefined;
+    const facts = await this.seedMemoryFacts(input);
+    const outboxDrain = isEnabled(input.outboxDrain, false)
+      ? await diagnosticsResource(this.resources, "seedMemoryAndBuildBrief outboxDrain")
+        .waitForOutboxDrain(withWorkflowControls(input, stepOptions(input.outboxDrain)))
+      : undefined;
+    const brief = await this.buildMemoryBrief(withWorkflowControls(input, input.brief));
+    const outboxDrainOk = outboxDrain === undefined
+      ? null
+      : outboxDrain.diagnostics.blocking_count <= outboxDrain.diagnostics.max_blocking_items;
+    const seed = seedMemoryDiagnostics(input, facts);
+    const warnings = uniqueStrings([
+      ...(topology?.diagnostics.warnings ?? []),
+      ...seed.warnings,
+      ...(outboxDrain !== undefined && !outboxDrainOk
+        ? [`outbox still has ${outboxDrain.diagnostics.blocking_count} blocking item(s)`]
+        : []),
+      ...brief.diagnostics.warnings,
+    ]);
+
+    return {
+      ...(topology ? { topology } : {}),
+      facts,
+      ...(outboxDrain ? { outboxDrain } : {}),
+      brief,
+      seed,
+      diagnostics: {
+        ok: seed.remembered === seed.total && (outboxDrainOk ?? true),
+        seededFactsOk: seed.remembered === seed.total,
+        outboxDrainOk,
+        warnings,
+      },
+    };
+  }
+
   async runMemorySummaryLoop(input: RunMemorySummaryLoopInput): Promise<RunMemorySummaryLoopResult> {
     const topology = isEnabled(input.topology, false)
       ? await this.ensureMemoryTopology(withWorkflowControls(
@@ -913,6 +998,32 @@ export class MemoryWorkflows {
         warnings,
       },
     };
+  }
+
+  private async seedMemoryFacts(input: SeedMemoryAndBuildBriefInput): Promise<readonly ApiEnvelope<FactRecord>[]> {
+    const seeds = [...(input.facts ?? [])];
+    if (seeds.length > 100) {
+      throw new ValueError("seedMemoryAndBuildBrief supports at most 100 seed facts");
+    }
+
+    const remembered: ApiEnvelope<FactRecord>[] = [];
+    for (const [index, seed] of seeds.entries()) {
+      const scopedSeed = withWorkflowControls(input, seed);
+      remembered.push(await this.resources.facts.rememberFact({
+        ...seedFactScopeInput(input, seed),
+        ...workflowControls(scopedSeed),
+        text: seed.text,
+        kind: seed.kind ?? "memory_seed",
+        classification: seed.classification ?? "internal",
+        category: seed.category ?? "memory_seed",
+        tags: seed.tags ?? ["memory_seed"],
+        ttlPolicy: seed.ttlPolicy ?? "durable",
+        sourceRefs: seed.sourceRefs ?? seedMemorySourceRefs(input, index),
+        idempotencyKey: seedMemoryIdempotencyKey(input, seed, index),
+      }));
+    }
+
+    return remembered;
   }
 
   async checkFullMemoryReadiness(
@@ -1966,6 +2077,59 @@ function briefDiagnostics(
     ]),
     warnings: context.data.answer_support.warnings,
   };
+}
+
+function seedMemoryDiagnostics(
+  input: SeedMemoryAndBuildBriefInput,
+  facts: readonly ApiEnvelope<FactRecord>[],
+): SeedMemoryDiagnostics {
+  const total = input.facts?.length ?? 0;
+  return {
+    total,
+    remembered: facts.length,
+    factIds: facts.map((fact) => fact.data.id),
+    warnings: total === 0 ? ["no seed facts provided"] : [],
+  };
+}
+
+function seedFactScopeInput(
+  input: SeedMemoryAndBuildBriefInput,
+  seed: SeedMemoryFactInput,
+): SingleScopeInput {
+  return {
+    ...optional("spaceId", seed.spaceId ?? input.spaceId),
+    ...optional("memoryScopeId", seed.memoryScopeId ?? input.memoryScopeId),
+    ...optional("threadId", seed.threadId ?? input.threadId),
+    ...optional("spaceSlug", seed.spaceSlug ?? input.spaceSlug),
+    ...optional("memoryScopeExternalRef", seed.memoryScopeExternalRef ?? input.memoryScopeExternalRef),
+    ...optional("threadExternalRef", seed.threadExternalRef ?? input.threadExternalRef),
+  };
+}
+
+function seedMemoryIdempotencyKey(
+  input: SeedMemoryAndBuildBriefInput,
+  seed: SeedMemoryFactInput,
+  index: number,
+): string {
+  if (seed.idempotencyKey !== undefined) {
+    return seed.idempotencyKey;
+  }
+
+  return `${requiredWorkflowText(
+    input.idempotencyKeyPrefix,
+    "seedMemoryAndBuildBrief seed facts require idempotencyKey or idempotencyKeyPrefix",
+  )}:fact:${index}`;
+}
+
+function seedMemorySourceRefs(
+  input: SeedMemoryAndBuildBriefInput,
+  index: number,
+): readonly SourceRef[] {
+  const sourceIdPrefix = input.sourceIdPrefix ?? input.idempotencyKeyPrefix ?? "seedMemoryAndBuildBrief";
+  return [{
+    source_type: input.sourceType ?? "memory_seed",
+    source_id: `${sourceIdPrefix}:fact:${index}`,
+  }];
 }
 
 function uniqueStrings(values: readonly string[]): readonly string[] {

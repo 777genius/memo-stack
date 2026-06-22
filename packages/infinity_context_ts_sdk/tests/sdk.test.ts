@@ -1371,6 +1371,136 @@ describe("InfinityContextClient", () => {
     });
   });
 
+  it("seeds durable memory before building a memory brief", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({ data: factRecord("fact_seed_1") }),
+      jsonResponse({ data: factRecord("fact_seed_2") }),
+      jsonResponse({
+        data: {
+          counts: { done: 2 },
+          oldest_active_lag_seconds: 0,
+          items: [],
+          next_cursor: null,
+        },
+      }),
+      jsonResponse(contextResponse("seed-brief", {
+        retrieval_sources_used: ["vector"],
+        vector_query_count: 2,
+        rag_query_count: 1,
+      })),
+      jsonResponse(searchResponse({
+        retrieval_sources_used: ["graph"],
+        graph_query_count: 1,
+      })),
+      jsonResponse(digestResponse("seed-brief")),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const result = await client.workflows.seedMemoryAndBuildBrief({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents:preferences",
+      idempotencyKeyPrefix: "seed:ai-agents",
+      sourceType: "sdk-seed",
+      sourceIdPrefix: "social-monitor:seed:ai-agents",
+      headers: { "x-trace-id": "trace_seed_memory" },
+      signal: controller.signal,
+      facts: [
+        {
+          text: "User prefers concise summaries grouped by source.",
+          category: "summary_preference",
+          tags: ["summary", "source_grouping"],
+        },
+        {
+          text: "User wants Reddit evidence separated from GitHub evidence.",
+          memoryScopeExternalRef: "user:user_1",
+          idempotencyKey: "seed:ai-agents:user:fact",
+          sourceRefs: [{ source_type: "user", source_id: "user_1" }],
+          tags: ["summary", "provider_split"],
+        },
+      ],
+      outboxDrain: {
+        maxAttempts: 1,
+        pollIntervalMs: 0,
+        limit: 5,
+      },
+      brief: {
+        query: "Which summary style should today's AI agents digest use?",
+        topic: "AI agents digest preferences",
+        spaceSlug: "social-monitor:tenant:workspace",
+        memoryScopeExternalRefs: ["topic:ai-agents:preferences", "user:user_1"],
+        maxFacts: 10,
+        maxChunks: 4,
+      },
+    });
+
+    expect(result.seed).toEqual({
+      total: 2,
+      remembered: 2,
+      factIds: ["fact_seed_1", "fact_seed_2"],
+      warnings: [],
+    });
+    expect(result.diagnostics).toMatchObject({
+      ok: true,
+      seededFactsOk: true,
+      outboxDrainOk: true,
+    });
+    expect(result.brief.diagnostics.retrievalSourcesUsed).toEqual(["vector", "graph"]);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/facts",
+      "POST /v1/facts",
+      "GET /v1/diagnostics/outbox",
+      "POST /v1/context",
+      "POST /v1/search",
+      "POST /v1/digest",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual([
+      "trace_seed_memory",
+      "trace_seed_memory",
+      "trace_seed_memory",
+      "trace_seed_memory",
+      "trace_seed_memory",
+      "trace_seed_memory",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("idempotency-key"))).toEqual([
+      "seed:ai-agents:fact:0",
+      "seed:ai-agents:user:fact",
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      space_slug: "social-monitor:tenant:workspace",
+      memory_scope_external_ref: "topic:ai-agents:preferences",
+      text: "User prefers concise summaries grouped by source.",
+      kind: "memory_seed",
+      category: "summary_preference",
+      tags: ["summary", "source_grouping"],
+      ttl_policy: "durable",
+      source_refs: [{ source_type: "sdk-seed", source_id: "social-monitor:seed:ai-agents:fact:0" }],
+    });
+    expect(transport.bodies[1]).toMatchObject({
+      space_slug: "social-monitor:tenant:workspace",
+      memory_scope_external_ref: "user:user_1",
+      source_refs: [{ source_type: "user", source_id: "user_1" }],
+    });
+    expect(transport.bodies[3]).toMatchObject({
+      memory_scope_external_refs: ["topic:ai-agents:preferences", "user:user_1"],
+      query: "Which summary style should today's AI agents digest use?",
+      max_facts: 10,
+      max_chunks: 4,
+    });
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel seed brief");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+  });
+
   it("checks full memory readiness through the workflow facade", async () => {
     const controller = new AbortController();
     const transport = new RecordingTransport([

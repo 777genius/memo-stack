@@ -131,6 +131,34 @@ console.log(brief.digest?.data.rendered_markdown);
 console.log(brief.diagnostics);
 ```
 
+Use `seedMemoryAndBuildBrief` when a product needs to persist user or topic preferences, wait for projections, and immediately read the memory-shaped answer.
+
+```ts
+const seeded = await memory.workflows.seedMemoryAndBuildBrief({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:preferences",
+  idempotencyKeyPrefix: "seed:tenant_1:workspace_1:ai-agents",
+  sourceType: "social-monitor",
+  facts: [
+    { text: "User prefers concise summaries grouped by provider.", tags: ["summary", "style"] },
+    {
+      text: "User wants Reddit discussions separated from GitHub issues.",
+      memoryScopeExternalRef: "user:user_1",
+      tags: ["summary", "provider_split"],
+    },
+  ],
+  outboxDrain: { maxAttempts: 30, pollIntervalMs: 1000, throwOnFailure: true },
+  brief: {
+    query: "Which summary style should today's AI agents digest use?",
+    topic: "AI agents digest preferences",
+    spaceSlug: "social-monitor:tenant_1:workspace_1",
+    memoryScopeExternalRefs: ["topic:ai-agents:preferences", "user:user_1"],
+  },
+});
+
+console.log(seeded.seed.factIds, seeded.brief.context.data.rendered_text);
+```
+
 Use `recordSourceEvidence` for provider ingestion loops that need durable source memory, reviewable capture history and graph-aware link suggestions.
 
 ```ts
