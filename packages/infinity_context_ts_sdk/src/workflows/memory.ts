@@ -221,11 +221,23 @@ export {
   createMemoryQualityPreset,
   MEMORY_QUALITY_PRESETS,
 } from "./memory-quality-presets.js";
+export {
+  createMemoryIngestionLoopPlan,
+} from "./memory-ingestion-loop-plan.js";
 export type {
   MemoryQualityPreset,
   MemoryQualityPresetName,
   MemoryQualityPresetOverrides,
 } from "./memory-quality-presets.js";
+export type {
+  CreateMemoryIngestionLoopPlanInput,
+  MemoryIngestionLoopBriefOptions,
+  MemoryIngestionLoopPlan,
+  MemoryIngestionLoopPlanSummary,
+  MemoryIngestionLoopReadScope,
+  MemoryIngestionLoopScopeOptions,
+  MemoryIngestionLoopSourceEvidenceOptions,
+} from "./memory-ingestion-loop-plan.js";
 export type {
   MemoryWorkflowErrorData,
   RecordSourceEvidenceBatchFailure,

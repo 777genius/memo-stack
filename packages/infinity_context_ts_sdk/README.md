@@ -37,6 +37,8 @@ import {
   ReadScope,
   assertFullMemoryReady,
   assertMemoryBriefQuality,
+  assertMemorySummaryLoopPolicy,
+  createMemoryIngestionLoopPlan,
   createMemoryQualityPreset,
   createMemoryScopePlan,
   createMemorySourceEvidencePlan,
@@ -243,6 +245,43 @@ const batch = await memory.workflows.recordSourceEvidenceBatch({
 
 const batchSummary = summarizeSourceEvidenceBatch(batch);
 console.log(sourceEvidencePlan.summary.sourceTypes, batchSummary.succeeded, batchSummary.failed);
+```
+
+For product loops that already have provider findings and want one typed plan for topology, source evidence and digest generation, use `createMemoryIngestionLoopPlan`.
+
+```ts
+const ingestionPlan = createMemoryIngestionLoopPlan({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  spaceName: "Social Monitor workspace 1",
+  sourceAgent: "social-monitor",
+  query: "What matters most in AI agents today?",
+  topic: "AI agents daily digest",
+  threadExternalRef: "scan:2026-06-22",
+  headers: { "x-trace-id": "scan:2026-06-22" },
+  scope: {
+    topics: [{ slug: "ai-agents", name: "AI agents" }],
+    sources: [
+      { sourceType: "reddit", sourceId: "r/LocalLLaMA", name: "Reddit LocalLLaMA" },
+      { sourceType: "github", sourceId: "openai/openai-node", name: "GitHub openai-node" },
+    ],
+  },
+  sourceEvidence: {
+    sourceType: "reddit",
+    concurrency: 4,
+    continueOnError: true,
+    document: { classification: "public" },
+    linkSuggestions: { persist: true, limit: 5 },
+  },
+  brief: {
+    tokenBudget: 1200,
+    maxFacts: 8,
+  },
+  preset: "durable",
+  findings: providerFindings,
+});
+
+const loop = await memory.workflows.runMemorySummaryLoop(ingestionPlan.input);
+assertMemorySummaryLoopPolicy(loop, ingestionPlan.policy);
 ```
 
 For product loops that should bootstrap memory, check runtime readiness, ingest provider evidence and return a readable summary in one call, use `runMemorySummaryLoop`.

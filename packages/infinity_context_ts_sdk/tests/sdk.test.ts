@@ -11,6 +11,7 @@ import {
   assertMemoryMaintenancePolicy,
   assertMemorySnapshotTransferPolicy,
   assertMemorySummaryLoopPolicy,
+  createMemoryIngestionLoopPlan,
   createMemoryQualityPreset,
   createMemoryScopePlan,
   createMemorySourceEvidencePlan,
@@ -797,6 +798,162 @@ describe("InfinityContextClient", () => {
       sourceType: "reddit",
       findings: [{ sourceId: "post_1", text: "" }],
     })).toThrow("source evidence finding requires text or title");
+  });
+
+  it("plans a complete ingestion summary loop from provider findings", () => {
+    const plan = createMemoryIngestionLoopPlan({
+      spaceSlug: "social-monitor:tenant:workspace",
+      spaceName: "Tenant workspace",
+      sourceAgent: "social-monitor",
+      query: "What matters most in AI agents today?",
+      topic: "AI agents daily digest",
+      threadExternalRef: "scan:2026-06-22",
+      headers: { "x-trace-id": "scan:2026-06-22" },
+      scope: {
+        topics: [{ slug: "ai-agents", name: "AI agents" }],
+        sources: [{
+          sourceType: "reddit",
+          sourceId: "r/LocalLLaMA",
+          name: "Reddit LocalLLaMA",
+        }, {
+          sourceType: "github",
+          sourceId: "openai/openai-node",
+          name: "GitHub openai-node",
+        }],
+      },
+      sourceEvidence: {
+        sourceType: "reddit",
+        concurrency: 2,
+        continueOnError: true,
+        document: { classification: "public" },
+        linkSuggestions: { persist: true, limit: 5 },
+      },
+      brief: {
+        tokenBudget: 1200,
+        maxFacts: 8,
+        memoryScopeExternalRefs: ["user:user_1"],
+      },
+      preset: "durable",
+      findings: [
+        {
+          sourceId: "reddit:t3_abc",
+          title: "Reddit thread about memory agents",
+          text: "Operators want freshness, citations and source ranking.",
+        },
+        {
+          sourceType: "github",
+          sourceId: "github:issue_42",
+          title: "GitHub issue about SDK ergonomics",
+          text: "Developers want typed source evidence planning.",
+          memoryScopeExternalRef: "source:github:openai/openai-node",
+        },
+      ],
+    });
+
+    expect(plan.scope.memoryScopes).toEqual([
+      { kind: "workspace", externalRef: "workspace-global", name: "Workspace global memory" },
+      { kind: "topic", externalRef: "topic:ai-agents", name: "AI agents" },
+      { kind: "source", externalRef: "source:reddit:r/LocalLLaMA", name: "Reddit LocalLLaMA" },
+      { kind: "source", externalRef: "source:github:openai/openai-node", name: "GitHub openai-node" },
+    ]);
+    expect(plan.readScope).toEqual({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRefs: [
+        "workspace-global",
+        "topic:ai-agents",
+        "source:reddit:r/LocalLLaMA",
+        "source:github:openai/openai-node",
+        "user:user_1",
+      ],
+      threadExternalRef: "scan:2026-06-22",
+    });
+    expect(plan.sourceEvidence.batch).toMatchObject({
+      headers: { "x-trace-id": "scan:2026-06-22" },
+      concurrency: 2,
+      continueOnError: true,
+    });
+    expect(plan.sourceEvidence.items[0]).toMatchObject({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "source:reddit:r/LocalLLaMA",
+      threadExternalRef: "scan:2026-06-22",
+      sourceAgent: "social-monitor",
+      sourceType: "reddit",
+      sourceId: "reddit:t3_abc",
+      idempotencyKey: "scan:2026-06-22:reddit:reddit:t3_abc",
+      document: { classification: "public" },
+      linkSuggestions: { persist: true, limit: 5 },
+    });
+    expect(plan.sourceEvidence.items[1]).toMatchObject({
+      memoryScopeExternalRef: "source:github:openai/openai-node",
+      sourceType: "github",
+      sourceId: "github:issue_42",
+      idempotencyKey: "scan:2026-06-22:github:github:issue_42",
+    });
+    expect(plan.summaryLoop.input).toMatchObject({
+      headers: { "x-trace-id": "scan:2026-06-22" },
+      topology: plan.scope.topology,
+      sourceEvidence: plan.sourceEvidence.batch,
+      outboxDrain: { throwOnFailure: true },
+      brief: {
+        query: "What matters most in AI agents today?",
+        topic: "AI agents daily digest",
+        spaceSlug: "social-monitor:tenant:workspace",
+        memoryScopeExternalRefs: [
+          "workspace-global",
+          "topic:ai-agents",
+          "source:reddit:r/LocalLLaMA",
+          "source:github:openai/openai-node",
+          "user:user_1",
+        ],
+        threadExternalRef: "scan:2026-06-22",
+        tokenBudget: 1200,
+        maxFacts: 8,
+        includeSearch: true,
+        includeDigest: true,
+      },
+    });
+    expect(plan.policy).toMatchObject({
+      requireReadiness: true,
+      requireSourceEvidence: true,
+      requireOutboxDrain: true,
+      requireQuality: true,
+    });
+    expect(plan.summary).toEqual({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeCount: 4,
+      findingCount: 2,
+      sourceTypes: ["reddit", "github"],
+      readScopeExternalRefs: [
+        "workspace-global",
+        "topic:ai-agents",
+        "source:reddit:r/LocalLLaMA",
+        "source:github:openai/openai-node",
+        "user:user_1",
+      ],
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(Object.isFrozen(plan.readScope.memoryScopeExternalRefs)).toBe(true);
+  });
+
+  it("validates ingestion loop plan identifiers", () => {
+    expect(() => createMemoryIngestionLoopPlan({
+      spaceSlug: "",
+      sourceAgent: "social-monitor",
+      query: "Daily digest",
+      findings: [],
+    })).toThrow("createMemoryIngestionLoopPlan requires spaceSlug");
+    expect(() => createMemoryIngestionLoopPlan({
+      spaceSlug: "workspace",
+      sourceAgent: "",
+      query: "Daily digest",
+      findings: [],
+    })).toThrow("createMemoryIngestionLoopPlan requires sourceAgent");
+    expect(() => createMemoryIngestionLoopPlan({
+      spaceSlug: "workspace",
+      sourceAgent: "social-monitor",
+      query: "",
+      findings: [],
+    })).toThrow("createMemoryIngestionLoopPlan requires query");
   });
 
   it("runs a non-mutating runtime canary against full memory retrieval", async () => {
