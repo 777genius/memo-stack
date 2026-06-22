@@ -23,6 +23,8 @@ const report = await runFullMemoryProof({
   requireFullMemory,
   pollAttempts: parsePositiveInteger(env.INFINITY_CONTEXT_PROOF_POLL_ATTEMPTS),
   pollDelayMs: parsePositiveInteger(env.INFINITY_CONTEXT_PROOF_POLL_DELAY_MS),
+  outboxDrainAttempts: parsePositiveInteger(env.INFINITY_CONTEXT_PROOF_OUTBOX_DRAIN_ATTEMPTS),
+  outboxDrainDelayMs: parsePositiveInteger(env.INFINITY_CONTEXT_PROOF_OUTBOX_DRAIN_DELAY_MS),
 });
 
 const serialized = `${JSON.stringify(report, null, 2)}\n`;

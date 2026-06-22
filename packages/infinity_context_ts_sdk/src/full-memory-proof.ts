@@ -12,6 +12,7 @@ import {
   summarizeSourceEvidenceBatch,
   type RecordSourceEvidenceBatchSummary,
 } from "./workflows/memory.js";
+import type { OutboxDrainDiagnostics } from "./resources/diagnostics.js";
 import type {
   AnchorRecord,
   DocumentRecord,
@@ -26,6 +27,8 @@ export interface FullMemoryProofOptions {
   readonly requireFullMemory?: boolean | undefined;
   readonly pollAttempts?: number | undefined;
   readonly pollDelayMs?: number | undefined;
+  readonly outboxDrainAttempts?: number | undefined;
+  readonly outboxDrainDelayMs?: number | undefined;
   readonly sleep?: ((ms: number) => Promise<void>) | undefined;
   readonly now?: (() => Date) | undefined;
 }
@@ -51,6 +54,7 @@ export interface FullMemoryProofReport {
     readonly memoryInspectionReadable: boolean;
     readonly maintenancePlanReadable: boolean;
     readonly operationsConsoleReadable: boolean;
+    readonly outboxDrained: boolean;
     readonly usageReadable: boolean;
     readonly snapshotPreviewSucceeded: boolean;
     readonly derivedRetrievalUsed: boolean;
@@ -77,6 +81,7 @@ export interface FullMemoryProofReport {
     readonly maintenanceActionableCount: number;
     readonly maintenanceIssueCount: number;
     readonly operationsDiagnostics: JsonObject;
+    readonly outboxDrainDiagnostics: OutboxDrainDiagnostics;
     readonly usageResourceCount: number;
     readonly snapshotPreview: JsonObject;
     readonly sourceEvidenceBatchSummary: RecordSourceEvidenceBatchSummary;
@@ -98,6 +103,8 @@ export interface FullMemoryProofReport {
 
 const defaultPollAttempts = 6;
 const defaultPollDelayMs = 2_000;
+const defaultOutboxDrainAttempts = 12;
+const defaultOutboxDrainDelayMs = 1_000;
 
 export async function runFullMemoryProof(options: FullMemoryProofOptions): Promise<FullMemoryProofReport> {
   const now = options.now ?? (() => new Date());
@@ -317,6 +324,13 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     kind: "project",
     limit: 10,
   });
+  const outboxDrain = await options.client.diagnostics.waitForOutboxDrain({
+    limit: 100,
+    maxAttempts: positiveIntegerOr(options.outboxDrainAttempts, defaultOutboxDrainAttempts),
+    pollIntervalMs: positiveIntegerOr(options.outboxDrainDelayMs, defaultOutboxDrainDelayMs),
+    throwOnFailure: true,
+    ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
+  });
   const memoryBrowser = await options.client.readModels.getMemoryBrowser({
     spaceSlug,
     memoryScopeExternalRef: "topic:full-memory-proof:feedback",
@@ -401,6 +415,8 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       "topic:full-memory-proof:feedback" && !memoryInspection.inspection.partial,
     maintenancePlanReadable: maintenancePlan.diagnostics.issues.length === 0,
     operationsConsoleReadable: operationsConsole.data.scope !== null,
+    outboxDrained: outboxDrain.diagnostics.blocking_count <= outboxDrain.diagnostics.max_blocking_items &&
+      outboxDrain.diagnostics.failure_count === 0,
     usageReadable: usage.data.space_id === space.id,
     snapshotPreviewSucceeded: jsonObjectField(snapshotTransfer.preview, "data") !== undefined,
   };
@@ -444,6 +460,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       maintenanceActionableCount: maintenancePlan.summary.totalActionable,
       maintenanceIssueCount: maintenancePlan.diagnostics.issues.length,
       operationsDiagnostics: operationsConsole.data.diagnostics,
+      outboxDrainDiagnostics: outboxDrain.diagnostics,
       usageResourceCount: usage.data.resources.length,
       snapshotPreview: jsonObjectField(snapshotTransfer.preview, "data") ?? {},
       sourceEvidenceBatchSummary,

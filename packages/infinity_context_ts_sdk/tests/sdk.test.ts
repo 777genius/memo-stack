@@ -2184,6 +2184,14 @@ describe("InfinityContextClient", () => {
       jsonResponse({ data: [] }),
       jsonResponse({
         data: {
+          counts: { pending: 0, retry_pending: 0, done: 12 },
+          oldest_active_lag_seconds: null,
+          items: [],
+          next_cursor: null,
+        },
+      }),
+      jsonResponse({
+        data: {
           generated_at: "2026-06-06T00:00:00.000Z",
           memory_scope: scopeRecord("scope_topic", "topic:full-memory-proof:feedback"),
           facts: [factRecord("fact_feedback")],
@@ -2335,6 +2343,7 @@ describe("InfinityContextClient", () => {
       memoryInspectionReadable: true,
       maintenancePlanReadable: true,
       operationsConsoleReadable: true,
+      outboxDrained: true,
       usageReadable: true,
       snapshotPreviewSucceeded: true,
       derivedRetrievalUsed: true,
@@ -2357,6 +2366,11 @@ describe("InfinityContextClient", () => {
     expect(report.observed.memoryInspectionSections).toContain("runtimeDiagnostics");
     expect(report.observed.maintenanceActionableCount).toBe(3);
     expect(report.observed.maintenanceIssueCount).toBe(0);
+    expect(report.observed.outboxDrainDiagnostics).toMatchObject({
+      attempts: 1,
+      blocking_count: 0,
+      failure_count: 0,
+    });
     expect(report.observed.usageResourceCount).toBe(0);
     expect(report.retrieval.vector.queryCount).toBe(4);
     expect(report.retrieval.graph.queryCount).toBe(3);
@@ -2389,6 +2403,7 @@ describe("InfinityContextClient", () => {
       "POST /v1/anchors",
       "POST /v1/anchors/backfill",
       "GET /v1/anchors/merge-suggestions",
+      "GET /v1/diagnostics/outbox",
       "GET /v1/memory-browser",
       "GET /v1/operations-console",
       "GET /v1/memory-browser",

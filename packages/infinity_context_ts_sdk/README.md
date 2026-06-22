@@ -574,8 +574,10 @@ Useful optional env:
 - `INFINITY_CONTEXT_PROOF_RUN_ID`: stable run id for repeatable idempotency keys.
 - `INFINITY_CONTEXT_PROOF_OUTPUT`: write the JSON evidence report to a file.
 - `INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY=false`: allow lite/local mode while still proving the SDK write/read loop.
+- `INFINITY_CONTEXT_PROOF_OUTBOX_DRAIN_ATTEMPTS`: override attempts for waiting on projection/outbox drain.
+- `INFINITY_CONTEXT_PROOF_OUTBOX_DRAIN_DELAY_MS`: override delay between projection/outbox drain checks.
 
-The report fails when the durable SDK loop cannot prove write/read/workflow/operations/export coverage. In full mode it also fails when Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval.
+The report fails when the durable SDK loop cannot prove write/read/workflow/operations/export coverage or when outbox projections do not drain before read-model checks. In full mode it also fails when Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval.
 
 ## Maintainer parity check
 

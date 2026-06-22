@@ -60,7 +60,6 @@ function sleepWithSignal(ms: number, signal: AbortSignal | undefined): Promise<v
       cleanup();
       resolve();
     }, ms);
-    timeout.unref?.();
 
     const onAbort = () => {
       cleanup();
