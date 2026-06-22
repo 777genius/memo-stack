@@ -77,6 +77,12 @@ export type {
   ContextScopeInput,
 } from "./resources/context.js";
 export type {
+  ListOutboxDiagnosticsInput,
+  OutboxDiagnosticItem,
+  OutboxDiagnosticsData,
+  OutboxDiagnosticsResponse,
+} from "./resources/diagnostics.js";
+export type {
   IngestDocumentInput,
   IngestEpisodeInput,
   ListDocumentChunksInput,

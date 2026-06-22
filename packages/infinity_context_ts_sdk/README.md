@@ -308,6 +308,12 @@ for await (const fact of memory.facts.iterateFacts(
 const chunks = await memory.documents.listAllDocumentChunks("doc_123", {
   pageLimit: 100,
 });
+
+const outboxItems = await memory.diagnostics.listAllOutboxItems({
+  pageLimit: 100,
+  maxItems: 1000,
+});
+console.log(outboxItems.filter((item) => item.status !== "done").length);
 ```
 
 ## Per-request controls

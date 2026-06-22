@@ -227,6 +227,57 @@ describe("InfinityContextClient", () => {
     ]);
   });
 
+  it("iterates diagnostics outbox items with opaque cursors", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          counts: { pending: 2 },
+          oldest_active_lag_seconds: 30,
+          items: [outboxItem(1, "pending")],
+          next_cursor: "outbox_cursor_2",
+        },
+      }),
+      jsonResponse({
+        data: {
+          counts: { pending: 1, done: 1 },
+          oldest_active_lag_seconds: 10,
+          items: [outboxItem(2, "retry_pending"), outboxItem(3, "done")],
+          next_cursor: null,
+        },
+      }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const items = await client.diagnostics.listAllOutboxItems({
+      pageLimit: 1,
+      maxItems: 2,
+      signal: controller.signal,
+      headers: { "x-worker-id": "worker_outbox" },
+    });
+
+    expect(items.map((item) => [item.id, item.status])).toEqual([
+      [1, "pending"],
+      [2, "retry_pending"],
+    ]);
+    expect(transport.requests.map((request) => request.url.toString())).toEqual([
+      "http://memory.test/v1/diagnostics/outbox?limit=1",
+      "http://memory.test/v1/diagnostics/outbox?limit=1&cursor=outbox_cursor_2",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-worker-id"))).toEqual([
+      "worker_outbox",
+      "worker_outbox",
+    ]);
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel outbox scan");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+  });
+
   it("keeps instrumentation hook failures from changing request results", async () => {
     const transport = new RecordingTransport([jsonResponse({ data: { id: "fact_1" } })]);
     const client = new InfinityContextClient({
@@ -2822,6 +2873,25 @@ function membershipRecord(id: string, spaceId: string, userId: string, role = "m
     user_id: userId,
     role,
     status: "active",
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function outboxItem(id: number, status: string) {
+  return {
+    id,
+    event_type: "fact.upsert",
+    aggregate_type: "memory_fact",
+    aggregate_id: `fact_${id}`,
+    aggregate_version: 1,
+    workload_class: "projection",
+    fairness_key: "space_1",
+    status,
+    attempt_count: status === "retry_pending" ? 1 : 0,
+    last_safe_error: null,
+    last_safe_diagnostic_code: null,
+    next_attempt_at: "2026-06-06T00:00:00.000Z",
     created_at: "2026-06-06T00:00:00.000Z",
     updated_at: "2026-06-06T00:00:00.000Z",
   };
