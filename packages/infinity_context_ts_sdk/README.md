@@ -38,6 +38,7 @@ import {
   assertFullMemoryReady,
   assertMemoryBriefQuality,
   createMemoryQualityPreset,
+  createMemorySummaryLoopPlan,
   healthyRetrievalComponents,
   MEMORY_QUALITY_PRESETS,
   retrievalDiagnostics,
@@ -322,7 +323,7 @@ const betaQuality = createMemoryQualityPreset("durable", {
   },
 });
 
-const loop = await memory.workflows.runMemorySummaryLoop({
+const plan = createMemorySummaryLoopPlan({
   sourceEvidence: {
     items: providerItems,
     concurrency: 4,
@@ -334,10 +335,12 @@ const loop = await memory.workflows.runMemorySummaryLoop({
     spaceSlug: "social-monitor:tenant_1:workspace_1",
     memoryScopeExternalRefs: ["topic:ai-agents"],
   },
-  qualityPolicy: betaQuality.brief,
+}, {
+  preset: betaQuality,
 });
 
-assertMemorySummaryLoopPolicy(loop, betaQuality.summaryLoop);
+const loop = await memory.workflows.runMemorySummaryLoop(plan.input);
+assertMemorySummaryLoopPolicy(loop, plan.policy);
 ```
 
 `MEMORY_QUALITY_PRESETS.lite` is useful for smoke tests, `durable` is the beta/MVP default, and `full` additionally requires Qdrant, Graphiti and derived vector/graph retrieval.

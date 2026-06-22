@@ -12,6 +12,7 @@ import {
   assertMemorySnapshotTransferPolicy,
   assertMemorySummaryLoopPolicy,
   createMemoryQualityPreset,
+  createMemorySummaryLoopPlan,
   evaluateMemoryBriefQuality,
   evaluateMemoryInspectionPolicy,
   evaluateMemoryMaintenancePolicy,
@@ -497,6 +498,102 @@ describe("InfinityContextClient", () => {
     });
     expect(MEMORY_QUALITY_PRESETS.full.summaryLoop.minUniqueSourceRefs).toBe(2);
     expect(MEMORY_QUALITY_PRESETS.full.proofArtifact.maxDurationMs).toBeUndefined();
+  });
+
+  it("creates preset-aligned memory summary loop plans", () => {
+    const durablePlan = createMemorySummaryLoopPlan({
+      sourceEvidence: {
+        continueOnError: true,
+        items: [],
+      },
+      brief: {
+        query: "What changed in AI agents today?",
+        spaceSlug: "workspace",
+        memoryScopeExternalRefs: ["topic:ai-agents"],
+        includeSearch: false,
+        includeDigest: false,
+      },
+      qualityPolicy: {
+        minDigestSections: 0,
+      },
+    }, {
+      preset: "durable",
+      summaryPolicy: {
+        requiredEvidenceSourceTypes: ["reddit", "github"],
+      },
+    });
+
+    expect(durablePlan.policy).toMatchObject({
+      requireReadiness: true,
+      requireSourceEvidence: true,
+      requireOutboxDrain: true,
+      requireQuality: true,
+      requiredEvidenceSourceTypes: ["reddit", "github"],
+    });
+    expect(durablePlan.input.brief).toMatchObject({
+      includeSearch: true,
+      includeDigest: true,
+    });
+    expect(durablePlan.input.qualityPolicy).toMatchObject({
+      requireSearch: true,
+      requireDigest: true,
+      minDigestSections: 0,
+    });
+    expect(durablePlan.input.readiness).toMatchObject({
+      requiredAdapters: [],
+      requiredRetrieval: [],
+      requireDerivedRetrieval: false,
+      assertReady: true,
+    });
+    expect(durablePlan.input.outboxDrain).toMatchObject({
+      throwOnFailure: true,
+    });
+    expect(Object.isFrozen(durablePlan.input.qualityPolicy)).toBe(true);
+
+    const fullPlan = createMemorySummaryLoopPlan({
+      brief: {
+        query: "Prove full memory retrieval",
+        spaceSlug: "workspace",
+        memoryScopeExternalRefs: ["topic:ai-agents"],
+        tokenBudget: 900,
+      },
+    }, {
+      preset: "full",
+    });
+
+    expect(fullPlan.input.readiness).toMatchObject({
+      query: "Prove full memory retrieval",
+      includeContextProbe: true,
+      includeSearchProbe: true,
+      spaceSlug: "workspace",
+      memoryScopeExternalRefs: ["topic:ai-agents"],
+      tokenBudget: 900,
+      requiredAdapters: ["qdrant", "graphiti"],
+      requiredRetrieval: ["vector", "graph"],
+      requireDerivedRetrieval: true,
+      assertReady: true,
+    });
+    expect(fullPlan.input.qualityPolicy).toMatchObject({
+      requireDerivedRetrieval: true,
+      requiredRetrieval: ["vector", "graph"],
+    });
+
+    const litePlan = createMemorySummaryLoopPlan({
+      brief: {
+        query: "Smoke summary",
+        spaceSlug: "workspace",
+        memoryScopeExternalRefs: ["topic:ai-agents"],
+      },
+    }, {
+      preset: "lite",
+    });
+
+    expect(litePlan.input.readiness).toBe(false);
+    expect(litePlan.input.outboxDrain).toBeUndefined();
+    expect(litePlan.policy).toMatchObject({
+      requireQuality: true,
+      minContextItems: 1,
+    });
   });
 
   it("runs a non-mutating runtime canary against full memory retrieval", async () => {

@@ -104,6 +104,9 @@ export {
   evaluateMemorySummaryLoopPolicy,
   summarizeMemorySummaryLoop,
 } from "./memory-summary-loop.js";
+export {
+  createMemorySummaryLoopPlan,
+} from "./memory-summary-loop-plan.js";
 export type {
   MemoryInspectionCounts,
   MemoryInspectionPolicy,
@@ -143,6 +146,11 @@ export type {
   MemoryMaintenanceReport,
   MemoryMaintenanceStatus,
 } from "./memory-maintenance-report.js";
+export type {
+  MemorySummaryLoopPlan,
+  MemorySummaryLoopPlanOptions,
+  MemorySummaryLoopPlanPreset,
+} from "./memory-summary-loop-plan.js";
 export type {
   MemorySummaryLoopGateReport,
   MemorySummaryLoopGateStatus,
