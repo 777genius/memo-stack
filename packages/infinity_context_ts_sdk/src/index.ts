@@ -188,6 +188,8 @@ export type {
   UserRecord,
 } from "./types.js";
 export {
+  assertMemorySummaryLoopPolicy,
+  evaluateMemorySummaryLoopPolicy,
   assertMemoryBriefQuality,
   evaluateMemoryBriefQuality,
   MemoryWorkflows,
@@ -230,6 +232,8 @@ export type {
   MemorySnapshotTransferMode,
   MemorySummaryLoopGateReport,
   MemorySummaryLoopGateStatus,
+  MemorySummaryLoopPolicy,
+  MemorySummaryLoopPolicyEvaluation,
   MemorySummaryLoopReadableSummary,
   MemorySummaryLoopReport,
   MemorySummaryLoopSourceEvidenceReport,

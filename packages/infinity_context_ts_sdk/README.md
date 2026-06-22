@@ -291,12 +291,22 @@ When `qualityPolicy` is set, the loop throws `memory.brief_quality_failed` befor
 For UI cards, CI logs or release artifacts, turn the loop result into a stable report instead of hand-assembling diagnostics in each caller.
 
 ```ts
-import { summarizeMemorySummaryLoop } from "@infinity-context/sdk";
+import { assertMemorySummaryLoopPolicy, summarizeMemorySummaryLoop } from "@infinity-context/sdk";
 
 const report = summarizeMemorySummaryLoop(loop);
 
 console.log(report.status, report.gates.quality.status, report.sourceEvidence?.successRate);
 console.log(report.summary.renderedMarkdown ?? report.summary.renderedText);
+
+assertMemorySummaryLoopPolicy(report, {
+  requireReadiness: true,
+  requireSourceEvidence: true,
+  requireOutboxDrain: true,
+  requireQuality: true,
+  minSourceEvidenceSuccessRate: 0.95,
+  minUniqueSourceRefs: 1,
+  requiredRetrieval: ["vector", "graph"],
+});
 ```
 
 The report preserves the raw workflow result separately while collecting readiness, source evidence, outbox, quality, retrieval and evidence counts into one serializable shape.

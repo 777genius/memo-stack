@@ -95,6 +95,8 @@ export {
   summarizeSourceEvidenceBatch,
 } from "./memory-source-evidence.js";
 export {
+  assertMemorySummaryLoopPolicy,
+  evaluateMemorySummaryLoopPolicy,
   summarizeMemorySummaryLoop,
 } from "./memory-summary-loop.js";
 export type {
@@ -116,6 +118,8 @@ export type {
 export type {
   MemorySummaryLoopGateReport,
   MemorySummaryLoopGateStatus,
+  MemorySummaryLoopPolicy,
+  MemorySummaryLoopPolicyEvaluation,
   MemorySummaryLoopReadableSummary,
   MemorySummaryLoopReport,
   MemorySummaryLoopSourceEvidenceReport,

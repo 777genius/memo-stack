@@ -7,7 +7,9 @@ import {
   ValueError,
   assertMemoryBriefQuality,
   assertFullMemoryReady,
+  assertMemorySummaryLoopPolicy,
   evaluateMemoryBriefQuality,
+  evaluateMemorySummaryLoopPolicy,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
   retrievalDiagnostics,
@@ -1932,6 +1934,37 @@ describe("InfinityContextClient", () => {
       warnings: [],
       errors: [],
     });
+    expect(evaluateMemorySummaryLoopPolicy(report, {
+      requireReadiness: true,
+      requireSourceEvidence: true,
+      requireOutboxDrain: true,
+      requireQuality: true,
+      minSourceEvidenceSuccessRate: 1,
+      maxSourceEvidenceFailures: 0,
+      minContextItems: 1,
+      minSearchItems: 1,
+      minUniqueSourceRefs: 1,
+      requiredSourceEvidenceTypes: ["reddit", "github"],
+      requiredEvidenceSourceTypes: ["sdk-full-memory-proof"],
+      requireDerivedRetrieval: true,
+      requiredRetrieval: ["vector", "graph"],
+    })).toMatchObject({
+      ok: true,
+      errors: [],
+    });
+    expect(() => assertMemorySummaryLoopPolicy(loop, {
+      requireReadiness: true,
+      requireSourceEvidence: true,
+      requireOutboxDrain: true,
+      requireQuality: true,
+      minDigestSections: 1,
+      minUniqueSourceRefs: 2,
+      minCitations: 1,
+      requiredEvidenceSourceTypes: ["github"],
+    })).toThrow(InfinityContextError);
+    expect(() => assertMemorySummaryLoopPolicy(loop, {
+      minDigestSections: 1,
+    })).toThrow("Memory summary loop policy failed: digest sections 0, expected at least 1");
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /v1/spaces",
       "POST /v1/spaces",
