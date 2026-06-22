@@ -8,7 +8,15 @@ import {
 } from "./diagnostics.js";
 import { InfinityContextError } from "./errors.js";
 import { ReadScope } from "./payload.js";
-import type { DocumentRecord, FactRecord, InfinityContextCapabilities, JsonObject, MemoryScopeRecord, Space } from "./types.js";
+import type {
+  AnchorRecord,
+  DocumentRecord,
+  FactRecord,
+  InfinityContextCapabilities,
+  JsonObject,
+  MemoryScopeRecord,
+  Space,
+} from "./types.js";
 
 export interface FullMemoryProofOptions {
   readonly client: InfinityContextClient;
@@ -31,6 +39,14 @@ export interface FullMemoryProofReport {
     readonly searchReturnedEvidence: boolean;
     readonly digestReturnedEvidence: boolean;
     readonly contextLinkCreated: boolean;
+    readonly captureCreated: boolean;
+    readonly suggestionBatchCreated: boolean;
+    readonly anchorCreated: boolean;
+    readonly anchorBackfillReadable: boolean;
+    readonly memoryBrowserReadable: boolean;
+    readonly operationsConsoleReadable: boolean;
+    readonly usageReadable: boolean;
+    readonly snapshotPreviewSucceeded: boolean;
     readonly derivedRetrievalUsed: boolean;
     readonly vectorHealthy: boolean;
     readonly graphHealthy: boolean;
@@ -42,6 +58,17 @@ export interface FullMemoryProofReport {
     readonly documentId: string;
     readonly episodeId: string;
     readonly contextLinkId: string;
+    readonly captureId: string;
+    readonly anchorId: string;
+  };
+  readonly observed: {
+    readonly suggestionsCreated: number;
+    readonly anchorBackfillCreated: number;
+    readonly anchorMergeSuggestionCount: number;
+    readonly memoryBrowserStats: JsonObject;
+    readonly operationsDiagnostics: JsonObject;
+    readonly usageResourceCount: number;
+    readonly snapshotPreview: JsonObject;
   };
   readonly capabilities: {
     readonly enabledAdapters: readonly string[];
@@ -157,6 +184,99 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     reason: `${runId}: SDK proof links document evidence to durable architecture fact.`,
     metadata: { run_id: runId, proof: "full-memory" },
   });
+  const capture = await options.client.captures.createCapture({
+    spaceSlug,
+    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    sourceAgent: "infinity-context-ts-sdk",
+    sourceKind: "full_memory_proof",
+    eventType: "sdk.full_memory.feedback_recorded",
+    actorRole: "system",
+    text: `${runId}: Capture proof says daily summaries should show citations, freshness and retrieval degradation.`,
+    sourceEventId: `${runId}:capture:feedback`,
+    clientInstanceId: "infinity-context-ts-sdk",
+    evidenceRefs: [{ source_type: "fact", source_id: facts[1]?.data.id ?? "unknown" }],
+    trustLevel: "high",
+    sourceAuthority: "sdk_full_memory_proof",
+    sensitivity: "medium",
+    dataClassification: "internal",
+    occurredAt: now().toISOString(),
+    metadata: { run_id: runId, proof: "full-memory" },
+    traceId: `${runId}:trace`,
+    idempotencyKey: `${runId}:capture:feedback`,
+    consolidate: false,
+  });
+  const suggestions = await options.client.suggestions.createSuggestionsBatch({
+    spaceSlug,
+    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    continueOnError: false,
+    items: [
+      {
+        candidateText: `${runId}: Summaries should prioritize primary-source citations and stale-source markers.`,
+        safeReason: `${runId}: full memory proof suggestion from captured feedback`,
+        kind: "summary_preference",
+        sourceRefs: [{ source_type: "capture", source_id: capture.data.id }],
+        trustLevel: "high",
+        confidence: "high",
+        operation: "add",
+        category: "summary_preference",
+        tags: ["full-memory-proof", "summary-feedback"],
+        candidateFingerprint: `${runId}:suggestion:summary-preference`,
+        reviewPayload: { run_id: runId, proof: "full-memory" },
+        autoApprove: false,
+      },
+    ],
+  });
+  const anchor = await ensureAnchor(options.client, {
+    spaceSlug,
+    memoryScopeExternalRef: "workspace-global",
+    kind: "project",
+    label: `${runId} full memory proof`,
+    aliases: [`${runId} memory graph`],
+    description: "SDK full memory proof anchor.",
+    confidence: "high",
+    evidenceRefs: [{ source_type: "document", source_id: document.data.id }],
+    metadata: { run_id: runId, proof: "full-memory" },
+  });
+  const anchorBackfill = await options.client.anchors.backfillAnchors({
+    spaceSlug,
+    memoryScopeExternalRef: "workspace-global",
+    limitPerSource: 25,
+  });
+  const anchorMergeSuggestions = await options.client.anchors.listAnchorMergeSuggestions({
+    spaceSlug,
+    memoryScopeExternalRef: "workspace-global",
+    kind: "project",
+    limit: 10,
+  });
+  const memoryBrowser = await options.client.readModels.getMemoryBrowser({
+    spaceSlug,
+    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    limit: 50,
+    captureStatus: "active",
+    suggestionStatus: "pending",
+  });
+  const operationsConsole = await options.client.readModels.getOperationsConsole({
+    spaceSlug,
+    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    limit: 25,
+  });
+  const usage = await options.client.usage.summary({ spaceSlug });
+  const snapshotExport = await options.client.exports.exportMemoryScopeSnapshot({
+    spaceSlug,
+    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    redacted: true,
+  });
+  const snapshot = jsonObjectField(snapshotExport, "data");
+  const manifest = jsonObjectField(snapshotExport, "manifest");
+  const snapshotPreview = snapshot === undefined
+    ? undefined
+    : await options.client.exports.previewMemoryScopeSnapshotImport({
+      spaceSlug,
+      memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+      snapshot,
+      ...(manifest === undefined ? {} : { manifest }),
+      mergeStrategy: "fail_on_conflict",
+    });
 
   const query = `${runId} Qdrant Graphiti OpenAI embeddings concise summary freshness degraded retrieval`;
   const context = await pollContext(options, () =>
@@ -192,20 +312,36 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     format: "markdown",
   });
   const contextDiagnostics = context.data.diagnostics;
-  const checks = {
-    capabilitiesFullMemory,
+  const durableChecks = {
     contextReturnedEvidence: context.data.items.length > 0 || context.data.rendered_text.includes(runId),
     searchReturnedEvidence: search.data.items.length > 0,
     digestReturnedEvidence: digest.data.rendered_markdown.includes(runId) || digest.data.sections.length > 0,
     contextLinkCreated: contextLink.data.id.length > 0,
+    captureCreated: capture.data.id.length > 0,
+    suggestionBatchCreated: suggestions.data.created + suggestions.data.existing > 0,
+    anchorCreated: anchor.id.length > 0,
+    anchorBackfillReadable: Array.isArray(anchorBackfill.data.sources),
+    memoryBrowserReadable: memoryBrowser.data.memory_scope?.external_ref === "topic:full-memory-proof:feedback",
+    operationsConsoleReadable: operationsConsole.data.scope !== null,
+    usageReadable: usage.data.space_id === space.id,
+    snapshotPreviewSucceeded: jsonObjectField(snapshotPreview, "data") !== undefined,
+  };
+  const fullMemoryChecks = {
+    capabilitiesFullMemory,
     derivedRetrievalUsed: usedDerivedRetrieval(contextDiagnostics),
     vectorHealthy: healthyRetrievalComponents(contextDiagnostics, ["vector"]),
     graphHealthy: healthyRetrievalComponents(contextDiagnostics, ["graph"]),
   };
+  const checks = {
+    ...fullMemoryChecks,
+    ...durableChecks,
+  };
   const requireFullMemory = options.requireFullMemory ?? true;
+  const durableOk = Object.values(durableChecks).every(Boolean);
+  const fullMemoryOk = Object.values(fullMemoryChecks).every(Boolean);
 
   return {
-    ok: Object.values(checks).every(Boolean) || (!requireFullMemory && checks.contextReturnedEvidence),
+    ok: durableOk && (requireFullMemory ? fullMemoryOk : true),
     runId,
     spaceSlug,
     memoryScopeExternalRefs,
@@ -217,6 +353,17 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       documentId: document.data.id,
       episodeId: stringField(episode.data, "id") ?? stringField(episode.data, "episode_id") ?? "unknown",
       contextLinkId: contextLink.data.id,
+      captureId: capture.data.id,
+      anchorId: anchor.id,
+    },
+    observed: {
+      suggestionsCreated: suggestions.data.created + suggestions.data.existing,
+      anchorBackfillCreated: anchorBackfill.data.created,
+      anchorMergeSuggestionCount: anchorMergeSuggestions.data.length,
+      memoryBrowserStats: memoryBrowser.data.stats,
+      operationsDiagnostics: operationsConsole.data.diagnostics,
+      usageResourceCount: usage.data.resources.length,
+      snapshotPreview: jsonObjectField(snapshotPreview, "data") ?? {},
     },
     capabilities: {
       enabledAdapters: capabilities.enabled_adapters ?? [],
@@ -284,6 +431,51 @@ async function ensureMemoryScope(
   }
 }
 
+async function ensureAnchor(
+  client: InfinityContextClient,
+  input: {
+    readonly spaceSlug: string;
+    readonly memoryScopeExternalRef: string;
+    readonly kind: string;
+    readonly label: string;
+    readonly aliases?: readonly string[];
+    readonly description?: string;
+    readonly confidence?: string;
+    readonly evidenceRefs?: readonly { readonly source_type: string; readonly source_id: string }[];
+    readonly metadata?: JsonObject;
+  },
+): Promise<AnchorRecord> {
+  const existing = await client.anchors.listAnchors({
+    spaceSlug: input.spaceSlug,
+    memoryScopeExternalRef: input.memoryScopeExternalRef,
+    kind: input.kind,
+    limit: 500,
+  });
+  const found = existing.data.find((anchor) => anchor.label === input.label);
+  if (found !== undefined) {
+    return found;
+  }
+
+  try {
+    return (await client.anchors.createAnchor(input)).data;
+  } catch (error) {
+    if (!isConflict(error)) {
+      throw error;
+    }
+    const afterConflict = await client.anchors.listAnchors({
+      spaceSlug: input.spaceSlug,
+      memoryScopeExternalRef: input.memoryScopeExternalRef,
+      kind: input.kind,
+      limit: 500,
+    });
+    const created = afterConflict.data.find((anchor) => anchor.label === input.label);
+    if (created === undefined) {
+      throw error;
+    }
+    return created;
+  }
+}
+
 async function pollContext(
   options: FullMemoryProofOptions,
   build: () => Promise<ContextEnvelope<ContextBundleData>>,
@@ -333,6 +525,16 @@ function stringField(value: JsonObject, key: string): string | undefined {
   const item = value[key];
 
   return typeof item === "string" ? item : undefined;
+}
+
+function jsonObjectField(value: JsonObject | undefined, key: string): JsonObject | undefined {
+  const item = value?.[key];
+
+  return isJsonObject(item) ? item : undefined;
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function defaultSleep(ms: number): Promise<void> {

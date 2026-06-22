@@ -331,6 +331,88 @@ describe("InfinityContextClient", () => {
       jsonResponse({ data: { id: "doc_1", title: "SDK proof doc", status: "processed" } }),
       jsonResponse({ data: { id: "episode_1" } }),
       jsonResponse({ data: contextLinkRecord("link_1") }),
+      jsonResponse({
+        data: {
+          ...captureRecord("capture_1"),
+          duplicate: false,
+          created_suggestions: 0,
+          suggestion_ids: [],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({
+        data: {
+          created: 1,
+          existing: 0,
+          failed: 0,
+          stopped: false,
+          results: [{ index: 0, status: "created", suggestion: memorySuggestionRecord("suggestion_1") }],
+        },
+      }, 201),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: anchorRecord("anchor_1", "sdk-proof full memory proof") }),
+      jsonResponse({
+        data: {
+          anchors: [anchorRecord("anchor_1", "sdk-proof full memory proof")],
+          created: 1,
+          updated: 0,
+          sources: [{ source_type: "fact", scanned: 2, observed: 1, skipped_conflicts: 0 }],
+          diagnostics: { scanned_sources: 1 },
+        },
+      }),
+      jsonResponse({ data: [] }),
+      jsonResponse({
+        data: {
+          generated_at: "2026-06-06T00:00:00.000Z",
+          memory_scope: scopeRecord("scope_topic", "topic:full-memory-proof:feedback"),
+          facts: [factRecord("fact_feedback")],
+          episodes: [],
+          documents: [],
+          chunks: [],
+          extraction_jobs: [],
+          threads: [],
+          captures: [captureRecord("capture_1")],
+          assets: [],
+          anchors: [],
+          context_links: [],
+          context_link_suggestions: [],
+          stats: { facts: 1, captures: 1 },
+          visual_summary: { status: "ready" },
+          quick_actions: [],
+          diagnostics: { browser_version: "memory-browser-v1" },
+        },
+      }),
+      jsonResponse({
+        data: {
+          generated_at: "2026-06-06T00:00:00.000Z",
+          scope: { space_id: "space_1", memory_scope_id: "scope_topic" },
+          extraction_status_counts: {},
+          link_suggestion_status_counts: { pending: 1 },
+          extraction_jobs: [],
+          context_link_suggestions: [],
+          diagnostics: { console_version: "memory-operations-console-v1" },
+        },
+      }),
+      jsonResponse({
+        data: {
+          space_id: "space_1",
+          plan: {
+            tier: "beta",
+            display_name: "Beta",
+            media_analysis_seconds_per_month: 3600,
+          },
+          resources: [],
+        },
+      }),
+      jsonResponse({
+        data: { schema_version: "memory_scope_snapshot.v1", facts: [] },
+        status: "ok",
+        counts: { facts: 1 },
+        redacted: true,
+        manifest: { snapshot_sha256: "snapshot_sha" },
+      }),
+      jsonResponse({ data: { dry_run: true, created: 0, updated: 0, conflicts: [] } }),
       jsonResponse(contextResponse("sdk-proof", { vector_query_count: 4, graph_query_count: 3 })),
       jsonResponse(searchResponse({ vector_query_count: 4, graph_query_count: 3 })),
       jsonResponse(digestResponse("sdk-proof")),
@@ -356,10 +438,23 @@ describe("InfinityContextClient", () => {
       searchReturnedEvidence: true,
       digestReturnedEvidence: true,
       contextLinkCreated: true,
+      captureCreated: true,
+      suggestionBatchCreated: true,
+      anchorCreated: true,
+      anchorBackfillReadable: true,
+      memoryBrowserReadable: true,
+      operationsConsoleReadable: true,
+      usageReadable: true,
+      snapshotPreviewSucceeded: true,
       derivedRetrievalUsed: true,
       vectorHealthy: true,
       graphHealthy: true,
     });
+    expect(report.created.captureId).toBe("capture_1");
+    expect(report.created.anchorId).toBe("anchor_1");
+    expect(report.observed.suggestionsCreated).toBe(1);
+    expect(report.observed.anchorBackfillCreated).toBe(1);
+    expect(report.observed.usageResourceCount).toBe(0);
     expect(report.retrieval.vector.queryCount).toBe(4);
     expect(report.retrieval.graph.queryCount).toBe(3);
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
@@ -378,6 +473,17 @@ describe("InfinityContextClient", () => {
       "POST /v1/documents/doc_1/process",
       "POST /v1/episodes",
       "POST /v1/context-links",
+      "POST /v1/captures",
+      "POST /v1/suggestions/batch",
+      "GET /v1/anchors",
+      "POST /v1/anchors",
+      "POST /v1/anchors/backfill",
+      "GET /v1/anchors/merge-suggestions",
+      "GET /v1/memory-browser",
+      "GET /v1/operations-console",
+      "GET /v1/usage",
+      "GET /v1/export/memory_scope-snapshot",
+      "POST /v1/export/memory_scope-snapshot/preview",
       "POST /v1/context",
       "POST /v1/search",
       "POST /v1/digest",
