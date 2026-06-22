@@ -76,6 +76,89 @@ def test_query_relevance_expands_activity_category_intent() -> None:
     assert is_query_relevance_sufficient(relevance) is True
 
 
+def test_query_relevance_expands_career_intent_to_jobs_and_counseling() -> None:
+    terms = query_terms("Would Caroline pursue writing as a career option?")
+    variants_by_raw = {term.raw: set(term.variants) for term in terms}
+    relevance = score_query_relevance(
+        query="Would Caroline pursue writing as a career option?",
+        text=(
+            "D7:5 D7:9 Caroline: Caroline is looking into counseling and mental "
+            "health jobs after talking about education options."
+        ),
+    )
+
+    assert {"consider", "explore", "looking"}.issubset(variants_by_raw["pursue"])
+    assert {"job", "jobs", "work", "counseling"}.issubset(
+        variants_by_raw["career"]
+    )
+    assert relevance.unique_term_hits >= 3
+    assert relevance.distinctive_term_hits >= 3
+    assert is_query_relevance_sufficient(relevance) is True
+
+
+def test_query_relevance_expands_relocation_intent_to_home_country_context() -> None:
+    relevance = score_query_relevance(
+        query="Where did Caroline move from 4 years ago?",
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden, and reminds me of my roots."
+        ),
+    )
+
+    assert relevance.unique_term_hits >= 2
+    assert relevance.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(relevance) is True
+
+
+def test_query_relevance_expands_outdoor_preference_to_camping_context() -> None:
+    relevance = score_query_relevance(
+        query="Would Melanie be more interested in going to a national park or a theme park?",
+        text=(
+            "D10:12 Melanie: We planned a camping trip with marshmallows around "
+            "the campfire and watched the meteor shower in nature."
+        ),
+    )
+
+    assert relevance.unique_term_hits >= 2
+    assert relevance.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(relevance) is True
+
+
+def test_query_relevance_expands_adoption_intent_to_family_support() -> None:
+    relevance = score_query_relevance(
+        query="What does Melanie think about Caroline's decision to adopt?",
+        text=(
+            "D2:15 Melanie: Creating a family for those kids is lovely. You'll "
+            "be an awesome mom."
+        ),
+    )
+
+    assert relevance.unique_term_hits >= 2
+    assert relevance.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(relevance) is True
+
+
+def test_query_relevance_expands_religious_and_political_inference_terms() -> None:
+    political = score_query_relevance(
+        query="What would Caroline's political leaning likely be?",
+        text=(
+            "D12:1 Caroline: Religious conservatives made an unwelcoming comment "
+            "about her transition and LGBTQ rights."
+        ),
+    )
+    religious = score_query_relevance(
+        query="Would Caroline be considered religious?",
+        text="D14:19 Caroline: She wrote to a local church about faith and acceptance.",
+    )
+
+    assert political.unique_term_hits >= 3
+    assert political.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(political) is True
+    assert religious.unique_term_hits >= 2
+    assert religious.distinctive_term_hits >= 2
+    assert is_query_relevance_sufficient(religious) is True
+
+
 def test_query_relevance_expands_lgbtq_participation_intent() -> None:
     relevance = score_query_relevance(
         query="What LGBTQ events did Caroline participate in?",

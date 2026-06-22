@@ -135,6 +135,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             else None
         ),
     )
+    parser.add_argument(
+        "--progress-out",
+        type=Path,
+        default=(
+            Path(os.environ["MEMORY_PUBLIC_BENCHMARK_PROGRESS_OUT"])
+            if os.getenv("MEMORY_PUBLIC_BENCHMARK_PROGRESS_OUT")
+            else None
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-out",
+        type=Path,
+        default=(
+            Path(os.environ["MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_OUT"])
+            if os.getenv("MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_OUT")
+            else None
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-every-cases",
+        type=int,
+        default=int(os.getenv("MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES", "25")),
+    )
     args = parser.parse_args(argv)
     result = run_official_public_benchmark_canary(
         benchmark=args.benchmark,
@@ -148,6 +171,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         longmemeval_dataset=args.longmemeval_dataset,
         download_timeout_seconds=args.download_timeout_seconds,
         report_out=args.report_out,
+        progress_out=args.progress_out,
+        checkpoint_out=args.checkpoint_out,
+        checkpoint_every_cases=args.checkpoint_every_cases,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["ok"] else 1
@@ -166,6 +192,9 @@ def run_official_public_benchmark_canary(
     longmemeval_dataset: Path | None = None,
     download_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     report_out: Path | None = None,
+    progress_out: Path | None = None,
+    checkpoint_out: Path | None = None,
+    checkpoint_every_cases: int = 25,
 ) -> dict[str, object]:
     if max_cases < 1:
         raise ValueError("max_cases must be greater than zero")
@@ -200,6 +229,13 @@ def run_official_public_benchmark_canary(
                 max_cases=int(policy["max_cases"]),
                 min_accuracy=float(policy["min_accuracy"]),
                 case_selection_strategy=case_selection_strategy,
+                progress_out=progress_out,
+                checkpoint_out=_benchmark_checkpoint_path(
+                    checkpoint_out,
+                    benchmark=name,
+                    split=len(selected) > 1,
+                ),
+                checkpoint_every_cases=checkpoint_every_cases,
             )
             reports.append(report)
             dataset_sources[name] = _dataset_source_metadata(
@@ -276,6 +312,19 @@ def _dataset_selection(
     destination = tmp_dir / dataset.filename
     _download(dataset.url, destination, timeout_seconds=timeout_seconds)
     return DatasetSelection(path=destination, source_kind="official_download")
+
+
+def _benchmark_checkpoint_path(
+    checkpoint_out: Path | None,
+    *,
+    benchmark: str,
+    split: bool,
+) -> Path | None:
+    if checkpoint_out is None or not split:
+        return checkpoint_out
+    suffix = checkpoint_out.suffix or ".json"
+    stem = checkpoint_out.name[: -len(suffix)] if checkpoint_out.suffix else checkpoint_out.name
+    return checkpoint_out.with_name(f"{stem}.{benchmark}{suffix}")
 
 
 def _download(url: str, destination: Path, *, timeout_seconds: float) -> None:

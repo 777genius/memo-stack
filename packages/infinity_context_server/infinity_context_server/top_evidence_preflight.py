@@ -154,13 +154,19 @@ def run_top_evidence_preflight(
     checks["docker_available"] = bool(docker_path)
     _append_failure(checks, failures, "docker_available", "Docker executable is required")
 
-    openai_key_present = bool(_env_first(env, "MEMORY_OPENAI_API_KEY", "OPENAI_API_KEY"))
+    openai_key_file_present = _api_key_file_present(env)
+    openai_key_present = bool(
+        _env_first(env, "MEMORY_OPENAI_API_KEY", "OPENAI_API_KEY")
+    ) or openai_key_file_present
     checks["openai_key_present"] = openai_key_present
     _append_failure(
         checks,
         failures,
         "openai_key_present",
-        "Set MEMORY_OPENAI_API_KEY or OPENAI_API_KEY before running top evidence",
+        (
+            "Set MEMORY_OPENAI_API_KEY, OPENAI_API_KEY or "
+            "MEMORY_OPENAI_API_KEY_FILE before running top evidence"
+        ),
     )
 
     checks["multimodal_live_invalid_key_probe_enabled"] = (
@@ -466,6 +472,7 @@ def run_top_evidence_preflight(
             "multimodal_required_audio_types": sorted(multimodal_required_audio_types),
             "multimodal_skip_invalid_key_probe": multimodal_skip_invalid_key_probe,
             "multimodal_timeout_seconds": multimodal_timeout_seconds,
+            "openai_key_file_present": openai_key_file_present,
             "openai_key_present": openai_key_present,
             "public_benchmark_competitive_floor_mode": competitive_floor_mode,
             "public_benchmark_competitive_floors": {
@@ -523,6 +530,17 @@ def _dataset_file(env: Mapping[str, str], name: str) -> Path | None:
         return None
     path = Path(value).expanduser()
     return path if path.is_file() else None
+
+
+def _api_key_file_present(env: Mapping[str, str]) -> bool:
+    value = env.get("MEMORY_OPENAI_API_KEY_FILE", "").strip()
+    if not value:
+        return False
+    path = Path(value).expanduser()
+    try:
+        return path.is_file() and bool(path.read_text(encoding="utf-8").strip())
+    except OSError:
+        return False
 
 
 def _dataset_profile(path: Path | None, *, benchmark: str) -> dict[str, object] | None:

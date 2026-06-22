@@ -93,6 +93,35 @@ def test_top_evidence_preflight_accepts_clean_publishable_config(tmp_path: Path)
     assert str(tmp_path) not in json.dumps(payload)
 
 
+def test_top_evidence_preflight_accepts_openai_key_file_without_leak(
+    tmp_path: Path,
+) -> None:
+    key_file = tmp_path / "openai.key"
+    key_file.write_text("sk-test-secret-from-file", encoding="utf-8")
+    result = run_top_evidence_preflight(
+        env=_top_evidence_env(
+            tmp_path,
+            MEMORY_OPENAI_API_KEY="",
+            OPENAI_API_KEY="",
+            MEMORY_OPENAI_API_KEY_FILE=str(key_file),
+        ),
+        cwd=tmp_path,
+        docker_path="/usr/bin/docker",
+        git={"commit": "abc123", "dirty": False},
+    )
+
+    payload = result.as_dict()
+    rendered = json.dumps(payload, sort_keys=True)
+
+    assert result.ok is True
+    assert payload["checks"]["openai_key_present"] is True
+    assert payload["sanitized_config"]["openai_key_file_present"] is True
+    assert payload["sanitized_config"]["openai_key_present"] is True
+    assert "sk-test-secret-from-file" not in rendered
+    assert str(key_file) not in rendered
+    assert str(tmp_path) not in rendered
+
+
 def test_top_evidence_preflight_rejects_dirty_worktree_without_override(
     tmp_path: Path,
 ) -> None:

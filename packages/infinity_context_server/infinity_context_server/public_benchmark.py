@@ -117,6 +117,82 @@ class CaseRunResult:
     latency_ms: float
 
 
+@dataclass
+class _BenchmarkProgress:
+    dataset_path: Path
+    dataset_hash: str
+    total_case_count: int
+    case_selection: Mapping[str, object] | None
+    started: float
+    progress_out: Path | None = None
+    checkpoint_out: Path | None = None
+    checkpoint_every_cases: int = 25
+
+    def event(self, event_type: str, **fields: object) -> None:
+        if self.progress_out is None:
+            return
+        payload: dict[str, object] = {
+            "schema_version": "public-benchmark-progress-v1",
+            "event_type": event_type,
+            "dataset_path_label": self.dataset_path.name,
+            "dataset_hash": self.dataset_hash,
+            "elapsed_ms": round((time.perf_counter() - self.started) * 1000, 2),
+        }
+        payload.update(_bounded_progress_fields(fields))
+        self.progress_out.parent.mkdir(parents=True, exist_ok=True)
+        with self.progress_out.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+
+    def checkpoint(
+        self,
+        *,
+        processed_case_count: int,
+        run_results: Sequence[CaseRunResult],
+        failures: Sequence[Mapping[str, object]],
+        seeded_source_count: int,
+        force: bool = False,
+    ) -> None:
+        if self.checkpoint_out is None:
+            return
+        interval = max(1, self.checkpoint_every_cases)
+        if (
+            not force
+            and processed_case_count < self.total_case_count
+            and processed_case_count % interval != 0
+        ):
+            return
+        payload = {
+            "schema_version": "public-benchmark-checkpoint-v1",
+            "status": (
+                "completed"
+                if processed_case_count >= self.total_case_count
+                else "running"
+            ),
+            "dataset_path_label": self.dataset_path.name,
+            "dataset_hash": self.dataset_hash,
+            "case_selection": dict(self.case_selection or {}),
+            "progress": {
+                "processed_case_count": processed_case_count,
+                "total_case_count": self.total_case_count,
+                "seeded_source_count": seeded_source_count,
+                "failure_count": len(failures),
+                "elapsed_ms": round((time.perf_counter() - self.started) * 1000, 2),
+            },
+            "metrics_so_far": {
+                "case_count": len(run_results),
+                "accuracy": _accuracy(run_results),
+                "latency_ms_p95": _p95([item.latency_ms for item in run_results]),
+            },
+            "recent_cases": [_case_payload(item) for item in run_results[-20:]],
+            "recent_failures": list(failures[-20:]),
+        }
+        self.checkpoint_out.parent.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_out.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
 class _TestClientBenchmarkAdapter:
     def __init__(self, client: Any) -> None:
         self._client = client
@@ -151,6 +227,9 @@ def run_public_memory_benchmark(
     api_url: str | None = None,
     auth_token: str | None = None,
     report_out: Path | None = None,
+    progress_out: Path | None = None,
+    checkpoint_out: Path | None = None,
+    checkpoint_every_cases: int = 25,
     benchmark: str | None = None,
     min_accuracy: float = _DEFAULT_MIN_ACCURACY,
     max_cases: int | None = None,
@@ -228,6 +307,9 @@ def run_public_memory_benchmark(
                 min_accuracy=min_accuracy,
                 started=started,
                 case_selection=case_selection,
+                progress_out=progress_out,
+                checkpoint_out=checkpoint_out,
+                checkpoint_every_cases=checkpoint_every_cases,
             )
     else:
         from fastapi.testclient import TestClient
@@ -257,6 +339,9 @@ def run_public_memory_benchmark(
                     min_accuracy=min_accuracy,
                     started=started,
                     case_selection=case_selection,
+                    progress_out=progress_out,
+                    checkpoint_out=checkpoint_out,
+                    checkpoint_every_cases=checkpoint_every_cases,
                 )
 
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
@@ -338,33 +423,75 @@ def _execute_cases(
     min_accuracy: float,
     started: float,
     case_selection: Mapping[str, object] | None = None,
+    progress_out: Path | None = None,
+    checkpoint_out: Path | None = None,
+    checkpoint_every_cases: int = 25,
 ) -> dict[str, object]:
     dataset_hash = _dataset_hash(dataset_path)
     scope_slug = f"public-benchmark-{dataset_hash[:16]}"
     run_results: list[CaseRunResult] = []
     failures: list[dict[str, object]] = []
     seeded_source_keys: set[tuple[str, str, str, str]] = set()
+    progress = _BenchmarkProgress(
+        dataset_path=dataset_path,
+        dataset_hash=dataset_hash,
+        total_case_count=len(cases),
+        case_selection=case_selection,
+        started=started,
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+        checkpoint_every_cases=checkpoint_every_cases,
+    )
 
-    for case in cases:
+    progress.event(
+        "run_started",
+        total_case_count=len(cases),
+        benchmark_count=len({case.benchmark for case in cases}),
+    )
+    for case_index, case in enumerate(cases, start=1):
+        progress.event(
+            "case_started",
+            case_index=case_index,
+            total_case_count=len(cases),
+            case_id=case.case_id,
+            benchmark=case.benchmark,
+            capability=_case_capability(case),
+            memory_count=len(case.memories),
+            document_count=len(case.documents),
+        )
         try:
-            run_results.append(
-                _run_case(
-                    adapter=adapter,
-                    headers=headers,
-                    scope_slug=scope_slug,
-                    dataset_hash=dataset_hash,
-                    case=case,
-                    seeded_source_keys=seeded_source_keys,
-                )
+            result = _run_case(
+                adapter=adapter,
+                headers=headers,
+                scope_slug=scope_slug,
+                dataset_hash=dataset_hash,
+                case=case,
+                seeded_source_keys=seeded_source_keys,
+                progress=progress,
+                case_index=case_index,
+                total_case_count=len(cases),
+            )
+            run_results.append(result)
+            progress.event(
+                "case_completed",
+                case_index=case_index,
+                total_case_count=len(cases),
+                case_id=case.case_id,
+                benchmark=case.benchmark,
+                capability=result.capability,
+                ok=result.ok,
+                missing_term_count=len(result.missing_terms),
+                leaked_term_count=len(result.leaked_terms),
+                latency_ms=result.latency_ms,
+                seeded_source_count=len(seeded_source_keys),
             )
         except Exception as exc:
-            failures.append(
-                {
-                    "case_id": case.case_id,
-                    "category": case.benchmark,
-                    "reason": exc.__class__.__name__,
-                }
-            )
+            failure = {
+                "case_id": case.case_id,
+                "category": case.benchmark,
+                "reason": exc.__class__.__name__,
+            }
+            failures.append(failure)
             run_results.append(
                 CaseRunResult(
                     benchmark=case.benchmark,
@@ -379,6 +506,37 @@ def _execute_cases(
                     latency_ms=0.0,
                 )
             )
+            progress.event(
+                "case_failed",
+                case_index=case_index,
+                total_case_count=len(cases),
+                case_id=case.case_id,
+                benchmark=case.benchmark,
+                reason=exc.__class__.__name__,
+                seeded_source_count=len(seeded_source_keys),
+            )
+        finally:
+            progress.checkpoint(
+                processed_case_count=case_index,
+                run_results=run_results,
+                failures=failures,
+                seeded_source_count=len(seeded_source_keys),
+            )
+
+    progress.event(
+        "run_completed",
+        total_case_count=len(cases),
+        processed_case_count=len(run_results),
+        failure_count=len(failures),
+        seeded_source_count=len(seeded_source_keys),
+    )
+    progress.checkpoint(
+        processed_case_count=len(cases),
+        run_results=run_results,
+        failures=failures,
+        seeded_source_count=len(seeded_source_keys),
+        force=True,
+    )
 
     benchmarks = _benchmark_summaries(run_results, min_accuracy=min_accuracy)
     accuracy = _accuracy(run_results)
@@ -537,6 +695,9 @@ def _run_case(
     dataset_hash: str,
     case: PublicBenchmarkCase,
     seeded_source_keys: set[tuple[str, str, str, str]],
+    progress: _BenchmarkProgress | None = None,
+    case_index: int | None = None,
+    total_case_count: int | None = None,
 ) -> CaseRunResult:
     memory_scope_ref = case.memory_scope_external_ref or f"{case.benchmark}-{case.case_id}"
     thread_ref = case.thread_external_ref or f"{case.benchmark}-{case.case_id}"
@@ -547,6 +708,19 @@ def _run_case(
         )
         seed_key = (memory_scope_ref, thread_ref, "fact", source_id)
         if seed_key not in seeded_source_keys:
+            if progress is not None:
+                progress.event(
+                    "source_seed_started",
+                    case_index=case_index,
+                    total_case_count=total_case_count,
+                    case_id=case.case_id,
+                    benchmark=case.benchmark,
+                    source_kind="fact",
+                    source_index=index + 1,
+                    source_id_hash=_short_hash(source_id),
+                    payload_chars=len(memory.text),
+                    seeded_source_count=len(seeded_source_keys),
+                )
             _post_required(
                 adapter,
                 "/v1/facts",
@@ -569,6 +743,18 @@ def _run_case(
                 idempotency_key=source_id,
             )
             seeded_source_keys.add(seed_key)
+            if progress is not None:
+                progress.event(
+                    "source_seed_completed",
+                    case_index=case_index,
+                    total_case_count=total_case_count,
+                    case_id=case.case_id,
+                    benchmark=case.benchmark,
+                    source_kind="fact",
+                    source_index=index + 1,
+                    source_id_hash=_short_hash(source_id),
+                    seeded_source_count=len(seeded_source_keys),
+                )
 
     for index, document in enumerate(case.documents):
         source_id = _safe_identifier(
@@ -577,6 +763,20 @@ def _run_case(
         )
         seed_key = (memory_scope_ref, thread_ref, "document", source_id)
         if seed_key not in seeded_source_keys:
+            if progress is not None:
+                progress.event(
+                    "source_seed_started",
+                    case_index=case_index,
+                    total_case_count=total_case_count,
+                    case_id=case.case_id,
+                    benchmark=case.benchmark,
+                    source_kind="document",
+                    source_index=index + 1,
+                    source_id_hash=_short_hash(source_id),
+                    source_type=document.source_type,
+                    payload_chars=len(document.text),
+                    seeded_source_count=len(seeded_source_keys),
+                )
             _post_required(
                 adapter,
                 "/v1/documents",
@@ -594,7 +794,29 @@ def _run_case(
                 idempotency_key=source_id,
             )
             seeded_source_keys.add(seed_key)
+            if progress is not None:
+                progress.event(
+                    "source_seed_completed",
+                    case_index=case_index,
+                    total_case_count=total_case_count,
+                    case_id=case.case_id,
+                    benchmark=case.benchmark,
+                    source_kind="document",
+                    source_index=index + 1,
+                    source_id_hash=_short_hash(source_id),
+                    source_type=document.source_type,
+                    seeded_source_count=len(seeded_source_keys),
+                )
 
+    if progress is not None:
+        progress.event(
+            "context_request_started",
+            case_index=case_index,
+            total_case_count=total_case_count,
+            case_id=case.case_id,
+            benchmark=case.benchmark,
+            seeded_source_count=len(seeded_source_keys),
+        )
     started = time.perf_counter()
     response = _post_required(
         adapter,
@@ -611,6 +833,15 @@ def _run_case(
         },
     )
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
+    if progress is not None:
+        progress.event(
+            "context_request_completed",
+            case_index=case_index,
+            total_case_count=total_case_count,
+            case_id=case.case_id,
+            benchmark=case.benchmark,
+            latency_ms=latency_ms,
+        )
     data = _response_data(response)
     evidence_text = _evidence_text(data)
     normalized_evidence = _normalize_text(evidence_text)
@@ -1548,6 +1779,36 @@ def _p95(values: Sequence[float]) -> float:
 
 def _dataset_hash(dataset_path: Path) -> str:
     return hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+
+
+def _short_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _bounded_progress_fields(fields: Mapping[str, object]) -> dict[str, object]:
+    bounded: dict[str, object] = {}
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            bounded[key] = value[:240]
+        elif isinstance(value, bool | int | float):
+            bounded[key] = value
+        elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            bounded[key] = [
+                item[:120] if isinstance(item, str) else item
+                for item in value[:20]
+                if isinstance(item, str | bool | int | float)
+            ]
+        elif isinstance(value, Mapping):
+            bounded[key] = {
+                str(map_key)[:80]: map_value[:120]
+                if isinstance(map_value, str)
+                else map_value
+                for map_key, map_value in list(value.items())[:20]
+                if isinstance(map_value, str | bool | int | float)
+            }
+    return bounded
 
 
 def _dataset_source_metadata(

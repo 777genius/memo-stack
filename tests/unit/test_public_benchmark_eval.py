@@ -444,6 +444,83 @@ def test_public_memory_benchmark_uses_recall_oriented_context_budget(
     assert result["ok"] is True
 
 
+def test_public_memory_benchmark_writes_progress_and_checkpoint(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "dataset.json"
+    progress_out = tmp_path / "progress.jsonl"
+    checkpoint_out = tmp_path / "checkpoint.json"
+    dataset.write_text("[]", encoding="utf-8")
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="progress-one",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(
+                BenchmarkDocumentInput(
+                    title="Shared document",
+                    text="SHARED_MARKER lives in a shared public benchmark document.",
+                    source_external_id="shared-document",
+                ),
+            ),
+            memory_scope_external_ref="progress-scope",
+            thread_external_ref="progress-thread",
+        ),
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="progress-two",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(
+                BenchmarkDocumentInput(
+                    title="Shared document",
+                    text="SHARED_MARKER lives in a shared public benchmark document.",
+                    source_external_id="shared-document",
+                ),
+            ),
+            memory_scope_external_ref="progress-scope",
+            thread_external_ref="progress-thread",
+        ),
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=cases,
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+        checkpoint_every_cases=1,
+    )
+
+    progress_events = [
+        json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
+    ]
+    checkpoint = json.loads(checkpoint_out.read_text(encoding="utf-8"))
+    rendered = checkpoint_out.read_text(encoding="utf-8") + progress_out.read_text(
+        encoding="utf-8"
+    )
+
+    assert result["ok"] is True
+    assert [event["event_type"] for event in progress_events].count("case_started") == 2
+    assert any(
+        event["event_type"] == "source_seed_started"
+        and event["source_kind"] == "document"
+        for event in progress_events
+    )
+    assert progress_events[-1]["event_type"] == "run_completed"
+    assert checkpoint["status"] == "completed"
+    assert checkpoint["progress"]["processed_case_count"] == 2
+    assert checkpoint["progress"]["seeded_source_count"] == 1
+    assert checkpoint["metrics_so_far"]["accuracy"] == 1.0
+    assert str(tmp_path) not in rendered
+    assert "shared-document" not in rendered
+
+
 def test_public_memory_benchmark_accepts_official_locomo_shape(tmp_path: Path) -> None:
     dataset = tmp_path / "locomo10-mini.json"
     dataset.write_text(
@@ -677,6 +754,70 @@ def test_public_memory_benchmark_links_observations_to_related_locomo_turn_ids(
 
     assert "D1:9 D1:11 Caroline:" in observation_doc.text
     assert "D1:10" not in observation_doc.text
+    assert result["ok"] is True
+
+
+def test_public_memory_benchmark_recalls_locomo_career_intent_synonyms(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-career-intent-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-career-intent-mini",
+                    "conversation": {
+                        "session_7": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D7:5",
+                                "text": "I need to figure out what to do next.",
+                            },
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D7:9",
+                                "text": "I talked with Melanie about possible next steps.",
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "Would Caroline pursue writing as a career option?"
+                            ),
+                            "answer": "No, she was looking into counseling jobs.",
+                            "evidence": ["D7:5"],
+                            "category": 3,
+                        }
+                    ],
+                    "observation": {
+                        "session_7_observation": {
+                            "Caroline": [
+                                [
+                                    (
+                                        "Caroline is looking into counseling and mental "
+                                        "health jobs."
+                                    ),
+                                    "D7:5",
+                                ]
+                            ]
+                        }
+                    },
+                    "event_summary": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+    observation_doc = next(
+        document for document in case.documents if document.source_type == "locomo_observation"
+    )
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert "D7:5 Caroline:" in observation_doc.text
     assert result["ok"] is True
 
 
