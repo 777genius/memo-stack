@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+import re
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from infinity_context_core.application.context_anchor_relations import (
@@ -27,6 +28,7 @@ from infinity_context_core.application.context_diagnostics import (
     normalize_context_bundle_diagnostics,
 )
 from infinity_context_core.application.context_hydration import ContextHydrator
+from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_link_expansion import ApprovedContextLinkExpander
 from infinity_context_core.application.context_media_time import enrich_context_item_with_media_time
 from infinity_context_core.application.context_packer import ContextPacker
@@ -110,6 +112,41 @@ from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS = (1, -1, 2, -2, 3, -3)
+_SOURCE_GROUP_SIBLING_SCORES = {
+    1: 0.955,
+    2: 0.948,
+    3: 0.935,
+}
+_MAX_SOURCE_GROUPS = 16
+_MAX_SOURCE_GROUP_SIBLING_ITEMS = 20
+_MAX_AGGREGATION_KEYWORD_ITEMS = 20
+_TURN_SOURCE_ID_RE = re.compile(
+    r"^(?P<group>.+):(?P<dialogue>D\d+):(?P<turn>\d+):turn$",
+    re.IGNORECASE,
+)
+_STRICT_QUERY_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+_DIALOGUE_MARKER_RE = re.compile(r"\bD\d+:\d+\b")
+_COUNT_AGGREGATION_QUERY_RE = re.compile(
+    r"\b(how many|number of|count|total)\b",
+    re.IGNORECASE,
+)
+_SOURCE_GROUP_SUFFIXES = frozenset({"events", "observation", "summary"})
+
+
+@dataclass(frozen=True)
+class _SourceGroupSeed:
+    priority: int
+    primary_turn: int
+    turns: frozenset[int]
+
+
+@dataclass(frozen=True)
+class _SourceSiblingRank:
+    score: float
+    group_priority: int
+    turn_distance: int
+    turn_delta: int
+
 
 class BuildContextUseCase:
     def __init__(
@@ -197,6 +234,12 @@ class BuildContextUseCase:
             "keyword_neighbor_chunks_considered": 0,
             "keyword_neighbor_chunks_used": 0,
             "keyword_neighbor_chunks_skipped": 0,
+            "keyword_source_sibling_chunks_considered": 0,
+            "keyword_source_sibling_chunks_used": 0,
+            "keyword_source_sibling_chunks_skipped": 0,
+            "keyword_aggregation_chunks_considered": 0,
+            "keyword_aggregation_chunks_used": 0,
+            "keyword_aggregation_chunks_skipped": 0,
             "anchors_considered": len(canonical.anchors),
             "anchor_lookup_keys_considered": canonical.anchor_lookup_keys_considered,
             "anchors_loaded_by_lookup": canonical.anchors_loaded_by_lookup,
@@ -333,6 +376,7 @@ class BuildContextUseCase:
         diagnostics["anchor_relation_items_used"] = len(related_anchor_items)
         items.extend(related_anchor_items)
         used_keyword_chunks: list[MemoryChunk] = []
+        scored_keyword_chunks: list[tuple[int, int, int, float, float, int, MemoryChunk]] = []
         for chunk in canonical.keyword_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -357,6 +401,17 @@ class BuildContextUseCase:
                 query_expansion_reason=expansion_reason,
             )
             used_keyword_chunks.append(chunk)
+            scored_keyword_chunks.append(
+                (
+                    _strict_query_term_hits(query=query.query, text=chunk_text),
+                    relevance.distinctive_term_hits,
+                    relevance.unique_term_hits,
+                    relevance.hit_ratio,
+                    score,
+                    len(scored_keyword_chunks),
+                    chunk,
+                )
+            )
             items.append(
                 _chunk_context_item(
                     chunk=chunk,
@@ -369,6 +424,12 @@ class BuildContextUseCase:
                     query_expansion_reason=expansion_reason,
                 )
             )
+        aggregation_items, aggregation_diagnostics = _keyword_aggregation_chunk_items(
+            query=query,
+            seed_chunks=tuple(used_keyword_chunks),
+        )
+        diagnostics.update(aggregation_diagnostics)
+        items.extend(aggregation_items)
         neighbor_items, neighbor_diagnostics = await self._keyword_neighbor_chunk_items(
             query=query,
             memory_scope_ids=memory_scope_ids,
@@ -376,6 +437,27 @@ class BuildContextUseCase:
         )
         diagnostics.update(neighbor_diagnostics)
         items.extend(neighbor_items)
+        sibling_seed_chunks = tuple(
+            chunk
+            for _, _, _, _, _, _, chunk in sorted(
+                scored_keyword_chunks,
+                key=lambda item: (
+                    -item[0],
+                    -item[1],
+                    -item[2],
+                    -item[3],
+                    -item[4],
+                    item[5],
+                ),
+            )
+        )
+        sibling_items, sibling_diagnostics = await self._keyword_source_sibling_chunk_items(
+            query=query,
+            memory_scope_ids=memory_scope_ids,
+            seed_chunks=sibling_seed_chunks,
+        )
+        diagnostics.update(sibling_diagnostics)
+        items.extend(sibling_items)
         for chunk in vector_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -625,6 +707,113 @@ class BuildContextUseCase:
             "keyword_neighbor_chunks_considered": considered,
             "keyword_neighbor_chunks_used": len(items),
             "keyword_neighbor_chunks_skipped": skipped,
+        }
+
+    async def _keyword_source_sibling_chunk_items(
+        self,
+        *,
+        query: BuildContextQuery,
+        memory_scope_ids: tuple[str, ...],
+        seed_chunks: tuple[MemoryChunk, ...],
+    ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
+        empty_diagnostics = {
+            "keyword_source_sibling_chunks_considered": 0,
+            "keyword_source_sibling_chunks_used": 0,
+            "keyword_source_sibling_chunks_skipped": 0,
+        }
+        if query.max_chunks <= 0 or not seed_chunks:
+            return (), empty_diagnostics
+
+        source_groups = _source_group_seed_turns(seed_chunks)
+        if not source_groups:
+            return (), empty_diagnostics
+        max_items = min(
+            _MAX_SOURCE_GROUP_SIBLING_ITEMS,
+            max(2, query.max_chunks // 3),
+        )
+        candidate_limit = min(
+            1000,
+            max(query.max_chunks * 12, max_items * 16, len(source_groups) * 48),
+        )
+        items: list[ContextItem] = []
+        used_ids: set[str] = set()
+        considered = 0
+        skipped = 0
+        async with self._uow_factory() as uow:
+            list_source_group_chunks = getattr(
+                uow.chunks,
+                "list_by_source_external_id_groups",
+                None,
+            )
+            if list_source_group_chunks is None:
+                return (), empty_diagnostics
+            candidates = await list_source_group_chunks(
+                space_id=str(query.space_id),
+                memory_scope_ids=memory_scope_ids,
+                thread_id=str(query.thread_id) if query.thread_id else None,
+                source_external_id_groups=tuple(source_groups.keys()),
+                exclude_chunk_ids=(),
+                limit=candidate_limit,
+            )
+        ranked_candidates: list[
+            tuple[int, int, float, str, int, str, _SourceSiblingRank, MemoryChunk]
+        ] = []
+        for chunk in candidates:
+            rank = _source_sibling_rank(chunk, source_groups=source_groups)
+            if rank is None:
+                continue
+            ranked_candidates.append(
+                (
+                    rank.group_priority,
+                    rank.turn_distance,
+                    -rank.score,
+                    chunk.source_external_id,
+                    chunk.sequence,
+                    str(chunk.id),
+                    rank,
+                    chunk,
+                )
+            )
+        ranked_candidates.sort(key=lambda item: item[:6])
+        for _, _, _, _, _, chunk_id, rank, chunk in ranked_candidates:
+            if len(items) >= max_items:
+                break
+            considered += 1
+            if chunk_id in used_ids:
+                skipped += 1
+                continue
+            if not _is_neighbor_chunk_visible(
+                chunk,
+                query=query,
+                memory_scope_ids=memory_scope_ids,
+            ):
+                skipped += 1
+                continue
+            used_ids.add(chunk_id)
+            chunk_text = document_chunk_retrieval_text(
+                text=chunk.text,
+                metadata=chunk.metadata,
+            )
+            item = _chunk_context_item(
+                chunk=chunk,
+                text=chunk_text,
+                retrieval_source="keyword_source_sibling_chunks",
+                base_score=0.74,
+                score=rank.score,
+                relevance=None,
+                query_text=query.query,
+            )
+            items.append(
+                _with_source_sibling_score_signals(
+                    item,
+                    rank=rank,
+                )
+            )
+
+        return tuple(items), {
+            "keyword_source_sibling_chunks_considered": considered,
+            "keyword_source_sibling_chunks_used": len(items),
+            "keyword_source_sibling_chunks_skipped": skipped,
         }
 
     async def _apply_temporal_relation_signals(
@@ -964,6 +1153,54 @@ def _annotate_temporal_relation(
     )
 
 
+def _with_source_sibling_score_signals(
+    item: ContextItem,
+    *,
+    rank: _SourceSiblingRank,
+) -> ContextItem:
+    after_seed_boost = 0.05 if rank.turn_delta > 0 else 0.0
+    diagnostics = dict(item.diagnostics or {})
+    diagnostics["score_signals"] = {
+        **_score_signals(diagnostics),
+        "source_sibling_after_seed_boost": after_seed_boost,
+        "source_sibling_group_boost": max(0, _MAX_SOURCE_GROUPS - rank.group_priority),
+        "source_sibling_after_seed": 1 if rank.turn_delta > 0 else 0,
+        "source_sibling_closeness": max(0, 4 - rank.turn_distance),
+        "source_sibling_turn_distance": rank.turn_distance,
+        "source_sibling_group_priority": rank.group_priority,
+    }
+    diagnostics["provenance"] = {
+        **_provenance(diagnostics),
+        "source_sibling_turn_delta": rank.turn_delta,
+        "source_sibling_turn_distance": rank.turn_distance,
+        "source_sibling_group_priority": rank.group_priority,
+    }
+    return replace(
+        item,
+        score=min(0.99, round(item.score + after_seed_boost, 4)),
+        diagnostics=diagnostics,
+    )
+
+
+def _with_keyword_aggregation_score_signals(
+    item: ContextItem,
+    *,
+    strict_hits: int,
+    source_group: str,
+) -> ContextItem:
+    diagnostics = dict(item.diagnostics or {})
+    diagnostics["score_signals"] = {
+        **_score_signals(diagnostics),
+        "keyword_aggregation_strict_term_hits": strict_hits,
+        "keyword_aggregation_group_match": 1,
+    }
+    diagnostics["provenance"] = {
+        **_provenance(diagnostics),
+        "keyword_aggregation_source_group": source_group,
+    }
+    return replace(item, diagnostics=diagnostics)
+
+
 def _chunk_context_item(
     *,
     chunk: MemoryChunk,
@@ -974,8 +1211,9 @@ def _chunk_context_item(
     relevance: QueryRelevance | None,
     query_text: str,
     query_expansion_reason: str = "original_query",
+    use_query_snippet: bool = True,
 ) -> ContextItem:
-    snippet = query_focused_snippet(query=query_text, text=text)
+    snippet = query_focused_snippet(query=query_text, text=text) if use_query_snippet else None
     evidence_text = snippet.text if snippet is not None else text
     source_refs = source_refs_with_query_snippet(
         chunk_source_refs(chunk, text_preview=(snippet.text if snippet else text[:200])),
@@ -1051,6 +1289,260 @@ def _is_neighbor_chunk_visible(
     if query.thread_id is None:
         return chunk.thread_id is None
     return chunk.thread_id is None or str(chunk.thread_id) == str(query.thread_id)
+
+
+def _strict_query_term_hits(*, query: str, text: str) -> int:
+    terms = query_terms(query)
+    if not terms:
+        return 0
+    text_variants: set[str] = set()
+    for match in _STRICT_QUERY_TOKEN_RE.finditer(text):
+        text_variants.update(_strict_token_variants(match.group(0)))
+    return sum(
+        1
+        for term in terms
+        if text_variants.intersection(_strict_token_variants(term.raw))
+    )
+
+
+def _strict_token_variants(token: str) -> tuple[str, ...]:
+    normalized = token.casefold().replace("ё", "е").strip("_")
+    if not normalized:
+        return ()
+    variants = {normalized}
+    if len(normalized) > 5 and normalized.endswith("ing"):
+        stem = normalized[:-3]
+        variants.add(stem)
+        variants.add(f"{stem}e")
+        if len(stem) > 3 and stem[-1:] == stem[-2:-1]:
+            variants.add(stem[:-1])
+    if len(normalized) > 4 and normalized.endswith("ed"):
+        variants.add(normalized[:-2])
+    if len(normalized) > 4 and normalized.endswith("es"):
+        variants.add(normalized[:-2])
+    if len(normalized) > 3 and normalized.endswith("s"):
+        variants.add(normalized[:-1])
+    return tuple(sorted(variant for variant in variants if len(variant) >= 2))
+
+
+def _keyword_aggregation_chunk_items(
+    *,
+    query: BuildContextQuery,
+    seed_chunks: tuple[MemoryChunk, ...],
+) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
+    diagnostics = {
+        "keyword_aggregation_chunks_considered": 0,
+        "keyword_aggregation_chunks_used": 0,
+        "keyword_aggregation_chunks_skipped": 0,
+    }
+    if query.max_chunks <= 0 or not seed_chunks or not _is_count_aggregation_query(query.query):
+        return (), diagnostics
+
+    max_items = min(
+        _MAX_AGGREGATION_KEYWORD_ITEMS,
+        max(4, query.max_chunks // 2),
+    )
+    candidates: list[
+        tuple[tuple[int, int, int, float, int], str, MemoryChunk, str, QueryRelevance, int]
+    ] = []
+    skipped = 0
+    for order, chunk in enumerate(seed_chunks):
+        diagnostics["keyword_aggregation_chunks_considered"] = (
+            int(diagnostics["keyword_aggregation_chunks_considered"]) + 1
+        )
+        chunk_text = document_chunk_retrieval_text(
+            text=chunk.text,
+            metadata=chunk.metadata,
+        )
+        strict_hits = _strict_query_term_hits(query=query.query, text=chunk_text)
+        if strict_hits < 2:
+            skipped += 1
+            continue
+        relevance = score_query_relevance(query=query.query, text=chunk_text)
+        if not is_query_relevance_sufficient(relevance):
+            skipped += 1
+            continue
+        group = _aggregation_source_group(chunk)
+        rank_key = (
+            -strict_hits,
+            _aggregation_source_kind_rank(chunk),
+            -relevance.distinctive_term_hits,
+            -relevance.hit_ratio,
+            order,
+        )
+        candidates.append((rank_key, group, chunk, chunk_text, relevance, strict_hits))
+
+    items: list[ContextItem] = []
+    group_counts: dict[str, int] = {}
+    for _, group, chunk, chunk_text, relevance, strict_hits in sorted(
+        candidates,
+        key=lambda item: item[0],
+    ):
+        if len(items) >= max_items:
+            break
+        if group_counts.get(group, 0) >= 3:
+            skipped += 1
+            continue
+        group_counts[group] = group_counts.get(group, 0) + 1
+        item = _chunk_context_item(
+            chunk=chunk,
+            text=_aggregation_evidence_text(query=query.query, text=chunk_text),
+            retrieval_source="keyword_aggregation_chunks",
+            base_score=0.78,
+            score=0.985,
+            relevance=relevance,
+            query_text=query.query,
+            use_query_snippet=False,
+        )
+        items.append(
+            _with_keyword_aggregation_score_signals(
+                item,
+                strict_hits=strict_hits,
+                source_group=group,
+            )
+        )
+
+    diagnostics["keyword_aggregation_chunks_used"] = len(items)
+    diagnostics["keyword_aggregation_chunks_skipped"] = skipped
+    return tuple(items), diagnostics
+
+
+def _is_count_aggregation_query(query: str) -> bool:
+    return bool(_COUNT_AGGREGATION_QUERY_RE.search(query))
+
+
+def _aggregation_source_group(chunk: MemoryChunk) -> str:
+    marker = _source_turn_marker(chunk.source_external_id)
+    if marker is not None:
+        return marker[0]
+    source_id = " ".join(str(chunk.source_external_id).split())
+    parts = source_id.split(":")
+    if len(parts) >= 4 and parts[-1] in _SOURCE_GROUP_SUFFIXES:
+        return ":".join(parts[:-1])
+    return source_id or str(chunk.document_id or chunk.id)
+
+
+def _aggregation_source_kind_rank(chunk: MemoryChunk) -> int:
+    if _source_turn_marker(chunk.source_external_id) is not None:
+        return 1
+    parts = " ".join(str(chunk.source_external_id).split()).split(":")
+    if parts and parts[-1] in {"events", "summary"}:
+        return 3
+    if parts and parts[-1] == "observation":
+        return 2
+    return 0
+
+
+def _aggregation_evidence_text(*, query: str, text: str) -> str:
+    match_start = _first_strict_query_match_start(query=query, text=text)
+    if match_start is None:
+        return text
+    markers = tuple(_DIALOGUE_MARKER_RE.finditer(text))
+    if not markers:
+        return text
+    marker_index = max(
+        (index for index, marker in enumerate(markers) if marker.start() <= match_start),
+        default=0,
+    )
+    start_index = max(0, marker_index - 1)
+    end_index = min(len(markers) - 1, marker_index + 3)
+    start = markers[start_index].start()
+    end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
+    window = text[start:end].strip()
+    if start > 0:
+        window = f"... {window}"
+    if end < len(text):
+        window = f"{window} ..."
+    return window or text
+
+
+def _first_strict_query_match_start(*, query: str, text: str) -> int | None:
+    query_variant_sets = tuple(
+        sorted(
+            (set(_strict_token_variants(term.raw)) for term in query_terms(query)),
+            key=lambda variants: (len(variants) <= 1, sorted(variants)),
+        )
+    )
+    if not query_variant_sets:
+        return None
+    for variants in query_variant_sets:
+        for match in _STRICT_QUERY_TOKEN_RE.finditer(text):
+            token_variants = set(_strict_token_variants(match.group(0)))
+            if token_variants.intersection(variants):
+                return match.start()
+    return None
+
+
+def _source_group_seed_turns(
+    seed_chunks: tuple[MemoryChunk, ...],
+) -> dict[str, _SourceGroupSeed]:
+    groups: dict[str, tuple[int, int, set[int]]] = {}
+    for chunk in seed_chunks:
+        marker = _source_turn_marker(chunk.source_external_id)
+        if marker is None:
+            continue
+        group, turn = marker
+        if group not in groups:
+            groups[group] = (len(groups), turn, set())
+        groups[group][2].add(turn)
+        if len(groups) >= _MAX_SOURCE_GROUPS:
+            break
+    return {
+        group: _SourceGroupSeed(
+            priority=priority,
+            primary_turn=primary_turn,
+            turns=frozenset(turns),
+        )
+        for group, (priority, primary_turn, turns) in groups.items()
+    }
+
+
+def _source_turn_marker(source_external_id: str) -> tuple[str, int] | None:
+    source_id = " ".join(str(source_external_id).split())
+    if not source_id:
+        return None
+    match = _TURN_SOURCE_ID_RE.match(source_id)
+    if match is None:
+        return None
+    group = match.group("group").strip()
+    if not group or len(group.split(":")) < 3:
+        return None
+    try:
+        turn = int(match.group("turn"))
+    except ValueError:
+        return None
+    return group, turn
+
+
+def _source_sibling_rank(
+    chunk: MemoryChunk,
+    *,
+    source_groups: dict[str, _SourceGroupSeed],
+) -> _SourceSiblingRank | None:
+    marker = _source_turn_marker(chunk.source_external_id)
+    if marker is None:
+        return None
+    group, turn = marker
+    seed = source_groups.get(group)
+    if seed is None or not seed.turns or turn == seed.primary_turn:
+        return None
+    seed_turns = tuple(seed_turn for seed_turn in seed.turns if seed_turn != turn)
+    if not seed_turns:
+        return None
+    turn_delta = min(
+        (turn - seed_turn for seed_turn in seed_turns),
+        key=lambda delta: (abs(delta), delta < 0),
+    )
+    min_distance = abs(turn_delta)
+    score = _SOURCE_GROUP_SIBLING_SCORES.get(min_distance)
+    if score is None:
+        return None
+    return _SourceSiblingRank(
+        score=score,
+        group_priority=seed.priority,
+        turn_distance=min_distance,
+        turn_delta=turn_delta,
+    )
 
 
 def _score_signals(diagnostics: dict[str, object]) -> dict[str, object]:

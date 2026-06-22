@@ -51,6 +51,8 @@ _DEFAULT_RRF_SOURCE_WEIGHTS = {
     "canonical_anchor_relations": 1.12,
     "canonical_anchors": 1.15,
     "graph_hydrated": 1.08,
+    "keyword_aggregation_chunks": 1.12,
+    "keyword_source_sibling_chunks": 1.08,
     "temporal_supersedes_relation": 1.12,
 }
 _BM25_K1 = 1.2
@@ -61,8 +63,10 @@ _CONTEXT_REQUIREMENT_MAX_BOOST = 0.04
 _CONTEXT_REQUIREMENT_ANCHOR_BOOST = 0.008
 _CONTEXT_REQUIREMENT_MODALITY_BOOST = 0.022
 _CONTEXT_REQUIREMENT_FEATURE_BOOST = 0.014
+_DUPLICATE_SOURCE_SCORE_TOLERANCE = 0.015
 _KEYWORD_EXPANSION_SCORE_CAPS = {
     "career_intent_bridge": 0.91,
+    "education_career_field_bridge": 0.96,
     "support_career_motivation_bridge": 0.96,
     "support_counterfactual_bridge": 0.94,
     "support_origin_bridge": 0.94,
@@ -76,13 +80,43 @@ _KEYWORD_EXPANSION_SCORE_CAPS = {
 }
 _KEYWORD_EXPANSION_REASON_BOOSTS = {
     "adverse_trip_bridge": 0.012,
+    "allergy_condition_inference_bridge": 0.018,
+    "attribute_description_bridge": 0.018,
+    "beach_or_mountains_inference_bridge": 0.018,
+    "book_suggestion_bridge": 0.018,
+    "children_count_sibling_bridge": 0.016,
+    "console_game_cover_bridge": 0.018,
+    "counseling_workshop_bridge": 0.018,
+    "degree_policy_inference_bridge": 0.018,
+    "education_career_field_bridge": 0.022,
+    "decomposition_attribute_aggregation": 0.018,
+    "decomposition_current_preference_or_goal": 0.018,
+    "event_participation_bridge": 0.018,
+    "family_activity_bridge": 0.024,
+    "family_motivation_context_bridge": 0.02,
+    "family_painting_activity_bridge": 0.02,
+    "family_swimming_activity_bridge": 0.02,
+    "event_participation_help_bridge": 0.02,
+    "friends_team_inference_bridge": 0.018,
+    "lgbtq_community_participation_bridge": 0.02,
+    "lgbtq_pride_event_bridge": 0.02,
+    "lgbtq_school_event_bridge": 0.02,
+    "lgbtq_support_group_event_bridge": 0.02,
+    "meteor_shower_feeling_bridge": 0.018,
+    "music_artist_band_bridge": 0.018,
     "outdoor_nature_memory_bridge": 0.018,
     "personality_authenticity_bridge": 0.014,
     "personality_drive_bridge": 0.014,
     "personality_thoughtfulness_bridge": 0.014,
     "personality_trait_bridge": 0.012,
+    "pet_allergy_discomfort_bridge": 0.018,
+    "pottery_color_reason_bridge": 0.018,
+    "shoe_usage_bridge": 0.018,
     "support_career_motivation_bridge": 0.022,
     "support_origin_bridge": 0.01,
+    "symbol_importance_bridge": 0.018,
+    "transgender_poetry_event_bridge": 0.02,
+    "volunteer_career_inference_bridge": 0.018,
 }
 
 
@@ -348,6 +382,10 @@ def _should_replace_context_item(*, candidate: ContextItem, existing: ContextIte
     if candidate.score > existing.score:
         return True
     if candidate.score < existing.score:
+        if existing.score - candidate.score <= _DUPLICATE_SOURCE_SCORE_TOLERANCE:
+            return context_duplicate_primary_key(candidate) < context_duplicate_primary_key(
+                existing
+            )
         return False
     return context_duplicate_primary_key(candidate) < context_duplicate_primary_key(existing)
 
@@ -363,8 +401,9 @@ def _merge_context_items(*, primary: ContextItem, secondary: ContextItem) -> Con
         source_ref_count=len(source_refs),
     )
     score = min(0.99, round(max(primary.score, secondary.score) + hybrid_boost, 4))
+    body_item = _preferred_merge_body_item(primary=primary, secondary=secondary)
     return replace(
-        primary,
+        body_item,
         score=score,
         source_refs=source_refs,
         diagnostics=merge_context_diagnostics(
@@ -377,6 +416,24 @@ def _merge_context_items(*, primary: ContextItem, secondary: ContextItem) -> Con
             hybrid_boost=hybrid_boost,
         ),
     )
+
+
+def _preferred_merge_body_item(*, primary: ContextItem, secondary: ContextItem) -> ContextItem:
+    if (primary.item_type, primary.item_id) != (secondary.item_type, secondary.item_id):
+        return primary
+    primary_sources = set(diagnostic_retrieval_sources(primary.diagnostics))
+    secondary_sources = set(diagnostic_retrieval_sources(secondary.diagnostics))
+    if (
+        "keyword_aggregation_chunks" in secondary_sources
+        and "keyword_aggregation_chunks" not in primary_sources
+    ):
+        return secondary
+    if (
+        "keyword_aggregation_chunks" in primary_sources
+        and "keyword_aggregation_chunks" not in secondary_sources
+    ):
+        return primary
+    return primary
 
 
 def _merge_source_refs(

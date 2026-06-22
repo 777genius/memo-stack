@@ -77,6 +77,204 @@ def test_query_expansion_covers_activity_location_and_destress_bridges() -> None
     )
 
 
+def test_query_expansion_covers_event_participation_bridges() -> None:
+    events = build_query_expansion_plan(
+        "What LGBTQ+ events has Caroline participated in?"
+    )
+    helping = build_query_expansion_plan(
+        "What events has Caroline participated in to help children?"
+    )
+
+    assert "events participated attended joined went" in _expansion_query(
+        events,
+        "event_participation_bridge",
+    )
+    assert "mentorship mentoring program youth" in _expansion_query(
+        events,
+        "event_participation_bridge",
+    )
+    assert "pride parade marched flags" in _expansion_query(
+        events,
+        "lgbtq_pride_event_bridge",
+    )
+    assert "support group transgender stories" in _expansion_query(
+        events,
+        "lgbtq_support_group_event_bridge",
+    )
+    assert "school event speech talk" in _expansion_query(
+        events,
+        "lgbtq_school_event_bridge",
+    )
+    assert "transgender_poetry_event_bridge" not in {
+        expansion.reason for expansion in events.expansions
+    }
+    assert "help children youth mentorship" in _expansion_query(
+        helping,
+        "event_participation_help_bridge",
+    )
+    assert "activist group connected activists" in _expansion_query(
+        build_query_expansion_plan(
+            "In what ways is Caroline participating in the LGBTQ community?"
+        ),
+        "lgbtq_community_participation_bridge",
+    )
+
+
+def test_query_expansion_covers_locomo_inference_bridges() -> None:
+    workshop = build_query_expansion_plan(
+        "What kind of counseling workshop did Melanie attend recently?"
+    )
+    degree = build_query_expansion_plan("What might John's degree be in?")
+    friends = build_query_expansion_plan(
+        "Is it likely that Nate has friends besides Joanna?"
+    )
+
+    assert "therapeutic methods trans people" in _expansion_query(
+        workshop,
+        "counseling_workshop_bridge",
+    )
+    assert "policymaking policy political science" in _expansion_query(
+        degree,
+        "degree_policy_inference_bridge",
+    )
+    assert "teammates team video game" in _expansion_query(
+        friends,
+        "friends_team_inference_bridge",
+    )
+
+
+def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
+    cases = [
+        (
+            build_query_expansion_plan(
+                "What activities has Melanie done with her family?"
+            ),
+            "family_activity_bridge",
+            "kids children husband museum",
+        ),
+        (
+            build_query_expansion_plan(
+                "What activities has Melanie done with her family?"
+            ),
+            "family_painting_activity_bridge",
+            "painting together nature inspired",
+        ),
+        (
+            build_query_expansion_plan(
+                "What activities has Melanie done with her family?"
+            ),
+            "family_swimming_activity_bridge",
+            "swimming with kids swim",
+        ),
+        (
+            build_query_expansion_plan(
+                "What activities has Melanie done with her family?"
+            ),
+            "family_motivation_context_bridge",
+            "husband kids children keep motivated",
+        ),
+        (
+            build_query_expansion_plan(
+                "Does John live close to a beach or the mountains?"
+            ),
+            "beach_or_mountains_inference_bridge",
+            "beach ocean sunset sailboat",
+        ),
+        (
+            build_query_expansion_plan("What job might Maria pursue in the future?"),
+            "volunteer_career_inference_bridge",
+            "volunteering volunteer shelter",
+        ),
+        (
+            build_query_expansion_plan(
+                "What fields would Caroline be likely to pursue in her educaton?"
+            ),
+            "education_career_field_bridge",
+            "career options fields jobs counseling",
+        ),
+        (
+            build_query_expansion_plan(
+                "What pets would not cause any discomfort to Joanna?"
+            ),
+            "pet_allergy_discomfort_bridge",
+            "reptiles fur allergic",
+        ),
+        (
+            build_query_expansion_plan(
+                "What underlying condition might Joanna have based on her allergies?"
+            ),
+            "allergy_condition_inference_bridge",
+            "allergies allergic reptiles",
+        ),
+        (
+            build_query_expansion_plan("What symbols are important to Caroline?"),
+            "symbol_importance_bridge",
+            "rainbow flag mural eagle",
+        ),
+        (
+            build_query_expansion_plan("What Console does Nate own?"),
+            "console_game_cover_bridge",
+            "console nintendo game cover",
+        ),
+        (
+            build_query_expansion_plan(
+                "What musical artists/bands has Melanie seen?"
+            ),
+            "music_artist_band_bridge",
+            "summer sounds band pop song",
+        ),
+        (
+            build_query_expansion_plan(
+                "What are the new shoes that Caroline got used for?"
+            ),
+            "shoe_usage_bridge",
+            "purple walking running",
+        ),
+        (
+            build_query_expansion_plan(
+                "How did Caroline feel while watching the meteor shower?"
+            ),
+            "meteor_shower_feeling_bridge",
+            "felt tiny awe universe",
+        ),
+        (
+            build_query_expansion_plan(
+                "Why did Caroline choose to use colors and patterns in her "
+                "pottery project?"
+            ),
+            "pottery_color_reason_bridge",
+            "catch eye make people smile",
+        ),
+        (
+            build_query_expansion_plan(
+                "What transgender-specific events has Caroline attended?"
+            ),
+            "transgender_poetry_event_bridge",
+            "transgender event poetry reading",
+        ),
+        (
+            build_query_expansion_plan(
+                "What book did Melanie read from Caroline's suggestion?"
+            ),
+            "book_suggestion_bridge",
+            "becoming nicole amy ellis nutt",
+        ),
+        (
+            build_query_expansion_plan("How many children does Melanie have?"),
+            "children_count_sibling_bridge",
+            "brother siblings two younger kids",
+        ),
+        (
+            build_query_expansion_plan("What attributes describe John?"),
+            "attribute_description_bridge",
+            "volunteering food supplies toy drive",
+        ),
+    ]
+
+    for plan, reason, expected_text in cases:
+        assert expected_text in _expansion_query(plan, reason)
+
+
 def test_query_expansion_covers_trait_and_adverse_trip_bridges() -> None:
     traits = build_query_expansion_plan(
         "What personality traits might Melanie say Caroline has?"
@@ -312,6 +510,32 @@ def test_best_query_relevance_uses_support_career_motivation_bridge() -> None:
         looser,
         query_expansion_reason="support_career_motivation_bridge",
     )
+
+
+def test_best_query_relevance_uses_education_career_field_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "What fields would Caroline be likely to pursue in her educaton?"
+    )
+
+    _, options_reason, options_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D1:9 Caroline: Gonna continue my edu and check out career options, "
+            "which is pretty exciting!"
+        ),
+    )
+    _, counseling_reason, counseling_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D1:11 Caroline: I'm keen on counseling or working in mental health - "
+            "I'd love to support those with similar issues."
+        ),
+    )
+
+    assert options_reason == "education_career_field_bridge"
+    assert options_relevance.distinctive_term_hits >= 5
+    assert counseling_reason == "education_career_field_bridge"
+    assert counseling_relevance.distinctive_term_hits >= 5
 
 
 def test_best_query_relevance_uses_trait_and_adverse_trip_bridges() -> None:

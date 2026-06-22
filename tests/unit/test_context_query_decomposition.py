@@ -115,6 +115,60 @@ def test_query_decomposition_adds_inference_support_query() -> None:
     assert "support supportive encouraging" in inference.query
 
 
+def test_query_decomposition_keeps_salient_terms_for_inference_queries() -> None:
+    plan = build_query_decomposition_plan(
+        "Would Caroline pursue writing as a career option?"
+    )
+
+    inference = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_inference_support"
+    )
+    current_goal = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_current_preference_or_goal"
+    )
+
+    assert inference.query.casefold().startswith("caroline ")
+    assert "writing" in inference.query.casefold()
+    assert "supporting evidence likely would considered" in inference.query
+    assert "current goal future plan" in current_goal.query
+
+
+def test_query_decomposition_adds_attribute_aggregation_query() -> None:
+    plan = build_query_decomposition_plan("What items has Melanie bought?")
+
+    aggregation = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_attribute_aggregation"
+    )
+
+    assert aggregation.query.casefold().startswith("melanie ")
+    assert "items" in aggregation.query.casefold()
+    assert "bought purchased got new" in aggregation.query
+
+
+def test_query_decomposition_keeps_existing_activity_bridge_unshadowed() -> None:
+    plan = build_query_decomposition_plan("What activities does Melanie partake in?")
+
+    assert "decomposition_attribute_aggregation" not in {
+        item.reason for item in plan.decompositions
+    }
+
+
+def test_query_decomposition_does_not_add_current_goal_noise_to_music_preference() -> None:
+    plan = build_query_decomposition_plan(
+        'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    )
+
+    assert "decomposition_current_preference_or_goal" not in {
+        item.reason for item in plan.decompositions
+    }
+
+
 def test_query_decomposition_adds_evidence_reason_query() -> None:
     plan = build_query_decomposition_plan(
         "Why would Project Atlas be considered blocked?"

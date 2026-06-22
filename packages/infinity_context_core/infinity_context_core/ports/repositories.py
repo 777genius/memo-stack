@@ -390,6 +390,18 @@ class ChunkRepositoryPort(Protocol):
     ) -> list[MemoryChunk]:
         """Load visible active chunks after derived-index candidate retrieval."""
 
+    async def list_by_source_external_id_groups(
+        self,
+        *,
+        space_id: str,
+        memory_scope_ids: tuple[str, ...],
+        thread_id: str | None,
+        source_external_id_groups: tuple[str, ...],
+        exclude_chunk_ids: tuple[str, ...],
+        limit: int,
+    ) -> list[MemoryChunk]:
+        """List active chunks from tightly related source-external-id groups."""
+
     async def keyword_search(
         self,
         *,

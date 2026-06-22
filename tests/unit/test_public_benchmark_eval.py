@@ -1359,6 +1359,440 @@ def test_public_memory_benchmark_recalls_locomo_classical_music_preference(
     assert result["cases"][0]["missing_terms"] == []
 
 
+def test_public_memory_benchmark_recalls_locomo_bought_items_aggregation(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-bought-items-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-bought-items-mini",
+                    "conversation": {
+                        "session_7": [
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D7:18",
+                                "text": (
+                                    "Luna and Oliver are so sweet and playful. "
+                                    "Just got some new shoes, too!"
+                                ),
+                            }
+                        ],
+                        "session_19": [
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D19:2",
+                                "text": (
+                                    "These figurines I bought yesterday remind me "
+                                    "of family love."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What items has Melanie bought?",
+                            "answer": "Figurines, shoes",
+                            "evidence": ["D19:2", "D7:18"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_event_help_aggregation(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-event-help-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-event-help-mini",
+                    "conversation": {
+                        "session_3": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D3:3",
+                                "text": (
+                                    "I felt powerful giving my school talk. I shared "
+                                    "my journey and inspired people to be better allies."
+                                ),
+                            }
+                        ],
+                        "session_9": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D9:2",
+                                "text": (
+                                    "Last weekend I joined a mentorship program for "
+                                    "LGBTQ youth. It is rewarding to help the community."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "What events has Caroline participated in to help "
+                                "children?"
+                            ),
+                            "answer": "Mentoring program, school speech",
+                            "evidence": ["D9:2", "D3:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_lgbtq_events_aggregation(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-lgbtq-events-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-lgbtq-events-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:3",
+                                "text": (
+                                    "I went to a LGBTQ support group yesterday and "
+                                    "it was so powerful."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D3:1",
+                                "text": (
+                                    "I wanted to tell you about my school event last "
+                                    "week. I talked about my transgender journey and "
+                                    "encouraged students to get involved in the LGBTQ "
+                                    "community."
+                                ),
+                            }
+                        ],
+                        "session_5": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D5:1",
+                                "text": (
+                                    "Last week I went to an LGBTQ+ pride parade. "
+                                    "Everyone was happy and it made me feel like I "
+                                    "belonged."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "What LGBTQ+ events has Caroline participated in?"
+                            ),
+                            "answer": "Pride parade, school speech, support group",
+                            "evidence": ["D5:1", "D3:1", "D1:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_hike_count_adjacent_windows(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-hike-count-adjacent-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-hike-count-adjacent-mini",
+                    "conversation": {
+                        "session_11": [
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D11:3",
+                                "text": (
+                                    "I went hiking and found some more amazing trails "
+                                    "in my town. It was such an awesome experience."
+                                ),
+                            },
+                            {
+                                "speaker": "Nate",
+                                "dia_id": "D11:4",
+                                "text": "Sounds great. Did you happen to take any photos?",
+                            },
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D11:5",
+                                "text": (
+                                    "Yeah, I did! Loved this spot on the hike. "
+                                    "The rush of the water was so soothing."
+                                ),
+                                "image_caption": (
+                                    "a photo of a waterfall with a dark sky in the background"
+                                ),
+                                "visual_query": "waterfall lush greenery",
+                            },
+                        ],
+                        "session_14": [
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D14:19",
+                                "text": (
+                                    "Yep, I'm hiking with some buddies this weekend. "
+                                    "We're checking out a new trail with a rad waterfall."
+                                ),
+                            },
+                            {
+                                "speaker": "Nate",
+                                "dia_id": "D14:20",
+                                "text": (
+                                    "Sounds great! I'm organizing a gaming party two "
+                                    "weekends later."
+                                ),
+                            },
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D14:21",
+                                "text": "Oh? Are you going to invite your tournament friends?",
+                            },
+                        ],
+                        "session_28": [
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D28:22",
+                                "text": (
+                                    "I took that pic on a hike last summer near Fort Wayne. "
+                                    "The sunset and beauty were inspiring."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "How many hikes has Joanna been on?",
+                            "answer": "Three",
+                            "evidence": ["D11:5", "D14:21", "D28:22"],
+                            "category": 3,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_reliable_failure_bridges(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-reliable-bridges-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-reliable-bridges-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D1:4",
+                                "text": (
+                                    "I took the kids to the museum yesterday. "
+                                    "The dinosaur exhibit made their eyes light up."
+                                ),
+                            },
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D1:8",
+                                "text": (
+                                    "We love painting nature-inspired scenes "
+                                    "together as a family."
+                                ),
+                            },
+                        ],
+                        "session_2": [
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D2:23",
+                                "text": (
+                                    "I'm allergic to most reptiles and animals "
+                                    "with fur. My face gets puffy and itchy."
+                                ),
+                            },
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D2:29",
+                                "text": (
+                                    "I recently found out I'm allergic to "
+                                    "cockroaches too, so pets are tricky."
+                                ),
+                            },
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D3:11",
+                                "text": (
+                                    "I loved Becoming Nicole by Amy Ellis Nutt. "
+                                    "It is an inspiring true story about a trans "
+                                    "girl and her family."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "What activities has Melanie done with her family?"
+                            ),
+                            "answer": "Museum visits and painting.",
+                            "evidence": ["D1:4", "D1:8"],
+                            "category": 1,
+                        },
+                        {
+                            "question": (
+                                "What underlying condition might Joanna have "
+                                "based on her allergies?"
+                            ),
+                            "answer": "A broad animal allergy.",
+                            "evidence": ["D2:23", "D2:29"],
+                            "category": 3,
+                        },
+                        {
+                            "question": (
+                                "What book did Melanie read from Caroline's "
+                                "suggestion?"
+                            ),
+                            "answer": "Becoming Nicole by Amy Ellis Nutt.",
+                            "evidence": ["D3:11"],
+                            "category": 1,
+                        },
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert [case["missing_terms"] for case in result["cases"]] == [[], [], []]
+
+
+def test_public_memory_benchmark_recalls_locomo_current_goal_inference(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-current-goal-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-current-goal-mini",
+                    "conversation": {
+                        "session_19": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D19:1",
+                                "text": (
+                                    "I passed the adoption agency interviews last "
+                                    "Friday. This is a big move towards my goal of "
+                                    "having a family."
+                                ),
+                            },
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D19:3",
+                                "text": (
+                                    "I hope to build my own family and put a roof "
+                                    "over kids who have not had that before. Adoption "
+                                    "is a way of giving back."
+                                ),
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "Would Caroline want to move back to her home country "
+                                "soon?"
+                            ),
+                            "answer": (
+                                "No; she is in the process of adopting children."
+                            ),
+                            "evidence": ["D19:1", "D19:3"],
+                            "category": 3,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
 def test_public_memory_benchmark_links_observations_to_related_locomo_turn_ids(
     tmp_path: Path,
 ) -> None:

@@ -212,8 +212,18 @@ class ContextHydrator:
                     text=chunk.text,
                     metadata=chunk.metadata,
                 )
-                snippet = query_focused_snippet(query=query.query, text=chunk_text)
-                evidence_text = snippet.text if snippet is not None else chunk_text
+                preserve_existing_evidence = _should_preserve_chunk_item_evidence(item)
+                snippet = (
+                    None
+                    if preserve_existing_evidence
+                    else query_focused_snippet(query=query.query, text=chunk_text)
+                )
+                if preserve_existing_evidence and item.text.strip():
+                    evidence_text = item.text
+                elif snippet is not None:
+                    evidence_text = snippet.text
+                else:
+                    evidence_text = chunk_text
                 visible_items.append(
                     enrich_context_item_with_media_time(
                         ContextItem(
@@ -222,7 +232,9 @@ class ContextHydrator:
                             text=evidence_text,
                             score=item.score,
                             source_refs=source_refs_with_query_snippet(
-                                chunk_source_refs(
+                                item.source_refs
+                                if preserve_existing_evidence and item.source_refs
+                                else chunk_source_refs(
                                     chunk,
                                     text_preview=snippet.text if snippet else chunk_text,
                                 ),
@@ -236,3 +248,13 @@ class ContextHydrator:
                     )
                 )
         return tuple(visible_items)
+
+
+def _should_preserve_chunk_item_evidence(item: ContextItem) -> bool:
+    diagnostics = item.diagnostics if isinstance(item.diagnostics, dict) else {}
+    retrieval_sources = diagnostics.get("retrieval_sources")
+    if isinstance(retrieval_sources, (list, tuple)) and (
+        "keyword_aggregation_chunks" in retrieval_sources
+    ):
+        return True
+    return diagnostics.get("retrieval_source") == "keyword_aggregation_chunks"

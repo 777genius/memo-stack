@@ -55,6 +55,14 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "career_intent_bridge",
     ),
     (
+        frozenset({"field", "pursue"}),
+        (
+            "education edu career options fields jobs counseling counselor mental "
+            "health psychology support similar issues pursue work"
+        ),
+        "education_career_field_bridge",
+    ),
+    (
         frozenset({"support", "career"}),
         (
             "motivation motivated mattered made difference support got counseling "
@@ -143,9 +151,229 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "activity_aggregation_bridge",
     ),
     (
+        frozenset({"activity", "family"}),
+        (
+            "family kids children husband museum dinosaur painting nature camping "
+            "campfire marshmallows hiking beach stories trip spending time pottery "
+            "workshop clay pots swimming fam unplug hang creativity imagination "
+            "excited motivated motivate love latest work quiet weekend"
+        ),
+        "family_activity_bridge",
+    ),
+    (
+        frozenset({"activity", "family"}),
+        (
+            "family painting together nature inspired latest work sunset flowers "
+            "kids creativity imagination project"
+        ),
+        "family_painting_activity_bridge",
+    ),
+    (
+        frozenset({"activity", "family"}),
+        (
+            "family swimming with kids swim taking care ourselves vital self care "
+            "after conversation talk soon"
+        ),
+        "family_swimming_activity_bridge",
+    ),
+    (
+        frozenset({"activity", "family"}),
+        (
+            "family husband kids children keep motivated motivate motivation love "
+            "support moments worth lucky"
+        ),
+        "family_motivation_context_bridge",
+    ),
+    (
         frozenset({"partake"}),
         "pottery camping painting swimming running hobbies activities creative outdoors",
         "activity_aggregation_bridge",
+    ),
+    (
+        frozenset({"event", "attend"}),
+        (
+            "events participated attended joined went lgbtq community advocacy "
+            "activism campaign mentorship mentoring program youth equality awareness"
+        ),
+        "event_participation_bridge",
+    ),
+    (
+        frozenset({"lgbtq", "event", "attend"}),
+        (
+            "lgbtq pride parade marched flags signs celebrating love diversity "
+            "accepted happy belonged community equality"
+        ),
+        "lgbtq_pride_event_bridge",
+    ),
+    (
+        frozenset({"lgbtq", "event", "attend"}),
+        (
+            "lgbtq support group transgender stories powerful inspiring accepted "
+            "courage embrace community"
+        ),
+        "lgbtq_support_group_event_bridge",
+    ),
+    (
+        frozenset({"lgbtq", "event", "attend"}),
+        (
+            "school event speech talk transgender journey students involved "
+            "community reactions awareness allies inclusion gender identity"
+        ),
+        "lgbtq_school_event_bridge",
+    ),
+    (
+        frozenset({"event", "attend", "help"}),
+        (
+            "help children youth mentorship mentoring program school speech talk "
+            "students audience inspire allies community gender identity inclusion "
+            "support voice transgender journey"
+        ),
+        "event_participation_help_bridge",
+    ),
+    (
+        frozenset({"lgbtq", "community", "attend"}),
+        (
+            "lgbtq community participating ways activist group connected activists "
+            "rights support voice difference pride parade mentorship program youth "
+            "art show paintings"
+        ),
+        "lgbtq_community_participation_bridge",
+    ),
+    (
+        frozenset({"counseling", "workshop"}),
+        (
+            "counseling workshop therapeutic methods trans people mental health "
+            "safe space professionals support acceptance enlightening"
+        ),
+        "counseling_workshop_bridge",
+    ),
+    (
+        frozenset({"degree"}),
+        (
+            "degree policymaking policy political science public administration "
+            "public affairs positive impact opportunities improvements"
+        ),
+        "degree_policy_inference_bridge",
+    ),
+    (
+        frozenset({"friend", "beside"}),
+        (
+            "friends teammates team video game counter strike global offensive "
+            "played together blast friends besides"
+        ),
+        "friends_team_inference_bridge",
+    ),
+    (
+        frozenset({"beach", "mountains"}),
+        (
+            "beach ocean sunset sailboat walk weekly nature close nearby mountains "
+            "outdoors hiking camping"
+        ),
+        "beach_or_mountains_inference_bridge",
+    ),
+    (
+        frozenset({"future", "job", "pursue"}),
+        (
+            "future job career volunteering volunteer shelter homeless front desk "
+            "talks helping people make difference fulfilling kindness community"
+        ),
+        "volunteer_career_inference_bridge",
+    ),
+    (
+        frozenset({"pet", "discomfort"}),
+        (
+            "pets animals reptiles fur allergic allergy puffy itchy discomfort "
+            "turtles cockroaches pet"
+        ),
+        "pet_allergy_discomfort_bridge",
+    ),
+    (
+        frozenset({"condition", "allergy"}),
+        (
+            "underlying condition allergies allergic reptiles animals fur puffy "
+            "itchy cockroaches turtles pet discomfort"
+        ),
+        "allergy_condition_inference_bridge",
+    ),
+    (
+        frozenset({"symbol"}),
+        (
+            "symbols important rainbow flag mural eagle freedom pride courage "
+            "strength trans community resilience stained glass acceptance"
+        ),
+        "symbol_importance_bridge",
+    ),
+    (
+        frozenset({"console"}),
+        (
+            "console nintendo game cover fantasy rpg xenoblade chronicles switch "
+            "playing awesome blast recommend"
+        ),
+        "console_game_cover_bridge",
+    ),
+    (
+        frozenset({"artist", "band"}),
+        (
+            "musical artists bands summer sounds band pop song dancing singing "
+            "concert lively fun"
+        ),
+        "music_artist_band_bridge",
+    ),
+    (
+        frozenset({"shoe", "used"}),
+        (
+            "new shoes purple walking running used for walk run love color sneakers"
+        ),
+        "shoe_usage_bridge",
+    ),
+    (
+        frozenset({"meteor", "shower", "feel"}),
+        (
+            "meteor shower felt tiny awe universe awesome life sky stars watching "
+            "camping trip"
+        ),
+        "meteor_shower_feeling_bridge",
+    ),
+    (
+        frozenset({"color", "pattern", "pottery"}),
+        (
+            "pottery colors patterns catch eye make people smile express feelings "
+            "creative creativity painting stroke project"
+        ),
+        "pottery_color_reason_bridge",
+    ),
+    (
+        frozenset({"transgender", "event", "specific"}),
+        (
+            "transgender event poetry reading trans lives matter stories poetry "
+            "safe place self expression empowering identities pride flags"
+        ),
+        "transgender_poetry_event_bridge",
+    ),
+    (
+        frozenset({"book", "suggestion"}),
+        (
+            "book suggestion recommended becoming nicole amy ellis nutt true story "
+            "trans girl family hope connection self acceptance"
+        ),
+        "book_suggestion_bridge",
+    ),
+    (
+        frozenset({"children", "many"}),
+        (
+            "children kids brother siblings two younger kids son daughter scared "
+            "reassured tough family"
+        ),
+        "children_count_sibling_bridge",
+    ),
+    (
+        frozenset({"attribute", "describe"}),
+        (
+            "attributes describe traits family rock thankful volunteering food "
+            "supplies toy drive calm assistance rescue mission burning building "
+            "purpose make difference helpful brave"
+        ),
+        "attribute_description_bridge",
     ),
     (
         frozenset({"personality", "traits"}),

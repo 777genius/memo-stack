@@ -725,6 +725,88 @@ def test_context_expands_keyword_chunk_with_adjacent_document_evidence(
     )
 
 
+def test_context_expands_keyword_turn_with_source_sibling_evidence(
+    tmp_path: Path,
+) -> None:
+    scope = {
+        "space_id": "space_client_app",
+        "memory_scope_id": "memory_scope_default",
+    }
+    with make_client(tmp_path) as client:
+        primary = client.post(
+            "/v1/documents",
+            json={
+                **scope,
+                "title": "LoCoMo test session_4 turn D4:6",
+                "text": (
+                    "session_4 turn D4:6\n"
+                    "session_4 date: 10:37 am on 27 June, 2023\n"
+                    "D4:6 Melanie: I just took my family camping in the mountains "
+                    "last week."
+                ),
+                "source_type": "locomo_turn",
+                "source_external_id": "locomo:test:session_4:D4:6:turn",
+            },
+            headers=auth_headers(),
+        )
+        sibling = client.post(
+            "/v1/documents",
+            json={
+                **scope,
+                "title": "LoCoMo test session_4 turn D4:8",
+                "text": (
+                    "session_4 turn D4:8\n"
+                    "D4:8 SOURCE_SIBLING_TURN_MARKER We explored nature, "
+                    "roasted marshmallows around the campfire and went on a hike."
+                ),
+                "source_type": "locomo_turn",
+                "source_external_id": "locomo:test:session_4:D4:8:turn",
+            },
+            headers=auth_headers(),
+        )
+        distractor = client.post(
+            "/v1/documents",
+            json={
+                **scope,
+                "title": "LoCoMo test session_40 turn D40:8",
+                "text": (
+                    "session_40 turn D40:8\n"
+                    "D40:8 Nora: WRONG_SOURCE_SIBLING_MARKER unrelated note."
+                ),
+                "source_type": "locomo_turn",
+                "source_external_id": "locomo:test:session_40:D40:8:turn",
+            },
+            headers=auth_headers(),
+        )
+        context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "When did Melanie go camping in June?",
+                "token_budget": 1600,
+                "max_facts": 0,
+                "max_chunks": 8,
+                "max_evidence_items": 0,
+            },
+            headers=auth_headers(),
+        )
+
+    assert primary.status_code == 201
+    assert sibling.status_code == 201
+    assert distractor.status_code == 201
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    assert "SOURCE_SIBLING_TURN_MARKER" in data["rendered_text"]
+    assert "WRONG_SOURCE_SIBLING_MARKER" not in data["rendered_text"]
+    assert data["diagnostics"]["keyword_source_sibling_chunks_used"] >= 1
+    assert any(
+        item["diagnostics"]["retrieval_source"] == "keyword_source_sibling_chunks"
+        and "SOURCE_SIBLING_TURN_MARKER" in item["text"]
+        for item in data["items"]
+    )
+
+
 def test_document_ingest_returns_backpressure_when_outbox_high(tmp_path: Path) -> None:
     with make_client_with_settings(
         tmp_path,

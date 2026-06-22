@@ -84,6 +84,14 @@ def _retrieval_candidate_limit(limit: int) -> int:
     return min(max(limit * 20, limit, 200), 2000)
 
 
+def _escape_like(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
 def _not_expired(model: type, now: datetime | None):
     comparable_now = now if now is not None else func.now()
     return or_(model.expires_at.is_(None), model.expires_at > comparable_now)

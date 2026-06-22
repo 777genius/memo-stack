@@ -58,6 +58,7 @@ from infinity_context_adapters.postgres.models import (
     MemorySuggestionRow,
 )
 from infinity_context_adapters.postgres.repository_helpers import (
+    _escape_like,
     _retrieval_candidate_limit,
     _score,
     _terms,
@@ -427,6 +428,62 @@ class PostgresChunkRepository(ChunkRepositoryPort):
         ).scalars()
         by_id = {row.id: chunk_row_to_domain(row) for row in rows}
         return [by_id[chunk_id] for chunk_id in chunk_ids if chunk_id in by_id]
+
+    async def list_by_source_external_id_groups(
+        self,
+        *,
+        space_id: str,
+        memory_scope_ids: tuple[str, ...],
+        thread_id: str | None,
+        source_external_id_groups: tuple[str, ...],
+        exclude_chunk_ids: tuple[str, ...],
+        limit: int,
+    ) -> list[MemoryChunk]:
+        groups = tuple(
+            dict.fromkeys(
+                group.strip()
+                for group in source_external_id_groups
+                if group and group.strip()
+            )
+        )
+        if limit <= 0 or not groups:
+            return []
+        source_conditions = tuple(
+            or_(
+                MemoryChunkRow.source_external_id == group,
+                MemoryChunkRow.source_external_id.like(
+                    f"{_escape_like(group)}:%",
+                    escape="\\",
+                ),
+            )
+            for group in groups
+        )
+        conditions = [
+            MemoryChunkRow.space_id == space_id,
+            MemoryChunkRow.memory_scope_id.in_(memory_scope_ids),
+            MemoryChunkRow.status == "active",
+            MemoryChunkRow.classification != "restricted",
+            or_(*source_conditions),
+        ]
+        if exclude_chunk_ids:
+            conditions.append(MemoryChunkRow.id.not_in(exclude_chunk_ids))
+        if thread_id is not None:
+            conditions.append(
+                or_(MemoryChunkRow.thread_id == thread_id, MemoryChunkRow.thread_id.is_(None))
+            )
+        rows = (
+            await self._session.execute(
+                select(MemoryChunkRow)
+                .where(*conditions)
+                .order_by(
+                    MemoryChunkRow.source_external_id.asc(),
+                    MemoryChunkRow.sequence.asc(),
+                    MemoryChunkRow.id.asc(),
+                )
+                .limit(limit)
+            )
+        ).scalars()
+        return [chunk_row_to_domain(row) for row in rows]
 
     async def keyword_search(
         self,

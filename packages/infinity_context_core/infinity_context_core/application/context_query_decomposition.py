@@ -166,6 +166,59 @@ _COMPARISON_TERMS = frozenset(
         "сравни",
     }
 )
+_ATTRIBUTE_AGGREGATION_TERMS = frozenset(
+    {
+        "attend",
+        "attended",
+        "bought",
+        "buy",
+        "events",
+        "instrument",
+        "instruments",
+        "items",
+        "participate",
+        "participated",
+        "play",
+        "plays",
+        "share",
+        "shared",
+        "traits",
+    }
+)
+_CURRENT_GOAL_TERMS = frozenset(
+    {
+        "adopt",
+        "adoption",
+        "back",
+        "career",
+        "country",
+        "future",
+        "goal",
+        "goals",
+        "move",
+        "moved",
+        "moving",
+        "open",
+        "plan",
+        "pursue",
+        "soon",
+        "want",
+        "wants",
+    }
+)
+_SALIENT_DROP_VARIANTS = frozenset(
+    {
+        *_QUESTION_STOPWORDS,
+        *_INFERENCE_TERMS,
+        "career",
+        "consider",
+        "considered",
+        "does",
+        "option",
+        "still",
+    }
+)
+_MAX_SALIENT_TERMS = 5
 _EVIDENCE_REASON_RE = re.compile(
     r"\b("
     r"why|reason|because|what evidence|which evidence|what shows|what showed|"
@@ -215,6 +268,7 @@ def build_query_decomposition_plan(
     temporal_intent = temporal_intent or build_temporal_query_intent(query)
     variants = _query_variant_set(query)
     identities = _identity_terms(query, anchor_intent)
+    salient_terms = _salient_terms(query, identities=identities)
     candidates: list[QueryDecomposition] = []
     _append_clause_decompositions(candidates, query=query, identities=identities)
     if _has_event_focus(anchor_intent, variants):
@@ -290,7 +344,7 @@ def build_query_decomposition_plan(
         _append_candidate(
             candidates,
             query=_compose_query(
-                identities,
+                (*identities, *salient_terms),
                 (
                     "inference supporting evidence likely would considered "
                     "observed mentioned indicates preference trait decision reason "
@@ -299,6 +353,20 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_inference_support",
         )
+        if variants.intersection(_CURRENT_GOAL_TERMS):
+            _append_candidate(
+                candidates,
+                query=_compose_query(
+                    (*identities, *salient_terms),
+                    (
+                        "current goal future plan wants preference likes dislikes "
+                        "interested recently now decided committed adoption family "
+                        "children kids home roof agency interview build career "
+                        "activity service country office military"
+                    ),
+                ),
+                reason="decomposition_current_preference_or_goal",
+            )
     if variants.intersection(_COMPARISON_TERMS):
         _append_candidate(
             candidates,
@@ -310,6 +378,15 @@ def build_query_decomposition_plan(
                 ),
             ),
             reason="decomposition_comparison_preference",
+        )
+    if variants.intersection(_ATTRIBUTE_AGGREGATION_TERMS):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                _attribute_aggregation_tail(variants),
+            ),
+            reason="decomposition_attribute_aggregation",
         )
     return QueryDecompositionPlan(
         original_query=query,
@@ -378,6 +455,56 @@ def _compose_query(
     tail: str,
 ) -> str:
     return _normalize_query(" ".join((*identities, tail)))
+
+
+def _salient_terms(query: str, *, identities: tuple[str, ...]) -> tuple[str, ...]:
+    identity_keys = {identity.casefold() for identity in identities}
+    terms: list[str] = []
+    seen: set[str] = set()
+    for term in query_terms(query, min_chars=3, max_terms=18):
+        variants = frozenset(term.variants)
+        raw = _normalize_identity_term(term.raw)
+        if not raw:
+            continue
+        key = raw.casefold()
+        if key in seen or key in identity_keys:
+            continue
+        if variants.intersection(_SALIENT_DROP_VARIANTS):
+            continue
+        terms.append(raw)
+        seen.add(key)
+        if len(terms) >= _MAX_SALIENT_TERMS:
+            break
+    return tuple(terms)
+
+
+def _attribute_aggregation_tail(variants: frozenset[str]) -> str:
+    tails: list[str] = [
+        "aggregate list multiple mentions evidence observed mentioned",
+    ]
+    if variants.intersection({"items", "bought", "buy"}):
+        tails.append("item bought purchased got new gift object possession")
+    if variants.intersection({"instrument", "instruments", "play", "plays"}):
+        tails.append("instrument music play plays played violin clarinet piano guitar")
+    if variants.intersection(
+        {"events", "attend", "attended", "participate", "participated"}
+    ):
+        tails.append(
+            "event attended participated went conference parade speech support group "
+            "reading meeting mentorship mentoring youth children school talk gender "
+            "identity inclusion community ally allies"
+        )
+    if variants.intersection({"share", "shared"}):
+        tails.append(
+            "shared both similar interests hobbies enjoy watching movies making "
+            "desserts recipes baking"
+        )
+    if variants.intersection({"traits"}):
+        tails.append(
+            "trait personality thoughtful authentic driven caring supportive "
+            "concerned helpful"
+        )
+    return _normalize_query(" ".join(tails))
 
 
 def _requests_evidence_reason(query: str) -> bool:

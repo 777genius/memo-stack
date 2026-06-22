@@ -8,6 +8,8 @@ from infinity_context_core.application.context_ranking import (
     apply_query_anchor_intent_boosts,
     apply_query_plan_bm25_lexical_boosts,
     apply_rank_fusion_boosts,
+    best_query_relevance,
+    keyword_chunk_score,
     reciprocal_rank_fusion_scores,
 )
 from infinity_context_core.application.dto import ContextItem
@@ -210,6 +212,197 @@ def test_query_plan_bm25_lexical_boost_uses_best_decomposed_query() -> None:
     assert boosted[0].diagnostics["provenance"]["bm25_lexical_query_reason"] == (
         "decomposition_artifact_evidence"
     )
+
+
+def test_keyword_chunk_score_boosts_attribute_aggregation_reason() -> None:
+    plan = build_query_expansion_plan("What items has Melanie bought?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D19:2 Melanie bought family figurines yesterday and D7:18 Melanie "
+            "got some new shoes."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "decomposition_attribute_aggregation"
+    assert score >= 0.84
+
+
+def test_keyword_chunk_score_boosts_event_participation_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "What events has Caroline participated in?"
+    )
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline participated in LGBTQ community advocacy campaigns and "
+            "joined a youth mentorship program."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "event_participation_bridge"
+    assert score >= 0.88
+
+
+def test_keyword_chunk_score_boosts_lgbtq_pride_event_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "What LGBTQ+ events has Caroline participated in?"
+    )
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D5:1 Caroline went to an LGBTQ pride parade, felt happy, and "
+            "belonged in the community."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "lgbtq_pride_event_bridge"
+    assert score >= 0.89
+
+
+def test_keyword_chunk_score_boosts_lgbtq_support_group_event_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "What LGBTQ+ events has Caroline participated in?"
+    )
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D1:3 Caroline attended an LGBTQ support group and found the "
+            "transgender stories powerful."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "lgbtq_support_group_event_bridge"
+    assert score >= 0.89
+
+
+def test_keyword_chunk_score_boosts_event_participation_help_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "What events has Caroline participated in to help children?"
+    )
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D3:3 Caroline gave a school speech about gender identity and "
+            "inspired students to be better allies."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "event_participation_help_bridge"
+    assert score >= 0.87
+
+
+def test_keyword_chunk_score_boosts_reliable_locomo_failure_bridges() -> None:
+    cases = [
+        (
+            "What activities has Melanie done with her family?",
+            (
+                "Melanie took her kids to the museum, painted nature scenes, and "
+                "roasted marshmallows on a family camping trip."
+            ),
+            "family_activity_bridge",
+        ),
+        (
+            "Does John live close to a beach or the mountains?",
+            (
+                "John goes on weekly walks by the ocean and shared a sunset beach "
+                "photo with a sailboat."
+            ),
+            "beach_or_mountains_inference_bridge",
+        ),
+        (
+            "What job might Maria pursue in the future?",
+            (
+                "Maria volunteers at a homeless shelter front desk, gives talks, "
+                "helps people, and finds it fulfilling."
+            ),
+            "volunteer_career_inference_bridge",
+        ),
+        (
+            "What pets would not cause any discomfort to Joanna?",
+            (
+                "Joanna is allergic to reptiles and animals with fur, and even "
+                "cockroaches make pets difficult."
+            ),
+            "pet_allergy_discomfort_bridge",
+        ),
+        (
+            "What underlying condition might Joanna have based on her allergies?",
+            (
+                "Joanna is allergic to reptiles, animals with fur, cockroaches, "
+                "and gets puffy and itchy."
+            ),
+            "allergy_condition_inference_bridge",
+        ),
+        (
+            "What symbols are important to Caroline?",
+            (
+                "Caroline said the rainbow flag mural and eagle symbolize freedom, "
+                "pride, courage, and resilience."
+            ),
+            "symbol_importance_bridge",
+        ),
+        (
+            "What Console does Nate own?",
+            (
+                "Nate plays Xenoblade Chronicles, and the image caption shows "
+                "Nintendo game covers."
+            ),
+            "console_game_cover_bridge",
+        ),
+        (
+            "What are the new shoes that Caroline got used for?",
+            "Caroline asked whether the purple new shoes were for walking or running.",
+            "shoe_usage_bridge",
+        ),
+        (
+            "How did Caroline feel while watching the meteor shower?",
+            "Watching the meteor shower made her feel tiny and in awe of the universe.",
+            "meteor_shower_feeling_bridge",
+        ),
+        (
+            "What transgender-specific events has Caroline attended?",
+            (
+                "Caroline attended a transgender poetry reading, a safe place for "
+                "self expression and identities."
+            ),
+            "transgender_poetry_event_bridge",
+        ),
+        (
+            "What book did Melanie read from Caroline's suggestion?",
+            (
+                "Caroline recommended Becoming Nicole by Amy Ellis Nutt, a true "
+                "story about a trans girl and family."
+            ),
+            "book_suggestion_bridge",
+        ),
+        (
+            "What attributes describe John?",
+            (
+                "John gave food and supplies at a homeless shelter, organized a toy "
+                "drive, stayed calm, and helped save a family from a burning building."
+            ),
+            "attribute_description_bridge",
+        ),
+    ]
+
+    for query, text, expected_reason in cases:
+        plan = build_query_expansion_plan(query)
+        _, reason, relevance = best_query_relevance(plan, text=text)
+        score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+        assert reason == expected_reason
+        assert score >= 0.88
 
 
 def test_query_anchor_intent_boost_prefers_matching_entity_evidence() -> None:
