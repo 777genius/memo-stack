@@ -35,6 +35,23 @@ def test_query_decomposition_handles_russian_event_artifact_query() -> None:
     assert any("artifact file screenshot image video audio" in query for query in queries)
 
 
+def test_query_decomposition_expands_relative_time_queries() -> None:
+    plan = build_query_decomposition_plan("What did Alex say two hours ago?")
+
+    relative = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_relative_time"
+    )
+
+    assert "alex" in relative.query.casefold()
+    assert "hours_ago" in relative.query
+    assert "transcript notes meeting call" in relative.query
+    assert "decomposition_relative_time" in plan.diagnostics()[
+        "query_decomposition_reasons"
+    ]
+
+
 def test_query_decomposition_is_bounded_and_deduplicated() -> None:
     plan = build_query_decomposition_plan(
         "What changed after the call with Alex about Atlas and what changed after "
@@ -58,6 +75,13 @@ def test_query_expansion_plan_uses_decompositions_for_retrieval_queries() -> Non
     assert "decomposition_artifact_evidence" in retrieval_reasons
     assert "change_over_time_bridge" in retrieval_reasons
     assert plan.diagnostics()["query_decomposition_count"] > 0
+
+
+def test_query_expansion_plan_uses_relative_time_decomposition() -> None:
+    plan = build_query_expansion_plan("What did Alex say previous week?")
+
+    retrieval_reasons = [item.reason for item in plan.retrieval_queries]
+    assert "decomposition_relative_time" in retrieval_reasons
 
 
 def test_best_query_relevance_uses_decomposed_artifact_query() -> None:

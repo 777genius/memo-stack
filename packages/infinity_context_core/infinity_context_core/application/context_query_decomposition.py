@@ -186,6 +186,18 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_temporal_change",
         )
+    if temporal_intent.relative_time_hints:
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "event temporal time window occurred capture transcript "
+                    f"notes meeting call {' '.join(temporal_intent.relative_time_hints)}"
+                ),
+            ),
+            reason="decomposition_relative_time",
+        )
     if variants.intersection(_ARTIFACT_TERMS):
         _append_candidate(
             candidates,
