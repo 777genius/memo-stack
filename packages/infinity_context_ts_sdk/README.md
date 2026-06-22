@@ -288,6 +288,19 @@ console.log(loop.brief.digest?.data.rendered_markdown);
 
 When `qualityPolicy` is set, the loop throws `memory.brief_quality_failed` before returning an unsupported or non-derived summary. `evidenceSummary` is always returned so beta smokes can prove which provider/source refs reached the final brief.
 
+For UI cards, CI logs or release artifacts, turn the loop result into a stable report instead of hand-assembling diagnostics in each caller.
+
+```ts
+import { summarizeMemorySummaryLoop } from "@infinity-context/sdk";
+
+const report = summarizeMemorySummaryLoop(loop);
+
+console.log(report.status, report.gates.quality.status, report.sourceEvidence?.successRate);
+console.log(report.summary.renderedMarkdown ?? report.summary.renderedText);
+```
+
+The report preserves the raw workflow result separately while collecting readiness, source evidence, outbox, quality, retrieval and evidence counts into one serializable shape.
+
 Use `inspectMemory` when an operator, beta smoke or backend job needs one typed view over read models, usage, runtime diagnostics and optional graph/snapshot checks.
 
 ```ts

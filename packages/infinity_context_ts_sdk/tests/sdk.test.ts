@@ -13,6 +13,7 @@ import {
   retrievalDiagnostics,
   runRuntimeCanary,
   summarizeMemoryBriefEvidence,
+  summarizeMemorySummaryLoop,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
   waitForRuntimeCanary,
@@ -1895,6 +1896,41 @@ describe("InfinityContextClient", () => {
       outboxDrainOk: true,
       qualityOk: true,
       warnings: [],
+    });
+    const report = summarizeMemorySummaryLoop(loop);
+    expect(report).toMatchObject({
+      ok: true,
+      status: "ready",
+      gates: {
+        readiness: { ok: true, status: "passed", errors: [], warnings: [] },
+        sourceEvidence: { ok: true, status: "passed", errors: [], warnings: [] },
+        outboxDrain: { ok: true, status: "passed", errors: [], warnings: [] },
+        quality: { ok: true, status: "passed", errors: [], warnings: [] },
+      },
+      sourceEvidence: {
+        total: 2,
+        completed: 2,
+        skipped: 0,
+        succeeded: 2,
+        failed: 0,
+        successRate: 1,
+        bySourceType: { reddit: 1, github: 1 },
+      },
+      summary: {
+        contextItems: 1,
+        searchItems: 1,
+        digestSections: 0,
+        sourceRefsTotal: 2,
+        uniqueSourceRefs: 1,
+        renderedMarkdown: "loop-brief: concise digest",
+      },
+      retrieval: {
+        derivedRetrievalUsed: true,
+        vectorHealthy: true,
+        graphHealthy: true,
+      },
+      warnings: [],
+      errors: [],
     });
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /v1/spaces",

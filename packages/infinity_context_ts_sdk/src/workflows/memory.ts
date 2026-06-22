@@ -94,6 +94,9 @@ export {
 export {
   summarizeSourceEvidenceBatch,
 } from "./memory-source-evidence.js";
+export {
+  summarizeMemorySummaryLoop,
+} from "./memory-summary-loop.js";
 export type {
   InspectMemoryDiagnostics,
   InspectMemoryInput,
@@ -110,6 +113,14 @@ export type {
   PlanMemoryMaintenanceInput,
   PlanMemoryMaintenanceResult,
 } from "./memory-maintenance.js";
+export type {
+  MemorySummaryLoopGateReport,
+  MemorySummaryLoopGateStatus,
+  MemorySummaryLoopReadableSummary,
+  MemorySummaryLoopReport,
+  MemorySummaryLoopSourceEvidenceReport,
+  MemorySummaryLoopStatus,
+} from "./memory-summary-loop.js";
 export type {
   EnsureMemoryScopeInput,
   EnsureMemoryTopologyCreated,

@@ -3,6 +3,7 @@ export {
   evaluateMemoryBriefQuality,
   MemoryWorkflows,
   summarizeMemoryBriefEvidence,
+  summarizeMemorySummaryLoop,
   summarizeSourceEvidenceBatch,
 } from "./workflows/memory.js";
 export type {
@@ -38,6 +39,12 @@ export type {
   MemorySnapshotTransferDiagnostics,
   MemorySnapshotTransferEndpoint,
   MemorySnapshotTransferMode,
+  MemorySummaryLoopGateReport,
+  MemorySummaryLoopGateStatus,
+  MemorySummaryLoopReadableSummary,
+  MemorySummaryLoopReport,
+  MemorySummaryLoopSourceEvidenceReport,
+  MemorySummaryLoopStatus,
   MemoryWorkflowResources,
   PlanMemoryMaintenanceInput,
   PlanMemoryMaintenanceResult,
