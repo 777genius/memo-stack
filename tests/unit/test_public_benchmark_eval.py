@@ -761,6 +761,101 @@ def test_public_memory_benchmark_runs_isolated_cases_in_parallel(
     assert progress_snapshots[-1]["processed_case_ratio"] == 1.0
 
 
+def test_public_memory_benchmark_parallelizes_independent_context_groups(
+    tmp_path: Path,
+) -> None:
+    adapter = _ParallelBenchmarkAdapter(expected_parallel_contexts=2)
+    dataset = tmp_path / "dataset.json"
+    progress_out = tmp_path / "progress.jsonl"
+    checkpoint_out = tmp_path / "checkpoint.json"
+    dataset.write_text("[]", encoding="utf-8")
+    shared_document = BenchmarkDocumentInput(
+        title="Shared group document",
+        text="SHARED_MARKER lives in the first grouped benchmark document.",
+        source_external_id="group-a-shared-document",
+    )
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="group-a-one",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(shared_document,),
+            memory_scope_external_ref="group-a-scope",
+            thread_external_ref="group-a-thread",
+        ),
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="group-a-two",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(shared_document,),
+            memory_scope_external_ref="group-a-scope",
+            thread_external_ref="group-a-thread",
+        ),
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="group-b-one",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(
+                BenchmarkDocumentInput(
+                    title="Independent group document",
+                    text="SHARED_MARKER lives in the second grouped document.",
+                    source_external_id="group-b-document",
+                ),
+            ),
+            memory_scope_external_ref="group-b-scope",
+            thread_external_ref="group-b-thread",
+        ),
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=cases,
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+        checkpoint_every_cases=1,
+        parallelism=2,
+    )
+
+    progress_events = [
+        json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
+    ]
+    execution_configured = next(
+        event
+        for event in progress_events
+        if event["event_type"] == "run_execution_configured"
+    )
+    checkpoint = json.loads(checkpoint_out.read_text(encoding="utf-8"))
+
+    assert result["ok"] is True
+    assert result["metrics"]["requested_parallelism"] == 2
+    assert result["metrics"]["effective_parallelism"] == 2
+    assert result["metrics"]["parallelism_degraded"] is False
+    assert result["metrics"]["seed_source_attempt_count"] == 3
+    assert result["metrics"]["seeded_source_count"] == 2
+    assert result["metrics"]["seed_cache_hit_count"] == 1
+    assert adapter.max_active_context_posts == 2
+    assert len([post for post in adapter.posts if post[0] == "/v1/documents"]) == 2
+    assert [case["case_id"] for case in result["cases"]] == [
+        "group-a-one",
+        "group-a-two",
+        "group-b-one",
+    ]
+    assert [case["case_id"] for case in checkpoint["cases"]] == [
+        "group-a-one",
+        "group-a-two",
+        "group-b-one",
+    ]
+    assert execution_configured["effective_parallelism"] == 2
+    assert [event["event_type"] for event in progress_events].count("case_completed") == 3
+
+
 def test_public_memory_benchmark_degrades_parallelism_for_shared_contexts(
     tmp_path: Path,
 ) -> None:

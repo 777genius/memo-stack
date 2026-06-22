@@ -90,6 +90,10 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert result["metrics"]["unique_case_id_count"] == 2
     assert result["metrics"]["duplicate_case_id_count"] == 0
     assert result["metrics"]["accuracy"] == 1.0
+    assert result["metrics"]["requested_parallelism_max"] == 1
+    assert result["metrics"]["effective_parallelism_max"] == 1
+    assert result["metrics"]["parallelism_degraded_count"] == 0
+    assert result["metrics"]["parallelism_degraded"] is False
     assert result["checks"]["unique_case_ids"] is True
     assert result["competitive_floor_mode"] is True
     assert result["publishable_public_benchmark_candidate"] is True

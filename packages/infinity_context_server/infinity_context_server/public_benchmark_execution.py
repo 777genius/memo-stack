@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -50,10 +51,26 @@ class CaseExecutionEntry:
 
 
 @dataclass(frozen=True)
+class CaseExecutionGroup:
+    group_index: int
+    context_ref: tuple[str, str]
+    entries: tuple[CaseExecutionEntry, ...]
+
+
+@dataclass(frozen=True)
 class CaseExecutionOutcome:
     entry: CaseExecutionEntry
     result: CaseRunResult
     failure: dict[str, object] | None
+    seeded_source_keys: frozenset[SourceKey]
+    seeded_corpus_identities: frozenset[CorpusIdentity]
+    seed_stats: BenchmarkSeedStats
+
+
+@dataclass(frozen=True)
+class CaseExecutionGroupOutcome:
+    group: CaseExecutionGroup
+    case_outcomes: tuple[CaseExecutionOutcome, ...]
     seeded_source_keys: frozenset[SourceKey]
     seeded_corpus_identities: frozenset[CorpusIdentity]
     seed_stats: BenchmarkSeedStats
@@ -150,6 +167,52 @@ def execute_case_with_isolated_state(
     )
 
 
+def execute_case_group_with_isolated_state(
+    *,
+    group: CaseExecutionGroup,
+    run_case: RunCase,
+    capability_resolver: CaseCapabilityResolver,
+) -> CaseExecutionGroupOutcome:
+    seeded_source_keys: set[SourceKey] = set()
+    seeded_corpus_identities: set[CorpusIdentity] = set()
+    seed_corpus_metadata_cache: dict[tuple[int, int], Any] = {}
+    seed_stats = BenchmarkSeedStats()
+    case_outcomes: list[CaseExecutionOutcome] = []
+    for entry in group.entries:
+        try:
+            result = run_case(
+                entry.case,
+                seeded_source_keys,
+                seeded_corpus_identities,
+                seed_corpus_metadata_cache,
+                seed_stats,
+                None,
+                entry.case_index,
+                None,
+            )
+            failure = None
+        except Exception as exc:
+            result = case_error_result(entry.case, capability_resolver)
+            failure = case_exception_failure(entry.case, exc)
+        case_outcomes.append(
+            CaseExecutionOutcome(
+                entry=entry,
+                result=result,
+                failure=failure,
+                seeded_source_keys=frozenset(),
+                seeded_corpus_identities=frozenset(),
+                seed_stats=BenchmarkSeedStats(),
+            )
+        )
+    return CaseExecutionGroupOutcome(
+        group=group,
+        case_outcomes=tuple(case_outcomes),
+        seeded_source_keys=frozenset(seeded_source_keys),
+        seeded_corpus_identities=frozenset(seeded_corpus_identities),
+        seed_stats=seed_stats,
+    )
+
+
 def case_exception_outcome(
     entry: CaseExecutionEntry,
     exc: Exception,
@@ -169,6 +232,20 @@ def case_exception_outcome(
 def merge_case_execution_outcome(
     *,
     outcome: CaseExecutionOutcome,
+    seeded_source_keys: set[SourceKey],
+    seeded_corpus_identities: set[CorpusIdentity],
+    seed_stats: BenchmarkSeedStats,
+) -> None:
+    seeded_source_keys.update(outcome.seeded_source_keys)
+    seeded_corpus_identities.update(outcome.seeded_corpus_identities)
+    seed_stats.source_attempt_count += outcome.seed_stats.source_attempt_count
+    seed_stats.seeded_source_count = len(seeded_source_keys)
+    seed_stats.seed_cache_hit_count += outcome.seed_stats.seed_cache_hit_count
+
+
+def merge_case_execution_group_outcome(
+    *,
+    outcome: CaseExecutionGroupOutcome,
     seeded_source_keys: set[SourceKey],
     seeded_corpus_identities: set[CorpusIdentity],
     seed_stats: BenchmarkSeedStats,
@@ -293,12 +370,31 @@ def case_execution_parallelism(
     *,
     requested_parallelism: int,
 ) -> tuple[int, str | None]:
+    groups = case_execution_groups(entries)
     if requested_parallelism <= 1 or len(entries) <= 1:
         return 1, None
-    context_refs = [case_context_ref(entry.case) for entry in entries]
-    if len(set(context_refs)) != len(context_refs):
+    if len(groups) <= 1:
         return 1, "shared_case_context_refs"
-    return min(requested_parallelism, len(entries)), None
+    effective_parallelism = min(requested_parallelism, len(groups))
+    if effective_parallelism < requested_parallelism:
+        return effective_parallelism, "case_context_group_limit"
+    return effective_parallelism, None
+
+
+def case_execution_groups(
+    entries: Sequence[CaseExecutionEntry],
+) -> tuple[CaseExecutionGroup, ...]:
+    grouped: OrderedDict[tuple[str, str], list[CaseExecutionEntry]] = OrderedDict()
+    for entry in entries:
+        grouped.setdefault(case_context_ref(entry.case), []).append(entry)
+    return tuple(
+        CaseExecutionGroup(
+            group_index=index,
+            context_ref=context_ref,
+            entries=tuple(group_entries),
+        )
+        for index, (context_ref, group_entries) in enumerate(grouped.items(), start=1)
+    )
 
 
 def case_context_ref(case: Any) -> tuple[str, str]:

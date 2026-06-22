@@ -45,7 +45,13 @@ from infinity_context_server.public_benchmark_execution import (
     CaseExecutionEntry as _CaseExecutionEntry,
 )
 from infinity_context_server.public_benchmark_execution import (
+    CaseExecutionGroupOutcome as _CaseExecutionGroupOutcome,
+)
+from infinity_context_server.public_benchmark_execution import (
     case_exception_outcome as _case_exception_outcome,
+)
+from infinity_context_server.public_benchmark_execution import (
+    case_execution_groups as _case_execution_groups,
 )
 from infinity_context_server.public_benchmark_execution import (
     case_execution_parallelism as _case_execution_parallelism,
@@ -60,13 +66,13 @@ from infinity_context_server.public_benchmark_execution import (
     emit_case_started as _emit_case_started,
 )
 from infinity_context_server.public_benchmark_execution import (
+    execute_case_group_with_isolated_state as _execute_case_group_with_isolated_state,
+)
+from infinity_context_server.public_benchmark_execution import (
     execute_case_sequentially as _execute_case_sequentially,
 )
 from infinity_context_server.public_benchmark_execution import (
-    execute_case_with_isolated_state as _execute_case_with_isolated_state,
-)
-from infinity_context_server.public_benchmark_execution import (
-    merge_case_execution_outcome as _merge_case_execution_outcome,
+    merge_case_execution_group_outcome as _merge_case_execution_group_outcome,
 )
 from infinity_context_server.public_benchmark_execution import (
     normalize_parallelism as _normalize_parallelism,
@@ -662,80 +668,93 @@ def _execute_cases(
             case_result_key(result.benchmark, result.case_id): result
             for result in run_results
         }
+        execution_groups = _case_execution_groups(pending_entries)
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=effective_parallelism,
-            thread_name_prefix="public-benchmark-case",
+            thread_name_prefix="public-benchmark-context",
         ) as executor:
-            future_to_entry = {}
-            for entry in pending_entries:
-                _emit_case_started(
-                    progress=progress,
-                    entry=entry,
-                    capability_resolver=_case_capability,
-                    total_case_count=len(cases),
-                    effective_parallelism=effective_parallelism,
-                )
+            future_to_group = {}
+            for group in execution_groups:
+                for entry in group.entries:
+                    _emit_case_started(
+                        progress=progress,
+                        entry=entry,
+                        capability_resolver=_case_capability,
+                        total_case_count=len(cases),
+                        effective_parallelism=effective_parallelism,
+                    )
                 future = executor.submit(
-                    _execute_case_with_isolated_state,
-                    entry=entry,
+                    _execute_case_group_with_isolated_state,
+                    group=group,
                     run_case=run_case_adapter,
                     capability_resolver=_case_capability,
                 )
-                future_to_entry[future] = entry
-            for future in concurrent.futures.as_completed(future_to_entry):
-                entry = future_to_entry[future]
+                future_to_group[future] = group
+            for future in concurrent.futures.as_completed(future_to_group):
+                group = future_to_group[future]
                 try:
-                    outcome = future.result()
+                    group_outcome = future.result()
                 except Exception as exc:
-                    outcome = _case_exception_outcome(
-                        entry,
-                        exc,
-                        capability_resolver=_case_capability,
+                    group_outcome = _CaseExecutionGroupOutcome(
+                        group=group,
+                        case_outcomes=tuple(
+                            _case_exception_outcome(
+                                entry,
+                                exc,
+                                capability_resolver=_case_capability,
+                            )
+                            for entry in group.entries
+                        ),
+                        seeded_source_keys=frozenset(),
+                        seeded_corpus_identities=frozenset(),
+                        seed_stats=_BenchmarkSeedStats(),
                     )
-                _merge_case_execution_outcome(
-                    outcome=outcome,
+                _merge_case_execution_group_outcome(
+                    outcome=group_outcome,
                     seeded_source_keys=seeded_source_keys,
                     seeded_corpus_identities=seeded_corpus_identities,
                     seed_stats=seed_stats,
                 )
-                if outcome.failure is not None:
-                    failures.append(outcome.failure)
-                    _emit_case_failed(
+                for outcome in group_outcome.case_outcomes:
+                    entry = outcome.entry
+                    if outcome.failure is not None:
+                        failures.append(outcome.failure)
+                        _emit_case_failed(
+                            progress=progress,
+                            entry=entry,
+                            reason=str(outcome.failure["reason"]),
+                            seeded_source_count=len(seeded_source_keys),
+                            seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+                            effective_parallelism=effective_parallelism,
+                        )
+                    else:
+                        _emit_case_completed(
+                            progress=progress,
+                            entry=entry,
+                            result=outcome.result,
+                            seeded_source_count=len(seeded_source_keys),
+                            seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+                            effective_parallelism=effective_parallelism,
+                        )
+                    result_by_key[
+                        case_result_key(outcome.result.benchmark, outcome.result.case_id)
+                    ] = outcome.result
+                    run_results[:] = _ordered_run_results(cases, result_by_key)
+                    _emit_case_progress_snapshot(
                         progress=progress,
-                        entry=entry,
-                        reason=str(outcome.failure["reason"]),
+                        run_results=run_results,
+                        failures=failures,
                         seeded_source_count=len(seeded_source_keys),
-                        seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+                        seed_stats=seed_stats,
                         effective_parallelism=effective_parallelism,
                     )
-                else:
-                    _emit_case_completed(
-                        progress=progress,
-                        entry=entry,
-                        result=outcome.result,
+                    progress.checkpoint(
+                        processed_case_count=len(run_results),
+                        run_results=run_results,
+                        failures=failures,
                         seeded_source_count=len(seeded_source_keys),
-                        seed_cache_hit_count=seed_stats.seed_cache_hit_count,
-                        effective_parallelism=effective_parallelism,
+                        seed_stats=seed_stats,
                     )
-                result_by_key[
-                    case_result_key(outcome.result.benchmark, outcome.result.case_id)
-                ] = outcome.result
-                run_results[:] = _ordered_run_results(cases, result_by_key)
-                _emit_case_progress_snapshot(
-                    progress=progress,
-                    run_results=run_results,
-                    failures=failures,
-                    seeded_source_count=len(seeded_source_keys),
-                    seed_stats=seed_stats,
-                    effective_parallelism=effective_parallelism,
-                )
-                progress.checkpoint(
-                    processed_case_count=len(run_results),
-                    run_results=run_results,
-                    failures=failures,
-                    seeded_source_count=len(seeded_source_keys),
-                    seed_stats=seed_stats,
-                )
 
     progress.event(
         "run_completed",
