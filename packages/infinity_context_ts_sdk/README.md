@@ -694,6 +694,23 @@ console.log(preview.diagnostics.warnings);
 console.log(preview.preview?.data);
 ```
 
+For migration gates, convert the transfer into a report and assert safety before allowing import steps.
+
+```ts
+import { assertMemorySnapshotTransferPolicy, summarizeMemorySnapshotTransfer } from "@infinity-context/sdk";
+
+const snapshotReport = summarizeMemorySnapshotTransfer(preview);
+
+assertMemorySnapshotTransferPolicy(snapshotReport, {
+  allowedModes: ["preview"],
+  forbidMutation: true,
+  requireRedacted: true,
+  requireManifest: true,
+  requirePreview: true,
+  forbidSameScope: true,
+});
+```
+
 Confirmed imports require an explicit mode and confirmation flag.
 
 ```ts

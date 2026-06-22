@@ -9,10 +9,12 @@ import {
   assertFullMemoryReady,
   assertMemoryInspectionPolicy,
   assertMemoryMaintenancePolicy,
+  assertMemorySnapshotTransferPolicy,
   assertMemorySummaryLoopPolicy,
   evaluateMemoryBriefQuality,
   evaluateMemoryInspectionPolicy,
   evaluateMemoryMaintenancePolicy,
+  evaluateMemorySnapshotTransferPolicy,
   evaluateMemorySummaryLoopPolicy,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
@@ -21,6 +23,7 @@ import {
   summarizeMemoryBriefEvidence,
   summarizeMemoryInspection,
   summarizeMemoryMaintenance,
+  summarizeMemorySnapshotTransfer,
   summarizeMemorySummaryLoop,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
@@ -2467,6 +2470,32 @@ describe("InfinityContextClient", () => {
     });
     expect(preview.preview).toMatchObject({ data: { dry_run: true, conflicts: [] } });
     expect(preview.manifest).toMatchObject({ sha256: "sha_1" });
+    const previewReport = summarizeMemorySnapshotTransfer(preview);
+    expect(previewReport).toMatchObject({
+      ok: true,
+      status: "review_required",
+      mode: "preview",
+      mutated: false,
+      redacted: true,
+      mergeStrategy: "fail_on_conflict",
+      sameScope: false,
+      hasManifest: true,
+      hasPreview: true,
+      hasImportResult: false,
+      counts: { facts: 0 },
+    });
+    expect(evaluateMemorySnapshotTransferPolicy(previewReport, {
+      allowedModes: ["preview"],
+      forbidMutation: true,
+      requireRedacted: true,
+      forbidSameScope: true,
+      requireManifest: true,
+      requirePreview: true,
+      requiredMergeStrategy: "fail_on_conflict",
+    })).toMatchObject({
+      ok: true,
+      errors: [],
+    });
 
     await expect(
       client.workflows.transferMemorySnapshot({
@@ -2497,6 +2526,30 @@ describe("InfinityContextClient", () => {
       mergeStrategy: "replace",
     });
     expect(imported.importResult).toMatchObject({ data: { imported: true, dry_run: false } });
+    const importReport = summarizeMemorySnapshotTransfer(imported);
+    expect(importReport).toMatchObject({
+      ok: true,
+      status: "mutated",
+      mode: "confirmed_import",
+      mutated: true,
+      redacted: false,
+      hasImportResult: true,
+      counts: { facts: 1 },
+    });
+    expect(evaluateMemorySnapshotTransferPolicy(imported, {
+      allowedModes: ["confirmed_import"],
+      requireMutation: true,
+      requireImportResult: true,
+      minFacts: 1,
+      requiredMergeStrategy: "replace",
+    })).toMatchObject({
+      ok: true,
+      errors: [],
+    });
+    expect(() => assertMemorySnapshotTransferPolicy(importReport, {
+      forbidMutation: true,
+      requireRedacted: true,
+    })).toThrow("Memory snapshot transfer policy failed: snapshot transfer mutated target memory");
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /v1/export/memory_scope-snapshot",
       "POST /v1/export/memory_scope-snapshot/preview",

@@ -168,6 +168,18 @@ export type {
   TransferMemorySnapshotInput,
   TransferMemorySnapshotResult,
 } from "./memory-snapshot-transfer.js";
+export {
+  assertMemorySnapshotTransferPolicy,
+  evaluateMemorySnapshotTransferPolicy,
+  summarizeMemorySnapshotTransfer,
+} from "./memory-snapshot-transfer-report.js";
+export type {
+  MemorySnapshotTransferCounts,
+  MemorySnapshotTransferPolicy,
+  MemorySnapshotTransferPolicyEvaluation,
+  MemorySnapshotTransferReport,
+  MemorySnapshotTransferStatus,
+} from "./memory-snapshot-transfer-report.js";
 export type {
   MemoryBriefEvidenceSourceRef,
   MemoryBriefEvidenceSummary,
