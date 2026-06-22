@@ -233,6 +233,19 @@ The maintenance workflow reads operations, pending context link suggestions, mem
 Use runtime guards in CI, beta smoke tests or app boot checks before relying on full memory retrieval.
 
 ```ts
+const readiness = await memory.workflows.checkFullMemoryReadiness({
+  query: "runtime readiness probe",
+  readScope: ReadScope.external({
+    spaceSlug: "social-monitor:tenant_1:workspace_1",
+    memoryScopeExternalRefs: ["workspace-global"],
+  }),
+  includeSearchProbe: true,
+  assertReady: true,
+});
+
+console.log(readiness.readiness.mode, readiness.readiness.enabledAdapters);
+console.log(readiness.diagnostics);
+
 const capabilities = await memory.system.capabilities();
 const context = await memory.context.buildContext({
   query: "runtime readiness probe",

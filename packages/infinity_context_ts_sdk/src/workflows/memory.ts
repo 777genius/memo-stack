@@ -1,6 +1,10 @@
 import type { RequestControls } from "../client.js";
 import type { ContextEnvelope, ContextBundleData, MemoryDigestData, SearchMemoryData } from "../context-types.js";
-import { healthyRetrievalComponents, usedDerivedRetrieval } from "../diagnostics.js";
+import {
+  healthyRetrievalComponents,
+  usedDerivedRetrieval,
+  type ContextRetrievalComponent,
+} from "../diagnostics.js";
 import { ValueError, type ReadScope, type ReadScopeInput, type SingleScopeInput } from "../payload.js";
 import type { AnchorsClient, AnchorMergeCandidate } from "../resources/anchors.js";
 import type { AssetsClient } from "../resources/assets.js";
@@ -17,6 +21,12 @@ import type { SuggestionsClient } from "../resources/suggestions.js";
 import type { SystemClient } from "../resources/system.js";
 import type { UsageClient } from "../resources/usage.js";
 import type { UsersClient } from "../resources/users.js";
+import {
+  assertRuntimeReadiness,
+  evaluateRuntimeReadiness,
+  type MemoryRuntimeAdapter,
+  type RuntimeReadinessReport,
+} from "../runtime.js";
 import type {
   ApiEnvelope,
   AssetExtractionJobRecord,
@@ -76,6 +86,11 @@ interface MemoryTopologyResources {
   readonly users: UsersClient;
 }
 
+interface MemoryRuntimeReadinessResources {
+  readonly context: ContextClient;
+  readonly system: SystemClient;
+}
+
 export interface RecordMemoryFeedbackInput extends SingleScopeInput, RequestControls {
   readonly sourceAgent: string;
   readonly text: string;
@@ -131,6 +146,38 @@ export interface BuildMemoryBriefResult {
   readonly search?: ContextEnvelope<SearchMemoryData>;
   readonly digest?: ContextEnvelope<MemoryDigestData>;
   readonly diagnostics: MemoryBriefDiagnostics;
+}
+
+export interface CheckFullMemoryReadinessInput extends ReadScopeInput, RequestControls {
+  readonly readScope?: ReadScope;
+  readonly query?: string;
+  readonly includeContextProbe?: boolean;
+  readonly includeSearchProbe?: boolean;
+  readonly tokenBudget?: number;
+  readonly maxFacts?: number;
+  readonly maxChunks?: number;
+  readonly maxEvidenceItems?: number;
+  readonly consistencyMode?: string;
+  readonly includeStale?: boolean;
+  readonly requiredAdapters?: readonly MemoryRuntimeAdapter[];
+  readonly requiredRetrieval?: readonly ContextRetrievalComponent[];
+  readonly requireDerivedRetrieval?: boolean;
+  readonly assertReady?: boolean;
+}
+
+export interface CheckFullMemoryReadinessDiagnostics {
+  readonly contextProbe: boolean;
+  readonly searchProbe: boolean;
+  readonly diagnosticsSource: "context" | "search" | "none";
+  readonly warnings: readonly string[];
+}
+
+export interface CheckFullMemoryReadinessResult {
+  readonly capabilities: InfinityContextCapabilities;
+  readonly readiness: RuntimeReadinessReport;
+  readonly context?: ContextEnvelope<ContextBundleData>;
+  readonly search?: ContextEnvelope<SearchMemoryData>;
+  readonly diagnostics: CheckFullMemoryReadinessDiagnostics;
 }
 
 export interface InspectMemoryInput extends SingleScopeInput, RequestControls {
@@ -776,6 +823,67 @@ export class MemoryWorkflows {
     };
   }
 
+  async checkFullMemoryReadiness(
+    input: CheckFullMemoryReadinessInput = {},
+  ): Promise<CheckFullMemoryReadinessResult> {
+    const resources = runtimeReadinessResources(this.resources);
+    const controls = workflowControls(input);
+    const shouldProbeContext = input.includeContextProbe ?? input.query !== undefined;
+    const shouldProbeSearch = input.includeSearchProbe ?? false;
+    const probeRequested = shouldProbeContext || shouldProbeSearch;
+
+    let probeInput: BuildContextInput | undefined;
+    if (probeRequested) {
+      const query = requiredWorkflowText(input.query, "checkFullMemoryReadiness probe requires query");
+      probeInput = {
+        ...readScopeInput(input),
+        ...controls,
+        query,
+        ...optional("tokenBudget", input.tokenBudget),
+        ...optional("maxFacts", input.maxFacts),
+        ...optional("maxChunks", input.maxChunks),
+        ...optional("maxEvidenceItems", input.maxEvidenceItems),
+        ...optional("consistencyMode", input.consistencyMode),
+        ...optional("includeStale", input.includeStale),
+      };
+    }
+
+    const [capabilities, context, search] = await Promise.all([
+      resources.system.capabilities(controls),
+      shouldProbeContext && probeInput !== undefined
+        ? resources.context.buildContext(probeInput)
+        : Promise.resolve(undefined),
+      shouldProbeSearch && probeInput !== undefined
+        ? resources.context.search(probeInput)
+        : Promise.resolve(undefined),
+    ]);
+
+    const diagnostics = context?.data.diagnostics ?? search?.data.diagnostics;
+    const readinessInput = {
+      capabilities,
+      ...(diagnostics === undefined ? {} : { diagnostics }),
+      ...optional("requiredAdapters", input.requiredAdapters),
+      ...optional("requiredRetrieval", input.requiredRetrieval),
+      requireDerivedRetrieval: input.requireDerivedRetrieval ?? diagnostics !== undefined,
+    };
+    const readiness = input.assertReady === true
+      ? assertRuntimeReadiness(readinessInput)
+      : evaluateRuntimeReadiness(readinessInput);
+
+    return {
+      capabilities,
+      readiness,
+      ...(context ? { context } : {}),
+      ...(search ? { search } : {}),
+      diagnostics: {
+        contextProbe: context !== undefined,
+        searchProbe: search !== undefined,
+        diagnosticsSource: context ? "context" : search ? "search" : "none",
+        warnings: readiness.warnings,
+      },
+    };
+  }
+
   async ensureMemoryTopology(input: EnsureMemoryTopologyInput): Promise<EnsureMemoryTopologyResult> {
     const resources = topologyResources(this.resources);
     const controls = workflowControls(input);
@@ -1172,6 +1280,15 @@ function topologyResources(resources: MemoryWorkflowResources): MemoryTopologyRe
   }
 
   return { spaces, users };
+}
+
+function runtimeReadinessResources(resources: MemoryWorkflowResources): MemoryRuntimeReadinessResources {
+  const system = resources.system;
+  if (system === undefined) {
+    throw new ValueError("checkFullMemoryReadiness requires MemoryWorkflowResources: system");
+  }
+
+  return { context: resources.context, system };
 }
 
 function maintenanceResources(resources: MemoryWorkflowResources): MemoryMaintenanceResources {
@@ -1714,7 +1831,9 @@ function factScopeInput(input: RecordMemoryFeedbackInput): RememberFactInput {
   };
 }
 
-function readScopeInput(input: BuildMemoryBriefInput): ReadScopeInput & { readonly readScope?: ReadScope } {
+function readScopeInput(input: ReadScopeInput & { readonly readScope?: ReadScope }): ReadScopeInput & {
+  readonly readScope?: ReadScope;
+} {
   return {
     ...optional("readScope", input.readScope),
     ...optional("spaceId", input.spaceId),

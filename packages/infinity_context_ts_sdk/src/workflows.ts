@@ -2,6 +2,9 @@ export { MemoryWorkflows, summarizeSourceEvidenceBatch } from "./workflows/memor
 export type {
   BuildMemoryBriefInput,
   BuildMemoryBriefResult,
+  CheckFullMemoryReadinessDiagnostics,
+  CheckFullMemoryReadinessInput,
+  CheckFullMemoryReadinessResult,
   EnsureMemoryScopeInput,
   EnsureMemoryTopologyCreated,
   EnsureMemoryTopologyDiagnostics,

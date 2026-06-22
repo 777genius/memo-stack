@@ -1017,6 +1017,99 @@ describe("InfinityContextClient", () => {
     });
   });
 
+  it("checks full memory readiness through the workflow facade", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({ enabled_adapters: ["qdrant", "graphiti"], supports_qdrant: true, supports_graphiti: true }),
+      jsonResponse(contextResponse("readiness", {
+        retrieval_sources_used: ["vector", "graph"],
+        vector_query_count: 3,
+        graph_query_count: 2,
+      })),
+      jsonResponse(searchResponse({
+        retrieval_sources_used: ["vector"],
+        vector_query_count: 2,
+        graph_query_count: 1,
+      })),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const readiness = await client.workflows.checkFullMemoryReadiness({
+      query: "Prove full memory runtime before summary generation",
+      readScope: ReadScope.external({
+        spaceSlug: "social-monitor:tenant:workspace",
+        memoryScopeExternalRefs: ["workspace-global", "topic:ai-agents:preferences"],
+      }),
+      includeSearchProbe: true,
+      assertReady: true,
+      tokenBudget: 900,
+      maxFacts: 8,
+      maxChunks: 6,
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_readiness" },
+    });
+
+    expect(readiness.readiness).toMatchObject({
+      ok: true,
+      mode: "full",
+      missingAdapters: [],
+      unhealthyRetrieval: [],
+      derivedRetrievalUsed: true,
+    });
+    expect(readiness.diagnostics).toEqual({
+      contextProbe: true,
+      searchProbe: true,
+      diagnosticsSource: "context",
+      warnings: [],
+    });
+    expect(readiness.context?.data.bundle_id).toBe("bundle_1");
+    expect(readiness.search?.data.items).toHaveLength(1);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/capabilities",
+      "POST /v1/context",
+      "POST /v1/search",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual([
+      "trace_readiness",
+      "trace_readiness",
+      "trace_readiness",
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      query: "Prove full memory runtime before summary generation",
+      memory_scope_external_refs: ["workspace-global", "topic:ai-agents:preferences"],
+      token_budget: 900,
+      max_facts: 8,
+      max_chunks: 6,
+    });
+    expect(transport.bodies[1]).toMatchObject(transport.bodies[0] as Record<string, unknown>);
+  });
+
+  it("fails full memory readiness assertions when required adapters are missing", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ enabled_adapters: [], supports_qdrant: true, supports_graphiti: true }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await expect(
+      client.workflows.checkFullMemoryReadiness({ assertReady: true }),
+    ).rejects.toMatchObject({
+      code: "memory.runtime_not_ready",
+      statusCode: 0,
+      retryable: false,
+    });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/capabilities",
+    ]);
+  });
+
   it("inspects memory across read models, diagnostics, graph and snapshot preview", async () => {
     const controller = new AbortController();
     const transport = new RecordingTransport([
