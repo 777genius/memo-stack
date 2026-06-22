@@ -11,6 +11,9 @@ MEMORY_FRONTEND_MARIONETTE_REPORT ?= .e2e-artifacts/frontend-marionette-local-e2
 MEMORY_MULTIMODAL_PROVIDER_CANARY_REPORT_OUT ?= .e2e-artifacts/multimodal-live-provider-canary.json
 MEMORY_AGENT_LIVE_SMOKE_REPORT_OUT ?= .e2e-artifacts/agent-live-smoke.json
 MEMORY_LOCAL_VISUAL_SMOKE_REPORT_OUT ?= .e2e-artifacts/local-mcp-visual-memory-smoke.json
+MEMORY_LOCAL_EXPERIENCE_PROOF_REPORT_OUT ?= .e2e-artifacts/local-experience-proof.json
+MEMORY_LOCAL_EXPERIENCE_POSTGRES_PORT ?= 55432
+MEMORY_LOCAL_EXPERIENCE_SERVER_PORT ?= 17792
 MEMORY_SERVER_ENV ?= MEMORY_AUTO_CREATE_SCHEMA=true MEMORY_SERVICE_TOKEN=local-dev-token
 PLUGIN_KIT_AI ?= scripts/plugin-kit-ai-local
 MEMORY_AGENT_PLUGIN_ROOT ?= plugins/infinity-context-agent-plugin
@@ -294,6 +297,7 @@ infinity-context-prod-confidence:
 	$(MAKE) infinity-context-plugin-test; \
 	$(MAKE) infinity-context-test-quality; \
 	$(MAKE) infinity-context-agent-install-doctor; \
+	$(MAKE) infinity-context-local-experience-proof; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) infinity-context-agent-live-smoke; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) infinity-context-agent-live-smoke-agents; \
 	$(MAKE) infinity-context-agent-auth-doctor; \
@@ -310,6 +314,7 @@ infinity-context-prod-confidence-strict:
 	$(MAKE) infinity-context-test-quality; \
 	$(MAKE) infinity-context-agent-install-doctor; \
 	$(MAKE) infinity-context-top-evidence-bundle; \
+	$(MAKE) infinity-context-local-experience-proof; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) infinity-context-agent-live-smoke; \
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_PROD_CONFIDENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_PROD_CONFIDENCE_SERVER_PORT)} $(MAKE) infinity-context-agent-live-smoke-agents-strict; \
 	git diff --check; \
@@ -339,6 +344,10 @@ infinity-context-mcp-smoke:
 infinity-context-local-visual-smoke:
 	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_AGENT_SMOKE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_AGENT_SMOKE_SERVER_PORT)} $(MAKE) infinity-context-up-lite
 	MEMORY_API_URL=$${MEMORY_API_URL:-http://127.0.0.1:$${MEMORY_SERVER_PORT:-$(MEMORY_AGENT_SMOKE_SERVER_PORT)}} MEMORY_SERVICE_TOKEN=$${MEMORY_SERVICE_TOKEN:-local-dev-token} $(PYTHON) scripts/local_mcp_visual_memory_smoke.py --report-out "$(MEMORY_LOCAL_VISUAL_SMOKE_REPORT_OUT)"
+
+.PHONY: infinity-context-local-experience-proof
+infinity-context-local-experience-proof:
+	MEMORY_POSTGRES_PORT=$${MEMORY_POSTGRES_PORT:-$(MEMORY_LOCAL_EXPERIENCE_POSTGRES_PORT)} MEMORY_SERVER_PORT=$${MEMORY_SERVER_PORT:-$(MEMORY_LOCAL_EXPERIENCE_SERVER_PORT)} MEMORY_API_URL=$${MEMORY_API_URL:-http://127.0.0.1:$${MEMORY_SERVER_PORT:-$(MEMORY_LOCAL_EXPERIENCE_SERVER_PORT)}} $(PYTHON) scripts/local_experience_proof.py --python "$(PYTHON)" --report-out "$(MEMORY_LOCAL_EXPERIENCE_PROOF_REPORT_OUT)"
 
 .PHONY: infinity-context-plugin-generate
 infinity-context-plugin-generate:

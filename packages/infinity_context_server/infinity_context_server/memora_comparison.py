@@ -224,11 +224,12 @@ DIMENSIONS: tuple[Dimension, ...] = (
             "local_experience payload includes a first-use score, one-minute path "
             "and capability-derived Capture modalities, so installers and humans "
             "can see exactly whether runtime, visual memory, MCP config, capture "
-            "and review are ready. A dedicated local MCP visual memory smoke now "
-            "checks Codex MCP config, MCP status, UI assets, Capture, pending "
-            "review and memory-browser visibility through a sandbox scope. The "
-            "flow is much closer, but still needs installer polish and richer "
-            "first-run guidance to match Memora's out-of-the-box feel."
+            "and review are ready. A dedicated local experience proof now gates "
+            "install script syntax, quickstart without runtime start, live "
+            "quickstart, doctor, MCP tool availability and visual-memory capture "
+            "through a sandbox home and scope. The flow is much closer, but still "
+            "needs installer polish and richer first-run guidance to match Memora's "
+            "out-of-the-box feel."
         ),
         memora_rationale=(
             "Memora's README and direct smoke show a simpler local MCP server path "
@@ -362,6 +363,9 @@ def build_memora_agent_memory_comparison(
                 "tests/e2e/test_infinity_context_agent_behavior_bench_e2e.py",
                 "tests/e2e/test_infinity_context_agent_plugin_e2e.py",
                 "scripts/clean_full_smoke.py",
+                "scripts/local_experience_proof.py",
+                "scripts/local_mcp_visual_memory_smoke.py",
+                ".e2e-artifacts/local-experience-proof.json",
                 ".e2e-artifacts/public-benchmark-full-600-current.json",
                 ".e2e-artifacts/multimodal-production-goal-audit.json",
             ],

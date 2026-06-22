@@ -475,6 +475,164 @@ def test_makefile_has_local_visual_mcp_smoke_target() -> None:
     assert "MEMORY_LOCAL_VISUAL_SMOKE_REPORT_OUT" in makefile
 
 
+def test_makefile_has_local_experience_proof_target() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = "\n".join(
+        _make_target_recipe(makefile, "infinity-context-local-experience-proof")
+    )
+
+    assert ".PHONY: infinity-context-local-experience-proof" in makefile
+    assert "MEMORY_LOCAL_EXPERIENCE_PROOF_REPORT_OUT ?=" in makefile
+    assert "MEMORY_LOCAL_EXPERIENCE_POSTGRES_PORT ?= 55432" in makefile
+    assert "MEMORY_LOCAL_EXPERIENCE_SERVER_PORT ?= 17792" in makefile
+    proof_script = (ROOT / "scripts" / "local_experience_proof.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'DEFAULT_PROOF_HOME = PROJECT_ROOT / ".tmp" / "local-experience-proof-home"' in (
+        proof_script
+    )
+    assert proof_script.count('"--force"') == 2
+    assert "MEMORY_API_URL=$${MEMORY_API_URL:-http://127.0.0.1:" in recipe
+    assert "$${MEMORY_SERVER_PORT:-$(MEMORY_LOCAL_EXPERIENCE_SERVER_PORT)}}" in recipe
+    assert "$(PYTHON) scripts/local_experience_proof.py" in recipe
+    assert '--python "$(PYTHON)"' in recipe
+    assert '--report-out "$(MEMORY_LOCAL_EXPERIENCE_PROOF_REPORT_OUT)"' in recipe
+
+
+def test_local_experience_proof_summarizes_quickstart_readiness() -> None:
+    proof = _load_local_experience_proof(ROOT / "scripts" / "local_experience_proof.py")
+
+    configured = proof._summarize_quickstart(
+        {
+            "ok": True,
+            "returncode": 0,
+            "payload": {
+                "ok": True,
+                "token_included": False,
+                "local_experience": {
+                    "status": "configured_not_started",
+                    "mcp_ready": True,
+                    "visual_memory_ready": False,
+                    "readiness": {"score": 4.0},
+                    "first_capture": {"supports": ["text", "file"]},
+                },
+            },
+        },
+        expect_ready=False,
+    )
+    live = proof._summarize_quickstart(
+        {
+            "ok": True,
+            "returncode": 0,
+            "payload": {
+                "ok": True,
+                "token_included": False,
+                "local_experience": {
+                    "status": "ready",
+                    "mcp_ready": True,
+                    "visual_memory_ready": True,
+                    "ready_agents": ["codex"],
+                    "readiness": {"score": 10.0},
+                    "first_capture": {
+                        "supports": ["text", "image", "audio", "video"],
+                        "active_modalities": ["text", "image"],
+                        "review_supported": True,
+                    },
+                },
+            },
+        },
+        expect_ready=True,
+    )
+
+    assert configured["ok"] is True
+    assert configured["local_experience_status"] == "configured_not_started"
+    assert configured["readiness_score"] == 4.0
+    assert live["ok"] is True
+    assert live["local_experience_status"] == "ready"
+    assert live["visual_memory_ready"] is True
+    assert live["ready_agents"] == ["codex"]
+
+
+def test_local_experience_proof_requires_visual_memory_and_mcp_tools() -> None:
+    proof = _load_local_experience_proof(ROOT / "scripts" / "local_experience_proof.py")
+    payload = {
+        "ok": True,
+        "checks": {
+            "generated_mcp": {"raw_token_absent": True, "token_included": False},
+            "mcp_session": {"tool_count": 45},
+            "ui": {"first_memory_guidance": True},
+            "visual_memory": {
+                "browser_capture_visible": True,
+                "pending_suggestions": 1,
+                "capture_id": "capture-demo",
+            },
+        },
+        "ui_url": "http://127.0.0.1:7788/ui/",
+        "review_url": "http://127.0.0.1:7788/ui/review",
+    }
+
+    good = proof._summarize_local_visual_smoke(
+        {"ok": True, "returncode": 0, "payload": payload}
+    )
+    weak_payload = json.loads(json.dumps(payload))
+    weak_payload["checks"]["mcp_session"]["tool_count"] = 12
+
+    weak = proof._summarize_local_visual_smoke(
+        {"ok": True, "returncode": 0, "payload": weak_payload}
+    )
+
+    assert good["ok"] is True
+    assert good["mcp_tool_count"] == 45
+    assert good["pending_suggestions"] == 1
+    assert weak["ok"] is False
+    assert weak["checks"]["mcp_tool_count"] is False
+
+
+def test_local_experience_proof_failure_list_is_required_components_only() -> None:
+    proof = _load_local_experience_proof(ROOT / "scripts" / "local_experience_proof.py")
+
+    assert proof._failed_required_components(
+        {
+            "install_script_syntax": {"ok": True},
+            "quickstart_no_start": {"ok": True},
+            "quickstart_live": {"ok": True},
+            "doctor": {"ok": True},
+            "local_visual_smoke": {"ok": True},
+            "extra_diagnostics": {"ok": False},
+        }
+    ) == []
+    assert proof._failed_required_components(
+        {
+            "install_script_syntax": {"ok": True},
+            "quickstart_no_start": {"ok": True},
+            "quickstart_live": {"ok": True},
+            "doctor": {"ok": False},
+            "local_visual_smoke": {"ok": True},
+        }
+    ) == ["doctor"]
+
+
+def test_local_experience_proof_report_uses_non_sensitive_redaction_marker() -> None:
+    proof = _load_local_experience_proof(ROOT / "scripts" / "local_experience_proof.py")
+
+    report = proof._build_report(
+        api_url="http://127.0.0.1:7788",
+        agent="codex",
+        components={
+            "install_script_syntax": {"ok": True},
+            "quickstart_no_start": {"ok": True},
+            "quickstart_live": {"ok": True},
+            "doctor": {"ok": True},
+            "local_visual_smoke": {"ok": True},
+        },
+        failures=[],
+        started=0.0,
+    )
+
+    assert report["redaction_applied"] is True
+    assert "secrets_redacted" not in report
+
+
 def test_makefile_has_manual_prod_load_canary_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     recipe = _make_target_recipe(makefile, "infinity-context-prod-load-canary")
@@ -514,6 +672,7 @@ def test_makefile_has_prod_confidence_gate_with_cleanup() -> None:
     assert "$(MAKE) infinity-context-plugin-test" in recipe
     assert "$(MAKE) infinity-context-test-quality" in recipe
     assert "$(MAKE) infinity-context-agent-install-doctor" in recipe
+    assert "$(MAKE) infinity-context-local-experience-proof" in recipe
     assert "$(MAKE) infinity-context-agent-live-smoke" in recipe
     assert "$(MAKE) infinity-context-agent-live-smoke-agents" in recipe
     assert "MEMORY_PROD_CONFIDENCE_POSTGRES_PORT" in recipe
@@ -560,6 +719,7 @@ def test_makefile_has_strict_full_prod_confidence_gate() -> None:
     assert "$(MAKE) infinity-context-test-quality" in recipe
     assert "$(MAKE) infinity-context-agent-install-doctor" in recipe
     assert "$(MAKE) infinity-context-top-evidence-bundle" in recipe
+    assert "$(MAKE) infinity-context-local-experience-proof" in recipe
     assert "$(MAKE) infinity-context-full-provider-public-benchmark-suite" not in recipe
     assert "$(MAKE) infinity-context-agent-live-smoke" in recipe
     assert "$(MAKE) infinity-context-agent-live-smoke-agents-strict" in recipe
@@ -1618,6 +1778,15 @@ def _load_frontend_marionette_local_e2e(path: Path):
         "frontend_marionette_local_e2e_for_test",
         path,
     )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_local_experience_proof(path: Path):
+    spec = importlib.util.spec_from_file_location("local_experience_proof_for_test", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

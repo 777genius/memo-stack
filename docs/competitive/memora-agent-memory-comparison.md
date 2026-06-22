@@ -39,6 +39,9 @@ Infinity Context local evidence:
 - `tests/e2e/test_infinity_context_agent_behavior_bench_e2e.py`
 - `tests/e2e/test_infinity_context_agent_plugin_e2e.py`
 - `scripts/clean_full_smoke.py`
+- `scripts/local_experience_proof.py`
+- `scripts/local_mcp_visual_memory_smoke.py`
+- `.e2e-artifacts/local-experience-proof.json`
 - `.e2e-artifacts/public-benchmark-full-600-current.json`
 - `.e2e-artifacts/multimodal-production-goal-audit.json`
 
@@ -116,6 +119,9 @@ Fresh Infinity Context evidence from the latest local run:
 
 - local multimodal Docker proof, frontend Marionette proof and quality scorecard
   are green on the current commit;
+- local experience proof is green: install script syntax, quickstart without
+  runtime start, live quickstart, doctor, MCP tool availability and visual memory
+  capture are verified together through a sandbox home;
 - internal deterministic retrieval, linking, multimodal and safety gates are
   strong, but they are not a substitute for a fresh large public benchmark;
 - the current public benchmark artifact in the workspace is canary-sized, so
@@ -135,7 +141,8 @@ python -m infinity_context_server.memora_comparison \
 This keeps the competitive claim honest: Infinity Context is stronger on
 governed multimodal evidence, scope isolation, review policy and verified
 architecture. Memora is still stronger as a ready-to-use personal MCP graph UI
-with action history, simple local setup and immediately obvious visual memory.
+with action history and graph-first polish, but the quick local MCP and visual
+memory gap is now much narrower.
 
 ## Scorecard
 
@@ -154,14 +161,14 @@ make infinity-context-compare-memora
 | Large documents and architecture notes | 9.4 | 9.1 | Infinity Context |
 | Graph relationships and temporal context | 9.5 | 8.4 | Infinity Context |
 | Agent hooks, plugins and real agent ergonomics | 8.8 | 8.4 | Infinity Context |
-| Local MCP setup and visual memory UX | 8.1 | 9.3 | Memora |
+| Local MCP setup and visual memory UX | 8.6 | 9.3 | Memora |
 | Project/team/memory scope isolation | 9.2 | 7.5 | Infinity Context |
 | Operational confidence and benchmark evidence | 8.6 | 7.7 | Infinity Context |
 | Clean Architecture and extensibility | 9.1 | 6.8 | Infinity Context |
 
 Weighted total:
 
-- Infinity Context: 8.93
+- Infinity Context: 8.97
 - Memora: 8.26
 
 ## Honest conclusion
@@ -198,10 +205,13 @@ restore. Read-only memory insights are available through HTTP API, SDK, MCP and
 CLI for pending review load, expired facts, document indexing coverage,
 taxonomy hotspots, recent activity, duplicate/similar fact review, a safe
 consolidation plan and cleanup action items.
-Memora still has more polished local graph UI and a stronger zero-to-first-memory
-local MCP experience. Infinity Context now narrows that gap with structured
-`local_experience` readiness, a first-use score, a one-minute path and
-capability-derived Capture modalities in `quickstart` and `doctor`.
+Memora still has more polished local graph UI, action history and chat-first
+memory exploration. Infinity Context now narrows the zero-to-first-memory gap
+with structured `local_experience` readiness, a first-use score, a one-minute
+path, capability-derived Capture modalities in `quickstart` and `doctor`, and a
+dedicated `local_experience_proof` gate that verifies install syntax,
+quickstart/no-start, quickstart/live, doctor, MCP tools and visual-memory capture
+in one report.
 Infinity Context now also has `memory_related_facts` and
 `GET /v1/facts/{fact_id}/related`, giving agents read-only related fact
 traversal with explainable relation reasons before update/delete or summary
