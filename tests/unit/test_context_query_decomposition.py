@@ -203,6 +203,22 @@ def test_query_decomposition_keeps_existing_activity_bridge_unshadowed() -> None
     }
 
 
+def test_query_decomposition_adds_current_goal_for_career_path_typo() -> None:
+    plan = build_query_decomposition_plan(
+        "What career path has Caroline decided to persue?"
+    )
+
+    current_goal = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_current_preference_or_goal"
+    )
+
+    assert "caroline" in current_goal.query.casefold()
+    assert "current career path goal decided pursue" in current_goal.query
+    assert "education options counseling counselor mental health" in current_goal.query
+
+
 def test_query_decomposition_does_not_add_current_goal_noise_to_music_preference() -> None:
     plan = build_query_decomposition_plan(
         'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'

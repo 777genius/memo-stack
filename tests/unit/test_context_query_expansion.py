@@ -193,6 +193,13 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
             "career options fields jobs counseling",
         ),
         (
+            build_query_expansion_plan(
+                "What career path has Caroline decided to persue?"
+            ),
+            "career_path_bridge",
+            "career path decided pursue persue education options",
+        ),
+        (
             build_query_expansion_plan("What is Caroline's identity?"),
             "identity_bridge",
             "transgender trans woman transition",
@@ -546,6 +553,23 @@ def test_best_query_relevance_uses_education_career_field_bridge() -> None:
     assert options_relevance.distinctive_term_hits >= 5
     assert counseling_reason == "education_career_field_bridge"
     assert counseling_relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_career_path_typo_bridge() -> None:
+    career = build_query_expansion_plan(
+        "What career path has Caroline decided to persue?"
+    )
+
+    _, career_reason, career_relevance = best_query_relevance(
+        career,
+        text=(
+            "D4:13 Caroline: I decided I want to pursue a career path in "
+            "counseling and mental health work after exploring my education options."
+        ),
+    )
+
+    assert career_reason == "career_path_bridge"
+    assert career_relevance.distinctive_term_hits >= 6
 
 
 def test_best_query_relevance_uses_identity_and_relationship_status_bridges() -> None:

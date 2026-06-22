@@ -103,6 +103,7 @@ _CROSS_LANGUAGE_ALIASES = {
     "participate": ("attend", "attended", "join", "joined", "march", "went"),
     "participat": ("attend", "attended", "join", "joined", "went"),
     "political": ("rights", "activist", "activism", "conservative", "conservatives"),
+    "persue": ("pursue", "career", "path"),
     "pursu": ("consider", "explore", "look", "looking", "interested", "interest"),
     "pursue": ("consider", "explore", "look", "looking", "interested", "interest"),
     "project": ("проект",),

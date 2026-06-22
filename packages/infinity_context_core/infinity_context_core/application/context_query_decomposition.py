@@ -112,6 +112,7 @@ _SOURCE_TERMS = frozenset(
         "citations",
         "evidence",
         "file",
+        "proof",
         "source",
         "sources",
         "доказательство",
@@ -424,6 +425,18 @@ def build_query_decomposition_plan(
                 ),
                 reason="decomposition_current_preference_or_goal",
             )
+    if _requests_non_inference_career_goal(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "current career path goal decided pursue education options "
+                    "counseling counselor mental health jobs work"
+                ),
+            ),
+            reason="decomposition_current_preference_or_goal",
+        )
     if variants.intersection(_COMPARISON_TERMS):
         _append_candidate(
             candidates,
@@ -562,6 +575,17 @@ def _attribute_aggregation_tail(variants: frozenset[str]) -> str:
             "concerned helpful"
         )
     return _normalize_query(" ".join(tails))
+
+
+def _requests_non_inference_career_goal(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    return (
+        "career" in variants
+        and bool(raw_tokens.intersection({"decided", "persue"}) or "path" in variants)
+    )
 
 
 def _event_sequence_tail(intent: TemporalQueryIntent) -> str:
