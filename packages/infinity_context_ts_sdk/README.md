@@ -10,6 +10,13 @@ The SDK is intentionally HTTP-first. Qdrant, Graphiti, OpenAI embeddings and Pos
 npm install @infinity-context/sdk
 ```
 
+Stable entry points:
+
+- `@infinity-context/sdk`: full SDK.
+- `@infinity-context/sdk/runtime`: runtime readiness guards.
+- `@infinity-context/sdk/pagination`: reusable cursor helpers.
+- `@infinity-context/sdk/workflows`: workflow facade types and classes.
+
 ## Usage
 
 ```ts

@@ -11,10 +11,26 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./pagination": {
+      "types": "./dist/pagination.d.ts",
+      "import": "./dist/pagination.js",
+      "require": "./dist/pagination.cjs"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js",
+      "require": "./dist/runtime.cjs"
+    },
+    "./workflows": {
+      "types": "./dist/workflows.d.ts",
+      "import": "./dist/workflows.js",
+      "require": "./dist/workflows.cjs"
     }
   },
   "files": [
     "dist",
+    "scripts/check-package-exports.mjs",
     "scripts/full-memory-proof.mjs",
     "README.md"
   ],
@@ -23,12 +39,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/pagination.ts src/runtime.ts src/workflows.ts --format esm,cjs --dts --sourcemap --clean",
     "check:parity": "node scripts/check-api-parity.mjs",
+    "check:exports": "node scripts/check-package-exports.mjs",
     "proof:full-memory": "npm run build && node scripts/full-memory-proof.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "verify": "npm run check:parity && npm run typecheck && npm run test && npm run build"
+    "verify": "npm run check:parity && npm run typecheck && npm run test && npm run build && npm run check:exports"
   },
   "dependencies": {},
   "overrides": {
