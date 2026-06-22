@@ -336,6 +336,21 @@ console.log(inspection.snapshotPreview?.data);
 
 `inspectMemory` keeps browser, operations, usage, capabilities and runtime diagnostics enabled by default. Graph export and snapshot preview are opt-in because they are heavier and snapshot preview requires `spaceSlug` plus `memoryScopeExternalRef`.
 
+For operator gates, convert the inspection into a stable report and assert the sections that beta needs.
+
+```ts
+import { assertMemoryInspectionPolicy, summarizeMemoryInspection } from "@infinity-context/sdk";
+
+const inspectionReport = summarizeMemoryInspection(inspection);
+
+assertMemoryInspectionPolicy(inspectionReport, {
+  requireComplete: true,
+  requiredAdapters: ["qdrant", "graphiti"],
+  requiredSections: ["operationsConsole", "runtimeDiagnostics", "graph"],
+  maxOperationExtractionJobs: 0,
+});
+```
+
 Use `planMemoryMaintenance` to turn pending review queues into one operator-ready plan without mutating memory state.
 
 ```ts

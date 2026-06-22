@@ -95,10 +95,26 @@ export {
   summarizeSourceEvidenceBatch,
 } from "./memory-source-evidence.js";
 export {
+  assertMemoryInspectionPolicy,
+  evaluateMemoryInspectionPolicy,
+  summarizeMemoryInspection,
+} from "./memory-inspection-report.js";
+export {
   assertMemorySummaryLoopPolicy,
   evaluateMemorySummaryLoopPolicy,
   summarizeMemorySummaryLoop,
 } from "./memory-summary-loop.js";
+export type {
+  MemoryInspectionCounts,
+  MemoryInspectionPolicy,
+  MemoryInspectionPolicyEvaluation,
+  MemoryInspectionReport,
+  MemoryInspectionRuntimeSummary,
+  MemoryInspectionSection,
+  MemoryInspectionSectionReport,
+  MemoryInspectionSectionStatus,
+  MemoryInspectionStatus,
+} from "./memory-inspection-report.js";
 export type {
   InspectMemoryDiagnostics,
   InspectMemoryInput,

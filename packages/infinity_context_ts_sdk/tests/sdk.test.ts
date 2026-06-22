@@ -7,14 +7,17 @@ import {
   ValueError,
   assertMemoryBriefQuality,
   assertFullMemoryReady,
+  assertMemoryInspectionPolicy,
   assertMemorySummaryLoopPolicy,
   evaluateMemoryBriefQuality,
+  evaluateMemoryInspectionPolicy,
   evaluateMemorySummaryLoopPolicy,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
   retrievalDiagnostics,
   runRuntimeCanary,
   summarizeMemoryBriefEvidence,
+  summarizeMemoryInspection,
   summarizeMemorySummaryLoop,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
@@ -2133,6 +2136,44 @@ describe("InfinityContextClient", () => {
         "snapshotPreview",
       ],
     });
+    const report = summarizeMemoryInspection(inspection);
+    expect(report).toMatchObject({
+      ok: true,
+      status: "ready",
+      counts: {
+        facts: 1,
+        documents: 0,
+        anchors: 0,
+        operationExtractionJobs: 0,
+        operationContextLinkSuggestions: 0,
+      },
+      runtime: {
+        enabledAdapters: ["qdrant", "graphiti"],
+        supportsQdrant: true,
+        supportsGraphiti: true,
+        diagnosticsSections: ["adapters", "memoryScope", "metrics", "storage"],
+      },
+      sections: {
+        memoryBrowser: { status: "present", present: true, issues: [] },
+        operationsConsole: { status: "present", present: true, issues: [] },
+        usage: { status: "present", present: true, issues: [] },
+        capabilities: { status: "present", present: true, issues: [] },
+        runtimeDiagnostics: { status: "present", present: true, issues: [] },
+        graph: { status: "present", present: true, issues: [] },
+        snapshotPreview: { status: "present", present: true, issues: [] },
+      },
+    });
+    expect(evaluateMemoryInspectionPolicy(report, {
+      requireComplete: true,
+      requiredAdapters: ["qdrant", "graphiti"],
+      requiredSections: ["graph", "snapshotPreview"],
+      minFacts: 1,
+      maxOperationExtractionJobs: 0,
+      maxOperationContextLinkSuggestions: 0,
+    })).toMatchObject({
+      ok: true,
+      errors: [],
+    });
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /v1/memory-browser",
       "GET /v1/operations-console",
@@ -2195,6 +2236,25 @@ describe("InfinityContextClient", () => {
         },
       },
     ]);
+    const report = summarizeMemoryInspection(inspection);
+    expect(report).toMatchObject({
+      ok: false,
+      status: "failed",
+      sections: {
+        memoryBrowser: { status: "present", present: true },
+        operationsConsole: { status: "failed", present: false },
+        usage: { status: "skipped", present: false },
+      },
+      errors: ["operationsConsole: temporarily unavailable"],
+    });
+    expect(() => assertMemoryInspectionPolicy(report, {
+      requireComplete: true,
+      requiredSections: ["operationsConsole"],
+      maxIssues: 0,
+    })).toThrow(InfinityContextError);
+    expect(() => assertMemoryInspectionPolicy(report, {
+      requiredSections: ["operationsConsole"],
+    })).toThrow("Memory inspection policy failed: operationsConsole: temporarily unavailable");
   });
 
   it("plans memory maintenance across review queues", async () => {
