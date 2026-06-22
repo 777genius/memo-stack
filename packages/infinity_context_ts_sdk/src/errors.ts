@@ -40,6 +40,23 @@ export class InfinityContextError extends Error {
 }
 
 export function networkError(cause: unknown): InfinityContextError {
+  const name = errorName(cause);
+  if (name === "TimeoutError") {
+    return new InfinityContextError({
+      statusCode: 0,
+      code: "memory.request_timeout",
+      message: cause instanceof Error ? cause.message : "Infinity Context request timed out",
+      retryable: true,
+    });
+  }
+  if (name === "AbortError") {
+    return new InfinityContextError({
+      statusCode: 0,
+      code: "memory.request_aborted",
+      message: cause instanceof Error ? cause.message : "Infinity Context request aborted",
+      retryable: false,
+    });
+  }
   const message = cause instanceof Error ? cause.message : "Infinity Context request failed";
   return new InfinityContextError({
     statusCode: 0,
@@ -47,6 +64,12 @@ export function networkError(cause: unknown): InfinityContextError {
     message,
     retryable: true,
   });
+}
+
+function errorName(cause: unknown): string | undefined {
+  return typeof cause === "object" && cause !== null && "name" in cause
+    ? String((cause as { readonly name?: unknown }).name)
+    : undefined;
 }
 
 export function redactSensitiveText(value: string): string {

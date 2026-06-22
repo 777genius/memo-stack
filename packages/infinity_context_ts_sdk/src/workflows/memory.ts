@@ -2278,6 +2278,7 @@ function workflowControls(input: RequestControls): RequestControls {
   return {
     ...optional("headers", input.headers),
     ...optional("signal", input.signal),
+    ...optional("timeoutMs", input.timeoutMs),
   };
 }
 
@@ -2299,6 +2300,7 @@ function mergeWorkflowControls(parent: RequestControls, child: RequestControls):
   return {
     ...optional("headers", headers),
     ...optional("signal", child.signal ?? parent.signal),
+    ...optional("timeoutMs", child.timeoutMs ?? parent.timeoutMs),
   };
 }
 

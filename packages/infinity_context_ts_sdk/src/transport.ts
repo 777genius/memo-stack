@@ -28,6 +28,11 @@ export interface HttpTransport {
 
 export type FetchLike = typeof fetch;
 
+export interface TimeoutSignal {
+  readonly signal?: AbortSignal | undefined;
+  readonly cleanup: () => void;
+}
+
 export class FetchTransport implements HttpTransport {
   readonly #fetch: FetchLike;
 
@@ -92,9 +97,12 @@ export function buildUrl(baseUrl: string, path: string, params?: QueryParams): U
   return url;
 }
 
-export function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+export function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): TimeoutSignal {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return signal ?? new AbortController().signal;
+    return {
+      ...(signal !== undefined ? { signal } : {}),
+      cleanup: () => undefined,
+    };
   }
 
   const timeoutController = new AbortController();
@@ -104,24 +112,38 @@ export function withTimeout(signal: AbortSignal | undefined, timeoutMs: number):
   timeout.unref?.();
 
   if (!signal) {
-    timeoutController.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true });
-    return timeoutController.signal;
+    return {
+      signal: timeoutController.signal,
+      cleanup: () => clearTimeout(timeout),
+    };
   }
 
   const controller = new AbortController();
-  const abort = (reason?: unknown) => {
+  const cleanup = () => {
     clearTimeout(timeout);
-    controller.abort(reason);
+    timeoutController.signal.removeEventListener("abort", onTimeout);
   };
+  const abort = (reason?: unknown) => {
+    cleanup();
+    if (!controller.signal.aborted) {
+      controller.abort(reason);
+    }
+  };
+  const onAbort = () => abort(signal.reason);
+  const onTimeout = () => abort(timeoutController.signal.reason);
 
   if (signal.aborted) {
     abort(signal.reason);
-    return controller.signal;
+    return {
+      signal: controller.signal,
+      cleanup,
+    };
   }
 
-  signal.addEventListener("abort", () => abort(signal.reason), { once: true });
-  timeoutController.signal.addEventListener("abort", () => abort(timeoutController.signal.reason), {
-    once: true,
-  });
-  return controller.signal;
+  signal.addEventListener("abort", onAbort, { once: true });
+  timeoutController.signal.addEventListener("abort", onTimeout, { once: true });
+  return {
+    signal: controller.signal,
+    cleanup,
+  };
 }

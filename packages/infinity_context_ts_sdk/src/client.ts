@@ -32,6 +32,7 @@ export interface RequestOptions {
   readonly headers?: Record<string, string> | undefined;
   readonly idempotencyKey?: string | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly timeoutMs?: number | undefined;
   readonly responseType?: "json" | "bytes" | undefined;
 }
 
@@ -42,12 +43,14 @@ export interface RequestExecutor {
 export interface RequestControls {
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
 }
 
-export function requestControls(input: RequestControls): Pick<RequestOptions, "headers" | "signal"> {
+export function requestControls(input: RequestControls): Pick<RequestOptions, "headers" | "signal" | "timeoutMs"> {
   return {
     ...(input.headers !== undefined ? { headers: input.headers } : {}),
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
   };
 }
 
@@ -156,14 +159,19 @@ export class HttpClient implements RequestExecutor {
       body = { kind: "bytes", value: options.bytes, contentType: options.contentType };
     }
 
-    return this.#transport.send({
-      method: options.method,
-      url: buildUrl(this.#baseUrl, options.path, options.params),
-      headers,
-      body,
-      signal: withTimeout(options.signal, this.#timeoutMs),
-      responseType: options.responseType,
-    });
+    const timeout = withTimeout(options.signal, options.timeoutMs ?? this.#timeoutMs);
+    try {
+      return await this.#transport.send({
+        method: options.method,
+        url: buildUrl(this.#baseUrl, options.path, options.params),
+        headers,
+        body,
+        signal: timeout.signal,
+        responseType: options.responseType,
+      });
+    } finally {
+      timeout.cleanup();
+    }
   }
 
   async #retry(

@@ -418,7 +418,7 @@ console.log(drained.diagnostics.attempts, drained.diagnostics.blocking_count);
 
 ## Per-request controls
 
-Every high-volume memory read/write surface accepts scoped request controls. Use them for cancellation, worker tracing and request correlation without changing the shared client.
+Every high-volume memory read/write surface accepts scoped request controls. Use them for cancellation, per-request deadlines, worker tracing and request correlation without changing the shared client.
 
 ```ts
 const controller = new AbortController();
@@ -432,6 +432,7 @@ const facts = await memory.facts.listAllFacts(
     pageLimit: 100,
     maxItems: 1000,
     signal: controller.signal,
+    timeoutMs: 15_000,
     headers: {
       "x-trace-id": "digest-run:2026-06-22",
     },

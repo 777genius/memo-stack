@@ -109,6 +109,7 @@ async function runRuntimeCanaryAttempt(
     ...(options.requiredRetrieval !== undefined ? { requiredRetrieval: options.requiredRetrieval } : {}),
     ...(options.headers !== undefined ? { headers: options.headers } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     requireDerivedRetrieval: options.requireDerivedRetrieval ?? (includeContextProbe || includeSearchProbe),
   });
 

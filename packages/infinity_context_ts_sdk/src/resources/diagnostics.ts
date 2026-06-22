@@ -144,6 +144,7 @@ export class DiagnosticsClient {
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
         ...(input.headers !== undefined ? { headers: input.headers } : {}),
         ...(input.signal !== undefined ? { signal: input.signal } : {}),
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
       });
       last = {
         response,

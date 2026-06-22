@@ -41,6 +41,17 @@ class RecordingTransport implements HttpTransport {
   }
 }
 
+class HangingTransport implements HttpTransport {
+  readonly requests: HttpRequest[] = [];
+
+  send(request: HttpRequest): Promise<HttpResponse> {
+    this.requests.push(request);
+    return new Promise((_, reject) => {
+      request.signal?.addEventListener("abort", () => reject(request.signal?.reason), { once: true });
+    });
+  }
+}
+
 describe("InfinityContextClient", () => {
   it("sends auth, params and idempotency headers through resource clients", async () => {
     const transport = new RecordingTransport([jsonResponse({ data: { id: "fact_1" } })]);
@@ -120,6 +131,45 @@ describe("InfinityContextClient", () => {
       "request:2:POST:/v1/facts",
       "response:2:200:req_ok",
     ]);
+  });
+
+  it("applies per-request timeout controls and cleans up completed request timers", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: { status: "ok" } }),
+      jsonResponse({ enabled_adapters: [] }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      timeoutMs: 0,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await client.system.health();
+    await client.system.capabilities({ timeoutMs: 10 });
+
+    expect(transport.requests[0]?.signal).toBeUndefined();
+    const timedSignal = transport.requests[1]?.signal;
+    expect(timedSignal).toBeDefined();
+    expect(timedSignal?.aborted).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(timedSignal?.aborted).toBe(false);
+  });
+
+  it("fails hanging requests with a typed timeout error", async () => {
+    const transport = new HangingTransport();
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      timeoutMs: 0,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await expect(client.system.capabilities({ timeoutMs: 1 })).rejects.toMatchObject({
+      code: "memory.request_timeout",
+      retryable: true,
+    });
+    expect(transport.requests[0]?.signal?.aborted).toBe(true);
   });
 
   it("passes per-request controls through context calls", async () => {

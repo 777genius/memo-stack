@@ -65,5 +65,6 @@ export function cursorPageRequest(
     ...(limit !== undefined ? { limit } : {}),
     ...(controls.headers !== undefined ? { headers: controls.headers } : {}),
     ...(controls.signal !== undefined ? { signal: controls.signal } : {}),
+    ...(controls.timeoutMs !== undefined ? { timeoutMs: controls.timeoutMs } : {}),
   };
 }
