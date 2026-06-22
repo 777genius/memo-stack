@@ -108,6 +108,11 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         "ally_support_bridge",
     ),
     (
+        frozenset({"ally"}),
+        "supportive support acceptance encouraging community care help",
+        "ally_support_bridge",
+    ),
+    (
         frozenset({"member", "community"}),
         "part belong identify refer herself community lgbtq",
         "community_membership_bridge",

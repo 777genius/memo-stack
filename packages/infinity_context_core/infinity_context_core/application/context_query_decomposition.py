@@ -120,6 +120,52 @@ _SOURCE_TERMS = frozenset(
         "файл",
     }
 )
+_INFERENCE_TERMS = frozenset(
+    {
+        "considered",
+        "could",
+        "infer",
+        "inference",
+        "likely",
+        "might",
+        "probably",
+        "would",
+        "вероятно",
+        "вывод",
+        "может",
+        "мог",
+        "могла",
+        "похоже",
+        "считается",
+        "скорее",
+    }
+)
+_COMPARISON_TERMS = frozenset(
+    {
+        "between",
+        "compare",
+        "compared",
+        "comparison",
+        "interested",
+        "less",
+        "more",
+        "prefer",
+        "preference",
+        "rather",
+        "versus",
+        "vs",
+        "больше",
+        "выбор",
+        "интереснее",
+        "лучше",
+        "между",
+        "меньше",
+        "предпочел",
+        "предпочла",
+        "предпочитает",
+        "сравни",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -218,6 +264,31 @@ def build_query_decomposition_plan(
                 "source citation evidence file artifact reference provenance",
             ),
             reason="decomposition_source_evidence",
+        )
+    if variants.intersection(_INFERENCE_TERMS):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "inference supporting evidence likely would considered "
+                    "observed mentioned indicates preference trait decision reason "
+                    "support supportive encouraging acceptance care help"
+                ),
+            ),
+            reason="decomposition_inference_support",
+        )
+    if variants.intersection(_COMPARISON_TERMS):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "comparison preference choice option alternative likes dislikes "
+                    "interested more less rather prefer similar difference evidence"
+                ),
+            ),
+            reason="decomposition_comparison_preference",
         )
     return QueryDecompositionPlan(
         original_query=query,
@@ -343,7 +414,12 @@ def _capitalized_identity_terms(query: str) -> Iterable[str]:
 
 
 def _normalize_identity_term(value: str) -> str:
-    token = _normalize_query(value).strip("@")
+    tokens = _normalize_query(value).strip("@").split()
+    while tokens and tokens[0].casefold() in _QUESTION_STOPWORDS:
+        tokens = tokens[1:]
+    while tokens and tokens[-1].casefold() in _QUESTION_STOPWORDS:
+        tokens = tokens[:-1]
+    token = _normalize_query(" ".join(tokens)).strip("@")
     if len(token) < 2 or token.casefold() in _QUESTION_STOPWORDS:
         return ""
     return token

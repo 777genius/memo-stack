@@ -161,6 +161,15 @@ def test_query_expansion_covers_russian_multimodal_evidence_bridges() -> None:
     assert "текст написано" in screenshot_expansion
 
 
+def test_query_expansion_covers_generic_ally_inference_bridge() -> None:
+    plan = build_query_expansion_plan("Would Melanie be considered an ally?")
+
+    assert "supportive support acceptance" in _expansion_query(
+        plan,
+        "ally_support_bridge",
+    )
+
+
 def test_query_expansion_covers_temporal_change_bridges() -> None:
     latest = build_query_expansion_plan("What is the latest current Atlas decision?")
     changed = build_query_expansion_plan("What changed after the meeting with Alex?")

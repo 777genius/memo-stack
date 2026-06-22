@@ -99,3 +99,45 @@ def test_best_query_relevance_uses_decomposed_artifact_query() -> None:
 
     assert reason == "decomposition_artifact_evidence"
     assert relevance.distinctive_term_hits >= 4
+
+
+def test_query_decomposition_adds_inference_support_query() -> None:
+    plan = build_query_decomposition_plan("Would Melanie be considered an ally?")
+
+    inference = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_inference_support"
+    )
+
+    assert inference.query.casefold().startswith("melanie ")
+    assert "supporting evidence likely would considered" in inference.query
+    assert "support supportive encouraging" in inference.query
+
+
+def test_query_decomposition_adds_comparison_preference_query() -> None:
+    plan = build_query_decomposition_plan(
+        "Would Melanie be more interested in a national park or a theme park?"
+    )
+
+    comparison = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_comparison_preference"
+    )
+
+    assert comparison.query.casefold().startswith("melanie ")
+    assert "comparison preference choice option" in comparison.query
+    assert "more less rather prefer" in comparison.query
+
+
+def test_best_query_relevance_uses_inference_support_decomposition() -> None:
+    plan = build_query_expansion_plan("Would Melanie be considered an ally?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="Melanie is supportive, encouraging, and helps Caroline feel accepted.",
+    )
+
+    assert reason in {"ally_support_bridge", "decomposition_inference_support"}
+    assert relevance.distinctive_term_hits >= 4
