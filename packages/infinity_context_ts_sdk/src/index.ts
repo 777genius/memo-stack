@@ -147,6 +147,12 @@ export { MemoryWorkflows, summarizeSourceEvidenceBatch } from "./workflows/memor
 export type {
   BuildMemoryBriefInput,
   BuildMemoryBriefResult,
+  EnsureMemoryScopeInput,
+  EnsureMemoryTopologyCreated,
+  EnsureMemoryTopologyDiagnostics,
+  EnsureMemoryTopologyInput,
+  EnsureMemoryTopologyResult,
+  EnsureMemoryUserInput,
   InspectMemoryDiagnostics,
   InspectMemoryInput,
   InspectMemoryIssue,

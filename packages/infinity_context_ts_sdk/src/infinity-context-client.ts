@@ -65,9 +65,11 @@ export class InfinityContextClient {
       exports: this.exports,
       facts: this.facts,
       readModels: this.readModels,
+      spaces: this.spaces,
       suggestions: this.suggestions,
       system: this.system,
       usage: this.usage,
+      users: this.users,
     });
   }
 }

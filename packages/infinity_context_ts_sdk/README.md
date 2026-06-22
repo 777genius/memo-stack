@@ -82,6 +82,22 @@ if (!healthyRetrievalComponents(context.data.diagnostics, ["vector", "graph"])) 
 Use `client.workflows` for product integrations that should not hand-build low-level capture enums, source refs and idempotency keys.
 
 ```ts
+await memory.workflows.ensureMemoryTopology({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  spaceName: "Social Monitor workspace 1",
+  memoryScopes: [
+    { externalRef: "workspace-global", name: "Workspace global memory" },
+    { externalRef: "user:user_1", name: "User 1 preferences" },
+    { externalRef: "topic:ai-agents:preferences", name: "AI agents preferences" },
+    { externalRef: "source:reddit:ai-agents", name: "Reddit AI agents source memory" },
+  ],
+  users: [{
+    externalRef: "user:user_1",
+    displayName: "User 1",
+    role: "owner",
+  }],
+});
+
 await memory.workflows.recordFeedback({
   spaceSlug: "social-monitor:tenant_1:workspace_1",
   memoryScopeExternalRef: "topic:ai-agents:feedback",

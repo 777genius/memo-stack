@@ -1356,6 +1356,138 @@ describe("InfinityContextClient", () => {
     expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
   });
 
+  it("ensures memory topology through the workflow facade", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: spaceRecord("space_1", "workspace") }, 201),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: scopeRecord("scope_workspace", "workspace-global") }, 201),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: scopeRecord("scope_topic", "topic:ai-agents") }, 201),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: userRecord("user_1", "user:owner") }, 201),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: membershipRecord("membership_1", "space_1", "user_1", "owner") }, 201),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const result = await client.workflows.ensureMemoryTopology({
+      spaceSlug: "workspace",
+      spaceName: "Workspace",
+      memoryScopes: [
+        { externalRef: "workspace-global", name: "Workspace global" },
+        { externalRef: "topic:ai-agents", name: "AI agents" },
+      ],
+      users: [{
+        externalRef: "user:owner",
+        displayName: "Owner",
+        email: "owner@example.com",
+        metadata: { source: "sdk-test" },
+        role: "owner",
+      }],
+      listLimit: 10,
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_topology" },
+    });
+
+    expect(result.created).toEqual({
+      space: true,
+      memoryScopes: ["workspace-global", "topic:ai-agents"],
+      users: ["user:owner"],
+      memberships: ["user:owner"],
+    });
+    expect(result.diagnostics).toEqual({ listLimit: 10, warnings: [] });
+    expect(result.space.id).toBe("space_1");
+    expect(result.memoryScopes.map((scope) => scope.external_ref)).toEqual(["workspace-global", "topic:ai-agents"]);
+    expect(result.users.map((user) => user.external_ref)).toEqual(["user:owner"]);
+    expect(result.memberships.map((membership) => membership.role)).toEqual(["owner"]);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/spaces",
+      "POST /v1/spaces",
+      "GET /v1/memory-scopes",
+      "POST /v1/memory-scopes",
+      "GET /v1/memory-scopes",
+      "POST /v1/memory-scopes",
+      "GET /v1/users",
+      "POST /v1/users",
+      "GET /v1/spaces/space_1/memberships",
+      "POST /v1/spaces/space_1/memberships",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual(
+      Array.from({ length: 10 }, () => "trace_topology"),
+    );
+    expect(transport.requests[0]?.url.searchParams.get("limit")).toBe("10");
+    expect(transport.requests[2]?.url.searchParams.get("space_id")).toBe("space_1");
+    expect(transport.requests[6]?.url.searchParams.get("status")).toBe("active");
+    expect(transport.bodies[0]).toEqual({ slug: "workspace", name: "Workspace" });
+    expect(transport.bodies[3]).toEqual({
+      external_ref: "user:owner",
+      display_name: "Owner",
+      email: "owner@example.com",
+      metadata: { source: "sdk-test" },
+    });
+    expect(transport.bodies[4]).toEqual({ user_id: "user_1", role: "owner" });
+    expect(transport.requests.every((request) => request.signal !== undefined)).toBe(true);
+  });
+
+  it("recovers memory topology creation conflicts idempotently", async () => {
+    const existingSpace = spaceRecord("space_1", "workspace");
+    const existingScope = scopeRecord("scope_workspace", "workspace-global");
+    const existingUser = userRecord("user_1", "user:owner");
+    const existingMembership = membershipRecord("membership_1", "space_1", "user_1", "viewer");
+    const transport = new RecordingTransport([
+      jsonResponse({ data: [] }),
+      jsonResponse({ error: { code: "conflict", message: "space already exists" } }, 409),
+      jsonResponse({ data: [existingSpace] }),
+      jsonResponse({ data: [existingScope] }),
+      jsonResponse({ data: [existingUser] }),
+      jsonResponse({ data: [existingMembership] }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const result = await client.workflows.ensureMemoryTopology({
+      spaceSlug: "workspace",
+      spaceName: "Workspace",
+      memoryScopes: [{ externalRef: "workspace-global", name: "Workspace global" }],
+      users: [{ externalRef: "user:owner", displayName: "Owner", role: "owner" }],
+      listLimit: 7,
+    });
+
+    expect(result.space).toEqual(existingSpace);
+    expect(result.memoryScopes).toEqual([existingScope]);
+    expect(result.users).toEqual([existingUser]);
+    expect(result.memberships).toEqual([existingMembership]);
+    expect(result.created).toEqual({
+      space: false,
+      memoryScopes: [],
+      users: [],
+      memberships: [],
+    });
+    expect(result.diagnostics.warnings).toEqual([
+      "membership for user:owner exists with role viewer",
+    ]);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/spaces",
+      "POST /v1/spaces",
+      "GET /v1/spaces",
+      "GET /v1/memory-scopes",
+      "GET /v1/users",
+      "GET /v1/spaces/space_1/memberships",
+    ]);
+    expect(transport.requests.map((request) => request.url.searchParams.get("limit"))).toEqual(
+      ["7", null, "7", "7", "7", "7"],
+    );
+  });
+
   it("keeps unsafe writes from retrying unless an idempotency key exists", async () => {
     const noRetryTransport = new RecordingTransport([
       jsonResponse({ error: { code: "temporary", message: "try again", retryable: true } }, 503),
@@ -1527,10 +1659,10 @@ describe("InfinityContextClient", () => {
       jsonResponse({ data: [] }),
       jsonResponse({ data: spaceRecord("space_1", "sdk-full-memory-proof:sdk-proof") }),
       jsonResponse({ data: [] }),
-      jsonResponse({ data: [] }),
-      jsonResponse({ data: [] }),
       jsonResponse({ data: scopeRecord("scope_workspace", "workspace-global") }),
+      jsonResponse({ data: [] }),
       jsonResponse({ data: scopeRecord("scope_topic", "topic:full-memory-proof:feedback") }),
+      jsonResponse({ data: [] }),
       jsonResponse({ data: scopeRecord("scope_source", "source:full-memory-proof-transcript") }),
       jsonResponse({ data: factRecord("fact_architecture") }),
       jsonResponse({ data: factRecord("fact_feedback") }),
@@ -1777,10 +1909,10 @@ describe("InfinityContextClient", () => {
       "GET /v1/spaces",
       "POST /v1/spaces",
       "GET /v1/memory-scopes",
-      "GET /v1/memory-scopes",
+      "POST /v1/memory-scopes",
       "GET /v1/memory-scopes",
       "POST /v1/memory-scopes",
-      "POST /v1/memory-scopes",
+      "GET /v1/memory-scopes",
       "POST /v1/memory-scopes",
       "POST /v1/facts",
       "POST /v1/facts",
@@ -2441,6 +2573,31 @@ function scopeRecord(id: string, externalRef: string) {
     space_id: "space_1",
     external_ref: externalRef,
     name: externalRef,
+    status: "active",
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function userRecord(id: string, externalRef: string) {
+  return {
+    id,
+    external_ref: externalRef,
+    display_name: "SDK user",
+    email: null,
+    status: "active",
+    metadata: {},
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function membershipRecord(id: string, spaceId: string, userId: string, role = "member") {
+  return {
+    id,
+    space_id: spaceId,
+    user_id: userId,
+    role,
     status: "active",
     created_at: "2026-06-06T00:00:00.000Z",
     updated_at: "2026-06-06T00:00:00.000Z",

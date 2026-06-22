@@ -18,8 +18,6 @@ import type {
   FactRecord,
   InfinityContextCapabilities,
   JsonObject,
-  MemoryScopeRecord,
-  Space,
 } from "./types.js";
 
 export interface FullMemoryProofOptions {
@@ -116,19 +114,13 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
   });
   const capabilities = await options.client.system.capabilities();
   const capabilitiesFullMemory = hasFullMemoryCapabilities(capabilities);
-  const space = await ensureSpace(options.client, {
-    slug: spaceSlug,
-    name: `SDK full memory proof ${runId}`,
+  const topology = await options.client.workflows.ensureMemoryTopology({
+    spaceSlug,
+    spaceName: `SDK full memory proof ${runId}`,
+    memoryScopes: memoryScopeExternalRefs.map((externalRef) => ({ externalRef, name: externalRef })),
   });
-  const scopes = await Promise.all(
-    memoryScopeExternalRefs.map((externalRef) =>
-      ensureMemoryScope(options.client, {
-        spaceId: space.id,
-        externalRef,
-        name: externalRef,
-      }),
-    ),
-  );
+  const space = topology.space;
+  const scopes = topology.memoryScopes;
 
   const facts = await Promise.all([
     options.client.facts.rememberFact({
@@ -470,56 +462,6 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     searchDiagnostics: search.data.diagnostics,
     digestDiagnostics: digest.data.diagnostics,
   };
-}
-
-async function ensureSpace(
-  client: InfinityContextClient,
-  input: { readonly slug: string; readonly name: string },
-): Promise<Space> {
-  const existing = await client.spaces.listSpaces({ limit: 500 });
-  const found = existing.data.find((space) => space.slug === input.slug);
-  if (found !== undefined) {
-    return found;
-  }
-
-  try {
-    return (await client.spaces.createSpace(input)).data;
-  } catch (error) {
-    if (!isConflict(error)) {
-      throw error;
-    }
-    const afterConflict = await client.spaces.listSpaces({ limit: 500 });
-    const created = afterConflict.data.find((space) => space.slug === input.slug);
-    if (created === undefined) {
-      throw error;
-    }
-    return created;
-  }
-}
-
-async function ensureMemoryScope(
-  client: InfinityContextClient,
-  input: { readonly spaceId: string; readonly externalRef: string; readonly name: string },
-): Promise<MemoryScopeRecord> {
-  const existing = await client.spaces.listMemoryScopes({ spaceId: input.spaceId, limit: 500 });
-  const found = existing.data.find((scope) => scope.external_ref === input.externalRef);
-  if (found !== undefined) {
-    return found;
-  }
-
-  try {
-    return (await client.spaces.createMemoryScope(input)).data;
-  } catch (error) {
-    if (!isConflict(error)) {
-      throw error;
-    }
-    const afterConflict = await client.spaces.listMemoryScopes({ spaceId: input.spaceId, limit: 500 });
-    const created = afterConflict.data.find((scope) => scope.external_ref === input.externalRef);
-    if (created === undefined) {
-      throw error;
-    }
-    return created;
-  }
 }
 
 async function ensureAnchor(
