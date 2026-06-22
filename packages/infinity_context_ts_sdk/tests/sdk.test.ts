@@ -51,7 +51,10 @@ class HangingTransport implements HttpTransport {
   send(request: HttpRequest): Promise<HttpResponse> {
     this.requests.push(request);
     return new Promise((_, reject) => {
-      request.signal?.addEventListener("abort", () => reject(request.signal?.reason), { once: true });
+      request.signal?.addEventListener("abort", () => {
+        const reason = request.signal?.reason;
+        reject(reason instanceof Error ? reason : new DOMException("Request aborted", "AbortError"));
+      }, { once: true });
     });
   }
 }
@@ -176,6 +179,27 @@ describe("InfinityContextClient", () => {
     expect(transport.requests[0]?.signal?.aborted).toBe(true);
   });
 
+  it("propagates caller aborts while a request is in flight", async () => {
+    const controller = new AbortController();
+    const transport = new HangingTransport();
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      timeoutMs: 0,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const request = client.system.capabilities({ signal: controller.signal, timeoutMs: 1000 });
+    await waitForRecordedRequests(transport, 1);
+    controller.abort("cancel active request");
+
+    await expect(request).rejects.toMatchObject({
+      code: "memory.request_aborted",
+      retryable: false,
+    });
+    expect(transport.requests[0]?.signal?.aborted).toBe(true);
+  });
+
   it("passes per-request controls through context calls", async () => {
     const controller = new AbortController();
     const transport = new RecordingTransport([
@@ -204,8 +228,8 @@ describe("InfinityContextClient", () => {
     expect(requestSignal).toBeDefined();
     expect(requestSignal?.aborted).toBe(false);
     controller.abort("cancel context");
-    expect(requestSignal?.aborted).toBe(true);
-    expect(requestSignal?.reason).toBe("cancel context");
+    expect(requestSignal?.aborted).toBe(false);
+    expect(requestSignal?.reason).toBeUndefined();
     expect(transport.requests[0]?.headers.get("x-trace-id")).toBe("trace_1");
     expect(transport.bodies[0]).not.toHaveProperty("headers");
     expect(transport.bodies[0]).not.toHaveProperty("signal");
@@ -244,9 +268,7 @@ describe("InfinityContextClient", () => {
       Array.from({ length: 11 }, () => "trace_resource_controls"),
     );
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel resources");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel resources");
     expect(transport.bodies.every((body) => !Object.hasOwn(body as object, "headers"))).toBe(true);
     expect(transport.bodies.every((body) => !Object.hasOwn(body as object, "signal"))).toBe(true);
   });
@@ -277,10 +299,7 @@ describe("InfinityContextClient", () => {
 
     expect(facts.map((fact) => fact.id)).toEqual(["fact_1", "fact_2"]);
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel scan");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
-    expect(requestSignals.map((signal) => signal?.reason)).toEqual(["cancel scan", "cancel scan"]);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel scan");
     expect(transport.requests.map((request) => request.headers.get("x-worker-id"))).toEqual([
       "worker_1",
       "worker_1",
@@ -333,9 +352,7 @@ describe("InfinityContextClient", () => {
       "worker_outbox",
     ]);
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel outbox scan");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel outbox scan");
   });
 
   it("waits for diagnostics outbox drain", async () => {
@@ -394,9 +411,7 @@ describe("InfinityContextClient", () => {
       "worker_outbox_drain",
     ]);
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel outbox drain");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel outbox drain");
 
     const failureTransport = new RecordingTransport([
       jsonResponse({
@@ -785,9 +800,7 @@ describe("InfinityContextClient", () => {
       "trace_canary_wait",
     ]);
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel runtime canary wait");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel runtime canary wait");
   });
 
   it("times out runtime canary waits with typed readiness details", async () => {
@@ -1049,9 +1062,7 @@ describe("InfinityContextClient", () => {
       "trace_source_evidence",
     ]);
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel source evidence");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel source evidence");
     expect(transport.requests.map((request) => request.headers.get("idempotency-key"))).toEqual([
       "reddit:t3_abc:document",
       "reddit:t3_abc:document:process",
@@ -1214,9 +1225,7 @@ describe("InfinityContextClient", () => {
       "item_bad",
     ]);
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel batch");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel batch");
   });
 
   it("stops source evidence batches after the first error when configured", async () => {
@@ -1839,9 +1848,7 @@ describe("InfinityContextClient", () => {
       max_chunks: 4,
     });
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel seed brief");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel seed brief");
   });
 
   it("checks full memory readiness through the workflow facade", async () => {
@@ -2286,9 +2293,7 @@ describe("InfinityContextClient", () => {
       merge_strategy: "fail_on_conflict",
     });
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel inspection");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel inspection");
   });
 
   it("returns partial memory inspection issues when optional sections fail", async () => {
@@ -2410,9 +2415,7 @@ describe("InfinityContextClient", () => {
     expect(transport.requests[4]?.url.searchParams.get("consolidation_status")).toBe("pending");
     expect(transport.requests[5]?.url.searchParams.get("status")).toBe("failed");
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel maintenance");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel maintenance");
   });
 
   it("returns partial maintenance plan issues when optional queues fail", async () => {
@@ -2534,9 +2537,7 @@ describe("InfinityContextClient", () => {
       source_name: "sdk-test-transfer",
     });
     const requestSignals = transport.requests.map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel snapshot transfer");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel snapshot transfer");
   });
 
   it("ensures memory topology through the workflow facade", async () => {
@@ -2923,9 +2924,7 @@ describe("InfinityContextClient", () => {
       "trace_extraction_wait",
     ]);
     const requestSignals = transport.requests.slice(0, 3).map((request) => request.signal);
-    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
-    controller.abort("cancel extraction wait");
-    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel extraction wait");
   });
 
   it("validates mixed canonical and external scopes", () => {
@@ -4059,6 +4058,29 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
     headers: new Headers(headers),
     body: JSON.stringify(body),
   };
+}
+
+async function waitForRecordedRequests(
+  source: { readonly requests: readonly HttpRequest[] },
+  count: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (source.requests.length >= count) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Expected ${count} recorded request(s), got ${source.requests.length}`);
+}
+
+function expectCompletedSignalsDetached(
+  signals: readonly (AbortSignal | undefined)[],
+  controller: AbortController,
+  reason: string,
+): void {
+  expect(signals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+  controller.abort(reason);
+  expect(signals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
 }
 
 function spaceRecord(id: string, slug: string) {

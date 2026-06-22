@@ -119,8 +119,14 @@ export function withTimeout(signal: AbortSignal | undefined, timeoutMs: number):
   }
 
   const controller = new AbortController();
+  let cleanedUp = false;
   const cleanup = () => {
+    if (cleanedUp) {
+      return;
+    }
+    cleanedUp = true;
     clearTimeout(timeout);
+    signal.removeEventListener("abort", onAbort);
     timeoutController.signal.removeEventListener("abort", onTimeout);
   };
   const abort = (reason?: unknown) => {
