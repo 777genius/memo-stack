@@ -96,6 +96,43 @@ def test_context_bundle_diagnostics_preserve_requirement_coverage() -> None:
     assert secret not in str(diagnostics)
 
 
+def test_context_bundle_diagnostics_preserve_temporal_query_intent_when_bounded() -> None:
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            **{f"extra_{index}": "x" * 500 for index in range(90)},
+            "temporal_query_intent_status": "available",
+            "temporal_query_prefers_current": True,
+            "temporal_query_requests_previous": False,
+            "temporal_query_requests_change": True,
+            "temporal_query_after_event": True,
+            "temporal_query_before_event": False,
+            "temporal_query_excludes_stale": False,
+            "temporal_query_include_superseded_review": True,
+            "temporal_query_intent_reasons": [
+                "prefers_current",
+                "requests_change",
+                "after_event",
+            ],
+        },
+        items=(),
+    )
+
+    assert diagnostics["diagnostics_truncated"] is True
+    assert diagnostics["temporal_query_intent_status"] == "available"
+    assert diagnostics["temporal_query_prefers_current"] is True
+    assert diagnostics["temporal_query_requests_previous"] is False
+    assert diagnostics["temporal_query_requests_change"] is True
+    assert diagnostics["temporal_query_after_event"] is True
+    assert diagnostics["temporal_query_before_event"] is False
+    assert diagnostics["temporal_query_excludes_stale"] is False
+    assert diagnostics["temporal_query_include_superseded_review"] is True
+    assert diagnostics["temporal_query_intent_reasons"] == [
+        "prefers_current",
+        "requests_change",
+        "after_event",
+    ]
+
+
 def test_context_bundle_diagnostics_preserve_artifact_coordinate_drop_counters() -> None:
     diagnostics = normalize_context_bundle_diagnostics(
         {

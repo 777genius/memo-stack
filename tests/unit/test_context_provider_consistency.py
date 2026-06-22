@@ -2602,6 +2602,31 @@ def test_context_can_include_superseded_review_only_evidence(
             },
             headers=auth_headers(),
         )
+        change_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": "what changed about CONTEXT_SUPERSEDED_REVIEW_MARKER old endpoint",
+                "token_budget": 512,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
+        current_context = client.post(
+            "/v1/context",
+            json={
+                "space_id": "space_client_app",
+                "memory_scope_ids": ["memory_scope_default"],
+                "query": (
+                    "ignore stale notes, what is current about "
+                    "CONTEXT_SUPERSEDED_REVIEW_MARKER old endpoint"
+                ),
+                "token_budget": 512,
+                "max_chunks": 0,
+            },
+            headers=auth_headers(),
+        )
         restricted_review_context = client.post(
             "/v1/context",
             json={
@@ -2619,6 +2644,8 @@ def test_context_can_include_superseded_review_only_evidence(
     assert restricted_fact.status_code == 201
     assert default_context.status_code == 200
     assert review_context.status_code == 200
+    assert change_context.status_code == 200
+    assert current_context.status_code == 200
     assert restricted_review_context.status_code == 200
 
     default_data = default_context.json()["data"]
@@ -2641,6 +2668,22 @@ def test_context_can_include_superseded_review_only_evidence(
         == "included only for review because include_superseded is true"
     )
     assert review_item["diagnostics"]["provenance"]["visibility"] == "review_only"
+
+    change_data = change_context.json()["data"]
+    assert "CONTEXT_SUPERSEDED_REVIEW_MARKER" in change_data["rendered_text"]
+    assert change_data["diagnostics"]["temporal_query_requests_change"] is True
+    assert change_data["diagnostics"]["temporal_query_include_superseded_review"] is True
+    change_item = next(
+        item for item in change_data["items"] if item["item_id"] == safe_fact.json()["data"]["id"]
+    )
+    assert change_item["diagnostics"]["retrieval_source"] == "superseded_review"
+    assert change_item["diagnostics"]["score_signals"]["temporal_query_intent_boost"] > 0
+
+    current_data = current_context.json()["data"]
+    assert "CONTEXT_SUPERSEDED_REVIEW_MARKER" not in current_data["rendered_text"]
+    assert current_data["diagnostics"]["temporal_query_excludes_stale"] is True
+    assert current_data["diagnostics"]["temporal_query_include_superseded_review"] is False
+    assert current_data["diagnostics"]["superseded_facts_used"] == 0
 
     restricted_data = restricted_review_context.json()["data"]
     assert "CONTEXT_SUPERSEDED_SECRET_MARKER" not in restricted_data["rendered_text"]

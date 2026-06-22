@@ -325,6 +325,21 @@ _BUNDLE_STATUS_DEFAULTS = {
     "artifact_evidence_status": "unknown",
     "requirement_guard_status": "not_triggered",
 }
+_BUNDLE_TEMPORAL_QUERY_TEXT_KEYS = (
+    "temporal_query_intent_status",
+)
+_BUNDLE_TEMPORAL_QUERY_BOOL_KEYS = (
+    "temporal_query_prefers_current",
+    "temporal_query_requests_previous",
+    "temporal_query_requests_change",
+    "temporal_query_after_event",
+    "temporal_query_before_event",
+    "temporal_query_excludes_stale",
+    "temporal_query_include_superseded_review",
+)
+_BUNDLE_TEMPORAL_QUERY_LIST_KEYS = (
+    "temporal_query_intent_reasons",
+)
 _RETRIEVAL_SOURCE_PRIORITY = {
     "vector_chunks": 0,
     "rag_recall": 1,
@@ -458,6 +473,7 @@ def normalize_context_bundle_diagnostics(
         normalized[key] = (
             _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS) or default
         )
+    normalized.update(_safe_bundle_temporal_query_diagnostics(raw))
     all_retrieval_sources = _bundle_retrieval_sources(
         items,
         limit=_MAX_RETRIEVAL_SOURCE_CANDIDATES,
@@ -711,6 +727,30 @@ def _safe_anchor_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
     identity_metadata = safe_diagnostic_mapping(raw.get("identity_metadata"))
     if identity_metadata:
         diagnostics["identity_metadata"] = identity_metadata
+    return diagnostics
+
+
+def _safe_bundle_temporal_query_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
+    diagnostics: dict[str, object] = {}
+    for key in _BUNDLE_TEMPORAL_QUERY_TEXT_KEYS:
+        value = _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+        if value:
+            diagnostics[key] = value
+    for key in _BUNDLE_TEMPORAL_QUERY_BOOL_KEYS:
+        value = raw.get(key)
+        if isinstance(value, bool):
+            diagnostics[key] = value
+    for key in _BUNDLE_TEMPORAL_QUERY_LIST_KEYS:
+        value = raw.get(key)
+        if not isinstance(value, list | tuple):
+            continue
+        safe_values = [
+            text
+            for raw_text in value[:_MAX_DIAGNOSTIC_LIST_ITEMS]
+            if (text := _safe_optional_text(raw_text, limit=_MAX_DIAGNOSTIC_KEY_CHARS))
+        ]
+        if safe_values:
+            diagnostics[key] = safe_values
     return diagnostics
 
 

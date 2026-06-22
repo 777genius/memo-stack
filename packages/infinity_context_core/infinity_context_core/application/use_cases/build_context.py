@@ -73,6 +73,10 @@ from infinity_context_core.application.context_snippets import (
     query_snippet_score_signals,
     source_refs_with_query_snippet,
 )
+from infinity_context_core.application.context_temporal_query import (
+    apply_temporal_query_intent_boosts,
+    build_temporal_query_intent,
+)
 from infinity_context_core.application.document_text import document_chunk_retrieval_text
 from infinity_context_core.application.dto import (
     BuildContextQuery,
@@ -158,6 +162,7 @@ class BuildContextUseCase:
         memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
         query_expansion_plan = build_query_expansion_plan(query.query)
         query_anchor_intent = build_query_anchor_intent(query.query)
+        temporal_query_intent = build_temporal_query_intent(query.query)
         canonical = await self._canonical_collector.collect(
             query=query,
             memory_scope_ids=memory_scope_ids,
@@ -250,6 +255,7 @@ class BuildContextUseCase:
         now = self._clock.now() if self._clock is not None else None
         diagnostics.update(query_anchor_intent.diagnostics())
         diagnostics.update(query_expansion_plan.diagnostics())
+        diagnostics.update(temporal_query_intent.diagnostics())
         for fact in canonical.facts:
             items.append(_fact_context_item(fact, now=now, query_text=query.query))
         anchors_used = 0
@@ -393,7 +399,11 @@ class BuildContextUseCase:
             diagnostics=diagnostics,
             query_expansion_plan=query_expansion_plan,
         )
-        include_stale_review = query.include_stale or query.include_superseded
+        include_stale_review = (
+            query.include_stale
+            or query.include_superseded
+            or temporal_query_intent.include_superseded_review
+        )
         stale_review_items, stale_diagnostics = (
             await self._stale_review_items(
                 query=query,
@@ -432,12 +442,15 @@ class BuildContextUseCase:
         candidate_items = dedupe_rank_items(
             apply_rank_fusion_boosts(
                 apply_bm25_lexical_boosts(
-                    (
-                        *temporal_items,
-                        *artifact_evidence_items,
-                        *linked_temporal_items,
-                        *stale_review_items,
-                        *pending_review_items,
+                    apply_temporal_query_intent_boosts(
+                        (
+                            *temporal_items,
+                            *artifact_evidence_items,
+                            *linked_temporal_items,
+                            *stale_review_items,
+                            *pending_review_items,
+                        ),
+                        intent=temporal_query_intent,
                     ),
                     query=query.query,
                 )
