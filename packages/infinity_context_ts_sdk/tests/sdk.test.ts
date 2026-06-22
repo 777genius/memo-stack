@@ -504,6 +504,7 @@ describe("InfinityContextClient", () => {
   });
 
   it("records source evidence through the workflow facade", async () => {
+    const controller = new AbortController();
     const transport = new RecordingTransport([
       jsonResponse({ data: documentRecord("doc_1") }, 201),
       jsonResponse({ data: documentRecord("doc_1") }),
@@ -555,6 +556,8 @@ describe("InfinityContextClient", () => {
       text: "Operators want Reddit freshness, citations and source scoring in summaries.",
       occurredAt: "2026-06-22T10:00:00.000Z",
       idempotencyKey: "reddit:t3_abc",
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_source_evidence" },
       metadata: { provider: "reddit", subreddit: "LocalLLaMA" },
       document: { process: true, classification: "public" },
       fact: {
@@ -585,6 +588,18 @@ describe("InfinityContextClient", () => {
       "POST /v1/facts",
       "POST /v1/link-suggestions",
     ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual([
+      "trace_source_evidence",
+      "trace_source_evidence",
+      "trace_source_evidence",
+      "trace_source_evidence",
+      "trace_source_evidence",
+      "trace_source_evidence",
+    ]);
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel source evidence");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
     expect(transport.requests.map((request) => request.headers.get("idempotency-key"))).toEqual([
       "reddit:t3_abc:document",
       "reddit:t3_abc:document:process",
@@ -644,6 +659,7 @@ describe("InfinityContextClient", () => {
   });
 
   it("records source evidence batches with per-item errors", async () => {
+    const controller = new AbortController();
     const transport = new RecordingTransport([
       jsonResponse({ data: { id: "episode_1", status: "active" } }, 201),
       jsonResponse({
@@ -674,6 +690,8 @@ describe("InfinityContextClient", () => {
     const batch = await client.workflows.recordSourceEvidenceBatch({
       concurrency: 1,
       continueOnError: true,
+      signal: controller.signal,
+      headers: { "x-batch-id": "batch_1" },
       items: [
         {
           spaceSlug: "social-monitor:tenant:workspace",
@@ -692,6 +710,7 @@ describe("InfinityContextClient", () => {
           sourceId: "reddit:t3_bad",
           text: "Second provider item should fail.",
           idempotencyKey: "reddit:t3_bad",
+          headers: { "x-item-id": "item_bad" },
         },
       ],
     });
@@ -730,6 +749,22 @@ describe("InfinityContextClient", () => {
       "POST /v1/link-suggestions",
       "POST /v1/episodes",
     ]);
+    expect(transport.requests.map((request) => request.headers.get("x-batch-id"))).toEqual([
+      "batch_1",
+      "batch_1",
+      "batch_1",
+      "batch_1",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-item-id"))).toEqual([
+      null,
+      null,
+      null,
+      "item_bad",
+    ]);
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel batch");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
   });
 
   it("stops source evidence batches after the first error when configured", async () => {

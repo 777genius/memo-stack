@@ -1,3 +1,4 @@
+import type { RequestControls } from "../client.js";
 import type { ContextEnvelope, ContextBundleData, MemoryDigestData, SearchMemoryData } from "../context-types.js";
 import { healthyRetrievalComponents, usedDerivedRetrieval } from "../diagnostics.js";
 import { ValueError, type ReadScope, type ReadScopeInput, type SingleScopeInput } from "../payload.js";
@@ -16,7 +17,7 @@ export interface MemoryWorkflowResources {
   readonly facts: FactsClient;
 }
 
-export interface RecordMemoryFeedbackInput extends SingleScopeInput {
+export interface RecordMemoryFeedbackInput extends SingleScopeInput, RequestControls {
   readonly sourceAgent: string;
   readonly text: string;
   readonly idempotencyKey: string;
@@ -42,7 +43,7 @@ export interface RecordMemoryFeedbackResult {
   readonly fact?: ApiEnvelope<FactRecord>;
 }
 
-export interface BuildMemoryBriefInput extends ReadScopeInput {
+export interface BuildMemoryBriefInput extends ReadScopeInput, RequestControls {
   readonly readScope?: ReadScope;
   readonly query: string;
   readonly topic?: string;
@@ -120,7 +121,7 @@ export interface RecordSourceEvidenceLinkSuggestionOptions {
   readonly sourceId?: string;
 }
 
-export interface RecordSourceEvidenceInput extends SingleScopeInput {
+export interface RecordSourceEvidenceInput extends SingleScopeInput, RequestControls {
   readonly sourceAgent: string;
   readonly sourceType: string;
   readonly sourceId: string;
@@ -166,7 +167,7 @@ export interface RecordSourceEvidenceBatchItemResult {
   readonly error?: MemoryWorkflowErrorData;
 }
 
-export interface RecordSourceEvidenceBatchInput {
+export interface RecordSourceEvidenceBatchInput extends RequestControls {
   readonly items: readonly RecordSourceEvidenceInput[];
   readonly concurrency?: number;
   readonly continueOnError?: boolean;
@@ -267,8 +268,10 @@ export class MemoryWorkflows {
 
   async recordFeedback(input: RecordMemoryFeedbackInput): Promise<RecordMemoryFeedbackResult> {
     const sourceRefs = feedbackSourceRefs(input);
+    const controls = workflowControls(input);
     const captureInput: CreateCaptureInput = {
       ...singleScopeInput(input),
+      ...controls,
       sourceAgent: input.sourceAgent,
       sourceKind: "hook",
       eventType: input.eventType ?? "memory.feedback.recorded",
@@ -295,6 +298,7 @@ export class MemoryWorkflows {
 
     const fact = await this.resources.facts.rememberFact({
       ...factScopeInput(input),
+      ...controls,
       text: input.factText ?? input.text,
       kind: input.factKind ?? "user_preference",
       category: input.factCategory ?? "feedback",
@@ -310,6 +314,7 @@ export class MemoryWorkflows {
   async recordSourceEvidence(input: RecordSourceEvidenceInput): Promise<RecordSourceEvidenceResult> {
     const baseSourceRefs = sourceEvidenceRefs(input);
     const createdSourceRefs: SourceRef[] = [];
+    const controls = workflowControls(input);
 
     let document: ApiEnvelope<DocumentRecord> | undefined;
     let processedDocument: ApiEnvelope<DocumentRecord> | undefined;
@@ -317,6 +322,7 @@ export class MemoryWorkflows {
       const documentOptions = stepOptions(input.document);
       document = await this.resources.documents.ingestDocument({
         ...singleScopeInput(input),
+        ...controls,
         title: documentOptions.title ?? input.title ?? input.sourceId,
         text: input.text,
         sourceExternalId: input.sourceId,
@@ -329,6 +335,7 @@ export class MemoryWorkflows {
 
       if (documentOptions.process === true) {
         processedDocument = await this.resources.documents.processDocument(document.data.id, {
+          ...controls,
           idempotencyKey: `${input.idempotencyKey}:document:process`,
         });
       }
@@ -339,6 +346,7 @@ export class MemoryWorkflows {
       const episodeOptions = stepOptions(input.episode);
       episode = await this.resources.documents.ingestEpisode({
         ...singleScopeInput(input),
+        ...controls,
         sourceExternalId: input.sourceId,
         sourceType: input.sourceType,
         text: input.text,
@@ -361,6 +369,7 @@ export class MemoryWorkflows {
       const captureOptions = stepOptions(input.capture);
       capture = await this.resources.captures.createCapture({
         ...singleScopeInput(input),
+        ...controls,
         sourceAgent: input.sourceAgent,
         sourceKind: captureOptions.sourceKind ?? "document",
         eventType: captureOptions.eventType ?? "memory.source_evidence.recorded",
@@ -388,6 +397,7 @@ export class MemoryWorkflows {
       const factOptions = stepOptions(input.fact);
       fact = await this.resources.facts.rememberFact({
         ...singleScopeInput(input),
+        ...controls,
         ...optional("memoryScopeExternalRef", factOptions.memoryScopeExternalRef ?? input.memoryScopeExternalRef),
         text: factOptions.text ?? input.text,
         kind: factOptions.kind ?? "source_signal",
@@ -404,6 +414,7 @@ export class MemoryWorkflows {
       const linkOptions = stepOptions(input.linkSuggestions);
       linkSuggestions = await this.resources.contextLinks.suggestContextLinks({
         ...singleScopeInput(input),
+        ...controls,
         text: input.text,
         sourceType: linkOptions.sourceType ?? (capture ? "capture" : input.sourceType),
         sourceId: linkOptions.sourceId ?? capture?.data.id ?? input.sourceId,
@@ -455,10 +466,12 @@ export class MemoryWorkflows {
         }
 
         try {
-          const result = await this.recordSourceEvidence(item);
-          results[index] = batchItemResult(index, item, { result });
+          const scopedItem = withWorkflowControls(input, item);
+          const result = await this.recordSourceEvidence(scopedItem);
+          results[index] = batchItemResult(index, scopedItem, { result });
         } catch (error) {
-          results[index] = batchItemResult(index, item, { error: workflowErrorData(error) });
+          const scopedItem = withWorkflowControls(input, item);
+          results[index] = batchItemResult(index, scopedItem, { error: workflowErrorData(error) });
           if (!continueOnError) {
             stopped = true;
             return;
@@ -481,6 +494,7 @@ export class MemoryWorkflows {
   async buildMemoryBrief(input: BuildMemoryBriefInput): Promise<BuildMemoryBriefResult> {
     const contextInput: BuildContextInput = {
       ...readScopeInput(input),
+      ...workflowControls(input),
       query: input.query,
       ...optional("tokenBudget", input.tokenBudget),
       ...optional("maxFacts", input.maxFacts),
@@ -497,6 +511,7 @@ export class MemoryWorkflows {
         ? Promise.resolve(undefined)
         : this.resources.context.buildDigest({
             ...readScopeInput(input),
+            ...workflowControls(input),
             topic: input.topic ?? input.query,
             ...optional("tokenBudget", input.digestTokenBudget ?? input.tokenBudget),
             ...optional("maxFacts", input.maxFacts),
@@ -535,6 +550,34 @@ function singleScopeInput(input: SingleScopeInput): SingleScopeInput {
     ...optional("spaceSlug", input.spaceSlug),
     ...optional("memoryScopeExternalRef", input.memoryScopeExternalRef),
     ...optional("threadExternalRef", input.threadExternalRef),
+  };
+}
+
+function workflowControls(input: RequestControls): RequestControls {
+  return {
+    ...optional("headers", input.headers),
+    ...optional("signal", input.signal),
+  };
+}
+
+function withWorkflowControls(
+  batchControls: RequestControls,
+  input: RecordSourceEvidenceInput,
+): RecordSourceEvidenceInput {
+  return {
+    ...input,
+    ...mergeWorkflowControls(batchControls, input),
+  };
+}
+
+function mergeWorkflowControls(parent: RequestControls, child: RequestControls): RequestControls {
+  const headers = parent.headers === undefined && child.headers === undefined
+    ? undefined
+    : { ...parent.headers, ...child.headers };
+
+  return {
+    ...optional("headers", headers),
+    ...optional("signal", child.signal ?? parent.signal),
   };
 }
 

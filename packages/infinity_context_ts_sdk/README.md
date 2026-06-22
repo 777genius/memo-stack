@@ -143,6 +143,8 @@ For provider scans, batch items with bounded concurrency and keep per-item error
 const batch = await memory.workflows.recordSourceEvidenceBatch({
   concurrency: 4,
   continueOnError: true,
+  signal: scanAbortController.signal,
+  headers: { "x-trace-id": "scan:2026-06-22" },
   items: redditPosts.map((post) => ({
     spaceSlug: "social-monitor:tenant_1:workspace_1",
     memoryScopeExternalRef: "source:reddit:ai-agents",

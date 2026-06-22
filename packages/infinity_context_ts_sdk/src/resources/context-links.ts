@@ -1,4 +1,4 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, ValueError, type SingleScopeInput } from "../payload.js";
 import type {
   ApiEnvelope,
@@ -57,7 +57,7 @@ export interface ReviewContextLinkSuggestionsBatchData extends JsonObject {
   readonly results: readonly JsonObject[];
 }
 
-export type ContextLinkVisibleFilterInput = SingleScopeInput & {
+export type ContextLinkVisibleFilterInput = SingleScopeInput & RequestControls & {
   readonly sourceType?: string | undefined;
   readonly sourceId?: string | undefined;
   readonly targetType?: string | undefined;
@@ -77,10 +77,11 @@ export class ContextLinksClient {
     readonly sourceId?: string;
     readonly limit?: number;
     readonly persist?: boolean;
-  }): Promise<ApiEnvelope<SuggestContextLinksData>> {
+  } & RequestControls): Promise<ApiEnvelope<SuggestContextLinksData>> {
     return this.http.request<ApiEnvelope<SuggestContextLinksData>>({
       method: "POST",
       path: "/v1/link-suggestions",
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         text: input.text ?? "",
@@ -101,10 +102,11 @@ export class ContextLinksClient {
     readonly confidence?: string;
     readonly reason: string;
     readonly metadata?: JsonObject;
-  }): Promise<ApiEnvelope<CreateContextLinkData>> {
+  } & RequestControls): Promise<ApiEnvelope<CreateContextLinkData>> {
     return this.http.request<ApiEnvelope<CreateContextLinkData>>({
       method: "POST",
       path: "/v1/context-links",
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         source_type: input.sourceType,
@@ -123,6 +125,7 @@ export class ContextLinksClient {
     return this.http.request<ApiEnvelope<ContextLinkRecord[]>>({
       method: "GET",
       path: "/v1/context-links",
+      ...requestControls(input),
       params: visibleFilterParams(input, "active"),
     });
   }
@@ -136,10 +139,11 @@ export class ContextLinksClient {
     readonly confidence?: string;
     readonly reason?: string;
     readonly metadata?: JsonObject;
-  }): Promise<ApiEnvelope<ContextLinkRecord>> {
+  } & RequestControls): Promise<ApiEnvelope<ContextLinkRecord>> {
     return this.http.request<ApiEnvelope<ContextLinkRecord>>({
       method: "PATCH",
       path: `/v1/context-links/${contextLinkId}`,
+      ...requestControls(input),
       json: withoutUndefined({
         source_type: input.sourceType,
         source_id: input.sourceId,
@@ -153,10 +157,11 @@ export class ContextLinksClient {
     });
   }
 
-  deleteContextLink(contextLinkId: string): Promise<ApiEnvelope<ContextLinkRecord>> {
+  deleteContextLink(contextLinkId: string, input: RequestControls = {}): Promise<ApiEnvelope<ContextLinkRecord>> {
     return this.http.request<ApiEnvelope<ContextLinkRecord>>({
       method: "DELETE",
       path: `/v1/context-links/${contextLinkId}`,
+      ...requestControls(input),
     });
   }
 
@@ -166,13 +171,14 @@ export class ContextLinksClient {
     return this.http.request<ApiEnvelope<ContextLinkSuggestionRecord[]>>({
       method: "GET",
       path: "/v1/context-link-suggestions",
+      ...requestControls(input),
       params: visibleFilterParams(input, "pending"),
     });
   }
 
   reviewContextLinkSuggestion(
     suggestionId: string,
-    input: ReviewContextLinkSuggestionInput,
+    input: ReviewContextLinkSuggestionInput & RequestControls,
   ): Promise<ApiEnvelope<ReviewContextLinkSuggestionData>> {
     return this.http.request<ApiEnvelope<ReviewContextLinkSuggestionData>>({
       method: "POST",
@@ -180,20 +186,21 @@ export class ContextLinksClient {
         suggestionId,
         "Context link review requires suggestionId",
       )}/review`,
+      ...requestControls(input),
       json: reviewPayload(input),
     });
   }
 
   approveContextLinkSuggestion(
     suggestionId: string,
-    input: Omit<ReviewContextLinkSuggestionInput, "action"> = {},
+    input: Omit<ReviewContextLinkSuggestionInput, "action"> & RequestControls = {},
   ): Promise<ApiEnvelope<ReviewContextLinkSuggestionData>> {
     return this.reviewContextLinkSuggestion(suggestionId, { ...input, action: "approve" });
   }
 
   rejectContextLinkSuggestion(
     suggestionId: string,
-    input: { readonly reason?: string } = {},
+    input: { readonly reason?: string } & RequestControls = {},
   ): Promise<ApiEnvelope<ReviewContextLinkSuggestionData>> {
     return this.reviewContextLinkSuggestion(suggestionId, {
       action: "reject",
@@ -206,13 +213,14 @@ export class ContextLinksClient {
     input: {
       readonly continueOnError?: boolean;
       readonly visibleFilter?: ContextLinkVisibleFilterInput;
-    } = {},
+    } & RequestControls = {},
   ): Promise<ApiEnvelope<ReviewContextLinkSuggestionsBatchData>> {
     const normalizedItems = normalizeBatchItems(items);
 
     return this.http.request<ApiEnvelope<ReviewContextLinkSuggestionsBatchData>>({
       method: "POST",
       path: "/v1/context-link-suggestions/review-batch",
+      ...requestControls(input),
       json: withoutUndefined({
         items: normalizedItems,
         continue_on_error: input.continueOnError ?? false,

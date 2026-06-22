@@ -1,4 +1,4 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type { ApiEnvelope, CaptureRecord, JsonObject, SourceRef } from "../types.js";
 
@@ -46,7 +46,7 @@ export type CaptureSensitivity = "low" | "medium" | "high" | "secret";
 
 export type CaptureDataClassification = "public" | "internal" | "restricted" | "unknown";
 
-export interface CreateCaptureInput extends SingleScopeInput {
+export interface CreateCaptureInput extends SingleScopeInput, RequestControls {
   readonly sourceAgent: string;
   readonly eventType: string;
   readonly text: string;
@@ -79,6 +79,7 @@ export class CapturesClient {
       method: "POST",
       path: "/v1/captures",
       idempotencyKey: input.idempotencyKey,
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         source_agent: input.sourceAgent,
@@ -107,7 +108,7 @@ export class CapturesClient {
     });
   }
 
-  listCaptures(input: SingleScopeInput & {
+  listCaptures(input: SingleScopeInput & RequestControls & {
     readonly status?: string | null;
     readonly consolidationStatus?: string | null;
     readonly limit?: number;
@@ -115,46 +116,51 @@ export class CapturesClient {
     return this.http.request<ApiEnvelope<CaptureRecord[]>>({
       method: "GET",
       path: "/v1/captures",
+      ...requestControls(input),
       params: captureQuery(input),
     });
   }
 
-  getCapture(captureId: string): Promise<ApiEnvelope<CaptureRecord | null>> {
+  getCapture(captureId: string, input: RequestControls = {}): Promise<ApiEnvelope<CaptureRecord | null>> {
     return this.http.request<ApiEnvelope<CaptureRecord | null>>({
       method: "GET",
       path: `/v1/captures/${captureId}`,
+      ...requestControls(input),
     });
   }
 
   consolidateCapture(
     captureId: string,
-    input: { readonly force?: boolean } = {},
+    input: { readonly force?: boolean } & RequestControls = {},
   ): Promise<ApiEnvelope<ConsolidateCaptureData>> {
     return this.http.request<ApiEnvelope<ConsolidateCaptureData>>({
       method: "POST",
       path: `/v1/captures/${captureId}/consolidate`,
+      ...requestControls(input),
       json: { force: input.force ?? false },
     });
   }
 
   purgeCapture(
     captureId: string,
-    input: { readonly reason?: string } = {},
+    input: { readonly reason?: string } & RequestControls = {},
   ): Promise<ApiEnvelope<CaptureRecord>> {
     return this.http.request<ApiEnvelope<CaptureRecord>>({
       method: "DELETE",
       path: `/v1/captures/${captureId}`,
+      ...requestControls(input),
       json: { reason: input.reason ?? "privacy_purge" },
     });
   }
 
-  captureDiagnostics(input: SingleScopeInput & {
+  captureDiagnostics(input: SingleScopeInput & RequestControls & {
     readonly consolidationStatus?: string | null;
     readonly limit?: number;
   }): Promise<ApiEnvelope<CaptureRecord[]>> {
     return this.http.request<ApiEnvelope<CaptureRecord[]>>({
       method: "GET",
       path: "/v1/diagnostics/captures",
+      ...requestControls(input),
       params: captureQuery(input),
     });
   }
