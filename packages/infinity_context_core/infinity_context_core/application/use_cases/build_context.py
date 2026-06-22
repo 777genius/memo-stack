@@ -46,6 +46,7 @@ from infinity_context_core.application.context_query_intent import (
     query_anchor_lookup_keys,
 )
 from infinity_context_core.application.context_ranking import (
+    apply_bm25_lexical_boosts,
     apply_rank_fusion_boosts,
     best_query_relevance,
     dedupe_rank_items,
@@ -373,7 +374,11 @@ class BuildContextUseCase:
         items.extend(rag_items)
 
         deduped = await self._hydrator.revalidate_visible_items(
-            dedupe_rank_items(apply_rank_fusion_boosts(tuple(items))),
+            dedupe_rank_items(
+                apply_rank_fusion_boosts(
+                    apply_bm25_lexical_boosts(tuple(items), query=query.query)
+                )
+            ),
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
@@ -426,12 +431,15 @@ class BuildContextUseCase:
         )
         candidate_items = dedupe_rank_items(
             apply_rank_fusion_boosts(
-                (
-                    *temporal_items,
-                    *artifact_evidence_items,
-                    *linked_temporal_items,
-                    *stale_review_items,
-                    *pending_review_items,
+                apply_bm25_lexical_boosts(
+                    (
+                        *temporal_items,
+                        *artifact_evidence_items,
+                        *linked_temporal_items,
+                        *stale_review_items,
+                        *pending_review_items,
+                    ),
+                    query=query.query,
                 )
             )
         )

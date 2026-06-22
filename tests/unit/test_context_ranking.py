@@ -1,4 +1,5 @@
 from infinity_context_core.application.context_ranking import (
+    apply_bm25_lexical_boosts,
     apply_rank_fusion_boosts,
     reciprocal_rank_fusion_scores,
 )
@@ -80,11 +81,82 @@ def test_rank_fusion_does_not_apply_twice_to_same_candidate() -> None:
     assert second_pass[2].score == first_pass[2].score
 
 
-def _item(item_id: str, *, score: float, retrieval_source: str) -> ContextItem:
+def test_bm25_lexical_boost_prefers_precise_multi_term_candidate() -> None:
+    precise = _item(
+        "precise",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex approved the Atlas launch checklist.",
+    )
+    loose = _item(
+        "loose",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Alex discussed many unrelated launch ideas and launch notes, "
+            "but there was no checklist reference."
+        ),
+    )
+
+    boosted = apply_bm25_lexical_boosts(
+        (precise, loose),
+        query="Alex Atlas launch checklist",
+        max_boost=0.04,
+    )
+
+    assert boosted[0].score > boosted[1].score
+    assert boosted[0].diagnostics["score_signals"]["bm25_lexical_boost"] <= 0.04
+    assert boosted[0].diagnostics["score_signals"][
+        "bm25_lexical_matched_term_count"
+    ] == 4
+    assert boosted[0].diagnostics["provenance"]["bm25_lexical_applied"] is True
+
+
+def test_bm25_lexical_boost_skips_queries_without_terms() -> None:
+    item = _item("only", score=0.7, retrieval_source="keyword_chunks")
+
+    boosted = apply_bm25_lexical_boosts((item,), query="what and where")
+
+    assert boosted == (item,)
+
+
+def test_bm25_lexical_boost_does_not_apply_twice() -> None:
+    first = _item(
+        "first",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex approved the Atlas launch checklist.",
+    )
+    second = _item(
+        "second",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="The billing export finished after lunch.",
+    )
+
+    first_pass = apply_bm25_lexical_boosts(
+        (first, second),
+        query="Alex Atlas launch checklist",
+    )
+    second_pass = apply_bm25_lexical_boosts(
+        first_pass,
+        query="Alex Atlas launch checklist",
+    )
+
+    assert second_pass[0].score == first_pass[0].score
+
+
+def _item(
+    item_id: str,
+    *,
+    score: float,
+    retrieval_source: str,
+    text: str | None = None,
+) -> ContextItem:
     return ContextItem(
         item_id=item_id,
         item_type="chunk",
-        text=item_id,
+        text=text or item_id,
         score=score,
         source_refs=(SourceRef(source_type="document", source_id="doc"),),
         diagnostics={

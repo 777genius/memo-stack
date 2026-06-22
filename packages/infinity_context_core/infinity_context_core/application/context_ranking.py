@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from infinity_context_core.application.context_diagnostics import (
     context_duplicate_primary_key,
@@ -15,6 +16,13 @@ from infinity_context_core.application.context_diagnostics import (
     normalize_context_item_diagnostics,
     safe_diagnostic_mapping,
     safe_score_signals,
+)
+from infinity_context_core.application.context_lexical import (
+    LexicalQueryTerm,
+    query_term_frequency,
+    query_terms,
+    text_variant_counts,
+    text_variant_sequence,
 )
 from infinity_context_core.application.context_query_expansion import QueryExpansionPlan
 from infinity_context_core.application.context_relevance import (
@@ -28,6 +36,9 @@ from infinity_context_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, Sour
 _RRF_RANK_CONSTANT = 60.0
 _RRF_MAX_RANK_PER_SOURCE = 50
 _RRF_MAX_BOOST = 0.045
+_BM25_K1 = 1.2
+_BM25_B = 0.75
+_BM25_MAX_BOOST = 0.035
 _KEYWORD_EXPANSION_SCORE_CAPS = {
     "career_intent_bridge": 0.91,
     "support_career_motivation_bridge": 0.96,
@@ -102,6 +113,55 @@ def apply_rank_fusion_boosts(
             source_count=len(rankings),
         )
         for item in items
+    )
+
+
+def apply_bm25_lexical_boosts(
+    items: tuple[ContextItem, ...],
+    *,
+    query: str,
+    k1: float = _BM25_K1,
+    b: float = _BM25_B,
+    max_boost: float = _BM25_MAX_BOOST,
+) -> tuple[ContextItem, ...]:
+    if len(items) <= 1 or k1 <= 0 or not 0 <= b <= 1 or max_boost <= 0:
+        return items
+    terms = query_terms(query)
+    if not terms:
+        return items
+    documents = tuple(_bm25_document(item=item, terms=terms) for item in items)
+    average_length = sum(document.length for document in documents) / len(documents)
+    document_frequencies = tuple(
+        sum(1 for document in documents if document.term_frequencies[index] > 0)
+        for index, _ in enumerate(terms)
+    )
+    raw_scores = tuple(
+        _bm25_score(
+            term_frequencies=document.term_frequencies,
+            document_frequencies=document_frequencies,
+            document_count=len(documents),
+            document_length=document.length,
+            average_document_length=max(1.0, average_length),
+            k1=k1,
+            b=b,
+        )
+        for document in documents
+    )
+    max_raw_score = max(raw_scores, default=0.0)
+    if max_raw_score <= 0:
+        return items
+    return tuple(
+        _with_bm25_lexical_boost(
+            document.item,
+            raw_score=raw_score,
+            max_raw_score=max_raw_score,
+            max_boost=max_boost,
+            query_term_count=len(terms),
+            matched_term_count=sum(
+                1 for frequency in document.term_frequencies if frequency > 0
+            ),
+        )
+        for document, raw_score in zip(documents, raw_scores, strict=True)
     )
 
 
@@ -283,6 +343,99 @@ def _bounded_source_weight(value: float) -> float:
     if value <= 0:
         return 0.0
     return min(5.0, float(value))
+
+
+@dataclass(frozen=True)
+class _Bm25Document:
+    item: ContextItem
+    term_frequencies: tuple[int, ...]
+    length: int
+
+
+def _bm25_document(
+    *,
+    item: ContextItem,
+    terms: tuple[LexicalQueryTerm, ...],
+) -> _Bm25Document:
+    counts = text_variant_counts(item.text)
+    return _Bm25Document(
+        item=item,
+        term_frequencies=tuple(query_term_frequency(term, counts) for term in terms),
+        length=max(1, len(text_variant_sequence(item.text))),
+    )
+
+
+def _bm25_score(
+    *,
+    term_frequencies: tuple[int, ...],
+    document_frequencies: tuple[int, ...],
+    document_count: int,
+    document_length: int,
+    average_document_length: float,
+    k1: float,
+    b: float,
+) -> float:
+    score = 0.0
+    length_ratio = document_length / average_document_length
+    normalizer = k1 * (1 - b + b * length_ratio)
+    for frequency, document_frequency in zip(
+        term_frequencies,
+        document_frequencies,
+        strict=True,
+    ):
+        if frequency <= 0 or document_frequency <= 0:
+            continue
+        idf = math.log(
+            1
+            + (document_count - document_frequency + 0.5)
+            / (document_frequency + 0.5)
+        )
+        score += idf * (frequency * (k1 + 1)) / (frequency + normalizer)
+    return round(score, 8)
+
+
+def _with_bm25_lexical_boost(
+    item: ContextItem,
+    *,
+    raw_score: float,
+    max_raw_score: float,
+    max_boost: float,
+    query_term_count: int,
+    matched_term_count: int,
+) -> ContextItem:
+    if _bm25_lexical_already_applied(item):
+        return item
+    if raw_score <= 0 or max_raw_score <= 0 or matched_term_count <= 0:
+        return item
+    normalized_score = min(1.0, raw_score / max_raw_score)
+    boost = round(max_boost * normalized_score, 4)
+    if boost <= 0:
+        return item
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    diagnostics["bm25_lexical_reason"] = "BM25 lexical rerank over candidate pool"
+    diagnostics["score_signals"] = {
+        **safe_score_signals(diagnostics.get("score_signals")),
+        "bm25_lexical_raw_score": round(raw_score, 6),
+        "bm25_lexical_normalized_score": round(normalized_score, 4),
+        "bm25_lexical_boost": boost,
+        "bm25_lexical_query_term_count": query_term_count,
+        "bm25_lexical_matched_term_count": matched_term_count,
+    }
+    diagnostics["provenance"] = {
+        **safe_diagnostic_mapping(diagnostics.get("provenance")),
+        "bm25_lexical_applied": True,
+    }
+    return replace(
+        item,
+        score=min(0.99, round(item.score + boost, 4)),
+        diagnostics=normalize_context_diagnostics(diagnostics),
+    )
+
+
+def _bm25_lexical_already_applied(item: ContextItem) -> bool:
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
+    return provenance.get("bm25_lexical_applied") is True
 
 
 def _with_rank_fusion_boost(
