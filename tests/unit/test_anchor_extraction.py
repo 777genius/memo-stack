@@ -75,6 +75,14 @@ def test_anchor_extraction_ignores_command_verbs_as_people() -> None:
     assert "open" not in person_keys
 
 
+def test_anchor_extraction_strips_question_modal_prefix_from_person() -> None:
+    anchors = extract_observed_anchors("Would Melanie be considered an ally?")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    assert "melanie" in person_keys
+    assert "would melanie" not in person_keys
+
+
 def test_anchor_extraction_keeps_same_name_people_and_projects_separate() -> None:
     anchors = extract_observed_anchors("Alex wrote that Project Alex is a separate workspace.")
 

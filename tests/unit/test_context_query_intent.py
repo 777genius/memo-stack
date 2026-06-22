@@ -65,6 +65,17 @@ def test_query_anchor_lookup_keys_include_storage_and_canonical_variants() -> No
     assert all("event temporal" not in normalized_key for _, normalized_key in keys)
 
 
+def test_query_anchor_intent_strips_question_modal_prefix_from_person() -> None:
+    intent = build_query_anchor_intent("Would Melanie be considered an ally?")
+
+    assert intent.keys_for_kind(MemoryAnchorKind.PERSON) == {"melanie"}
+    assert all(
+        "would melanie" not in hint.canonical_key
+        for hint in intent.hints
+        if hint.kind == MemoryAnchorKind.PERSON
+    )
+
+
 def test_query_anchor_intent_matches_cross_language_event_identity() -> None:
     intent = build_query_anchor_intent("созвон с алексом в атласе час назад")
     anchor = _anchor(
