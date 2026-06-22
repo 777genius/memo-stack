@@ -212,6 +212,10 @@ class _BenchmarkProgress:
             "progress": {
                 "processed_case_count": processed_case_count,
                 "total_case_count": self.total_case_count,
+                "processed_case_ratio": _ratio(
+                    min(processed_case_count, self.total_case_count),
+                    self.total_case_count,
+                ),
                 "seeded_source_count": seeded_source_count,
                 "seed_source_attempt_count": (
                     seed_stats.source_attempt_count if seed_stats is not None else 0
@@ -233,10 +237,7 @@ class _BenchmarkProgress:
             "recent_failures": list(failures[-20:]),
         }
         self.checkpoint_out.parent.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_out.write_text(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _write_json_atomic(self.checkpoint_out, payload)
 
 
 class _TestClientBenchmarkAdapter:
@@ -2079,6 +2080,15 @@ def _p95(values: Sequence[float]) -> float:
 
 def _dataset_hash(dataset_path: Path) -> str:
     return hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
 
 
 def _short_hash(value: str) -> str:

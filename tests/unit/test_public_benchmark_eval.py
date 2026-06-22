@@ -872,6 +872,7 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
     assert progress_events[-1]["event_type"] == "run_completed"
     assert checkpoint["status"] == "completed"
     assert checkpoint["progress"]["processed_case_count"] == 2
+    assert checkpoint["progress"]["processed_case_ratio"] == 1.0
     assert checkpoint["progress"]["seeded_source_count"] == 1
     assert checkpoint["progress"]["seed_source_attempt_count"] == 2
     assert checkpoint["progress"]["seed_cache_hit_count"] == 1
@@ -880,6 +881,7 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
         "progress-one",
         "progress-two",
     ]
+    assert not (tmp_path / ".checkpoint.json.tmp").exists()
     assert str(tmp_path) not in rendered
     assert "shared-document" not in rendered
 
