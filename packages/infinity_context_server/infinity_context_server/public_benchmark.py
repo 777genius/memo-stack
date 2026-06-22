@@ -617,6 +617,14 @@ def _execute_cases(
                 failures=failures,
                 effective_parallelism=effective_parallelism,
             )
+            _emit_case_progress_snapshot(
+                progress=progress,
+                run_results=run_results,
+                failures=failures,
+                seeded_source_count=len(seeded_source_keys),
+                seed_stats=seed_stats,
+                effective_parallelism=effective_parallelism,
+            )
             progress.checkpoint(
                 processed_case_count=len(run_results),
                 run_results=run_results,
@@ -688,6 +696,14 @@ def _execute_cases(
                     case_result_key(outcome.result.benchmark, outcome.result.case_id)
                 ] = outcome.result
                 run_results[:] = _ordered_run_results(cases, result_by_key)
+                _emit_case_progress_snapshot(
+                    progress=progress,
+                    run_results=run_results,
+                    failures=failures,
+                    seeded_source_count=len(seeded_source_keys),
+                    seed_stats=seed_stats,
+                    effective_parallelism=effective_parallelism,
+                )
                 progress.checkpoint(
                     processed_case_count=len(run_results),
                     run_results=run_results,
@@ -769,6 +785,30 @@ def _execute_cases(
             result["metrics"][f"{name}_accuracy"] = metrics.get("accuracy")
             result["metrics"][f"{name}_case_count"] = metrics.get("case_count")
     return result
+
+
+def _emit_case_progress_snapshot(
+    *,
+    progress: _BenchmarkProgress,
+    run_results: Sequence[CaseRunResult],
+    failures: Sequence[Mapping[str, object]],
+    seeded_source_count: int,
+    seed_stats: _BenchmarkSeedStats,
+    effective_parallelism: int,
+) -> None:
+    processed_case_count = len(run_results)
+    progress.event(
+        "case_progress",
+        processed_case_count=processed_case_count,
+        total_case_count=progress.total_case_count,
+        processed_case_ratio=_ratio(processed_case_count, progress.total_case_count),
+        accuracy_so_far=_accuracy(run_results),
+        failure_count=len(failures),
+        seeded_source_count=seeded_source_count,
+        seed_source_attempt_count=seed_stats.source_attempt_count,
+        seed_cache_hit_count=seed_stats.seed_cache_hit_count,
+        effective_parallelism=effective_parallelism,
+    )
 
 
 def _select_cases(

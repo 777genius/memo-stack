@@ -737,6 +737,12 @@ def test_public_memory_benchmark_runs_isolated_cases_in_parallel(
     ]
     assert execution_configured["effective_parallelism"] == 2
     assert [event["event_type"] for event in progress_events].count("case_completed") == 3
+    progress_snapshots = [
+        event for event in progress_events if event["event_type"] == "case_progress"
+    ]
+    assert len(progress_snapshots) == 3
+    assert progress_snapshots[-1]["processed_case_count"] == 3
+    assert progress_snapshots[-1]["processed_case_ratio"] == 1.0
 
 
 def test_public_memory_benchmark_degrades_parallelism_for_shared_contexts(
@@ -870,6 +876,12 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
         for event in progress_events
     )
     assert progress_events[-1]["event_type"] == "run_completed"
+    progress_snapshots = [
+        event for event in progress_events if event["event_type"] == "case_progress"
+    ]
+    assert [event["processed_case_count"] for event in progress_snapshots] == [1, 2]
+    assert [event["processed_case_ratio"] for event in progress_snapshots] == [0.5, 1.0]
+    assert progress_snapshots[-1]["accuracy_so_far"] == 1.0
     assert checkpoint["status"] == "completed"
     assert checkpoint["progress"]["processed_case_count"] == 2
     assert checkpoint["progress"]["processed_case_ratio"] == 1.0
