@@ -46,14 +46,22 @@ _RRF_MAX_BOOST = 0.045
 _DEFAULT_RRF_SOURCE_WEIGHTS = {
     "approved_context_linked_anchors": 1.18,
     "approved_context_linked_asset_manifest_evidence": 1.14,
+    "approved_context_linked_assets": 1.08,
+    "approved_context_linked_chunks": 1.12,
     "approved_context_linked_extraction_artifacts": 1.2,
+    "approved_context_linked_facts": 1.14,
     "artifact_evidence": 1.2,
     "canonical_anchor_relations": 1.12,
     "canonical_anchors": 1.15,
     "graph_hydrated": 1.08,
     "keyword_aggregation_chunks": 1.12,
+    "keyword_chunks": 1.04,
+    "keyword_neighbor_chunks": 1.04,
     "keyword_source_sibling_chunks": 1.08,
+    "postgres_facts": 1.06,
+    "rag_recall": 1.06,
     "temporal_supersedes_relation": 1.12,
+    "vector_chunks": 1.08,
 }
 _BM25_K1 = 1.2
 _BM25_B = 0.75

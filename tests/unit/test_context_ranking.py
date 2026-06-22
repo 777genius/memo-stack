@@ -102,6 +102,31 @@ def test_rank_fusion_counts_all_sources_on_hybrid_candidate() -> None:
     assert boosted[0].diagnostics["provenance"]["rank_fusion_source_count"] == 2
 
 
+def test_rank_fusion_prefers_multi_signal_entity_temporal_evidence() -> None:
+    hybrid = _item(
+        "hybrid",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        retrieval_sources=("keyword_chunks", "vector_chunks", "canonical_anchors"),
+        text="Alex discussed Atlas after the launch review.",
+    )
+    lexical_only = _item(
+        "lexical_only",
+        score=0.71,
+        retrieval_source="keyword_chunks",
+        text="Alex mentioned Atlas in a broad note.",
+    )
+
+    boosted = apply_rank_fusion_boosts((hybrid, lexical_only), max_boost=0.045)
+
+    assert boosted[0].score > boosted[1].score
+    assert boosted[0].diagnostics["score_signals"]["rank_fusion_boost"] > boosted[
+        1
+    ].diagnostics["score_signals"]["rank_fusion_boost"]
+    assert boosted[0].diagnostics["score_signals"]["rank_fusion_source_weighted"] is True
+    assert boosted[0].diagnostics["provenance"]["rank_fusion_source_weighted"] is True
+
+
 def test_rank_fusion_does_not_apply_twice_to_same_candidate() -> None:
     keyword_top = _item("shared", score=0.8, retrieval_source="keyword_chunks")
     keyword_low = _item("keyword_low", score=0.6, retrieval_source="keyword_chunks")
