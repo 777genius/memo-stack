@@ -54,6 +54,20 @@ export type {
   CursorPaginationOptions,
   PaginatedEnvelope,
 } from "./pagination.js";
+export {
+  buildFullMemoryProofArtifact,
+  FULL_MEMORY_PROOF_ARTIFACT_SCHEMA,
+  summarizeFullMemoryProofReport,
+} from "./proof-artifact.js";
+export type {
+  FullMemoryProofArtifact,
+  FullMemoryProofArtifactInput,
+  FullMemoryProofArtifactMetadata,
+  FullMemoryProofArtifactSummary,
+  FullMemoryProofGitMetadata,
+  FullMemoryProofRuntimeMetadata,
+  FullMemoryProofSdkMetadata,
+} from "./proof-artifact.js";
 export type { AnchorBackfillData, AnchorBackfillSource, AnchorMergeCandidate } from "./resources/anchors.js";
 export type {
   AssetExtractionListInput,

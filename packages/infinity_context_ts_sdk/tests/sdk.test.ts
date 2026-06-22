@@ -7,6 +7,7 @@ import {
   ValueError,
   assertMemoryBriefQuality,
   assertFullMemoryReady,
+  buildFullMemoryProofArtifact,
   evaluateMemoryBriefQuality,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
@@ -3218,6 +3219,53 @@ describe("InfinityContextClient", () => {
     expect(report.observed.usageResourceCount).toBe(0);
     expect(report.retrieval.vector.queryCount).toBe(4);
     expect(report.retrieval.graph.queryCount).toBe(3);
+    const artifact = buildFullMemoryProofArtifact({
+      report,
+      startedAt: "2026-06-06T00:00:00.000Z",
+      finishedAt: "2026-06-06T00:00:02.500Z",
+      metadata: {
+        sdk: { packageName: "@infinity-context/sdk", packageVersion: "0.1.0" },
+        git: { commitSha: "abc123", branch: "main", repository: "777genius/memo-stack" },
+        runtime: { baseUrl: "http://memory.test", requireFullMemory: true },
+      },
+    });
+
+    expect(artifact).toMatchObject({
+      schemaVersion: "infinity_context.full_memory_proof_artifact.v1",
+      generatedAt: "2026-06-06T00:00:02.500Z",
+      startedAt: "2026-06-06T00:00:00.000Z",
+      finishedAt: "2026-06-06T00:00:02.500Z",
+      durationMs: 2500,
+      ok: true,
+      metadata: {
+        sdk: { packageName: "@infinity-context/sdk", packageVersion: "0.1.0" },
+        git: { commitSha: "abc123", branch: "main", repository: "777genius/memo-stack" },
+        runtime: { baseUrl: "http://memory.test", requireFullMemory: true },
+      },
+      summary: {
+        ok: true,
+        mode: "full",
+        durableOk: true,
+        fullMemoryOk: true,
+        checksTotal: 21,
+        checksPassed: 21,
+        checksFailed: 0,
+        failedChecks: [],
+        enabledAdapters: ["qdrant", "graphiti"],
+        supportsQdrant: true,
+        supportsGraphiti: true,
+        vectorHealthy: true,
+        graphHealthy: true,
+        derivedRetrievalUsed: true,
+        vectorQueryCount: 4,
+        graphQueryCount: 3,
+        sourceEvidenceSuccessRate: 1,
+        memoryInspectionIssueCount: 0,
+        maintenanceActionableCount: 3,
+        outboxBlockingCount: 0,
+      },
+    });
+    expect(artifact.report).toBe(report);
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /v1/capabilities",
       "GET /v1/spaces",
