@@ -35,6 +35,10 @@ from infinity_context_core.application.context_policy import (
     is_context_fact_visible,
     is_context_review_fact_visible,
 )
+from infinity_context_core.application.context_query_expansion import (
+    QueryExpansionPlan,
+    build_query_expansion_plan,
+)
 from infinity_context_core.application.context_query_intent import (
     QueryAnchorIntent,
     build_query_anchor_intent,
@@ -91,6 +95,17 @@ from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS = (1, -1, 2, -2, 3, -3)
+_KEYWORD_EXPANSION_SCORE_CAPS = {
+    "career_intent_bridge": 0.91,
+    "support_counterfactual_bridge": 0.94,
+    "support_origin_bridge": 0.94,
+    "outdoor_preference_bridge": 0.94,
+    "outdoor_nature_memory_bridge": 0.94,
+}
+_KEYWORD_EXPANSION_REASON_BOOSTS = {
+    "outdoor_nature_memory_bridge": 0.018,
+    "support_origin_bridge": 0.01,
+}
 
 
 class BuildContextUseCase:
@@ -147,8 +162,13 @@ class BuildContextUseCase:
 
     async def execute(self, query: BuildContextQuery) -> ContextBundle:
         memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
+        query_expansion_plan = build_query_expansion_plan(query.query)
         canonical = await self._canonical_collector.collect(
-            query=query, memory_scope_ids=memory_scope_ids
+            query=query,
+            memory_scope_ids=memory_scope_ids,
+            keyword_queries=tuple(
+                expansion.query for expansion in query_expansion_plan.retrieval_queries
+            ),
         )
 
         diagnostics: dict[str, object] = {
@@ -229,6 +249,7 @@ class BuildContextUseCase:
         now = self._clock.now() if self._clock is not None else None
         query_anchor_intent = build_query_anchor_intent(query.query)
         diagnostics.update(query_anchor_intent.diagnostics())
+        diagnostics.update(query_expansion_plan.diagnostics())
         for fact in canonical.facts:
             items.append(_fact_context_item(fact, now=now, query_text=query.query))
         anchors_used = 0
@@ -300,13 +321,19 @@ class BuildContextUseCase:
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
                 continue
-            relevance = score_query_relevance(query=query.query, text=chunk_text)
+            expansion_query, expansion_reason, relevance = _best_query_relevance(
+                query_expansion_plan,
+                text=chunk_text,
+            )
             if not is_query_relevance_sufficient(relevance):
                 diagnostics["keyword_chunks_dropped_by_relevance"] = (
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
                 continue
-            score = min(0.87, round(0.75 + relevance.score_boost, 4))
+            score = _keyword_chunk_score(
+                relevance,
+                query_expansion_reason=expansion_reason,
+            )
             used_keyword_chunks.append(chunk)
             items.append(
                 _chunk_context_item(
@@ -316,7 +343,8 @@ class BuildContextUseCase:
                     base_score=0.75,
                     score=score,
                     relevance=relevance,
-                    query_text=query.query,
+                    query_text=expansion_query,
+                    query_expansion_reason=expansion_reason,
                 )
             )
         neighbor_items, neighbor_diagnostics = await self._keyword_neighbor_chunk_items(
@@ -887,6 +915,61 @@ def _annotate_temporal_relation(
     )
 
 
+def _best_query_relevance(
+    plan: QueryExpansionPlan,
+    *,
+    text: str,
+) -> tuple[str, str, QueryRelevance]:
+    scored = tuple(
+        (
+            expansion.query,
+            expansion.reason,
+            score_query_relevance(query=expansion.query, text=text),
+        )
+        for expansion in plan.retrieval_queries
+    )
+    return max(scored, key=_query_relevance_rank_key)
+
+
+def _query_relevance_rank_key(
+    item: tuple[str, str, QueryRelevance],
+) -> tuple[bool, int, int, float, bool]:
+    _, reason, relevance = item
+    return (
+        is_query_relevance_sufficient(relevance),
+        relevance.distinctive_term_hits,
+        relevance.unique_term_hits,
+        relevance.score_boost,
+        reason == "original_query",
+    )
+
+
+def _keyword_chunk_score(
+    relevance: QueryRelevance,
+    *,
+    query_expansion_reason: str,
+) -> float:
+    distinctive_boost = min(0.028, relevance.distinctive_term_hits * 0.007)
+    phrase_boost = min(0.018, relevance.phrase_bigram_hits * 0.006)
+    frequency_boost = min(0.014, relevance.capped_frequency_hits * 0.0015)
+    expansion_boost = 0.004 if query_expansion_reason != "original_query" else 0.0
+    reason_boost = _KEYWORD_EXPANSION_REASON_BOOSTS.get(query_expansion_reason, 0.0)
+    score_cap = _KEYWORD_EXPANSION_SCORE_CAPS.get(query_expansion_reason, 0.93)
+    return min(
+        score_cap,
+        round(
+            0.75
+            + relevance.score_boost
+            + distinctive_boost
+            + phrase_boost
+            + frequency_boost
+            + expansion_boost
+            + reason_boost,
+            4,
+        ),
+    )
+
+
 def _chunk_context_item(
     *,
     chunk: MemoryChunk,
@@ -896,6 +979,7 @@ def _chunk_context_item(
     score: float,
     relevance: QueryRelevance | None,
     query_text: str,
+    query_expansion_reason: str = "original_query",
 ) -> ContextItem:
     snippet = query_focused_snippet(query=query_text, text=text)
     evidence_text = snippet.text if snippet is not None else text
@@ -914,6 +998,8 @@ def _chunk_context_item(
     }
     if relevance is not None:
         score_signals.update(query_relevance_score_signals(relevance))
+    if query_expansion_reason != "original_query":
+        score_signals["query_expansion_reason"] = query_expansion_reason
     return enrich_context_item_with_media_time(
         ContextItem(
             item_id=str(chunk.id),
@@ -926,6 +1012,7 @@ def _chunk_context_item(
                 "retrieval_source": retrieval_source,
                 "retrieval_sources": [retrieval_source],
                 "ranking_reason": f"matched via {retrieval_source}",
+                "query_expansion_reason": query_expansion_reason,
                 "score_signals": score_signals,
                 "provenance": {
                     "retrieval_sources": [retrieval_source],
@@ -938,6 +1025,7 @@ def _chunk_context_item(
                     "char_end": chunk.char_end,
                     **source_ref_location_summary(source_refs),
                     **query_snippet_diagnostics(snippet),
+                    "query_expansion_reason": query_expansion_reason,
                 },
                 "source_type": chunk.source_type,
                 "source_id": chunk.source_external_id,

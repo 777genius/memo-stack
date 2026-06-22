@@ -75,6 +75,24 @@ def test_query_focused_snippet_keeps_adjacent_structured_dialog_turns() -> None:
     assert len(snippet.text) <= 640
 
 
+def test_query_focused_snippet_preserves_long_structured_evidence_prefix() -> None:
+    text = (
+        "D10:10 D10:12 D10:14 D10:16 Melanie: "
+        + "background detail " * 35
+        + "The family watched the Perseid meteor shower during a camping trip."
+    )
+
+    snippet = query_focused_snippet(
+        query="meteor shower camping trip",
+        text=text,
+        window_chars=120,
+    )
+
+    assert snippet is not None
+    assert snippet.text.startswith("D10:10 D10:12 D10:14 D10:16")
+    assert "meteor shower during a camping trip" in snippet.text
+
+
 def test_source_refs_with_query_snippet_preserves_location_metadata() -> None:
     source_ref = SourceRef(
         source_type="asset_extraction",

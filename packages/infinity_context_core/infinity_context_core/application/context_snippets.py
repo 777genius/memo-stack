@@ -19,8 +19,11 @@ _MAX_SNIPPET_CHARS = 360
 _MAX_STRUCTURED_SNIPPET_CHARS = 640
 _MAX_STRUCTURED_SNIPPET_LINES = 4
 _MAX_BOUNDARY_SCAN_CHARS = 40
-_MAX_LINE_PREFIX_SCAN_CHARS = 240
+_MAX_LINE_PREFIX_SCAN_CHARS = 1200
 _STRUCTURED_EVIDENCE_LINE_RE = re.compile(r"^\s*(?:D\d+:\d+|S\d+:\d+|T\d+:\d+)\b")
+_STRUCTURED_EVIDENCE_PREFIX_RE = re.compile(
+    r"^\s*((?:(?:D|S|T)\d+:\d+\s+){0,7}(?:D|S|T)\d+:\d+)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,20 @@ def query_focused_snippet(
     if structured_line and start == line_start:
         end = _right_structured_line_boundary(text=text, start=start, end=end)
     snippet = _render_snippet(text=text, start=start, end=end, max_chars=max_chars)
+    if structured_line and start != line_start:
+        snippet = _prepend_structured_evidence_prefix(
+            text=text,
+            line_start=line_start,
+            snippet=snippet,
+            max_chars=max_chars,
+        )
+    if structured_line:
+        snippet = _prepend_adjacent_structured_evidence_prefixes(
+            text=text,
+            line_start=line_start,
+            snippet=snippet,
+            max_chars=max_chars,
+        )
     if not snippet:
         return None
     return QuerySnippet(
@@ -213,6 +230,105 @@ def _is_structured_evidence_line(text: str, line_start: int) -> bool:
         line_end = len(text)
     line = text[line_start:line_end]
     return bool(_STRUCTURED_EVIDENCE_LINE_RE.match(line))
+
+
+def _prepend_structured_evidence_prefix(
+    *,
+    text: str,
+    line_start: int,
+    snippet: str,
+    max_chars: int,
+) -> str:
+    if not snippet:
+        return ""
+    line_end = text.find("\n", line_start)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    match = _STRUCTURED_EVIDENCE_PREFIX_RE.match(line)
+    if not match:
+        return snippet
+    prefix = " ".join(match.group(1).split())
+    if prefix in snippet:
+        return snippet
+    normalized_snippet = snippet.removeprefix("... ").strip()
+    return safe_metadata_text(f"{prefix} ... {normalized_snippet}", limit=max_chars)
+
+
+def _prepend_adjacent_structured_evidence_prefixes(
+    *,
+    text: str,
+    line_start: int,
+    snippet: str,
+    max_chars: int,
+) -> str:
+    if not snippet:
+        return ""
+    prefixes = _adjacent_structured_evidence_prefixes(text=text, line_start=line_start)
+    missing = tuple(prefix for prefix in prefixes if prefix not in snippet)
+    if not missing:
+        return snippet
+    normalized_snippet = snippet.removeprefix("... ").strip()
+    prefix_text = " ".join(missing)
+    return safe_metadata_text(f"{prefix_text} ... {normalized_snippet}", limit=max_chars)
+
+
+def _adjacent_structured_evidence_prefixes(
+    *,
+    text: str,
+    line_start: int,
+) -> tuple[str, ...]:
+    prefixes: list[str] = []
+    previous = _previous_line_start(text, line_start)
+    if previous is not None:
+        previous_prefix = _structured_evidence_prefix(text=text, line_start=previous)
+        if previous_prefix:
+            prefixes.append(previous_prefix)
+    cursor = line_start
+    for _ in range(4):
+        prefix = _structured_evidence_prefix(text=text, line_start=cursor)
+        if prefix:
+            prefixes.append(prefix)
+        next_line = _next_line_start(text, cursor)
+        if next_line is None:
+            break
+        cursor = next_line
+    return tuple(_dedupe_prefixes(prefixes))
+
+
+def _structured_evidence_prefix(*, text: str, line_start: int) -> str:
+    line_end = text.find("\n", line_start)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    match = _STRUCTURED_EVIDENCE_PREFIX_RE.match(line)
+    return " ".join(match.group(1).split()) if match else ""
+
+
+def _previous_line_start(text: str, line_start: int) -> int | None:
+    if line_start <= 0:
+        return None
+    previous_end = line_start - 1
+    previous_start = text.rfind("\n", 0, previous_end)
+    return 0 if previous_start == -1 else previous_start + 1
+
+
+def _next_line_start(text: str, line_start: int) -> int | None:
+    line_end = text.find("\n", line_start)
+    if line_end == -1 or line_end + 1 >= len(text):
+        return None
+    return line_end + 1
+
+
+def _dedupe_prefixes(prefixes: list[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for prefix in prefixes:
+        if prefix in seen:
+            continue
+        seen.add(prefix)
+        result.append(prefix)
+    return tuple(result)
 
 
 def _right_structured_line_boundary(*, text: str, start: int, end: int) -> int:

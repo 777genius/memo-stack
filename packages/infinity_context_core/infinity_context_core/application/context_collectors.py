@@ -91,6 +91,7 @@ class CanonicalContextCollector:
         *,
         query: BuildContextQuery,
         memory_scope_ids: tuple[str, ...],
+        keyword_queries: tuple[str, ...] | None = None,
     ) -> CanonicalCollectionResult:
         async with self._uow_factory() as uow:
             facts = await uow.facts.find_active(
@@ -109,11 +110,12 @@ class CanonicalContextCollector:
                 query_text=query.query,
                 limit=query.max_facts,
             )
-            keyword_chunks = await uow.chunks.keyword_search(
+            keyword_chunks = await _keyword_search_chunks(
+                uow,
                 space_id=str(query.space_id),
                 memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
-                query=query.query,
+                queries=keyword_queries or (query.query,),
                 limit=query.max_chunks,
             )
             anchors: list[MemoryAnchor] = []
@@ -133,6 +135,39 @@ class CanonicalContextCollector:
             keyword_chunks=tuple(keyword_chunks),
             anchors=tuple(anchors),
         )
+
+
+async def _keyword_search_chunks(
+    uow: object,
+    *,
+    space_id: str,
+    memory_scope_ids: tuple[str, ...],
+    thread_id: str | None,
+    queries: tuple[str, ...],
+    limit: int,
+) -> tuple[MemoryChunk, ...]:
+    if limit <= 0:
+        return ()
+    deduped: dict[str, MemoryChunk] = {}
+    seen_queries: set[str] = set()
+    candidate_limit = min(240, max(limit * 4, limit))
+    for raw_query in queries:
+        normalized_query = " ".join(raw_query.split()).casefold()
+        if not normalized_query or normalized_query in seen_queries:
+            continue
+        seen_queries.add(normalized_query)
+        chunks = await uow.chunks.keyword_search(
+            space_id=space_id,
+            memory_scope_ids=memory_scope_ids,
+            thread_id=thread_id,
+            query=raw_query,
+            limit=limit,
+        )
+        for chunk in chunks:
+            deduped.setdefault(str(chunk.id), chunk)
+            if len(deduped) >= candidate_limit:
+                return tuple(deduped.values())
+    return tuple(deduped.values())
 
 
 def _canonical_fact_candidate_limit(max_facts: int) -> int:
